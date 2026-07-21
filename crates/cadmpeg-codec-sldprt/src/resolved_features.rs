@@ -833,11 +833,12 @@ mod marker_tests {
         component_profile_source_at, component_reference_curve_path_at,
         consecutive_legacy_profile_line_endpoints, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_marker_local_links,
-        coordinate_roster_curve_endpoint_markers, cosmetic_thread_component_face_reference_at,
-        cosmetic_thread_cylinder_reference_at, enrich_history_revolution_inputs,
-        explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
-        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
-        inline_surface_reference_at, legacy_coordinate_roster_selected_axis_endpoint_indices,
+        coordinate_roster_arc_center, coordinate_roster_curve_endpoint_markers,
+        cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
+        enrich_history_revolution_inputs, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, fixed_reference_plane_frame, generated_surface_identities,
+        indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
+        legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
         legacy_feature_input_section, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
@@ -3511,6 +3512,22 @@ mod marker_tests {
                 .collect::<Vec<_>>(),
             vec![Some([1.0, 2.0]), Some([5.0, 6.0])]
         );
+        payload[curve_offset + 64..curve_offset + 66].copy_from_slice(&1u16.to_le_bytes());
+        let mut centered_entities = entities.clone();
+        centered_entities[0].coordinates_m = Some([0.0, 0.0]);
+        centered_entities[1].coordinates_m = Some([1.0, 0.0]);
+        centered_entities[2].coordinates_m = Some([0.0, 1.0]);
+        let centered_markers = centered_entities.iter().collect::<Vec<_>>();
+        assert_eq!(
+            coordinate_roster_arc_center(
+                &payload,
+                &centered_entities[3],
+                &centered_markers,
+                [&centered_entities[1], &centered_entities[2]],
+            ),
+            Some([0.0, 0.0])
+        );
+        payload[curve_offset + 64..curve_offset + 66].copy_from_slice(&0u16.to_le_bytes());
         payload[curve_offset..curve_offset + LEGACY_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_SKETCH_MARKER);
         payload[curve_offset + 92..curve_offset + 92 + LEGACY_SKETCH_MARKER.len()]
@@ -14480,7 +14497,7 @@ pub(crate) fn project_marker_backed_sketches(
             .collect::<Vec<_>>();
         objects.sort_by_key(|(offset, _)| *offset);
         for (object_index, &(start, native_feature)) in objects.iter().enumerate() {
-            let Some((feature_index, already_bound)) =
+            let Some((feature_index, bound_sketch)) =
                 features.iter().enumerate().find_map(|(index, feature)| {
                     if feature.native_ref.as_deref() != Some(native_feature.id.as_str()) {
                         return None;
@@ -14492,7 +14509,7 @@ pub(crate) fn project_marker_backed_sketches(
                     else {
                         return None;
                     };
-                    Some((index, sketch.is_some()))
+                    Some((index, sketch.clone()))
                 })
             else {
                 continue;
@@ -14595,6 +14612,12 @@ pub(crate) fn project_marker_backed_sketches(
                         space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     };
+                continue;
+            }
+            if bound_sketch
+                .as_ref()
+                .is_some_and(|sketch| !sketch.0.contains("sketch#compact:"))
+            {
                 continue;
             }
             let mut sketch = Sketch {
@@ -14708,6 +14731,15 @@ pub(crate) fn project_marker_backed_sketches(
                                     ) {
                                         let [start_u, start_v] = endpoints[0].coordinates_m?;
                                         let [end_u, end_v] = endpoints[1].coordinates_m?;
+                                        let roster_center = coordinate_roster_arc_center(
+                                            &lane.native_payload,
+                                            marker,
+                                            &object_markers,
+                                            [endpoints[0], endpoints[1]],
+                                        )
+                                        .map(|[u, v]| {
+                                            Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR)
+                                        });
                                         let candidates = object_markers
                                             .iter()
                                             .copied()
@@ -14723,15 +14755,20 @@ pub(crate) fn project_marker_backed_sketches(
                                                 ))
                                             })
                                             .collect::<Vec<_>>();
-                                        if let Some(center) = unique_arc_center_marker(
-                                            Point2::new(
-                                                start_u * NATIVE_TO_IR,
-                                                start_v * NATIVE_TO_IR,
-                                            ),
-                                            Point2::new(end_u * NATIVE_TO_IR, end_v * NATIVE_TO_IR),
-                                            &candidates,
-                                            QUANTUM,
-                                        ) {
+                                        if let Some(center) = roster_center.or_else(|| {
+                                            unique_arc_center_marker(
+                                                Point2::new(
+                                                    start_u * NATIVE_TO_IR,
+                                                    start_v * NATIVE_TO_IR,
+                                                ),
+                                                Point2::new(
+                                                    end_u * NATIVE_TO_IR,
+                                                    end_v * NATIVE_TO_IR,
+                                                ),
+                                                &candidates,
+                                                QUANTUM,
+                                            )
+                                        }) {
                                             let center =
                                                 transform.apply(quantize(center, QUANTUM))?;
                                             let center = Point2::new(
@@ -14806,8 +14843,12 @@ pub(crate) fn project_marker_backed_sketches(
                 .collect::<Vec<_>>();
             resolve_connected_marker_arcs(&mut projected, QUANTUM);
             sketch.profiles = closed_marker_profiles(&projected);
-            if projected.is_empty() || (already_bound && sketch.profiles.is_empty()) {
+            if projected.is_empty() || (bound_sketch.is_some() && sketch.profiles.is_empty()) {
                 continue;
+            }
+            if let Some(bound_sketch) = &bound_sketch {
+                sketch_entities.retain(|entity| entity.sketch != *bound_sketch);
+                sketches.retain(|sketch| sketch.id != *bound_sketch);
             }
             sketch_entities.extend(projected);
             sketches.push(sketch);
@@ -20571,6 +20612,62 @@ fn coordinate_roster_curve_endpoint_markers<'a>(
         .unwrap_or_default()
 }
 
+fn coordinate_roster_arc_center(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+    resolved_endpoints: [&SketchInputEntity; 2],
+) -> Option<[f64; 2]> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(2)
+        || wide_indexed_curve_endpoint_indices(payload, offset).is_none()
+        || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
+    {
+        return None;
+    }
+    let roster_endpoints = coordinate_roster_curve_endpoint_markers(payload, curve, markers);
+    let [roster_first, roster_second] = roster_endpoints.as_slice() else {
+        return None;
+    };
+    let same_pair = (resolved_endpoints[0].id == roster_first.id
+        && resolved_endpoints[1].id == roster_second.id)
+        || (resolved_endpoints[0].id == roster_second.id
+            && resolved_endpoints[1].id == roster_first.id);
+    if !same_pair {
+        return None;
+    }
+    let first_index = usize::from(u16::from_le_bytes(
+        payload.get(offset + 64..offset + 66)?.try_into().ok()?,
+    ));
+    let second_index = usize::from(u16::from_le_bytes(
+        payload.get(offset + 66..offset + 68)?.try_into().ok()?,
+    ));
+    let center_index = first_index.min(second_index).checked_sub(1)?;
+    let mut coordinates = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref == curve.feature_ref
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point
+                        | SketchInputKind::ConstrainedPoint
+                        | SketchInputKind::LineOrCircle
+                        | SketchInputKind::Arc
+                )
+        })
+        .collect::<Vec<_>>();
+    coordinates.sort_unstable_by_key(|marker| marker.offset);
+    let center = coordinates.get(center_index)?.coordinates_m?;
+    let first = resolved_endpoints[0].coordinates_m?;
+    let second = resolved_endpoints[1].coordinates_m?;
+    let first_radius = (first[0] - center[0]).hypot(first[1] - center[1]);
+    let second_radius = (second[0] - center[0]).hypot(second[1] - center[1]);
+    (first_radius > 0.0 && same_dimension_length(first_radius, second_radius)).then_some(center)
+}
+
 fn coordinate_roster_curve_layout(payload: &[u8], offset: usize) -> bool {
     coordinate_roster_endpoint_offset(payload, offset).is_some()
 }
@@ -24087,6 +24184,41 @@ mod profile_join_tests {
         arc_end.ordinal = 5;
         arc_end.offset = 5;
         arc_end.links = arc_start.links.clone();
+        let triangle_point = |id: &str, ordinal, offset, coordinates_m| {
+            let mut point = marker(id, Some(coordinates_m));
+            point.feature_ref = Some("sketch-native".into());
+            point.ordinal = ordinal;
+            point.offset = offset;
+            point
+        };
+        let triangle_points = [
+            triangle_point("triangle-point-0", 6, 6, [0.010, 0.010]),
+            triangle_point("triangle-point-1", 7, 7, [0.020, 0.010]),
+            triangle_point("triangle-point-2", 8, 8, [0.015, 0.020]),
+        ];
+        let triangle_line = |id: &str, ordinal, offset, first: &str, second: &str| {
+            let mut line = marker(id, Some([0.0, 0.0]));
+            line.feature_ref = Some("sketch-native".into());
+            line.ordinal = ordinal;
+            line.offset = offset;
+            line.kind = SketchInputKind::LineOrCircle;
+            line.links = vec![
+                SketchInputLink {
+                    local_id: 10,
+                    entity_ref: first.into(),
+                },
+                SketchInputLink {
+                    local_id: 11,
+                    entity_ref: second.into(),
+                },
+            ];
+            line
+        };
+        let triangle = [
+            triangle_line("triangle-0", 9, 9, "triangle-point-0", "triangle-point-1"),
+            triangle_line("triangle-1", 10, 10, "triangle-point-1", "triangle-point-2"),
+            triangle_line("triangle-2", 11, 11, "triangle-point-2", "triangle-point-0"),
+        ];
         payload.resize(300, 0);
         payload[200..205].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload[227..229].copy_from_slice(&2u16.to_le_bytes());
@@ -24122,7 +24254,11 @@ mod profile_join_tests {
             surface_selections: Vec::new(),
             generated_surface_identities: Vec::new(),
             references: Vec::new(),
-            sketch_entities: vec![point, curve, endpoint, arc, arc_start, arc_end],
+            sketch_entities: vec![point, curve, endpoint, arc, arc_start, arc_end]
+                .into_iter()
+                .chain(triangle_points)
+                .chain(triangle)
+                .collect(),
         };
         let mut sketches = Vec::new();
         let mut entities = Vec::new();
@@ -24137,7 +24273,7 @@ mod profile_join_tests {
         );
 
         assert_eq!(sketches.len(), 1);
-        assert_eq!(entities.len(), 6);
+        assert_eq!(entities.len(), 12);
         assert!(matches!(
             entities[0].geometry,
             SketchGeometry::Point { position }
@@ -24164,6 +24300,8 @@ mod profile_join_tests {
                 && start_angle == std::f64::consts::FRAC_PI_2
                 && end_angle == std::f64::consts::PI
         ));
+        assert_eq!(sketches[0].profiles.len(), 1);
+        assert_eq!(sketches[0].profiles[0].len(), 3);
         assert!(matches!(
             features[1].definition,
             FeatureDefinition::Sketch {
@@ -24185,7 +24323,7 @@ mod profile_join_tests {
             &lanes,
         );
         assert_eq!(sketches.len(), 1);
-        assert_eq!(entities.len(), 6);
+        assert_eq!(entities.len(), 12);
         assert!(matches!(
             &configured_features[1].definition,
             FeatureDefinition::Sketch {
@@ -24193,6 +24331,34 @@ mod profile_join_tests {
                 ..
             } if sketch == &expected_sketch
         ));
+
+        let compact_id = SketchId("sldprt:model:sketch#compact:lane:7".into());
+        let mut compact_sketch = sketches[0].clone();
+        compact_sketch.id = compact_id.clone();
+        compact_sketch.profiles.clear();
+        let mut compact_entity = entities[0].clone();
+        compact_entity.id = SketchEntityId("compact-entity".into());
+        compact_entity.sketch = compact_id.clone();
+        let mut replacement_features = features.clone();
+        replacement_features[1].definition = FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
+            sketch: Some(compact_id),
+        };
+        let mut replacement_sketches = vec![compact_sketch];
+        let mut replacement_entities = vec![compact_entity];
+        project_marker_backed_sketches(
+            &mut replacement_features,
+            &mut replacement_sketches,
+            &mut replacement_entities,
+            &histories,
+            &lanes,
+        );
+        assert_eq!(replacement_sketches.len(), 1);
+        assert_eq!(replacement_sketches[0].id, expected_sketch);
+        assert_eq!(replacement_entities.len(), 12);
+        assert!(replacement_entities
+            .iter()
+            .all(|entity| entity.sketch == expected_sketch));
     }
 
     #[test]
