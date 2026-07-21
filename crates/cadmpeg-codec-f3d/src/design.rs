@@ -10,15 +10,15 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::records::{
     BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, DesignBaseFeatureConstruction,
     DesignBaseFlangeOperation, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
-    DesignBodyRecipeOperand, DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement,
-    DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
-    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
-    DesignCopyPasteBodiesOperation, DesignDimensionAnnotationFrame,
-    DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
-    DesignDirectFaceOperation, DesignEdgeFlangeOperation, DesignEdgeIdentityOperand,
-    DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeExtent,
-    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignCoilExtent, DesignCoilSection,
+    DesignCoilSectionPlacement, DesignConfiguration, DesignConfigurationKind,
+    DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
+    DesignConstructionPersistentIdentity, DesignCopyPasteBodiesOperation,
+    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
+    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
+    DesignDimensionRecipeRecord, DesignDirectFaceOperation, DesignEdgeFlangeOperation,
+    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
     DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
     DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
@@ -18066,27 +18066,43 @@ fn parse_body_recipe_operand(
     let start = usize::try_from(header.byte_offset).ok()?;
     let next_at = body_recipe_operand_end(bytes, start, header.record_index)?;
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
+    let reference_count = usize::try_from(u32_at(bytes, start + 21)?).ok()?;
     if start >= recipe_at
         || recipe_at >= next_at
         || bytes.get(start + 11..start + 21)? != [0; 10]
-        || u32_at(bytes, start + 21)? != 1
-        || u32_at(bytes, start + 33)? != 3
-        || bytes.get(start + 37) != Some(&1)
-        || bytes.get(start + 46..start + 48)? != [0; 2]
-        || u32_at(bytes, start + 48)? != 1
+        || reference_count == 0
     {
         return None;
     }
-    let design_reference = read_u64(bytes, start + 25)?;
-    let nested_record_index = read_u64(bytes, start + 38)?;
-    let (asset_id, after_asset_id) = lp_utf16(bytes, start + 52)?;
+    let mut references = Vec::with_capacity(reference_count);
+    let mut cursor = start.checked_add(25)?;
+    for _ in 0..reference_count {
+        references.push(DesignBodyRecipeReference {
+            design_reference: read_u64(bytes, cursor)?,
+            design_reference_offset: u64::try_from(cursor).ok()?,
+            form: u32_at(bytes, cursor + 8)?,
+            form_offset: u64::try_from(cursor + 8).ok()?,
+            candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            preceding_body_slots: Vec::new(),
+        });
+        cursor = cursor.checked_add(12)?;
+    }
+    if bytes.get(cursor) != Some(&1)
+        || bytes.get(cursor + 9..cursor + 11)? != [0; 2]
+        || u32_at(bytes, cursor + 11)? != 1
+    {
+        return None;
+    }
+    let nested_record_index = read_u64(bytes, cursor + 1)?;
+    let asset_id_at = cursor.checked_add(15)?;
+    let (asset_id, after_asset_id) = lp_utf16(bytes, asset_id_at)?;
     let (context_id, after_context_id) = lp_utf16(bytes, after_asset_id)?;
     if !is_guid(&asset_id)
         || !is_guid(&context_id)
         || u32_at(bytes, after_context_id)? != 2
         || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
         || nested_record_index != u64::from(header.record_index.checked_add(3)?)
-        || recipe.design_id.as_deref()?.parse::<u64>().ok()? != design_reference
     {
         return None;
     }
@@ -18099,17 +18115,15 @@ fn parse_body_recipe_operand(
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
         asset_id,
-        asset_id_offset: u64::try_from(start + 56).ok()?,
+        asset_id_offset: u64::try_from(asset_id_at + 4).ok()?,
         context_id,
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
-        design_reference,
-        design_reference_offset: u64::try_from(start + 25).ok()?,
+        references,
         nested_record_index,
-        nested_record_index_offset: u64::try_from(start + 38).ok()?,
+        nested_record_index_offset: u64::try_from(cursor + 1).ok()?,
         recipe_id: recipe.id.clone(),
-        candidate_faces: Vec::new(),
-        preceding_candidate_faces: Vec::new(),
         resolved_face_slot: None,
+        resolved_body_slot: None,
         next_record_index: header.record_index.checked_add(4)?,
         next_byte_offset: u64::try_from(next_at).ok()?,
     })
@@ -18123,22 +18137,24 @@ pub fn bind_body_recipe_operand_candidates(
     use cadmpeg_ir::attributes::AttributeTarget;
 
     for operand in operands {
-        operand.candidate_faces.clear();
-        let Ok(design_reference) = i64::try_from(operand.design_reference) else {
-            continue;
-        };
-        operand.candidate_faces = tags
-            .iter()
-            .filter(|tag| tag.design_references.contains(&design_reference))
-            .filter_map(|tag| match &tag.target {
-                AttributeTarget::Face(face) => Some(face.clone()),
-                _ => None,
-            })
-            .collect();
-        operand
-            .candidate_faces
-            .sort_by(|left, right| left.0.cmp(&right.0));
-        operand.candidate_faces.dedup();
+        for reference in &mut operand.references {
+            reference.candidate_faces.clear();
+            let Ok(design_reference) = i64::try_from(reference.design_reference) else {
+                continue;
+            };
+            reference.candidate_faces = tags
+                .iter()
+                .filter(|tag| tag.design_references.contains(&design_reference))
+                .filter_map(|tag| match &tag.target {
+                    AttributeTarget::Face(face) => Some(face.clone()),
+                    _ => None,
+                })
+                .collect();
+            reference
+                .candidate_faces
+                .sort_by(|left, right| left.0.cmp(&right.0));
+            reference.candidate_faces.dedup();
+        }
     }
 }
 
@@ -27269,7 +27285,7 @@ mod relation_tests {
     }
 
     #[test]
-    fn body_recipe_operand_joins_exact_record_and_design_reference() {
+    fn body_recipe_operand_decodes_counted_reference_table() {
         fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
             bytes.extend_from_slice(&3u32.to_le_bytes());
             bytes.extend_from_slice(&class_tag);
@@ -27310,9 +27326,11 @@ mod relation_tests {
         let mut bytes = Vec::new();
         header(&mut bytes, *b"365", 100);
         bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
         bytes.extend_from_slice(&2265u64.to_le_bytes());
         bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&2266u64.to_le_bytes());
+        bytes.extend_from_slice(&32u32.to_le_bytes());
         bytes.push(1);
         bytes.extend_from_slice(&103u64.to_le_bytes());
         bytes.extend_from_slice(&[0; 2]);
@@ -27342,14 +27360,14 @@ mod relation_tests {
 
         let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
             .expect("body recipe operand");
-        assert_eq!(operand.design_reference, 2265);
+        assert_eq!(operand.references.len(), 2);
+        assert_eq!(operand.references[0].design_reference, 2265);
+        assert_eq!(operand.references[0].form, 3);
+        assert_eq!(operand.references[1].design_reference, 2266);
+        assert_eq!(operand.references[1].form, 32);
         assert_eq!(operand.nested_record_index, 103);
         assert_eq!(operand.recipe_id, recipe.id);
         assert_eq!(operand.next_byte_offset, next_at as u64);
-
-        let mut mismatched = recipe;
-        mismatched.design_id = Some("2266".into());
-        assert!(parse_body_recipe_operand(&bytes, &group, 0, &record, &mismatched).is_none());
     }
 
     #[test]

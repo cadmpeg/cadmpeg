@@ -1041,6 +1041,7 @@ pub fn decode(
                 &mut ir.model.features,
                 &native.design_parameter_scopes,
                 &native.design_construction_operand_groups,
+                &native.design_body_recipe_operands,
                 &native.asm_histories,
             );
             crate::history::bind_feature_face_selections(
@@ -1397,6 +1398,7 @@ pub fn decode(
         &mut ir.model.features,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
+        &native.design_body_recipe_operands,
         &native.asm_histories,
     );
     crate::history::bind_feature_face_selections(

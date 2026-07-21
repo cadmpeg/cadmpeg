@@ -602,6 +602,7 @@ pub(crate) fn bind_feature_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[crate::records::DesignParameterScope],
     groups: &[crate::records::DesignConstructionOperandGroup],
+    body_recipe_operands: &[crate::records::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
 ) {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
@@ -623,6 +624,31 @@ pub(crate) fn bind_feature_body_selections(
             continue;
         };
         if matching_scopes.next().is_some() {
+            continue;
+        }
+        let feature_id = feature.id.clone();
+        if let FeatureDefinition::BoundaryFill { tools, cells } = &mut feature.definition {
+            let Some(previous_state_id) = scope.previous_history_state_id else {
+                continue;
+            };
+            bind_body_recipe_body_selection(
+                tools,
+                &feature_id,
+                previous_state_id,
+                scope,
+                groups,
+                body_recipe_operands,
+            );
+            for cell in cells {
+                bind_body_recipe_body_selection(
+                    cell,
+                    &feature_id,
+                    previous_state_id,
+                    scope,
+                    groups,
+                    body_recipe_operands,
+                );
+            }
             continue;
         }
         let (bodies, proof) = match &mut feature.definition {
@@ -678,6 +704,68 @@ pub(crate) fn bind_feature_body_selections(
             native: group_id.clone(),
         };
     }
+}
+
+fn bind_body_recipe_body_selection(
+    selection: &mut cadmpeg_ir::features::BodySelection,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+    scope: &crate::records::DesignParameterScope,
+    groups: &[crate::records::DesignConstructionOperandGroup],
+    operands: &[crate::records::DesignBodyRecipeOperand],
+) {
+    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::ids::HistoricalBodyId;
+
+    let BodySelection::Native(group_id) = selection else {
+        return;
+    };
+    let stream = crate::design::native_stream(&scope.id);
+    let mut matching_groups = groups.iter().filter(|group| {
+        group.id == *group_id
+            && group.scope_record_index == scope.record_index
+            && matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
+            && crate::design::native_stream(&group.id) == stream
+    });
+    let Some(group) = matching_groups.next() else {
+        return;
+    };
+    if matching_groups.next().is_some() || group.members.is_empty() {
+        return;
+    }
+    let mut body_slots = Vec::with_capacity(group.members.len());
+    for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+        let Ok(ordinal) = u32::try_from(ordinal) else {
+            return;
+        };
+        let mut matching_operands = operands.iter().filter(|operand| {
+            operand.group_record_index == group.record_index
+                && operand.group_member_ordinal == ordinal
+                && operand.record_index == record_index
+                && crate::design::native_stream(&operand.id) == stream
+        });
+        let Some(operand) = matching_operands.next() else {
+            return;
+        };
+        if matching_operands.next().is_some() {
+            return;
+        }
+        let Some(body_slot) = operand.resolved_body_slot else {
+            return;
+        };
+        if !body_slots.contains(&body_slot) {
+            body_slots.push(body_slot);
+        }
+    }
+    let prefix = feature_input_prefix(feature_id, previous_state_id);
+    *selection = BodySelection::Historical {
+        state: crate::design::feature_input_topology_id(feature_id, previous_state_id),
+        bodies: body_slots
+            .into_iter()
+            .map(|slot| HistoricalBodyId(format!("f3d:history-input:body#{prefix}:{slot}")))
+            .collect(),
+        native: group_id.clone(),
+    };
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1155,8 +1243,12 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             .or_insert(Some(state));
     }
     for operand in operands {
-        operand.preceding_candidate_faces.clear();
+        for reference in &mut operand.references {
+            reference.preceding_candidate_faces.clear();
+            reference.preceding_body_slots.clear();
+        }
         operand.resolved_face_slot = None;
+        operand.resolved_body_slot = None;
         let stream = crate::design::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -1188,17 +1280,52 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             continue;
         };
         let source_prefix = format!("f3d:brep/{source}/");
-        operand.preceding_candidate_faces = faces_in_topology(
-            &operand
-                .candidate_faces
+        for reference in &mut operand.references {
+            reference.preceding_candidate_faces = faces_in_topology(
+                &reference
+                    .candidate_faces
+                    .iter()
+                    .filter(|face| face.0.starts_with(&source_prefix))
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                topology,
+            );
+            let face_slots = reference
+                .preceding_candidate_faces
                 .iter()
-                .filter(|face| face.0.starts_with(&source_prefix))
-                .cloned()
-                .collect::<Vec<_>>(),
-            topology,
-        );
-        if let [face] = operand.preceding_candidate_faces.as_slice() {
-            operand.resolved_face_slot = stable_ref(&face.0);
+                .filter_map(|face| stable_ref(&face.0))
+                .collect::<BTreeSet<_>>();
+            let Some(body_slots) = bodies_intersecting(topology, &face_slots) else {
+                continue;
+            };
+            reference.preceding_body_slots = body_slots.into_iter().collect();
+        }
+        if let [reference] = operand.references.as_slice() {
+            if let [face] = reference.preceding_candidate_faces.as_slice() {
+                operand.resolved_face_slot = stable_ref(&face.0);
+            }
+        }
+        let Some(first) = operand.references.first() else {
+            continue;
+        };
+        if first.preceding_body_slots.is_empty()
+            || operand
+                .references
+                .iter()
+                .any(|reference| reference.preceding_body_slots.is_empty())
+        {
+            continue;
+        }
+        let mut intersection = first
+            .preceding_body_slots
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        for reference in &operand.references[1..] {
+            intersection.retain(|body| reference.preceding_body_slots.contains(body));
+        }
+        if intersection.len() == 1 {
+            operand.resolved_body_slot = intersection.into_iter().next();
         }
     }
 }

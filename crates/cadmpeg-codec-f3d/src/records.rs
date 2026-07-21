@@ -1690,29 +1690,46 @@ pub struct DesignBodyRecipeOperand {
     pub context_id: String,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
-    /// Persistent Design reference repeated by the body recipe.
-    pub design_reference: u64,
-    /// Byte offset of `design_reference`.
-    pub design_reference_offset: u64,
+    /// Counted persistent Design references carried by this operand.
+    pub references: Vec<DesignBodyRecipeReference>,
     /// Tagged nested record reference following the Design reference.
     pub nested_record_index: u64,
     /// Byte offset of `nested_record_index`.
     pub nested_record_index_offset: u64,
     /// Body construction recipe contained by this operand record.
     pub recipe_id: String,
-    /// Solved faces carrying `design_reference`, ordered by face identity.
+    /// Unique input-state face selected by this operand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_face_slot: Option<i64>,
+    /// Unique input-state body containing every reference's candidate faces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_body_slot: Option<i64>,
+    /// Identity of the indexed record immediately following this operand.
+    pub next_record_index: u32,
+    /// Byte offset of the indexed record immediately following this operand.
+    pub next_byte_offset: u64,
+}
+
+/// One counted persistent reference inside a whole-body recipe operand.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignBodyRecipeReference {
+    /// Persistent Design reference.
+    pub design_reference: u64,
+    /// Byte offset of `design_reference`.
+    pub design_reference_offset: u64,
+    /// Reference-local serialized form discriminator.
+    pub form: u32,
+    /// Byte offset of `form`.
+    pub form_offset: u64,
+    /// Solved faces carrying this reference, ordered by face identity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_faces: Vec<cadmpeg_ir::ids::FaceId>,
     /// Candidate faces present in the owning feature's input topology.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub preceding_candidate_faces: Vec<cadmpeg_ir::ids::FaceId>,
-    /// Unique input-state face selected by this operand.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved_face_slot: Option<i64>,
-    /// Identity of the indexed record immediately following this operand.
-    pub next_record_index: u32,
-    /// Byte offset of the indexed record immediately following this operand.
-    pub next_byte_offset: u64,
+    /// Input-state bodies containing at least one candidate face.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preceding_body_slots: Vec<i64>,
 }
 
 /// Stable ASM entity family named by a Design persistent identity.
