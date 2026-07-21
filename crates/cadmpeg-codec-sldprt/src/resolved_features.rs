@@ -4129,6 +4129,18 @@ mod marker_tests {
             wide_indexed_curve_endpoint_indices(&current_112, 0),
             Some([7, 11])
         );
+        let mut current_112_with_detail = current_112.clone();
+        current_112_with_detail.resize(112 + 80, 0);
+        current_112_with_detail[112..112 + 80].copy_from_slice(&payload[detail..detail + 80]);
+        assert_eq!(
+            compact_bounded_curve_tangent(&current_112_with_detail, 0),
+            Some([-1.0, 0.0])
+        );
+        current_112_with_detail[84..86].copy_from_slice(&3u16.to_le_bytes());
+        assert_eq!(
+            compact_bounded_curve_tangent(&current_112_with_detail, 0),
+            None
+        );
         current_112[17..21].copy_from_slice(&1u32.to_le_bytes());
         assert_eq!(wide_indexed_curve_endpoint_indices(&current_112, 0), None);
         current_112[17..21].copy_from_slice(&2u32.to_le_bytes());
@@ -15137,7 +15149,13 @@ pub(crate) fn project_marker_backed_sketches(
 
 fn compact_bounded_curve_tangent(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
     let record_size = if wide_indexed_curve_endpoint_indices(payload, offset).is_some() {
-        92
+        if sketch_marker_prefix_at(payload, offset.checked_add(92)?) {
+            92
+        } else if sketch_marker_prefix_at(payload, offset.checked_add(112)?) {
+            112
+        } else {
+            return None;
+        }
     } else {
         84
     };
