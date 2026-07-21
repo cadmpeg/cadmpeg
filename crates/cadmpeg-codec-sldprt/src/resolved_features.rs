@@ -21366,6 +21366,29 @@ fn typed_relation_definition(
                     (second_point.u - first_point.u).hypot(second_point.v - first_point.v),
                     expected.0,
                 ) {
+                    let horizontal =
+                        same_dimension_length((second_point.u - first_point.u).abs(), expected.0);
+                    let vertical =
+                        same_dimension_length((second_point.v - first_point.v).abs(), expected.0);
+                    let projected_distance_operands = relation
+                        .operands
+                        .iter()
+                        .all(|operand| operand.kind == FeatureInputOperandKind::Native(0xbc7c));
+                    if projected_distance_operands && horizontal != vertical {
+                        return Some(if horizontal {
+                            SketchConstraintDefinition::HorizontalDistance {
+                                first,
+                                second,
+                                parameter: parameter_id,
+                            }
+                        } else {
+                            SketchConstraintDefinition::VerticalDistance {
+                                first,
+                                second,
+                                parameter: parameter_id,
+                            }
+                        });
+                    }
                     (first, second) = unique_repaired_profile_distance_loci_pair(
                         sketch,
                         &first,
@@ -26833,7 +26856,7 @@ mod profile_join_tests {
         let hint_a = marker("hint-a", Some([0.0, 0.0]));
         let hint_b = marker("hint-b", Some([0.002, 0.0]));
         let markers = HashMap::from([(hint_a.id.as_str(), &hint_a), (hint_b.id.as_str(), &hint_b)]);
-        let loci = HashMap::from([
+        let mut loci = HashMap::from([
             (
                 hint_a.id.clone(),
                 vec![SketchLocus::Entity(SketchEntityId("hint-a".into()))],
@@ -26920,6 +26943,63 @@ mod profile_join_tests {
             }) if [&first, &second].contains(&&SketchEntityId("hint-a".into()))
                 && [&first, &second].contains(&&SketchEntityId("solved".into()))
         ));
+
+        let mut directional_entities = vec![point("hint-a", 0.0), point("hint-b", 1.0)];
+        let mut projected_relation = relation.clone();
+        for operand in &mut projected_relation.operands {
+            operand.kind = FeatureInputOperandKind::Native(0xbc7c);
+        }
+        loci.insert(
+            super::qualified_point_marker_key(&hint_a.id),
+            vec![SketchLocus::Entity(SketchEntityId("hint-a".into()))],
+        );
+        loci.insert(
+            super::qualified_point_marker_key(&hint_b.id),
+            vec![SketchLocus::Entity(SketchEntityId("hint-b".into()))],
+        );
+        directional_entities[1].geometry = SketchGeometry::Point {
+            position: Point2::new(1.0, 0.05),
+        };
+        let mut directional_parameter = parameter.clone();
+        directional_parameter.value = Some(ParameterValue::Length(Length(1.0)));
+        assert!(matches!(
+            typed_relation_definition(
+                &projected_relation,
+                Some(&directional_parameter),
+                &sketch,
+                &directional_entities,
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::HorizontalDistance { .. })
+        ));
+        directional_parameter.value = Some(ParameterValue::Length(Length(0.05)));
+        assert!(matches!(
+            typed_relation_definition(
+                &projected_relation,
+                Some(&directional_parameter),
+                &sketch,
+                &directional_entities,
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::VerticalDistance { .. })
+        ));
+        directional_entities[1].geometry = SketchGeometry::Point {
+            position: Point2::new(1.0, 1.0),
+        };
+        directional_parameter.value = Some(ParameterValue::Length(Length(1.0)));
+        assert_eq!(
+            typed_relation_definition(
+                &projected_relation,
+                Some(&directional_parameter),
+                &sketch,
+                &directional_entities,
+                &markers,
+                &loci,
+            ),
+            None
+        );
 
         let mut ambiguous_entities = entities;
         ambiguous_entities.push(point("other-solved", -5.0));
