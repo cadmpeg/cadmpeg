@@ -276,6 +276,14 @@ Named prototype fields describe the first surface instance. The first instance i
 
 In the ND layout, a complete plane or torus prototype `local_sys` and family parameters define the first instance carrier. Slots 0 through 2 contain the first support direction. In the rank-two compressed form slots 3 through 5 are zero and slots 6 through 8 contain the second support direction. A torus prototype can instead store its second support direction directly in slots 3 through 5. Slots 9 through 11 contain the origin in either complete form. Each positional plane origin slot uses its row-lane scalar form when the prefix defines one. Other slot-9 prefixes use the signed first-coordinate lane defined for tabulated-cylinder directrix points; other slot-10 and slot-11 prefixes use the corresponding second-coordinate lane. The first-coordinate lane's `4a` form stores a negative coordinate in seven bytes: `c0` is the implicit first IEEE-754 byte, the six bytes after `4a` are bytes one through six, and the low byte is zero. The normalized cross product of the two orthogonal, equal-scale support directions is the analytic axis. A bare terminal `18` in the bounded `local_sys` body occupies one zero slot. A plane passes through the local-system origin, uses the analytic axis as its normal, and uses the first support direction as its parameter-space reference direction. A zero torus `radius1` and positive `radius2` define a sphere centered at the local-system origin. Positive `radius1` and `radius2` define a torus with respective major and minor radii centered at that origin.
 
+Two five-coordinate type-26 rows for one zero-`radius1` prototype encode the
+two hemispheres of one Z-axis sphere. Each row stores
+`x_min, z_start, y_min, radial_max, z_end`. The two radial minima are equal,
+`radial_max - x_min` is the sphere diameter, and each axial span is one radius.
+The axial spans share only the sphere-center endpoint and their union is one
+diameter. The X and Y center coordinates are the midpoint of the radial range;
+the shared axial endpoint is the Z center coordinate.
+
 A complete plane envelope whose two model-space diagonal corners have exactly
 one byte-equal coordinate defines an axis-aligned plane through that held
 coordinate. The other two coordinate pairs are byte-distinct. This defines

@@ -974,6 +974,64 @@ fn decode_retains_type26_coordinate_envelope_in_native_ir() {
 }
 
 #[test]
+fn decode_places_paired_five_coordinate_sphere_envelopes() {
+    let lower = [
+        0x18, 0x18, 0x01, 0x11, 0x2e, 0xb0, 0x12, 0x47, 0x05, 0x33, 0x2d, 0x2d, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0x29, 0x47, 0x05, 0x33, 0x2e, 0x05, 0x33, 0x2d, 0x31, 0xa6, 0x66, 0x66, 0x66,
+        0x66, 0x66, 0x18,
+    ];
+    let upper = [
+        0x18, 0x18, 0x01, 0x11, 0x2e, 0xb8, 0x12, 0x47, 0x05, 0x33, 0x2d, 0x28, 0xb3, 0x33, 0x33,
+        0x33, 0x33, 0x33, 0x47, 0x05, 0x33, 0x2e, 0x05, 0x33, 0x2d, 0x2e, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0xd7, 0x18,
+    ];
+    let mut payload = b"srf_array\0\xf8\x02".to_vec();
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&lower);
+    payload.push(0xe3);
+    payload.extend_from_slice(&[8, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&upper);
+    payload.push(0xe3);
+    payload.extend_from_slice(
+        b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe0\x01radius2\0\x2e\x05\x33\xe3",
+    );
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode paired sphere envelopes");
+    for id in [7, 8] {
+        let surface = result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.as_str() == format!("creo:visibgeom:surface#{id}"))
+            .expect("paired sphere surface");
+        assert!(matches!(
+            surface.geometry,
+            cadmpeg_ir::geometry::SurfaceGeometry::Sphere {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            } if center.x == 0.0
+                && center.y == 0.0
+                && (center.z + 15.0).abs() < 1.0e-12
+                && axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                && ref_direction == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                && radius == 2.65
+        ));
+    }
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes["transferred_paired_envelope_sphere_count"],
+        "2"
+    );
+}
+
+#[test]
 fn decode_retains_split_type26_coordinate_envelope_in_native_ir() {
     let body = [
         0x28, 0x8d, 0x07, 0x1b, 0xd2, 0x65, 0x6f, 0x6c, 0x18, 0x94, 0x3f, 0x02, 0x70, 0x16, 0xbe,

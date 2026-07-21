@@ -14436,6 +14436,58 @@ fn five_coordinate_envelope_proves_torus_radii(
         && coordinate_pair_proves_torus_radii([a1, a2], [b1, b2], major_radius, minor_radius)
 }
 
+fn paired_five_coordinate_sphere_center(
+    envelopes: [crate::surface::Type26FiveCoordinateEnvelope; 2],
+    radius: f64,
+) -> Option<[f64; 3]> {
+    (radius.is_finite() && radius > 0.0).then_some(())?;
+    let scale = envelopes
+        .iter()
+        .flat_map(|envelope| envelope.values)
+        .map(f64::abs)
+        .fold(radius.max(1.0), f64::max);
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let decoded = envelopes.map(|envelope| {
+        let [x_min, z0, y_min, radial_max, z1] = envelope.values;
+        (close(x_min, y_min)
+            && close(radial_max - x_min, 2.0 * radius)
+            && close((z1 - z0).abs(), radius))
+        .then_some(([x_min, radial_max], [z0, z1]))
+    });
+    let [Some((first_radial, first_axial)), Some((second_radial, second_axial))] = decoded else {
+        return None;
+    };
+    (close(first_radial[0], second_radial[0]) && close(first_radial[1], second_radial[1]))
+        .then_some(())?;
+    let shared = [first_axial[0], first_axial[1]]
+        .into_iter()
+        .filter(|candidate| {
+            [second_axial[0], second_axial[1]]
+                .into_iter()
+                .any(|other| close(*candidate, other))
+        })
+        .collect::<Vec<_>>();
+    let [center_z] = shared.as_slice() else {
+        return None;
+    };
+    let axial_min = first_axial
+        .into_iter()
+        .chain(second_axial)
+        .fold(f64::INFINITY, f64::min);
+    let axial_max = first_axial
+        .into_iter()
+        .chain(second_axial)
+        .fold(f64::NEG_INFINITY, f64::max);
+    (close(axial_max - axial_min, 2.0 * radius)
+        && close(*center_z - axial_min, radius)
+        && close(axial_max - *center_z, radius))
+    .then_some([
+        0.5 * (first_radial[0] + first_radial[1]),
+        0.5 * (first_radial[0] + first_radial[1]),
+        *center_z,
+    ])
+}
+
 fn unique_surface_parameter_record<'a>(
     scan: &'a ContainerScan,
     row: &crate::surface::SurfaceRow,
@@ -17648,6 +17700,24 @@ mod resolved_sketch_tests {
             4.45,
             0.5
         ));
+        assert_eq!(
+            paired_five_coordinate_sphere_center(
+                [
+                    five_coordinate([-2.65, -15.0, -2.65, 2.65, -17.65]),
+                    five_coordinate([-2.65, -12.35, -2.65, 2.65, -15.0]),
+                ],
+                2.65,
+            ),
+            Some([0.0, 0.0, -15.0])
+        );
+        assert!(paired_five_coordinate_sphere_center(
+            [
+                five_coordinate([-2.65, -15.0, -2.65, 2.65, -17.65]),
+                five_coordinate([-2.65, -12.0, -2.65, 2.65, -15.0]),
+            ],
+            2.65,
+        )
+        .is_none());
     }
 
     #[test]
@@ -30198,6 +30268,86 @@ fn transfer_first_instance_prototype_surfaces(
     transferred
 }
 
+fn transfer_paired_envelope_spheres(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    if scan.layout != crate::container::Layout::Nd {
+        return 0;
+    }
+    let mut transferred = 0;
+    for (prototype, associated_row, section) in unique_surface_prototype_associations(scan) {
+        if prototype.family != crate::surface::SurfacePrototypeFamily::Torus
+            || prototype_scalar(prototype, "radius1") != Some(0.0)
+        {
+            continue;
+        }
+        let Some(radius) = prototype_scalar(prototype, "radius2")
+            .filter(|radius| radius.is_finite() && *radius > 0.0)
+        else {
+            continue;
+        };
+        let rows = scan
+            .surface_rows
+            .iter()
+            .filter(|row| {
+                row.feature_id == associated_row.feature_id
+                    && row.kind == crate::surface::SurfaceKind::TorusOrSphere
+            })
+            .collect::<Vec<_>>();
+        let [first_row, second_row] = rows.as_slice() else {
+            continue;
+        };
+        let envelopes = [first_row, second_row].map(|row| {
+            unique_surface_parameter_record(scan, row)?
+                .type26_five_coordinate_envelope(row.type_byte)
+        });
+        let [Some(first_envelope), Some(second_envelope)] = envelopes else {
+            continue;
+        };
+        let Some(center) =
+            paired_five_coordinate_sphere_center([first_envelope, second_envelope], radius)
+        else {
+            continue;
+        };
+        for row in rows {
+            let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+                continue;
+            }
+            annotate(
+                annotations,
+                &id,
+                &section.name,
+                row.offset as u64,
+                "paired_type26_sphere_envelope",
+                Exactness::Derived,
+            );
+            ir.model.surfaces.push(Surface {
+                id,
+                geometry: SurfaceGeometry::Sphere {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                    radius,
+                },
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("{}:{}", section.name, row.id),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+            transferred += 1;
+        }
+    }
+    transferred
+}
+
 fn transfer_positional_line_extrusion_planes(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -33596,6 +33746,8 @@ fn build_ir(
     let cross_section_plane_count = transfer_cross_section_planes(scan, &mut ir, &mut annotations);
     let first_instance_prototype_surface_count =
         transfer_first_instance_prototype_surfaces(scan, &mut ir, &mut annotations);
+    let paired_envelope_sphere_count =
+        transfer_paired_envelope_spheres(scan, &mut ir, &mut annotations);
     let positional_line_extrusion_plane_count =
         transfer_positional_line_extrusion_planes(scan, &mut ir, &mut annotations);
     let tabulated_cylinder_spline_extrusion_count =
@@ -33677,6 +33829,10 @@ fn build_ir(
         source.attributes.insert(
             "transferred_first_instance_prototype_surface_count".to_string(),
             first_instance_prototype_surface_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_paired_envelope_sphere_count".to_string(),
+            paired_envelope_sphere_count.to_string(),
         );
         source.attributes.insert(
             "transferred_positional_line_extrusion_plane_count".to_string(),
