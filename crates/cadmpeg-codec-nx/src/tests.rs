@@ -3512,6 +3512,13 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         cadmpeg_ir::features::FeatureDefinition::Native { .. }
     ));
     assert!(matches!(
+        crate::decode::non_boolean_feature_definition("TEXT", &["", ""], None, None, None),
+        cadmpeg_ir::features::FeatureDefinition::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::Annotations,
+            ..
+        }
+    ));
+    assert!(matches!(
         crate::decode::non_boolean_feature_definition(
             "BLOCK",
             &[],
@@ -3557,6 +3564,12 @@ fn nx_text_payload_projects_semantic_text_and_font_family() {
     assert_eq!(annotation.parameters["font_family"], "Arial");
     assert_eq!(annotation.native_ref, "nx:text#1");
     assert_eq!(annotation.order, 7);
+
+    let empty =
+        crate::decode::text_semantic_annotation("TEXT", &feature, "nx:text#empty", 8, &["", ""])
+            .unwrap();
+    assert_eq!(empty.text, [""]);
+    assert_eq!(empty.parameters["font_family"], "");
 
     assert!(crate::decode::text_semantic_annotation(
         "BLOCK",

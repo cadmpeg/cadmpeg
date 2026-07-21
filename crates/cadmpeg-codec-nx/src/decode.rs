@@ -12172,9 +12172,6 @@ pub(crate) fn text_semantic_annotation(
     let [text, font_family] = payload_strings else {
         return None;
     };
-    if text.is_empty() || font_family.is_empty() {
-        return None;
-    }
     Some(SemanticAnnotation {
         id: SemanticAnnotationId(format!("{}:semantic-text", feature.0)),
         object: feature.0.clone(),
@@ -13063,13 +13060,11 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
         "DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
         "POINT" => FeatureDefinition::DatumPointUnresolved,
         "DATUM_CSYS" => FeatureDefinition::DatumCoordinateSystemUnresolved,
-        "TEXT" if matches!(payload_strings, [text, font] if !text.is_empty() && !font.is_empty()) => {
-            FeatureDefinition::TreeNode {
-                role: FeatureTreeNodeRole::Annotations,
-                children: Vec::new(),
-                active_child: None,
-            }
-        }
+        "TEXT" if matches!(payload_strings, [_, _]) => FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::Annotations,
+            children: Vec::new(),
+            active_child: None,
+        },
         "BLOCK" => FeatureDefinition::Block {
             dimensions: None,
             placement: None,
