@@ -748,6 +748,50 @@ impl SurfaceParameterRecord {
     }
 
     fn type24_round_layout(&self) -> Option<Type24RoundLayout> {
+        self.type24_scalar_frame_round_layout()
+            .or_else(|| self.type24_first_coordinate_round_layout())
+    }
+
+    fn type24_first_coordinate_round_layout(&self) -> Option<Type24RoundLayout> {
+        (self.body.len() == 50
+            && self.body.get(..2) == Some(&[0x4c, 0xb7])
+            && self.body.get(15) == Some(&0x12)
+            && self.body.get(49) == Some(&0x18))
+        .then_some(())?;
+        let cache = scalar::ScalarCache::default();
+        let decode_at = |offset| {
+            let (value, end) =
+                scalar::decode_tabulated_cylinder_first_coordinate(&self.body, offset, &cache)?;
+            value.is_finite().then_some((value, end))
+        };
+        let (first_diameter, first_end) = decode_at(7)?;
+        (first_end == 15).then_some(())?;
+        let (second_diameter, mut cursor) = decode_at(16)?;
+        (cursor == 24).then_some(())?;
+        let mut coordinates = Vec::with_capacity(6);
+        for _ in 0..5 {
+            let (value, next) = decode_at(cursor)?;
+            coordinates.push(value);
+            cursor = next;
+        }
+        (cursor == 49).then_some(())?;
+        coordinates.push(0.0);
+        let [a0, a1, a2, b0, b1, b2] = coordinates.as_slice() else {
+            unreachable!("six bounded round coordinates")
+        };
+        let diameter = (second_diameter - first_diameter).abs();
+        let scale = [first_diameter, second_diameter]
+            .into_iter()
+            .chain(coordinates.iter().copied())
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+        (diameter > 1e-12 * scale).then_some(Type24RoundLayout {
+            diameter,
+            extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
+        })
+    }
+
+    fn type24_scalar_frame_round_layout(&self) -> Option<Type24RoundLayout> {
         let contiguous_values = |frame: &SurfaceParameterScalarFrame| {
             let mut cursor = frame.offset;
             let mut values = Vec::with_capacity(frame.slots.len());
@@ -5219,6 +5263,43 @@ mod tests {
         let mut inconsistent = separated;
         inconsistent[31..34].copy_from_slice(&[0x2f, 0x12, 0x00]);
         assert!(record(&inconsistent).type24_round_radius(0x24).is_none());
+
+        let first_coordinate = [
+            0x4c, 0xb7, 0x67, 0xe1, 0x01, 0x3f, 0x80, 0x2d, 0x31, 0xa4, 0xa8, 0xc1, 0x54, 0xc9,
+            0x87, 0x12, 0x2d, 0x35, 0xa4, 0xa8, 0xc1, 0x54, 0xc9, 0x87, 0x2f, 0x22, 0x00, 0x2f,
+            0x43, 0x00, 0x48, 0x10, 0x00, 0x2d, 0x32, 0x4e, 0xfa, 0x22, 0xce, 0x34, 0xea, 0x2d,
+            0x47, 0xfc, 0xef, 0xa2, 0x2c, 0xe3, 0x4f, 0x18,
+        ];
+        let first_coordinate = record(&first_coordinate);
+        let frame = first_coordinate
+            .positional_cylinder_frame
+            .expect("complete first-coordinate round carrier");
+        assert_eq!(frame.origin, [9.0, 38.0, -2.0]);
+        assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
+        assert_eq!(frame.radius, 2.0);
+        let length = frame.length.expect("bounded axial span");
+        let expected_length = 9.308_504_271_834_785_f64.hypot(9.976_063_033_979_35);
+        assert!((length - expected_length).abs() < 1.0e-12);
+        assert!((frame.axis[0] - 9.308_504_271_834_785 / length).abs() < 1.0e-12);
+        assert!((frame.axis[1] - 9.976_063_033_979_35 / length).abs() < 1.0e-12);
+        assert_eq!(first_coordinate.type24_round_radius(0x24), Some(2.0));
+
+        let mut wrong_close = first_coordinate.body.clone();
+        wrong_close[49] = 0x19;
+        assert!(record(&wrong_close).positional_cylinder_frame.is_none());
+
+        let opposite = [
+            0x4c, 0xb7, 0x67, 0xe1, 0x01, 0x3f, 0x80, 0x2d, 0x35, 0xa4, 0xa8, 0xc1, 0x54, 0xc9,
+            0x87, 0x12, 0x2d, 0x39, 0xa4, 0xa8, 0xc1, 0x54, 0xc9, 0x87, 0x46, 0x32, 0x4e, 0xfa,
+            0x22, 0xce, 0x34, 0xea, 0x2f, 0x43, 0x00, 0x48, 0x10, 0x00, 0x48, 0x22, 0x00, 0x2d,
+            0x47, 0xfc, 0xef, 0xa2, 0x2c, 0xe3, 0x4f, 0x18,
+        ];
+        let opposite = record(&opposite)
+            .positional_cylinder_frame
+            .expect("opposite first-coordinate round carrier");
+        assert_eq!(opposite.origin, [-18.308_504_271_834_785, 38.0, -2.0]);
+        assert_eq!(opposite.radius, 2.0);
+        assert!((opposite.length.unwrap() - expected_length).abs() < 1.0e-12);
     }
 
     #[test]
