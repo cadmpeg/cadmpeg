@@ -7303,8 +7303,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "chamfer"
             }
             FeatureDefinition::Fillet { edges, radius }
-                if edge_selection_is_opaque(edges)
-                    || matches!(radius, RadiusSpec::Unresolved { .. }) =>
+                if edge_selection_is_opaque(edges) || radius_spec_is_incomplete(radius) =>
             {
                 "fillet"
             }
@@ -7314,7 +7313,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 radius,
             } if face_selection_is_opaque(first_faces)
                 || face_selection_is_opaque(second_faces)
-                || matches!(radius, RadiusSpec::Unresolved { .. }) =>
+                || radius_spec_is_incomplete(radius) =>
             {
                 "face blend"
             }
@@ -7481,6 +7480,14 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
                     .iter()
                     .any(|stage| pattern_is_incomplete(&stage.pattern))
         }
+    }
+}
+
+pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
+    match radius {
+        RadiusSpec::Unresolved { .. } => true,
+        RadiusSpec::Constant { .. } => false,
+        RadiusSpec::Variable { points } => points.len() < 2,
     }
 }
 

@@ -2385,6 +2385,42 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
 }
 
 #[test]
+fn nx_variable_radius_completeness_requires_a_law_interval() {
+    use cadmpeg_ir::features::{Length, RadiusSpec, VariableRadius};
+
+    assert!(crate::decode::radius_spec_is_incomplete(
+        &RadiusSpec::Variable { points: Vec::new() }
+    ));
+    assert!(crate::decode::radius_spec_is_incomplete(
+        &RadiusSpec::Variable {
+            points: vec![VariableRadius {
+                parameter: 0.0,
+                radius: Length(2.0),
+            }],
+        }
+    ));
+    assert!(!crate::decode::radius_spec_is_incomplete(
+        &RadiusSpec::Variable {
+            points: vec![
+                VariableRadius {
+                    parameter: 0.0,
+                    radius: Length(2.0),
+                },
+                VariableRadius {
+                    parameter: 1.0,
+                    radius: Length(3.0),
+                },
+            ],
+        }
+    ));
+    assert!(!crate::decode::radius_spec_is_incomplete(
+        &RadiusSpec::Constant {
+            radius: Length(2.0),
+        }
+    ));
+}
+
+#[test]
 fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, ProfileRef};
 
