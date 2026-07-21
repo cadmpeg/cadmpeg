@@ -638,6 +638,16 @@ Its split form is `12 <y0> 14 <y1> <x-edge> <y0> <z0> <x-center> <y1>
 reference direction points from `x-center` to `x-edge`, its radius is half the
 Z span, and its finite length is the Y span.
 
+A held-coordinate type-24 round envelope has three contiguous scalar frames
+with slot counts two, two, and five. The first frame starts at the body with a
+zero slot and ends before control bytes `78 ac`; the second starts immediately
+after those bytes and ends before `24 00`; the five-coordinate frame occupies
+the remainder of the bounded body. Its coordinates are `x0, y0, z, x1, y1`.
+The omitted second Z coordinate equals `z`. The cylinder origin is
+`(x0, midpoint(y0, y1), z)`, its axis points from `x0` to `x1`, its reference
+direction points from `y0` to `y1`, its radius is half the Y span, and its
+finite length is the X span. Both spans are nonzero.
+
 A bounded type-24 round envelope stores two diameter endpoints and two
 three-coordinate extent endpoints. The diameter endpoints occur around a held
 coordinate after `15` or `00 15 1c`, or across the single-byte `12` separator

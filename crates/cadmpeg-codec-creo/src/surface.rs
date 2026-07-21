@@ -631,12 +631,21 @@ impl SurfaceParameterRecord {
     #[must_use]
     pub fn type24_round_radius(&self, type_byte: u8) -> Option<f64> {
         (type_byte == 0x24).then_some(())?;
-        let layout = self.type24_round_layout()?;
-        Some(0.5 * layout.diameter)
+        self.type24_round_layout()
+            .map(|layout| 0.5 * layout.diameter)
+            .or_else(|| {
+                self.type24_held_coordinate_round_frame()
+                    .map(|frame| frame.radius)
+            })
     }
 
     fn type24_round_frame(&self, type_byte: u8) -> Option<PositionalCylinderFrame> {
         (type_byte == 0x24).then_some(())?;
+        self.repeated_diameter_type24_round_frame()
+            .or_else(|| self.type24_held_coordinate_round_frame())
+    }
+
+    fn repeated_diameter_type24_round_frame(&self) -> Option<PositionalCylinderFrame> {
         let layout = self.type24_round_layout()?;
         let spans = std::array::from_fn::<_, 3, _>(|index| {
             layout.extent_endpoints[1][index] - layout.extent_endpoints[0][index]
@@ -680,6 +689,62 @@ impl SurfaceParameterRecord {
             radius: 0.5 * layout.diameter,
             length: Some(length),
         })
+    }
+
+    fn type24_held_coordinate_round_frame(&self) -> Option<PositionalCylinderFrame> {
+        let contiguous_end = |frame: &SurfaceParameterScalarFrame| {
+            frame.slots.iter().try_fold(frame.offset, |cursor, slot| {
+                (slot.offset == cursor).then(|| cursor + slot.length)
+            })
+        };
+        let [leading, controls, terminal] = self.scalar_frames.as_slice() else {
+            return None;
+        };
+        let [leading_zero, _] = leading.slots.as_slice() else {
+            return None;
+        };
+        let [_, _] = controls.slots.as_slice() else {
+            return None;
+        };
+        let [axial_start, radial_start, held, axial_end, radial_end] = terminal.slots.as_slice()
+        else {
+            return None;
+        };
+        (leading.offset == 0
+            && leading_zero.value == Some(0.0)
+            && contiguous_end(leading) == Some(9)
+            && self.body.get(9..11) == Some(&[0x78, 0xac])
+            && controls.offset == 11
+            && contiguous_end(controls) == Some(25)
+            && self.body.get(25..27) == Some(&[0x24, 0x00])
+            && terminal.offset == 27
+            && contiguous_end(terminal) == Some(self.body.len()))
+        .then_some(())?;
+        let [axial_start, radial_start, held, axial_end, radial_end] = [
+            axial_start.value?,
+            radial_start.value?,
+            held.value?,
+            axial_end.value?,
+            radial_end.value?,
+        ];
+        let axial_span = axial_end - axial_start;
+        let radial_span = radial_end - radial_start;
+        let scale = [axial_start, radial_start, held, axial_end, radial_end]
+            .into_iter()
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+        (held.is_finite()
+            && axial_span.is_finite()
+            && radial_span.is_finite()
+            && axial_span.abs() > 1e-12 * scale
+            && radial_span.abs() > 1e-12 * scale)
+            .then_some(PositionalCylinderFrame {
+                origin: [axial_start, f64::midpoint(radial_start, radial_end), held],
+                axis: [axial_span.signum(), 0.0, 0.0],
+                ref_direction: [0.0, radial_span.signum(), 0.0],
+                radius: 0.5 * radial_span.abs(),
+                length: Some(axial_span.abs()),
+            })
     }
 
     fn type24_round_layout(&self) -> Option<Type24RoundLayout> {
@@ -5154,6 +5219,38 @@ mod tests {
         let mut inconsistent = separated;
         inconsistent[31..34].copy_from_slice(&[0x2f, 0x12, 0x00]);
         assert!(record(&inconsistent).type24_round_radius(0x24).is_none());
+    }
+
+    #[test]
+    fn decodes_held_coordinate_type24_round_envelope() {
+        let body = [
+            0x18, 0x2d, 0x4f, 0x12, 0x6e, 0x97, 0x8d, 0x4f, 0xe0, 0x78, 0xac, 0x67, 0x05, 0x61,
+            0xbb, 0x50, 0x2d, 0x54, 0x89, 0x37, 0x4b, 0xc6, 0xa7, 0xf0, 0x48, 0x24, 0x00, 0x2f,
+            0x41, 0x00, 0x2f, 0x10, 0x00, 0x2f, 0x24, 0x00, 0x2f, 0x43, 0x00, 0x2f, 0x18, 0x00,
+        ];
+        let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        payload.extend_from_slice(&body);
+        payload.push(0xe3);
+        let record = parameter_records(&payload).remove(0);
+        let frame = record
+            .positional_cylinder_frame
+            .expect("complete held-coordinate round carrier");
+
+        assert_eq!(frame.origin, [34.0, 5.0, 10.0]);
+        assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
+        assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
+        assert_eq!(frame.radius, 1.0);
+        assert_eq!(frame.length, Some(4.0));
+        assert_eq!(record.type24_round_radius(0x24), Some(1.0));
+
+        let mut wrong_control = body;
+        wrong_control[25] = 0x25;
+        let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        payload.extend_from_slice(&wrong_control);
+        payload.push(0xe3);
+        assert!(parameter_records(&payload)[0]
+            .positional_cylinder_frame
+            .is_none());
     }
 
     #[test]
