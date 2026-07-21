@@ -835,8 +835,8 @@ mod marker_tests {
         constraint_reference_plane_frame, coordinate_marker_local_links,
         coordinate_roster_curve_endpoint_markers, cosmetic_thread_component_face_reference_at,
         cosmetic_thread_cylinder_reference_at, enrich_history_revolution_inputs,
-        explicit_reference_axis_frame, explicit_reference_plane_frame, extended_compact_arc_record,
-        fixed_reference_plane_frame, generated_surface_identities, indexed_profile_vertex,
+        explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
+        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
         inline_surface_reference_at, legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
         legacy_feature_input_section, legacy_reference_axis_triads,
@@ -4028,7 +4028,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn extended_compact_arc_uses_one_equidistant_center_marker() {
+    fn indexed_arcs_use_one_equidistant_center_marker() {
         let mut payload = vec![0; 104 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
         payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -4043,7 +4043,25 @@ mod marker_tests {
             payload[offset..offset + 4].copy_from_slice(&(-2i32).to_le_bytes());
         }
         payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-        assert!(extended_compact_arc_record(&payload, 0));
+        assert!(indexed_arc_uses_coordinate_center(&payload, 0));
+
+        let mut current = vec![0; 92 + SKETCH_MARKER.len()];
+        current[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        current[5..13].fill(0xff);
+        current[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        current[17..21].copy_from_slice(&2u32.to_le_bytes());
+        current[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        current[27..29].copy_from_slice(&1u16.to_le_bytes());
+        current[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        current[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        current[64..66].copy_from_slice(&1u16.to_le_bytes());
+        current[66..68].copy_from_slice(&2u16.to_le_bytes());
+        current[68..72].copy_from_slice(&1u32.to_le_bytes());
+        current[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        current[92..].copy_from_slice(SKETCH_MARKER);
+        assert!(indexed_arc_uses_coordinate_center(&current, 0));
+        current[17..21].copy_from_slice(&1u32.to_le_bytes());
+        assert!(!indexed_arc_uses_coordinate_center(&current, 0));
 
         let start = Point2::new(1.0, 0.0);
         let end = Point2::new(0.0, 1.0);
@@ -14684,7 +14702,10 @@ pub(crate) fn project_marker_backed_sketches(
                                     };
                                     let (start, end) = (project(start)?, project(end)?);
                                     let offset = usize::try_from(marker.offset).ok()?;
-                                    if extended_compact_arc_record(&lane.native_payload, offset) {
+                                    if indexed_arc_uses_coordinate_center(
+                                        &lane.native_payload,
+                                        offset,
+                                    ) {
                                         let [start_u, start_v] = endpoints[0].coordinates_m?;
                                         let [end_u, end_v] = endpoints[1].coordinates_m?;
                                         let candidates = object_markers
@@ -20653,8 +20674,8 @@ fn legacy_coordinate_roster_undetailed_line(payload: &[u8], offset: usize) -> bo
         && compact_bounded_curve_tangent(payload, offset).is_none()
 }
 
-fn extended_compact_arc_record(payload: &[u8], offset: usize) -> bool {
-    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) -> bool {
+    let extended_compact = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && payload.get(offset + 17..offset + 21) == Some(&0u32.to_le_bytes())
         && matches!(
@@ -20678,7 +20699,12 @@ fn extended_compact_arc_record(payload: &[u8], offset: usize) -> bool {
                 0xff, 0xff,
             ])
         && payload.get(offset + 94..offset + 96) == Some(&[0; 2])
-        && sketch_marker_prefix_at(payload, offset.saturating_add(104))
+        && sketch_marker_prefix_at(payload, offset.saturating_add(104));
+    let current_wide = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
+        && sketch_marker_prefix_at(payload, offset.saturating_add(92));
+    extended_compact || current_wide
 }
 
 fn unique_arc_center_marker(
