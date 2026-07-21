@@ -7351,6 +7351,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 keep,
             } if body_selection_is_opaque(targets)
                 || body_selection_is_opaque(tools)
+                || body_selections_overlap(targets, tools)
                 || matches!(keep, BodyTrimSide::Unresolved) =>
             {
                 "trim bodies"
@@ -7386,6 +7387,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::Combine { target, tools, op }
                 if body_selection_is_opaque(target)
                     || body_selection_is_opaque(tools)
+                    || body_selections_overlap(target, tools)
                     || matches!(op, BooleanOp::Unresolved) =>
             {
                 "body combine"
@@ -7660,6 +7662,18 @@ pub(crate) fn body_selection_is_opaque(selection: &BodySelection) -> bool {
         BodySelection::Unresolved | BodySelection::Native(_) => true,
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
     }
+}
+
+pub(crate) fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
+    let first = match first {
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies,
+        BodySelection::Unresolved | BodySelection::Native(_) => return false,
+    };
+    let second = match second {
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies,
+        BodySelection::Unresolved | BodySelection::Native(_) => return false,
+    };
+    first.iter().any(|body| second.contains(body))
 }
 
 pub(crate) fn face_selection_is_opaque(selection: &FaceSelection) -> bool {

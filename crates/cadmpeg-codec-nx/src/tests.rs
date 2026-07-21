@@ -3815,6 +3815,32 @@ fn nx_face_blend_completeness_requires_disjoint_supports() {
 }
 
 #[test]
+fn nx_body_operation_completeness_requires_disjoint_roles() {
+    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::ids::BodyId;
+
+    let shared = BodyId("test:body#shared".into());
+    let distinct = BodyId("test:body#distinct".into());
+    let target = BodySelection::Bodies(vec![shared.clone()]);
+
+    assert!(crate::decode::body_selections_overlap(
+        &target,
+        &BodySelection::Resolved {
+            bodies: vec![shared],
+            native: "test:tools".into(),
+        },
+    ));
+    assert!(!crate::decode::body_selections_overlap(
+        &target,
+        &BodySelection::Bodies(vec![distinct]),
+    ));
+    assert!(!crate::decode::body_selections_overlap(
+        &target,
+        &BodySelection::Unresolved,
+    ));
+}
+
+#[test]
 fn nx_body_producing_feature_families_require_history_outputs() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length};
     use std::collections::BTreeMap;
