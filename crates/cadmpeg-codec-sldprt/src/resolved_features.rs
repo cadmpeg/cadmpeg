@@ -3453,7 +3453,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn compact_legacy_wide_profile_curve_indexes_the_coordinate_roster() {
+    fn wide_profile_curves_index_the_coordinate_roster() {
         let curve_offset = 402;
         let mut payload = vec![0; curve_offset + 92 + LEGACY_SKETCH_MARKER.len()];
         for (offset, coordinate) in [
@@ -3500,6 +3500,21 @@ mod marker_tests {
                 .collect::<Vec<_>>(),
             vec![Some([1.0, 2.0]), Some([5.0, 6.0])]
         );
+
+        payload[curve_offset..curve_offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[curve_offset + 92..curve_offset + 92 + SKETCH_MARKER.len()]
+            .copy_from_slice(SKETCH_MARKER);
+        assert_eq!(
+            coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+                .iter()
+                .map(|marker| marker.coordinates_m)
+                .collect::<Vec<_>>(),
+            vec![Some([1.0, 2.0]), Some([5.0, 6.0])]
+        );
+        payload[curve_offset..curve_offset + LEGACY_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[curve_offset + 92..curve_offset + 92 + LEGACY_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_SKETCH_MARKER);
 
         payload[curve_offset + 23..curve_offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         payload[curve_offset + 35..curve_offset + 39].copy_from_slice(&[0x00, 0x00, 0x05, 0x00]);
@@ -20536,6 +20551,11 @@ fn coordinate_roster_curve_layout(payload: &[u8], offset: usize) -> bool {
 
 fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<usize> {
     let prefix = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?;
+    if prefix == SKETCH_MARKER {
+        return (wide_indexed_curve_endpoint_indices(payload, offset).is_some()
+            && sketch_marker_prefix_at(payload, offset.checked_add(92)?))
+        .then_some(64);
+    }
     if prefix == LEGACY_EXTENDED_SKETCH_MARKER {
         return if extended_compact_indexed_curve_endpoint_indices(payload, offset).is_some()
             || compact_curve_endpoint_indices(payload, offset).is_some()
