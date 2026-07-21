@@ -7234,6 +7234,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 feature.outputs.is_empty()
                     || feature.outputs.iter().collect::<BTreeSet<_>>().len()
                         != feature.outputs.len()
+                    || feature
+                        .outputs
+                        .iter()
+                        .any(|output| !ir.model.bodies.iter().any(|body| body.id == *output))
             }) {
                 *incomplete_feature_families.entry(family).or_default() += 1;
                 continue;
