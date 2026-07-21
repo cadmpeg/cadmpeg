@@ -7286,7 +7286,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 ..
             } if profiles.len() < 2
                 || profiles.iter().any(profile_ref_is_incomplete)
-                || guides.iter().any(path_ref_is_opaque)
+                || guides.iter().any(path_ref_is_incomplete)
                 || matches!(op, BooleanOp::Unresolved) =>
             {
                 "loft"
@@ -7296,7 +7296,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 target_faces,
                 direction,
                 bidirectional,
-            } if path_ref_is_opaque(source)
+            } if path_ref_is_incomplete(source)
                 || face_selection_is_incomplete(target_faces)
                 || matches!(
                     direction,
@@ -7308,7 +7308,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             }
             FeatureDefinition::TrimSurface { faces, tool, keep }
                 if face_selection_is_incomplete(faces)
-                    || path_ref_is_opaque(tool)
+                    || path_ref_is_incomplete(tool)
                     || matches!(keep, TrimRegion::Unresolved) =>
             {
                 "trim surface"
@@ -7718,7 +7718,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         }
         PatternKind::Circular { .. } | PatternKind::Mirror { .. } => false,
         PatternKind::CircularAngles { angles, .. } => angles.is_empty(),
-        PatternKind::CurveDriven { path, .. } => path.as_ref().is_none_or(path_ref_is_opaque),
+        PatternKind::CurveDriven { path, .. } => path.as_ref().is_none_or(path_ref_is_incomplete),
         PatternKind::Scale { center, .. } => {
             matches!(center, cadmpeg_ir::features::PatternScaleCenter::Native(_))
         }
@@ -7806,12 +7806,12 @@ fn selection_ids_are_incomplete<T: Ord>(ids: &[T]) -> bool {
     ids.is_empty() || ids.iter().collect::<BTreeSet<_>>().len() != ids.len()
 }
 
-pub(crate) fn path_ref_is_opaque(path: &PathRef) -> bool {
+pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
     match path {
         PathRef::Unresolved | PathRef::Native(_) => true,
         PathRef::Sketch(_) => false,
-        PathRef::Edges(edges) => edges.is_empty(),
-        PathRef::Curves(curves) => curves.is_empty(),
+        PathRef::Edges(edges) => selection_ids_are_incomplete(edges),
+        PathRef::Curves(curves) => selection_ids_are_incomplete(curves),
     }
 }
 

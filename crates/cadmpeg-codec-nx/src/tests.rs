@@ -2577,8 +2577,16 @@ fn nx_empty_resolved_selections_remain_incomplete() {
     assert!(crate::decode::profile_ref_is_incomplete(
         &ProfileRef::Faces(Vec::new())
     ));
-    assert!(crate::decode::path_ref_is_opaque(&PathRef::Curves(
+    assert!(crate::decode::path_ref_is_incomplete(&PathRef::Curves(
         Vec::new()
+    )));
+    let edge = cadmpeg_ir::ids::EdgeId("edge#0".into());
+    assert!(crate::decode::path_ref_is_incomplete(&PathRef::Edges(
+        vec![edge.clone(), edge]
+    )));
+    let curve = cadmpeg_ir::ids::CurveId("curve#0".into());
+    assert!(crate::decode::path_ref_is_incomplete(&PathRef::Curves(
+        vec![curve.clone(), curve]
     )));
 }
 
