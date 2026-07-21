@@ -7356,7 +7356,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "thicken"
             }
             FeatureDefinition::Pattern { seeds, pattern }
-                if seeds.is_empty() || matches!(pattern, PatternKind::Unresolved { .. }) =>
+                if seeds.is_empty() || pattern_is_incomplete(pattern) =>
             {
                 "pattern"
             }
@@ -7459,6 +7459,28 @@ pub(crate) fn chamfer_requires_direction(spec: &ChamferSpec) -> bool {
         ChamferSpec::Unresolved { .. } | ChamferSpec::DistanceAngle { .. } => true,
         ChamferSpec::Distance { .. } => false,
         ChamferSpec::TwoDistances { first, second } => first != second,
+    }
+}
+
+pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
+    match pattern {
+        PatternKind::Unresolved { .. } => true,
+        PatternKind::Linear { direction, .. } => direction.is_none(),
+        PatternKind::LinearOffsets { direction, offsets } => {
+            direction.is_none() || offsets.is_empty()
+        }
+        PatternKind::Circular { .. } | PatternKind::Mirror { .. } => false,
+        PatternKind::CircularAngles { angles, .. } => angles.is_empty(),
+        PatternKind::CurveDriven { path, .. } => path.as_ref().is_none_or(path_ref_is_opaque),
+        PatternKind::Scale { center, .. } => {
+            matches!(center, cadmpeg_ir::features::PatternScaleCenter::Native(_))
+        }
+        PatternKind::Composite { stages } => {
+            stages.is_empty()
+                || stages
+                    .iter()
+                    .any(|stage| pattern_is_incomplete(&stage.pattern))
+        }
     }
 }
 

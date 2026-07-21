@@ -2346,6 +2346,45 @@ fn nx_chamfer_direction_is_required_only_for_asymmetric_specs() {
 }
 
 #[test]
+fn nx_pattern_completeness_requires_every_regeneration_operand() {
+    use cadmpeg_ir::features::{
+        Length, PathRef, PatternKind, PatternStage, PatternStageCombination,
+    };
+    use cadmpeg_ir::math::Vector3;
+
+    let linear = PatternKind::Linear {
+        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+        spacing: Length(10.0),
+        count: 3,
+    };
+    assert!(!crate::decode::pattern_is_incomplete(&linear));
+    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
+        direction: None,
+        spacing: Length(10.0),
+        count: 3,
+    }));
+    assert!(crate::decode::pattern_is_incomplete(
+        &PatternKind::CurveDriven {
+            path: Some(PathRef::Native("nx:path".into())),
+            spacing: Length(10.0),
+            count: 3,
+        }
+    ));
+    assert!(crate::decode::pattern_is_incomplete(
+        &PatternKind::Composite {
+            stages: vec![PatternStage {
+                pattern: Box::new(PatternKind::Linear {
+                    direction: None,
+                    spacing: Length(10.0),
+                    count: 3,
+                }),
+                combination: PatternStageCombination::Initialize,
+            }],
+        }
+    ));
+}
+
+#[test]
 fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, ProfileRef};
 
