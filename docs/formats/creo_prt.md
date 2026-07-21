@@ -665,6 +665,14 @@ use the tabulated-cylinder first-coordinate lane, including its positive
 eight-byte `2d` form. The common bounded-round diameter and unique radial-span
 invariants apply to the resulting two three-coordinate extent endpoints.
 
+The segmented first-coordinate bounded round form is 56 bytes. Byte zero is
+`18`; the first diameter endpoint occupies bytes 1 through 8; bytes 9 through
+15 are `70 bf e3 4f 05 11 10`; the second diameter endpoint occupies bytes 16
+through 23; and six contiguous extent coordinates occupy bytes 24 through 53.
+The body ends with `f7 19`. Both diameter endpoints and all six extent
+coordinates use the tabulated-cylinder first-coordinate lane. The common
+bounded-round diameter and unique radial-span invariants apply.
+
 A tagged `geom_type = 26` radius trailer begins with `18 0d`, followed by one
 positive radial scalar, zero or one selector byte, and `0e`. Zero or one
 selector byte after `0e` precedes the terminal positive `radius1` scalar. The

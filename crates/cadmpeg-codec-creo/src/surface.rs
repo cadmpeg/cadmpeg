@@ -631,22 +631,35 @@ impl SurfaceParameterRecord {
     #[must_use]
     pub fn type24_round_radius(&self, type_byte: u8) -> Option<f64> {
         (type_byte == 0x24).then_some(())?;
-        self.type24_round_layout()
+        self.type24_scalar_frame_round_layout()
             .map(|layout| 0.5 * layout.diameter)
+            .or_else(|| {
+                (self.is_type24_first_coordinate_round_body()
+                    || self.is_type24_segmented_first_coordinate_round_body())
+                .then_some(())?;
+                self.positional_cylinder_frame.map(|frame| frame.radius)
+            })
             .or_else(|| {
                 self.type24_held_coordinate_round_frame()
                     .map(|frame| frame.radius)
             })
     }
 
-    fn type24_round_frame(&self, type_byte: u8) -> Option<PositionalCylinderFrame> {
+    fn type24_round_frame(
+        &self,
+        type_byte: u8,
+        cache: &scalar::ScalarCache,
+    ) -> Option<PositionalCylinderFrame> {
         (type_byte == 0x24).then_some(())?;
-        self.repeated_diameter_type24_round_frame()
+        self.repeated_diameter_type24_round_frame(cache)
             .or_else(|| self.type24_held_coordinate_round_frame())
     }
 
-    fn repeated_diameter_type24_round_frame(&self) -> Option<PositionalCylinderFrame> {
-        let layout = self.type24_round_layout()?;
+    fn repeated_diameter_type24_round_frame(
+        &self,
+        cache: &scalar::ScalarCache,
+    ) -> Option<PositionalCylinderFrame> {
+        let layout = self.type24_round_layout(cache)?;
         let spans = std::array::from_fn::<_, 3, _>(|index| {
             layout.extent_endpoints[1][index] - layout.extent_endpoints[0][index]
         });
@@ -747,21 +760,20 @@ impl SurfaceParameterRecord {
             })
     }
 
-    fn type24_round_layout(&self) -> Option<Type24RoundLayout> {
+    fn type24_round_layout(&self, cache: &scalar::ScalarCache) -> Option<Type24RoundLayout> {
         self.type24_scalar_frame_round_layout()
-            .or_else(|| self.type24_first_coordinate_round_layout())
+            .or_else(|| self.type24_first_coordinate_round_layout(cache))
+            .or_else(|| self.type24_segmented_first_coordinate_round_layout(cache))
     }
 
-    fn type24_first_coordinate_round_layout(&self) -> Option<Type24RoundLayout> {
-        (self.body.len() == 50
-            && self.body.get(..2) == Some(&[0x4c, 0xb7])
-            && self.body.get(15) == Some(&0x12)
-            && self.body.get(49) == Some(&0x18))
-        .then_some(())?;
-        let cache = scalar::ScalarCache::default();
+    fn type24_first_coordinate_round_layout(
+        &self,
+        cache: &scalar::ScalarCache,
+    ) -> Option<Type24RoundLayout> {
+        self.is_type24_first_coordinate_round_body().then_some(())?;
         let decode_at = |offset| {
             let (value, end) =
-                scalar::decode_tabulated_cylinder_first_coordinate(&self.body, offset, &cache)?;
+                scalar::decode_tabulated_cylinder_first_coordinate(&self.body, offset, cache)?;
             value.is_finite().then_some((value, end))
         };
         let (first_diameter, first_end) = decode_at(7)?;
@@ -789,6 +801,57 @@ impl SurfaceParameterRecord {
             diameter,
             extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
         })
+    }
+
+    fn type24_segmented_first_coordinate_round_layout(
+        &self,
+        cache: &scalar::ScalarCache,
+    ) -> Option<Type24RoundLayout> {
+        self.is_type24_segmented_first_coordinate_round_body()
+            .then_some(())?;
+        let decode_at = |offset| {
+            let (value, end) =
+                scalar::decode_tabulated_cylinder_first_coordinate(&self.body, offset, cache)?;
+            value.is_finite().then_some((value, end))
+        };
+        let (first_diameter, first_end) = decode_at(1)?;
+        (first_end == 9).then_some(())?;
+        let (second_diameter, mut cursor) = decode_at(16)?;
+        (cursor == 24).then_some(())?;
+        let mut coordinates = Vec::with_capacity(6);
+        for _ in 0..6 {
+            let (value, next) = decode_at(cursor)?;
+            coordinates.push(value);
+            cursor = next;
+        }
+        (cursor == 54).then_some(())?;
+        let [a0, a1, a2, b0, b1, b2] = coordinates.as_slice() else {
+            unreachable!("six bounded segmented-round coordinates")
+        };
+        let diameter = (second_diameter - first_diameter).abs();
+        let scale = [first_diameter, second_diameter]
+            .into_iter()
+            .chain(coordinates.iter().copied())
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+        (diameter > 1e-12 * scale).then_some(Type24RoundLayout {
+            diameter,
+            extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
+        })
+    }
+
+    fn is_type24_first_coordinate_round_body(&self) -> bool {
+        self.body.len() == 50
+            && self.body.get(..2) == Some(&[0x4c, 0xb7])
+            && self.body.get(15) == Some(&0x12)
+            && self.body.get(49) == Some(&0x18)
+    }
+
+    fn is_type24_segmented_first_coordinate_round_body(&self) -> bool {
+        self.body.len() == 56
+            && self.body.first() == Some(&0x18)
+            && self.body.get(9..16) == Some(&[0x70, 0xbf, 0xe3, 0x4f, 0x05, 0x11, 0x10])
+            && self.body.get(54..56) == Some(&[0xf7, 0x19])
     }
 
     fn type24_scalar_frame_round_layout(&self) -> Option<Type24RoundLayout> {
@@ -2086,7 +2149,7 @@ fn parameter_records_for_rows(
             body_offset: *body_start,
         };
         if row.kind == SurfaceKind::Cylinder && record.positional_cylinder_frame.is_none() {
-            record.positional_cylinder_frame = record.type24_round_frame(row.type_byte);
+            record.positional_cylinder_frame = record.type24_round_frame(row.type_byte, &cache);
         }
         records.push(record);
     }
@@ -4991,6 +5054,13 @@ mod tests {
         assert_eq!(frame.ref_direction[2], 0.0);
         assert_eq!(frame.radius, 5.0);
         assert_eq!(frame.length, None);
+        let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        payload.extend_from_slice(&body);
+        payload.push(0xe3);
+        assert_eq!(
+            parameter_records(&payload)[0].type24_round_radius(0x24),
+            None
+        );
 
         assert!(decode_positional_cylinder_frame(
             &body[..body.len() - 3],
@@ -5300,6 +5370,28 @@ mod tests {
         assert_eq!(opposite.origin, [-18.308_504_271_834_785, 38.0, -2.0]);
         assert_eq!(opposite.radius, 2.0);
         assert!((opposite.length.unwrap() - expected_length).abs() < 1.0e-12);
+
+        let segmented = [
+            0x18, 0x2d, 0x35, 0xa8, 0xa9, 0xfd, 0x2c, 0xc7, 0xe2, 0x70, 0xbf, 0xe3, 0x4f, 0x05,
+            0x11, 0x10, 0x2d, 0x3a, 0xc5, 0x1b, 0xc4, 0x49, 0x39, 0xa9, 0x46, 0x20, 0x38, 0xe3,
+            0x8e, 0x38, 0xe3, 0x8e, 0x2f, 0x41, 0x00, 0x18, 0x48, 0x1c, 0x00, 0x2d, 0x42, 0x92,
+            0x43, 0xe3, 0x8f, 0xf2, 0x60, 0x9f, 0x71, 0xc7, 0x1c, 0x71, 0xc7, 0x1c, 0xf7, 0x19,
+        ];
+        let segmented = record(&segmented);
+        let frame = segmented
+            .positional_cylinder_frame
+            .expect("complete segmented first-coordinate round carrier");
+        let diameter = 5.111_111_111_111_111;
+        assert_eq!(frame.origin, [-8.111_111_111_111_11, 34.0, 0.5 * diameter]);
+        assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
+        assert_eq!(frame.radius, 0.5 * diameter);
+        let expected_length = 1.111_111_111_111_110_7_f64.hypot(3.142_696_805_273_545);
+        assert!((frame.length.unwrap() - expected_length).abs() < 1.0e-12);
+        assert_eq!(segmented.type24_round_radius(0x24), Some(0.5 * diameter));
+
+        let mut wrong_separator = segmented.body.clone();
+        wrong_separator[9] = 0x71;
+        assert!(record(&wrong_separator).positional_cylinder_frame.is_none());
     }
 
     #[test]
