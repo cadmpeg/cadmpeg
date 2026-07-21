@@ -835,11 +835,11 @@ mod marker_tests {
         constraint_reference_plane_frame, coordinate_centered_line_endpoints,
         coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, cosmetic_thread_component_face_reference_at,
-        cosmetic_thread_cylinder_reference_at, current_indexed_arc_reverses_center_sweep,
-        enrich_history_revolution_inputs, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, fixed_reference_plane_frame, generated_surface_identities,
-        indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
-        legacy_coordinate_roster_selected_axis_endpoint_indices,
+        cosmetic_thread_cylinder_reference_at, current_coordinate_linked_line_endpoints,
+        current_indexed_arc_reverses_center_sweep, enrich_history_revolution_inputs,
+        explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
+        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
+        inline_surface_reference_at, legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
         legacy_feature_input_section, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
@@ -3679,6 +3679,58 @@ mod marker_tests {
         assert_eq!(
             coordinate_centered_line_endpoints(&payload, &line, &markers),
             Some([&first, &second])
+        );
+    }
+
+    #[test]
+    fn current_coordinate_line_uses_its_single_local_link() {
+        let mut payload = vec![0; 157];
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[5..13].copy_from_slice(&[0xff; 8]);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+        payload[82..86].copy_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+        payload[86..88].copy_from_slice(&0xbc87u16.to_le_bytes());
+        payload[88..90].copy_from_slice(&22u16.to_le_bytes());
+        payload[90..94].fill(0xff);
+        payload[102..106].copy_from_slice(&(-2i32).to_le_bytes());
+        payload[152..].copy_from_slice(SKETCH_MARKER);
+        let entity = |id: &str, offset, local_id, kind, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset,
+            object_index: None,
+            local_id,
+            kind,
+            state_value: None,
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let line = entity(
+            "line",
+            0,
+            Some(1),
+            SketchInputKind::LineOrCircle,
+            Some([2.0, 3.0]),
+        );
+        let endpoint = entity(
+            "endpoint",
+            153,
+            Some(22),
+            SketchInputKind::Point,
+            Some([4.0, 5.0]),
+        );
+        assert_eq!(
+            current_coordinate_linked_line_endpoints(&payload, &line, &[&line, &endpoint]),
+            Some([&line, &endpoint])
         );
     }
 
@@ -20527,10 +20579,58 @@ fn marker_curve_endpoint_markers<'a>(
     if endpoints.len() == 2 {
         return endpoints;
     }
+    if let Some(endpoints) = current_coordinate_linked_line_endpoints(payload, curve, markers) {
+        return endpoints.to_vec();
+    }
     if let Some(endpoints) = coordinate_centered_line_endpoints(payload, curve, markers) {
         return endpoints.to_vec();
     }
     consecutive_legacy_profile_line_endpoints(payload, curve, markers)
+}
+
+fn current_coordinate_linked_line_endpoints<'a>(
+    payload: &[u8],
+    line: &'a SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Option<[&'a SketchInputEntity; 2]> {
+    let offset = usize::try_from(line.offset).ok()?;
+    let cell = payload.get(offset + 86..offset + 98)?;
+    let kind = operand_kind(cell[..2].try_into().ok()?)?;
+    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(1)
+        || !marker_is_geometry_locus(payload, offset)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&0u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 64..offset + 66) != Some(&[0x1e, 0x00])
+        || payload.get(offset + 82..offset + 86) != Some(&[0x00, 0x00, 0x01, 0x00])
+        || !operand_accepts_marker(kind, SketchInputKind::LineOrCircle)
+        || !operand_accepts_marker(kind, SketchInputKind::Arc)
+        || cell[4..8] != [0xff; 4]
+        || cell[8..12] != [0; 4]
+        || payload.get(offset + 98..offset + 102) != Some(&[0; 4])
+        || payload.get(offset + 102..offset + 106) != Some(&(-2i32).to_le_bytes())
+        || payload.get(offset + 106..offset + 148) != Some(&[0; 42])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(152)?)
+    {
+        return None;
+    }
+    let local_id = u32::from(u16::from_le_bytes(cell[2..4].try_into().ok()?));
+    let mut endpoints = markers.iter().copied().filter(|marker| {
+        marker.feature_ref == line.feature_ref
+            && marker.local_id == Some(local_id)
+            && marker.coordinates_m.is_some()
+            && matches!(
+                marker.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            )
+    });
+    let endpoint = endpoints.next()?;
+    endpoints.next().is_none().then_some([line, endpoint])
 }
 
 fn coordinate_centered_line_endpoints<'a>(
