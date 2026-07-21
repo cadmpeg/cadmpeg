@@ -835,10 +835,11 @@ mod marker_tests {
         constraint_reference_plane_frame, coordinate_centered_line_endpoints,
         coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, cosmetic_thread_component_face_reference_at,
-        cosmetic_thread_cylinder_reference_at, enrich_history_revolution_inputs,
-        explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
-        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
-        inline_surface_reference_at, legacy_coordinate_roster_selected_axis_endpoint_indices,
+        cosmetic_thread_cylinder_reference_at, current_indexed_arc_reverses_center_sweep,
+        enrich_history_revolution_inputs, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, fixed_reference_plane_frame, generated_surface_identities,
+        indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
+        legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
         legacy_feature_input_section, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
@@ -4180,6 +4181,9 @@ mod marker_tests {
         current[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
         current[92..].copy_from_slice(SKETCH_MARKER);
         assert!(indexed_arc_uses_coordinate_center(&current, 0));
+        assert!(!current_indexed_arc_reverses_center_sweep(&current, 0));
+        current[80..84].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
+        assert!(current_indexed_arc_reverses_center_sweep(&current, 0));
         current[17..21].copy_from_slice(&1u32.to_le_bytes());
         assert!(!indexed_arc_uses_coordinate_center(&current, 0));
 
@@ -14870,16 +14874,37 @@ pub(crate) fn project_marker_backed_sketches(
                                                 ))
                                             })
                                             .collect::<Vec<_>>();
+                                        let (center_start, center_end) =
+                                            if current_indexed_arc_reverses_center_sweep(
+                                                &lane.native_payload,
+                                                offset,
+                                            ) {
+                                                (
+                                                    Point2::new(
+                                                        end_u * NATIVE_TO_IR,
+                                                        end_v * NATIVE_TO_IR,
+                                                    ),
+                                                    Point2::new(
+                                                        start_u * NATIVE_TO_IR,
+                                                        start_v * NATIVE_TO_IR,
+                                                    ),
+                                                )
+                                            } else {
+                                                (
+                                                    Point2::new(
+                                                        start_u * NATIVE_TO_IR,
+                                                        start_v * NATIVE_TO_IR,
+                                                    ),
+                                                    Point2::new(
+                                                        end_u * NATIVE_TO_IR,
+                                                        end_v * NATIVE_TO_IR,
+                                                    ),
+                                                )
+                                            };
                                         if let Some(center) = roster_center.or_else(|| {
                                             unique_arc_center_marker(
-                                                Point2::new(
-                                                    start_u * NATIVE_TO_IR,
-                                                    start_v * NATIVE_TO_IR,
-                                                ),
-                                                Point2::new(
-                                                    end_u * NATIVE_TO_IR,
-                                                    end_v * NATIVE_TO_IR,
-                                                ),
+                                                center_start,
+                                                center_end,
                                                 &candidates,
                                                 QUANTUM,
                                             )
@@ -14933,10 +14958,21 @@ pub(crate) fn project_marker_backed_sketches(
                             &markers_by_id,
                             &object_markers,
                         );
-                        endpoints
+                        let mut endpoint_refs = endpoints
                             .into_iter()
                             .map(|endpoint| endpoint.id.clone())
-                            .collect()
+                            .collect::<Vec<_>>();
+                        if marker.kind == SketchInputKind::Arc
+                            && usize::try_from(marker.offset).ok().is_some_and(|offset| {
+                                current_indexed_arc_reverses_center_sweep(
+                                    &lane.native_payload,
+                                    offset,
+                                )
+                            })
+                        {
+                            endpoint_refs.reverse();
+                        }
+                        endpoint_refs
                     } else {
                         Vec::new()
                     };
@@ -21092,6 +21128,14 @@ fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) -> bool {
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92));
     extended_compact || current_wide
+}
+
+fn current_indexed_arc_reverses_center_sweep(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
+        && payload.get(offset + 80..offset + 84) == Some(&[0x00, 0x00, 0x02, 0x00])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(92))
 }
 
 fn unique_arc_center_marker(
