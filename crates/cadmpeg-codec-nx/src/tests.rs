@@ -4186,6 +4186,40 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 }
 
 #[test]
+fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
+    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let first = ir.model.bodies[0].id.clone();
+    let mut second_body = ir.model.bodies[0].clone();
+    second_body.id = cadmpeg_ir::ids::BodyId("test:body#second".into());
+    let second = second_body.id.clone();
+    ir.model.bodies.push(second_body);
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#sew".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: vec![first.clone()],
+        definition: FeatureDefinition::SewBodies {
+            bodies: BodySelection::Bodies(vec![first, second]),
+            gap_tolerance: None,
+        },
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+}
+
+#[test]
 fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let dimensions = [10.0, 20.0, 30.0];
