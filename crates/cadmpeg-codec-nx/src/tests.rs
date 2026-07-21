@@ -3073,7 +3073,7 @@ fn feature_body_selection_resolves_complete_segment_bindings_atomically() {
             "nx:om-object-indices#94,122".to_string(),
         ),
         BodySelection::Resolved {
-            bodies: vec![first, second],
+            bodies: vec![first.clone(), second],
             native: "nx:om-object-indices#94,122".to_string(),
         }
     );
@@ -3082,6 +3082,15 @@ fn feature_body_selection_resolves_complete_segment_bindings_atomically() {
             &[94, 123],
             &bindings,
             "nx:om-object-indices#94,123".to_string(),
+        ),
+        BodySelection::Native(_)
+    ));
+    let aliases = BTreeMap::from([(94, vec![first.clone()]), (150, vec![first])]);
+    assert!(matches!(
+        crate::decode::feature_body_selection(
+            &[94, 150],
+            &aliases,
+            "nx:om-object-indices#94,150".to_string(),
         ),
         BodySelection::Native(_)
     ));
@@ -3124,7 +3133,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         crate::decode::sew_body_feature_definition(10, &references, &bodies),
         Some(FeatureDefinition::SewBodies {
             bodies: BodySelection::Resolved {
-                bodies: vec![primary, first, second],
+                bodies: vec![primary.clone(), first, second],
                 native: "nx:om-object-indices#10,20,30".to_string(),
             },
             gap_tolerance: None,
@@ -3134,6 +3143,20 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         crate::decode::sew_body_feature_definition(10, &[], &bodies),
         None
     );
+
+    let aliased = BodyId("body#alias".to_string());
+    let alias_bodies = BTreeMap::from([
+        (10, vec![primary.clone()]),
+        (20, vec![aliased.clone()]),
+        (30, vec![aliased]),
+    ]);
+    assert!(matches!(
+        crate::decode::sew_body_feature_definition(10, &references, &alias_bodies),
+        Some(FeatureDefinition::SewBodies {
+            bodies: BodySelection::Native(native),
+            ..
+        }) if native == "nx:om-object-indices#10,20,30"
+    ));
 }
 
 #[test]

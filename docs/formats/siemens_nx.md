@@ -154,7 +154,8 @@ order.
 Each of these labels projects as a neutral combine with join, cut, or intersect
 semantics respectively. A complete Boolean header supplies the target and
 ordered tool selections. Target and tool selections resolve atomically only
-when their neutral body sets are disjoint. An absent or invalid header, an
+when every serialized participant maps to a nonempty neutral body set and the
+participant sets are pairwise disjoint. An absent or invalid header, an
 unresolved body binding, or alias overlap leaves both native
 selections unresolved without discarding the operation family or Boolean kind.
 
@@ -838,7 +839,8 @@ primary-body field or without body operands, the body selection is unresolved.
 With both fields, the primary body is the first participant and the remaining
 participant order is the wrapped-member order. Every participant resolves to
 neutral bodies only when all object identities have surviving segment body
-bindings; otherwise the ordered native object-index selection is retained
+bindings and their body sets are pairwise disjoint; otherwise the ordered
+native object-index selection is retained
 atomically. The operation record does not assign a gap tolerance, so the
 neutral tolerance remains absent.
 
@@ -847,8 +849,8 @@ unambiguous primary body and one or more body operands, the target and tool-body
 selections are unresolved. With those fields, the primary body is the target;
 wrapped-member order defines the ordered tool-body selection. Target and tools
 resolve atomically through surviving segment body bindings only when their
-neutral body sets are disjoint, and otherwise retain their native object-index
-selections. The body clauses do not assign which side
+participant body sets are pairwise disjoint, and otherwise retain their native
+object-index selections. The body clauses do not assign which side
 is retained, so the neutral retained side is unresolved.
 
 A `DELETE` operation projects as a neutral delete-selected-bodies feature. Its primary-body field is the selected body, not an output. A uniquely bound body image resolves the selection; an absent or ambiguous binding leaves the selection unresolved.

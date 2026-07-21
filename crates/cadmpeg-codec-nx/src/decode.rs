@@ -13514,9 +13514,10 @@ pub(crate) fn feature_body_selection(
             return BodySelection::Native(native);
         };
         for body in bound {
-            if !bodies.contains(body) {
-                bodies.push(body.clone());
+            if bodies.contains(body) {
+                return BodySelection::Native(native);
             }
+            bodies.push(body.clone());
         }
     }
     BodySelection::Resolved { bodies, native }
