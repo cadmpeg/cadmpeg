@@ -3295,7 +3295,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
 }
 
 #[test]
-fn nx_delete_body_retains_an_unresolved_missing_selection() {
+fn nx_delete_body_requires_a_primary_body_field() {
     use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, FeatureDefinition};
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
@@ -3304,20 +3304,17 @@ fn nx_delete_body_retains_an_unresolved_missing_selection() {
     let bodies = BTreeMap::from([(20, vec![body.clone()])]);
     assert_eq!(
         crate::decode::delete_body_feature_definition(Some(20), &bodies),
-        FeatureDefinition::DeleteBody {
+        Some(FeatureDefinition::DeleteBody {
             bodies: BodySelection::Resolved {
                 bodies: vec![body],
                 native: "nx:om-object-index#20".to_string(),
             },
             mode: BodyRetentionMode::DeleteSelected,
-        }
+        })
     );
     assert_eq!(
         crate::decode::delete_body_feature_definition(None, &bodies),
-        FeatureDefinition::DeleteBody {
-            bodies: BodySelection::Unresolved,
-            mode: BodyRetentionMode::DeleteSelected,
-        }
+        None
     );
 }
 
