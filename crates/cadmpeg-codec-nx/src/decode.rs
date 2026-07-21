@@ -7359,7 +7359,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::SewBodies {
                 bodies,
                 gap_tolerance,
-            } if body_selection_is_incomplete(bodies) || gap_tolerance.is_none() => "sew bodies",
+            } if body_selection_is_incomplete(bodies)
+                || explicit_body_ids(bodies).is_some_and(|bodies| bodies.len() < 2)
+                || gap_tolerance.is_none() =>
+            {
+                "sew bodies"
+            }
             FeatureDefinition::TrimBodies {
                 targets,
                 tools,
@@ -7682,24 +7687,23 @@ pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
 }
 
 pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
-    match selection {
-        BodySelection::Unresolved | BodySelection::Native(_) => true,
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            bodies.is_empty() || bodies.iter().collect::<BTreeSet<_>>().len() != bodies.len()
-        }
-    }
+    explicit_body_ids(selection).is_none_or(|bodies| {
+        bodies.is_empty() || bodies.iter().collect::<BTreeSet<_>>().len() != bodies.len()
+    })
 }
 
 pub(crate) fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
-    let first = match first {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies,
-        BodySelection::Unresolved | BodySelection::Native(_) => return false,
-    };
-    let second = match second {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies,
-        BodySelection::Unresolved | BodySelection::Native(_) => return false,
-    };
-    first.iter().any(|body| second.contains(body))
+    explicit_body_ids(first).is_some_and(|first| {
+        explicit_body_ids(second)
+            .is_some_and(|second| first.iter().any(|body| second.contains(body)))
+    })
+}
+
+fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
+    match selection {
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => Some(bodies),
+        BodySelection::Unresolved | BodySelection::Native(_) => None,
+    }
 }
 
 pub(crate) fn face_selection_is_opaque(selection: &FaceSelection) -> bool {

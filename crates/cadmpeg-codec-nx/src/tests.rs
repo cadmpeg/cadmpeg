@@ -3882,7 +3882,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("block (1)"));
 
-    ir.model.features[0].outputs = vec![output.clone(), output];
+    ir.model.features[0].outputs = vec![output.clone(), output.clone()];
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -3928,6 +3928,15 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("datum plane (1)"));
+
+    ir.model.features[0].definition = FeatureDefinition::SewBodies {
+        bodies: cadmpeg_ir::features::BodySelection::Bodies(vec![output.clone()]),
+        gap_tolerance: Some(Length(0.01)),
+    };
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("sew bodies (1)"));
 
     assert_eq!(
         crate::decode::body_output_feature_family(&FeatureDefinition::DatumPointUnresolved),
