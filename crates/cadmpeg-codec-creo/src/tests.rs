@@ -1029,6 +1029,14 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
         result.ir.source.as_ref().unwrap().attributes["transferred_paired_envelope_sphere_count"],
         "2"
     );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("Transferred 2 sphere carrier(s) from complementary five-coordinate")
+    }));
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("Placement-complete paired sphere envelopes additionally transfer")
+    }));
 }
 
 #[test]

@@ -35588,6 +35588,16 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         .and_then(|source| source.attributes.get("transferred_positional_cone_count"))
         .and_then(|count| count.parse::<usize>().ok())
         .unwrap_or(0);
+    let paired_envelope_sphere_count = ir
+        .source
+        .as_ref()
+        .and_then(|source| {
+            source
+                .attributes
+                .get("transferred_paired_envelope_sphere_count")
+        })
+        .and_then(|count| count.parse::<usize>().ok())
+        .unwrap_or(0);
     let mut losses = Vec::new();
 
     if container_only {
@@ -35677,6 +35687,19 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             message: format!(
                 "Transferred {first_instance_prototype_surface_count} first-instance ND plane, \
                  cone, torus, or interpolation-spline carrier(s) from complete named parameters."
+            ),
+            provenance: None,
+        });
+    }
+
+    if !container_only && paired_envelope_sphere_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {paired_envelope_sphere_count} sphere carrier(s) from complementary \
+                 five-coordinate type-26 hemisphere envelopes and their shared zero-major-radius \
+                 prototype."
             ),
             provenance: None,
         });
@@ -35840,8 +35863,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             message: format!(
                 "Retained {} tagged type-26 radius override(s), {} terminal outline extent(s), \
                  {} five-coordinate envelope(s), and {} split-coordinate envelope(s). These \
-                 row-local fields remain native until the same positional body establishes a \
-                 complete model-space placement.",
+                 row-local fields remain byte-exact native data. Placement-complete paired sphere \
+                 envelopes additionally transfer as analytic carriers.",
                 torus_coverage.radius_overrides,
                 torus_coverage.outline_extents,
                 torus_coverage.five_coordinate_envelopes,
