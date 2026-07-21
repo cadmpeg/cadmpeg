@@ -1986,6 +1986,48 @@ struct SurfaceTransferCoverage {
     by_family: BTreeMap<&'static str, (usize, usize)>,
 }
 
+#[derive(Default)]
+struct CurveTransferCoverage {
+    unique_rows: usize,
+    transferred_rows: usize,
+    ambiguous_rows: usize,
+    by_type: BTreeMap<u8, (usize, usize)>,
+}
+
+fn curve_transfer_coverage(
+    rows: &[crate::curve::CurveTopologyRow],
+    curves: &[Curve],
+) -> CurveTransferCoverage {
+    let unique_rows = crate::topology::uniquely_identified_rows(rows);
+    let transferred_ids = curves
+        .iter()
+        .filter(|curve| !matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+        .filter_map(|curve| {
+            curve
+                .source_object
+                .as_ref()
+                .filter(|source| source.format == "creo")?
+                .object_id
+                .strip_prefix("VisibGeom:")?
+                .parse::<u32>()
+                .ok()
+        })
+        .collect::<BTreeSet<_>>();
+    let mut coverage = CurveTransferCoverage {
+        unique_rows: unique_rows.len(),
+        ambiguous_rows: rows.len().saturating_sub(unique_rows.len()),
+        ..CurveTransferCoverage::default()
+    };
+    for row in unique_rows {
+        let transferred = usize::from(transferred_ids.contains(&row.id));
+        coverage.transferred_rows += transferred;
+        let type_coverage = coverage.by_type.entry(row.type_byte).or_default();
+        type_coverage.0 += 1;
+        type_coverage.1 += transferred;
+    }
+    coverage
+}
+
 fn surface_transfer_coverage(
     rows: &[crate::surface::SurfaceRow],
     surfaces: &[Surface],
@@ -16928,6 +16970,52 @@ mod resolved_sketch_tests {
         assert_eq!(coverage.by_family["plane"], (1, 1));
         assert_eq!(coverage.by_family["cylinder"], (1, 0));
         assert_eq!(coverage.by_family["cone"], (0, 0));
+    }
+
+    #[test]
+    fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
+        let row = |id, type_byte| crate::curve::CurveTopologyRow {
+            id,
+            type_byte,
+            feature_id: 17,
+            directions: [0x01, 0xf6],
+            faces: [1, 2],
+            next_edges: [id, id],
+            offset: 0,
+        };
+        let rows = vec![row(41, 0x05), row(42, 0x13), row(43, 0x05), row(43, 0x05)];
+        let source = |native_id| SourceObjectAssociation {
+            format: "creo".to_string(),
+            object_id: format!("VisibGeom:{native_id}"),
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        };
+        let curves = vec![
+            Curve {
+                id: CurveId("typed".to_string()),
+                geometry: CurveGeometry::Line {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    direction: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: Some(source(41)),
+            },
+            Curve {
+                id: CurveId("opaque".to_string()),
+                geometry: CurveGeometry::Unknown { record: None },
+                source_object: Some(source(42)),
+            },
+        ];
+
+        let coverage = curve_transfer_coverage(&rows, &curves);
+
+        assert_eq!(coverage.unique_rows, 2);
+        assert_eq!(coverage.transferred_rows, 1);
+        assert_eq!(coverage.ambiguous_rows, 2);
+        assert_eq!(coverage.by_type[&0x05], (1, 1));
+        assert_eq!(coverage.by_type[&0x13], (1, 0));
     }
 
     #[test]
@@ -34061,6 +34149,7 @@ fn build_ir(
         transferred_feature_skamp_constraint_count
             .saturating_sub(transferred_native_feature_skamp_constraint_count);
     let surface_coverage = surface_transfer_coverage(&scan.surface_rows, &ir.model.surfaces);
+    let curve_coverage = curve_transfer_coverage(&scan.curve_topology_rows, &ir.model.curves);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "unique_visible_surface_row_count".to_string(),
@@ -34088,6 +34177,35 @@ fn build_ir(
             );
             source.attributes.insert(
                 format!("transferred_visible_{family}_surface_row_count"),
+                transferred.to_string(),
+            );
+        }
+        source.attributes.insert(
+            "unique_visible_curve_row_count".to_string(),
+            curve_coverage.unique_rows.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_visible_curve_row_count".to_string(),
+            curve_coverage.transferred_rows.to_string(),
+        );
+        source.attributes.insert(
+            "untransferred_visible_curve_row_count".to_string(),
+            curve_coverage
+                .unique_rows
+                .saturating_sub(curve_coverage.transferred_rows)
+                .to_string(),
+        );
+        source.attributes.insert(
+            "ambiguous_visible_curve_row_count".to_string(),
+            curve_coverage.ambiguous_rows.to_string(),
+        );
+        for (type_byte, (rows, transferred)) in &curve_coverage.by_type {
+            source.attributes.insert(
+                format!("visible_curve_type_{type_byte:02x}_row_count"),
+                rows.to_string(),
+            );
+            source.attributes.insert(
+                format!("transferred_visible_curve_type_{type_byte:02x}_row_count"),
                 transferred.to_string(),
             );
         }
