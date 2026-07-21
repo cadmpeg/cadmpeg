@@ -2339,7 +2339,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         None,
         Some(Point3::new(1.0, 2.0, 3.0)),
         Some(Vector3::new(0.0, 0.0, 1.0)),
-        &HoleKind::Simple,
+        (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&Extent::ThroughAll),
     ));
@@ -2348,7 +2348,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(&FaceSelection::Unresolved),
         None,
         None,
-        &HoleKind::Simple,
+        (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&Extent::ThroughAll),
     ));
@@ -2357,9 +2357,27 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         None,
         Some(Point3::new(1.0, 2.0, 3.0)),
         Some(Vector3::new(0.0, 0.0, 1.0)),
-        &HoleKind::Simple,
+        (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&Extent::Unresolved),
+    ));
+    assert!(crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        Some(Point3::new(1.0, 2.0, 3.0)),
+        Some(Vector3::new(0.0, 0.0, 1.0)),
+        (
+            &HoleKind::Simple,
+            Some(&HoleKind::Unresolved {
+                form: Some(cadmpeg_ir::features::HoleForm::Chamfer),
+                counterbore_diameter: None,
+                counterbore_depth: None,
+                countersink_diameter: None,
+                countersink_angle: None,
+            }),
+        ),
+        Some(Length(5.0)),
+        Some(&Extent::ThroughAll),
     ));
 }
 

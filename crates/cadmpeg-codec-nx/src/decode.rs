@@ -7280,6 +7280,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 position,
                 direction,
                 kind,
+                exit_kind,
                 diameter,
                 extent,
                 ..
@@ -7288,7 +7289,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 face.as_ref(),
                 *position,
                 *direction,
-                kind,
+                (kind, exit_kind.as_ref()),
                 *diameter,
                 extent.as_ref(),
             ) =>
@@ -7538,15 +7539,17 @@ pub(crate) fn hole_feature_is_incomplete(
     face: Option<&FaceSelection>,
     position: Option<Point3>,
     direction: Option<Vector3>,
-    kind: &HoleKind,
+    treatments: (&HoleKind, Option<&HoleKind>),
     diameter: Option<Length>,
     extent: Option<&Extent>,
 ) -> bool {
+    let (kind, exit_kind) = treatments;
     let location_unresolved = position.is_none() && profile.is_none_or(profile_ref_is_opaque);
     let orientation_unresolved = direction.is_none() && face.is_none_or(face_selection_is_opaque);
     location_unresolved
         || orientation_unresolved
         || matches!(kind, HoleKind::Unresolved { .. })
+        || exit_kind.is_some_and(|kind| matches!(kind, HoleKind::Unresolved { .. }))
         || diameter.is_none()
         || extent.is_none_or(|extent| matches!(extent, Extent::Unresolved))
 }
