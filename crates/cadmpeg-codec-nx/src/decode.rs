@@ -7509,6 +7509,41 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             provenance: None,
         });
     }
+
+    let native_sketch_entity_count = ir
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| {
+            matches!(
+                entity.geometry,
+                cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+            )
+        })
+        .count();
+    let native_sketch_constraint_count = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| {
+            matches!(
+                constraint.definition,
+                cadmpeg_ir::sketches::SketchConstraintDefinition::Native { .. }
+            )
+        })
+        .count();
+    if native_sketch_entity_count != 0 || native_sketch_constraint_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Feature,
+            severity: Severity::Warning,
+            message: format!(
+                "Neutral semantics remain unresolved for {native_sketch_entity_count} NX sketch \
+                 geometry record(s) and {native_sketch_constraint_count} sketch constraint \
+                 record(s)."
+            ),
+            provenance: None,
+        });
+    }
 }
 
 pub(crate) fn body_output_feature_family(definition: &FeatureDefinition) -> Option<&'static str> {

@@ -3858,6 +3858,86 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
 }
 
 #[test]
+fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchGeometry, SketchId,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let sketch_id = SketchId("test:sketch#0".into());
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#sketch".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
+            sketch: Some(sketch_id.clone()),
+        },
+        native_ref: None,
+    });
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    let entity_id = SketchEntityId("test:sketch-entity#0".into());
+    ir.model.sketch_entities.push(SketchEntity {
+        id: entity_id.clone(),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Native {
+            native_kind: "test".into(),
+        },
+    });
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: SketchConstraintId("test:sketch-constraint#0".into()),
+        sketch: sketch_id,
+        definition: SketchConstraintDefinition::Native {
+            native_kind: "test".into(),
+            entities: vec![entity_id],
+            parameter: None,
+            operands: Vec::new(),
+        },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .contains("1 NX sketch geometry record(s) and 1 sketch constraint"));
+}
+
+#[test]
 fn nx_body_operation_completeness_requires_disjoint_roles() {
     use cadmpeg_ir::features::BodySelection;
     use cadmpeg_ir::ids::BodyId;
