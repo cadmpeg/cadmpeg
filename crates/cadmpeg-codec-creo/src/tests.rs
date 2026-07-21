@@ -961,6 +961,16 @@ fn decode_retains_type26_coordinate_envelope_in_native_ir() {
         assert!((actual.as_f64().expect("finite coordinate") - expected).abs() < 1.0e-12);
     }
     assert!(record.fields["type26_split_coordinate_envelope"].is_null());
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes
+            ["decoded_type26_five_coordinate_envelope_count"],
+        "1"
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("1 five-coordinate envelope(s)")));
 }
 
 #[test]
@@ -987,6 +997,16 @@ fn decode_retains_split_type26_coordinate_envelope_in_native_ir() {
         assert!((actual.as_f64().expect("finite coordinate") - expected).abs() < 1.0e-12);
     }
     assert!(record.fields["type26_five_coordinate_envelope"].is_null());
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes
+            ["decoded_type26_split_coordinate_envelope_count"],
+        "1"
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("1 split-coordinate envelope(s)")));
 }
 
 #[test]

@@ -34887,18 +34887,44 @@ fn annotate(
     annotations.exactness(id, exactness);
 }
 
-fn torus_parameter_coverage(scan: &ContainerScan) -> (usize, usize) {
+#[derive(Default)]
+struct TorusParameterCoverage {
+    radius_overrides: usize,
+    outline_extents: usize,
+    five_coordinate_envelopes: usize,
+    split_coordinate_envelopes: usize,
+}
+
+fn torus_parameter_coverage(scan: &ContainerScan) -> TorusParameterCoverage {
     let rows = scan.surface_parameters.iter().filter_map(|record| {
         crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
             .map(|row| (record, row))
     });
-    (
-        rows.clone()
+    TorusParameterCoverage {
+        radius_overrides: rows
+            .clone()
             .filter(|(record, row)| record.torus_radius_overrides(row.type_byte).is_some())
             .count(),
-        rows.filter(|(record, row)| record.torus_outline_frame(row.type_byte).is_some())
+        outline_extents: rows
+            .clone()
+            .filter(|(record, row)| record.torus_outline_frame(row.type_byte).is_some())
             .count(),
-    )
+        five_coordinate_envelopes: rows
+            .clone()
+            .filter(|(record, row)| {
+                record
+                    .type26_five_coordinate_envelope(row.type_byte)
+                    .is_some()
+            })
+            .count(),
+        split_coordinate_envelopes: rows
+            .filter(|(record, row)| {
+                record
+                    .type26_split_coordinate_envelope(row.type_byte)
+                    .is_some()
+            })
+            .count(),
+    }
 }
 
 fn source_meta(scan: &ContainerScan) -> SourceMeta {
@@ -34957,14 +34983,22 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
             .count()
             .to_string(),
     );
-    let (torus_radius_override_count, torus_outline_extent_count) = torus_parameter_coverage(scan);
+    let torus_coverage = torus_parameter_coverage(scan);
     attributes.insert(
         "decoded_torus_radius_override_count".to_string(),
-        torus_radius_override_count.to_string(),
+        torus_coverage.radius_overrides.to_string(),
     );
     attributes.insert(
         "decoded_torus_outline_extent_count".to_string(),
-        torus_outline_extent_count.to_string(),
+        torus_coverage.outline_extents.to_string(),
+    );
+    attributes.insert(
+        "decoded_type26_five_coordinate_envelope_count".to_string(),
+        torus_coverage.five_coordinate_envelopes.to_string(),
+    );
+    attributes.insert(
+        "decoded_type26_split_coordinate_envelope_count".to_string(),
+        torus_coverage.split_coordinate_envelopes.to_string(),
     );
     attributes.insert(
         "decoded_plane_local_system_count".to_string(),
@@ -35638,16 +35672,24 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         });
     }
 
-    let (torus_radius_override_count, torus_outline_extent_count) = torus_parameter_coverage(scan);
-    if torus_radius_override_count != 0 || torus_outline_extent_count != 0 {
+    let torus_coverage = torus_parameter_coverage(scan);
+    if torus_coverage.radius_overrides != 0
+        || torus_coverage.outline_extents != 0
+        || torus_coverage.five_coordinate_envelopes != 0
+        || torus_coverage.split_coordinate_envelopes != 0
+    {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Retained {torus_radius_override_count} tagged type-26 radius override(s) and \
-                 {torus_outline_extent_count} complete type-26 terminal outline extent(s). These \
+                "Retained {} tagged type-26 radius override(s), {} terminal outline extent(s), \
+                 {} five-coordinate envelope(s), and {} split-coordinate envelope(s). These \
                  row-local fields remain native until the same positional body establishes a \
-                 complete model-space placement."
+                 complete model-space placement.",
+                torus_coverage.radius_overrides,
+                torus_coverage.outline_extents,
+                torus_coverage.five_coordinate_envelopes,
+                torus_coverage.split_coordinate_envelopes,
             ),
             provenance: None,
         });
