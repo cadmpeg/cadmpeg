@@ -2410,6 +2410,36 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
 }
 
 #[test]
+fn nx_rib_completeness_requires_a_resolved_profile() {
+    use cadmpeg_ir::features::{BooleanOp, Length, ProfileRef, RibConstruction, RibDraft, RibSide};
+    use cadmpeg_ir::math::Vector3;
+
+    let mut construction = RibConstruction {
+        profile: Some(ProfileRef::Native("nx:profile#0".to_string())),
+        direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+        thickness: Some(Length(2.0)),
+        side: Some(RibSide::Centered),
+        draft: RibDraft::None,
+    };
+    assert!(crate::decode::rib_feature_is_incomplete(
+        &construction,
+        BooleanOp::Join,
+    ));
+    construction.profile = Some(ProfileRef::Faces(vec![cadmpeg_ir::ids::FaceId(
+        "face#0".to_string(),
+    )]));
+    assert!(!crate::decode::rib_feature_is_incomplete(
+        &construction,
+        BooleanOp::Join,
+    ));
+    construction.profile = Some(ProfileRef::Faces(Vec::new()));
+    assert!(crate::decode::rib_feature_is_incomplete(
+        &construction,
+        BooleanOp::Join,
+    ));
+}
+
+#[test]
 fn nx_chamfer_direction_is_required_only_for_asymmetric_specs() {
     use cadmpeg_ir::features::{Angle, ChamferSpec, Length};
 

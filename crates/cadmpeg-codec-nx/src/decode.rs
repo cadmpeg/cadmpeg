@@ -7297,12 +7297,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "hole"
             }
             FeatureDefinition::Rib { construction, op }
-                if construction.profile.is_none()
-                    || construction.direction.is_none()
-                    || construction.thickness.is_none()
-                    || construction.side.is_none()
-                    || matches!(construction.draft, RibDraft::Unresolved)
-                    || matches!(op, BooleanOp::Unresolved) =>
+                if rib_feature_is_incomplete(construction, *op) =>
             {
                 "rib"
             }
@@ -7573,6 +7568,18 @@ pub(crate) fn extent_is_incomplete(extent: &Extent) -> bool {
         | Extent::SymmetricAngle { .. }
         | Extent::TwoSidedAngles { .. } => false,
     }
+}
+
+pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: BooleanOp) -> bool {
+    construction
+        .profile
+        .as_ref()
+        .is_none_or(profile_ref_is_opaque)
+        || construction.direction.is_none()
+        || construction.thickness.is_none()
+        || construction.side.is_none()
+        || matches!(construction.draft, RibDraft::Unresolved)
+        || matches!(op, BooleanOp::Unresolved)
 }
 
 pub(crate) fn chamfer_requires_direction(spec: &ChamferSpec) -> bool {
