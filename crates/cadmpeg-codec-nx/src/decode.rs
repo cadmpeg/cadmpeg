@@ -7248,7 +7248,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 dimensions,
                 placement,
             } if dimensions.is_none() || placement.is_none() => "block",
-            FeatureDefinition::ExtractBody { source } if body_selection_is_opaque(source) => {
+            FeatureDefinition::ExtractBody { source } if body_selection_is_incomplete(source) => {
                 "extract body"
             }
             FeatureDefinition::Sketch { space, sketch }
@@ -7344,13 +7344,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::SewBodies {
                 bodies,
                 gap_tolerance,
-            } if body_selection_is_opaque(bodies) || gap_tolerance.is_none() => "sew bodies",
+            } if body_selection_is_incomplete(bodies) || gap_tolerance.is_none() => "sew bodies",
             FeatureDefinition::TrimBodies {
                 targets,
                 tools,
                 keep,
-            } if body_selection_is_opaque(targets)
-                || body_selection_is_opaque(tools)
+            } if body_selection_is_incomplete(targets)
+                || body_selection_is_incomplete(tools)
                 || body_selections_overlap(targets, tools)
                 || matches!(keep, BodyTrimSide::Unresolved) =>
             {
@@ -7385,15 +7385,15 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "pattern"
             }
             FeatureDefinition::Combine { target, tools, op }
-                if body_selection_is_opaque(target)
-                    || body_selection_is_opaque(tools)
+                if body_selection_is_incomplete(target)
+                    || body_selection_is_incomplete(tools)
                     || body_selections_overlap(target, tools)
                     || matches!(op, BooleanOp::Unresolved) =>
             {
                 "body combine"
             }
             FeatureDefinition::DeleteBody { bodies, mode }
-                if body_selection_is_opaque(bodies)
+                if body_selection_is_incomplete(bodies)
                     || matches!(mode, BodyRetentionMode::Unresolved) =>
             {
                 "delete body"
@@ -7657,10 +7657,12 @@ pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
     }
 }
 
-pub(crate) fn body_selection_is_opaque(selection: &BodySelection) -> bool {
+pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
     match selection {
         BodySelection::Unresolved | BodySelection::Native(_) => true,
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            bodies.is_empty() || bodies.iter().collect::<BTreeSet<_>>().len() != bodies.len()
+        }
     }
 }
 

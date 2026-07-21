@@ -2559,7 +2559,7 @@ fn nx_variable_radius_completeness_requires_a_law_interval() {
 fn nx_empty_resolved_selections_remain_incomplete() {
     use cadmpeg_ir::features::{BodySelection, EdgeSelection, FaceSelection, PathRef, ProfileRef};
 
-    assert!(crate::decode::body_selection_is_opaque(
+    assert!(crate::decode::body_selection_is_incomplete(
         &BodySelection::Bodies(Vec::new())
     ));
     assert!(crate::decode::face_selection_is_opaque(
@@ -3822,6 +3822,11 @@ fn nx_body_operation_completeness_requires_disjoint_roles() {
     let shared = BodyId("test:body#shared".into());
     let distinct = BodyId("test:body#distinct".into());
     let target = BodySelection::Bodies(vec![shared.clone()]);
+
+    assert!(crate::decode::body_selection_is_incomplete(
+        &BodySelection::Bodies(vec![shared.clone(), shared.clone()]),
+    ));
+    assert!(!crate::decode::body_selection_is_incomplete(&target));
 
     assert!(crate::decode::body_selections_overlap(
         &target,
