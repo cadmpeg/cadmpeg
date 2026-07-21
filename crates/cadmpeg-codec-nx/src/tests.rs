@@ -3938,6 +3938,40 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
 }
 
 #[test]
+fn nx_sketch_completeness_requires_planar_space() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
+    use cadmpeg_ir::sketches::SketchId;
+
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#sketch".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: SketchSpace::Spatial,
+            sketch: Some(SketchId("test:sketch#0".into())),
+        },
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.iter().any(|loss| {
+        loss.message.contains(
+            "construction fields or output lineage remain unresolved or native-only: sketch (1)",
+        )
+    }));
+}
+
+#[test]
 fn nx_body_operation_completeness_requires_disjoint_roles() {
     use cadmpeg_ir::features::BodySelection;
     use cadmpeg_ir::ids::BodyId;

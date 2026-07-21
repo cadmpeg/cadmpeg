@@ -7275,7 +7275,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "extract body"
             }
             FeatureDefinition::Sketch { space, sketch }
-                if matches!(space, SketchSpace::Unresolved) || sketch.is_none() =>
+                if !matches!(space, SketchSpace::Planar) || sketch.is_none() =>
             {
                 "sketch"
             }
