@@ -3806,6 +3806,13 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("block (1)"));
 
+    let output = cadmpeg_ir::ids::BodyId("test:body#output".into());
+    ir.model.features[0].outputs = vec![output.clone(), output];
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("block (1)"));
+
     ir.model.features[0].suppressed = Some(true);
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);

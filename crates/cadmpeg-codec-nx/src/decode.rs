@@ -7229,8 +7229,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
 
     let mut incomplete_feature_families = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
-        if feature.suppressed != Some(true) && feature.outputs.is_empty() {
-            if let Some(family) = body_output_feature_family(&feature.definition) {
+        if feature.suppressed != Some(true) {
+            if let Some(family) = body_output_feature_family(&feature.definition).filter(|_| {
+                feature.outputs.is_empty()
+                    || feature.outputs.iter().collect::<BTreeSet<_>>().len()
+                        != feature.outputs.len()
+            }) {
                 *incomplete_feature_families.entry(family).or_default() += 1;
                 continue;
             }
