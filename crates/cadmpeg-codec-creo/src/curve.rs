@@ -522,6 +522,8 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
                     assignment.value = evaluate_expression(&assignment.expression, &values);
                     if let Some(value) = assignment.value {
                         values.insert(assignment.name.clone(), value);
+                    } else {
+                        values.remove(&assignment.name);
                     }
                     assignment
                 })
@@ -559,7 +561,36 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
-        if bytes[cursor] == b'_' || bytes[cursor].is_ascii_alphabetic() {
+        if bytes[cursor].is_ascii_digit()
+            || (bytes[cursor] == b'.' && bytes.get(cursor + 1).is_some_and(u8::is_ascii_digit))
+        {
+            while bytes
+                .get(cursor)
+                .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'.')
+            {
+                cursor += 1;
+            }
+            if bytes
+                .get(cursor)
+                .is_some_and(|byte| matches!(byte, b'e' | b'E'))
+                && bytes.get(cursor + 1).is_some_and(|byte| {
+                    byte.is_ascii_digit()
+                        || (matches!(byte, b'+' | b'-')
+                            && bytes.get(cursor + 2).is_some_and(u8::is_ascii_digit))
+                })
+            {
+                cursor += 1;
+                if bytes
+                    .get(cursor)
+                    .is_some_and(|byte| matches!(byte, b'+' | b'-'))
+                {
+                    cursor += 1;
+                }
+                while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+                    cursor += 1;
+                }
+            }
+        } else if bytes[cursor] == b'_' || bytes[cursor].is_ascii_alphabetic() {
             let start = cursor;
             cursor += 1;
             while cursor < bytes.len()
@@ -570,7 +601,13 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
                 cursor += 1;
             }
             let dependency = &expression[start..cursor];
-            if !dependencies.iter().any(|existing| existing == dependency) {
+            let mut following = cursor;
+            while bytes.get(following).is_some_and(u8::is_ascii_whitespace) {
+                following += 1;
+            }
+            let function =
+                bytes.get(following) == Some(&b'(') && creo_math_function(dependency).is_some();
+            if !function && !dependencies.iter().any(|existing| existing == dependency) {
                 dependencies.push(dependency.to_owned());
             }
         } else {
@@ -592,6 +629,7 @@ trait ArithmeticValue: Copy {
     fn subtract(self, right: Self) -> Option<Self>;
     fn multiply(self, right: Self) -> Option<Self>;
     fn divide(self, right: Self) -> Option<Self>;
+    fn function(name: CreoMathFunction, arguments: &[Self]) -> Option<Self>;
     fn negate(self) -> Self;
     fn finite(self) -> bool;
 }
@@ -615,6 +653,10 @@ impl ArithmeticValue for f64 {
 
     fn divide(self, right: Self) -> Option<Self> {
         Some(self / right)
+    }
+
+    fn function(name: CreoMathFunction, arguments: &[Self]) -> Option<Self> {
+        evaluate_creo_math_function(name, arguments)
     }
 
     fn negate(self) -> Self {
@@ -666,6 +708,14 @@ impl ArithmeticValue for AffineValue {
             constant: self.constant / right.constant,
             linear: self.linear / right.constant,
         })
+    }
+
+    fn function(name: CreoMathFunction, arguments: &[Self]) -> Option<Self> {
+        let constants = arguments
+            .iter()
+            .map(|argument| (argument.linear == 0.0).then_some(argument.constant))
+            .collect::<Option<Vec<_>>>()?;
+        evaluate_creo_math_function(name, &constants).map(Self::number)
     }
 
     fn negate(self) -> Self {
@@ -757,7 +807,7 @@ impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
                 })
             }
             byte if byte.is_ascii_digit() || *byte == b'.' => self.number(),
-            byte if byte.is_ascii_alphabetic() || *byte == b'_' => self.identifier(),
+            byte if byte.is_ascii_alphabetic() || *byte == b'_' => self.identifier_or_function(),
             _ => None,
         }?;
         Some(if negate { value.negate() } else { value })
@@ -796,7 +846,9 @@ impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
         Some(V::number(value))
     }
 
-    fn identifier(&mut self) -> Option<V> {
+    fn identifier_or_function(&mut self) -> Option<V> {
+        const MAX_NESTING: usize = 128;
+
         let start = self.cursor;
         self.cursor += 1;
         while self.source.get(self.cursor).is_some_and(|byte| {
@@ -805,8 +857,154 @@ impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
             self.cursor += 1;
         }
         let name = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
-        self.values.get(name).copied()
+        self.whitespace();
+        if self.source.get(self.cursor) != Some(&b'(') {
+            return self.values.get(name).copied();
+        }
+        (self.nesting < MAX_NESTING).then_some(())?;
+        let function = creo_math_function(name)?;
+        self.cursor += 1;
+        self.nesting += 1;
+        self.whitespace();
+        let mut arguments = Vec::new();
+        if self.source.get(self.cursor) != Some(&b')') {
+            loop {
+                arguments.push(self.expression()?);
+                self.whitespace();
+                if self.source.get(self.cursor) != Some(&b',') {
+                    break;
+                }
+                self.cursor += 1;
+            }
+        }
+        self.whitespace();
+        (self.source.get(self.cursor) == Some(&b')')).then_some(())?;
+        self.cursor += 1;
+        self.nesting -= 1;
+        V::function(function, &arguments)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CreoMathFunction {
+    Sin,
+    Cos,
+    Tan,
+    Asin,
+    Acos,
+    Atan,
+    Atan2,
+    Sinh,
+    Cosh,
+    Tanh,
+    Sign,
+    Mod,
+    If,
+    Bound,
+    Dead,
+    Near,
+    Min,
+    Max,
+    Log,
+    Ln,
+    Exp,
+    Pow,
+    Sqrt,
+    Abs,
+    Ceil,
+    Floor,
+    DblInTol,
+}
+
+fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
+    match name.to_ascii_lowercase().as_str() {
+        "sin" => Some(CreoMathFunction::Sin),
+        "cos" => Some(CreoMathFunction::Cos),
+        "tan" => Some(CreoMathFunction::Tan),
+        "asin" => Some(CreoMathFunction::Asin),
+        "acos" => Some(CreoMathFunction::Acos),
+        "atan" => Some(CreoMathFunction::Atan),
+        "atan2" => Some(CreoMathFunction::Atan2),
+        "sinh" => Some(CreoMathFunction::Sinh),
+        "cosh" => Some(CreoMathFunction::Cosh),
+        "tanh" => Some(CreoMathFunction::Tanh),
+        "sign" => Some(CreoMathFunction::Sign),
+        "mod" => Some(CreoMathFunction::Mod),
+        "if" => Some(CreoMathFunction::If),
+        "bound" => Some(CreoMathFunction::Bound),
+        "dead" => Some(CreoMathFunction::Dead),
+        "near" => Some(CreoMathFunction::Near),
+        "min" => Some(CreoMathFunction::Min),
+        "max" => Some(CreoMathFunction::Max),
+        "log" => Some(CreoMathFunction::Log),
+        "ln" => Some(CreoMathFunction::Ln),
+        "exp" => Some(CreoMathFunction::Exp),
+        "pow" => Some(CreoMathFunction::Pow),
+        "sqrt" => Some(CreoMathFunction::Sqrt),
+        "abs" => Some(CreoMathFunction::Abs),
+        "ceil" => Some(CreoMathFunction::Ceil),
+        "floor" => Some(CreoMathFunction::Floor),
+        "dbl_in_tol" => Some(CreoMathFunction::DblInTol),
+        _ => None,
+    }
+}
+
+fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Option<f64> {
+    let value = match (name, arguments) {
+        (CreoMathFunction::Sin, [x]) => x.to_radians().sin(),
+        (CreoMathFunction::Cos, [x]) => x.to_radians().cos(),
+        (CreoMathFunction::Tan, [x]) => x.to_radians().tan(),
+        (CreoMathFunction::Asin, [x]) => x.asin().to_degrees(),
+        (CreoMathFunction::Acos, [x]) => x.acos().to_degrees(),
+        (CreoMathFunction::Atan, [x]) => x.atan().to_degrees(),
+        (CreoMathFunction::Atan2, [y, x]) => y.atan2(*x).to_degrees(),
+        (CreoMathFunction::Sinh, [x]) if x.abs() <= 85.0 => x.sinh(),
+        (CreoMathFunction::Cosh, [x]) if x.abs() <= 85.0 => x.cosh(),
+        (CreoMathFunction::Tanh, [x]) if x.abs() <= 85.0 => x.tanh(),
+        (CreoMathFunction::Sign, [x, y]) => {
+            if *y < 0.0 {
+                -x.abs()
+            } else {
+                x.abs()
+            }
+        }
+        (CreoMathFunction::Mod, [x, y]) if *y != 0.0 => x - (x / y).trunc() * y,
+        (CreoMathFunction::If, [condition, when_true, when_false]) => {
+            if *condition == 0.0 {
+                *when_false
+            } else {
+                *when_true
+            }
+        }
+        (CreoMathFunction::Bound, [x, lower, upper]) if lower < upper => x.clamp(*lower, *upper),
+        (CreoMathFunction::Dead, [x, lower, upper]) if lower <= upper => {
+            if x < lower {
+                x - lower
+            } else if x > upper {
+                x - upper
+            } else {
+                0.0
+            }
+        }
+        (CreoMathFunction::Near, [x, y, delta]) if *delta >= 0.0 => {
+            ((x - y).abs() <= *delta) as u8 as f64
+        }
+        (CreoMathFunction::Min, [x, y]) => x.min(*y),
+        (CreoMathFunction::Max, [x, y]) => x.max(*y),
+        (CreoMathFunction::Log, [x]) => x.log10(),
+        (CreoMathFunction::Ln, [x]) => x.ln(),
+        (CreoMathFunction::Exp, [x]) => x.exp(),
+        (CreoMathFunction::Pow, [base, exponent]) => base.powf(*exponent),
+        (CreoMathFunction::Sqrt, [x]) => x.sqrt(),
+        (CreoMathFunction::Abs, [x]) => x.abs(),
+        (CreoMathFunction::Ceil, [x]) => (x - 1e-9).ceil(),
+        (CreoMathFunction::Floor, [x]) => (x + 1e-9).floor(),
+        (CreoMathFunction::DblInTol, [first, second, tolerance]) if *tolerance >= 0.0 => {
+            ((first - second).abs() <= *tolerance) as u8 as f64
+        }
+        _ => return None,
+    };
+    value.is_finite().then_some(value)
 }
 
 fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Option<f64> {
@@ -1965,6 +2163,71 @@ mod tests {
     }
 
     #[test]
+    fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies() {
+        let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x0aexpression\0\xf8\x05a=SIN(30)\0b=pow(a,2)+sqrt(9)\0\
+            c=bound(12,0,10)+dead(3,1,2)\0d=custom(a)\0e=1e3\0";
+        let records = expression_records(payload);
+        let assignments = &records[0].assignments;
+
+        assert!(assignments[0].dependencies.is_empty());
+        assert!((assignments[0].value.expect("sine") - 0.5).abs() < 1e-12);
+        assert_eq!(assignments[1].dependencies, ["a"]);
+        assert!((assignments[1].value.expect("power and root") - 3.25).abs() < 1e-12);
+        assert!(assignments[2].dependencies.is_empty());
+        assert_eq!(assignments[2].value, Some(11.0));
+        assert_eq!(assignments[3].dependencies, ["custom", "a"]);
+        assert_eq!(assignments[3].value, None);
+        assert!(assignments[4].dependencies.is_empty());
+        assert_eq!(assignments[4].value, Some(1000.0));
+
+        let values = BTreeMap::new();
+        let cases = [
+            ("cos(60)", 0.5),
+            ("tan(45)", 1.0),
+            ("asin(1)", 90.0),
+            ("acos(0)", 90.0),
+            ("atan(1)", 45.0),
+            ("atan2(1,0)", 90.0),
+            ("sinh(0)", 0.0),
+            ("cosh(0)", 1.0),
+            ("tanh(0)", 0.0),
+            ("sign(-2,-1)", -2.0),
+            ("sign(-2,-0)", 2.0),
+            ("mod(-5,3)", -2.0),
+            ("if(0,2,3)", 3.0),
+            ("near(2,2.1,0.2)", 1.0),
+            ("min(2,3)+max(2,3)", 5.0),
+            ("log(100)", 2.0),
+            ("ln(exp(1))", 1.0),
+            ("abs(-2)", 2.0),
+            ("ceil(2.1)+floor(2.9)", 5.0),
+            ("dbl_in_tol(2,2.1,0.2)", 1.0),
+        ];
+        for (expression, expected) in cases {
+            let actual = evaluate_expression(expression, &values).expect(expression);
+            assert!((actual - expected).abs() < 1e-12, "{expression}");
+        }
+        assert_eq!(evaluate_expression("sqrt(-1)", &values), None);
+        assert_eq!(evaluate_expression("sinh(86)", &values), None);
+        assert_eq!(evaluate_expression("bound(1,2,1)", &values), None);
+        assert_eq!(evaluate_expression("sin()", &values), None);
+    }
+
+    #[test]
+    fn unresolved_reassignment_invalidates_the_previous_scalar_value() {
+        let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x0aexpression\0\xf8\x04a=5\0b=a+1\0a=external\0c=a+1\0";
+        let records = expression_records(payload);
+        let assignments = &records[0].assignments;
+
+        assert_eq!(assignments[0].value, Some(5.0));
+        assert_eq!(assignments[1].value, Some(6.0));
+        assert_eq!(assignments[2].value, None);
+        assert_eq!(assignments[3].value, None);
+    }
+
+    #[test]
     fn decodes_only_complete_explicit_curve_expression_frames() {
         let complete = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
             \xe0\x02local_sys\0\xf9\x04\x03\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x0f\x0f\
@@ -2015,6 +2278,20 @@ mod tests {
                 z_start: -2.0,
                 revolutions: 2.0,
                 start_angle: std::f64::consts::FRAC_PI_2,
+                clockwise: false,
+            })
+        );
+
+        let constant_functions = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x08\
+            \xe0\x0aexpression\0\xf8\x03r=sqrt(25)\0theta=atan(1)+t*360\0z=t*pow(2,3)\0";
+        assert_eq!(
+            expression_helix(&expression_records(constant_functions)[0]),
+            Some(CurveExpressionHelix {
+                radius: 5.0,
+                height: 8.0,
+                z_start: 0.0,
+                revolutions: 1.0,
+                start_angle: std::f64::consts::FRAC_PI_4,
                 clockwise: false,
             })
         );
