@@ -2101,6 +2101,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                     | design::DesignFeatureFamily::Thicken
                                     | design::DesignFeatureFamily::Split,
                                 ) => true,
+                                Some(design::DesignFeatureFamily::Loft) => {
+                                    group.is_some_and(|group| {
+                                        matches!(
+                                            group.role,
+                                            0x0000_0041_0000_0000 | 0x0000_0043_0000_0000
+                                        )
+                                    }) && operand.recipe_kind
+                                        == records::ConstructionRecipeKind::BoundedFace
+                                }
                                 Some(
                                     design::DesignFeatureFamily::Fillet
                                     | design::DesignFeatureFamily::Chamfer,

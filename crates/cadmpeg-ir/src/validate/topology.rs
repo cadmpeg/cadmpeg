@@ -3151,11 +3151,14 @@ fn check_feature_sketch_references(
             if let ProfileRef::SpatialSketchProfiles { sketch, .. }
             | ProfileRef::SpatialSketchSelection { sketch, .. } = profile
             {
-                if !matches!(feature.definition, FeatureDefinition::Extrude { .. }) {
+                if !matches!(
+                    feature.definition,
+                    FeatureDefinition::Extrude { .. } | FeatureDefinition::Loft { .. }
+                ) {
                     feature_geometry_error(
                         findings,
                         feature,
-                        "spatial sketch profiles are only supported by extrude features",
+                        "spatial sketch profiles are only supported by extrude and loft features",
                     );
                 }
                 if !spatial_sketches.contains(sketch.0.as_str()) {

@@ -873,6 +873,7 @@ pub fn project_parameter_design_with_edge_identities(
                     construction_groups,
                     edge_operands,
                     edge_identity_operands,
+                    face_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: scope.kind.clone(),
@@ -3695,6 +3696,7 @@ fn project_fixed_loft(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
+    face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, LoftPointSection, LoftSection, ProfileRef};
 
@@ -3730,7 +3732,12 @@ fn project_fixed_loft(
             let guided_profiles = groups
                 .iter()
                 .filter(|group| group.role == 0x43_0000_0000)
-                .map(|group| LoftSection::Profile(ProfileRef::Native(group.id.clone())))
+                .map(|group| {
+                    LoftSection::Profile(
+                        resolved_profile_face_group(scope, group, face_operands)
+                            .unwrap_or_else(|| ProfileRef::Native(group.id.clone())),
+                    )
+                })
                 .collect::<Vec<_>>();
             if guided_profiles.len() == 2 {
                 let guides = groups
@@ -16775,6 +16782,8 @@ pub fn decode_face_operands(
         let is_shell_operand = design_feature_family(&scope.kind)
             == Some(DesignFeatureFamily::Shell)
             && group.role == 0x0000_0010_0000_0000;
+        let is_loft_profile = design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
+            && matches!(group.role, 0x0000_0041_0000_0000 | 0x0000_0043_0000_0000);
         let is_edge_treatment_support = matches!(
             design_feature_family(&scope.kind),
             Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
@@ -16782,6 +16791,7 @@ pub fn decode_face_operands(
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
+            && !is_loft_profile
             && !is_edge_treatment_support
         {
             continue;
@@ -17044,13 +17054,19 @@ pub fn bind_sketch_profiles(
 }
 
 /// Resolve Loft profile groups that carry the standard sketch-profile frame.
+pub(crate) struct LoftProfileResolution<'a> {
+    pub(crate) entities: &'a [DesignEntityHeader],
+    pub(crate) entity_selection_operands: &'a [DesignEntitySelectionOperand],
+    pub(crate) placements: &'a [DesignSketchPlacement],
+    pub(crate) curve_identities: &'a [SketchCurveIdentity],
+    pub(crate) spatial_sketches: &'a [cadmpeg_ir::sketches::SpatialSketch],
+}
+
 pub(crate) fn bind_loft_sketch_profiles(
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
-    entities: &[DesignEntityHeader],
-    placements: &[DesignSketchPlacement],
-    spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+    resolution: &LoftProfileResolution<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, LoftSection, ProfileRef};
@@ -17082,16 +17098,18 @@ pub(crate) fn bind_loft_sketch_profiles(
             stream,
             group.scope_reference_ordinal,
             header,
-            entities,
+            resolution.entities,
         ) else {
             continue;
         };
-        let matches = placements
+        let matches = resolution
+            .placements
             .iter()
             .filter(|placement| {
                 native_stream(&placement.id) == Some(stream)
                     && placement.entity_id == profile.entity_id
-                    && !spatial_sketches
+                    && !resolution
+                        .spatial_sketches
                         .iter()
                         .any(|sketch| sketch.id == neutral_spatial_sketch_id(placement))
             })
@@ -17099,7 +17117,74 @@ pub(crate) fn bind_loft_sketch_profiles(
         let [placement] = matches.as_slice() else {
             continue;
         };
-        resolved.insert(group.id.clone(), neutral_sketch_id(placement));
+        resolved.insert(
+            group.id.clone(),
+            ProfileRef::Sketch(neutral_sketch_id(placement)),
+        );
+    }
+    for group in groups
+        .iter()
+        .filter(|group| group.role == 0x5_0000_0000 && group.members.len() == 1)
+    {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let mut operands = resolution
+            .entity_selection_operands
+            .iter()
+            .filter(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == 0
+                    && operand.record_index == group.members[0]
+            });
+        let Some(operand) = operands.next() else {
+            continue;
+        };
+        if operands.next().is_some() {
+            continue;
+        }
+        let mut matching_placements = resolution.placements.iter().filter(|placement| {
+            native_stream(&placement.id) == Some(stream)
+                && placement.entity_suffix == operand.primary_identity
+        });
+        let Some(placement) = matching_placements.next() else {
+            continue;
+        };
+        if matching_placements.next().is_some() {
+            continue;
+        }
+        let spatial_sketch = neutral_spatial_sketch_id(placement);
+        if !resolution
+            .spatial_sketches
+            .iter()
+            .any(|sketch| sketch.id == spatial_sketch)
+        {
+            continue;
+        }
+        let Ok(owner_reference) = u32::try_from(operand.primary_identity) else {
+            continue;
+        };
+        let geometry_matches = resolution
+            .curve_identities
+            .iter()
+            .filter(|curve| {
+                native_stream(&curve.id) == Some(stream)
+                    && curve.owner_reference == Some(owner_reference)
+                    && curve.primary_id == operand.secondary_identity
+            })
+            .count();
+        if geometry_matches != 1 {
+            continue;
+        }
+        resolved.insert(
+            group.id.clone(),
+            ProfileRef::SpatialSketchSelection {
+                sketch: spatial_sketch,
+                selections: vec![operand.id.clone()],
+            },
+        );
     }
     for feature in features {
         let FeatureDefinition::Loft { sections, .. } = &mut feature.definition else {
@@ -17109,8 +17194,8 @@ pub(crate) fn bind_loft_sketch_profiles(
             let LoftSection::Profile(ProfileRef::Native(native)) = section else {
                 continue;
             };
-            if let Some(sketch) = resolved.get(native) {
-                *section = LoftSection::Profile(ProfileRef::Sketch(sketch.clone()));
+            if let Some(profile) = resolved.get(native) {
+                *section = LoftSection::Profile(profile.clone());
             }
         }
     }
@@ -26390,7 +26475,7 @@ mod relation_tests {
         };
         let role_41 = [loft_group(0, 0x41_0000_0000), loft_group(1, 0x41_0000_0000)];
         assert!(matches!(
-            super::project_fixed_loft(&loft_scope, &role_41, &[], &[]),
+            super::project_fixed_loft(&loft_scope, &role_41, &[], &[], &[]),
             Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
                 if sections.len() == 2 && guides.is_empty()
         ));
@@ -26400,7 +26485,7 @@ mod relation_tests {
             loft_group(2, 0x5_0000_0000),
         ];
         assert!(matches!(
-            super::project_fixed_loft(&loft_scope, &role_5, &[], &[]),
+            super::project_fixed_loft(&loft_scope, &role_5, &[], &[], &[]),
             Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
                 if sections.len() == 3 && guides.is_empty()
         ));
@@ -26410,7 +26495,7 @@ mod relation_tests {
             loft_group(2, 0x7_0000_0000),
         ];
         assert!(matches!(
-            super::project_fixed_loft(&loft_scope, &centered, &[], &[]),
+            super::project_fixed_loft(&loft_scope, &centered, &[], &[], &[]),
             Some(cadmpeg_ir::features::FeatureDefinition::Loft {
                 sections,
                 guides,
@@ -26425,7 +26510,7 @@ mod relation_tests {
             loft_group(3, 0x7_0000_0000),
         ];
         assert_eq!(
-            super::project_fixed_loft(&loft_scope, &mixed, &[], &[]),
+            super::project_fixed_loft(&loft_scope, &mixed, &[], &[], &[]),
             None
         );
         let mut point = loft_group(0, 0x5_0000_0000);
@@ -26437,6 +26522,7 @@ mod relation_tests {
             super::project_fixed_loft(
                 &loft_scope,
                 &[point, profile, boundary],
+                &[],
                 &[],
                 &[],
             ),

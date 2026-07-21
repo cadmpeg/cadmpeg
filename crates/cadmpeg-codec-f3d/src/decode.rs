@@ -1078,9 +1078,13 @@ pub fn decode(
                 &scan,
                 &native.design_construction_operand_groups,
                 &native.design_record_headers,
-                &native.design_entity_headers,
-                &native.design_sketch_placements,
-                &ir.model.spatial_sketches,
+                &crate::design::LoftProfileResolution {
+                    entities: &native.design_entity_headers,
+                    entity_selection_operands: &native.design_entity_selection_operands,
+                    placements: &native.design_sketch_placements,
+                    curve_identities: &native.sketch_curve_identities,
+                    spatial_sketches: &ir.model.spatial_sketches,
+                },
                 &mut ir.model.features,
             )?;
             crate::design::bind_sketch_feature_geometry(
@@ -1435,9 +1439,13 @@ pub fn decode(
         &scan,
         &native.design_construction_operand_groups,
         &native.design_record_headers,
-        &native.design_entity_headers,
-        &native.design_sketch_placements,
-        &ir.model.spatial_sketches,
+        &crate::design::LoftProfileResolution {
+            entities: &native.design_entity_headers,
+            entity_selection_operands: &native.design_entity_selection_operands,
+            placements: &native.design_sketch_placements,
+            curve_identities: &native.sketch_curve_identities,
+            spatial_sketches: &ir.model.spatial_sketches,
+        },
         &mut ir.model.features,
     )?;
     crate::design::bind_sketch_feature_geometry(
