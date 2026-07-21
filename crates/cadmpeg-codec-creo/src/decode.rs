@@ -1647,6 +1647,7 @@ struct CreoSurfaceParameterRecord {
     terminal_scalar_frame: Option<CreoSurfaceParameterScalarFrame>,
     tabulated_cylinder_frame: Option<CreoTabulatedCylinderFrame>,
     positional_cylinder_frame: Option<CreoPositionalCylinderFrame>,
+    split_cylinder_outline_bounds: Option<[[f64; 2]; 2]>,
     positional_cone_frame: Option<CreoPositionalConeFrame>,
     torus_outline_frame: Option<CreoTorusOutlineFrame>,
     torus_radius_overrides: Option<CreoTorusRadiusOverrides>,
@@ -2284,6 +2285,7 @@ fn surface_parameter_records(
                         length: frame.length,
                     }
                 }),
+                split_cylinder_outline_bounds: record.split_cylinder_outline_bounds,
                 positional_cone_frame: record.positional_cone_frame.map(|frame| {
                     CreoPositionalConeFrame {
                         apex: frame.apex,
@@ -15356,6 +15358,71 @@ fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<SurfaceG
     })
 }
 
+fn cylinder_from_complementary_outline_bounds(
+    plane: &SurfaceGeometry,
+    bounds: [[[f64; 2]; 2]; 2],
+) -> Option<SurfaceGeometry> {
+    let SurfaceGeometry::Plane { origin, normal, .. } = plane else {
+        return None;
+    };
+    let axis = normalized([normal.x, normal.y, normal.z])?;
+    let axis_index = (0..3).find(|index| {
+        axis[*index].abs() > 1.0 - 1e-9
+            && (0..3).all(|other| other == *index || axis[other].abs() < 1e-9)
+    })?;
+    let radial = (0..3)
+        .filter(|index| *index != axis_index)
+        .collect::<Vec<_>>();
+    let scale = bounds
+        .iter()
+        .flatten()
+        .flatten()
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    if bounds
+        .iter()
+        .any(|rectangle| (0..2).any(|index| rectangle[1][index] <= rectangle[0][index]))
+    {
+        return None;
+    }
+    let union = if close(bounds[0][0][0], bounds[1][0][0])
+        && close(bounds[0][1][0], bounds[1][1][0])
+        && (close(bounds[0][1][1], bounds[1][0][1]) || close(bounds[1][1][1], bounds[0][0][1]))
+    {
+        [
+            [bounds[0][0][0], bounds[0][0][1].min(bounds[1][0][1])],
+            [bounds[0][1][0], bounds[0][1][1].max(bounds[1][1][1])],
+        ]
+    } else if close(bounds[0][0][1], bounds[1][0][1])
+        && close(bounds[0][1][1], bounds[1][1][1])
+        && (close(bounds[0][1][0], bounds[1][0][0]) || close(bounds[1][1][0], bounds[0][0][0]))
+    {
+        [
+            [bounds[0][0][0].min(bounds[1][0][0]), bounds[0][0][1]],
+            [bounds[0][1][0].max(bounds[1][1][0]), bounds[0][1][1]],
+        ]
+    } else {
+        return None;
+    };
+    let spans = [union[1][0] - union[0][0], union[1][1] - union[0][1]];
+    if spans.iter().any(|span| !span.is_finite() || *span <= 0.0) || !close(spans[0], spans[1]) {
+        return None;
+    }
+    let mut center = [origin.x, origin.y, origin.z];
+    for (coordinate, index) in radial.iter().enumerate() {
+        center[*index] = 0.5 * (union[0][coordinate] + union[1][coordinate]);
+    }
+    let mut ref_direction = [0.0; 3];
+    ref_direction[radial[0]] = 1.0;
+    Some(SurfaceGeometry::Cylinder {
+        origin: Point3::new(center[0], center[1], center[2]),
+        axis: Vector3::new(axis[0], axis[1], axis[2]),
+        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+        radius: 0.5 * spans[0],
+    })
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct SimpleHoleGeometry {
     entry_surface_id: Option<u32>,
@@ -16012,6 +16079,47 @@ mod resolved_sketch_tests {
     }
 
     #[test]
+    fn complementary_split_outlines_establish_a_cylinder_carrier() {
+        let bounds = [
+            [[-0.3125, 1.3125], [0.3125, 1.625]],
+            [[-0.3125, 1.625], [0.3125, 1.9375]],
+        ];
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, -1.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        assert_eq!(
+            cylinder_from_complementary_outline_bounds(&plane, bounds),
+            Some(SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 1.625, -1.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 0.3125,
+            })
+        );
+    }
+
+    #[test]
+    fn split_outline_carrier_requires_complementary_square_bounds() {
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        assert!(cylinder_from_complementary_outline_bounds(
+            &plane,
+            [[[-1.0, 0.0], [1.0, 0.5]], [[-1.0, 0.6], [1.0, 1.0]]],
+        )
+        .is_none());
+        assert!(cylinder_from_complementary_outline_bounds(
+            &plane,
+            [[[-1.0, 0.0], [1.0, 0.5]], [[-1.0, 0.5], [1.0, 3.0]]],
+        )
+        .is_none());
+    }
+
+    #[test]
     fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
         let replay = crate::surface::TabulatedCylinderCurveReplay {
             surface_id: 7,
@@ -16060,6 +16168,7 @@ mod resolved_sketch_tests {
             terminal_scalar_frame: None,
             tabulated_cylinder_frame: None,
             positional_cylinder_frame: None,
+            split_cylinder_outline_bounds: None,
             positional_cone_frame: None,
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
@@ -16166,6 +16275,7 @@ mod resolved_sketch_tests {
             terminal_scalar_frame: None,
             tabulated_cylinder_frame: None,
             positional_cylinder_frame: None,
+            split_cylinder_outline_bounds: None,
             positional_cone_frame: None,
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
@@ -32444,6 +32554,114 @@ fn transfer_hole_cylinders(
     transferred
 }
 
+fn transfer_split_outline_cylinders(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let rows = scan
+        .surface_rows
+        .iter()
+        .map(|row| (row.id, row))
+        .collect::<BTreeMap<_, _>>();
+    let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
+    for edge in crate::topology::uniquely_identified_rows(&scan.curve_topology_rows) {
+        if edge.type_byte != 0 {
+            continue;
+        }
+        let [left, right] = edge.faces;
+        let pair = match (rows.get(&left), rows.get(&right)) {
+            (Some(plane), Some(cylinder))
+                if plane.kind == crate::surface::SurfaceKind::Plane
+                    && cylinder.kind == crate::surface::SurfaceKind::Cylinder =>
+            {
+                Some(((left, cylinder.feature_id), right))
+            }
+            (Some(cylinder), Some(plane))
+                if plane.kind == crate::surface::SurfaceKind::Plane
+                    && cylinder.kind == crate::surface::SurfaceKind::Cylinder =>
+            {
+                Some(((right, cylinder.feature_id), left))
+            }
+            _ => None,
+        };
+        if let Some((plane_and_feature, cylinder)) = pair {
+            cylinders_by_plane
+                .entry(plane_and_feature)
+                .or_default()
+                .insert(cylinder);
+        }
+    }
+
+    let mut transferred = 0;
+    for ((plane_id, _), cylinder_ids) in cylinders_by_plane {
+        let cylinder_ids = cylinder_ids.into_iter().collect::<Vec<_>>();
+        let [first_id, second_id] = cylinder_ids.as_slice() else {
+            continue;
+        };
+        let Some(first) =
+            crate::surface::unique_surface_parameter(&scan.surface_parameters, *first_id)
+        else {
+            continue;
+        };
+        let Some(second) =
+            crate::surface::unique_surface_parameter(&scan.surface_parameters, *second_id)
+        else {
+            continue;
+        };
+        let Some(bounds) = first
+            .split_cylinder_outline_bounds
+            .zip(second.split_cylinder_outline_bounds)
+            .map(|(first, second)| [first, second])
+        else {
+            continue;
+        };
+        let plane_id = SurfaceId(format!("creo:visibgeom:surface#{plane_id}"));
+        let Some(plane) = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == plane_id)
+        else {
+            continue;
+        };
+        let Some(geometry) = cylinder_from_complementary_outline_bounds(&plane.geometry, bounds)
+        else {
+            continue;
+        };
+        for cylinder_id in [*first_id, *second_id] {
+            let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
+            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+                continue;
+            }
+            let row = rows[&cylinder_id];
+            annotate(
+                annotations,
+                &id,
+                "VisibGeom",
+                row.offset as u64,
+                "split_outline_cylinder",
+                Exactness::Derived,
+            );
+            ir.model.surfaces.push(Surface {
+                id,
+                geometry: geometry.clone(),
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("VisibGeom:{cylinder_id}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+            transferred += 1;
+        }
+    }
+    transferred
+}
+
 fn transfer_positional_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -33229,6 +33447,8 @@ fn build_ir(
         transfer_circular_sweep_cylinders(scan, &mut ir, &mut annotations);
     let positional_cylinder_count = transfer_positional_cylinders(scan, &mut ir, &mut annotations);
     let positional_cone_count = transfer_positional_cones(scan, &mut ir, &mut annotations);
+    let split_outline_cylinder_count =
+        transfer_split_outline_cylinders(scan, &mut ir, &mut annotations);
     let hole_cylinder_count = transfer_hole_cylinders(scan, &mut ir, &mut annotations);
     let constrained_slot_fillet_cylinder_count =
         transfer_constrained_slot_fillet_cylinders(scan, &mut ir, &mut annotations);
@@ -33344,6 +33564,10 @@ fn build_ir(
         source.attributes.insert(
             "transferred_positional_cone_count".to_string(),
             positional_cone_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_split_outline_cylinder_count".to_string(),
+            split_outline_cylinder_count.to_string(),
         );
         source.attributes.insert(
             "transferred_constrained_slot_fillet_cylinder_count".to_string(),
@@ -35039,7 +35263,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind \
              circular-sweep cylinders, \
              four-entry simple-hole cylinders with complete cap outlines, and compact simple-hole \
-             cylinders with complete positional carriers, complete positional cylinder bodies, \
+             cylinders with complete positional carriers, complementary split-outline cylinders \
+             bound to an axis-normal plane, complete positional cylinder bodies, \
              and complete support-apex and planar-envelope positional cones transfer as carriers; \
              other parameter bodies remain structural records.",
             scan.sections.len(),
@@ -35064,7 +35289,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, \
              a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
              square cap outline establishes the complete axis placement and radius, or a compact \
-             class-911 table owns a complete positional cylinder carrier. Later positional \
+             class-911 table owns a complete positional cylinder carrier, or two same-feature \
+             patches have complementary square outline bounds on one axis-normal plane. Later positional \
              instances do not inherit prototype placement or scalar \
              defaults; they require their per-instance parameter bodies \
              ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). {geom_sections} PSB geometry section(s) were preserved verbatim as unknown \

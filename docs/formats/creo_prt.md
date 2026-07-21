@@ -1634,6 +1634,17 @@ entries do not use this simple-hole rule. The midpoint of the entry square is
 the neutral hole position, twice the square half-span is its diameter, and the
 four-entry form is a simple cylindrical hole.
 The termination plane is the flat blind bottom of that simple hole.
+
+A cylinder patch may end with two scalar coordinate pairs separated by
+`00 0c 98`, followed by orientation scalar `-1`. The pairs are opposite
+corners of an axis-normal rectangle. Two cylinder rows from the same feature
+that each meet the same plane through a type-0 topology edge define one
+carrier when their rectangles share one complete span, meet exactly on the
+other span, and their union is a nonzero square. The plane normal is the
+cylinder axis, the plane origin fixes its axial coordinate, the square
+midpoint fixes its radial center, and half the square span is the radius. The
+two rows are complementary patches of that carrier.
+
 A compact class-911 simple-hole table contains class-204 and class-203 topology
 entries followed by two class-200 generated-geometry entries. The first
 class-200 entry has source section entity zero and no surface row; it is the

@@ -269,6 +269,8 @@ pub struct SurfaceParameterRecord {
     pub tabulated_cylinder_frame: Option<TabulatedCylinderFrame>,
     /// Complete analytic carrier decoded from a positional cylinder row.
     pub positional_cylinder_frame: Option<PositionalCylinderFrame>,
+    /// Axis-normal rectangle corners from a split cylinder patch suffix.
+    pub split_cylinder_outline_bounds: Option<[[f64; 2]; 2]>,
     /// Complete analytic carrier decoded from a positional cone row.
     pub positional_cone_frame: Option<PositionalConeFrame>,
     /// Structural form that bounded the body.
@@ -1803,6 +1805,38 @@ fn terminal_scalar_frame(
     (last.offset + last.length == body.len()).then(|| frame.clone())
 }
 
+fn split_cylinder_outline_bounds(
+    body: &[u8],
+    slots: &[SurfaceParameterScalar],
+) -> Option<[[f64; 2]; 2]> {
+    let [first_u, first_v, second_u, second_v, orientation] =
+        slots.get(slots.len().checked_sub(5)?..)?
+    else {
+        return None;
+    };
+    (first_u.offset + first_u.length == first_v.offset
+        && body.get(first_v.offset + first_v.length..second_u.offset)
+            == Some(&[0x00, 0x0c, 0x98][..])
+        && second_u.offset + second_u.length == second_v.offset
+        && second_v.offset + second_v.length == orientation.offset
+        && orientation.raw == [0x0d]
+        && orientation.value == Some(-1.0)
+        && matches!(
+            body.get(orientation.offset + orientation.length..),
+            Some([] | [0xf7, 0x17])
+        ))
+    .then_some(())?;
+    let bounds = [
+        [first_u.value?, first_v.value?],
+        [second_u.value?, second_v.value?],
+    ];
+    bounds
+        .iter()
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(bounds)
+}
+
 fn named_record_length(body: &[u8], offset: usize) -> Option<usize> {
     (body.get(offset) == Some(&psb::token::NAMED_RECORD)).then_some(())?;
     let field_type = *body.get(offset + 1)?;
@@ -1917,6 +1951,9 @@ fn parameter_records_for_rows(
         let positional_cylinder_frame = (row.kind == SurfaceKind::Cylinder)
             .then(|| decode_positional_cylinder_frame(&body, &cache))
             .flatten();
+        let split_cylinder_outline_bounds = (row.kind == SurfaceKind::Cylinder)
+            .then(|| split_cylinder_outline_bounds(&body, &scalar_tokens))
+            .flatten();
         let positional_cone_frame = (row.kind == SurfaceKind::Cone)
             .then(|| decode_positional_cone_frame(&body, &cache))
             .flatten();
@@ -1932,6 +1969,7 @@ fn parameter_records_for_rows(
             terminal_scalar_frame,
             tabulated_cylinder_frame,
             positional_cylinder_frame,
+            split_cylinder_outline_bounds,
             positional_cone_frame,
             body,
             boundary,
@@ -4287,6 +4325,37 @@ mod tests {
         inconsistent[20..23].copy_from_slice(&[0x2f, 0x42, 0x00]);
         assert!(decode_positional_cylinder_frame(&inconsistent, &cache).is_none());
         assert!(decode_positional_cylinder_frame(&direct[..direct.len() - 3], &cache).is_none());
+    }
+
+    #[test]
+    fn split_cylinder_outline_requires_the_exact_terminal_layout() {
+        let body = [1, 2, 0x00, 0x0c, 0x98, 3, 4, 0x0d];
+        let slots = [
+            (-0.3125, 0, vec![1]),
+            (1.3125, 1, vec![2]),
+            (0.3125, 5, vec![3]),
+            (1.625, 6, vec![4]),
+            (-1.0, 7, vec![0x0d]),
+        ]
+        .into_iter()
+        .map(|(value, offset, raw)| SurfaceParameterScalar {
+            value: Some(value),
+            raw,
+            offset,
+            length: 1,
+        })
+        .collect::<Vec<_>>();
+        assert_eq!(
+            split_cylinder_outline_bounds(&body, &slots),
+            Some([[-0.3125, 1.3125], [0.3125, 1.625]])
+        );
+
+        let mut wrong_orientation = slots.clone();
+        wrong_orientation[4].value = Some(1.0);
+        assert!(split_cylinder_outline_bounds(&body, &wrong_orientation).is_none());
+        let mut wrong_separator = body;
+        wrong_separator[4] = 0x99;
+        assert!(split_cylinder_outline_bounds(&wrong_separator, &slots).is_none());
     }
 
     #[test]

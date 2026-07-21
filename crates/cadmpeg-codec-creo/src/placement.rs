@@ -1823,6 +1823,7 @@ mod tests {
                 radius: 0.75,
                 length: Some(34.0),
             }),
+            split_cylinder_outline_bounds: None,
             positional_cone_frame: None,
             boundary: SurfaceBodyBoundary::CompoundClose,
             offset,
