@@ -4260,6 +4260,36 @@ mod marker_tests {
     }
 
     #[test]
+    fn tangent_bridge_arc_requires_one_equidistant_radial_intersection() {
+        let geometry = super::tangent_bridge_arc_geometry(
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.0, 2.0),
+            1.0e-9,
+        );
+        assert_eq!(
+            geometry,
+            Some(SketchGeometry::Arc {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(1.0),
+                start_angle: Angle(0.0),
+                end_angle: Angle(std::f64::consts::FRAC_PI_2),
+            })
+        );
+        assert_eq!(
+            super::tangent_bridge_arc_geometry(
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 1.0),
+                Point2::new(2.0, 0.0),
+                Point2::new(1.0, 2.0),
+                1.0e-9,
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn every_principal_plane_has_a_sketch_frame() {
         use cadmpeg_ir::features::PrincipalPlane;
 
@@ -14910,6 +14940,101 @@ fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) 
     for (index, geometry) in replacements {
         entities[index].geometry = geometry;
     }
+    resolve_tangent_bridge_marker_arcs(entities, tolerance);
+}
+
+fn resolve_tangent_bridge_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) {
+    let points = entities
+        .iter()
+        .filter_map(|entity| match entity.geometry {
+            SketchGeometry::Point { position } => Some((entity.native_ref.as_deref()?, position)),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+    let mut incidence = HashMap::<&str, Vec<usize>>::new();
+    for (index, entity) in entities.iter().enumerate() {
+        if entity.endpoint_refs.len() != 2 {
+            continue;
+        }
+        for endpoint in &entity.endpoint_refs {
+            incidence.entry(endpoint).or_default().push(index);
+        }
+    }
+    let replacements = entities
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entity)| {
+            let SketchGeometry::Native { ref native_kind } = entity.geometry else {
+                return None;
+            };
+            if native_kind != "sldprt:marker-geometry:2" {
+                return None;
+            }
+            let [start_ref, end_ref] = entity.endpoint_refs.as_slice() else {
+                return None;
+            };
+            let start = points.get(start_ref.as_str()).copied()?;
+            let end = points.get(end_ref.as_str()).copied()?;
+            let adjacent_arc = |endpoint: &str| {
+                let [first, second] = incidence.get(endpoint)?.as_slice() else {
+                    return None;
+                };
+                let adjacent = if *first == index {
+                    *second
+                } else if *second == index {
+                    *first
+                } else {
+                    return None;
+                };
+                match entities[adjacent].geometry {
+                    SketchGeometry::Arc { center, .. } => Some((adjacent, center)),
+                    _ => None,
+                }
+            };
+            let (start_adjacent, start_center) = adjacent_arc(start_ref)?;
+            let (end_adjacent, end_center) = adjacent_arc(end_ref)?;
+            if start_adjacent == end_adjacent {
+                return None;
+            }
+            tangent_bridge_arc_geometry(start, end, start_center, end_center, tolerance)
+                .map(|geometry| (index, geometry))
+        })
+        .collect::<Vec<_>>();
+    for (index, geometry) in replacements {
+        entities[index].geometry = geometry;
+    }
+}
+
+fn tangent_bridge_arc_geometry(
+    start: Point2,
+    end: Point2,
+    start_neighbor_center: Point2,
+    end_neighbor_center: Point2,
+    tolerance: f64,
+) -> Option<SketchGeometry> {
+    let first = [
+        start.u - start_neighbor_center.u,
+        start.v - start_neighbor_center.v,
+    ];
+    let second = [end.u - end_neighbor_center.u, end.v - end_neighbor_center.v];
+    let cross = first[0] * second[1] - first[1] * second[0];
+    let scale = first[0]
+        .hypot(first[1])
+        .max(second[0].hypot(second[1]))
+        .max(1.0);
+    if !cross.is_finite() || cross.abs() <= tolerance * scale * scale {
+        return None;
+    }
+    let delta = [end.u - start.u, end.v - start.v];
+    let parameter = (delta[0] * second[1] - delta[1] * second[0]) / cross;
+    if !parameter.is_finite() {
+        return None;
+    }
+    let center = Point2::new(
+        start.u + parameter * first[0],
+        start.v + parameter * first[1],
+    );
+    minor_arc_geometry(start, end, center, tolerance)
 }
 
 fn closed_marker_profiles(entities: &[SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
