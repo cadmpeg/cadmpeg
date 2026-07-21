@@ -5221,26 +5221,9 @@ fn append_resolved_consolidated_surface_curves(
 
 fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
     for jet in geometry::a8_freeform_curves(data) {
-        let sites = jet
-            .sites
-            .iter()
-            .zip(&jet.first_derivatives)
-            .zip(&jet.second_derivatives)
-            .map(|((site, first), second)| RollingBallJetSite {
-                first_limit: Point3::new(site.limit1[0], site.limit1[1], site.limit1[2]),
-                second_limit: Point3::new(site.limit2[0], site.limit2[1], site.limit2[2]),
-                center: Point3::new(site.center[0], site.center[1], site.center[2]),
-                angle: site.theta,
-                first_derivative: rolling_ball_derivative(*first),
-                second_derivative: rolling_ball_derivative(*second),
-            })
-            .collect::<Vec<_>>();
-        if jet.degree != 5
-            || sites.len() != jet.knots.len()
-            || jet.multiplicities.len() != jet.knots.len()
-        {
+        let Some(definition) = geometry::rolling_ball_jet_definition(&jet) else {
             continue;
-        }
+        };
         let surface_id = SurfaceId(format!(
             "catia:a8-rolling-ball:surf#{}",
             ir.model.surfaces.len()
@@ -5277,12 +5260,7 @@ fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuil
         ir.model.procedural_surfaces.push(ProceduralSurface {
             id: procedural_id,
             surface: surface_id,
-            definition: ProceduralSurfaceDefinition::RollingBallJet {
-                degree: jet.degree,
-                multiplicities: jet.multiplicities,
-                knots: jet.knots,
-                sites,
-            },
+            definition,
             cache_fit_tolerance: None,
         });
     }
@@ -5328,6 +5306,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         .collect::<HashSet<_>>();
     let object_evidence = standard_object_evidence(scan, &freeform_tags);
     let freeform_geometries = &object_evidence.surface_geometries;
+    let freeform_procedural_surfaces = &object_evidence.procedural_surfaces;
     let unresolved_freeform_record_count = records
         .iter()
         .filter(|record| {
@@ -5335,6 +5314,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
                 record,
                 geometry::StandardSurfaceRecord::Freeform { tag, .. }
                     if !freeform_geometries.contains_key(tag)
+                        && !freeform_procedural_surfaces.contains_key(tag)
             )
         })
         .count();
@@ -5399,6 +5379,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
     let mut surfaces = Vec::new();
     let mut surface_annotations = Vec::new();
     let mut face_bindings = Vec::new();
+    let mut procedural_surface_plans = Vec::new();
     let mut decoded_plane_targets = HashSet::new();
     let mut plane_faces = 0usize;
     let mut typed = TypedCounts::default();
@@ -5420,17 +5401,22 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
                 id.clone(),
                 *pos,
                 None,
-                if matches!(geometry, SurfaceGeometry::Unknown { .. }) {
+                if freeform_procedural_surfaces.contains_key(tag) {
+                    Exactness::ByteExact
+                } else if matches!(geometry, SurfaceGeometry::Unknown { .. }) {
                     Exactness::Unknown
                 } else {
                     Exactness::ByteExact
                 },
             ));
             surfaces.push(Surface {
-                id,
+                id: id.clone(),
                 geometry,
                 source_object: Some(cgm_source("carrier", *tag)),
             });
+            if let Some((carrier, definition)) = freeform_procedural_surfaces.get(tag).cloned() {
+                procedural_surface_plans.push((i, id, *pos, *tag, carrier, definition));
+            }
             continue;
         };
         // A bridged plane parameter record contains the same `00 33 32`
@@ -5507,6 +5493,23 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         scan,
         "catia:payload:unknown#brep-stream",
     );
+    for (index, surface, pos, tag, carrier, definition) in procedural_surface_plans {
+        let procedural_id = ProceduralSurfaceId(format!("catia:standard:procedural-surf#{index}"));
+        annotate(
+            &mut annotations,
+            &procedural_id,
+            "object_stream_a8_03_32",
+            pos as u64,
+            format!("face_object_id:{tag:08x}:result_carrier:{carrier:08x}"),
+            Exactness::ByteExact,
+        );
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: procedural_id,
+            surface,
+            definition,
+            cache_fit_tolerance: None,
+        });
+    }
 
     for (i, p) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:standard:pt#{i}"));
@@ -5606,7 +5609,14 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
 #[derive(Default)]
 pub(crate) struct StandardObjectEvidence {
     pub(crate) surface_geometries: HashMap<u32, SurfaceGeometry>,
+    pub(crate) procedural_surfaces: HashMap<u32, (u32, ProceduralSurfaceDefinition)>,
     pub(crate) edge_owner_faces: HashMap<u32, HashSet<u32>>,
+}
+
+#[derive(PartialEq)]
+enum StandardSurfaceEvidence {
+    Geometry(SurfaceGeometry),
+    Procedural(u32, ProceduralSurfaceDefinition),
 }
 
 fn standard_object_evidence(scan: &ContainerScan, tags: &HashSet<u32>) -> StandardObjectEvidence {
@@ -5625,7 +5635,7 @@ pub(crate) fn standard_object_evidence_from_streams(
     streams: impl IntoIterator<Item = Vec<u8>>,
     tags: &HashSet<u32>,
 ) -> StandardObjectEvidence {
-    let mut candidates = HashMap::<u32, Option<SurfaceGeometry>>::new();
+    let mut surface_candidates = HashMap::<u32, Option<StandardSurfaceEvidence>>::new();
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     for stream in streams {
         let face_surfaces = crate::b5::face_surface_references(&stream);
@@ -5660,24 +5670,41 @@ pub(crate) fn standard_object_evidence_from_streams(
             .iter()
             .filter(|(face_id, _)| tags.contains(face_id))
         {
-            let Some(geometry) = crate::b5_transfer::resolved_surface_geometry(&graph, surface_id)
-            else {
-                continue;
-            };
-            candidates
+            let evidence = crate::b5_transfer::resolved_surface_geometry(&graph, surface_id)
+                .map(StandardSurfaceEvidence::Geometry)
+                .or_else(|| {
+                    crate::b5_transfer::resolved_surface_procedural_definition(&graph, surface_id)
+                        .map(|(carrier, definition)| {
+                            StandardSurfaceEvidence::Procedural(carrier, definition)
+                        })
+                });
+            let Some(evidence) = evidence else { continue };
+            surface_candidates
                 .entry(face_id)
                 .and_modify(|stored| {
-                    if stored.as_ref().is_some_and(|stored| *stored != geometry) {
+                    if stored.as_ref().is_some_and(|stored| *stored != evidence) {
                         *stored = None;
                     }
                 })
-                .or_insert(Some(geometry));
+                .or_insert(Some(evidence));
         }
     }
     StandardObjectEvidence {
-        surface_geometries: candidates
+        surface_geometries: surface_candidates
+            .iter()
+            .filter_map(|(&tag, evidence)| match evidence.as_ref()? {
+                StandardSurfaceEvidence::Geometry(geometry) => Some((tag, geometry.clone())),
+                StandardSurfaceEvidence::Procedural(_, _) => None,
+            })
+            .collect(),
+        procedural_surfaces: surface_candidates
             .into_iter()
-            .filter_map(|(tag, geometry)| Some((tag, geometry?)))
+            .filter_map(|(tag, evidence)| match evidence? {
+                StandardSurfaceEvidence::Procedural(carrier, definition) => {
+                    Some((tag, (carrier, definition)))
+                }
+                StandardSurfaceEvidence::Geometry(_) => None,
+            })
             .collect(),
         edge_owner_faces: edge_face_candidates
             .into_iter()

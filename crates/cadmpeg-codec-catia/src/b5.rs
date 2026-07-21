@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
-use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeometry};
 use cadmpeg_ir::le::f64_at;
 use cadmpeg_ir::math::Point2;
 
@@ -184,6 +184,14 @@ pub enum B5Surface {
     /// [`crate::geometry::a8_surfaces`] and merged into the same
     /// `object_id` namespace.
     Nurbs(NurbsSurface),
+    /// An `a8 03 32` rolling-ball result carrier, resolved through its exact
+    /// stored value and derivative jet.
+    RollingBall {
+        /// Persistent object id of the `a8 03 32` result carrier.
+        carrier_object_id: u32,
+        /// Exact procedural definition decoded from the stored jet.
+        definition: ProceduralSurfaceDefinition,
+    },
 }
 
 /// A `b5 03 30` offset construction with an explicit result carrier.
@@ -377,6 +385,17 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             surfaces.insert(surface.object_id, B5Surface::Nurbs(nurbs));
         }
     }
+    for jet in crate::geometry::a8_freeform_curves(bytes) {
+        if let Some(definition) = crate::geometry::rolling_ball_jet_definition(&jet) {
+            surfaces.insert(
+                jet.object_id,
+                B5Surface::RollingBall {
+                    carrier_object_id: jet.object_id,
+                    definition,
+                },
+            );
+        }
+    }
     for record in &records {
         let Some(target) = surface_alias_target(record) else {
             continue;
@@ -398,14 +417,16 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     }
     let mut supported_surfaces = BTreeMap::new();
     for record in &records {
-        let Some(construction) = parse_supported_surface(record, &by_id, &surfaces) else {
+        let Some(construction) = parse_supported_surface(record) else {
             continue;
         };
         let Some(carrier) = surfaces.get(&construction.carrier_surface).cloned() else {
             continue;
         };
         surfaces.insert(record.object_id, carrier);
-        supported_surfaces.insert(record.object_id, construction);
+        if supported_surface_pcurves_match(&construction, &by_id) {
+            supported_surfaces.insert(record.object_id, construction);
+        }
     }
     let profiles: BTreeMap<u32, B5Profile> = records
         .iter()
@@ -1374,6 +1395,7 @@ fn parse_offset_surface(
         B5Surface::Plane { .. } => 0x15,
         B5Surface::Cylinder { .. } => 0x05,
         B5Surface::Torus { .. } => 0x0d,
+        B5Surface::RollingBall { .. } => 0x19,
         _ => return None,
     };
     (carrier_kind == expected_kind).then_some(B5OffsetSurface {
@@ -1386,11 +1408,7 @@ fn parse_offset_surface(
     })
 }
 
-fn parse_supported_surface(
-    record: &B5Record,
-    by_id: &HashMap<u32, &B5Record>,
-    surfaces: &BTreeMap<u32, B5Surface>,
-) -> Option<B5SupportedSurface> {
+fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
     (record.family == 0xb5
         && matches!(record.class, 0x37 | 0x3b)
         && record.payload.first() == Some(&0x85))
@@ -1401,17 +1419,6 @@ fn parse_supported_surface(
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()?;
-    surfaces.get(&references[0])?;
-    surfaces.get(&references[1])?;
-    surfaces.get(&references[2])?;
-    for lane in 0..2 {
-        let pcurve = by_id.get(&references[3 + lane])?;
-        let mut pcurve_position = 1;
-        (pcurve.payload.first() == Some(&0x81)
-            && reference(&pcurve.payload, &mut pcurve_position, pcurve.object_id)?
-                == references[1 + lane])
-            .then_some(())?;
-    }
     (record.payload.len() == position.checked_add(22)?).then_some(())?;
     let controls = [
         record.payload[position],
@@ -1436,6 +1443,24 @@ fn parse_supported_surface(
     })
 }
 
+fn supported_surface_pcurves_match(
+    construction: &B5SupportedSurface,
+    by_id: &HashMap<u32, &B5Record>,
+) -> bool {
+    construction
+        .support_pcurves
+        .iter()
+        .zip(construction.support_surfaces)
+        .all(|(pcurve_id, support_id)| {
+            let Some(pcurve) = by_id.get(pcurve_id) else {
+                return false;
+            };
+            let mut position = 1;
+            pcurve.payload.first() == Some(&0x81)
+                && reference(&pcurve.payload, &mut position, pcurve.object_id) == Some(support_id)
+        })
+}
+
 fn lift_pcurve_endpoints(
     surface: &B5Surface,
     profiles: &BTreeMap<u32, B5Profile>,
@@ -1443,7 +1468,9 @@ fn lift_pcurve_endpoints(
 ) -> Option<[[f64; 3]; 2]> {
     let endpoints = [*control_points.first()?, *control_points.last()?];
     match surface {
-        B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => None,
+        B5Surface::UnresolvedNurbs { .. }
+        | B5Surface::Unknown { .. }
+        | B5Surface::RollingBall { .. } => None,
         B5Surface::Plane {
             origin,
             direction_u,
@@ -2111,7 +2138,7 @@ fn topology_surface_references(records: &[B5Record]) -> HashSet<u32> {
 }
 
 fn is_referenced_geometry_class(family: u8, class: u8) -> bool {
-    (family == 0xa8 && class == 0x34)
+    (family == 0xa8 && matches!(class, 0x32 | 0x34))
         || (family == 0xb5 && (matches!(class, 0x18..=0x21) || is_surface_class(class)))
 }
 
@@ -2707,24 +2734,13 @@ mod tests {
     }
 
     #[test]
-    fn supported_surface_binds_ordered_support_pcurves() {
-        let plane = B5Surface::Plane {
-            origin: [0.0; 3],
-            direction_u: [1.0, 0.0, 0.0],
-            direction_v: [0.0, 1.0, 0.0],
-        };
-        let surfaces = BTreeMap::from([(2, plane.clone()), (3, plane.clone()), (4, plane)]);
+    fn supported_surface_preserves_ordered_support_pcurves() {
         let pcurve0 = B5Record {
             offset: 0,
             family: 0xb5,
             class: 0x18,
             object_id: 5,
             payload: vec![0x81, 0x83],
-        };
-        let pcurve1 = B5Record {
-            object_id: 6,
-            payload: vec![0x81, 0x84],
-            ..pcurve0.clone()
         };
         let mut payload = vec![0x85, 0x82, 0x83, 0x84, 0x85, 0x86, 0x09, 0x05];
         payload.extend_from_slice(&2.5f64.to_le_bytes());
@@ -2737,9 +2753,8 @@ mod tests {
             payload,
             ..pcurve0.clone()
         };
-        let records = HashMap::from([(5, &pcurve0), (6, &pcurve1)]);
         assert_eq!(
-            parse_supported_surface(&record, &records, &surfaces),
+            parse_supported_surface(&record),
             Some(B5SupportedSurface {
                 object_id: 7,
                 class: 0x37,
@@ -2750,6 +2765,28 @@ mod tests {
                 scalars: [2.5, 0.0],
             })
         );
+        let construction = parse_supported_surface(&record).expect("supported surface");
+        let pcurve0 = B5Record {
+            object_id: 5,
+            payload: vec![0x81, 0x83],
+            ..pcurve0.clone()
+        };
+        let pcurve1 = B5Record {
+            object_id: 6,
+            payload: vec![0x81, 0x84],
+            ..pcurve0.clone()
+        };
+        let records = HashMap::from([(5, &pcurve0), (6, &pcurve1)]);
+        assert!(supported_surface_pcurves_match(&construction, &records));
+
+        let wrong = B5Record {
+            payload: vec![0x81, 0x82],
+            ..pcurve1
+        };
+        assert!(!supported_surface_pcurves_match(
+            &construction,
+            &HashMap::from([(5, &pcurve0), (6, &wrong)])
+        ));
     }
 
     #[test]

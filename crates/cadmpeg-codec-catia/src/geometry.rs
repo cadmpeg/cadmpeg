@@ -19,7 +19,8 @@ use std::{
 use cadmpeg_ir::be::f32_at as f32_be;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, ProceduralCurveDefinition, SurfaceGeometry,
+    CurveGeometry, NurbsCurve, NurbsSurface, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite, SurfaceGeometry,
 };
 use cadmpeg_ir::le::{f64_at, u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -3400,7 +3401,7 @@ fn parse_consolidated_pcurve(
 }
 
 /// One knot-site value in an `a5 03 32` rolling-ball program.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RollingBallSite {
     /// First limiting curve point.
     pub limit1: [f64; 3],
@@ -3529,7 +3530,7 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
 }
 
 /// Common-form degree-5 rolling-ball jet stored in an `a8 03 32` object record.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct A8FreeformCurve {
     /// Record byte offset.
     pub pos: usize,
@@ -3549,6 +3550,47 @@ pub struct A8FreeformCurve {
     pub second_derivatives: Vec<[f64; 10]>,
     /// Bytes following the three jet blocks inside the payload.
     pub tail_len: usize,
+}
+
+/// Convert a complete common-form rolling-ball jet to its exact neutral
+/// procedural carrier.
+pub(crate) fn rolling_ball_jet_definition(
+    jet: &A8FreeformCurve,
+) -> Option<ProceduralSurfaceDefinition> {
+    if jet.degree != 5
+        || jet.sites.len() != jet.knots.len()
+        || jet.first_derivatives.len() != jet.knots.len()
+        || jet.second_derivatives.len() != jet.knots.len()
+        || jet.multiplicities.len() != jet.knots.len()
+    {
+        return None;
+    }
+    let derivative = |values: [f64; 10]| RollingBallJetDerivative {
+        first_limit: Vector3::new(values[0], values[1], values[2]),
+        second_limit: Vector3::new(values[3], values[4], values[5]),
+        center: Vector3::new(values[6], values[7], values[8]),
+        angle: values[9],
+    };
+    let sites = jet
+        .sites
+        .iter()
+        .zip(&jet.first_derivatives)
+        .zip(&jet.second_derivatives)
+        .map(|((site, first), second)| RollingBallJetSite {
+            first_limit: Point3::new(site.limit1[0], site.limit1[1], site.limit1[2]),
+            second_limit: Point3::new(site.limit2[0], site.limit2[1], site.limit2[2]),
+            center: Point3::new(site.center[0], site.center[1], site.center[2]),
+            angle: site.theta,
+            first_derivative: derivative(*first),
+            second_derivative: derivative(*second),
+        })
+        .collect();
+    Some(ProceduralSurfaceDefinition::RollingBallJet {
+        degree: jet.degree,
+        multiplicities: jet.multiplicities.clone(),
+        knots: jet.knots.clone(),
+        sites,
+    })
 }
 
 /// Decode framed `a8 03 32` common-form rolling-ball jet records.

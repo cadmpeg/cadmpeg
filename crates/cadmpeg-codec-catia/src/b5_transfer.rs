@@ -36,9 +36,17 @@ struct RevolutionPlan {
     parameter_interval: [f64; 2],
 }
 
+enum SurfaceProcedure {
+    Revolution(RevolutionPlan),
+    RollingBall {
+        carrier_object_id: u32,
+        definition: ProceduralSurfaceDefinition,
+    },
+}
+
 struct SurfacePlan {
     geometry: SurfaceGeometry,
-    revolution: Option<RevolutionPlan>,
+    procedure: Option<SurfaceProcedure>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -484,13 +492,22 @@ fn transfer_complete(
     let mut surface_ids = HashMap::new();
     for (object_id, plan) in surface_plan {
         let id = SurfaceId(format!("catia:b5:surface#{object_id}"));
-        let revolution_cache = plan.revolution.is_some();
+        let revolution_cache = matches!(
+            plan.procedure.as_ref(),
+            Some(SurfaceProcedure::Revolution(_))
+        );
+        let rolling_ball_carrier = matches!(
+            plan.procedure.as_ref(),
+            Some(SurfaceProcedure::RollingBall { .. })
+        );
         annotate(
             annotations,
             &id,
             "object_stream_b5_03",
             "face_surface",
-            if matches!(plan.geometry, SurfaceGeometry::Unknown { .. }) {
+            if rolling_ball_carrier {
+                Exactness::ByteExact
+            } else if matches!(plan.geometry, SurfaceGeometry::Unknown { .. }) {
                 Exactness::Unknown
             } else if revolution_cache {
                 Exactness::Derived
@@ -507,43 +524,67 @@ fn transfer_complete(
             geometry: plan.geometry,
             source_object: Some(cgm_source("surface", object_id)),
         });
-        if let Some(revolution) = plan.revolution {
-            let directrix_id = CurveId(format!("catia:b5:profile#{object_id}"));
-            annotate(
-                annotations,
-                &directrix_id,
-                "object_stream_b5_03",
-                "2d_profile_curve",
-                Exactness::Derived,
-            );
-            annotations.derived(&directrix_id, "geometry");
-            ir.model.curves.push(Curve {
-                id: directrix_id.clone(),
-                geometry: CurveGeometry::Nurbs(revolution.directrix),
-                source_object: None,
-            });
-            let procedural_id =
-                ProceduralSurfaceId(format!("catia:b5:procedural-surface#{object_id}"));
-            annotate(
-                annotations,
-                &procedural_id,
-                "object_stream_b5_03",
-                "2d_surface_of_revolution",
-                Exactness::Derived,
-            );
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: procedural_id,
-                surface: id,
-                definition: ProceduralSurfaceDefinition::Revolution {
-                    directrix: directrix_id,
-                    axis_origin: revolution.axis_origin,
-                    axis_direction: revolution.axis_direction,
-                    angular_interval: revolution.angular_interval,
-                    parameter_interval: Some(revolution.parameter_interval),
-                    transposed: false,
-                },
-                cache_fit_tolerance: None,
-            });
+        match plan.procedure {
+            Some(SurfaceProcedure::Revolution(revolution)) => {
+                let directrix_id = CurveId(format!("catia:b5:profile#{object_id}"));
+                annotate(
+                    annotations,
+                    &directrix_id,
+                    "object_stream_b5_03",
+                    "2d_profile_curve",
+                    Exactness::Derived,
+                );
+                annotations.derived(&directrix_id, "geometry");
+                ir.model.curves.push(Curve {
+                    id: directrix_id.clone(),
+                    geometry: CurveGeometry::Nurbs(revolution.directrix),
+                    source_object: None,
+                });
+                let procedural_id =
+                    ProceduralSurfaceId(format!("catia:b5:procedural-surface#{object_id}"));
+                annotate(
+                    annotations,
+                    &procedural_id,
+                    "object_stream_b5_03",
+                    "2d_surface_of_revolution",
+                    Exactness::Derived,
+                );
+                ir.model.procedural_surfaces.push(ProceduralSurface {
+                    id: procedural_id,
+                    surface: id,
+                    definition: ProceduralSurfaceDefinition::Revolution {
+                        directrix: directrix_id,
+                        axis_origin: revolution.axis_origin,
+                        axis_direction: revolution.axis_direction,
+                        angular_interval: revolution.angular_interval,
+                        parameter_interval: Some(revolution.parameter_interval),
+                        transposed: false,
+                    },
+                    cache_fit_tolerance: None,
+                });
+            }
+            Some(SurfaceProcedure::RollingBall {
+                carrier_object_id,
+                definition,
+            }) if !graph.offset_surfaces.contains_key(&object_id) => {
+                let procedural_id =
+                    ProceduralSurfaceId(format!("catia:b5:rolling-ball#{object_id}"));
+                let carrier_tag = format!("result_carrier:{carrier_object_id:08x}");
+                annotate(
+                    annotations,
+                    &procedural_id,
+                    "object_stream_a8_03_32",
+                    &carrier_tag,
+                    Exactness::ByteExact,
+                );
+                ir.model.procedural_surfaces.push(ProceduralSurface {
+                    id: procedural_id,
+                    surface: id,
+                    definition,
+                    cache_fit_tolerance: None,
+                });
+            }
+            Some(SurfaceProcedure::RollingBall { .. }) | None => {}
         }
     }
     for offset in graph.offset_surfaces.values() {
@@ -1398,7 +1439,9 @@ fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
 fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<CurveGeometry> {
     let knots = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities)?;
     match surface {
-        B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => None,
+        B5Surface::UnresolvedNurbs { .. }
+        | B5Surface::Unknown { .. }
+        | B5Surface::RollingBall { .. } => None,
         B5Surface::Plane {
             origin,
             direction_u,
@@ -1660,7 +1703,7 @@ fn neutral_surface(
     surface_id: u32,
     payload: &UnknownId,
 ) -> SurfacePlan {
-    let mut revolution = None;
+    let mut procedure = None;
     let geometry = match surface {
         B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => SurfaceGeometry::Unknown {
             record: Some(payload.clone()),
@@ -1718,6 +1761,18 @@ fn neutral_surface(
             minor_radius: *minor_radius,
         },
         B5Surface::Nurbs(surface) => SurfaceGeometry::Nurbs(surface.clone()),
+        B5Surface::RollingBall {
+            carrier_object_id,
+            definition,
+        } => {
+            procedure = Some(SurfaceProcedure::RollingBall {
+                carrier_object_id: *carrier_object_id,
+                definition: definition.clone(),
+            });
+            SurfaceGeometry::Unknown {
+                record: Some(payload.clone()),
+            }
+        }
         B5Surface::Revolution {
             profile_curve,
             axis_origin,
@@ -1735,14 +1790,14 @@ fn neutral_surface(
                 record: Some(payload.clone()),
             },
             |(surface, plan)| {
-                revolution = Some(plan);
+                procedure = Some(SurfaceProcedure::Revolution(plan));
                 SurfaceGeometry::Nurbs(surface)
             },
         ),
     };
     SurfacePlan {
         geometry,
-        revolution,
+        procedure,
     }
 }
 
@@ -1754,6 +1809,21 @@ pub(crate) fn resolved_surface_geometry(
     let payload = UnknownId("catia:payload:unknown#b5-surface".to_string());
     let geometry = neutral_surface(surface, graph, surface_id, &payload).geometry;
     (!matches!(geometry, SurfaceGeometry::Unknown { .. })).then_some(geometry)
+}
+
+pub(crate) fn resolved_surface_procedural_definition(
+    graph: &B5Graph,
+    surface_id: u32,
+) -> Option<(u32, ProceduralSurfaceDefinition)> {
+    let surface = graph.surfaces.get(&surface_id)?;
+    let payload = UnknownId("catia:payload:unknown#b5-surface".to_string());
+    match neutral_surface(surface, graph, surface_id, &payload).procedure? {
+        SurfaceProcedure::RollingBall {
+            carrier_object_id,
+            definition,
+        } => Some((carrier_object_id, definition)),
+        SurfaceProcedure::Revolution(_) => None,
+    }
 }
 
 fn surface_parameter_bounds(graph: &B5Graph, surface_id: u32) -> Option<[[f64; 2]; 2]> {
@@ -2775,7 +2845,7 @@ mod tests {
                     normal: Vector3::new(0.0, 0.0, 1.0),
                     u_axis: Vector3::new(1.0, 0.0, 0.0),
                 },
-                revolution: None,
+                procedure: None,
             },
         )]);
         let pcurves = BTreeMap::from([(
@@ -3081,7 +3151,7 @@ mod tests {
                     normal: Vector3::new(0.0, 0.0, 1.0),
                     u_axis: Vector3::new(1.0, 0.0, 0.0),
                 },
-                revolution: None,
+                procedure: None,
             },
         )]);
         let supports = HashMap::from([(3, vec![(4, 2, [0.25, 0.75])])]);

@@ -3862,6 +3862,37 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
 }
 
 #[test]
+fn standard_face_resolves_a_rolling_ball_result_carrier() {
+    let mut stream = b5_closed_triangle_stream();
+    let vertex_start = stream
+        .windows(3)
+        .position(|bytes| bytes == [0x05, 0x08, 0x01])
+        .expect("vertex run");
+    let mut records = a8_freeform_curve_stream();
+    records[7..11].copy_from_slice(&100u32.to_le_bytes());
+    let mut offset = vec![0x82, 0xe4, 0xe5];
+    offset.extend_from_slice(&le_f64(-0.5));
+    offset.push(0x19);
+    for bound in [-2.0, 3.0, -4.0, 5.0] {
+        offset.extend_from_slice(&le_f64(bound));
+    }
+    append_b5_record(&mut records, 0x30, 102, &offset);
+    append_b5_record(&mut records, 0x5f, 501, &[0x82, 0xe6, 0x18, 231, 3, 0x05]);
+    stream.splice(vertex_start..vertex_start, records);
+
+    let evidence =
+        crate::decode::standard_object_evidence_from_streams([stream], &HashSet::from([501]));
+    assert!(!evidence.surface_geometries.contains_key(&501));
+    assert!(matches!(
+        evidence.procedural_surfaces.get(&501),
+        Some((
+            100,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. }
+        ))
+    ));
+}
+
+#[test]
 fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport, StandardSurfaceRecord};
 
