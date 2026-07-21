@@ -7351,7 +7351,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 op,
                 ..
             } if profile_ref_is_opaque(profile)
-                || matches!(extent, Extent::Unresolved)
+                || extent_is_incomplete(extent)
                 || matches!(op, BooleanOp::Unresolved) =>
             {
                 "extrude"
@@ -7551,7 +7551,28 @@ pub(crate) fn hole_feature_is_incomplete(
         || matches!(kind, HoleKind::Unresolved { .. })
         || exit_kind.is_some_and(|kind| matches!(kind, HoleKind::Unresolved { .. }))
         || diameter.is_none()
-        || extent.is_none_or(|extent| matches!(extent, Extent::Unresolved))
+        || extent.is_none_or(extent_is_incomplete)
+}
+
+pub(crate) fn extent_is_incomplete(extent: &Extent) -> bool {
+    match extent {
+        Extent::Unresolved => true,
+        Extent::TwoSidedExtents { first, second } => {
+            extent_is_incomplete(first) || extent_is_incomplete(second)
+        }
+        Extent::SymmetricExtent { extent } => extent_is_incomplete(extent),
+        Extent::ToFace { face } => face_selection_is_opaque(face),
+        Extent::ToShape { target } => face_selection_is_opaque(target),
+        Extent::Blind { .. }
+        | Extent::Symmetric { .. }
+        | Extent::TwoSided { .. }
+        | Extent::ThroughAll
+        | Extent::ToFirst
+        | Extent::ToLast
+        | Extent::Angle { .. }
+        | Extent::SymmetricAngle { .. }
+        | Extent::TwoSidedAngles { .. } => false,
+    }
 }
 
 pub(crate) fn chamfer_requires_direction(spec: &ChamferSpec) -> bool {

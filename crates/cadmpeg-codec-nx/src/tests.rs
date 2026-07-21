@@ -2382,6 +2382,34 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
 }
 
 #[test]
+fn nx_extent_completeness_checks_nested_and_face_termination() {
+    use cadmpeg_ir::features::{Extent, FaceSelection, Length};
+
+    assert!(!crate::decode::extent_is_incomplete(
+        &Extent::TwoSidedExtents {
+            first: Box::new(Extent::Blind {
+                length: Length(5.0),
+            }),
+            second: Box::new(Extent::ThroughAll),
+        }
+    ));
+    assert!(crate::decode::extent_is_incomplete(
+        &Extent::SymmetricExtent {
+            extent: Box::new(Extent::Unresolved),
+        }
+    ));
+    assert!(crate::decode::extent_is_incomplete(&Extent::ToFace {
+        face: FaceSelection::Native("nx:face-selection#0".to_string()),
+    }));
+    assert!(crate::decode::extent_is_incomplete(&Extent::ToShape {
+        target: FaceSelection::Resolved {
+            faces: Vec::new(),
+            native: "nx:face-selection#1".to_string(),
+        },
+    }));
+}
+
+#[test]
 fn nx_chamfer_direction_is_required_only_for_asymmetric_specs() {
     use cadmpeg_ir::features::{Angle, ChamferSpec, Length};
 
