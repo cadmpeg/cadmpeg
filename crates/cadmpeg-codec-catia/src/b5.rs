@@ -1345,6 +1345,9 @@ fn surface_node(
 fn surface_alias_target(record: &B5Record) -> Option<u32> {
     (record.family == 0xb5 && record.class == 0x2e).then_some(())?;
     let mut position = 0;
+    if record.payload.first() == Some(&0x81) {
+        position += 1;
+    }
     let target = reference(&record.payload, &mut position, record.object_id)?;
     (position == record.payload.len()).then_some(target)
 }
@@ -2618,6 +2621,12 @@ mod tests {
             payload: vec![0x38, 0x34, 0x12, 0x00],
         };
         assert_eq!(surface_alias_target(&alias), Some(0x1234));
+
+        let counted = B5Record {
+            payload: vec![0x81, 0x38, 0x34, 0x12, 0x00],
+            ..alias.clone()
+        };
+        assert_eq!(surface_alias_target(&counted), Some(0x1234));
 
         let mut tailed = alias.clone();
         tailed.payload.push(0x05);
