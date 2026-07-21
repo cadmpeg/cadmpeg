@@ -1826,6 +1826,20 @@ pub(crate) fn resolved_surface_procedural_definition(
     }
 }
 
+pub(crate) fn resolved_offset_surface(
+    graph: &B5Graph,
+    surface_id: u32,
+) -> Option<(u32, u32, SurfaceGeometry, f64)> {
+    let offset = graph.offset_surfaces.get(&surface_id)?;
+    let support = resolved_surface_geometry(graph, offset.source_surface)?;
+    Some((
+        offset.carrier_surface,
+        offset.source_surface,
+        support,
+        offset.distance,
+    ))
+}
+
 fn surface_parameter_bounds(graph: &B5Graph, surface_id: u32) -> Option<[[f64; 2]; 2]> {
     let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
     for point in graph

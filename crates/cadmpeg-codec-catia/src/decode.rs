@@ -5414,8 +5414,8 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
                 geometry,
                 source_object: Some(cgm_source("carrier", *tag)),
             });
-            if let Some((carrier, definition)) = freeform_procedural_surfaces.get(tag).cloned() {
-                procedural_surface_plans.push((i, id, *pos, *tag, carrier, definition));
+            if let Some(procedure) = freeform_procedural_surfaces.get(tag).cloned() {
+                procedural_surface_plans.push((i, id, *tag, procedure));
             }
             continue;
         };
@@ -5493,15 +5493,69 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         scan,
         "catia:payload:unknown#brep-stream",
     );
-    for (index, surface, pos, tag, carrier, definition) in procedural_surface_plans {
+    let mut offset_supports = HashMap::<u32, SurfaceId>::new();
+    for (index, surface, tag, procedure) in procedural_surface_plans {
         let procedural_id = ProceduralSurfaceId(format!("catia:standard:procedural-surf#{index}"));
+        let (source, carrier, definition, exactness) = match procedure {
+            StandardSurfaceProcedure::RollingBall {
+                carrier_object_id,
+                definition,
+            } => (
+                "object_stream_a8_03_32",
+                carrier_object_id,
+                definition,
+                Exactness::ByteExact,
+            ),
+            StandardSurfaceProcedure::Offset {
+                carrier_object_id,
+                support_object_id,
+                support,
+                distance,
+            } => {
+                let support_id = offset_supports
+                    .entry(support_object_id)
+                    .or_insert_with(|| {
+                        let id =
+                            SurfaceId(format!("catia:standard:offset-support#{support_object_id}"));
+                        annotate(
+                            &mut annotations,
+                            &id,
+                            "object_stream_b5_03",
+                            0,
+                            format!("offset_support:{support_object_id:08x}"),
+                            Exactness::ByteExact,
+                        );
+                        surfaces.push(Surface {
+                            id: id.clone(),
+                            geometry: support,
+                            source_object: Some(cgm_source("surface", support_object_id)),
+                        });
+                        id
+                    })
+                    .clone();
+                annotations.derived(&procedural_id, "definition.u_sense");
+                annotations.derived(&procedural_id, "definition.v_sense");
+                (
+                    "object_stream_b5_03_30",
+                    carrier_object_id,
+                    ProceduralSurfaceDefinition::Offset {
+                        support: support_id,
+                        distance,
+                        u_sense: Some(0),
+                        v_sense: Some(0),
+                        extension_flags: Vec::new(),
+                    },
+                    Exactness::Derived,
+                )
+            }
+        };
         annotate(
             &mut annotations,
             &procedural_id,
-            "object_stream_a8_03_32",
-            pos as u64,
+            source,
+            0,
             format!("face_object_id:{tag:08x}:result_carrier:{carrier:08x}"),
-            Exactness::ByteExact,
+            exactness,
         );
         ir.model.procedural_surfaces.push(ProceduralSurface {
             id: procedural_id,
@@ -5609,14 +5663,28 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
 #[derive(Default)]
 pub(crate) struct StandardObjectEvidence {
     pub(crate) surface_geometries: HashMap<u32, SurfaceGeometry>,
-    pub(crate) procedural_surfaces: HashMap<u32, (u32, ProceduralSurfaceDefinition)>,
+    pub(crate) procedural_surfaces: HashMap<u32, StandardSurfaceProcedure>,
     pub(crate) edge_owner_faces: HashMap<u32, HashSet<u32>>,
+}
+
+#[derive(Clone, PartialEq)]
+pub(crate) enum StandardSurfaceProcedure {
+    RollingBall {
+        carrier_object_id: u32,
+        definition: ProceduralSurfaceDefinition,
+    },
+    Offset {
+        carrier_object_id: u32,
+        support_object_id: u32,
+        support: SurfaceGeometry,
+        distance: f64,
+    },
 }
 
 #[derive(PartialEq)]
 enum StandardSurfaceEvidence {
     Geometry(SurfaceGeometry),
-    Procedural(u32, ProceduralSurfaceDefinition),
+    Procedural(StandardSurfaceProcedure),
 }
 
 fn standard_object_evidence(scan: &ContainerScan, tags: &HashSet<u32>) -> StandardObjectEvidence {
@@ -5636,6 +5704,7 @@ pub(crate) fn standard_object_evidence_from_streams(
     tags: &HashSet<u32>,
 ) -> StandardObjectEvidence {
     let mut surface_candidates = HashMap::<u32, Option<StandardSurfaceEvidence>>::new();
+    let mut support_candidates = HashMap::<u32, Option<SurfaceGeometry>>::new();
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     for stream in streams {
         let face_surfaces = crate::b5::face_surface_references(&stream);
@@ -5666,7 +5735,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                 })
                 .or_insert(Some(owners));
         }
-        for (&face_id, &surface_id) in face_surfaces
+        for &(face_id, surface_id) in face_surfaces
             .iter()
             .filter(|(face_id, _)| tags.contains(face_id))
         {
@@ -5674,11 +5743,43 @@ pub(crate) fn standard_object_evidence_from_streams(
                 .map(StandardSurfaceEvidence::Geometry)
                 .or_else(|| {
                     crate::b5_transfer::resolved_surface_procedural_definition(&graph, surface_id)
-                        .map(|(carrier, definition)| {
-                            StandardSurfaceEvidence::Procedural(carrier, definition)
+                        .map(|(carrier_object_id, definition)| {
+                            StandardSurfaceEvidence::Procedural(
+                                StandardSurfaceProcedure::RollingBall {
+                                    carrier_object_id,
+                                    definition,
+                                },
+                            )
                         })
+                })
+                .or_else(|| {
+                    crate::b5_transfer::resolved_offset_surface(&graph, surface_id).map(
+                        |(carrier_object_id, support_object_id, support, distance)| {
+                            StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
+                                carrier_object_id,
+                                support_object_id,
+                                support,
+                                distance,
+                            })
+                        },
+                    )
                 });
             let Some(evidence) = evidence else { continue };
+            if let StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
+                support_object_id,
+                support,
+                ..
+            }) = &evidence
+            {
+                support_candidates
+                    .entry(*support_object_id)
+                    .and_modify(|stored| {
+                        if stored.as_ref().is_some_and(|stored| stored != support) {
+                            *stored = None;
+                        }
+                    })
+                    .or_insert_with(|| Some(support.clone()));
+            }
             surface_candidates
                 .entry(face_id)
                 .and_modify(|stored| {
@@ -5694,14 +5795,27 @@ pub(crate) fn standard_object_evidence_from_streams(
             .iter()
             .filter_map(|(&tag, evidence)| match evidence.as_ref()? {
                 StandardSurfaceEvidence::Geometry(geometry) => Some((tag, geometry.clone())),
-                StandardSurfaceEvidence::Procedural(_, _) => None,
+                StandardSurfaceEvidence::Procedural(_) => None,
             })
             .collect(),
         procedural_surfaces: surface_candidates
             .into_iter()
             .filter_map(|(tag, evidence)| match evidence? {
-                StandardSurfaceEvidence::Procedural(carrier, definition) => {
-                    Some((tag, (carrier, definition)))
+                StandardSurfaceEvidence::Procedural(procedure) => {
+                    let valid = match &procedure {
+                        StandardSurfaceProcedure::Offset {
+                            support_object_id,
+                            support,
+                            ..
+                        } => {
+                            support_candidates
+                                .get(support_object_id)
+                                .and_then(Option::as_ref)
+                                == Some(support)
+                        }
+                        StandardSurfaceProcedure::RollingBall { .. } => true,
+                    };
+                    valid.then_some((tag, procedure))
                 }
                 StandardSurfaceEvidence::Geometry(_) => None,
             })

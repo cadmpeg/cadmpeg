@@ -406,11 +406,20 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     }
     let mut offset_surfaces = BTreeMap::new();
     for record in &records {
-        let Some(offset) = parse_offset_surface(record, &surfaces) else {
+        let Some(offset) = parse_offset_surface(record, &surfaces, &by_id) else {
             continue;
         };
-        let Some(carrier) = surfaces.get(&offset.carrier_surface).cloned() else {
-            continue;
+        let carrier = if let Some(carrier) = surfaces.get(&offset.carrier_surface).cloned() {
+            carrier
+        } else {
+            let Some(record) = by_id.get(&offset.carrier_surface) else {
+                continue;
+            };
+            B5Surface::Unknown {
+                family: record.family,
+                class: record.class,
+                payload: record.payload.clone(),
+            }
         };
         surfaces.insert(record.object_id, carrier);
         offset_surfaces.insert(record.object_id, offset);
@@ -1376,6 +1385,7 @@ fn surface_alias_target(record: &B5Record) -> Option<u32> {
 fn parse_offset_surface(
     record: &B5Record,
     surfaces: &BTreeMap<u32, B5Surface>,
+    records: &HashMap<u32, &B5Record>,
 ) -> Option<B5OffsetSurface> {
     (record.family == 0xb5 && record.class == 0x30 && record.payload.first() == Some(&0x82))
         .then_some(())?;
@@ -1391,12 +1401,27 @@ fn parse_offset_surface(
     if position != record.payload.len() || u0 >= u1 || v0 >= v1 {
         return None;
     }
-    let expected_kind = match surfaces.get(&carrier_surface)? {
-        B5Surface::Plane { .. } => 0x15,
-        B5Surface::Cylinder { .. } => 0x05,
-        B5Surface::Torus { .. } => 0x0d,
-        B5Surface::RollingBall { .. } => 0x19,
-        _ => return None,
+    let expected_kind = match surfaces.get(&carrier_surface) {
+        Some(B5Surface::Plane { .. }) => 0x15,
+        Some(B5Surface::Cylinder { .. }) => 0x05,
+        Some(B5Surface::Torus { .. }) => 0x0d,
+        Some(B5Surface::RollingBall { .. }) => 0x19,
+        Some(_) => return None,
+        None => {
+            let cache = parse_offset_cache(records.get(&carrier_surface)?)?;
+            let source = surfaces.get(&source_surface)?;
+            let cached_source = surfaces.get(&cache.source_surface)?;
+            if source != cached_source
+                || distance.to_bits() != cache.distance.to_bits()
+                || [u0, v0, u1, v1]
+                    .into_iter()
+                    .zip(cache.interleaved_bounds)
+                    .any(|(left, right)| left.to_bits() != right.to_bits())
+            {
+                return None;
+            }
+            0x01
+        }
     };
     (carrier_kind == expected_kind).then_some(B5OffsetSurface {
         object_id: record.object_id,
@@ -1405,6 +1430,26 @@ fn parse_offset_surface(
         distance,
         carrier_kind,
         parameter_bounds: [[u0, u1], [v0, v1]],
+    })
+}
+
+struct B5OffsetCache {
+    source_surface: u32,
+    distance: f64,
+    interleaved_bounds: [f64; 4],
+}
+
+fn parse_offset_cache(record: &B5Record) -> Option<B5OffsetCache> {
+    (record.family == 0xb5 && record.class == 0x31 && record.payload.first() == Some(&0x81))
+        .then_some(())?;
+    let mut position = 1;
+    let source_surface = reference(&record.payload, &mut position, record.object_id)?;
+    let [distance, u0, v0, u1, v1] = line_values::<5>(&record.payload, position)?;
+    position += 40;
+    (position == record.payload.len() && u0 < u1 && v0 < v1).then_some(B5OffsetCache {
+        source_surface,
+        distance,
+        interleaved_bounds: [u0, v0, u1, v1],
     })
 }
 
@@ -2150,7 +2195,7 @@ fn is_reference_dependency_class(family: u8, class: u8) -> bool {
 fn is_surface_class(class: u8) -> bool {
     matches!(
         class,
-        0x27 | 0x28 | 0x29 | 0x2b | 0x2c | 0x2d | 0x2e | 0x30 | 0x34 | 0x37 | 0x38 | 0x3b
+        0x27 | 0x28 | 0x29 | 0x2b | 0x2c | 0x2d | 0x2e | 0x30 | 0x31 | 0x34 | 0x37 | 0x38 | 0x3b
     )
 }
 
@@ -2239,7 +2284,7 @@ fn face_references(record: &B5Record) -> Option<Vec<u32>> {
 }
 
 /// Read each face's leading surface reference independently of its loop grammar.
-pub(crate) fn face_surface_references(bytes: &[u8]) -> BTreeMap<u32, u32> {
+pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     records(bytes)
         .into_iter()
         .filter_map(|record| {
@@ -2377,14 +2422,14 @@ mod tests {
     #[test]
     fn face_surface_references_do_not_require_resolved_loops() {
         let mut bytes = Vec::new();
-        for object_id in [500u32, 501] {
+        for (object_id, surface_id) in [(500u32, 100u8), (501, 100), (500, 101)] {
             bytes.extend_from_slice(&[0xb5, 0x03, 0x5f, 5]);
             bytes.extend_from_slice(&object_id.to_le_bytes());
-            bytes.extend_from_slice(&[0x82, 0x08, 100, 0x00, 0x05]);
+            bytes.extend_from_slice(&[0x82, 0x08, surface_id, 0x00, 0x05]);
         }
         assert_eq!(
             face_surface_references(&bytes),
-            BTreeMap::from([(500, 100), (501, 100)])
+            vec![(500, 100), (501, 100), (500, 101)]
         );
     }
 
@@ -2721,13 +2766,68 @@ mod tests {
             payload,
         };
         assert_eq!(
-            parse_offset_surface(&record, &surfaces),
+            parse_offset_surface(&record, &surfaces, &HashMap::new()),
             Some(B5OffsetSurface {
                 object_id: 9,
                 carrier_surface: 2,
                 source_surface: 3,
                 distance: -0.5,
                 carrier_kind: 0x15,
+                parameter_bounds: [[-2.0, 3.0], [-4.0, 5.0]],
+            })
+        );
+    }
+
+    #[test]
+    fn offset_surface_accepts_an_identity_checked_class_31_cache() {
+        assert!(is_referenced_geometry_class(0xb5, 0x31));
+        let source = B5Surface::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+        let surfaces = BTreeMap::from([(3, source.clone()), (4, source)]);
+        let mut cache_payload = vec![0x81, 0x84];
+        for value in [-0.5f64, -2.0, -4.0, 3.0, 5.0] {
+            cache_payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let cache = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x31,
+            object_id: 2,
+            payload: cache_payload,
+        };
+        let records = HashMap::from([(2, &cache)]);
+        let mut payload = vec![0x82, 0x82, 0x83];
+        payload.extend_from_slice(&(-0.5f64).to_le_bytes());
+        payload.push(0x01);
+        for value in [-2.0f64, 3.0, -4.0, 5.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x30,
+            object_id: 9,
+            payload,
+        };
+
+        assert_eq!(
+            parse_offset_surface(&record, &surfaces, &records),
+            Some(B5OffsetSurface {
+                object_id: 9,
+                carrier_surface: 2,
+                source_surface: 3,
+                distance: -0.5,
+                carrier_kind: 0x01,
                 parameter_bounds: [[-2.0, 3.0], [-4.0, 5.0]],
             })
         );

@@ -3885,10 +3885,10 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
     assert!(!evidence.surface_geometries.contains_key(&501));
     assert!(matches!(
         evidence.procedural_surfaces.get(&501),
-        Some((
-            100,
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. }
-        ))
+        Some(crate::decode::StandardSurfaceProcedure::RollingBall {
+            carrier_object_id: 100,
+            definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. },
+        })
     ));
 }
 
