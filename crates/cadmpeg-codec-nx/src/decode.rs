@@ -7297,7 +7297,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 direction,
                 bidirectional,
             } if path_ref_is_opaque(source)
-                || face_selection_is_opaque(target_faces)
+                || face_selection_is_incomplete(target_faces)
                 || matches!(
                     direction,
                     CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved)
@@ -7307,7 +7307,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "projected curve"
             }
             FeatureDefinition::TrimSurface { faces, tool, keep }
-                if face_selection_is_opaque(faces)
+                if face_selection_is_incomplete(faces)
                     || path_ref_is_opaque(tool)
                     || matches!(keep, TrimRegion::Unresolved) =>
             {
@@ -7317,7 +7317,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 faces,
                 distance,
                 method,
-            } if face_selection_is_opaque(faces)
+            } if face_selection_is_incomplete(faces)
                 || distance.is_none()
                 || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved) =>
             {
@@ -7354,14 +7354,14 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 edges,
                 spec,
                 flip_direction,
-            } if edge_selection_is_opaque(edges)
+            } if edge_selection_is_incomplete(edges)
                 || matches!(spec, ChamferSpec::Unresolved { .. })
                 || (chamfer_requires_direction(spec) && flip_direction.is_none()) =>
             {
                 "chamfer"
             }
             FeatureDefinition::Fillet { edges, radius }
-                if edge_selection_is_opaque(edges) || radius_spec_is_incomplete(radius) =>
+                if edge_selection_is_incomplete(edges) || radius_spec_is_incomplete(radius) =>
             {
                 "fillet"
             }
@@ -7369,8 +7369,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 first_faces,
                 second_faces,
                 radius,
-            } if face_selection_is_opaque(first_faces)
-                || face_selection_is_opaque(second_faces)
+            } if face_selection_is_incomplete(first_faces)
+                || face_selection_is_incomplete(second_faces)
                 || face_selections_overlap(first_faces, second_faces)
                 || radius_spec_is_incomplete(radius) =>
             {
@@ -7408,7 +7408,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "extrude"
             }
             FeatureDefinition::OffsetSurface { faces, distance }
-                if face_selection_is_opaque(faces) || distance.is_none() =>
+                if face_selection_is_incomplete(faces) || distance.is_none() =>
             {
                 "offset surface"
             }
@@ -7416,14 +7416,16 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 faces,
                 thickness,
                 side,
-            } if face_selection_is_opaque(faces) || thickness.is_none() || side.is_none() => {
+            } if face_selection_is_incomplete(faces) || thickness.is_none() || side.is_none() => {
                 "thicken"
             }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
                 ..
-            } if face_selection_is_opaque(faces) || face_selection_is_opaque(neutral_plane) => {
+            } if face_selection_is_incomplete(faces)
+                || face_selection_is_incomplete(neutral_plane) =>
+            {
                 "draft"
             }
             FeatureDefinition::Pattern { seeds, pattern }
@@ -7620,7 +7622,8 @@ pub(crate) fn hole_feature_is_incomplete(
 ) -> bool {
     let (kind, exit_kind) = treatments;
     let location_unresolved = position.is_none() && profile.is_none_or(profile_ref_is_opaque);
-    let orientation_unresolved = direction.is_none() && face.is_none_or(face_selection_is_opaque);
+    let orientation_unresolved =
+        direction.is_none() && face.is_none_or(face_selection_is_incomplete);
     location_unresolved
         || orientation_unresolved
         || matches!(kind, HoleKind::Unresolved { .. })
@@ -7636,8 +7639,8 @@ pub(crate) fn extent_is_incomplete(extent: &Extent) -> bool {
             extent_is_incomplete(first) || extent_is_incomplete(second)
         }
         Extent::SymmetricExtent { extent } => extent_is_incomplete(extent),
-        Extent::ToFace { face } => face_selection_is_opaque(face),
-        Extent::ToShape { target } => face_selection_is_opaque(target),
+        Extent::ToFace { face } => face_selection_is_incomplete(face),
+        Extent::ToShape { target } => face_selection_is_incomplete(target),
         Extent::Blind { .. }
         | Extent::Symmetric { .. }
         | Extent::TwoSided { .. }
@@ -7726,10 +7729,12 @@ fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
     }
 }
 
-pub(crate) fn face_selection_is_opaque(selection: &FaceSelection) -> bool {
+pub(crate) fn face_selection_is_incomplete(selection: &FaceSelection) -> bool {
     match selection {
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
-        FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces.is_empty(),
+        FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
+            faces.is_empty() || faces.iter().collect::<BTreeSet<_>>().len() != faces.len()
+        }
     }
 }
 
@@ -7745,11 +7750,13 @@ pub(crate) fn face_selections_overlap(first: &FaceSelection, second: &FaceSelect
     first.iter().any(|face| second.contains(face))
 }
 
-pub(crate) fn edge_selection_is_opaque(selection: &EdgeSelection) -> bool {
+pub(crate) fn edge_selection_is_incomplete(selection: &EdgeSelection) -> bool {
     match selection {
         EdgeSelection::Unresolved | EdgeSelection::Native(_) => true,
         EdgeSelection::All => false,
-        EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => edges.is_empty(),
+        EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => {
+            edges.is_empty() || edges.iter().collect::<BTreeSet<_>>().len() != edges.len()
+        }
     }
 }
 

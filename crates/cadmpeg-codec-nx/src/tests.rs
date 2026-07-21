@@ -2562,16 +2562,16 @@ fn nx_empty_resolved_selections_remain_incomplete() {
     assert!(crate::decode::body_selection_is_incomplete(
         &BodySelection::Bodies(Vec::new())
     ));
-    assert!(crate::decode::face_selection_is_opaque(
+    assert!(crate::decode::face_selection_is_incomplete(
         &FaceSelection::Resolved {
             faces: Vec::new(),
             native: "nx:faces".into(),
         }
     ));
-    assert!(crate::decode::edge_selection_is_opaque(
+    assert!(crate::decode::edge_selection_is_incomplete(
         &EdgeSelection::Edges(Vec::new())
     ));
-    assert!(!crate::decode::edge_selection_is_opaque(
+    assert!(!crate::decode::edge_selection_is_incomplete(
         &EdgeSelection::All
     ));
     assert!(crate::decode::profile_ref_is_opaque(&ProfileRef::Faces(
@@ -3811,6 +3811,22 @@ fn nx_face_blend_completeness_requires_disjoint_supports() {
     assert!(!crate::decode::face_selections_overlap(
         &first,
         &FaceSelection::Unresolved,
+    ));
+}
+
+#[test]
+fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
+    use cadmpeg_ir::features::{EdgeSelection, FaceSelection};
+    use cadmpeg_ir::ids::{EdgeId, FaceId};
+
+    let face = FaceId("test:face#repeated".into());
+    assert!(crate::decode::face_selection_is_incomplete(
+        &FaceSelection::Faces(vec![face.clone(), face]),
+    ));
+
+    let edge = EdgeId("test:edge#repeated".into());
+    assert!(crate::decode::edge_selection_is_incomplete(
+        &EdgeSelection::Edges(vec![edge.clone(), edge]),
     ));
 }
 
