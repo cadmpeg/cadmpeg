@@ -7478,23 +7478,14 @@ pub(crate) fn body_output_feature_family(definition: &FeatureDefinition) -> Opti
 }
 
 pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<ParameterId> {
-    let equation_owners = ir
+    let parameter_owners = ir
         .model
-        .features
+        .parameters
         .iter()
-        .filter_map(|feature| {
-            matches!(
-                feature.definition,
-                FeatureDefinition::TreeNode {
-                    role: FeatureTreeNodeRole::Equations,
-                    ..
-                }
-            )
-            .then_some(feature.id.clone())
-        })
+        .map(|parameter| parameter.owner.clone())
         .collect::<BTreeSet<_>>();
     let mut incomplete = BTreeSet::new();
-    for owner in equation_owners {
+    for owner in parameter_owners {
         let parameters = ir
             .model
             .parameters

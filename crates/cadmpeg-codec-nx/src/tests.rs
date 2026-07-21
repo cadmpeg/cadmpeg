@@ -1945,6 +1945,18 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
         crate::decode::incomplete_expression_parameters(&unevaluated),
         [unevaluated.model.parameters[1].id.clone()].into()
     );
+
+    let mut operation_owned = unevaluated;
+    operation_owned.model.features[0].definition =
+        cadmpeg_ir::features::FeatureDefinition::Native {
+            kind: "TEST_OPERATION".into(),
+            properties: Default::default(),
+            parameters: Default::default(),
+        };
+    assert_eq!(
+        crate::decode::incomplete_expression_parameters(&operation_owned),
+        [operation_owned.model.parameters[1].id.clone()].into()
+    );
 }
 
 #[test]
