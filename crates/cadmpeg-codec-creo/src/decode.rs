@@ -25780,10 +25780,12 @@ fn agreed_plane_surface(candidates: &[PlaneCandidate]) -> Option<(PlaneEquation,
 #[cfg(test)]
 mod plane_reconciliation_tests {
     use super::{
-        agreed_plane, agreed_plane_surface, dot, held_coordinate_plane, PlaneCandidate, PlaneChart,
-        PlaneEquation,
+        agreed_plane, agreed_plane_surface, dot, envelope_reconciled_plane_candidate,
+        held_coordinate_plane, PlaneCandidate, PlaneChart, PlaneEquation,
     };
-    use crate::surface::{PlaneEnvelope, PlaneEnvelopeRecord};
+    use crate::surface::{
+        LocalSystemClassification, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
+    };
 
     #[test]
     fn reconciles_equivalent_plane_frames_and_rejects_conflicts() {
@@ -25863,9 +25865,62 @@ mod plane_reconciliation_tests {
         unresolved.corner_coordinate_equal[2] = None;
         assert!(held_coordinate_plane(&unresolved).is_none());
     }
+
+    #[test]
+    fn held_envelope_assigns_mixed_support_frame_roles() {
+        let equation = PlaneEquation {
+            origin: [0.0, 0.0, -0.85],
+            normal: [0.0, 0.0, 1.0],
+        };
+        let mut frame = PlaneLocalSystem {
+            surface_id: 141,
+            body: Vec::new(),
+            slots: vec![
+                Some(0.0),
+                Some(0.0),
+                Some(1.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+                Some(1.0),
+                Some(0.0),
+                Some(0.0),
+                Some(8.0),
+                Some(0.0),
+                Some(-0.85),
+            ],
+            origin: Some([8.0, 0.0, -0.85]),
+            u_axis: Some([0.0, 0.0, 1.0]),
+            normal: Some([0.0, 1.0, 0.0]),
+            classification: LocalSystemClassification::Simple,
+            row_offset: 10,
+            offset: 20,
+        };
+        let candidate = envelope_reconciled_plane_candidate(&frame, equation).expect("mixed frame");
+        assert_eq!(candidate.equation.origin, equation.origin);
+        assert_eq!(candidate.equation.normal, equation.normal);
+        assert_eq!(candidate.chart.expect("chart").u_axis, [1.0, 0.0, 0.0]);
+
+        frame.origin = Some([8.0, 0.0, 1.0]);
+        assert!(envelope_reconciled_plane_candidate(&frame, equation).is_none());
+    }
 }
 
 fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> {
+    let held_planes = scan
+        .plane_envelopes
+        .iter()
+        .filter_map(|envelope| Some((envelope.surface_id, held_coordinate_plane(envelope)?)))
+        .fold(
+            BTreeMap::<u32, Vec<PlaneEquation>>::new(),
+            |mut planes, (surface_id, plane)| {
+                planes.entry(surface_id).or_default().push(plane);
+                planes
+            },
+        )
+        .into_iter()
+        .filter_map(|(surface_id, planes)| agreed_plane(&planes).map(|plane| (surface_id, plane)))
+        .collect::<BTreeMap<_, _>>();
     let mut candidates = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     for frame in &scan.plane_local_systems {
         let (Some(origin), Some(normal)) = (frame.origin, frame.normal) else {
@@ -25874,18 +25929,24 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
         let Some(u_axis) = frame.u_axis else {
             continue;
         };
+        let frame_candidate = PlaneCandidate {
+            equation: PlaneEquation { origin, normal },
+            chart: Some(PlaneChart {
+                origin,
+                normal,
+                u_axis,
+            }),
+            offset: frame.offset,
+        };
+        let candidate = held_planes
+            .get(&frame.surface_id)
+            .filter(|held| agreed_plane(&[frame_candidate.equation, **held]).is_none())
+            .and_then(|held| envelope_reconciled_plane_candidate(frame, *held))
+            .unwrap_or(frame_candidate);
         candidates
             .entry(frame.surface_id)
             .or_default()
-            .push(PlaneCandidate {
-                equation: PlaneEquation { origin, normal },
-                chart: Some(PlaneChart {
-                    origin,
-                    normal,
-                    u_axis,
-                }),
-                offset: frame.offset,
-            });
+            .push(candidate);
     }
     let local_chart_ids = scan
         .plane_local_systems
@@ -25934,6 +25995,75 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                 < 2
         })
         .collect()
+}
+
+fn envelope_reconciled_plane_candidate(
+    frame: &crate::surface::PlaneLocalSystem,
+    equation: PlaneEquation,
+) -> Option<PlaneCandidate> {
+    let origin = frame.origin?;
+    let normal = normalized(equation.normal)?;
+    let origin_scale = origin
+        .iter()
+        .chain(equation.origin.iter())
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    ((dot(normal, origin) - dot(normal, equation.origin)).abs() <= 1e-9 * origin_scale)
+        .then_some(())?;
+    let slots: [f64; 12] = frame
+        .slots
+        .iter()
+        .copied()
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()?;
+    let supports = [
+        <[f64; 3]>::try_from(&slots[0..3]).ok()?,
+        <[f64; 3]>::try_from(&slots[3..6]).ok()?,
+        <[f64; 3]>::try_from(&slots[6..9]).ok()?,
+    ];
+    let support_scale = supports
+        .iter()
+        .flatten()
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let nonzero = supports
+        .into_iter()
+        .filter_map(|support| {
+            let magnitude = dot(support, support).sqrt();
+            (magnitude > 1e-9 * support_scale).then_some((support, magnitude))
+        })
+        .collect::<Vec<_>>();
+    let [first, second] = nonzero.as_slice() else {
+        return None;
+    };
+    let role = |(support, magnitude): &([f64; 3], f64)| {
+        let alignment = dot(*support, normal).abs() / *magnitude;
+        if alignment <= 1e-9 {
+            Some((false, support.map(|value| value / *magnitude)))
+        } else if (alignment - 1.0).abs() <= 1e-9 {
+            Some((true, support.map(|value| value / *magnitude)))
+        } else {
+            None
+        }
+    };
+    let (first_parallel, first_direction) = role(first)?;
+    let (second_parallel, second_direction) = role(second)?;
+    (first_parallel != second_parallel).then_some(())?;
+    let u_axis = if first_parallel {
+        second_direction
+    } else {
+        first_direction
+    };
+    Some(PlaneCandidate {
+        equation,
+        chart: Some(PlaneChart {
+            origin,
+            normal,
+            u_axis,
+        }),
+        offset: frame.offset,
+    })
 }
 
 fn held_coordinate_plane(envelope: &crate::surface::PlaneEnvelopeRecord) -> Option<PlaneEquation> {
