@@ -7161,6 +7161,19 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         });
     }
 
+    let incomplete_expression_count = incomplete_expression_parameters(ir).len();
+    if incomplete_expression_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Feature,
+            severity: Severity::Warning,
+            message: format!(
+                "Neutral evaluation or dependency semantics remain incomplete for \
+                 {incomplete_expression_count} NX expression parameter(s)."
+            ),
+            provenance: None,
+        });
+    }
+
     let mut native_feature_kinds = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
         if let FeatureDefinition::Native { kind, .. } = &feature.definition {
@@ -7433,6 +7446,91 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             provenance: None,
         });
     }
+}
+
+pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<ParameterId> {
+    let equation_owners = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            matches!(
+                feature.definition,
+                FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::Equations,
+                    ..
+                }
+            )
+            .then_some(feature.id.clone())
+        })
+        .collect::<BTreeSet<_>>();
+    let mut incomplete = BTreeSet::new();
+    for owner in equation_owners {
+        let parameters = ir
+            .model
+            .parameters
+            .iter()
+            .filter(|parameter| parameter.owner == owner)
+            .collect::<Vec<_>>();
+        let mut ids_by_name = BTreeMap::<&str, Vec<&ParameterId>>::new();
+        for parameter in &parameters {
+            ids_by_name
+                .entry(parameter.name.as_str())
+                .or_default()
+                .push(&parameter.id);
+        }
+        let expected = parameters
+            .iter()
+            .map(|parameter| {
+                let [_] = ids_by_name.get(parameter.name.as_str())?.as_slice() else {
+                    return None;
+                };
+                let mut seen = BTreeSet::new();
+                let dependencies = crate::native::expression_parameter_names(&parameter.expression)
+                    .into_iter()
+                    .map(|name| {
+                        let [dependency] = ids_by_name.get(name)?.as_slice() else {
+                            return None;
+                        };
+                        Some((*dependency).clone())
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                Some(
+                    dependencies
+                        .into_iter()
+                        .filter(|dependency| seen.insert(dependency.clone()))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let indices = parameters
+            .iter()
+            .enumerate()
+            .map(|(index, parameter)| (&parameter.id, index))
+            .collect::<BTreeMap<_, _>>();
+        let mut emitted = BTreeSet::new();
+        while let Some(index) = (0..parameters.len()).find(|index| {
+            !emitted.contains(index)
+                && expected[*index].as_ref().is_some_and(|dependencies| {
+                    dependencies.iter().all(|dependency| {
+                        indices
+                            .get(dependency)
+                            .is_some_and(|dependency| emitted.contains(dependency))
+                    })
+                })
+        }) {
+            emitted.insert(index);
+        }
+        for (index, parameter) in parameters.into_iter().enumerate() {
+            if expected[index].as_ref() != Some(&parameter.dependencies)
+                || !emitted.contains(&index)
+                || parameter.value.is_none()
+            {
+                incomplete.insert(parameter.id.clone());
+            }
+        }
+    }
+    incomplete
 }
 
 pub(crate) fn hole_feature_is_incomplete(

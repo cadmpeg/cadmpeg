@@ -1922,6 +1922,29 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
         [ir.model.parameters[2].id.clone()]
     );
     assert_ne!(ir.model.parameters[1].owner, ir.model.parameters[3].owner);
+    for parameter in &mut ir.model.parameters {
+        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(1.0),
+        ));
+    }
+    assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+
+    let mut duplicate_name = ir.clone();
+    duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
+    assert_eq!(
+        crate::decode::incomplete_expression_parameters(&duplicate_name),
+        duplicate_name.model.parameters[..2]
+            .iter()
+            .map(|parameter| parameter.id.clone())
+            .collect()
+    );
+
+    let mut unevaluated = ir.clone();
+    unevaluated.model.parameters[1].value = None;
+    assert_eq!(
+        crate::decode::incomplete_expression_parameters(&unevaluated),
+        [unevaluated.model.parameters[1].id.clone()].into()
+    );
 }
 
 #[test]
@@ -1956,6 +1979,18 @@ fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
         .parameters
         .iter()
         .all(|parameter| parameter.dependencies.is_empty()));
+    assert_eq!(
+        crate::decode::incomplete_expression_parameters(&ir),
+        ir.model
+            .parameters
+            .iter()
+            .map(|parameter| parameter.id.clone())
+            .collect()
+    );
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("2 NX expression parameter(s)"));
 }
 
 #[test]
@@ -2000,6 +2035,18 @@ fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
     );
     assert!(ir.model.parameters[2].dependencies.is_empty());
     assert!(ir.model.parameters[3].dependencies.is_empty());
+    for parameter in &mut ir.model.parameters {
+        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(1.0),
+        ));
+    }
+    assert_eq!(
+        crate::decode::incomplete_expression_parameters(&ir),
+        ir.model.parameters[2..]
+            .iter()
+            .map(|parameter| parameter.id.clone())
+            .collect()
+    );
 }
 
 #[test]
