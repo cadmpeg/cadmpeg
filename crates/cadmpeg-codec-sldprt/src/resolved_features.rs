@@ -457,13 +457,15 @@ fn current_geometry_locus_profile_line(payload: &[u8], offset: usize, code: u32)
 }
 
 pub(crate) fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
-    if !sketch_marker_prefix_at(payload, offset)
-        || payload.get(offset + 35..offset + 39) == Some(CLASS_MARKER)
-    {
+    if !sketch_marker_prefix_at(payload, offset) {
         return false;
     }
-    (payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
-        && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf]))
+    let shared_geometry_body = payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
+        && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf])
+        && payload
+            .get(offset + 35..offset + 39)
+            .is_some_and(|state| state[0] == 0 && state[1] == 0 && state[3] == 0);
+    shared_geometry_body
         || compact_legacy_marker_body(payload, offset)
         || alternate_current_curve_body(payload, offset)
 }
@@ -3895,7 +3897,7 @@ mod marker_tests {
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         assert_eq!(marker_coordinates(&vertex, 0), None);
 
-        let mut curve = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len() + 12];
+        let mut curve = vec![0; 84 + 39];
         curve[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         curve[5..13].fill(0xff);
         curve[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
