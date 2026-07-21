@@ -2554,7 +2554,9 @@ mod marker_tests {
 
     #[test]
     fn inline_operation_binds_join_and_cut_to_their_family_words() {
-        use super::{feature_inline_operation, feature_inline_operation_fields};
+        use super::{
+            feature_inline_operation, feature_inline_operation_fields, feature_operation_code,
+        };
         use crate::records::{FeatureInputLane, FeatureInputName};
         use cadmpeg_ir::features::BooleanOp;
 
@@ -2592,6 +2594,16 @@ mod marker_tests {
             object_id: Some(7),
         };
         let mut lane = lane;
+        lane.native_payload[name_offset - 6..name_offset - 2].copy_from_slice(&1u32.to_le_bytes());
+        lane.native_payload[name_offset - 2..name_offset].copy_from_slice(&0x8d9au16.to_le_bytes());
+        assert_eq!(
+            feature_operation_code(&lane, &name, Some("moICE_c")),
+            Some(1)
+        );
+        assert_eq!(
+            feature_operation_code(&lane, &name, Some("moExtrusion_c")),
+            None
+        );
         assert_eq!(
             feature_inline_operation(&lane, &name),
             Some(BooleanOp::Join)
@@ -13966,7 +13978,11 @@ fn repeated_class_token(payload: &[u8], name_offset: usize) -> Option<u16> {
     ))
 }
 
-fn feature_operation_code(lane: &FeatureInputLane, name: &FeatureInputName) -> Option<u32> {
+fn feature_operation_code(
+    lane: &FeatureInputLane,
+    name: &FeatureInputName,
+    class: Option<&str>,
+) -> Option<u32> {
     let name_offset = usize::try_from(name.offset).ok()?;
     let direct_class = lane
         .classes
@@ -13990,12 +14006,21 @@ fn feature_operation_code(lane: &FeatureInputLane, name: &FeatureInputName) -> O
                 .then_some(code_offset)
         })?
     } else {
+        let repeated_token = repeated_class_token(&lane.native_payload, name_offset)?;
+        if repeated_token & 0x8000 == 0 || repeated_token == u16::MAX {
+            return None;
+        }
         let compact_instance = name_offset.checked_sub(14).filter(|code_offset| {
-            lane.native_payload.get(code_offset + 4..code_offset + 8) == Some(&[0; 4])
-                && lane.native_payload.get(name_offset - 2..name_offset) == Some(&[0x00, 0x80])
+            repeated_token == 0x8000
+                && lane.native_payload.get(code_offset + 4..code_offset + 8) == Some(&[0; 4])
         });
         compact_instance.or_else(|| {
-            [8usize, 4].into_iter().find_map(|padding| {
+            let paddings: &[usize] = if class == Some("moICE_c") {
+                &[8, 4, 0]
+            } else {
+                &[8, 4]
+            };
+            paddings.iter().copied().find_map(|padding| {
                 let code_offset = name_offset.checked_sub(6 + padding)?;
                 lane.native_payload
                     .get(code_offset + 4..name_offset - 2)?
@@ -14059,7 +14084,7 @@ pub(crate) fn bind_revolution_operations(
             let name = feature_object_name(history, lane)?;
             revolution_operation(
                 history.input_class.as_deref(),
-                feature_operation_code(lane, name)?,
+                feature_operation_code(lane, name, history.input_class.as_deref())?,
             )
         });
         let Some(first) = operations.next() else {
@@ -14104,7 +14129,7 @@ pub(crate) fn bind_sweep_operations(
             let name = feature_object_name(history, lane)?;
             match (
                 history.input_class.as_deref(),
-                feature_operation_code(lane, name)?,
+                feature_operation_code(lane, name, history.input_class.as_deref())?,
             ) {
                 (Some("moSweep_c"), 15) => Some(BooleanOp::Join),
                 _ => None,
@@ -14196,7 +14221,7 @@ pub(crate) fn bind_extrusion_operations(
             }
             extrusion_operation(
                 history.input_class.as_deref(),
-                feature_operation_code(lane, name)?,
+                feature_operation_code(lane, name, history.input_class.as_deref())?,
             )
         });
         let Some(first) = operations.next() else {
