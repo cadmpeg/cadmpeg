@@ -4116,6 +4116,21 @@ mod marker_tests {
         );
         legacy_112[98] = 0;
         assert_eq!(wide_indexed_curve_endpoint_indices(&legacy_112, 0), None);
+
+        let mut current_112 = legacy_112;
+        current_112[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        current_112[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        current_112[29..31].copy_from_slice(&1u16.to_le_bytes());
+        current_112[35..39].copy_from_slice(&[0x00, 0x00, 0x44, 0x00]);
+        current_112[80..84].copy_from_slice(&(-1i32).to_le_bytes());
+        current_112[98..102].copy_from_slice(&(-2i32).to_le_bytes());
+        current_112[112..112 + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        assert_eq!(
+            wide_indexed_curve_endpoint_indices(&current_112, 0),
+            Some([7, 11])
+        );
+        current_112[17..21].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(wide_indexed_curve_endpoint_indices(&current_112, 0), None);
     }
 
     #[test]
@@ -21546,6 +21561,7 @@ fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<
     let supported_locus = marker_is_geometry_locus(payload, offset)
         || payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]);
     let supported_state = payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x04, 0x00])
+        || current_extended_wide_curve_body(payload, offset)
         || prefix == LEGACY_SKETCH_MARKER
             && marker_is_geometry_locus(payload, offset)
             && payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x05, 0x00]);
@@ -21578,6 +21594,15 @@ fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<
     Some([endpoint(64)?, endpoint(66)?])
 }
 
+fn current_extended_wide_curve_body(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && marker_is_geometry_locus(payload, offset)
+        && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
+        && payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x44, 0x00])
+        && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
+}
+
 fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8]) -> bool {
     if sketch_marker_prefix_at(payload, offset.saturating_add(92)) {
         return true;
@@ -21596,7 +21621,7 @@ fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8
             .and_then(|bytes| bytes.try_into().ok())
             .map(u32::from_le_bytes)
     });
-    prefix == LEGACY_SKETCH_MARKER
+    (prefix == LEGACY_SKETCH_MARKER || current_extended_wide_curve_body(payload, offset))
         && matches!(selector, Some(-1 | 1))
         && state.is_some_and(|state| state != 0)
         && payload.get(offset + 86..offset + 102)
