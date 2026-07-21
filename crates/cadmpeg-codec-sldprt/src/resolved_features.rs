@@ -19452,6 +19452,7 @@ fn typed_marker_relation_definition_in_sketch(
                 let [first, second] = loci.as_slice() else {
                     return Some(native());
                 };
+                let mut horizontal = kind == Horizontal;
                 if !sketch_entities.is_empty() {
                     let (Some(first_point), Some(second_point)) = (
                         profile_locus_point(first, sketch_entities),
@@ -19459,25 +19460,29 @@ fn typed_marker_relation_definition_in_sketch(
                     ) else {
                         return Some(native());
                     };
-                    let aligned = if kind == Horizontal {
-                        same_dimension_length(first_point.v, second_point.v)
+                    let horizontal_aligned = same_dimension_length(first_point.v, second_point.v);
+                    let vertical_aligned = same_dimension_length(first_point.u, second_point.u);
+                    let native_aligned = if horizontal {
+                        horizontal_aligned
                     } else {
-                        same_dimension_length(first_point.u, second_point.u)
+                        vertical_aligned
                     };
-                    if !aligned {
+                    if !native_aligned && horizontal_aligned != vertical_aligned {
+                        horizontal = horizontal_aligned;
+                    } else if !native_aligned {
                         return Some(native());
                     }
                 }
-                match kind {
-                    Horizontal => SketchConstraintDefinition::HorizontalPoints {
+                if horizontal {
+                    SketchConstraintDefinition::HorizontalPoints {
                         first: first.clone(),
                         second: second.clone(),
-                    },
-                    Vertical => SketchConstraintDefinition::VerticalPoints {
+                    }
+                } else {
+                    SketchConstraintDefinition::VerticalPoints {
                         first: first.clone(),
                         second: second.clone(),
-                    },
-                    _ => unreachable!("relation kind was filtered above"),
+                    }
                 }
             } else {
                 return Some(native());
@@ -25041,6 +25046,29 @@ mod profile_join_tests {
                 &relation, &sketch, &entities, &markers, &loci,
             ),
             Some(SketchConstraintDefinition::Native { .. })
+        ));
+
+        let mut swapped_relation = relation.clone();
+        swapped_relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+        let swapped_loci = HashMap::from([
+            (
+                first.id.clone(),
+                vec![SketchLocus::End(SketchEntityId("first".into()))],
+            ),
+            (
+                second.id.clone(),
+                vec![SketchLocus::End(SketchEntityId("second".into()))],
+            ),
+        ]);
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &swapped_relation,
+                &sketch,
+                &entities,
+                &markers,
+                &swapped_loci,
+            ),
+            Some(SketchConstraintDefinition::VerticalPoints { .. })
         ));
     }
 
