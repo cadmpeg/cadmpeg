@@ -700,6 +700,7 @@ impl SurfaceParameterRecord {
     pub fn type24_round_radius(&self, type_byte: u8) -> Option<f64> {
         (type_byte == 0x24).then_some(())?;
         self.type24_scalar_frame_round_layout()
+            .or_else(|| self.type24_split_coordinate_round_layout())
             .map(|layout| 0.5 * layout.diameter)
             .or_else(|| {
                 (self.is_type24_first_coordinate_round_body()
@@ -5613,6 +5614,14 @@ mod tests {
         assert_eq!(split_frame.ref_direction, [0.0, 0.0, 1.0]);
         assert!((split_frame.radius - 2.0).abs() < 1.0e-12);
         assert_eq!(split_frame.length, Some(50.0_f64.sqrt()));
+        assert!(
+            (record(&split_coordinate)
+                .type24_round_radius(0x24)
+                .expect("split-coordinate rolling radius")
+                - 2.0)
+                .abs()
+                < 1.0e-12
+        );
 
         let opposite_split = [
             24, 45, 49, 164, 168, 193, 84, 201, 133, 18, 45, 53, 164, 168, 193, 84, 201, 136, 72,
