@@ -7364,7 +7364,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "thicken"
             }
             FeatureDefinition::Pattern { seeds, pattern }
-                if seeds.is_empty() || pattern_is_incomplete(pattern) =>
+                if pattern_feature_is_incomplete(seeds, pattern) =>
             {
                 "pattern"
             }
@@ -7610,6 +7610,12 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
                     .any(|stage| pattern_is_incomplete(&stage.pattern))
         }
     }
+}
+
+pub(crate) fn pattern_feature_is_incomplete(seeds: &[FeatureId], pattern: &PatternKind) -> bool {
+    seeds.is_empty()
+        || seeds.iter().collect::<BTreeSet<_>>().len() != seeds.len()
+        || pattern_is_incomplete(pattern)
 }
 
 pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {

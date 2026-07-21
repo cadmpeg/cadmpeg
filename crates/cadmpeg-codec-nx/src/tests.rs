@@ -3759,6 +3759,24 @@ fn nx_container_record_is_not_a_modeling_feature() {
 }
 
 #[test]
+fn nx_pattern_completeness_requires_distinct_seeds() {
+    let seed = cadmpeg_ir::features::FeatureId("test:feature#seed".into());
+    let pattern = cadmpeg_ir::features::PatternKind::Mirror {
+        plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        plane_normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+    };
+
+    assert!(!crate::decode::pattern_feature_is_incomplete(
+        std::slice::from_ref(&seed),
+        &pattern,
+    ));
+    assert!(crate::decode::pattern_feature_is_incomplete(
+        &[seed.clone(), seed],
+        &pattern,
+    ));
+}
+
+#[test]
 fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let dimensions = [10.0, 20.0, 30.0];
