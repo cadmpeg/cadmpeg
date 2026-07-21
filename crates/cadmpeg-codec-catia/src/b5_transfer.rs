@@ -1840,6 +1840,90 @@ pub(crate) fn resolved_offset_surface(
     ))
 }
 
+/// Neutral support evidence for one side of an exact extrusion directrix.
+#[derive(Clone, PartialEq)]
+pub(crate) struct ResolvedExtrusionSupport {
+    /// Persistent support-surface identity.
+    pub(crate) surface_object_id: u32,
+    /// Exact neutral support geometry.
+    pub(crate) surface: SurfaceGeometry,
+    /// Exact parameter-space directrix occurrence.
+    pub(crate) pcurve: PcurveGeometry,
+    /// Native interval used by this support occurrence.
+    pub(crate) pcurve_parameter_range: [f64; 2],
+}
+
+/// Exact two-support directrix and extrusion chart resolved from B5 objects.
+#[derive(Clone, PartialEq)]
+pub(crate) struct ResolvedExtrusionSurface {
+    /// Persistent extrusion-surface identity.
+    pub(crate) surface_object_id: u32,
+    /// Persistent directrix identity.
+    pub(crate) directrix_object_id: u32,
+    /// Solved directrix interval shared by the support mappings.
+    pub(crate) directrix_parameter_range: [f64; 2],
+    /// Fit tolerance of the retained sampled directrix cache.
+    pub(crate) cache_fit_tolerance: f64,
+    /// Unit world-space extrusion direction.
+    pub(crate) direction: Vector3,
+    /// Ordered exact support sides.
+    pub(crate) supports: [ResolvedExtrusionSupport; 2],
+}
+
+pub(crate) fn resolved_extrusion_surface(
+    graph: &B5Graph,
+    surface_id: u32,
+) -> Option<ResolvedExtrusionSurface> {
+    let extrusion = graph.extrusion_surfaces.get(&surface_id)?;
+    let supports: [ResolvedExtrusionSupport; 2] = extrusion
+        .directrix
+        .supports
+        .each_ref()
+        .map(
+            |&(surface_object_id, pcurve_object_id, pcurve_parameter_range)| {
+                let source_surface = graph.surfaces.get(&surface_object_id)?;
+                let surface = resolved_surface_geometry(graph, surface_object_id)?;
+                let pcurve = graph.pcurves.get(&pcurve_object_id)?;
+                let knots = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities)?;
+                let degree = usize::try_from(pcurve.degree).ok()?;
+                let domain = [
+                    *knots.get(degree)?,
+                    *knots.get(knots.len().checked_sub(degree + 1)?)?,
+                ];
+                bounded_occurrence_range(pcurve_parameter_range, domain)?;
+                Some(ResolvedExtrusionSupport {
+                    surface_object_id,
+                    surface,
+                    pcurve: PcurveGeometry::Nurbs {
+                        degree: pcurve.degree,
+                        knots,
+                        control_points: pcurve
+                            .control_points
+                            .iter()
+                            .map(|point| neutral_pcurve_point(*point, source_surface))
+                            .collect(),
+                        weights: pcurve.weights.clone(),
+                        periodic: false,
+                    },
+                    pcurve_parameter_range,
+                })
+            },
+        )
+        .into_iter()
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()?;
+    (supports[0].surface_object_id != supports[1].surface_object_id).then_some(())?;
+    Some(ResolvedExtrusionSurface {
+        surface_object_id: extrusion.object_id,
+        directrix_object_id: extrusion.directrix.object_id,
+        directrix_parameter_range: extrusion.directrix.parameter_range,
+        cache_fit_tolerance: extrusion.directrix.cache_fit_tolerance,
+        direction: vector(extrusion.direction),
+        supports,
+    })
+}
+
 fn surface_parameter_bounds(graph: &B5Graph, surface_id: u32) -> Option<[[f64; 2]; 2]> {
     let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
     for point in graph
@@ -2609,6 +2693,7 @@ mod tests {
             implicit_pcurves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
             parameter_incidences: BTreeMap::from([
                 (
@@ -2686,6 +2771,7 @@ mod tests {
                 },
             )]),
             offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
             parameter_incidences: BTreeMap::from([
                 (
@@ -2982,6 +3068,7 @@ mod tests {
             implicit_pcurves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
             parameter_incidences: BTreeMap::new(),
             vertex_points: vec![[0.0; 3], [1.0, 0.0, 0.0]],
@@ -3059,6 +3146,7 @@ mod tests {
             implicit_pcurves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
             parameter_incidences: BTreeMap::new(),
             vertex_points: Vec::new(),
@@ -3114,6 +3202,7 @@ mod tests {
             implicit_pcurves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
             parameter_incidences: BTreeMap::from([
                 (
