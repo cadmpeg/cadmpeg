@@ -12058,14 +12058,12 @@ fn attach_feature_operations(
                 )
             })
             .flatten();
-        let delete_projection = deletes_body
-            .then(|| {
-                delete_body_feature_definition(
-                    body_references.get(label.id.as_str()).copied(),
-                    &bodies_by_object_index,
-                )
-            })
-            .flatten();
+        let delete_projection = deletes_body.then(|| {
+            delete_body_feature_definition(
+                body_references.get(label.id.as_str()).copied(),
+                &bodies_by_object_index,
+            )
+        });
         let operation_parameter_uses = parameter_uses_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
@@ -13870,22 +13868,22 @@ pub(crate) fn boolean_feature_definition(
     }
 }
 
-/// Project `DELETE` as body deletion only when its bounded operation record
-/// carries a primary-body field. Other `DELETE` payloads target a different
-/// object family and remain native until that family is decoded.
+/// Project `DELETE` as body deletion, retaining an unresolved selection when
+/// its bounded operation record does not carry a primary-body field.
 pub(crate) fn delete_body_feature_definition(
     body_object_index: Option<u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> Option<FeatureDefinition> {
-    let body = body_object_index?;
-    Some(FeatureDefinition::DeleteBody {
-        bodies: feature_body_selection(
-            &[body],
-            bodies_by_object_index,
-            format!("nx:om-object-index#{body}"),
-        ),
+) -> FeatureDefinition {
+    FeatureDefinition::DeleteBody {
+        bodies: body_object_index.map_or(BodySelection::Unresolved, |body| {
+            feature_body_selection(
+                &[body],
+                bodies_by_object_index,
+                format!("nx:om-object-index#{body}"),
+            )
+        }),
         mode: BodyRetentionMode::DeleteSelected,
-    })
+    }
 }
 
 pub(crate) fn sew_body_feature_definition(
