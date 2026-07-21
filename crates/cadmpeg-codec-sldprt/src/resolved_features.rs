@@ -372,6 +372,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     (0..payload.len().saturating_sub(SKETCH_MARKER.len() - 1))
         .filter(|offset| sketch_marker_at(payload, *offset))
+        .filter(|offset| payload.get(offset + 35..offset + 39) != Some(CLASS_MARKER))
         .filter_map(|offset| {
             let code = marker_native_code(payload, offset)?;
             Some((offset, code))
@@ -3191,6 +3192,22 @@ mod marker_tests {
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].coordinates_m, None);
         assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
+    }
+
+    #[test]
+    fn embedded_class_header_is_not_a_sketch_entity() {
+        let mut payload = vec![0; 64];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[31..35].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[35..39].copy_from_slice(CLASS_MARKER);
+
+        assert!(super::sketch_marker_at(&payload, 0));
+        assert!(sketch_input_entities(&payload, "lane").is_empty());
     }
 
     #[test]
