@@ -3391,7 +3391,7 @@ fn nx_container_record_is_not_a_modeling_feature() {
 }
 
 #[test]
-fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
+fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let dimensions = [10.0, 20.0, 30.0];
     for axis in 0..3 {
@@ -3430,27 +3430,19 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
     let output = ir.model.bodies[0].id.clone();
 
     assert_eq!(
-        crate::decode::block_projection(&ir, Some(dimensions), std::slice::from_ref(&output)),
-        Some((dimensions, cadmpeg_ir::transform::Transform::identity()))
+        crate::decode::block_placement(&ir, dimensions, std::slice::from_ref(&output)),
+        Some(cadmpeg_ir::transform::Transform::identity())
     );
     assert_eq!(
-        crate::decode::block_projection(&ir, None, std::slice::from_ref(&output)),
-        Some((dimensions, cadmpeg_ir::transform::Transform::identity()))
+        crate::decode::block_placement(&ir, dimensions, &[]),
+        Some(cadmpeg_ir::transform::Transform::identity())
     );
     assert_eq!(
-        crate::decode::block_projection(&ir, Some(dimensions), &[]),
-        Some((dimensions, cadmpeg_ir::transform::Transform::identity()))
-    );
-    assert_eq!(
-        crate::decode::block_projection(&ir, Some(dimensions), &[output.clone(), output.clone()],),
+        crate::decode::block_placement(&ir, dimensions, &[output.clone(), output.clone()],),
         None
     );
     assert_eq!(
-        crate::decode::block_projection(
-            &ir,
-            Some([10.0, 10.0, 30.0]),
-            std::slice::from_ref(&output),
-        ),
+        crate::decode::block_placement(&ir, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
         None
     );
 
@@ -3469,15 +3461,12 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
         .expect("positive y plane");
     high_y.y = 10.0;
     assert_eq!(
-        crate::decode::block_projection(
+        crate::decode::block_placement(
             &repeated,
-            Some([10.0, 10.0, 30.0]),
+            [10.0, 10.0, 30.0],
             std::slice::from_ref(&output),
         ),
-        Some((
-            [10.0, 10.0, 30.0],
-            cadmpeg_ir::transform::Transform::identity()
-        ))
+        None
     );
 
     let mut stepped = ir.clone();
@@ -3508,7 +3497,7 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
         .push(intermediate_face.id.clone());
     stepped.model.faces.push(intermediate_face);
     assert_eq!(
-        crate::decode::block_projection(&stepped, Some(dimensions), std::slice::from_ref(&output)),
+        crate::decode::block_placement(&stepped, dimensions, std::slice::from_ref(&output)),
         None
     );
 
@@ -3520,11 +3509,7 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
         radius: 1.0,
     };
     assert_eq!(
-        crate::decode::block_projection(
-            &nonplanar,
-            Some(dimensions),
-            std::slice::from_ref(&output)
-        ),
+        crate::decode::block_placement(&nonplanar, dimensions, std::slice::from_ref(&output)),
         None
     );
 
@@ -3536,7 +3521,7 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
         .iter()
         .any(|face| face.surface == removed.id));
     assert_eq!(
-        crate::decode::block_projection(&missing_surface, Some(dimensions), &[]),
+        crate::decode::block_placement(&missing_surface, dimensions, &[]),
         None
     );
 
@@ -3559,14 +3544,14 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
         .push(curved_face.id.clone());
     curved_feature.model.faces.push(curved_face);
     assert_eq!(
-        crate::decode::block_projection(&curved_feature, Some(dimensions), &[]),
-        Some((dimensions, cadmpeg_ir::transform::Transform::identity()))
+        crate::decode::block_placement(&curved_feature, dimensions, &[]),
+        Some(cadmpeg_ir::transform::Transform::identity())
     );
 
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
     assert_eq!(
-        crate::decode::block_projection(&sheet, Some(dimensions), std::slice::from_ref(&output)),
+        crate::decode::block_placement(&sheet, dimensions, std::slice::from_ref(&output)),
         None
     );
 
@@ -3579,11 +3564,7 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
         .push(second_region.id.clone());
     disconnected.model.regions.push(second_region);
     assert_eq!(
-        crate::decode::block_projection(
-            &disconnected,
-            Some(dimensions),
-            std::slice::from_ref(&output)
-        ),
+        crate::decode::block_placement(&disconnected, dimensions, std::slice::from_ref(&output)),
         None
     );
 }
