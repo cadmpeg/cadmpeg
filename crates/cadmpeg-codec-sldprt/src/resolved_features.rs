@@ -3547,6 +3547,19 @@ mod marker_tests {
             ),
             Some([0.0, 0.0])
         );
+        hybrid_entities[0].coordinates_m = Some([4.0, 4.0]);
+        hybrid_entities[1].coordinates_m = Some([0.0, 0.0]);
+        hybrid_entities[1].object_index = Some(0);
+        let hybrid_markers = hybrid_entities.iter().collect::<Vec<_>>();
+        assert_eq!(
+            coordinate_roster_arc_center(
+                &payload,
+                &hybrid_entities[4],
+                &hybrid_markers,
+                [&hybrid_entities[3], &hybrid_entities[2]],
+            ),
+            Some([0.0, 0.0])
+        );
         payload[curve_offset + 64..curve_offset + 66].copy_from_slice(&0u16.to_le_bytes());
         payload[curve_offset + 66..curve_offset + 68].copy_from_slice(&2u16.to_le_bytes());
         payload[curve_offset..curve_offset + LEGACY_SKETCH_MARKER.len()]
@@ -21029,10 +21042,31 @@ fn coordinate_roster_arc_center(
         .filter(|marker| marker.feature_ref == curve.feature_ref && marker.coordinates_m.is_some())
         .collect::<Vec<_>>();
     complete_roster.sort_unstable_by_key(|marker| marker.offset);
-    let center = complete_roster.get(center_index)?.coordinates_m?;
-    let first_radius = (first[0] - center[0]).hypot(first[1] - center[1]);
-    let second_radius = (second[0] - center[0]).hypot(second[1] - center[1]);
-    (first_radius > 0.0 && same_dimension_length(first_radius, second_radius)).then_some(center)
+    let mut centers = complete_roster
+        .get(center_index)
+        .copied()
+        .into_iter()
+        .chain(markers.iter().copied().filter(|marker| {
+            marker.feature_ref == curve.feature_ref
+                && marker.object_index == u32::try_from(center_index).ok()
+        }))
+        .filter_map(|marker| marker.coordinates_m)
+        .filter(|center| {
+            let first_radius = (first[0] - center[0]).hypot(first[1] - center[1]);
+            let second_radius = (second[0] - center[0]).hypot(second[1] - center[1]);
+            first_radius > 0.0 && same_dimension_length(first_radius, second_radius)
+        })
+        .collect::<Vec<_>>();
+    centers.sort_by(|left, right| {
+        left[0]
+            .total_cmp(&right[0])
+            .then_with(|| left[1].total_cmp(&right[1]))
+    });
+    centers.dedup();
+    let [center] = centers.as_slice() else {
+        return None;
+    };
+    Some(*center)
 }
 
 fn coordinate_circle_radius(
