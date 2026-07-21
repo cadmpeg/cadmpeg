@@ -11640,24 +11640,6 @@ fn attach_feature_operations(
                 )
             })
             .flatten();
-        let trimmed_sheet_projection = (label.value == "TRIMMED_SH")
-            .then(|| {
-                Some(FeatureDefinition::TrimSurface {
-                    faces: single_sheet_output_face(ir, &outputs)?,
-                    tool: PathRef::Unresolved,
-                    keep: TrimRegion::Unresolved,
-                })
-            })
-            .flatten();
-        let extended_sheet_projection = (label.value == "EXTEND_SHEET")
-            .then(|| {
-                Some(FeatureDefinition::ExtendSurface {
-                    faces: single_sheet_output_face(ir, &outputs)?,
-                    distance: None,
-                    method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
-                })
-            })
-            .flatten();
         let offset_projection = (label.value == "OFFSET")
             .then(|| offset_surface_feature_definition(ir, &outputs))
             .flatten();
@@ -11738,8 +11720,6 @@ fn attach_feature_operations(
         let definition = booleans.get(label.id.as_str()).map_or_else(
             || {
                 trim_body_projection
-                    .or(trimmed_sheet_projection)
-                    .or(extended_sheet_projection)
                     .or(delete_projection)
                     .or(sew_projection)
                     .or(extrude_projection)
@@ -11974,21 +11954,6 @@ fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
         }
     }
     Some(faces)
-}
-
-pub(crate) fn single_sheet_output_face(ir: &CadIr, outputs: &[BodyId]) -> Option<FaceSelection> {
-    let [body_id] = outputs else {
-        return None;
-    };
-    let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
-    if body.kind != cadmpeg_ir::topology::BodyKind::Sheet {
-        return None;
-    }
-    let faces = body_faces(ir, &body.id)?;
-    let [face] = faces.as_slice() else {
-        return None;
-    };
-    Some(FaceSelection::Faces(vec![face.id.clone()]))
 }
 
 fn connected_solid_body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {

@@ -3589,33 +3589,6 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
 }
 
 #[test]
-fn nx_single_sheet_output_face_requires_one_complete_face_owner() {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
-    let output = ir.model.bodies[0].id.clone();
-    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
-    assert_eq!(
-        crate::decode::single_sheet_output_face(&ir, std::slice::from_ref(&output)),
-        None
-    );
-
-    let selected = ir.model.shells[0].faces[0].clone();
-    ir.model.shells[0].faces.truncate(1);
-    assert_eq!(
-        crate::decode::single_sheet_output_face(&ir, std::slice::from_ref(&output)),
-        Some(cadmpeg_ir::features::FaceSelection::Faces(vec![selected]))
-    );
-    assert_eq!(
-        crate::decode::single_sheet_output_face(&ir, &[output.clone(), output.clone()]),
-        None
-    );
-    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
-    assert_eq!(
-        crate::decode::single_sheet_output_face(&ir, std::slice::from_ref(&output)),
-        None
-    );
-}
-
-#[test]
 fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     use crate::native::{
         FeatureOperationLabel, FeatureOperationRecord, FeaturePayloadString,

@@ -959,9 +959,13 @@ When every non-repeated reference resolves in one offset store, bytewise concate
 
 Canonical `66 32 03, declared_length, printable_text, 00` string frames are decoded over the complete projected-curve construction payload. Each string retains its exact value, payload order and offset, construction-payload ownership, and absolute source offset. Physical block boundaries do not delimit the string scan.
 
-The `TRIMMED_SH` operation label identifies a surface-trim construction. When the operation has exactly one transferred output body and that body is a sheet containing exactly one completely owned face, that face is the input-face selection. Other output shapes leave the input faces unresolved. The trim path and retained region remain unresolved.
+The `TRIMMED_SH` operation label identifies a surface-trim construction. Its
+selected input faces, trim path, and retained region remain unresolved. Output
+face ownership does not identify the pre-operation face selection.
 
-The `EXTEND_SHEET` operation label identifies a surface-extension construction. When the operation has exactly one transferred output body and that body is a sheet containing exactly one completely owned face, that face is the input-face selection. Other output shapes leave the input faces unresolved. The distance and continuation law remain unresolved.
+The `EXTEND_SHEET` operation label identifies a surface-extension construction.
+Its selected input faces, distance, and continuation law remain unresolved.
+Output face ownership does not identify the pre-operation face selection.
 
 The `EXTRACT_BODY` operation label identifies a body-extraction construction. Neutral projection retains an unresolved source-body selection independently of the operation's output bodies.
 
