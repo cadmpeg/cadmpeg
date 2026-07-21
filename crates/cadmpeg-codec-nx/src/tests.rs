@@ -2317,6 +2317,35 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
 }
 
 #[test]
+fn nx_chamfer_direction_is_required_only_for_asymmetric_specs() {
+    use cadmpeg_ir::features::{Angle, ChamferSpec, Length};
+
+    assert!(!crate::decode::chamfer_requires_direction(
+        &ChamferSpec::Distance {
+            distance: Length(2.0),
+        }
+    ));
+    assert!(!crate::decode::chamfer_requires_direction(
+        &ChamferSpec::TwoDistances {
+            first: Length(2.0),
+            second: Length(2.0),
+        }
+    ));
+    assert!(crate::decode::chamfer_requires_direction(
+        &ChamferSpec::TwoDistances {
+            first: Length(2.0),
+            second: Length(3.0),
+        }
+    ));
+    assert!(crate::decode::chamfer_requires_direction(
+        &ChamferSpec::DistanceAngle {
+            distance: Length(2.0),
+            angle: Angle(0.5),
+        }
+    ));
+}
+
+#[test]
 fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, ProfileRef};
 

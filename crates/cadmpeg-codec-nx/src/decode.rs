@@ -7298,7 +7298,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 flip_direction,
             } if edge_selection_is_opaque(edges)
                 || matches!(spec, ChamferSpec::Unresolved { .. })
-                || flip_direction.is_none() =>
+                || (chamfer_requires_direction(spec) && flip_direction.is_none()) =>
             {
                 "chamfer"
             }
@@ -7452,6 +7452,14 @@ pub(crate) fn hole_feature_is_incomplete(
         || matches!(kind, HoleKind::Unresolved { .. })
         || diameter.is_none()
         || extent.is_none_or(|extent| matches!(extent, Extent::Unresolved))
+}
+
+pub(crate) fn chamfer_requires_direction(spec: &ChamferSpec) -> bool {
+    match spec {
+        ChamferSpec::Unresolved { .. } | ChamferSpec::DistanceAngle { .. } => true,
+        ChamferSpec::Distance { .. } => false,
+        ChamferSpec::TwoDistances { first, second } => first != second,
+    }
 }
 
 fn body_selection_is_opaque(selection: &BodySelection) -> bool {
