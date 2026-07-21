@@ -1099,11 +1099,12 @@ coordinate on either endpoint therefore supplies the missing coordinate on the
 other endpoint; conflicting solved coordinates remain distinct.
 For an arc or circle operand, sense `4` selects its center. A type-14 incidence
 stores a symmetry axis as a sense-zero line followed by two point loci selected
-with senses `2`, `3`, or `4`. A type-3 incidence between a sense-zero line and
-a selected point locus makes the locus coincident with the line and maps to a
-neutral point-on-object constraint. A type-3 incidence between a sense-zero
-`segtab` point and a selected point locus equates the point's `pointid`
-coordinate with the selected endpoint or arc-center `pointid` coordinate and
+with senses `2`, `3`, or `4`. A type-3 incidence between a sense-zero line,
+arc, circle, or spline and a selected point locus makes the locus coincident
+with the curve and maps to a neutral point-on-object constraint. A type-3
+incidence between a sense-zero `segtab` point and a selected point locus
+equates the point's `pointid` coordinate with the selected endpoint or
+arc-center `pointid` coordinate and
 maps to a neutral coincident-loci constraint. Solved coordinates propagate
 across that equality under the same unique-row and conflict rules as type zero.
 A two-item type-9 incidence with sense zero on one line and one point makes the
@@ -1122,7 +1123,7 @@ type-four incidence makes the referenced entities tangent at their selected
 endpoint loci.
 A two-item type-three incidence has one sense-zero point entity and one
 endpoint-selected entity; the point and endpoint loci map to a neutral
-coincident-loci constraint. The separate sense-zero-line form maps to
+coincident-loci constraint. The separate sense-zero-curve form maps to
 point-on-object as defined above.
 A two-item type-four incidence with sense zero on both curve entities maps to
 an entity-level tangent constraint. Endpoint-selected operands map to the

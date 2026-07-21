@@ -10812,29 +10812,10 @@ fn section_skamp_curve_entity(
     if item.sense != 0 {
         return None;
     }
-    let has_segment = definition
-        .segments
-        .iter()
-        .flat_map(|table| &table.rows)
-        .any(|segment| segment.external_id == item.entity_id);
-    let is_curve = if has_segment {
-        unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
-            matches!(
-                segment.kind,
-                crate::feature::FeatureSegmentKind::Line | crate::feature::FeatureSegmentKind::Arc
-            )
-        })
-    } else {
-        section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
-            matches!(
-                entity,
-                crate::feature::FeatureSavedEntity::Line(_)
-                    | crate::feature::FeatureSavedEntity::Arc(_)
-                    | crate::feature::FeatureSavedEntity::Circle(_)
-                    | crate::feature::FeatureSavedEntity::Spline(_)
-            )
-        })
-    };
+    let is_curve = section_skamp_is_line(definition, item)
+        || section_skamp_is_circular(definition, item)
+        || section_saved_entity(definition, item.entity_id)
+            .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Spline(_)));
     is_curve.then(|| sketch_entity_id(sketch, item.entity_id))
 }
 
@@ -11038,35 +11019,46 @@ fn section_skamp_constraints_for_geometry(
                             ],
                         }
                     }
-                    (3, [first, second])
-                        if (first.sense == 0
-                            && (section_skamp_is_point(definition, first)
-                                || section_skamp_is_line(definition, first))
-                            && section_skamp_locus(definition, sketch, first).is_some()
-                            && section_skamp_point_locus(definition, sketch, second).is_some())
-                            || (second.sense == 0
-                                && (section_skamp_is_point(definition, second)
-                                    || section_skamp_is_line(definition, second))
-                                && section_skamp_locus(definition, sketch, second).is_some()
-                                && section_skamp_point_locus(definition, sketch, first)
-                                    .is_some()) =>
-                    {
-                        let (entity, locus) = if first.sense == 0 {
-                            (first, second)
-                        } else {
-                            (second, first)
-                        };
-                        if section_skamp_is_line(definition, entity) {
+                    (3, [first, second]) => {
+                        let directed = [(first, second), (second, first)];
+                        let point_on_curve = directed
+                            .into_iter()
+                            .filter_map(|(curve, point)| {
+                                Some((
+                                    section_skamp_curve_entity(definition, sketch, curve)?,
+                                    section_skamp_incidence_locus(
+                                        definition, sketch, point, geometry,
+                                    )?,
+                                ))
+                            })
+                            .collect::<Vec<_>>();
+                        if let [(entity, point)] = point_on_curve.as_slice() {
                             SketchConstraintDefinition::PointOnObject {
-                                point: section_skamp_point_locus(definition, sketch, locus)?,
-                                entity: sketch_entity_id(sketch, entity.entity_id),
+                                point: point.clone(),
+                                entity: entity.clone(),
                             }
                         } else {
-                            SketchConstraintDefinition::CoincidentLoci {
-                                loci: vec![
-                                    section_skamp_locus(definition, sketch, entity)?,
-                                    section_skamp_point_locus(definition, sketch, locus)?,
-                                ],
+                            let point_coincidence = directed
+                                .into_iter()
+                                .filter_map(|(point, locus)| {
+                                    (point.sense == 0 && section_skamp_is_point(definition, point))
+                                        .then(|| {
+                                            Some([
+                                                section_skamp_locus(definition, sketch, point)?,
+                                                section_skamp_incidence_locus(
+                                                    definition, sketch, locus, geometry,
+                                                )?,
+                                            ])
+                                        })
+                                        .flatten()
+                                })
+                                .collect::<Vec<_>>();
+                            if let [loci] = point_coincidence.as_slice() {
+                                SketchConstraintDefinition::CoincidentLoci {
+                                    loci: loci.to_vec(),
+                                }
+                            } else {
+                                native_constraint()?
                             }
                         }
                     }
@@ -20615,6 +20607,34 @@ mod resolved_sketch_tests {
                 entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
             }
         );
+        let point_coincidence_relations = point_coincidence_definition
+            .relations
+            .as_mut()
+            .expect("relations");
+        point_coincidence_relations.skamps[0].items = vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 13,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 14,
+                sense: 0,
+            },
+        ];
+        assert_eq!(
+            section_skamp_constraints(
+                &point_coincidence_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::PointOnObject {
+                point: SketchLocus::Entity(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:14".to_string()
+                )),
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            }
+        );
         let native_endpoint = SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string());
         let point_coincidence_relations = point_coincidence_definition
             .relations
@@ -20645,6 +20665,15 @@ mod resolved_sketch_tests {
                     native_kind: "solver_only_section_entity".to_string(),
                 },
             ),
+            (
+                SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                SketchGeometry::Arc {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length(1.0),
+                    start_angle: Angle(0.0),
+                    end_angle: Angle(std::f64::consts::FRAC_PI_2),
+                },
+            ),
         ]);
         assert_eq!(
             section_skamp_constraints_for_geometry(
@@ -20661,6 +20690,28 @@ mod resolved_sketch_tests {
                     )),
                     SketchLocus::Start(native_endpoint.clone()),
                 ],
+            }
+        );
+        let point_coincidence_relations = point_coincidence_definition
+            .relations
+            .as_mut()
+            .expect("relations");
+        point_coincidence_relations.skamps[0].kind = 3;
+        point_coincidence_relations.skamps[0].items[0] = crate::feature::FeatureSkampItem {
+            entity_id: 13,
+            sense: 0,
+        };
+        assert_eq!(
+            section_skamp_constraints_for_geometry(
+                &point_coincidence_definition,
+                &SketchId("creo:model:sketch#917".into()),
+                Some(&incidence_geometry),
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::PointOnObject {
+                point: SketchLocus::Start(native_endpoint.clone()),
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
             }
         );
         point_coincidence_definition
