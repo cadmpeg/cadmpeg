@@ -1578,6 +1578,13 @@ pub enum PathRef {
     Native(String),
     /// Ordered geometry from a neutral sketch.
     Sketch(crate::sketches::SketchId),
+    /// Source-native curve selection within a known neutral spatial sketch.
+    SpatialSketchSelection {
+        /// Spatial sketch containing the selected curves.
+        sketch: crate::sketches::SpatialSketchId,
+        /// Full-fidelity native selection records in path order.
+        selections: Vec<String>,
+    },
     /// Path resolved as ordered topological edges.
     Edges(Vec<EdgeId>),
     /// Path resolved as ordered geometric curves.

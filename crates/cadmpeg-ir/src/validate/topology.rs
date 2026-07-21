@@ -2718,7 +2718,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             .collect()
                     },
                 ),
-                PathRef::Native(_) | PathRef::Sketch(_) => {}
+                PathRef::Native(_)
+                | PathRef::Sketch(_)
+                | PathRef::SpatialSketchSelection { .. } => {}
             }
         }
         for extent in extents {
@@ -3337,21 +3339,40 @@ fn check_feature_sketch_references(
             }
         }
         for path in paths {
-            if let PathRef::Sketch(sketch) = path {
-                if !sketches.contains(sketch.0.as_str()) {
-                    ref_error(findings, &feature.id.0, "sketch path", &sketch.0);
-                } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
-                    if *ordinal >= feature.ordinal {
-                        findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
-                                "sketch owner `{owner}` does not precede its path consumer"
-                            ),
-                            entity: Some(feature.id.0.clone()),
-                        });
-                    }
+            let (sketch, known_sketches, description, selections) = match path {
+                PathRef::Sketch(sketch) => (sketch.0.as_str(), sketches, "sketch path", None),
+                PathRef::SpatialSketchSelection { sketch, selections } => (
+                    sketch.0.as_str(),
+                    &spatial_sketches,
+                    "spatial sketch path",
+                    Some(selections),
+                ),
+                _ => continue,
+            };
+            if !known_sketches.contains(sketch) {
+                ref_error(findings, &feature.id.0, description, sketch);
+            } else if let Some((owner, ordinal)) = owners.get(sketch) {
+                if *ordinal >= feature.ordinal {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "sketch owner `{owner}` does not precede its path consumer"
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    });
                 }
+            }
+            if selections.is_some_and(|selections| {
+                selections.is_empty()
+                    || selections.iter().any(String::is_empty)
+                    || selections.iter().collect::<HashSet<_>>().len() != selections.len()
+            }) {
+                feature_geometry_error(
+                    findings,
+                    feature,
+                    "native spatial sketch path selections are empty or repeated",
+                );
             }
         }
     }

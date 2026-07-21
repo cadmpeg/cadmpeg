@@ -17053,8 +17053,8 @@ pub fn bind_sketch_profiles(
     Ok(())
 }
 
-/// Resolve Loft profile groups that carry the standard sketch-profile frame.
-pub(crate) struct LoftProfileResolution<'a> {
+/// Solved sketch records used to bind Loft section and guide selections.
+pub(crate) struct LoftSketchResolution<'a> {
     pub(crate) entities: &'a [DesignEntityHeader],
     pub(crate) entity_selection_operands: &'a [DesignEntitySelectionOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
@@ -17062,20 +17062,20 @@ pub(crate) struct LoftProfileResolution<'a> {
     pub(crate) spatial_sketches: &'a [cadmpeg_ir::sketches::SpatialSketch],
 }
 
-pub(crate) fn bind_loft_sketch_profiles(
+pub(crate) fn bind_loft_sketch_selections(
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
-    resolution: &LoftProfileResolution<'_>,
+    resolution: &LoftSketchResolution<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, LoftSection, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, LoftSection, PathRef, ProfileRef};
 
     let headers = headers
         .iter()
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
-    let mut resolved = HashMap::new();
+    let mut resolved_profiles = HashMap::new();
     for group in groups.iter().filter(|group| {
         matches!(group.role, 0x41_0000_0000 | 0x43_0000_0000) && group.members.len() == 1
     }) {
@@ -17117,11 +17117,12 @@ pub(crate) fn bind_loft_sketch_profiles(
         let [placement] = matches.as_slice() else {
             continue;
         };
-        resolved.insert(
+        resolved_profiles.insert(
             group.id.clone(),
             ProfileRef::Sketch(neutral_sketch_id(placement)),
         );
     }
+    let mut resolved_spatial_paths = HashMap::new();
     for group in groups
         .iter()
         .filter(|group| group.role == 0x5_0000_0000 && group.members.len() == 1)
@@ -17178,24 +17179,43 @@ pub(crate) fn bind_loft_sketch_profiles(
         if geometry_matches != 1 {
             continue;
         }
-        resolved.insert(
+        let selections = vec![operand.id.clone()];
+        resolved_profiles.insert(
             group.id.clone(),
             ProfileRef::SpatialSketchSelection {
+                sketch: spatial_sketch.clone(),
+                selections: selections.clone(),
+            },
+        );
+        resolved_spatial_paths.insert(
+            group.id.clone(),
+            PathRef::SpatialSketchSelection {
                 sketch: spatial_sketch,
-                selections: vec![operand.id.clone()],
+                selections,
             },
         );
     }
     for feature in features {
-        let FeatureDefinition::Loft { sections, .. } = &mut feature.definition else {
+        let FeatureDefinition::Loft {
+            sections, guides, ..
+        } = &mut feature.definition
+        else {
             continue;
         };
         for section in sections {
             let LoftSection::Profile(ProfileRef::Native(native)) = section else {
                 continue;
             };
-            if let Some(profile) = resolved.get(native) {
+            if let Some(profile) = resolved_profiles.get(native) {
                 *section = LoftSection::Profile(profile.clone());
+            }
+        }
+        for guide in guides {
+            let PathRef::Native(native) = guide else {
+                continue;
+            };
+            if let Some(path) = resolved_spatial_paths.get(native) {
+                *guide = path.clone();
             }
         }
     }

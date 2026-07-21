@@ -7106,7 +7106,10 @@ fn path_source(
                 .collect::<Vec<_>>()
                 .join(","),
         ),
-        PathRef::Edges(_) | PathRef::Curves(_) | PathRef::HistoricalEdges { .. } => None,
+        PathRef::Edges(_)
+        | PathRef::Curves(_)
+        | PathRef::SpatialSketchSelection { .. }
+        | PathRef::HistoricalEdges { .. } => None,
     }
 }
 
