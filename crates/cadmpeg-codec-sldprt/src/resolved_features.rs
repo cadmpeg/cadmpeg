@@ -19733,17 +19733,25 @@ fn typed_marker_relation_definition_in_sketch(
         Horizontal | Vertical | Fixed => {
             let direct_entities =
                 marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
+            let relation_owners = relation_owner_markers(marker, markers_by_id);
+            let point_owner_pair = matches!(relation_owners.as_slice(), [first, second]
+                if matches!(first.kind, SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
+                    && matches!(second.kind, SketchInputKind::Point | SketchInputKind::ConstrainedPoint));
             let owner_entities =
                 relation_owner_curve_entities(marker, markers_by_id, loci_by_marker);
-            let entities = match owner_entities.as_slice() {
-                [owner]
-                    if direct_entities.iter().all(|entity| {
-                        entity == owner || entity.0.contains("sketch-entity#relation-point:")
-                    }) =>
-                {
-                    owner_entities
+            let entities = if point_owner_pair && matches!(kind, Horizontal | Vertical) {
+                Vec::new()
+            } else {
+                match owner_entities.as_slice() {
+                    [owner]
+                        if direct_entities.iter().all(|entity| {
+                            entity == owner || entity.0.contains("sketch-entity#relation-point:")
+                        }) =>
+                    {
+                        owner_entities
+                    }
+                    _ => direct_entities,
                 }
-                _ => direct_entities,
             };
             if let [entity] = entities.as_slice() {
                 let invalid_axis_entity = !sketch_entities.is_empty()
@@ -25815,6 +25823,58 @@ mod profile_join_tests {
                 &entities,
                 &markers,
                 &swapped_loci,
+            ),
+            Some(SketchConstraintDefinition::VerticalPoints { .. })
+        ));
+
+        let mut owner_relation = marker("owner-relation", None);
+        owner_relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+        let mut first_owner = marker("first-owner", Some([0.0, 0.0]));
+        first_owner.kind = SketchInputKind::Point;
+        first_owner.links = vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: owner_relation.id.clone(),
+        }];
+        let mut second_owner = marker("second-owner", Some([0.0, 1.0]));
+        second_owner.kind = SketchInputKind::Point;
+        second_owner.links = first_owner.links.clone();
+        let first_point = SketchEntityId("first-point".into());
+        let second_point = SketchEntityId("second-point".into());
+        let point = |id, position| SketchEntity {
+            id,
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point { position },
+        };
+        let owner_entities = [
+            point(first_point.clone(), Point2::new(0.0, 0.0)),
+            point(second_point.clone(), Point2::new(0.0, 1.0)),
+        ];
+        let owner_markers = HashMap::from([
+            (owner_relation.id.as_str(), &owner_relation),
+            (first_owner.id.as_str(), &first_owner),
+            (second_owner.id.as_str(), &second_owner),
+        ]);
+        let owner_loci = HashMap::from([
+            (
+                first_owner.id.clone(),
+                vec![SketchLocus::Entity(first_point)],
+            ),
+            (
+                second_owner.id.clone(),
+                vec![SketchLocus::Entity(second_point)],
+            ),
+        ]);
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &owner_relation,
+                &sketch,
+                &owner_entities,
+                &owner_markers,
+                &owner_loci,
             ),
             Some(SketchConstraintDefinition::VerticalPoints { .. })
         ));
