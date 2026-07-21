@@ -1992,6 +1992,7 @@ fn decode_positional_cylinder_frame(
         .or_else(|| decode_local_system_cylinder_frame(body, cache))
         .or_else(|| decode_zero_support_cylinder_frame(body, cache))
         .or_else(|| decode_signed_zero_support_cylinder_frame(body, cache))
+        .or_else(|| decode_signed_radial_envelope_cylinder_frame(body, cache))
         .or_else(|| decode_referenced_planar_envelope_cylinder_frame(body, cache))
         .or_else(|| decode_held_axis_cylinder_frame(body, cache))
         .or_else(|| decode_axial_radial_cylinder_frame(body, cache))
@@ -2695,6 +2696,84 @@ fn decode_signed_zero_support_cylinder_frame(
     } else {
         (second[*diameter_index] - first[*diameter_index]).signum()
     };
+    Some(PositionalCylinderFrame {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+        length: Some(signed_length.abs()),
+    })
+}
+
+fn decode_signed_radial_envelope_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    (body.first() == Some(&0x11)).then_some(())?;
+    let (leading, mut cursor) = scalar::decode_in_surface_row_lane(body, 1, cache)?;
+    (leading.is_finite() && body.get(cursor) == Some(&0x13)).then_some(())?;
+    cursor += 1;
+    let mut values = [0.0; 7];
+    for value in &mut values {
+        let (decoded, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+        decoded.is_finite().then_some(())?;
+        *value = decoded;
+        cursor = next;
+    }
+    let reversed = if cursor == body.len() {
+        false
+    } else if body.get(cursor..) == Some(&[0xf7, 0x19]) {
+        true
+    } else {
+        return None;
+    };
+    let (signed_length, auxiliary) = if reversed {
+        (leading, values[0])
+    } else {
+        (values[0], leading)
+    };
+    (signed_length.is_finite()
+        && signed_length != 0.0
+        && reversed == signed_length.is_sign_negative()
+        && auxiliary.abs() < signed_length.abs())
+    .then_some(())?;
+
+    let first_radial = [values[1], values[2]];
+    let second_radial = [values[4], values[5]];
+    let radial_spans =
+        std::array::from_fn::<_, 2, _>(|index| (second_radial[index] - first_radial[index]).abs());
+    let scale = values
+        .iter()
+        .chain([leading, signed_length].iter())
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let (diameter_index, radius_index) = match (
+        close(radial_spans[0], 2.0 * radial_spans[1]),
+        close(radial_spans[1], 2.0 * radial_spans[0]),
+    ) {
+        (true, false) => (0, 1),
+        (false, true) => (1, 0),
+        _ => return None,
+    };
+    let radius = radial_spans[radius_index];
+    (radius > 1e-12 * scale).then_some(())?;
+
+    let axial_end = values[6];
+    let axial_start = axial_end - signed_length.abs();
+    let axial_sample = values[3];
+    (axial_sample >= axial_start - 1e-9 * scale && axial_sample <= axial_end + 1e-9 * scale)
+        .then_some(())?;
+    let mut origin = [0.0; 3];
+    origin[diameter_index] =
+        f64::midpoint(first_radial[diameter_index], second_radial[diameter_index]);
+    origin[radius_index] = second_radial[radius_index];
+    origin[2] = if reversed { axial_end } else { axial_start };
+    let mut axis = [0.0; 3];
+    axis[2] = if reversed { -1.0 } else { 1.0 };
+    let mut ref_direction = [0.0; 3];
+    ref_direction[diameter_index] =
+        axis[2] * (second_radial[diameter_index] - first_radial[diameter_index]).signum();
     Some(PositionalCylinderFrame {
         origin,
         axis,
@@ -4463,6 +4542,62 @@ mod tests {
         inconsistent[20..23].copy_from_slice(&[0x2f, 0x42, 0x00]);
         assert!(decode_positional_cylinder_frame(&inconsistent, &cache).is_none());
         assert!(decode_positional_cylinder_frame(&direct[..direct.len() - 3], &cache).is_none());
+    }
+
+    #[test]
+    fn positional_cylinder_frame_decodes_signed_radial_envelopes() {
+        let cache = scalar::ScalarCache::default();
+        let outer_left = [
+            17, 72, 40, 0, 19, 72, 33, 0, 72, 49, 0, 47, 54, 0, 47, 4, 0, 72, 42, 0, 47, 56, 0, 47,
+            24, 0, 247, 25,
+        ];
+        assert_eq!(
+            decode_positional_cylinder_frame(&outer_left, &cache),
+            Some(PositionalCylinderFrame {
+                origin: [-15.0, 24.0, 6.0],
+                axis: [0.0, 0.0, -1.0],
+                ref_direction: [-1.0, 0.0, 0.0],
+                radius: 2.0,
+                length: Some(12.0),
+            })
+        );
+
+        let middle_left = [
+            17, 72, 33, 0, 19, 24, 72, 50, 128, 47, 52, 128, 71, 23, 255, 72, 39, 0, 47, 56, 0, 47,
+            4, 0, 247, 25,
+        ];
+        assert_eq!(
+            decode_positional_cylinder_frame(&middle_left, &cache),
+            Some(PositionalCylinderFrame {
+                origin: [-15.0, 24.0, 2.5],
+                axis: [0.0, 0.0, -1.0],
+                ref_direction: [-1.0, 0.0, 0.0],
+                radius: 3.5,
+                length: Some(8.5),
+            })
+        );
+
+        let outer_right = [
+            17, 47, 33, 0, 19, 47, 40, 0, 47, 42, 0, 47, 54, 0, 47, 4, 0, 47, 49, 0, 47, 56, 0, 47,
+            24, 0,
+        ];
+        assert_eq!(
+            decode_positional_cylinder_frame(&outer_right, &cache),
+            Some(PositionalCylinderFrame {
+                origin: [15.0, 24.0, -6.0],
+                axis: [0.0, 0.0, 1.0],
+                ref_direction: [1.0, 0.0, 0.0],
+                radius: 2.0,
+                length: Some(12.0),
+            })
+        );
+
+        assert!(
+            decode_positional_cylinder_frame(&outer_left[..outer_left.len() - 2], &cache).is_none()
+        );
+        let mut inconsistent_radius = outer_right;
+        inconsistent_radius[17..20].copy_from_slice(&[47, 50, 0]);
+        assert!(decode_positional_cylinder_frame(&inconsistent_radius, &cache).is_none());
     }
 
     #[test]

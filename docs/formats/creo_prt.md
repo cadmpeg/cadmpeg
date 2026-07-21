@@ -342,6 +342,21 @@ midpoint, and at one endpoint of the radius span. The axis points from the
 origin endpoint toward the other endpoint. The sign of the stored length
 selects the diameter-axis reference direction.
 
+A signed radial-envelope positional cylinder begins `11`, one scalar, and
+`13`, followed by seven surface-row scalars. The final six scalars store two
+radial XY pairs, one axial sample, and one upper axial endpoint in the order
+`x0, y0, z_sample, x1, y1, z1`. Exactly one radial span is twice the other;
+the smaller span is the positive radius, the larger is the diameter, and the
+second bound on the radius-span coordinate is the center coordinate. The axial
+sample lies in the closed interval ending at `z1`. A body ending in `f7 19`
+uses the negative scalar before `13` as its signed axial length and the first
+scalar after `13` as an auxiliary bound. A body ending after the seventh scalar
+uses the positive first scalar after `13` as its axial length and the scalar
+before `13` as the auxiliary bound. The auxiliary bound has smaller magnitude
+than the axial length. The negative form originates at `z1` and points toward
+`z1 - abs(length)`; the positive form originates at that lower endpoint and
+points toward `z1`. The diameter direction follows the axis sign.
+
 A referenced planar-envelope positional cylinder begins `11 18 13` and stores
 positive axial length, first radial bound, first axial bound, one complete
 `19` or `32` model-reference token, second radial bound, second axial bound,
