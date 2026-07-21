@@ -49,24 +49,24 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan);
         let report = build_container_report(&scan, true);
-        return finish_decode(ctx, root, ir, report, annotations, &unknowns);
+        return finish_decode(root, ir, report, annotations, &unknowns);
     }
 
     if matches!(scan.variant, Variant::StandardNested | Variant::FbbOnly) {
         if let Some((ir, report, annotations, unknowns)) = try_decode_standard(&scan) {
-            return finish_decode(ctx, root, ir, report, annotations, &unknowns);
+            return finish_decode(root, ir, report, annotations, &unknowns);
         }
     }
 
     if scan.variant == Variant::ZeroEntity {
         if let Some((ir, report, annotations, unknowns)) = try_decode_zero_entity(&scan) {
-            return finish_decode(ctx, root, ir, report, annotations, &unknowns);
+            return finish_decode(root, ir, report, annotations, &unknowns);
         }
     }
 
     if scan.variant == Variant::E5Stream {
         if let Some((ir, report, annotations, unknowns)) = try_decode_e5(&scan) {
-            return finish_decode(ctx, root, ir, report, annotations, &unknowns);
+            return finish_decode(root, ir, report, annotations, &unknowns);
         }
     }
 
@@ -75,24 +75,23 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         Variant::FloatPackedInnerNoFbb | Variant::FbbOnly | Variant::InnerNoDirectory
     ) {
         if let Some((ir, report, annotations, unknowns)) = try_decode_freeform_surfaces(&scan) {
-            return finish_decode(ctx, root, ir, report, annotations, &unknowns);
+            return finish_decode(root, ir, report, annotations, &unknowns);
         }
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan);
     let report = build_container_report(&scan, false);
-    finish_decode(ctx, root, ir, report, annotations, &unknowns)
+    finish_decode(root, ir, report, annotations, &unknowns)
 }
 
-fn finish_decode<'a>(
-    ctx: &DecodeContext<'a>,
-    root: View<'a>,
+fn finish_decode(
+    root: View<'_>,
     mut ir: CadIr,
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
-    CatiaNative::decode(ctx, root)?.store(ir.native.namespace_mut("catia"))?;
+    CatiaNative::decode(root)?.store(ir.native.namespace_mut("catia"))?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..Default::default()

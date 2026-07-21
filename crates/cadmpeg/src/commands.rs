@@ -10,7 +10,6 @@ use std::process::ExitCode;
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::source_fidelity_diff::{diff_source_fidelity, FidelityDiff};
 use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, CodecEntry, SourceFidelity};
 
 use crate::loader::{self, read_prefix};
@@ -497,9 +496,30 @@ enum FidelitySummary {
     Both(FidelityDiff),
 }
 
+struct FidelityDiff {
+    version: Option<(String, String)>,
+    annotations_changed: bool,
+    retained_records_changed: bool,
+}
+
+impl FidelityDiff {
+    fn between(left: &SourceFidelity, right: &SourceFidelity) -> Self {
+        Self {
+            version: (left.version != right.version)
+                .then(|| (left.version.clone(), right.version.clone())),
+            annotations_changed: left.annotations != right.annotations,
+            retained_records_changed: left.retained_records != right.retained_records,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.version.is_none() && !self.annotations_changed && !self.retained_records_changed
+    }
+}
+
 fn fidelity_diff(left: Option<&SourceFidelity>, right: Option<&SourceFidelity>) -> FidelitySummary {
     match (left, right) {
-        (Some(left), Some(right)) => FidelitySummary::Both(diff_source_fidelity(left, right)),
+        (Some(left), Some(right)) => FidelitySummary::Both(FidelityDiff::between(left, right)),
         (Some(_), None) => FidelitySummary::OnlyLeft,
         (None, Some(_)) => FidelitySummary::OnlyRight,
         (None, None) => FidelitySummary::None,
@@ -522,9 +542,20 @@ fn fidelity_json(summary: &FidelitySummary) -> serde_json::Value {
         FidelitySummary::Both(diff) => serde_json::json!({
             "present": "both",
             "different": !diff.is_empty(),
-            "diff": diff,
+            "diff": fidelity_delta_json(diff),
         }),
     }
+}
+
+fn fidelity_delta_json(diff: &FidelityDiff) -> serde_json::Value {
+    let mut value = serde_json::json!({
+        "annotations_changed": diff.annotations_changed,
+        "retained_records_changed": diff.retained_records_changed,
+    });
+    if let Some(version) = &diff.version {
+        value["version"] = serde_json::json!(version);
+    }
+    value
 }
 
 fn print_fidelity_summary(summary: &FidelitySummary) {

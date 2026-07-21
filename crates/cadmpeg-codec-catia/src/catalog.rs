@@ -3,7 +3,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_ir::decode::View;
 use cadmpeg_ir::le::u32_at as u32_le;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -35,23 +35,22 @@ pub struct CatalogEntry {
 }
 
 /// Parse every exact `7C02` catalog in a complete `CATPart` image.
-pub fn parse<'a>(ctx: &DecodeContext<'a>, view: View<'a>) -> Result<Vec<Catalog>, CodecError> {
+pub fn parse(view: View<'_>) -> Result<Vec<Catalog>, CodecError> {
     let bytes = view.window();
     let mut catalogs = Vec::new();
     for pos in 0..bytes.len().saturating_sub(1) {
         if bytes[pos..pos + 2] != [0x7c, 0x02] {
             continue;
         }
-        if let Some(catalog) = parse_candidate(ctx, view, bytes, pos)? {
+        if let Some(catalog) = parse_candidate(view, bytes, pos)? {
             catalogs.push(catalog);
         }
     }
     Ok(catalogs)
 }
 
-fn parse_candidate<'a>(
-    ctx: &DecodeContext<'a>,
-    view: View<'a>,
+fn parse_candidate(
+    view: View<'_>,
     bytes: &[u8],
     pos: usize,
 ) -> Result<Option<Catalog>, CodecError> {
@@ -85,7 +84,10 @@ fn parse_candidate<'a>(
     let Some(bounded) = region.counted(entry_count as u64, 1) else {
         return Ok(None);
     };
-    let mut entries = ctx.exact_vec::<CatalogEntry>(bounded)?;
+    let mut entries = Vec::new();
+    entries
+        .try_reserve_exact(bounded.get())
+        .map_err(|_| CodecError::Io(std::io::Error::other("catalog allocation failed")))?;
     let mut at = at;
     for ordinal in 0..entry_count {
         let framed_len = usize::from(*bytes.get(at).unwrap_or(&0));
@@ -110,10 +112,9 @@ fn parse_candidate<'a>(
             ordinal: ordinal as u32,
             pos: at,
             value: value.to_owned(),
-        })?;
+        });
         at = next;
     }
-    let entries = entries.finish();
     if at != end
         || entries
             .iter()

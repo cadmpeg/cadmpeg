@@ -84,10 +84,10 @@ impl Codec for CreoCodec {
 
     fn inspect_impl(
         &self,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_view(ctx, root)?;
+        let scan = container::scan_bytes(root.window());
         Ok(container::summarize(&scan))
     }
 

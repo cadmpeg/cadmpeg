@@ -99,9 +99,9 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             extend_related_design_records(&scan, &mut native)?;
             native.sketch_points = crate::design::decode_sketch_points(&scan)?;
             native.sketch_curve_identities = crate::design::decode_sketch_curve_identities(&scan)?;
-            native.design_body_members = crate::design::decode_body_members(ctx, &scan)?;
+            native.design_body_members = crate::design::decode_body_members(&scan)?;
             native.design_configurations = crate::design::decode_configurations(&scan)?;
-            let act = crate::act::decode(ctx, &scan)?;
+            let act = crate::act::decode(&scan)?;
             native.act_entities = act.entities;
             native.act_guids = act.guids;
             native.act_root_components = act.root_components;
@@ -188,9 +188,9 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     extend_related_design_records(&scan, &mut native)?;
     native.sketch_points = crate::design::decode_sketch_points(&scan)?;
     native.sketch_curve_identities = crate::design::decode_sketch_curve_identities(&scan)?;
-    native.design_body_members = crate::design::decode_body_members(ctx, &scan)?;
+    native.design_body_members = crate::design::decode_body_members(&scan)?;
     native.design_configurations = crate::design::decode_configurations(&scan)?;
-    let act = crate::act::decode(ctx, &scan)?;
+    let act = crate::act::decode(&scan)?;
     native.act_entities = act.entities;
     native.act_guids = act.guids;
     native.act_root_components = act.root_components;

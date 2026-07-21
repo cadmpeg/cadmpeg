@@ -14,7 +14,7 @@ use crate::records::DesignMaterialAssignment;
 use cadmpeg_ir::appearance::Appearance;
 use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeContext, DerivedKind, View};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
 use cadmpeg_ir::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, u64_at, utf16le_at};
 use cadmpeg_ir::topology::Color;
@@ -1138,10 +1138,7 @@ fn dechunk(bytes: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// Reassemble the paged `.protein` instance stream into its logical byte stream,
-/// registering it as a `Concat` derived space so the reconstruction is named in
-/// the runtime graph, its segments recorded as the exact page-body extents
-/// assembled. Returns `Ok(None)` when the framing is not the expected shape.
+/// Reassemble the paged `.protein` instance stream into its logical byte stream.
 fn dechunk_space<'a>(
     ctx: &DecodeContext<'a>,
     instance: View<'a>,
@@ -1156,9 +1153,7 @@ fn dechunk_space<'a>(
         };
         segments.push(child);
     }
-    let writer = ctx.begin_derived_space(&segments, DerivedKind::Concat)?;
-    let (_space, view) = writer.finalize()?;
-    Ok(Some(view))
+    Ok(Some(ctx.concat_views(&segments)?))
 }
 
 fn decode_logical_records(bytes: &[u8], stream: &str) -> Vec<Appearance> {

@@ -14,8 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::decode::{ByteRange, DecodeContext, View};
+use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveParameterRecord, CurvePrototype, CurvePrototypeTopology,
@@ -882,43 +881,6 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
     let value_offset = find(payload, label, 0)? + label.len();
     let (count, after) = psb::compact_int(payload, value_offset);
     (after > value_offset).then_some(count)
-}
-
-/// Scan a root view and register its section ranges.
-pub fn scan_view<'a>(
-    ctx: &DecodeContext<'_>,
-    root: View<'a>,
-) -> Result<ContainerScan<'a>, CodecError> {
-    let data = root.window();
-    let scan = scan_bytes(data);
-    register_section_spaces(ctx, root, &scan)?;
-    Ok(scan)
-}
-
-/// Register each enumerated section as a stored [`SpaceOrigin::Slice`] child of
-/// the root space, making the physical container framing visible in the runtime
-/// space graph. A section is an alias of already-admitted root bytes, so
-/// registration copies nothing, but each registered span retains a space-graph
-/// record whose count the input does not bound byte-for-byte (a container packed
-/// with minimal `\n#<alnum>\n` headers yields one section per few bytes). Charge
-/// that fixed per-section footprint against the input-proportional allocation
-/// budget up front so section registration is bounded by policy, not only by
-/// `max_input_bytes`.
-fn register_section_spaces(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-    scan: &ContainerScan<'_>,
-) -> Result<(), CodecError> {
-    let len = scan.data.len() as u64;
-    for section in &scan.sections {
-        let start = section.offset as u64;
-        let end = (section.offset as u64 + section.length as u64).min(len);
-        if start >= end {
-            continue;
-        }
-        ctx.register_slice(root, ByteRange { start, end })?;
-    }
-    Ok(())
 }
 
 /// Parse a whole `.prt` byte image. Borrows the root bytes; drives the framing,

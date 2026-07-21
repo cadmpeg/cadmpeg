@@ -13,7 +13,7 @@ use std::ops::Range;
 
 use cadmpeg_ir::be::u32_at as u32_be;
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::decode::{ByteRange, DecodeContext, DerivedKind, View};
+use cadmpeg_ir::decode::{DecodeContext, View};
 
 use crate::variant::Variant;
 
@@ -538,7 +538,6 @@ pub fn scan_view<'a>(
     let outer_dir_offset = u32_be(data, 8).unwrap_or(0);
     let outer_dir_length = u32_be(data, 12).unwrap_or(0);
     let inner = parse_stream_directory(data);
-    register_extent_spaces(ctx, root, inner.as_ref())?;
     let brep = build_brep_space(ctx, root, inner.as_ref())?;
     let brep_window = brep.as_ref().map(|v| v.window());
     let (census, variant) = identify(data, inner.as_ref(), brep_window);
@@ -551,33 +550,6 @@ pub fn scan_view<'a>(
         census,
         variant,
     })
-}
-
-/// Registers catalogued extents as slices of the root space.
-fn register_extent_spaces(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-    inner: Option<&InnerDir>,
-) -> Result<(), CodecError> {
-    let Some(dir) = inner else {
-        return Ok(());
-    };
-    let len = root.window().len();
-    for descriptor in &dir.descriptors {
-        for e in &descriptor.extents {
-            let Some(range) = e.abs_range(dir.inner, len) else {
-                continue;
-            };
-            ctx.register_slice(
-                root,
-                ByteRange {
-                    start: range.start as u64,
-                    end: range.end as u64,
-                },
-            )?;
-        }
-    }
-    Ok(())
 }
 
 /// Reassembles the BREP stream from its physical extents.
@@ -599,9 +571,7 @@ fn build_brep_space<'a>(
         };
         segments.push(child);
     }
-    let writer = ctx.begin_derived_space(&segments, DerivedKind::Concat)?;
-    let (_space, view) = writer.finalize()?;
-    Ok(Some(view))
+    Ok(Some(ctx.concat_views(&segments)?))
 }
 
 /// Identifies a `.CATPart` without a decode context.

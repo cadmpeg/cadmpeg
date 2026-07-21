@@ -5,7 +5,7 @@
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::View;
+use cadmpeg_ir::decode::{ExactVec, View};
 
 use crate::mesh::MeshExpand;
 
@@ -180,7 +180,6 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
 ) -> Result<PolyEdge, FramingError> {
     let data = expand.data();
-    let ctx = expand.ctx();
     let mut body = expand
         .root()
         .child(range.start, range.end)
@@ -206,9 +205,8 @@ pub(crate) fn decode(
         ));
     }
 
-    let mut reserved = ctx
-        .exact_vec::<f64>(parameter_bound)
-        .map_err(|error| refused(body.position(), &error))?;
+    let mut reserved =
+        ExactVec::<f64>::new(parameter_bound).map_err(|error| refused(body.position(), &error))?;
     let mut previous: Option<f64> = None;
     for _ in 0..parameter_count {
         let offset = body.position();
@@ -225,8 +223,7 @@ pub(crate) fn decode(
         .finish_exact()
         .map_err(|error| refused(body.position(), &error))?;
 
-    let mut segments = ctx
-        .exact_vec::<Segment>(segment_bound)
+    let mut segments = ExactVec::<Segment>::new(segment_bound)
         .map_err(|error| refused(body.position(), &error))?;
     for _ in 0..segment_count {
         let start = body.position();

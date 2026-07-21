@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::decode::{ByteRange, DecodeContext, DerivedKind, ExpandSpec, View};
+use cadmpeg_ir::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::le::u32_at as u32_le;
 
@@ -267,8 +267,8 @@ fn admit_block(
     if writer.written() != uncomp_sz as u64 || hasher.finalize() != crc {
         return Ok(None);
     }
-    let (_space, view) = match writer.finalize() {
-        Ok(pair) => pair,
+    let view = match writer.finalize() {
+        Ok(view) => view,
         Err(e) => return probe_or_propagate(e),
     };
     let inflated = view.window();
@@ -320,21 +320,6 @@ fn collect_parasolid_streams(
     inflated: &[u8],
 ) -> Result<Vec<(usize, Vec<u8>)>, CodecError> {
     let mut located = crate::parasolid::direct_streams_with_offsets(inflated);
-    for (offset, stream) in &located {
-        let Some(end) = offset.checked_add(stream.len()) else {
-            continue;
-        };
-        if inflated.get(*offset..end) != Some(stream.as_slice()) {
-            continue;
-        }
-        ctx.register_slice(
-            block,
-            ByteRange {
-                start: *offset as u64,
-                end: end as u64,
-            },
-        )?;
-    }
     if !located.is_empty() {
         return Ok(located);
     }
@@ -358,7 +343,7 @@ fn inflate_wrapped_stream(
     let Some(source) = block.child(offset, block.end()) else {
         return Ok(None);
     };
-    let mut writer = match ctx.begin_derived_space(&[source], DerivedKind::Transform) {
+    let mut writer = match ctx.begin_expand(source, ExpandSpec::Unknown) {
         Ok(writer) => writer,
         Err(e) => return probe_or_propagate(e),
     };

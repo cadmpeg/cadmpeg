@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use crate::records::{ActEntity, ActGuid, ActRootComponent};
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_ir::decode::View;
 
 use crate::container::{role, ContainerScan};
 
@@ -27,7 +27,7 @@ pub struct DecodedAct {
 }
 
 /// Decodes ACT segment-type streams.
-pub fn decode(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
+pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
     let mut entities = Vec::new();
     let mut guids = Vec::new();
     let mut root_components = Vec::new();
@@ -37,7 +37,7 @@ pub fn decode(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<Decod
         let Some(view) = scan.entry_view(&entry.name) else {
             continue;
         };
-        let (table, stream_guids) = decode_table(ctx, view)?;
+        let (table, stream_guids) = decode_table(view)?;
         let groups = decode_channel_groups(view);
         for component in decode_root_components(view, &entry.name) {
             root_components.push(component);
@@ -158,7 +158,7 @@ struct TableEntry {
 }
 
 /// Decode the `ACTTable` record list and the GUID literals that follow it.
-fn decode_table(ctx: &DecodeContext<'_>, base: View<'_>) -> Result<DecodedTable, CodecError> {
+fn decode_table(base: View<'_>) -> Result<DecodedTable, CodecError> {
     let empty = || (Vec::new(), Vec::new());
     let Some(name_at) = find_marker(base, b"ACTTable") else {
         return Ok(empty());
@@ -180,7 +180,10 @@ fn decode_table(ctx: &DecodeContext<'_>, base: View<'_>) -> Result<DecodedTable,
     else {
         return Ok(empty());
     };
-    let mut indexed = ctx.exact_vec::<TableEntry>(bounded)?;
+    let mut indexed = Vec::new();
+    indexed
+        .try_reserve_exact(bounded.get())
+        .map_err(|_| CodecError::Io(std::io::Error::other("ACT table allocation failed")))?;
     for _ in 0..count {
         if byte_rel(base, cursor) != Some(1) {
             return Ok(empty());
@@ -200,7 +203,7 @@ fn decode_table(ctx: &DecodeContext<'_>, base: View<'_>) -> Result<DecodedTable,
             record_index_offset: cursor + 1,
             entity_id,
             entity_id_offset,
-        })?;
+        });
         cursor = end;
     }
     let mut guids = Vec::new();
@@ -213,7 +216,7 @@ fn decode_table(ctx: &DecodeContext<'_>, base: View<'_>) -> Result<DecodedTable,
             cursor += 1;
         }
     }
-    Ok((indexed.finish(), guids))
+    Ok((indexed, guids))
 }
 
 /// One change-version channel group keyed by (record index, entity id), with

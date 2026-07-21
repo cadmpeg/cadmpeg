@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded navigation over one address space.
 
+use crate::codec::CodecError;
 use crate::cursor::bounded_len;
 
 use super::error::SourceLocation;
@@ -23,6 +24,48 @@ impl BoundedCount {
     /// Returns the minimum encoded size of one element.
     pub fn min_element_size(self) -> usize {
         self.min_element_size
+    }
+}
+
+/// A vector that must contain exactly a count proven against input.
+#[derive(Debug)]
+pub struct ExactVec<T> {
+    vec: Vec<T>,
+    capacity: usize,
+}
+
+impl<T> ExactVec<T> {
+    /// Allocates storage for a proven count.
+    pub fn new(count: BoundedCount) -> Result<Self, CodecError> {
+        let capacity = count.get();
+        let mut vec = Vec::new();
+        vec.try_reserve_exact(capacity)
+            .map_err(|_| CodecError::Io(std::io::Error::other("allocation failed")))?;
+        Ok(Self { vec, capacity })
+    }
+
+    /// Appends one value without exceeding the proven count.
+    pub fn push(&mut self, value: T) -> Result<(), CodecError> {
+        if self.vec.len() == self.capacity {
+            return Err(CodecError::Malformed(
+                "fixed-capacity vector overflow".to_owned(),
+            ));
+        }
+        self.vec.push(value);
+        Ok(())
+    }
+
+    /// Returns the values if the proven count was filled exactly.
+    pub fn finish_exact(self) -> Result<Vec<T>, CodecError> {
+        if self.vec.len() == self.capacity {
+            Ok(self.vec)
+        } else {
+            Err(CodecError::Malformed(format!(
+                "fixed-capacity vector contains {} of {} values",
+                self.vec.len(),
+                self.capacity
+            )))
+        }
     }
 }
 

@@ -89,7 +89,7 @@ pub fn extract_streams<'a>(
     let Some(end) = start.checked_add(size) else {
         return Ok(Vec::new());
     };
-    let (_part_space, part_view) = ctx.register_slice(
+    let part_view = ctx.register_slice(
         root,
         ByteRange {
             start: start as u64,

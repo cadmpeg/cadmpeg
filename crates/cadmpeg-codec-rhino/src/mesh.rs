@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeContext, ExactVec, ExpandSpec, View};
+use cadmpeg_ir::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use flate2::{Decompress, FlushDecompress, Status};
@@ -36,10 +36,6 @@ impl<'a> MeshExpand<'a> {
 
     pub(crate) fn data(self) -> &'a [u8] {
         self.root.window()
-    }
-
-    pub(crate) fn ctx(self) -> &'a DecodeContext<'a> {
-        self.ctx
     }
 
     pub(crate) fn root(self) -> View<'a> {
@@ -230,7 +226,7 @@ pub(crate) fn decode(
             )?;
         }
     }
-    let triangles = read_faces(expand, &mut reader, vertex_count, face_count)?;
+    let triangles = read_faces(&mut reader, vertex_count, face_count)?;
     let mut decompressed_bytes = 0;
     if major == 1 {
         read_raw_channels(
@@ -384,7 +380,6 @@ pub(crate) fn decode(
 }
 
 fn read_faces(
-    expand: MeshExpand<'_>,
     reader: &mut BoundedReader<'_>,
     vertices: usize,
     faces: usize,
@@ -419,18 +414,10 @@ fn read_faces(
         .checked_add(quad_count)
         .filter(|count| *count <= MAX_MESH_FACES)
         .ok_or_else(|| error(reader.position(), "mesh triangle output budget exceeded"))?;
-    // The triangle count is derived from the face stream, not bounded by a
-    // contiguous input field, so the `MAX_MESH_FACES` cap is its allocation
-    // floor.
-    let mut result = expand
-        .ctx()
-        .alloc_unfloored::<[u32; 3]>(triangle_count)
-        .map_err(|refusal| {
-            error(
-                reader.position(),
-                &format!("mesh triangle allocation refused: {refusal}"),
-            )
-        })?;
+    let mut result = Vec::new();
+    result
+        .try_reserve_exact(triangle_count)
+        .map_err(|_| error(reader.position(), "mesh triangle allocation failed"))?;
     for face in 0..faces {
         let mut indices = [0_u32; 4];
         for (slot, index) in indices.iter_mut().enumerate() {
@@ -440,20 +427,15 @@ fn read_faces(
                 return Err(error(reader.position(), "mesh face index out of range"));
             }
         }
-        let push = |result: &mut _, triangle| {
-            ExactVec::push(result, triangle)
-                .map_err(|refusal| error(reader.position(), &format!("mesh triangle: {refusal}")))
-        };
         if indices[2] == indices[3] {
-            push(&mut result, [indices[0], indices[1], indices[2]])?;
+            result.push([indices[0], indices[1], indices[2]]);
         } else {
-            push(&mut result, [indices[0], indices[1], indices[2]])?;
-            push(&mut result, [indices[0], indices[2], indices[3]])?;
+            result.push([indices[0], indices[1], indices[2]]);
+            result.push([indices[0], indices[2], indices[3]]);
         }
     }
-    result
-        .finish_exact()
-        .map_err(|refusal| error(reader.position(), &format!("mesh triangle: {refusal}")))
+    debug_assert_eq!(result.len(), triangle_count);
+    Ok(result)
 }
 
 fn face_index(raw: &[u8], offset: usize, width: i32) -> u32 {
@@ -728,18 +710,7 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
     );
 }
 
-/// Inflates one anonymous zlib mesh buffer through the platform expander.
-///
-/// `source` is the compressed chunk body as a window into the root address
-/// space. Output streams into an [`cadmpeg_ir::decode::ExpandWriter`] under an
-/// `Exact(expected)` contract: each write is charged to `decompressed_bytes`
-/// and bounded by the decompression envelope, the writer rejects any output
-/// past `expected`, and `finalize` refuses a short stream — so no decompressed
-/// byte exists outside the writer and the derived `Transform` space registers
-/// only on a complete, exactly-sized inflate. Returns the finalized arena view
-/// over the decompressed bytes — the caller reads them in place rather than
-/// copying them out a second time — and the number of compressed input bytes
-/// consumed.
+/// Inflates one anonymous zlib mesh buffer to exactly `expected` bytes.
 fn inflate<'a>(
     expand: MeshExpand<'a>,
     source: View<'_>,
@@ -771,7 +742,7 @@ fn inflate<'a>(
             .write(&buffer[..produced])
             .map_err(|refusal| expansion_refused(base, &refusal))?;
         if status == Status::StreamEnd {
-            let (_space, view) = writer
+            let view = writer
                 .finalize()
                 .map_err(|refusal| expansion_refused(base, &refusal))?;
             return Ok((view, source_offset));
@@ -1057,9 +1028,8 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
 /// gate an immediate contiguous run of input: `vertex_count` addresses vertex
 /// data that may arrive zlib-compressed downstream (so `count * element_size`
 /// legitimately exceeds `reader.remaining()`), and `face_count` is floored at
-/// consumption by `reader.take(bytes)` in `read_faces`. Every count-driven
-/// reservation therefore routes through `alloc_unfloored` or `read_buffer`; the
-/// `cap` alone does not floor an allocation against input size.
+/// consumption by `reader.take(bytes)` in `read_faces`. Count-driven
+/// reservations are bounded by codec-local caps or the consumed byte count.
 fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
     let value = reader.i32()?;
     if value < 0 || value as usize > cap {
@@ -1469,10 +1439,10 @@ mod tests {
                     _ => unreachable!(),
                 }
             }
-            with_expand(&bytes, |expand| {
+            with_expand(&bytes, |_expand| {
                 let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
                 assert_eq!(
-                    read_faces(expand, &mut reader, vertices, 1).expect("face"),
+                    read_faces(&mut reader, vertices, 1).expect("face"),
                     vec![[0, 1, 2]]
                 );
             });
@@ -1647,9 +1617,9 @@ mod tests {
         let mut raw = 1_i32.to_le_bytes().to_vec();
         raw.extend([0, 1, 2, 2]); // triangle (indices[2] == indices[3])
         raw.extend([0, 1, 2, 0]); // quad -> two triangles
-        with_expand(&raw, |expand| {
+        with_expand(&raw, |_expand| {
             let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
-            let triangles = read_faces(expand, &mut reader, 3, 2).expect("faces");
+            let triangles = read_faces(&mut reader, 3, 2).expect("faces");
             assert_eq!(triangles, vec![[0, 1, 2], [0, 1, 2], [0, 2, 0]]);
         });
     }
@@ -1658,9 +1628,9 @@ mod tests {
     fn read_faces_truncated_at_record_boundary() {
         let mut raw = 1_i32.to_le_bytes().to_vec();
         raw.extend([0, 1, 2, 2]); // only one of the two declared faces
-        with_expand(&raw, |expand| {
+        with_expand(&raw, |_expand| {
             let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
-            assert!(read_faces(expand, &mut reader, 3, 2).is_err());
+            assert!(read_faces(&mut reader, 3, 2).is_err());
         });
     }
 }

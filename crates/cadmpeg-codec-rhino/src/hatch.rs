@@ -5,7 +5,7 @@
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::View;
+use cadmpeg_ir::decode::{ExactVec, View};
 
 use crate::mesh::MeshExpand;
 
@@ -123,7 +123,6 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
 ) -> Result<Hatch, GeometryError> {
     let data = expand.data();
-    let ctx = expand.ctx();
     let mut body = expand
         .root()
         .child(range.start, range.end)
@@ -177,9 +176,8 @@ pub(crate) fn decode(
     let loop_bound = body
         .counted(count as u64, 5)
         .ok_or_else(|| structural(count_offset, "hatch loop count exceeds remaining window"))?;
-    let mut loops = ctx
-        .exact_vec::<HatchLoop>(loop_bound)
-        .map_err(|error| refused(body.position(), &error))?;
+    let mut loops =
+        ExactVec::<HatchLoop>::new(loop_bound).map_err(|error| refused(body.position(), &error))?;
     let mut warnings = Vec::new();
     for loop_index in 0..count {
         let loop_offset = body.position();

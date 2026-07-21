@@ -40,10 +40,10 @@ fn views_bound_reads_and_children() {
 fn fixed_vector_requires_a_physically_possible_count() {
     let bytes = [0_u8; 8];
     let arena = DecodeArena::new();
-    let (ctx, root) =
+    let (_, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     assert!(root.counted(3, 4).is_none());
-    let mut values = ctx.exact_vec::<u32>(root.counted(2, 4).unwrap()).unwrap();
+    let mut values = ExactVec::<u32>::new(root.counted(2, 4).unwrap()).unwrap();
     values.push(1).unwrap();
     values.push(2).unwrap();
     assert_eq!(values.finish_exact().unwrap(), vec![1, 2]);
@@ -60,7 +60,7 @@ fn exact_expansion_enforces_size_and_limit() {
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let mut writer = ctx.begin_expand(root, ExpandSpec::Exact(4)).unwrap();
     writer.write(&[1, 2, 3, 4]).unwrap();
-    let (_, view) = writer.finalize().unwrap();
+    let view = writer.finalize().unwrap();
     assert_eq!(view.window(), &[1, 2, 3, 4]);
 
     let mut writer = ctx.begin_expand(root, ExpandSpec::Unknown).unwrap();
@@ -78,14 +78,11 @@ fn concatenation_and_stored_slices_have_distinct_spaces() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let first = root.child(0, 2).unwrap();
     let second = root.child(4, 6).unwrap();
-    let writer = ctx
-        .begin_derived_space(&[first, second], DerivedKind::Concat)
-        .unwrap();
-    let (concat_space, concat) = writer.finalize().unwrap();
+    let concat = ctx.concat_views(&[first, second]).unwrap();
     assert_eq!(concat.window(), &[0, 1, 4, 5]);
-    let (slice_space, slice) = ctx
+    let slice = ctx
         .register_slice(root, ByteRange { start: 1, end: 3 })
         .unwrap();
     assert_eq!(slice.window(), &[1, 2]);
-    assert_ne!(concat_space, slice_space);
+    assert_ne!(concat.space(), slice.space());
 }

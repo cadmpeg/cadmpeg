@@ -5,7 +5,7 @@
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::View;
+use cadmpeg_ir::decode::{ExactVec, View};
 
 use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::curves::GeometryError;
@@ -92,7 +92,6 @@ pub(crate) fn decode_at(
     archive: ArchiveVersion,
 ) -> Result<(Cage, usize), GeometryError> {
     let data = expand.data();
-    let ctx = expand.ctx();
     let chunk = chunk_at(data, offset, end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
         return Err(malformed(offset, "invalid NURBS cage framing"));
@@ -165,9 +164,8 @@ pub(crate) fn decode_at(
         let bound = body
             .counted(knot_count as u64, 8)
             .ok_or_else(|| malformed(body.position(), "NURBS cage knot vector truncated"))?;
-        let mut reserved = ctx
-            .exact_vec::<f64>(bound)
-            .map_err(|error| refused(body.position(), &error))?;
+        let mut reserved =
+            ExactVec::<f64>::new(bound).map_err(|error| refused(body.position(), &error))?;
         let mut previous: Option<f64> = None;
         for _ in 0..knot_count {
             let knot = req_f64(&mut body)?;
@@ -195,18 +193,14 @@ pub(crate) fn decode_at(
     let control_bound = body
         .counted(control_count as u64, stored_dimension * 8)
         .ok_or_else(|| malformed(body.position(), "NURBS cage control net truncated"))?;
-    let mut control_points = ctx
-        .exact_vec::<Vec<f64>>(control_bound)
+    let mut control_points = ExactVec::<Vec<f64>>::new(control_bound)
         .map_err(|error| refused(body.position(), &error))?;
-    // Weights carry no separate input stream — each is peeled off a control
-    // tuple already proven above — so there is no byte floor to size against.
-    // Reserve through the zero-floor path; `control_count <= MAX_CONTROL_POINTS`
-    // is the codec-local cap that bounds it as defense in depth.
     let mut weights = if rational {
-        Some(
-            ctx.alloc_unfloored::<f64>(control_count)
-                .map_err(|error| refused(body.position(), &error))?,
-        )
+        let mut weights = Vec::new();
+        weights
+            .try_reserve_exact(control_count)
+            .map_err(|_| malformed(body.position(), "NURBS cage weight allocation failed"))?;
+        Some(weights)
     } else {
         None
     };
@@ -214,9 +208,8 @@ pub(crate) fn decode_at(
         let tuple_bound = body
             .counted(stored_dimension as u64, 8)
             .ok_or_else(|| malformed(body.position(), "NURBS cage coordinate tuple truncated"))?;
-        let mut stored = ctx
-            .exact_vec::<f64>(tuple_bound)
-            .map_err(|error| refused(body.position(), &error))?;
+        let mut stored =
+            ExactVec::<f64>::new(tuple_bound).map_err(|error| refused(body.position(), &error))?;
         for _ in 0..stored_dimension {
             let value = req_f64(&mut body)?;
             if !value.is_finite() {
@@ -240,8 +233,7 @@ pub(crate) fn decode_at(
             weights
                 .as_mut()
                 .expect("rational weights exist")
-                .push(weight)
-                .map_err(|error| refused(body.position(), &error))?;
+                .push(weight);
             weight
         } else {
             1.0
@@ -264,14 +256,6 @@ pub(crate) fn decode_at(
     let control_points = control_points
         .finish_exact()
         .map_err(|error| refused(body.position(), &error))?;
-    let weights = match weights {
-        Some(reserved) => Some(
-            reserved
-                .finish_exact()
-                .map_err(|error| refused(body.position(), &error))?,
-        ),
-        None => None,
-    };
     Ok((
         Cage {
             source_range: offset..chunk.next_offset,

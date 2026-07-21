@@ -159,9 +159,7 @@ pub struct ContainerScan<'a> {
     pub breps: Vec<BrepFacts>,
     /// The asset-folder prefix observed from BREP entry paths, if any.
     pub asset_folder: Option<String>,
-    /// Entry payload views, keyed by archive path. Each names its own address
-    /// space in the runtime graph: a `Slice` of the root for stored entries, a
-    /// decompression `Transform` for compressed ones.
+    /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
     /// Physical placement of every admitted entry within the root space, in
     /// archive order. Drives the fidelity ledger's coarse tiling.
@@ -200,7 +198,7 @@ pub(crate) fn admit_entry<'a>(
         .ok_or_else(|| CodecError::Malformed(format!("entry {name} data range overflows")))?;
 
     if compression == CompressionMethod::Stored {
-        let (_space, view) = ctx.register_slice(
+        let view = ctx.register_slice(
             parent,
             ByteRange {
                 start: data_start,
@@ -224,8 +222,7 @@ pub(crate) fn admit_entry<'a>(
         }
         writer.write(&chunk[..read])?;
     }
-    let (_space, view) = writer.finalize()?;
-    Ok(view)
+    writer.finalize()
 }
 
 /// Build a child view over an absolute `[start, end)` root range, refusing a

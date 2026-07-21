@@ -16,11 +16,11 @@ mod view;
 mod tests;
 
 pub use arena::DecodeArena;
-pub use context::{DecodeContext, DerivedKind, DerivedWriter, ExactVec, ExpandSpec, ExpandWriter};
+pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
 pub use error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
 pub use space::{ByteRange, SpaceId};
-pub use view::{BoundedCount, View};
+pub use view::{BoundedCount, ExactVec, View};

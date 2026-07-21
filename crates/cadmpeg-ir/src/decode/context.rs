@@ -14,8 +14,8 @@ use super::policy::{
     DecodeMode, DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
     DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE,
 };
-use super::space::{ByteRange, SpaceId, SpaceRegistry};
-use super::view::{BoundedCount, View};
+use super::space::{ByteRange, SpaceRegistry};
+use super::view::View;
 
 /// Initial per-expand reservation clamp: an attacker's declared size cannot
 /// force a large up-front reservation before any output is produced.
@@ -168,18 +168,6 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
-    /// Allocates a fixed-capacity vector after its count has been proven to fit
-    /// in the unread input.
-    pub fn exact_vec<T>(&self, count: BoundedCount) -> Result<ExactVec<T>, CodecError> {
-        ExactVec::with_capacity(count.get())
-    }
-
-    /// Allocates a fixed-capacity vector for a count bounded by format-local
-    /// validation rather than a fixed encoded element width.
-    pub fn alloc_unfloored<T>(&self, count: usize) -> Result<ExactVec<T>, CodecError> {
-        ExactVec::with_capacity(count)
-    }
-
     /// Records a permanent fuse and returns the resource error to propagate.
     fn fuse(
         &self,
@@ -212,8 +200,8 @@ impl<'a> DecodeContext<'a> {
 
     // --- decompression ------------------------------------------------------
 
-    /// Begins an expansion whose output is charged incrementally and stored in
-    /// the arena; the derived space is registered only on successful finalize.
+    /// Begins an expansion whose output is charged incrementally and becomes
+    /// available only after successful finalization.
     pub fn begin_expand(
         &self,
         source: View<'_>,
@@ -248,36 +236,30 @@ impl<'a> DecodeContext<'a> {
         })
     }
 
-    /// Begins assembling a derived space from several input extents. Concatenation
-    /// copies the extents immediately; transforms stream output through the
-    /// decompression limits.
-    pub fn begin_derived_space(
-        &self,
-        inputs: &[View<'_>],
-        kind: DerivedKind,
-    ) -> Result<DerivedWriter<'_, 'a>, CodecError> {
+    /// Copies several input extents into one derived view.
+    pub fn concat_views(&self, inputs: &[View<'_>]) -> Result<View<'a>, CodecError> {
         if let Some(limit) = self.fuse.get() {
             return Err(CodecError::ResourceLimit(limit));
         }
-        let location = inputs.first().map(|view| view.location());
-        let mut writer = DerivedWriter {
-            ctx: self,
-            kind,
-            location,
-            buffer: Vec::new(),
-            written: 0,
-        };
-        if matches!(kind, DerivedKind::Concat) {
-            for view in inputs {
-                writer.append_extent(view.window())?;
-            }
+        let total = inputs.iter().try_fold(0usize, |total, view| {
+            total.checked_add(view.window().len()).ok_or_else(|| {
+                CodecError::Io(std::io::Error::other("concatenated view is too large"))
+            })
+        })?;
+        let mut buffer = Vec::new();
+        buffer.try_reserve_exact(total).map_err(|_| {
+            CodecError::Io(std::io::Error::other("concatenated view allocation failed"))
+        })?;
+        for view in inputs {
+            buffer.extend_from_slice(view.window());
         }
-        Ok(writer)
+        let bytes = self.arena.alloc(buffer.into_boxed_slice());
+        let space = self.spaces.register();
+        Ok(View::over_space(bytes, space))
     }
 
     /// Registers a stored (uncompressed) child range as a space that borrows
-    /// the parent bytes without copying, returning the new
-    /// space id and a view whose coordinates are absolute within it.
+    /// the parent bytes without copying.
     ///
     /// `range` is expressed in the parent view's own space coordinates and must
     /// lie within the parent window; a range that escapes the parent is refused
@@ -290,7 +272,7 @@ impl<'a> DecodeContext<'a> {
         &self,
         parent: View<'v>,
         range: ByteRange,
-    ) -> Result<(SpaceId, View<'v>), CodecError> {
+    ) -> Result<View<'v>, CodecError> {
         if let Some(limit) = self.fuse.get() {
             return Err(CodecError::ResourceLimit(limit));
         }
@@ -308,7 +290,7 @@ impl<'a> DecodeContext<'a> {
                 ))
             })?;
         let space = self.spaces.register();
-        Ok((space, View::over_space(child.window(), space)))
+        Ok(View::over_space(child.window(), space))
     }
 
     // --- lifecycle ----------------------------------------------------------
@@ -368,67 +350,6 @@ fn root_error(reason: ResourceFailure, limit: u64, used: u64) -> CodecError {
     })
 }
 
-/// A fixed-capacity vector used after validating an untrusted count.
-#[derive(Debug)]
-pub struct ExactVec<T> {
-    vec: Vec<T>,
-    capacity: usize,
-}
-
-impl<T> ExactVec<T> {
-    fn with_capacity(capacity: usize) -> Result<Self, CodecError> {
-        let mut vec = Vec::new();
-        vec.try_reserve_exact(capacity)
-            .map_err(|_| CodecError::Io(std::io::Error::other("allocation failed")))?;
-        Ok(Self { vec, capacity })
-    }
-
-    /// Appends one value without allowing the vector to grow beyond the
-    /// validated count.
-    pub fn push(&mut self, value: T) -> Result<(), CodecError> {
-        if self.vec.len() == self.capacity {
-            return Err(CodecError::Malformed(
-                "fixed-capacity vector overflow".to_owned(),
-            ));
-        }
-        self.vec.push(value);
-        Ok(())
-    }
-
-    /// Returns the number of stored values.
-    pub fn len(&self) -> usize {
-        self.vec.len()
-    }
-
-    /// Returns whether the vector is empty.
-    pub fn is_empty(&self) -> bool {
-        self.vec.is_empty()
-    }
-
-    /// Returns the validated capacity.
-    pub fn capacity(&self) -> usize {
-        self.capacity
-    }
-
-    /// Returns the populated values.
-    pub fn finish(self) -> Vec<T> {
-        self.vec
-    }
-
-    /// Returns the values only when the validated count was filled exactly.
-    pub fn finish_exact(self) -> Result<Vec<T>, CodecError> {
-        if self.vec.len() == self.capacity {
-            Ok(self.vec)
-        } else {
-            Err(CodecError::Malformed(format!(
-                "fixed-capacity vector contains {} of {} values",
-                self.vec.len(),
-                self.capacity
-            )))
-        }
-    }
-}
-
 /// How much output an expansion is expected to produce.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExpandSpec {
@@ -438,15 +359,6 @@ pub enum ExpandSpec {
     AtMost(u64),
     /// No trustworthy declared size: the decompression limits apply.
     Unknown,
-}
-
-/// How a multi-input derived space assembles its output bytes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DerivedKind {
-    /// The output is the ordered concatenation of the input extents.
-    Concat,
-    /// The output is decompressed from the named input extents.
-    Transform,
 }
 
 /// Writes decompressed output under incremental charging.
@@ -508,7 +420,7 @@ impl<'a> ExpandWriter<'_, 'a> {
     }
 
     /// Finalizes the expansion, stores it in the arena, and registers its space.
-    pub fn finalize(self) -> Result<(SpaceId, View<'a>), CodecError> {
+    pub fn finalize(self) -> Result<View<'a>, CodecError> {
         if let ExpandSpec::Exact(size) = self.spec {
             if self.written != size {
                 return Err(CodecError::Malformed(format!(
@@ -519,79 +431,7 @@ impl<'a> ExpandWriter<'_, 'a> {
         }
         let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
         let space = self.ctx.spaces.register();
-        Ok((space, View::over_space(bytes, space)))
-    }
-
-    /// Returns how many bytes have been written so far.
-    pub fn written(&self) -> u64 {
-        self.written
-    }
-}
-
-/// Assembles a derived space.
-#[derive(Debug)]
-pub struct DerivedWriter<'ctx, 'a> {
-    ctx: &'ctx DecodeContext<'a>,
-    kind: DerivedKind,
-    location: Option<SourceLocation>,
-    buffer: Vec<u8>,
-    written: u64,
-}
-
-impl<'a> DerivedWriter<'_, 'a> {
-    /// Copies one concatenated extent.
-    fn append_extent(&mut self, data: &[u8]) -> Result<(), CodecError> {
-        let len = data.len() as u64;
-        self.buffer.try_reserve(data.len()).map_err(|_| {
-            CodecError::Io(std::io::Error::other("derived-space allocation failed"))
-        })?;
-        self.buffer.extend_from_slice(data);
-        self.written = self.written.saturating_add(len);
-        Ok(())
-    }
-
-    /// Appends transform output under the decompression limits.
-    pub fn write(&mut self, data: &[u8]) -> Result<(), CodecError> {
-        if !matches!(self.kind, DerivedKind::Transform) {
-            return Err(CodecError::Malformed(
-                "a derived Concat space assembles from its declared inputs; \
-                 write is only for Transform output"
-                    .to_owned(),
-            ));
-        }
-        let len = data.len() as u64;
-        let new_written = self.written.saturating_add(len);
-        let per_expand = self.ctx.per_expand_allowance();
-        if new_written > per_expand {
-            return Err(self.ctx.fuse(
-                ResourceFailure::BudgetExceeded,
-                LimitScope::PerExpand,
-                len,
-                "derived_write",
-                self.location,
-            ));
-        }
-        self.ctx
-            .charge_decompressed(LimitScope::Global, len, "derived_write", self.location)?;
-        self.buffer.try_reserve(data.len()).map_err(|_| {
-            self.ctx.fuse(
-                ResourceFailure::AllocationFailed,
-                LimitScope::PerExpand,
-                len,
-                "derived_write",
-                self.location,
-            )
-        })?;
-        self.buffer.extend_from_slice(data);
-        self.written = new_written;
-        Ok(())
-    }
-
-    /// Stores and registers the derived space.
-    pub fn finalize(self) -> Result<(SpaceId, View<'a>), CodecError> {
-        let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
-        let space = self.ctx.spaces.register();
-        Ok((space, View::over_space(bytes, space)))
+        Ok(View::over_space(bytes, space))
     }
 
     /// Returns how many bytes have been written so far.

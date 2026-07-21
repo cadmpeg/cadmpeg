@@ -561,7 +561,7 @@ fn transfer_plane_brep(
 /// Container-only mode is reflected in the report, but still performs the full
 /// structural scan.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan_view(ctx, root)?;
+    let scan = container::scan_bytes(root.window());
 
     let (mut ir, dropped_losses, annotations, unknowns) = build_ir(&scan)?;
     let mut report = build_report(&scan, ctx.container_only());

@@ -61,7 +61,6 @@ pub mod report;
 pub mod semantic_annotations;
 pub mod sketches;
 pub mod source_fidelity;
-pub mod source_fidelity_diff;
 pub mod spreadsheets;
 pub mod subd;
 pub mod tessellation;

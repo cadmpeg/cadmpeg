@@ -138,11 +138,10 @@ impl Default for CatiaNative {
 
 impl CatiaNative {
     /// Decode CATIA-native records directly from the session root view.
-    pub fn decode<'a>(
-        ctx: &cadmpeg_ir::decode::DecodeContext<'a>,
-        view: cadmpeg_ir::decode::View<'a>,
+    pub fn decode(
+        view: cadmpeg_ir::decode::View<'_>,
     ) -> Result<Self, cadmpeg_ir::codec::CodecError> {
-        let catalogs = catalog::parse(ctx, view)?
+        let catalogs = catalog::parse(view)?
             .into_iter()
             .map(CatiaCatalog::from)
             .collect();

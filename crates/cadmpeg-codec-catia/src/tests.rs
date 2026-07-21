@@ -2798,8 +2798,8 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
         "Sketch",
         "Pad",
     ];
-    let catalogs = with_root(&catalog_stream(&entries), |ctx, root| {
-        crate::catalog::parse(ctx, root).unwrap()
+    let catalogs = with_root(&catalog_stream(&entries), |_ctx, root| {
+        crate::catalog::parse(root).unwrap()
     });
 
     assert_eq!(catalogs.len(), 1);
@@ -2821,13 +2821,11 @@ fn catalog_parser_rejects_frame_truncated_at_entry_boundary() {
     ];
     let full = catalog_stream(&entries);
     assert_eq!(
-        with_root(&full, |ctx, root| crate::catalog::parse(ctx, root).unwrap()).len(),
+        with_root(&full, |_ctx, root| crate::catalog::parse(root).unwrap()).len(),
         1
     );
     let truncated = &full[..full.len() - 1];
-    let catalogs = with_root(truncated, |ctx, root| {
-        crate::catalog::parse(ctx, root).unwrap()
-    });
+    let catalogs = with_root(truncated, |_ctx, root| crate::catalog::parse(root).unwrap());
     assert!(catalogs.is_empty());
 }
 

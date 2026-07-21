@@ -14,7 +14,7 @@ use crate::records::{
     SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
 };
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_ir::decode::View;
 use cadmpeg_ir::le::{
     f64_at, f64s_at, lp_u32_bytes_at, u32_at, u32_at as read_u32, u64_at as read_u64, utf16le_at,
 };
@@ -1134,10 +1134,7 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 /// suffix and flags. The decode is rejected (no members returned for that
 /// stream) unless the declared count is fully consumed and immediately
 /// followed by a zero byte.
-pub fn decode_body_members(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<Vec<DesignBodyMember>, CodecError> {
+pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>, CodecError> {
     const PREFIX: &[u8] = b"\x0a\x00\x00\x00BodiesRoot\x00\x00\x0a\x00\x00\x00BodiesRoot";
     let mut out = Vec::new();
     for entry in scan
@@ -1167,7 +1164,12 @@ pub fn decode_body_members(
         else {
             continue;
         };
-        let mut decoded = ctx.exact_vec::<DesignBodyMember>(bounded)?;
+        let mut decoded = Vec::new();
+        decoded.try_reserve_exact(bounded.get()).map_err(|_| {
+            CodecError::Io(std::io::Error::other(
+                "design body member allocation failed",
+            ))
+        })?;
         let mut cursor = cursor_start;
         let mut ok = true;
         for _ in 0..count as usize {
@@ -1188,11 +1190,11 @@ pub fn decode_body_members(
                 byte_offset: cursor as u64,
                 entity_suffix,
                 flags,
-            })?;
+            });
             cursor += 11;
         }
         if ok && decoded.len() == count as usize && byte_at_rel(base, cursor) == Some(0) {
-            for member in decoded.finish() {
+            for member in decoded {
                 out.push(member);
             }
         }
