@@ -598,6 +598,143 @@ pub(crate) fn bind_feature_outputs(
     }
 }
 
+pub(crate) fn bind_feature_body_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[crate::records::DesignParameterScope],
+    groups: &[crate::records::DesignConstructionOperandGroup],
+    histories: &[AsmHistory],
+) {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+    use cadmpeg_ir::ids::HistoricalBodyId;
+
+    let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
+    for state in histories.iter().flat_map(|history| &history.states) {
+        states
+            .entry(state.state_id)
+            .and_modify(|state| *state = None)
+            .or_insert(Some(state));
+    }
+    for feature in features {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+        let Some(scope) = matching_scopes.next() else {
+            continue;
+        };
+        if matching_scopes.next().is_some() {
+            continue;
+        }
+        let FeatureDefinition::MoveBody { bodies, .. } = &mut feature.definition else {
+            continue;
+        };
+        let BodySelection::Native(group_id) = bodies else {
+            continue;
+        };
+        let mut matching_groups = groups.iter().filter(|group| {
+            group.id == *group_id
+                && group.scope_record_index == scope.record_index
+                && group.role == 0x0000_0004_0000_0000
+                && crate::design::native_stream(&group.id)
+                    == crate::design::native_stream(&scope.id)
+        });
+        let Some(group) = matching_groups.next() else {
+            continue;
+        };
+        if matching_groups.next().is_some() || group.members.len() != 1 {
+            continue;
+        }
+        let (Some(state_id), Some(previous_state_id)) =
+            (scope.history_state_id, scope.previous_history_state_id)
+        else {
+            continue;
+        };
+        let Some(Some(state)) = states.get(&state_id) else {
+            continue;
+        };
+        let Some(body) =
+            singleton_body_revision_across_state_chain(state, previous_state_id, &states)
+        else {
+            continue;
+        };
+        let prefix = feature_input_prefix(&feature.id, previous_state_id);
+        *bodies = BodySelection::Historical {
+            state: crate::design::feature_input_topology_id(&feature.id, previous_state_id),
+            bodies: vec![HistoricalBodyId(format!(
+                "f3d:history-input:body#{prefix}:{body}"
+            ))],
+            native: group_id.clone(),
+        };
+    }
+}
+
+fn singleton_body_revision_across_state_chain<'a>(
+    state: &'a AsmDeltaState,
+    previous_state_id: i64,
+    states: &HashMap<i64, Option<&'a AsmDeltaState>>,
+) -> Option<i64> {
+    let result_topology = state.topology.as_ref()?;
+    let mut current = state;
+    let mut visited = HashSet::new();
+    let mut selected = None;
+    while current.state_id != previous_state_id {
+        if !visited.insert(current.state_id) {
+            return None;
+        }
+        if let TopologyStableBodyRevision::Revised(body) =
+            body_revision_without_topology_change(current)?
+        {
+            match selected {
+                None => selected = Some(body),
+                Some(selected) if selected == body => {}
+                Some(_) => return None,
+            }
+        }
+        let previous = current.transition.as_ref()?.previous_state_id?;
+        current = *states.get(&previous)?.as_ref()?;
+    }
+    let body = selected?;
+    (result_topology.bodies.contains(&body) && current.topology.as_ref()?.bodies.contains(&body))
+        .then_some(body)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TopologyStableBodyRevision {
+    Unchanged,
+    Revised(i64),
+}
+
+fn body_revision_without_topology_change(
+    current: &AsmDeltaState,
+) -> Option<TopologyStableBodyRevision> {
+    let transition = current.transition.as_ref()?;
+    let delta = &transition.topology;
+    let body = match delta.bodies.updated.as_slice() {
+        [] => TopologyStableBodyRevision::Unchanged,
+        [body] => TopologyStableBodyRevision::Revised(*body),
+        _ => return None,
+    };
+    if !delta.bodies.inserted.is_empty()
+        || !delta.bodies.deleted.is_empty()
+        || [
+            &delta.regions,
+            &delta.shells,
+            &delta.faces,
+            &delta.loops,
+            &delta.coedges,
+            &delta.edges,
+            &delta.vertices,
+        ]
+        .into_iter()
+        .any(|family| {
+            !family.inserted.is_empty() || !family.deleted.is_empty() || !family.updated.is_empty()
+        })
+    {
+        return None;
+    }
+    Some(body)
+}
+
 pub(crate) fn bind_feature_face_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[crate::records::DesignParameterScope],
@@ -703,12 +840,7 @@ pub(crate) fn project_feature_input_topologies(
             })?;
             let state = (*states.get(&previous_state_id)?)?;
             let topology = state.topology.as_ref()?;
-            let feature_key = feature
-                .id
-                .0
-                .split_once('#')
-                .map_or(feature.id.0.as_str(), |(_, key)| key);
-            let prefix = format!("{}:{feature_key}:{previous_state_id}", feature_key.len());
+            let prefix = feature_input_prefix(&feature.id, previous_state_id);
             Some(FeatureInputTopology {
                 id: crate::design::feature_input_topology_id(&feature.id, previous_state_id),
                 input_of: feature.id.clone(),
@@ -731,6 +863,17 @@ pub(crate) fn project_feature_input_topologies(
             })
         })
         .collect()
+}
+
+fn feature_input_prefix(
+    feature: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+) -> String {
+    let feature_key = feature
+        .0
+        .split_once('#')
+        .map_or(feature.0.as_str(), |(_, key)| key);
+    format!("{}:{feature_key}:{previous_state_id}", feature_key.len())
 }
 
 pub(crate) fn bind_face_operand_history_candidates(
@@ -3991,6 +4134,81 @@ mod tests {
             )],
         };
         assert_eq!(historical_identity_kind(&[history, ambiguous], 42), None);
+    }
+
+    #[test]
+    fn singleton_body_revision_excludes_topology_changing_operations() {
+        let state = |state_id, transition| AsmDeltaState {
+            id: format!("state-{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology: Some(AsmHistoricalTopology {
+                bodies: vec![7],
+                ..AsmHistoricalTopology::default()
+            }),
+            transition,
+        };
+        let previous = state(10, None);
+        let mut transition = AsmHistoricalTransition {
+            previous_state_id: Some(10),
+            records: AsmHistoricalEntityDelta::default(),
+            topology: AsmHistoricalTopologyDelta::default(),
+        };
+        transition.topology.bodies.updated.push(7);
+        let current = state(11, Some(transition.clone()));
+        assert_eq!(
+            body_revision_without_topology_change(&current),
+            Some(TopologyStableBodyRevision::Revised(7))
+        );
+
+        transition.topology.points.updated.push(31);
+        transition.topology.surfaces.inserted.push(32);
+        transition.topology.curves.deleted.push(33);
+        transition.topology.pcurves.updated.push(34);
+        let carrier_revisions = state(11, Some(transition.clone()));
+        assert_eq!(
+            body_revision_without_topology_change(&carrier_revisions),
+            Some(TopologyStableBodyRevision::Revised(7))
+        );
+
+        let mut intermediate_transition = AsmHistoricalTransition {
+            previous_state_id: Some(10),
+            records: AsmHistoricalEntityDelta::default(),
+            topology: AsmHistoricalTopologyDelta::default(),
+        };
+        intermediate_transition.topology.bodies.updated.push(7);
+        let intermediate = state(11, Some(intermediate_transition));
+        transition.previous_state_id = Some(11);
+        let result = state(12, Some(transition.clone()));
+        let states = HashMap::from([
+            (10, Some(&previous)),
+            (11, Some(&intermediate)),
+            (12, Some(&result)),
+        ]);
+        assert_eq!(
+            singleton_body_revision_across_state_chain(&result, 10, &states),
+            Some(7)
+        );
+
+        transition.previous_state_id = Some(10);
+        transition.topology.faces.updated.push(19);
+        let topology_changing = state(11, Some(transition));
+        assert_eq!(
+            body_revision_without_topology_change(&topology_changing),
+            None
+        );
     }
 
     #[test]

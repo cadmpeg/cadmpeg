@@ -1037,6 +1037,12 @@ pub fn decode(
                 &native.asm_histories,
                 &ir.model.bodies,
             );
+            crate::history::bind_feature_body_selections(
+                &mut ir.model.features,
+                &native.design_parameter_scopes,
+                &native.design_construction_operand_groups,
+                &native.asm_histories,
+            );
             crate::history::bind_feature_face_selections(
                 &mut ir.model.features,
                 &native.design_parameter_scopes,
@@ -1379,6 +1385,12 @@ pub fn decode(
         &native.design_parameter_scopes,
         &native.asm_histories,
         &ir.model.bodies,
+    );
+    crate::history::bind_feature_body_selections(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.asm_histories,
     );
     crate::history::bind_feature_face_selections(
         &mut ir.model.features,
