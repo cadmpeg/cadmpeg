@@ -331,6 +331,17 @@ coordinate equals exactly one axial corner. The axis points from that endpoint
 toward the other. The reference direction points from the radial midpoint
 toward the second radial corner.
 
+A signed zero-support positional cylinder begins `11`, one nonzero signed
+axial length, and `13`, followed by two three-coordinate corners in stored
+`Z, X, Y` order. Immediately before its three-scalar model-space origin it
+stores the support suffix `10 18 e6 0f 18 0f 18`; all nine support slots are
+zero. A positive radius terminates the body. In XYZ order, one corner span
+equals the absolute axial length, one equals twice the radius, and one equals
+the radius. The origin lies at one axial endpoint, at the diameter-span
+midpoint, and at one endpoint of the radius span. The axis points from the
+origin endpoint toward the other endpoint. The sign of the stored length
+selects the diameter-axis reference direction.
+
 A referenced planar-envelope positional cylinder begins `11 18 13` and stores
 positive axial length, first radial bound, first axial bound, one complete
 `19` or `32` model-reference token, second radial bound, second axial bound,
