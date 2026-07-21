@@ -12852,7 +12852,7 @@ pub struct Configuration {
     /// Arrangement name.
     pub name: String,
     /// Whether NX marks this arrangement as the default.
-    pub active: bool,
+    pub is_default: bool,
     /// Directory entry containing the arrangement XML.
     pub source_entry: String,
     /// Absolute file offset of the arrangement element.
@@ -13500,16 +13500,16 @@ pub fn configurations(container: &Container) -> Vec<Configuration> {
                 if name.is_empty() || !names.insert(name) {
                     return None;
                 }
-                let active = match node.attribute("Default")? {
+                let is_default = match node.attribute("Default")? {
                     "YES" => true,
                     "NO" => false,
                     _ => return None,
                 };
-                active_count += usize::from(active);
+                active_count += usize::from(is_default);
                 configurations.push(Configuration {
                     id: format!("nx:arrangements-{entry_index}:configuration#{ordinal}"),
                     name: name.to_string(),
-                    active,
+                    is_default,
                     source_entry: entry.name.clone(),
                     source_offset: offset + node.range().start as u64,
                 });
@@ -13527,7 +13527,7 @@ pub fn configuration_attribute_uses(
 ) -> Vec<ConfigurationAttributeUse> {
     let active = configurations
         .iter()
-        .filter(|configuration| configuration.active)
+        .filter(|configuration| configuration.is_default)
         .collect::<Vec<_>>();
     let declarations = attributes
         .iter()
