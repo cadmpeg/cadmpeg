@@ -791,30 +791,47 @@ impl SurfaceParameterRecord {
         let [leading_zero, _] = leading.slots.as_slice() else {
             return None;
         };
-        let [_, _] = controls.slots.as_slice() else {
-            return None;
-        };
-        let [axial_start, radial_start, held, axial_end, radial_end] = terminal.slots.as_slice()
-        else {
-            return None;
-        };
         (leading.offset == 0
             && leading_zero.value == Some(0.0)
             && contiguous_end(leading) == Some(9)
             && self.body.get(9..11) == Some(&[0x78, 0xac])
-            && controls.offset == 11
-            && contiguous_end(controls) == Some(25)
-            && self.body.get(25..27) == Some(&[0x24, 0x00])
-            && terminal.offset == 27
-            && contiguous_end(terminal) == Some(self.body.len()))
-        .then_some(())?;
-        let [axial_start, radial_start, held, axial_end, radial_end] = [
-            axial_start.value?,
-            radial_start.value?,
-            held.value?,
-            axial_end.value?,
-            radial_end.value?,
-        ];
+            && controls.offset == 11)
+            .then_some(())?;
+        let values = match (controls.slots.as_slice(), terminal.slots.as_slice()) {
+            ([_, _], [axial_start, radial_start, held, axial_end, radial_end]) => {
+                (contiguous_end(controls) == Some(25)
+                    && self.body.get(25..27) == Some(&[0x24, 0x00])
+                    && terminal.offset == 27
+                    && contiguous_end(terminal) == Some(self.body.len()))
+                .then_some(())?;
+                [
+                    axial_start.value?,
+                    radial_start.value?,
+                    held.value?,
+                    axial_end.value?,
+                    radial_end.value?,
+                ]
+            }
+            ([control], [auxiliary, axial_start, radial_start, held, axial_end, radial_end]) => {
+                let controls_end = contiguous_end(controls)?;
+                let terminal_end = contiguous_end(terminal)?;
+                (control.value?.is_finite()
+                    && controls_end.checked_add(2) == Some(terminal.offset)
+                    && auxiliary.value?.is_finite()
+                    && (terminal_end == self.body.len()
+                        || self.body.get(terminal_end..) == Some(&[0xf7, 0x18])))
+                .then_some(())?;
+                [
+                    axial_start.value?,
+                    radial_start.value?,
+                    held.value?,
+                    axial_end.value?,
+                    radial_end.value?,
+                ]
+            }
+            _ => return None,
+        };
+        let [axial_start, radial_start, held, axial_end, radial_end] = values;
         let axial_span = axial_end - axial_start;
         let radial_span = radial_end - radial_start;
         let scale = [axial_start, radial_start, held, axial_end, radial_end]
@@ -5534,16 +5551,19 @@ mod tests {
 
     #[test]
     fn decodes_held_coordinate_type24_round_envelope() {
+        let record = |body: &[u8]| {
+            let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+            payload.extend_from_slice(body);
+            payload.push(0xe3);
+            parameter_records(&payload).remove(0)
+        };
         let body = [
             0x18, 0x2d, 0x4f, 0x12, 0x6e, 0x97, 0x8d, 0x4f, 0xe0, 0x78, 0xac, 0x67, 0x05, 0x61,
             0xbb, 0x50, 0x2d, 0x54, 0x89, 0x37, 0x4b, 0xc6, 0xa7, 0xf0, 0x48, 0x24, 0x00, 0x2f,
             0x41, 0x00, 0x2f, 0x10, 0x00, 0x2f, 0x24, 0x00, 0x2f, 0x43, 0x00, 0x2f, 0x18, 0x00,
         ];
-        let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
-        payload.extend_from_slice(&body);
-        payload.push(0xe3);
-        let record = parameter_records(&payload).remove(0);
-        let frame = record
+        let base_record = record(&body);
+        let frame = base_record
             .positional_cylinder_frame
             .expect("complete held-coordinate round carrier");
 
@@ -5552,16 +5572,37 @@ mod tests {
         assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
         assert_eq!(frame.radius, 1.0);
         assert_eq!(frame.length, Some(4.0));
-        assert_eq!(record.type24_round_radius(0x24), Some(1.0));
+        assert_eq!(base_record.type24_round_radius(0x24), Some(1.0));
+
+        let replay_body = [
+            24, 45, 79, 146, 110, 151, 141, 79, 224, 120, 172, 103, 5, 97, 187, 80, 45, 84, 73, 55,
+            75, 198, 167, 240, 72, 34, 0, 47, 65, 0, 47, 16, 0, 47, 34, 0, 47, 67, 0, 47, 24, 0,
+            247, 24,
+        ];
+        let replay = record(&replay_body);
+        assert_eq!(
+            replay.positional_cylinder_frame,
+            Some(PositionalCylinderFrame {
+                origin: [34.0, 5.0, 9.0],
+                axis: [1.0, 0.0, 0.0],
+                ref_direction: [0.0, 1.0, 0.0],
+                radius: 1.0,
+                length: Some(4.0),
+            })
+        );
+        assert_eq!(replay.type24_round_radius(0x24), Some(1.0));
+        assert_eq!(
+            record(&replay_body[..replay_body.len() - 2]).positional_cylinder_frame,
+            replay.positional_cylinder_frame,
+        );
+
+        let mut broken_replay = replay_body;
+        broken_replay[43] = 0x19;
+        assert!(record(&broken_replay).positional_cylinder_frame.is_none());
 
         let mut wrong_control = body;
         wrong_control[25] = 0x25;
-        let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
-        payload.extend_from_slice(&wrong_control);
-        payload.push(0xe3);
-        assert!(parameter_records(&payload)[0]
-            .positional_cylinder_frame
-            .is_none());
+        assert!(record(&wrong_control).positional_cylinder_frame.is_none());
     }
 
     #[test]

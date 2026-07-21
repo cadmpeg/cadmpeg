@@ -658,11 +658,15 @@ A held-coordinate type-24 round envelope has three contiguous scalar frames
 with slot counts two, two, and five. The first frame starts at the body with a
 zero slot and ends before control bytes `78 ac`; the second starts immediately
 after those bytes and ends before `24 00`; the five-coordinate frame occupies
-the remainder of the bounded body. Its coordinates are `x0, y0, z, x1, y1`.
-The omitted second Z coordinate equals `z`. The cylinder origin is
-`(x0, midpoint(y0, y1), z)`, its axis points from `x0` to `x1`, its reference
-direction points from `y0` to `y1`, its radius is half the Y span, and its
-finite length is the X span. Both spans are nonzero.
+the remainder of the bounded body. The replay form has frame slot counts two,
+one, and six. Its second frame also begins after `78 ac`, two control bytes
+separate it from the six-slot frame, the first slot of that frame is auxiliary,
+and `f7 18` may follow the frame. The controls and auxiliary slot do not
+contribute cylinder geometry. In both forms the five geometric coordinates are
+`x0, y0, z, x1, y1`. The omitted second Z coordinate equals `z`. The cylinder
+origin is `(x0, midpoint(y0, y1), z)`, its axis points from `x0` to `x1`, its
+reference direction points from `y0` to `y1`, its radius is half the Y span,
+and its finite length is the X span. Both spans are nonzero.
 
 A bounded type-24 round envelope stores two diameter endpoints and two
 three-coordinate extent endpoints. The diameter endpoints occur around a held
