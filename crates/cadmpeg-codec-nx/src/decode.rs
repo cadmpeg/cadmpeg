@@ -7248,6 +7248,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 dimensions,
                 placement,
             } if dimensions.is_none() || placement.is_none() => "block",
+            FeatureDefinition::DatumOffsetPlane { reference, .. } if reference.is_none() => {
+                "datum plane"
+            }
             FeatureDefinition::ExtractBody { source } if body_selection_is_incomplete(source) => {
                 "extract body"
             }
