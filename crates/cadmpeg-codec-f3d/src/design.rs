@@ -17954,6 +17954,8 @@ fn parse_entity_selection_operand(
         primary_identity_offset: u64::try_from(identity_at + 29).ok()?,
         secondary_identity: read_u64(bytes, identity_at + 37)?,
         secondary_identity_offset: u64::try_from(identity_at + 37).ok()?,
+        historical_edge_candidates: Vec::new(),
+        resolved_edge_slot: None,
         next_record_index: header.record_index.checked_add(4)?,
         next_byte_offset: u64::try_from(next_at).ok()?,
     })

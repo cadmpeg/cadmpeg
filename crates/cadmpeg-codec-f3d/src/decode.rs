@@ -1051,6 +1051,12 @@ pub fn decode(
                 &native.design_body_recipe_operands,
                 &native.asm_histories,
             );
+            crate::history::bind_feature_path_selections(
+                &mut ir.model.features,
+                &native.design_parameter_scopes,
+                &native.design_construction_operand_groups,
+                &native.design_entity_selection_operands,
+            );
             (ir.model.sketches, ir.model.sketch_entities) = crate::design::project_sketch_design(
                 &native.design_sketch_placements,
                 &native.sketch_points,
@@ -1400,6 +1406,12 @@ pub fn decode(
         &native.design_face_operands,
         &native.design_body_recipe_operands,
         &native.asm_histories,
+    );
+    crate::history::bind_feature_path_selections(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_entity_selection_operands,
     );
     (ir.model.sketches, ir.model.sketch_entities) = crate::design::project_sketch_design(
         &native.design_sketch_placements,
@@ -2265,6 +2277,11 @@ fn extend_related_design_records(
         &native.design_construction_operand_groups,
         &native.design_record_headers,
     )?;
+    crate::history::bind_entity_selection_history(
+        &mut native.design_entity_selection_operands,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+    );
     native.design_body_recipe_operands = crate::design::decode_body_recipe_operands(
         scan,
         &native.design_construction_operand_groups,

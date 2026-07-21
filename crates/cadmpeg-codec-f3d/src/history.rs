@@ -859,6 +859,127 @@ pub(crate) fn bind_feature_face_selections(
     }
 }
 
+pub(crate) fn bind_feature_path_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[crate::records::DesignParameterScope],
+    groups: &[crate::records::DesignConstructionOperandGroup],
+    operands: &[crate::records::DesignEntitySelectionOperand],
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, SurfaceBoundary};
+
+    for feature in features {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+        let Some(scope) = matching_scopes.next() else {
+            continue;
+        };
+        if matching_scopes.next().is_some() {
+            continue;
+        }
+        let Some(previous_state_id) = scope.previous_history_state_id else {
+            continue;
+        };
+        let feature_id = feature.id.clone();
+        match &mut feature.definition {
+            FeatureDefinition::FilledSurface {
+                boundary: SurfaceBoundary::Path(path),
+                ..
+            } => bind_entity_selection_path(
+                path,
+                &feature_id,
+                previous_state_id,
+                scope,
+                groups,
+                operands,
+            ),
+            FeatureDefinition::Loft { guides, .. } => {
+                for path in guides {
+                    bind_entity_selection_path(
+                        path,
+                        &feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        operands,
+                    );
+                }
+            }
+            FeatureDefinition::Sweep {
+                path: Some(path), ..
+            } => bind_entity_selection_path(
+                path,
+                &feature_id,
+                previous_state_id,
+                scope,
+                groups,
+                operands,
+            ),
+            _ => {}
+        }
+    }
+}
+
+fn bind_entity_selection_path(
+    path: &mut cadmpeg_ir::features::PathRef,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+    scope: &crate::records::DesignParameterScope,
+    groups: &[crate::records::DesignConstructionOperandGroup],
+    operands: &[crate::records::DesignEntitySelectionOperand],
+) {
+    use cadmpeg_ir::features::PathRef;
+    use cadmpeg_ir::ids::HistoricalEdgeId;
+
+    let PathRef::Native(group_id) = path else {
+        return;
+    };
+    let stream = crate::design::native_stream(&scope.id);
+    let mut matching_groups = groups.iter().filter(|group| {
+        group.id == *group_id
+            && group.scope_record_index == scope.record_index
+            && crate::design::native_stream(&group.id) == stream
+    });
+    let Some(group) = matching_groups.next() else {
+        return;
+    };
+    if matching_groups.next().is_some() || group.members.is_empty() {
+        return;
+    }
+    let mut edge_slots = Vec::with_capacity(group.members.len());
+    for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+        let Ok(ordinal) = u32::try_from(ordinal) else {
+            return;
+        };
+        let mut matching_operands = operands.iter().filter(|operand| {
+            operand.group_record_index == group.record_index
+                && operand.group_member_ordinal == ordinal
+                && operand.record_index == record_index
+                && crate::design::native_stream(&operand.id) == stream
+        });
+        let Some(operand) = matching_operands.next() else {
+            return;
+        };
+        if matching_operands.next().is_some() {
+            return;
+        }
+        let Some(edge_slot) = operand.resolved_edge_slot else {
+            return;
+        };
+        edge_slots.push(edge_slot);
+    }
+    let prefix = feature_input_prefix(feature_id, previous_state_id);
+    *path = PathRef::HistoricalEdges {
+        state: crate::design::feature_input_topology_id(feature_id, previous_state_id),
+        edges: edge_slots
+            .into_iter()
+            .map(|slot| HistoricalEdgeId(format!("f3d:history-input:edge#{prefix}:{slot}")))
+            .collect(),
+        native: group_id.clone(),
+    };
+}
+
 pub(crate) fn project_feature_input_topologies(
     features: &[cadmpeg_ir::features::Feature],
     scopes: &[crate::records::DesignParameterScope],
@@ -2609,6 +2730,98 @@ pub(crate) fn bind_extrude_selection_history(
     }
 }
 
+/// Resolve both identities in nested entity-selection operands against the
+/// owning feature's exact input topology.
+pub(crate) fn bind_entity_selection_history(
+    operands: &mut [crate::records::DesignEntitySelectionOperand],
+    scopes: &[crate::records::DesignParameterScope],
+    histories: &[AsmHistory],
+) {
+    for operand in operands {
+        operand.historical_edge_candidates.clear();
+        operand.resolved_edge_slot = None;
+        let stream = crate::design::native_stream(&operand.id);
+        let mut matching_scopes = scopes.iter().filter(|scope| {
+            scope.record_index == operand.scope_record_index
+                && crate::design::native_stream(&scope.id) == stream
+        });
+        let Some(scope) = matching_scopes.next() else {
+            continue;
+        };
+        if matching_scopes.next().is_some() {
+            continue;
+        }
+        let Some(previous_state_id) = scope.previous_history_state_id else {
+            continue;
+        };
+        let mut matching_states = histories
+            .iter()
+            .flat_map(|history| &history.states)
+            .filter(|state| state.state_id == previous_state_id);
+        let Some(state) = matching_states.next() else {
+            continue;
+        };
+        if matching_states.next().is_some() {
+            continue;
+        }
+        let Some(topology) = &state.topology else {
+            continue;
+        };
+        operand.historical_edge_candidates = entity_selection_edge_candidates(
+            [operand.primary_identity, operand.secondary_identity],
+            previous_state_id,
+            histories,
+            topology,
+        );
+        operand.resolved_edge_slot =
+            unique_entity_selection_edge(&operand.historical_edge_candidates);
+    }
+}
+
+fn entity_selection_edge_candidates(
+    identities: [u64; 2],
+    previous_state_id: i64,
+    histories: &[AsmHistory],
+    topology: &AsmHistoricalTopology,
+) -> Vec<crate::records::DesignEntitySelectionEdgeCandidate> {
+    use crate::records::DesignEntitySelectionEdgeCandidate;
+
+    identities
+        .into_iter()
+        .enumerate()
+        .filter_map(|(identity_ordinal, local_id)| {
+            let (kind, entity_ref, states) =
+                historical_selection_identity_kind(histories, local_id)?;
+            states.contains(&previous_state_id).then_some(())?;
+            let mut edge_slots = historical_identity_edges(kind, entity_ref, topology)
+                .into_iter()
+                .collect::<Vec<_>>();
+            edge_slots.sort_unstable();
+            (!edge_slots.is_empty()).then_some(DesignEntitySelectionEdgeCandidate {
+                identity_ordinal: u32::try_from(identity_ordinal)
+                    .expect("two identity ordinals fit u32"),
+                local_id,
+                historical_entity_kind: kind,
+                historical_entity_ref: entity_ref,
+                edge_slots,
+            })
+        })
+        .collect()
+}
+
+fn unique_entity_selection_edge(
+    candidates: &[crate::records::DesignEntitySelectionEdgeCandidate],
+) -> Option<i64> {
+    let first = candidates.first()?;
+    let mut intersection = first.edge_slots.iter().copied().collect::<BTreeSet<_>>();
+    for candidate in &candidates[1..] {
+        intersection.retain(|edge| candidate.edge_slots.contains(edge));
+    }
+    let mut intersection = intersection.into_iter();
+    let edge = intersection.next()?;
+    intersection.next().is_none().then_some(edge)
+}
+
 pub(crate) fn bind_edge_identity_history(
     operands: &mut [DesignEdgeIdentityOperand],
     identities: &[crate::records::DesignConstructionOperandIdentity],
@@ -2813,6 +3026,17 @@ fn historical_identity_edge(
     entity_ref: i64,
     topology: &AsmHistoricalTopology,
 ) -> Option<i64> {
+    let candidates = historical_identity_edges(kind, entity_ref, topology);
+    let mut candidates = candidates.into_iter();
+    let edge = candidates.next()?;
+    candidates.next().is_none().then_some(edge)
+}
+
+fn historical_identity_edges(
+    kind: AsmHistoricalEntityKind,
+    entity_ref: i64,
+    topology: &AsmHistoricalTopology,
+) -> HashSet<i64> {
     let mut candidates = HashSet::new();
     match kind {
         AsmHistoricalEntityKind::Edge => {
@@ -2881,9 +3105,7 @@ fn historical_identity_edge(
         | AsmHistoricalEntityKind::Loop
         | AsmHistoricalEntityKind::Surface => {}
     }
-    let mut candidates = candidates.into_iter();
-    let edge = candidates.next()?;
-    candidates.next().is_none().then_some(edge)
+    candidates
 }
 
 fn affected_body_refs(
@@ -4338,6 +4560,91 @@ mod tests {
             )],
         };
         assert_eq!(historical_identity_kind(&[history, ambiguous], 42), None);
+    }
+
+    #[test]
+    fn nested_entity_identity_resolves_through_input_coedge_incidence() {
+        let topology = AsmHistoricalTopology {
+            coedges: vec![42],
+            edges: vec![17, 18],
+            vertices: vec![50, 51, 52],
+            coedge_topology: vec![AsmHistoricalCoedge {
+                coedge: 42,
+                owner_loop: 5,
+                edge: 17,
+                next: 42,
+                previous: 42,
+                radial_next: 42,
+            }],
+            edge_vertices: vec![
+                AsmHistoricalEdge {
+                    edge: 17,
+                    start_vertex: 50,
+                    end_vertex: 51,
+                },
+                AsmHistoricalEdge {
+                    edge: 18,
+                    start_vertex: 50,
+                    end_vertex: 52,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        let history = AsmHistory {
+            id: "history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            states: vec![AsmDeltaState {
+                id: "state-3".into(),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id: 3,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 3,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                entity_versions: vec![
+                    AsmEntityVersion {
+                        entity_ref: 42,
+                        record_ref: 700,
+                    },
+                    AsmEntityVersion {
+                        entity_ref: 50,
+                        record_ref: 800,
+                    },
+                ],
+                record_table_complete: true,
+                topology: Some(topology.clone()),
+                transition: None,
+            }],
+        };
+        let candidates = entity_selection_edge_candidates([700, 800], 3, &[history], &topology);
+        assert_eq!(
+            candidates,
+            [
+                crate::records::DesignEntitySelectionEdgeCandidate {
+                    identity_ordinal: 0,
+                    local_id: 700,
+                    historical_entity_kind: AsmHistoricalEntityKind::Coedge,
+                    historical_entity_ref: 42,
+                    edge_slots: vec![17],
+                },
+                crate::records::DesignEntitySelectionEdgeCandidate {
+                    identity_ordinal: 1,
+                    local_id: 800,
+                    historical_entity_kind: AsmHistoricalEntityKind::Vertex,
+                    historical_entity_ref: 50,
+                    edge_slots: vec![17, 18],
+                },
+            ]
+        );
+        assert_eq!(unique_entity_selection_edge(&candidates), Some(17));
     }
 
     #[test]

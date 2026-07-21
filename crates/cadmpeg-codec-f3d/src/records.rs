@@ -1638,10 +1638,31 @@ pub struct DesignEntitySelectionOperand {
     pub secondary_identity: u64,
     /// Byte offset of `secondary_identity`.
     pub secondary_identity_offset: u64,
+    /// Input-state edge proofs derived from the two serialized identities.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,
+    /// Unique input-state edge selected by every available identity proof.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_edge_slot: Option<i64>,
     /// Identity of the indexed record immediately following the identity record.
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following the identity record.
     pub next_byte_offset: u64,
+}
+
+/// Historical edge proof carried by one nested entity-selection identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignEntitySelectionEdgeCandidate {
+    /// Zero for the first identity and one for the second identity.
+    pub identity_ordinal: u32,
+    /// Serialized persistent identity.
+    pub local_id: u64,
+    /// Stable ASM history family containing the identity.
+    pub historical_entity_kind: AsmHistoricalEntityKind,
+    /// Stable ASM entity slot after record-revision normalization.
+    pub historical_entity_ref: i64,
+    /// Edges incident to the stable entity in the feature-input topology.
+    pub edge_slots: Vec<i64>,
 }
 
 /// Whole-body construction operand carrying a persistent body-recipe reference.
