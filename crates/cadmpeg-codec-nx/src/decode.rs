@@ -7285,7 +7285,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 op,
                 ..
             } if profiles.len() < 2
-                || profiles.iter().any(profile_ref_is_opaque)
+                || profiles.iter().any(profile_ref_is_incomplete)
                 || guides.iter().any(path_ref_is_opaque)
                 || matches!(op, BooleanOp::Unresolved) =>
             {
@@ -7401,7 +7401,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 extent,
                 op,
                 ..
-            } if profile_ref_is_opaque(profile)
+            } if profile_ref_is_incomplete(profile)
                 || extent_is_incomplete(extent)
                 || matches!(op, BooleanOp::Unresolved) =>
             {
@@ -7621,9 +7621,9 @@ pub(crate) fn hole_feature_is_incomplete(
     extent: Option<&Extent>,
 ) -> bool {
     let (kind, exit_kind) = treatments;
-    let profile_incomplete = profile.is_some_and(profile_ref_is_opaque);
+    let profile_incomplete = profile.is_some_and(profile_ref_is_incomplete);
     let face_incomplete = face.is_some_and(face_selection_is_incomplete);
-    let location_unresolved = position.is_none() && profile.is_none_or(profile_ref_is_opaque);
+    let location_unresolved = position.is_none() && profile.is_none_or(profile_ref_is_incomplete);
     let orientation_unresolved =
         direction.is_none() && face.is_none_or(face_selection_is_incomplete);
     profile_incomplete
@@ -7661,7 +7661,7 @@ pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: Bool
     construction
         .profile
         .as_ref()
-        .is_none_or(profile_ref_is_opaque)
+        .is_none_or(profile_ref_is_incomplete)
         || construction.direction.is_none()
         || construction.thickness.is_none()
         || construction.side.is_none()
@@ -7714,9 +7714,7 @@ pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
 }
 
 pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
-    explicit_body_ids(selection).is_none_or(|bodies| {
-        bodies.is_empty() || bodies.iter().collect::<BTreeSet<_>>().len() != bodies.len()
-    })
+    explicit_body_ids(selection).is_none_or(selection_ids_are_incomplete)
 }
 
 pub(crate) fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
@@ -7737,7 +7735,7 @@ pub(crate) fn face_selection_is_incomplete(selection: &FaceSelection) -> bool {
     match selection {
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
-            faces.is_empty() || faces.iter().collect::<BTreeSet<_>>().len() != faces.len()
+            selection_ids_are_incomplete(faces)
         }
     }
 }
@@ -7759,17 +7757,21 @@ pub(crate) fn edge_selection_is_incomplete(selection: &EdgeSelection) -> bool {
         EdgeSelection::Unresolved | EdgeSelection::Native(_) => true,
         EdgeSelection::All => false,
         EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => {
-            edges.is_empty() || edges.iter().collect::<BTreeSet<_>>().len() != edges.len()
+            selection_ids_are_incomplete(edges)
         }
     }
 }
 
-pub(crate) fn profile_ref_is_opaque(profile: &ProfileRef) -> bool {
+pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
     match profile {
         ProfileRef::Unresolved | ProfileRef::Native(_) => true,
         ProfileRef::Sketch(_) => false,
-        ProfileRef::Faces(faces) => faces.is_empty(),
+        ProfileRef::Faces(faces) => selection_ids_are_incomplete(faces),
     }
+}
+
+fn selection_ids_are_incomplete<T: Ord>(ids: &[T]) -> bool {
+    ids.is_empty() || ids.iter().collect::<BTreeSet<_>>().len() != ids.len()
 }
 
 pub(crate) fn path_ref_is_opaque(path: &PathRef) -> bool {

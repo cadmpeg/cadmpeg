@@ -2574,9 +2574,9 @@ fn nx_empty_resolved_selections_remain_incomplete() {
     assert!(!crate::decode::edge_selection_is_incomplete(
         &EdgeSelection::All
     ));
-    assert!(crate::decode::profile_ref_is_opaque(&ProfileRef::Faces(
-        Vec::new()
-    )));
+    assert!(crate::decode::profile_ref_is_incomplete(
+        &ProfileRef::Faces(Vec::new())
+    ));
     assert!(crate::decode::path_ref_is_opaque(&PathRef::Curves(
         Vec::new()
     )));
@@ -3816,12 +3816,17 @@ fn nx_face_blend_completeness_requires_disjoint_supports() {
 
 #[test]
 fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
-    use cadmpeg_ir::features::{EdgeSelection, FaceSelection};
+    use cadmpeg_ir::features::{EdgeSelection, FaceSelection, ProfileRef};
     use cadmpeg_ir::ids::{EdgeId, FaceId};
 
     let face = FaceId("test:face#repeated".into());
     assert!(crate::decode::face_selection_is_incomplete(
         &FaceSelection::Faces(vec![face.clone(), face]),
+    ));
+
+    let face = FaceId("test:profile-face#repeated".into());
+    assert!(crate::decode::profile_ref_is_incomplete(
+        &ProfileRef::Faces(vec![face.clone(), face]),
     ));
 
     let edge = EdgeId("test:edge#repeated".into());
