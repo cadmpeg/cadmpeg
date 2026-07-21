@@ -832,7 +832,7 @@ mod marker_tests {
         component_path_features, component_path_preceding_feature, component_path_terminal_feature,
         component_profile_source_at, component_reference_curve_path_at,
         consecutive_legacy_profile_line_endpoints, constraint_midplane_frame,
-        constraint_reference_plane_frame, coordinate_marker_local_links,
+        constraint_reference_plane_frame, coordinate_circle_radius, coordinate_marker_local_links,
         coordinate_roster_arc_center, coordinate_roster_curve_endpoint_markers,
         cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
         enrich_history_revolution_inputs, explicit_reference_axis_frame,
@@ -3576,6 +3576,69 @@ mod marker_tests {
                 .collect::<Vec<_>>(),
             vec![Some([3.0, 4.0]), Some([5.0, 6.0])]
         );
+    }
+
+    #[test]
+    fn current_coordinate_circle_uses_its_complete_square_handle_grid() {
+        let mut payload = vec![0; 284];
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[5..13].copy_from_slice(&[0xff; 8]);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[31..35].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[35..39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+        payload[82..86].copy_from_slice(&1u32.to_le_bytes());
+        payload[92..96].copy_from_slice(&(-2i32).to_le_bytes());
+        payload[142..142 + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        let entity = |id: &str, ordinal, offset, kind, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal,
+            offset,
+            object_index: None,
+            local_id: None,
+            kind,
+            state_value: None,
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let center = entity("center", 0, 0, SketchInputKind::Arc, Some([2.0, 3.0]));
+        let points = [
+            [1.0, 2.0],
+            [2.0, 2.0],
+            [3.0, 2.0],
+            [1.0, 4.0],
+            [2.0, 4.0],
+            [3.0, 4.0],
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, point)| {
+            entity(
+                &format!("point-{index}"),
+                index as u32 + 1,
+                index as u64 + 143,
+                SketchInputKind::Point,
+                Some(point),
+            )
+        })
+        .collect::<Vec<_>>();
+        let mut entities = vec![center.clone()];
+        entities.extend(points);
+        let markers = entities.iter().collect::<Vec<_>>();
+        assert_eq!(
+            coordinate_circle_radius(&payload, &center, &markers),
+            Some(1.0)
+        );
+        entities[6].coordinates_m = Some([3.0, 5.0]);
+        let markers = entities.iter().collect::<Vec<_>>();
+        assert_eq!(coordinate_circle_radius(&payload, &center, &markers), None);
     }
 
     #[test]
@@ -14685,7 +14748,19 @@ pub(crate) fn project_marker_backed_sketches(
                                 &markers_by_id,
                                 &object_markers,
                             );
-                            if let ([start, end], Some(point)) = (
+                            if let (Some(point), Some(radius)) = (
+                                marker.coordinates_m.and_then(|_| project(marker)),
+                                coordinate_circle_radius(
+                                    &lane.native_payload,
+                                    marker,
+                                    &object_markers,
+                                ),
+                            ) {
+                                SketchGeometry::Circle {
+                                    center: point,
+                                    radius: Length(radius * NATIVE_TO_IR),
+                                }
+                            } else if let ([start, end], Some(point)) = (
                                 endpoints.as_slice(),
                                 marker.coordinates_m.and_then(|_| project(marker)),
                             ) {
@@ -15115,6 +15190,18 @@ fn tangent_bridge_arc_geometry(
 }
 
 fn closed_marker_profiles(entities: &[SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
+    let mut profiles = entities
+        .iter()
+        .filter(|entity| {
+            !entity.construction && matches!(entity.geometry, SketchGeometry::Circle { .. })
+        })
+        .map(|entity| {
+            vec![SketchEntityUse {
+                entity: entity.id.clone(),
+                reversed: false,
+            }]
+        })
+        .collect::<Vec<_>>();
     let curves = entities
         .iter()
         .enumerate()
@@ -15137,7 +15224,6 @@ fn closed_marker_profiles(entities: &[SketchEntity]) -> Vec<Vec<SketchEntityUse>
         .iter()
         .map(|(index, _)| *index)
         .collect::<HashSet<_>>();
-    let mut profiles = Vec::new();
     while let Some(&first) = unused.iter().min() {
         let mut component = HashSet::from([first]);
         let mut frontier = vec![first];
@@ -20668,6 +20754,96 @@ fn coordinate_roster_arc_center(
     (first_radius > 0.0 && same_dimension_length(first_radius, second_radius)).then_some(center)
 }
 
+fn coordinate_circle_radius(
+    payload: &[u8],
+    circle: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+) -> Option<f64> {
+    let offset = usize::try_from(circle.offset).ok()?;
+    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(2)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&0u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 64..offset + 66) != Some(&[0x1e, 0x00])
+        || payload.get(offset + 82..offset + 86) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 86..offset + 92) != Some(&[0; 6])
+        || payload.get(offset + 92..offset + 96) != Some(&(-2i32).to_le_bytes())
+        || payload.get(offset + 96..offset + 138) != Some(&[0; 42])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(142)?)
+    {
+        return None;
+    }
+    let [center_u, center_v] = circle.coordinates_m?;
+    let mut coordinates = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref == circle.feature_ref
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        })
+        .collect::<Vec<_>>();
+    coordinates.sort_unstable_by_key(|marker| marker.offset);
+    let insertion = coordinates.partition_point(|marker| marker.offset < circle.offset);
+    let grids = [
+        insertion
+            .checked_sub(6)
+            .and_then(|start| coordinates.get(start..insertion)),
+        coordinates.get(insertion..insertion.checked_add(6)?),
+    ];
+    let mut radii = grids
+        .into_iter()
+        .flatten()
+        .filter_map(|grid| {
+            let mut u = grid
+                .iter()
+                .filter_map(|marker| marker.coordinates_m.map(|point| point[0]))
+                .collect::<Vec<_>>();
+            let mut v = grid
+                .iter()
+                .filter_map(|marker| marker.coordinates_m.map(|point| point[1]))
+                .collect::<Vec<_>>();
+            u.sort_by(f64::total_cmp);
+            u.dedup();
+            v.sort_by(f64::total_cmp);
+            v.dedup();
+            let (u_min, u_max, v_min, v_max) = (*u.first()?, *u.last()?, *v.first()?, *v.last()?);
+            let mut points = grid
+                .iter()
+                .filter_map(|marker| marker.coordinates_m)
+                .collect::<Vec<_>>();
+            points.sort_by(|left, right| {
+                left[0]
+                    .total_cmp(&right[0])
+                    .then_with(|| left[1].total_cmp(&right[1]))
+            });
+            points.dedup();
+            let complete_grid = points.len() == 6 && u.len() * v.len() == 6;
+            let centered = same_dimension_length(center_u - u_min, u_max - center_u)
+                && same_dimension_length(center_v - v_min, v_max - center_v);
+            let square = same_dimension_length(u_max - u_min, v_max - v_min);
+            (complete_grid && centered && square && matches!((u.len(), v.len()), (3, 2) | (2, 3)))
+                .then_some((u_max - u_min) * 0.5)
+        })
+        .filter(|radius| radius.is_finite() && *radius > 0.0)
+        .collect::<Vec<_>>();
+    radii.sort_by(f64::total_cmp);
+    radii.dedup_by(|left, right| same_dimension_length(*left, *right));
+    let [radius] = radii.as_slice() else {
+        return None;
+    };
+    Some(*radius)
+}
+
 fn coordinate_roster_curve_layout(payload: &[u8], offset: usize) -> bool {
     coordinate_roster_endpoint_offset(payload, offset).is_some()
 }
@@ -24447,6 +24623,25 @@ mod profile_join_tests {
         assert_eq!(closed_marker_profiles(&entities)[0].len(), 3);
         entities.last_mut().unwrap().construction = true;
         assert!(closed_marker_profiles(&entities).is_empty());
+        entities.push(SketchEntity {
+            id: SketchEntityId("entity-circle".into()),
+            sketch: entities[0].sketch.clone(),
+            construction: false,
+            native_ref: Some("circle".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+            },
+        });
+        assert_eq!(
+            closed_marker_profiles(&entities),
+            vec![vec![SketchEntityUse {
+                entity: SketchEntityId("entity-circle".into()),
+                reversed: false,
+            }]]
+        );
     }
 
     #[test]
