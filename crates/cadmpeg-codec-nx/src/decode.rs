@@ -11816,31 +11816,7 @@ fn attach_feature_operations(
                         )
                     })
             },
-            |operation| FeatureDefinition::Combine {
-                target: feature_body_selection(
-                    &[operation.target_object_index],
-                    &bodies_by_object_index,
-                    format!("nx:om-object-index#{}", operation.target_object_index),
-                ),
-                tools: feature_body_selection(
-                    &operation.tool_object_indices,
-                    &bodies_by_object_index,
-                    format!(
-                        "nx:om-object-indices#{}",
-                        operation
-                            .tool_object_indices
-                            .iter()
-                            .map(u32::to_string)
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    ),
-                ),
-                op: match operation.kind {
-                    crate::native::FeatureBooleanKind::Unite => BooleanOp::Join,
-                    crate::native::FeatureBooleanKind::Subtract => BooleanOp::Cut,
-                    crate::native::FeatureBooleanKind::Intersect => BooleanOp::Intersect,
-                },
-            },
+            |operation| boolean_feature_definition(operation, &bodies_by_object_index),
         );
         annotations
             .note(&id, stream, label.source_offset)
@@ -13546,6 +13522,65 @@ pub(crate) fn feature_body_selection(
     BodySelection::Resolved { bodies, native }
 }
 
+fn atomic_disjoint_body_selections(
+    left: BodySelection,
+    right: BodySelection,
+) -> (BodySelection, BodySelection) {
+    let complete = match (&left, &right) {
+        (
+            BodySelection::Resolved { bodies: left, .. },
+            BodySelection::Resolved { bodies: right, .. },
+        ) => !left.iter().any(|body| right.contains(body)),
+        _ => false,
+    };
+    if complete {
+        return (left, right);
+    }
+    let native = |selection: BodySelection| match selection {
+        BodySelection::Resolved { native, .. } | BodySelection::Native(native) => {
+            BodySelection::Native(native)
+        }
+        BodySelection::Bodies(bodies) => BodySelection::Bodies(bodies),
+        BodySelection::Unresolved => BodySelection::Unresolved,
+    };
+    (native(left), native(right))
+}
+
+pub(crate) fn boolean_feature_definition(
+    operation: &crate::native::FeatureBooleanOperation,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
+) -> FeatureDefinition {
+    let (target, tools) = atomic_disjoint_body_selections(
+        feature_body_selection(
+            &[operation.target_object_index],
+            bodies_by_object_index,
+            format!("nx:om-object-index#{}", operation.target_object_index),
+        ),
+        feature_body_selection(
+            &operation.tool_object_indices,
+            bodies_by_object_index,
+            format!(
+                "nx:om-object-indices#{}",
+                operation
+                    .tool_object_indices
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        ),
+    );
+    FeatureDefinition::Combine {
+        target,
+        tools,
+        op: match operation.kind {
+            crate::native::FeatureBooleanKind::Unite => BooleanOp::Join,
+            crate::native::FeatureBooleanKind::Subtract => BooleanOp::Cut,
+            crate::native::FeatureBooleanKind::Intersect => BooleanOp::Intersect,
+        },
+    }
+}
+
 /// Project `DELETE` as body deletion only when its bounded operation record
 /// carries a primary-body field. Other `DELETE` payloads target a different
 /// object family and remain native until that family is decoded.
@@ -13600,25 +13635,31 @@ pub(crate) fn trim_body_feature_definition(
         .iter()
         .map(|operand| operand.operand_object_index)
         .collect::<Vec<_>>();
-    (!tool_object_indices.is_empty()).then(|| FeatureDefinition::TrimBodies {
-        targets: feature_body_selection(
-            &[target_object_index],
-            bodies_by_object_index,
-            format!("nx:om-object-index#{target_object_index}"),
-        ),
-        tools: feature_body_selection(
-            &tool_object_indices,
-            bodies_by_object_index,
-            format!(
-                "nx:om-object-indices#{}",
-                tool_object_indices
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")
+    (!tool_object_indices.is_empty()).then(|| {
+        let (targets, tools) = atomic_disjoint_body_selections(
+            feature_body_selection(
+                &[target_object_index],
+                bodies_by_object_index,
+                format!("nx:om-object-index#{target_object_index}"),
             ),
-        ),
-        keep: BodyTrimSide::Unresolved,
+            feature_body_selection(
+                &tool_object_indices,
+                bodies_by_object_index,
+                format!(
+                    "nx:om-object-indices#{}",
+                    tool_object_indices
+                        .iter()
+                        .map(u32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(",")
+                ),
+            ),
+        );
+        FeatureDefinition::TrimBodies {
+            targets,
+            tools,
+            keep: BodyTrimSide::Unresolved,
+        }
     })
 }
 

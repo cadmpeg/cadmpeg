@@ -3200,6 +3200,58 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         crate::decode::trim_body_feature_definition(10, &[], &bodies),
         None
     );
+
+    let aliased_body = BodyId("body#alias".to_string());
+    let same_body = BTreeMap::from([(10, vec![aliased_body.clone()]), (20, vec![aliased_body])]);
+    assert!(matches!(
+        crate::decode::trim_body_feature_definition(10, &references, &same_body),
+        Some(FeatureDefinition::TrimBodies {
+            targets: BodySelection::Native(target),
+            tools: BodySelection::Native(tools),
+            ..
+        }) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
+    ));
+}
+
+#[test]
+fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
+    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::ids::BodyId;
+    use std::collections::BTreeMap;
+
+    let operation = crate::native::FeatureBooleanOperation {
+        id: "boolean#0".to_string(),
+        operation_label: "operation#0".to_string(),
+        kind: crate::native::FeatureBooleanKind::Subtract,
+        target_object_index: 10,
+        raw_target_object_index: vec![10],
+        target_source_offset: 0,
+        tool_object_indices: vec![20],
+        raw_tool_object_indices: vec![vec![20]],
+        tool_source_offsets: vec![1],
+        source_offset: 0,
+    };
+    let body = BodyId("body#10".to_string());
+    let bodies = BTreeMap::from([(10, vec![body.clone()]), (20, vec![body])]);
+
+    assert_eq!(
+        crate::decode::boolean_feature_definition(&operation, &bodies),
+        FeatureDefinition::Combine {
+            target: BodySelection::Native("nx:om-object-index#10".to_string()),
+            tools: BodySelection::Native("nx:om-object-indices#20".to_string()),
+            op: BooleanOp::Cut,
+        }
+    );
+
+    let missing_tool = BTreeMap::from([(10, vec![BodyId("body#10".to_string())])]);
+    assert!(matches!(
+        crate::decode::boolean_feature_definition(&operation, &missing_tool),
+        FeatureDefinition::Combine {
+            target: BodySelection::Native(target),
+            tools: BodySelection::Native(tools),
+            ..
+        } if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
+    ));
 }
 
 #[test]

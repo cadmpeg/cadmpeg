@@ -153,8 +153,10 @@ order.
 
 Each of these labels projects as a neutral combine with join, cut, or intersect
 semantics respectively. A complete Boolean header supplies the target and
-ordered tool selections. An absent or invalid header leaves both selections
-unresolved without discarding the operation family or Boolean kind.
+ordered tool selections. Target and tool selections resolve atomically only
+when their neutral body sets are disjoint. An absent or invalid header, an
+unresolved body binding, or alias overlap leaves both native
+selections unresolved without discarding the operation family or Boolean kind.
 
 A body-affecting operation record contains exactly one primary-body field
 `01 02 10 body_object_index ff`. The object index uses the operation-header
@@ -844,8 +846,9 @@ A `TRIM BODY` operation projects as a neutral body-trim feature. Without one
 unambiguous primary body and one or more body operands, the target and tool-body
 selections are unresolved. With those fields, the primary body is the target;
 wrapped-member order defines the ordered tool-body selection. Target and tools
-resolve atomically through surviving segment body bindings and otherwise retain
-their native object-index selections. The body clauses do not assign which side
+resolve atomically through surviving segment body bindings only when their
+neutral body sets are disjoint, and otherwise retain their native object-index
+selections. The body clauses do not assign which side
 is retained, so the neutral retained side is unresolved.
 
 A `DELETE` operation projects as a neutral delete-selected-bodies feature. Its primary-body field is the selected body, not an output. A uniquely bound body image resolves the selection; an absent or ambiguous binding leaves the selection unresolved.
