@@ -372,7 +372,6 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     (0..payload.len().saturating_sub(SKETCH_MARKER.len() - 1))
         .filter(|offset| sketch_marker_at(payload, *offset))
-        .filter(|offset| payload.get(offset + 35..offset + 39) != Some(CLASS_MARKER))
         .filter_map(|offset| {
             let code = marker_native_code(payload, offset)?;
             Some((offset, code))
@@ -458,7 +457,9 @@ fn current_geometry_locus_profile_line(payload: &[u8], offset: usize, code: u32)
 }
 
 pub(crate) fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
-    if !sketch_marker_prefix_at(payload, offset) {
+    if !sketch_marker_prefix_at(payload, offset)
+        || payload.get(offset + 35..offset + 39) == Some(CLASS_MARKER)
+    {
         return false;
     }
     (payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
@@ -3206,7 +3207,7 @@ mod marker_tests {
         payload[31..35].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         payload[35..39].copy_from_slice(CLASS_MARKER);
 
-        assert!(super::sketch_marker_at(&payload, 0));
+        assert!(!super::sketch_marker_at(&payload, 0));
         assert!(sketch_input_entities(&payload, "lane").is_empty());
     }
 
@@ -3577,6 +3578,11 @@ mod marker_tests {
         compact[58..60].copy_from_slice(&9u16.to_le_bytes());
         compact[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
         compact[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert_eq!(
+            legacy_state_five_curve_endpoint_indices(&compact, 0),
+            Some([7, 10])
+        );
+        compact[60..64].copy_from_slice(&1u32.to_le_bytes());
         assert_eq!(
             legacy_state_five_curve_endpoint_indices(&compact, 0),
             Some([7, 10])
@@ -20394,7 +20400,11 @@ fn legacy_state_five_curve_endpoint_offset(payload: &[u8], offset: usize) -> Opt
         && sketch_marker_prefix_at(payload, offset.checked_add(92)?)
     {
         Some(64)
-    } else if payload.get(offset + 60..offset + 64) == Some(&0u32.to_le_bytes())
+    } else if payload
+        .get(offset + 60..offset + 64)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u32::from_le_bytes)
+        .is_some_and(|state| matches!(state, 0 | 1))
         && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
         && payload.get(offset + 72..offset + 80) == Some(&[0; 8])
         && sketch_marker_prefix_at(payload, offset.checked_add(84)?)
