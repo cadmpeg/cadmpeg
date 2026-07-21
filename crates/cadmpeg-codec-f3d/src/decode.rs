@@ -1048,6 +1048,7 @@ pub fn decode(
                 &native.design_parameter_scopes,
                 &native.design_construction_operand_groups,
                 &native.design_face_operands,
+                &native.design_body_recipe_operands,
                 &native.asm_histories,
             );
             (ir.model.sketches, ir.model.sketch_entities) = crate::design::project_sketch_design(
@@ -1397,6 +1398,7 @@ pub fn decode(
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.design_face_operands,
+        &native.design_body_recipe_operands,
         &native.asm_histories,
     );
     (ir.model.sketches, ir.model.sketch_entities) = crate::design::project_sketch_design(
@@ -2263,6 +2265,21 @@ fn extend_related_design_records(
         &native.design_construction_operand_groups,
         &native.design_record_headers,
     )?;
+    native.design_body_recipe_operands = crate::design::decode_body_recipe_operands(
+        scan,
+        &native.design_construction_operand_groups,
+        &native.design_record_headers,
+        &native.construction_recipes,
+    )?;
+    crate::design::bind_body_recipe_operand_candidates(
+        &mut native.design_body_recipe_operands,
+        &native.persistent_subentity_tags,
+    );
+    crate::history::bind_body_recipe_operand_history_candidates(
+        &mut native.design_body_recipe_operands,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+    );
     crate::design::bind_extrude_selection_identities(
         &mut native.design_extrude_selection_members,
         &native.design_construction_operand_identities,

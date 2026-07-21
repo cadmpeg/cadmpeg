@@ -10,14 +10,15 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::records::{
     BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, DesignBaseFeatureConstruction,
     DesignBaseFlangeOperation, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
-    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignConfiguration,
-    DesignConfigurationKind, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-    DesignConstructionPersistentIdentity, DesignCopyPasteBodiesOperation,
-    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
-    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
-    DesignDimensionRecipeRecord, DesignDirectFaceOperation, DesignEdgeFlangeOperation,
-    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
-    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignBodyRecipeOperand, DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement,
+    DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
+    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
+    DesignCopyPasteBodiesOperation, DesignDimensionAnnotationFrame,
+    DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
+    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
+    DesignDirectFaceOperation, DesignEdgeFlangeOperation, DesignEdgeIdentityOperand,
+    DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeExtent,
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
     DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
     DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
@@ -17958,6 +17959,187 @@ fn parse_entity_selection_operand(
     })
 }
 
+/// Decode whole-body construction operands that contain one persistent body recipe.
+pub fn decode_body_recipe_operands(
+    scan: &ContainerScan,
+    groups: &[DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+    recipes: &[ConstructionRecipe],
+) -> Result<Vec<DesignBodyRecipeOperand>, CodecError> {
+    let mut headers_by_identity = HashMap::<_, Option<&DesignRecordHeader>>::new();
+    for header in headers {
+        let Some(stream) = native_stream(&header.id) else {
+            continue;
+        };
+        headers_by_identity
+            .entry((stream, header.record_index))
+            .and_modify(|header| *header = None)
+            .or_insert(Some(header));
+    }
+    let mut out = Vec::new();
+    for group in groups {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            let Some(Some(header)) = headers_by_identity.get(&(stream, record_index)) else {
+                continue;
+            };
+            let Some(start) = usize::try_from(header.byte_offset).ok() else {
+                continue;
+            };
+            let Some(next_at) = body_recipe_operand_end(bytes, start, header.record_index) else {
+                continue;
+            };
+            let matching_recipes = recipes
+                .iter()
+                .filter(|recipe| {
+                    native_stream(&recipe.id) == Some(stream)
+                        && recipe.kind == ConstructionRecipeKind::Body
+                        && recipe.byte_offset > header.byte_offset
+                        && recipe.byte_offset < next_at as u64
+                })
+                .collect::<Vec<_>>();
+            let [recipe] = matching_recipes.as_slice() else {
+                continue;
+            };
+            if let Some(mut operand) =
+                parse_body_recipe_operand(bytes, group, ordinal, header, recipe)
+            {
+                operand.id = format!(
+                    "f3d:{}:design-body-recipe-operand#{}",
+                    entry.name, header.byte_offset
+                );
+                out.push(operand);
+            }
+        }
+    }
+    out.sort_by_key(|operand| operand.id.clone());
+    Ok(out)
+}
+
+fn body_recipe_operand_end(bytes: &[u8], start: usize, record_index: u32) -> Option<usize> {
+    let mut search = start.checked_add(11)?;
+    for (ordinal, expected) in [
+        record_index,
+        record_index.checked_add(1)?,
+        record_index.checked_add(2)?,
+        record_index.checked_add(3)?,
+        record_index.checked_add(4)?,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let at = next_indexed_record_offset(bytes, search)?;
+        let (_, after_tag) = lp_ascii(bytes, at)?;
+        if u32_at(bytes, after_tag)? != expected {
+            return None;
+        }
+        if ordinal == 4 {
+            return Some(at);
+        }
+        search = at.checked_add(11)?;
+    }
+    None
+}
+
+fn parse_body_recipe_operand(
+    bytes: &[u8],
+    group: &DesignConstructionOperandGroup,
+    group_member_ordinal: u32,
+    header: &DesignRecordHeader,
+    recipe: &ConstructionRecipe,
+) -> Option<DesignBodyRecipeOperand> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    let next_at = body_recipe_operand_end(bytes, start, header.record_index)?;
+    let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
+    if start >= recipe_at
+        || recipe_at >= next_at
+        || bytes.get(start + 11..start + 21)? != [0; 10]
+        || u32_at(bytes, start + 21)? != 1
+        || u32_at(bytes, start + 33)? != 3
+        || bytes.get(start + 37) != Some(&1)
+        || bytes.get(start + 46..start + 48)? != [0; 2]
+        || u32_at(bytes, start + 48)? != 1
+    {
+        return None;
+    }
+    let design_reference = read_u64(bytes, start + 25)?;
+    let nested_record_index = read_u64(bytes, start + 38)?;
+    let (asset_id, after_asset_id) = lp_utf16(bytes, start + 52)?;
+    let (context_id, after_context_id) = lp_utf16(bytes, after_asset_id)?;
+    if !is_guid(&asset_id)
+        || !is_guid(&context_id)
+        || u32_at(bytes, after_context_id)? != 2
+        || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
+        || nested_record_index != u64::from(header.record_index.checked_add(3)?)
+        || recipe.design_id.as_deref()?.parse::<u64>().ok()? != design_reference
+    {
+        return None;
+    }
+    Some(DesignBodyRecipeOperand {
+        id: String::new(),
+        scope_record_index: group.scope_record_index,
+        group_record_index: group.record_index,
+        group_member_ordinal,
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        asset_id,
+        asset_id_offset: u64::try_from(start + 56).ok()?,
+        context_id,
+        context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
+        design_reference,
+        design_reference_offset: u64::try_from(start + 25).ok()?,
+        nested_record_index,
+        nested_record_index_offset: u64::try_from(start + 38).ok()?,
+        recipe_id: recipe.id.clone(),
+        candidate_faces: Vec::new(),
+        preceding_candidate_faces: Vec::new(),
+        resolved_face_slot: None,
+        next_record_index: header.record_index.checked_add(4)?,
+        next_byte_offset: u64::try_from(next_at).ok()?,
+    })
+}
+
+/// Join body-recipe Design references to solved persistent face tags.
+pub fn bind_body_recipe_operand_candidates(
+    operands: &mut [DesignBodyRecipeOperand],
+    tags: &[PersistentSubentityTag],
+) {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    for operand in operands {
+        operand.candidate_faces.clear();
+        let Ok(design_reference) = i64::try_from(operand.design_reference) else {
+            continue;
+        };
+        operand.candidate_faces = tags
+            .iter()
+            .filter(|tag| tag.design_references.contains(&design_reference))
+            .filter_map(|tag| match &tag.target {
+                AttributeTarget::Face(face) => Some(face.clone()),
+                _ => None,
+            })
+            .collect();
+        operand
+            .candidate_faces
+            .sort_by(|left, right| left.0.cmp(&right.0));
+        operand.candidate_faces.dedup();
+    }
+}
+
 /// Resolve selection-member local identities against persistent point and
 /// curve identities owned by the Extrude scope's selected Sketch.
 pub fn bind_extrude_selection_geometry(
@@ -22573,20 +22755,21 @@ mod relation_tests {
         neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
         neutral_sketch_id, neutral_sketch_point_id, neutral_spatial_sketch_id,
         next_indexed_record_offset, next_indexed_record_offset_with_index,
-        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter,
-        parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_entity_selection_operand,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_genesis_entity_header, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_settled_entity_header, parse_sketch_placement_candidates,
-        parse_sketch_profile, parse_sketch_relation, parse_sketch_surface,
-        partial_historical_edge_selection, point_lies_on_sketch_geometry, point_on_sketch_entity,
-        project_configurations, project_dimension_constraints, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
-        project_spatial_dimension_constraints, project_spatial_sketch_constraints,
-        project_spatial_sketch_design, radial_dimension_definition, recipe_record_prefix,
-        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
+        null_locus_dimension_definition, offset_parameter_factor, parse_body_recipe_operand,
+        parse_construction_operand_group, parse_construction_operand_identity,
+        parse_design_parameter, parse_dimension_annotation_frame, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_entity_selection_operand, parse_extrude_selection_group,
+        parse_extrude_selection_member, parse_face_operand, parse_genesis_entity_header,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_settled_entity_header, parse_sketch_placement_candidates, parse_sketch_profile,
+        parse_sketch_relation, parse_sketch_surface, partial_historical_edge_selection,
+        point_lies_on_sketch_geometry, point_on_sketch_entity, project_configurations,
+        project_dimension_constraints, project_extrude, project_parameter_design,
+        project_sketch_constraints, project_sketch_design, project_spatial_dimension_constraints,
+        project_spatial_sketch_constraints, project_spatial_sketch_design,
+        radial_dimension_definition, recipe_record_prefix, region_containing_points,
+        remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
         resolved_face_group, sketch_entity_endpoints, spatial_parallel_line_distance_matches,
         two_locus_distance_dimension, unresolved_configuration_member_count,
@@ -27081,6 +27264,90 @@ mod relation_tests {
         assert_eq!(operand.secondary_identity, 183);
         assert_eq!(operand.identity_record_offset, identity_at as u64);
         assert_eq!(operand.next_byte_offset, next_at as u64);
+    }
+
+    #[test]
+    fn body_recipe_operand_joins_exact_record_and_design_reference() {
+        fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+            bytes.extend_from_slice(&class_tag);
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+        }
+
+        let group = DesignConstructionOperandGroup {
+            id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
+            scope_record_index: 80,
+            scope_reference_ordinal: 0,
+            record_index: 90,
+            byte_offset: 900,
+            class_tag: "269".into(),
+            member_count_offset: 921,
+            members: vec![100],
+            lost_edge_references: Vec::new(),
+            member_offsets: vec![926],
+            identity_record_index: 200,
+            identity_record_offset: 943,
+            role: 0x0000_0005_0000_0000,
+            extrude_role: None,
+            extrude_face_role: None,
+            role_offset: 953,
+            opaque_index: 1,
+            opaque_index_offset: 971,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 975,
+            variant: false,
+            paired_class_tag: "265".into(),
+            paired_byte_offset: 1024,
+        };
+        let record = DesignRecordHeader {
+            id: "f3d:Design/BulkStream.dat:record#100".into(),
+            byte_offset: 0,
+            class_tag: "365".into(),
+            record_index: 100,
+        };
+        let mut bytes = Vec::new();
+        header(&mut bytes, *b"365", 100);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&2265u64.to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&103u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        lp_utf16(&mut bytes, "53aa8ab4-194a-434b-bd52-8c6d761dc147");
+        lp_utf16(&mut bytes, "8e685642-4d68-4909-96d0-0dd4437491b6");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        header(&mut bytes, *b"259", 100);
+        header(&mut bytes, *b"283", 101);
+        header(&mut bytes, *b"463", 102);
+        header(&mut bytes, *b"452", 103);
+        let recipe_at = bytes.len();
+        bytes.extend_from_slice(b"body_recipe_data");
+        let next_at = bytes.len();
+        header(&mut bytes, *b"311", 104);
+        let recipe = ConstructionRecipe {
+            id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
+            byte_offset: recipe_at as u64,
+            record_index_offset: None,
+            kind: ConstructionRecipeKind::Body,
+            design_id: Some("2265".into()),
+            design_id_offset: None,
+            recipe_index: 0,
+            record_index: 0,
+        };
+
+        let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
+            .expect("body recipe operand");
+        assert_eq!(operand.design_reference, 2265);
+        assert_eq!(operand.nested_record_index, 103);
+        assert_eq!(operand.recipe_id, recipe.id);
+        assert_eq!(operand.next_byte_offset, next_at as u64);
+
+        let mut mismatched = recipe;
+        mismatched.design_id = Some("2266".into());
+        assert!(parse_body_recipe_operand(&bytes, &group, 0, &record, &mismatched).is_none());
     }
 
     #[test]

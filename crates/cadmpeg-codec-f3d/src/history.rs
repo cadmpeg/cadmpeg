@@ -789,6 +789,7 @@ pub(crate) fn bind_feature_face_selections(
     scopes: &[crate::records::DesignParameterScope],
     groups: &[crate::records::DesignConstructionOperandGroup],
     operands: &[crate::records::DesignFaceOperand],
+    body_recipe_operands: &[crate::records::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
 ) {
     let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
@@ -829,6 +830,7 @@ pub(crate) fn bind_feature_face_selections(
         let Some(_topology) = &previous.topology else {
             continue;
         };
+        let feature_id = feature.id.clone();
         match &mut feature.definition {
             cadmpeg_ir::features::FeatureDefinition::Extrude { start, extent, .. } => {
                 if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
@@ -838,9 +840,19 @@ pub(crate) fn bind_feature_face_selections(
                     bind_face_selection(face, scope, groups, operands);
                 }
             }
-            cadmpeg_ir::features::FeatureDefinition::MoveFace { faces, .. }
-            | cadmpeg_ir::features::FeatureDefinition::Thicken { faces, .. } => {
+            cadmpeg_ir::features::FeatureDefinition::MoveFace { faces, .. } => {
                 bind_face_selection(faces, scope, groups, operands);
+            }
+            cadmpeg_ir::features::FeatureDefinition::Thicken { faces, .. } => {
+                bind_face_selection(faces, scope, groups, operands);
+                bind_body_recipe_face_selection(
+                    faces,
+                    &feature_id,
+                    previous_state_id,
+                    scope,
+                    groups,
+                    body_recipe_operands,
+                );
             }
             _ => {}
         }
@@ -1007,6 +1019,76 @@ pub(crate) fn bind_face_operand_history_candidates(
         };
     }
     bind_profile_face_group_cardinality(operands, scopes, operand_groups, histories);
+}
+
+pub(crate) fn bind_body_recipe_operand_history_candidates(
+    operands: &mut [crate::records::DesignBodyRecipeOperand],
+    scopes: &[crate::records::DesignParameterScope],
+    histories: &[AsmHistory],
+) {
+    let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
+    for state in histories.iter().flat_map(|history| &history.states) {
+        states
+            .entry(state.state_id)
+            .and_modify(|state| *state = None)
+            .or_insert(Some(state));
+    }
+    for operand in operands {
+        operand.preceding_candidate_faces.clear();
+        operand.resolved_face_slot = None;
+        let stream = crate::design::native_stream(&operand.id);
+        let mut matching_scopes = scopes.iter().filter(|scope| {
+            scope.record_index == operand.scope_record_index
+                && crate::design::native_stream(&scope.id) == stream
+        });
+        let Some(scope) = matching_scopes.next() else {
+            continue;
+        };
+        if matching_scopes.next().is_some() {
+            continue;
+        }
+        let (Some(state_id), Some(previous_state_id)) =
+            (scope.history_state_id, scope.previous_history_state_id)
+        else {
+            continue;
+        };
+        let (Some(Some(state)), Some(Some(previous))) =
+            (states.get(&state_id), states.get(&previous_state_id))
+        else {
+            continue;
+        };
+        let Some(topology) = &previous.topology else {
+            continue;
+        };
+        if face_changes_across_state_chain(state, previous_state_id, &states).is_none() {
+            continue;
+        }
+        let Some(source) = historical_brep_source(&previous.id) else {
+            continue;
+        };
+        let source_prefix = format!("f3d:brep/{source}/");
+        operand.preceding_candidate_faces = faces_in_topology(
+            &operand
+                .candidate_faces
+                .iter()
+                .filter(|face| face.0.starts_with(&source_prefix))
+                .cloned()
+                .collect::<Vec<_>>(),
+            topology,
+        );
+        if let [face] = operand.preceding_candidate_faces.as_slice() {
+            operand.resolved_face_slot = stable_ref(&face.0);
+        }
+    }
+}
+
+fn historical_brep_source(state_id: &str) -> Option<&str> {
+    state_id
+        .rsplit_once("/BREP.")
+        .or_else(|| state_id.rsplit_once("BREP."))?
+        .1
+        .split_once(":asm-")
+        .map(|(source, _)| source)
 }
 
 fn resolve_direct_face_recipe_clauses(
@@ -2312,6 +2394,68 @@ fn bind_face_selection(
     }
 }
 
+fn bind_body_recipe_face_selection(
+    selection: &mut cadmpeg_ir::features::FaceSelection,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+    scope: &crate::records::DesignParameterScope,
+    groups: &[crate::records::DesignConstructionOperandGroup],
+    operands: &[crate::records::DesignBodyRecipeOperand],
+) {
+    use cadmpeg_ir::features::FaceSelection;
+    use cadmpeg_ir::ids::HistoricalFaceId;
+
+    let FaceSelection::Native(native) = selection else {
+        return;
+    };
+    let mut matching_groups = groups.iter().filter(|group| {
+        group.id == *native
+            && group.scope_record_index == scope.record_index
+            && group.role == 0x0000_0005_0000_0000
+            && crate::design::native_stream(&group.id) == crate::design::native_stream(&scope.id)
+    });
+    let Some(group) = matching_groups.next() else {
+        return;
+    };
+    if matching_groups.next().is_some() || group.members.is_empty() {
+        return;
+    }
+    let stream = crate::design::native_stream(&scope.id);
+    let mut slots = Vec::new();
+    for (ordinal, record_index) in group.members.iter().enumerate() {
+        let Ok(ordinal) = u32::try_from(ordinal) else {
+            return;
+        };
+        let mut matching_operands = operands.iter().filter(|operand| {
+            operand.group_record_index == group.record_index
+                && operand.group_member_ordinal == ordinal
+                && operand.record_index == *record_index
+                && crate::design::native_stream(&operand.id) == stream
+        });
+        let Some(operand) = matching_operands.next() else {
+            return;
+        };
+        if matching_operands.next().is_some() {
+            return;
+        }
+        let Some(slot) = operand.resolved_face_slot else {
+            return;
+        };
+        if !slots.contains(&slot) {
+            slots.push(slot);
+        }
+    }
+    let prefix = feature_input_prefix(feature_id, previous_state_id);
+    *selection = FaceSelection::Historical {
+        state: crate::design::feature_input_topology_id(feature_id, previous_state_id),
+        faces: slots
+            .into_iter()
+            .map(|slot| HistoricalFaceId(format!("f3d:history-input:face#{prefix}:{slot}")))
+            .collect(),
+        native: native.clone(),
+    };
+}
+
 fn faces_changed_by_transition<'a>(
     candidates: &'a [cadmpeg_ir::ids::FaceId],
     transition: &crate::history_records::AsmHistoricalTransition,
@@ -3283,6 +3427,17 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn historical_brep_source_qualifies_state_local_candidates() {
+        assert_eq!(
+            historical_brep_source(
+                "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#42"
+            ),
+            Some("example.smbh")
+        );
+        assert_eq!(historical_brep_source("f3d:unqualified:state#42"), None);
+    }
     use crate::history_records::{
         AsmHistoricalCurveAxis, AsmHistoricalOptionalCarrierBinding, AsmHistoricalSurfaceRadius,
     };

@@ -7,11 +7,11 @@ use serde::{Deserialize, Serialize};
 use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
-    CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignConfiguration,
-    DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-    DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
-    DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
+    CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
+    DesignBodyRecipeOperand, DesignConfiguration, DesignConstructionOperandGroup,
+    DesignConstructionOperandIdentity, DesignDimensionAnnotationFrame, DesignDimensionLocusGroup,
+    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
+    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
     DesignFilletRadiusGroup, DesignMaterialAssignment, DesignObject, DesignParameter,
     DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
@@ -41,6 +41,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_body_bindings",
     "design_body_bounds",
     "design_body_members",
+    "design_body_recipe_operands",
     "design_configurations",
     "design_construction_operand_groups",
     "design_construction_operand_identities",
@@ -98,6 +99,7 @@ macro_rules! f3d_arenas {
             body_native_keys: BodyNativeKey;
             body_visibilities: BodyVisibility;
             design_objects: DesignObject;
+            design_body_recipe_operands: DesignBodyRecipeOperand;
             design_dimension_annotation_frames: DesignDimensionAnnotationFrame;
             design_dimension_locus_groups: DesignDimensionLocusGroup;
             design_dimension_locus_pairs: DesignDimensionLocusPair;
@@ -219,6 +221,9 @@ pub struct F3dNative {
     /// Design `MetaStream` object-table records.
     #[serde(default)]
     pub design_objects: Vec<DesignObject>,
+    /// Whole-body operands joined to persistent body construction recipes.
+    #[serde(default)]
+    pub design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
     /// Annotated paired dimension frames governing parameter companions.
     #[serde(default)]
     pub design_dimension_annotation_frames: Vec<DesignDimensionAnnotationFrame>,
@@ -386,6 +391,7 @@ impl Default for F3dNative {
             body_native_keys: Vec::new(),
             body_visibilities: Vec::new(),
             design_objects: Vec::new(),
+            design_body_recipe_operands: Vec::new(),
             design_dimension_annotation_frames: Vec::new(),
             design_dimension_locus_pairs: Vec::new(),
             design_dimension_locus_groups: Vec::new(),

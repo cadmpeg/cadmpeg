@@ -1644,6 +1644,56 @@ pub struct DesignEntitySelectionOperand {
     pub next_byte_offset: u64,
 }
 
+/// Whole-body construction operand carrying a persistent body-recipe reference.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignBodyRecipeOperand {
+    /// Globally unique deterministic identifier for this native operand.
+    pub id: String,
+    /// Owning feature scope record.
+    pub scope_record_index: u32,
+    /// Owning construction-operand group record.
+    pub group_record_index: u32,
+    /// Zero-based position in the group's ordered member run.
+    pub group_member_ordinal: u32,
+    /// Primary indexed-record identity.
+    pub record_index: u32,
+    /// Primary indexed-header byte offset.
+    pub byte_offset: u64,
+    /// Source per-file dynamic primary class tag.
+    pub class_tag: String,
+    /// Asset UUID qualifying the persistent selection namespace.
+    pub asset_id: String,
+    /// Byte offset of the asset UUID's UTF-16LE code units.
+    pub asset_id_offset: u64,
+    /// UUID of the selection context.
+    pub context_id: String,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    pub context_id_offset: u64,
+    /// Persistent Design reference repeated by the body recipe.
+    pub design_reference: u64,
+    /// Byte offset of `design_reference`.
+    pub design_reference_offset: u64,
+    /// Tagged nested record reference following the Design reference.
+    pub nested_record_index: u64,
+    /// Byte offset of `nested_record_index`.
+    pub nested_record_index_offset: u64,
+    /// Body construction recipe contained by this operand record.
+    pub recipe_id: String,
+    /// Solved faces carrying `design_reference`, ordered by face identity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidate_faces: Vec<cadmpeg_ir::ids::FaceId>,
+    /// Candidate faces present in the owning feature's input topology.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preceding_candidate_faces: Vec<cadmpeg_ir::ids::FaceId>,
+    /// Unique input-state face selected by this operand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_face_slot: Option<i64>,
+    /// Identity of the indexed record immediately following this operand.
+    pub next_record_index: u32,
+    /// Byte offset of the indexed record immediately following this operand.
+    pub next_byte_offset: u64,
+}
+
 /// Stable ASM entity family named by a Design persistent identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
