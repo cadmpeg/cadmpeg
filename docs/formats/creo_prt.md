@@ -1066,7 +1066,10 @@ integer fields extend the compact-integer lattice with `c0..df XX YY`, equal
 to `((head-c0)<<16)|(XX<<8)|YY`.
 The least-significant `status` bit is the constraint enable state: zero denies
 the constraint and one enables it. Higher status bits are independent solver
-state and remain in the native row.
+state and remain in the native row. A disabled incidence does not supply point
+equations, line orientation, radius equality, relation-operand binding, or
+native-geometry role evidence. It remains an inactive neutral constraint and a
+complete native incidence row.
 
 For a two-item type-zero incidence, sense `2` selects the native first endpoint
 and sense `3` selects the native second endpoint. Sense `4` selects an arc or

@@ -4361,11 +4361,7 @@ pub(crate) fn resolved_section_points(
                 .all(|point_id| !ambiguous_point_ids.contains(point_id))
         })
         .collect::<Vec<_>>();
-    let coincident_points = definition
-        .relations
-        .iter()
-        .filter(|table| feature_skamp_table_complete(table))
-        .flat_map(|table| &table.skamps)
+    let coincident_points = active_complete_section_skamps(definition)
         .filter_map(|skamp| {
             let [first, second] = skamp.items.as_slice() else {
                 return None;
@@ -4402,11 +4398,7 @@ pub(crate) fn resolved_section_points(
             .then_some(pair)
         })
         .collect::<Vec<_>>();
-    let same_coordinate_points = definition
-        .relations
-        .iter()
-        .filter(|table| feature_skamp_table_complete(table))
-        .flat_map(|table| &table.skamps)
+    let same_coordinate_points = active_complete_section_skamps(definition)
         .filter_map(|skamp| section_skamp_same_coordinate_sources(definition, skamp))
         .filter(|(pair, _)| {
             pair.iter()
@@ -4417,29 +4409,17 @@ pub(crate) fn resolved_section_points(
                 })
         })
         .collect::<Vec<_>>();
-    let point_on_line_coordinates = definition
-        .relations
-        .iter()
-        .filter(|table| feature_skamp_table_complete(table))
-        .flat_map(|table| &table.skamps)
+    let point_on_line_coordinates = active_complete_section_skamps(definition)
         .filter_map(|skamp| section_skamp_point_on_line(definition, skamp))
         .filter(|(first, second, _)| {
             !ambiguous_point_ids.contains(first) && !ambiguous_point_ids.contains(second)
         })
         .collect::<Vec<_>>();
-    let saved_point_on_line_coordinates = definition
-        .relations
-        .iter()
-        .filter(|table| feature_skamp_table_complete(table))
-        .flat_map(|table| &table.skamps)
+    let saved_point_on_line_coordinates = active_complete_section_skamps(definition)
         .filter_map(|skamp| section_skamp_saved_point_on_line(definition, skamp))
         .filter(|(point_id, _, _)| !ambiguous_point_ids.contains(point_id))
         .collect::<Vec<_>>();
-    let symmetric_point_constraints = definition
-        .relations
-        .iter()
-        .filter(|table| feature_skamp_table_complete(table))
-        .flat_map(|table| &table.skamps)
+    let symmetric_point_constraints = active_complete_section_skamps(definition)
         .filter_map(|skamp| section_skamp_axis_symmetry(definition, skamp))
         .filter(|(axis, first, second, _)| {
             [first, second]
@@ -4455,11 +4435,7 @@ pub(crate) fn resolved_section_points(
                 }
         })
         .collect::<Vec<_>>();
-    let point_symmetric_constraints = definition
-        .relations
-        .iter()
-        .filter(|table| feature_skamp_table_complete(table))
-        .flat_map(|table| &table.skamps)
+    let point_symmetric_constraints = active_complete_section_skamps(definition)
         .filter_map(|skamp| section_skamp_point_symmetry(definition, skamp))
         .filter(|(center, first, second)| {
             !ambiguous_point_ids.contains(center)
@@ -4868,12 +4844,7 @@ fn section_line_entity_fixed_coordinate(
     entity_id: u32,
 ) -> Option<usize> {
     let mut adjacency = BTreeMap::<u32, Vec<(u32, usize)>>::new();
-    for skamp in definition
-        .relations
-        .iter()
-        .filter(|table| feature_skamp_table_complete(table))
-        .flat_map(|table| &table.skamps)
-    {
+    for skamp in active_complete_section_skamps(definition) {
         let (parity, first, second) = match (skamp.kind, skamp.items.as_slice()) {
             (5 | 7, [first, second]) if first.sense == 0 && second.sense == 0 => {
                 ((skamp.kind == 5) as usize, first, second)
@@ -4937,16 +4908,13 @@ fn section_line_direct_fixed_coordinates(
         .into_iter()
         .collect::<BTreeSet<_>>();
     coordinates.extend(
-        definition
-            .relations
-            .iter()
-            .filter(|table| feature_skamp_table_complete(table))
-            .flat_map(|table| &table.skamps)
-            .filter_map(|skamp| match (skamp.kind, skamp.items.as_slice()) {
+        active_complete_section_skamps(definition).filter_map(|skamp| {
+            match (skamp.kind, skamp.items.as_slice()) {
                 (1, [item]) if item.sense == 0 && item.entity_id == entity_id => Some(1),
                 (2, [item]) if item.sense == 0 && item.entity_id == entity_id => Some(0),
                 _ => None,
-            }),
+            }
+        }),
     );
     if let Some(crate::feature::FeatureSavedEntity::Line(line)) =
         section_saved_entity(definition, entity_id)
@@ -5366,12 +5334,7 @@ pub(crate) fn resolved_section_radii(
         }
     }
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
-    for skamp in definition
-        .relations
-        .iter()
-        .filter(|table| feature_skamp_table_complete(table))
-        .flat_map(|table| &table.skamps)
-    {
+    for skamp in active_complete_section_skamps(definition) {
         let [first, second] = skamp.items.as_slice() else {
             continue;
         };
@@ -9993,7 +9956,7 @@ fn relation_incidence(
     let [incidence] = incidences.as_slice() else {
         return None;
     };
-    Some(*incidence)
+    section_skamp_active(incidence.status).then_some(*incidence)
 }
 
 fn relation_incidence_entities(
@@ -10620,26 +10583,21 @@ fn section_skamp_oriented_line(
     if section_skamp_is_line(definition, item) {
         return Some(entity);
     }
-    let line_role_evidence = definition
-        .relations
-        .iter()
-        .filter(|relations| feature_skamp_table_complete(relations))
-        .flat_map(|relations| &relations.skamps)
-        .any(|skamp| {
-            skamp.items.iter().any(|candidate| {
-                candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3)
-            }) || match (skamp.kind, skamp.items.as_slice()) {
-                (35, [first, second]) => {
-                    (first.entity_id == item.entity_id
-                        && first.sense == 0
-                        && matches!(second.sense, 2..=4))
-                        || (second.entity_id == item.entity_id
-                            && second.sense == 0
-                            && matches!(first.sense, 2..=4))
-                }
-                _ => false,
+    let line_role_evidence = active_complete_section_skamps(definition).any(|skamp| {
+        skamp.items.iter().any(|candidate| {
+            candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3)
+        }) || match (skamp.kind, skamp.items.as_slice()) {
+            (35, [first, second]) => {
+                (first.entity_id == item.entity_id
+                    && first.sense == 0
+                    && matches!(second.sense, 2..=4))
+                    || (second.entity_id == item.entity_id
+                        && second.sense == 0
+                        && matches!(first.sense, 2..=4))
             }
-        });
+            _ => false,
+        }
+    });
     (line_role_evidence
         && geometry?
             .get(&entity)
@@ -10882,6 +10840,17 @@ fn section_skamp_constraints(
 
 fn section_skamp_active(status: u32) -> bool {
     status & 1 != 0
+}
+
+fn active_complete_section_skamps(
+    definition: &crate::feature::FeatureDefinition,
+) -> impl Iterator<Item = &crate::feature::FeatureSkamp> {
+    definition
+        .relations
+        .iter()
+        .filter(|relations| feature_skamp_table_complete(relations))
+        .flat_map(|relations| &relations.skamps)
+        .filter(|skamp| section_skamp_active(skamp.status))
 }
 
 fn section_skamp_constraints_for_geometry(
@@ -18704,7 +18673,7 @@ mod resolved_sketch_tests {
                 id: 5,
                 kind: 99,
                 flags: 0,
-                status: 0,
+                status: 1,
                 items: vec![crate::feature::FeatureSkampItem {
                     entity_id: 42,
                     sense: 4,
@@ -18747,6 +18716,37 @@ mod resolved_sketch_tests {
             vec![SketchEntityId(
                 "creo:featdefs:sketch_entity#5:42".to_string()
             )]
+        );
+        let mut duplicate_incidence = constrained.clone();
+        let duplicate_relations = duplicate_incidence.relations.as_mut().expect("relations");
+        let mut duplicate = duplicate_relations.skamps[0].clone();
+        duplicate.status = 34;
+        duplicate.offset = 32;
+        duplicate_relations.skamps.push(duplicate);
+        duplicate_relations
+            .skamp_header
+            .as_mut()
+            .expect("skamp header")
+            .declared_count = 2;
+        assert!(relation_incidence_entities(
+            &duplicate_incidence,
+            &SketchId("creo:model:sketch#5".to_string()),
+            7,
+        )
+        .is_empty());
+        constrained.relations.as_mut().expect("relations").skamps[0].status = 34;
+        assert!(relation_incidence_entities(
+            &constrained,
+            &SketchId("creo:model:sketch#5".to_string()),
+            7,
+        )
+        .is_empty());
+        assert_eq!(
+            section_skamp_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()))
+                [0]
+            .0
+            .active,
+            Some(false)
         );
         constrained.segments = None;
         let constraints =
@@ -19213,7 +19213,7 @@ mod resolved_sketch_tests {
             id: 1,
             kind: 1,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![crate::feature::FeatureSkampItem {
                 entity_id: 41,
                 sense: 0,
@@ -19224,7 +19224,7 @@ mod resolved_sketch_tests {
             id: 2,
             kind: 7,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![
                 crate::feature::FeatureSkampItem {
                     entity_id: 41,
@@ -19302,6 +19302,22 @@ mod resolved_sketch_tests {
                 end: cadmpeg_ir::math::Point2::new(4.0, 3.0),
             })
         );
+        let mut disabled_parallel = definition.clone();
+        disabled_parallel
+            .relations
+            .as_mut()
+            .expect("solver relations")
+            .skamps[1]
+            .status = 34;
+        assert_eq!(
+            trimmed_section_segment_geometry(
+                &disabled_parallel,
+                &BTreeMap::new(),
+                &trim_vertices,
+                &segment,
+            ),
+            None
+        );
 
         let carrier_points = BTreeMap::from([(7, [0.0, 3.0]), (9, [2.0, 3.0])]);
         assert!(trimmed_section_segment_geometry(
@@ -19325,7 +19341,7 @@ mod resolved_sketch_tests {
             id: 3,
             kind: 2,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![crate::feature::FeatureSkampItem {
                 entity_id: 41,
                 sense: 0,
@@ -20034,7 +20050,7 @@ mod resolved_sketch_tests {
                     id: 3,
                     kind: 1,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![crate::feature::FeatureSkampItem {
                         entity_id: 12,
                         sense: 0,
@@ -20045,7 +20061,7 @@ mod resolved_sketch_tests {
                     id: 4,
                     kind: 2,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![crate::feature::FeatureSkampItem {
                         entity_id: 12,
                         sense: 0,
@@ -20056,7 +20072,7 @@ mod resolved_sketch_tests {
                     id: 5,
                     kind: 7,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![crate::feature::FeatureSkampItem {
                         entity_id: 12,
                         sense: 4,
@@ -20067,7 +20083,7 @@ mod resolved_sketch_tests {
                     id: 6,
                     kind: 1,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![crate::feature::FeatureSkampItem {
                         entity_id: 13,
                         sense: 0,
@@ -20078,7 +20094,7 @@ mod resolved_sketch_tests {
                     id: 7,
                     kind: 0,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![
                         crate::feature::FeatureSkampItem {
                             entity_id: 12,
@@ -20095,7 +20111,7 @@ mod resolved_sketch_tests {
                     id: 8,
                     kind: 4,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![
                         crate::feature::FeatureSkampItem {
                             entity_id: 12,
@@ -20112,7 +20128,7 @@ mod resolved_sketch_tests {
                     id: 9,
                     kind: 14,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![
                         crate::feature::FeatureSkampItem {
                             entity_id: 12,
@@ -20133,7 +20149,7 @@ mod resolved_sketch_tests {
                     id: 10,
                     kind: 14,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![
                         crate::feature::FeatureSkampItem {
                             entity_id: 12,
@@ -20154,7 +20170,7 @@ mod resolved_sketch_tests {
                     id: 11,
                     kind: 3,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![
                         crate::feature::FeatureSkampItem {
                             entity_id: 14,
@@ -20171,7 +20187,7 @@ mod resolved_sketch_tests {
                     id: 12,
                     kind: 9,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![
                         crate::feature::FeatureSkampItem {
                             entity_id: 12,
@@ -20188,7 +20204,7 @@ mod resolved_sketch_tests {
                     id: 13,
                     kind: 5,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![
                         crate::feature::FeatureSkampItem {
                             entity_id: 12,
@@ -20205,7 +20221,7 @@ mod resolved_sketch_tests {
                     id: 14,
                     kind: 7,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![
                         crate::feature::FeatureSkampItem {
                             entity_id: 12,
@@ -20222,7 +20238,7 @@ mod resolved_sketch_tests {
                     id: 15,
                     kind: 8,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![
                         crate::feature::FeatureSkampItem {
                             entity_id: 12,
@@ -20239,7 +20255,7 @@ mod resolved_sketch_tests {
                     id: 16,
                     kind: 6,
                     flags: 0,
-                    status: 0,
+                    status: 1,
                     items: vec![
                         crate::feature::FeatureSkampItem {
                             entity_id: 13,
@@ -20256,7 +20272,7 @@ mod resolved_sketch_tests {
                     id: 17,
                     kind: 17,
                     flags: 2,
-                    status: 0,
+                    status: 1,
                     items: vec![
                         crate::feature::FeatureSkampItem {
                             entity_id: 12,
@@ -20537,7 +20553,7 @@ mod resolved_sketch_tests {
             id: 9,
             kind: 9,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![
                 crate::feature::FeatureSkampItem {
                     entity_id: 12,
@@ -20572,7 +20588,7 @@ mod resolved_sketch_tests {
             id: 35,
             kind: 35,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![
                 crate::feature::FeatureSkampItem {
                     entity_id: 12,
@@ -20701,6 +20717,20 @@ mod resolved_sketch_tests {
             resolved_section_radii(&equal_radius_definition),
             BTreeMap::from([(101, 3.0), (102, 3.0)])
         );
+        let mut disabled_equal_radius = equal_radius_definition.clone();
+        disabled_equal_radius
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps
+            .iter_mut()
+            .find(|skamp| skamp.kind == 6)
+            .expect("equal-radius incidence")
+            .status = 34;
+        assert_eq!(
+            resolved_section_radii(&disabled_equal_radius),
+            BTreeMap::from([(101, 3.0)])
+        );
         equal_radius_definition
             .variables
             .as_mut()
@@ -20761,7 +20791,7 @@ mod resolved_sketch_tests {
             id: 18,
             kind: 6,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![
                 crate::feature::FeatureSkampItem {
                     entity_id: 13,
@@ -20820,7 +20850,7 @@ mod resolved_sketch_tests {
             id: 20,
             kind: 4,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![
                 crate::feature::FeatureSkampItem {
                     entity_id: 12,
@@ -20852,7 +20882,7 @@ mod resolved_sketch_tests {
                 id: 20,
                 kind: 14,
                 flags: 0,
-                status: 0,
+                status: 1,
                 items: vec![
                     crate::feature::FeatureSkampItem {
                         entity_id: 14,
@@ -21759,7 +21789,7 @@ mod resolved_sketch_tests {
                 id: 18,
                 kind: 1,
                 flags: 0,
-                status: 0,
+                status: 1,
                 items: vec![crate::feature::FeatureSkampItem {
                     entity_id: 12,
                     sense: 0,
@@ -22274,7 +22304,7 @@ mod resolved_sketch_tests {
             id: 81,
             kind: 0,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![
                 crate::feature::FeatureSkampItem {
                     entity_id: 12,
@@ -22595,7 +22625,7 @@ mod resolved_sketch_tests {
                 id: 17,
                 kind: 0,
                 flags: 0,
-                status: 0,
+                status: 1,
                 items: vec![
                     crate::feature::FeatureSkampItem {
                         entity_id: 12,
@@ -22612,7 +22642,7 @@ mod resolved_sketch_tests {
                 id: 18,
                 kind: 3,
                 flags: 0,
-                status: 0,
+                status: 1,
                 items: vec![
                     crate::feature::FeatureSkampItem {
                         entity_id: 14,
@@ -22629,7 +22659,7 @@ mod resolved_sketch_tests {
                 id: 19,
                 kind: 2,
                 flags: 0,
-                status: 0,
+                status: 1,
                 items: vec![crate::feature::FeatureSkampItem {
                     entity_id: 15,
                     sense: 0,
@@ -22640,7 +22670,7 @@ mod resolved_sketch_tests {
                 id: 20,
                 kind: 9,
                 flags: 0,
-                status: 0,
+                status: 1,
                 items: vec![
                     crate::feature::FeatureSkampItem {
                         entity_id: 15,
@@ -22657,7 +22687,7 @@ mod resolved_sketch_tests {
                 id: 21,
                 kind: 1,
                 flags: 0,
-                status: 0,
+                status: 1,
                 items: vec![crate::feature::FeatureSkampItem {
                     entity_id: 12,
                     sense: 0,
@@ -22668,7 +22698,7 @@ mod resolved_sketch_tests {
                 id: 22,
                 kind: 14,
                 flags: 0,
-                status: 0,
+                status: 1,
                 items: vec![
                     crate::feature::FeatureSkampItem {
                         entity_id: 12,
@@ -22689,7 +22719,7 @@ mod resolved_sketch_tests {
                 id: 23,
                 kind: 5,
                 flags: 0,
-                status: 0,
+                status: 1,
                 items: vec![
                     crate::feature::FeatureSkampItem {
                         entity_id: 12,
@@ -22714,6 +22744,19 @@ mod resolved_sketch_tests {
         assert_eq!(coincident_points.get(&4), Some(&[3.0, 9.0]));
         assert_eq!(coincident_points.get(&6), Some(&[3.0, 9.0]));
         assert_eq!(coincident_points.get(&8), Some(&[2.0, 2.0]));
+        let mut disabled_incidences = coincident_definition.clone();
+        for skamp in &mut disabled_incidences
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps
+        {
+            skamp.status = 34;
+        }
+        assert_eq!(
+            resolved_section_points(&disabled_incidences),
+            BTreeMap::from([(2, [3.0, 4.0]), (7, [2.0, 6.0])])
+        );
         let mut ambiguous_definition = coincident_definition.clone();
         let duplicate = ambiguous_definition
             .variables
@@ -22846,7 +22889,7 @@ mod resolved_sketch_tests {
             id: 30,
             kind: 1,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![crate::feature::FeatureSkampItem {
                 entity_id: 99,
                 sense: 0,
@@ -22871,7 +22914,7 @@ mod resolved_sketch_tests {
             id: 31,
             kind: 7,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![
                 crate::feature::FeatureSkampItem {
                     entity_id: 12,
@@ -22908,7 +22951,7 @@ mod resolved_sketch_tests {
             id: 32,
             kind: 9,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![
                 crate::feature::FeatureSkampItem {
                     entity_id: 99,
@@ -22947,7 +22990,7 @@ mod resolved_sketch_tests {
                 id: 33,
                 kind: 0,
                 flags: 0,
-                status: 0,
+                status: 1,
                 items: vec![
                     crate::feature::FeatureSkampItem {
                         entity_id: 99,
@@ -22964,7 +23007,7 @@ mod resolved_sketch_tests {
                 id: 34,
                 kind: 3,
                 flags: 0,
-                status: 0,
+                status: 1,
                 items: vec![
                     crate::feature::FeatureSkampItem {
                         entity_id: 14,
@@ -23002,7 +23045,7 @@ mod resolved_sketch_tests {
             id: 35,
             kind: 14,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![
                 crate::feature::FeatureSkampItem {
                     entity_id: 99,
@@ -23041,7 +23084,7 @@ mod resolved_sketch_tests {
             id: 33,
             kind: 14,
             flags: 0,
-            status: 0,
+            status: 1,
             items: vec![
                 crate::feature::FeatureSkampItem {
                     entity_id: 99,
@@ -23072,7 +23115,7 @@ mod resolved_sketch_tests {
             id: 36,
             kind: 17,
             flags: 1,
-            status: 0,
+            status: 1,
             items: vec![
                 crate::feature::FeatureSkampItem {
                     entity_id: 99,
