@@ -371,6 +371,19 @@ axis points from the precise origin toward the second sample. Of the two radial
 model axes, the later XYZ coordinate is the parameter-space reference axis and
 points from the first sample toward the second.
 
+A precise held-center positional cylinder begins with `18`, two opaque bytes,
+and one finite seven-byte body-local control scalar. It then stores a nonzero
+signed axial extent, first model-X sample, one held radial center, literal `e4`,
+second model-X sample, one radial edge, another literal `e4`, and the exact
+trailer `f7 19`. Scalar fields use the surface-row lane; each `e4` is a unit
+radius and the two radius values are equal. The held-center-to-edge distance
+equals that radius. Subtracting the signed extent from the first X sample gives
+the precise X origin. The second X sample lies between that origin and the
+first sample and differs from the precise origin by at most one radius. The
+cylinder's Y and Z origin coordinates both equal the held center. Its axis has
+the sign of the signed extent on model X, and its reference direction is model
+Z from the held center toward the radial edge.
+
 A referenced planar-envelope positional cylinder begins `11 18 13` and stores
 positive axial length, first radial bound, first axial bound, one complete
 `19` or `32` model-reference token, second radial bound, second axial bound,
