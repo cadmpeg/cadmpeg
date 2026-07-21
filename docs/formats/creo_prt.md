@@ -446,9 +446,11 @@ model-reference token does not contribute a geometric coordinate.
 A repeated-diameter type-24 round body stores two scalar diameter endpoints
 and two model-space XYZ extent endpoints. The body is either one contiguous
 scalar frame after `15` or `00 15 1c`, or two scalar frames separated by the
-literal byte `12`. The diameter endpoints are distinct. Exactly one coordinate
-span between the extent endpoints equals their absolute difference. That
-coordinate is radial: its midpoint is the corresponding cylinder-origin
+literal byte `12`. A replay body may append `f7 18` after the last scalar
+frame; those bytes do not alter the envelope. The diameter endpoints are
+distinct. Exactly one coordinate span between the extent endpoints equals
+their absolute difference. That coordinate is radial: its midpoint is the
+corresponding cylinder-origin
 coordinate, its sign from the first endpoint to the second defines the
 reference direction, and half its span is the radius. Removing that radial
 component from the extent-endpoint displacement produces the nonzero cylinder

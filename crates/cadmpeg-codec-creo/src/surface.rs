@@ -930,6 +930,8 @@ impl SurfaceParameterRecord {
     }
 
     fn type24_scalar_frame_round_layout(&self) -> Option<Type24RoundEnvelope> {
+        let frame_reaches_body_end =
+            |end: usize| end == self.body.len() || self.body.get(end..) == Some(&[0xf7, 0x18]);
         let contiguous_values = |frame: &SurfaceParameterScalarFrame| {
             let mut cursor = frame.offset;
             let mut values = Vec::with_capacity(frame.slots.len());
@@ -952,7 +954,7 @@ impl SurfaceParameterRecord {
                 let [first, _, second, a0, a1, a2, b0, b1, b2] = values.as_slice() else {
                     return None;
                 };
-                (end == self.body.len()).then_some(())?;
+                frame_reaches_body_end(end).then_some(())?;
                 ([*first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
             }
             [leading, trailing] => {
@@ -966,7 +968,7 @@ impl SurfaceParameterRecord {
                 };
                 (leading.offset == 0
                     && self.body.get(leading_end..trailing.offset) == Some(&[0x12])
-                    && trailing_end == self.body.len())
+                    && frame_reaches_body_end(trailing_end))
                 .then_some(())?;
                 ([*first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
             }
@@ -5435,6 +5437,23 @@ mod tests {
         assert!((frame.axis[2] - 2.9 / frame.length.unwrap()).abs() < 1.0e-12);
         assert!((record(&prefixed_panel).type24_round_radius(0x24).unwrap() - 0.2).abs() < 1.0e-12);
         assert!((record(&separated).type24_round_radius(0x24).unwrap() - 2.0).abs() < 1.0e-12);
+        let replay_separated = [
+            24, 45, 82, 36, 168, 193, 84, 201, 135, 18, 45, 89, 164, 168, 193, 84, 201, 135, 47,
+            34, 0, 47, 32, 0, 47, 20, 0, 47, 36, 0, 47, 67, 0, 47, 24, 0, 247, 24,
+        ];
+        let replay_frame = record(&replay_separated)
+            .positional_cylinder_frame
+            .expect("replay-trailed repeated-diameter carrier");
+        assert_eq!(
+            replay_frame,
+            PositionalCylinderFrame {
+                origin: [9.0, 23.0, 5.0],
+                axis: [1.0 / 2.0_f64.sqrt(), 0.0, 1.0 / 2.0_f64.sqrt()],
+                ref_direction: [0.0, 1.0, 0.0],
+                radius: 15.0,
+                length: Some(2.0_f64.sqrt()),
+            }
+        );
 
         let equal_span = record(&[
             24, 45, 47, 73, 81, 130, 169, 147, 32, 18, 45, 49, 164, 168, 193, 84, 201, 144, 47, 12,
