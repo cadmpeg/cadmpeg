@@ -6047,6 +6047,8 @@ pub struct FeatureExtrudePayload32Branch {
     pub raw_scalar: [u8; 8],
     /// Ordered fixed-width big-endian atoms in the first counted lane.
     pub atoms_be: Vec<u32>,
+    /// Absolute source offsets of the fixed-width atoms in lane order.
+    pub atom_source_offsets: Vec<u64>,
     /// Compact indices wrapped by the fixed-width atoms.
     pub atom_indices: Vec<u32>,
     /// Unique offset-only data blocks addressed by the atom indices.
@@ -10926,6 +10928,11 @@ pub fn feature_extrude_payload_32_branches(
                 scalar: branch.scalar,
                 raw_scalar: branch.raw_scalar,
                 atoms_be: branch.atoms_be,
+                atom_source_offsets: branch
+                    .atom_offsets
+                    .into_iter()
+                    .map(|offset| entry_offset + offset as u64)
+                    .collect(),
                 atom_indices: branch.atom_indices,
                 atom_data_blocks,
                 first_indices: branch.first_indices,

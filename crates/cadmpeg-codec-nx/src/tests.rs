@@ -2778,7 +2778,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 153);
+    assert_eq!(namespace.version, 154);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -8944,6 +8944,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     assert!(branch.scalar.is_finite());
     assert_eq!(branch.raw_scalar, bytes[8..16]);
     assert_eq!(branch.atoms_be, [0x3d82_5600, 0x3d82_5700]);
+    assert_eq!(branch.atom_offsets, [118, 122]);
     assert_eq!(branch.atom_indices, [598, 599]);
     assert_eq!(branch.first_indices, [43, 45, 44]);
     assert_eq!(
@@ -9014,6 +9015,7 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         scalar: 1.0,
         raw_scalar: [0x2f, 0xf0, 0, 0, 0, 0, 0, 0],
         atoms_be: vec![0x3d80_0100],
+        atom_source_offsets: vec![20],
         atom_indices: vec![1],
         atom_data_blocks: vec![Some("block#1".to_string())],
         first_indices: vec![2],
@@ -13538,7 +13540,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 153);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 154);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

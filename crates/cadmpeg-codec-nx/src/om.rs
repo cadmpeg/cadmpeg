@@ -1364,6 +1364,8 @@ pub struct ExtrudePayload32Branch {
     pub raw_scalar: [u8; 8],
     /// Ordered fixed-width big-endian atoms in the first counted lane.
     pub atoms_be: Vec<u32>,
+    /// Absolute offsets of the fixed-width atoms in lane order.
+    pub atom_offsets: Vec<usize>,
     /// Compact indices wrapped by the fixed-width atoms.
     pub atom_indices: Vec<u32>,
     /// Ordered values in the first compact-index lane.
@@ -3079,7 +3081,7 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
     let raw_scalar = <[u8; 8]>::try_from(record.bytes.get(end + 4..end + 12)?).ok()?;
     let scalar = shifted_ieee_f64(&raw_scalar)?;
     let mut at = end + 12;
-    let atoms_be = counted_u32_atoms(record.bytes, &mut at)?;
+    let (atoms_be, atom_offsets) = counted_u32_atoms(record.bytes, &mut at)?;
     let atom_indices = atoms_be
         .iter()
         .map(|atom| {
@@ -3108,6 +3110,10 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
         scalar,
         raw_scalar,
         atoms_be,
+        atom_offsets: atom_offsets
+            .into_iter()
+            .map(|offset| record.offset + offset)
+            .collect(),
         atom_indices,
         first_indices: first.values,
         raw_first_indices: first.raw_values,
@@ -3824,7 +3830,7 @@ pub fn data_block_object_frames(bytes: &[u8]) -> Vec<DataBlockObjectFrame> {
     references
 }
 
-fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<u32>> {
+fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<(Vec<u32>, Vec<usize>)> {
     if bytes.get(*at) != Some(&0x01) {
         return None;
     }
@@ -3834,13 +3840,15 @@ fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<u32>> {
     }
     *at += 2;
     let mut values = Vec::with_capacity(count - 1);
+    let mut offsets = Vec::with_capacity(count - 1);
     for _ in 1..count {
+        offsets.push(*at);
         values.push(u32::from_be_bytes(
             bytes.get(*at..*at + 4)?.try_into().ok()?,
         ));
         *at += 4;
     }
-    Some(values)
+    Some((values, offsets))
 }
 
 struct CountedCompactValues {
