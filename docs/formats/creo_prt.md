@@ -357,6 +357,20 @@ than the axial length. The negative form originates at `z1` and points toward
 `z1 - abs(length)`; the positive form originates at that lower endpoint and
 points toward `z1`. The diameter direction follows the axis sign.
 
+A precise center-to-edge positional cylinder begins with `18`, one opaque byte,
+and one finite seven-byte body-local control scalar. A nonzero signed axial
+extent and two XYZ samples follow in the surface-row scalar lane, then the
+exact trailer `f7 19`. Exactly two sample-coordinate spans are equal and
+nonzero; they are radial center-to-edge spans and their common magnitude is
+the radius. The remaining span is axial and is greater than the radius. The
+first sample supplies both radial center coordinates. Adding the signed extent
+to the second sample's axial coordinate gives the precise origin coordinate;
+the first sample's coarse axial coordinate lies between that origin and the
+second sample and differs from the precise origin by at most one radius. The
+axis points from the precise origin toward the second sample. Of the two radial
+model axes, the later XYZ coordinate is the parameter-space reference axis and
+points from the first sample toward the second.
+
 A referenced planar-envelope positional cylinder begins `11 18 13` and stores
 positive axial length, first radial bound, first axial bound, one complete
 `19` or `32` model-reference token, second radial bound, second axial bound,
