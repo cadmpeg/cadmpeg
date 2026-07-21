@@ -4016,6 +4016,51 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
 }
 
 #[test]
+fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
+    let payload = b"feat_defs_917\0\xe0\x01feat_id\0\x28\xe0\x00gsec2d_ptr\0\
+        dimtab_ptr\0\xf8\x03\xf7\x81\x02\xfb\xe2\
+        \xe0\x01type\0\x0a\xe0\x01value\0\xe4\
+        \xe0\x01direct\0\x01\xe0\x01aux_value\0\x0f\
+        \xe0\x01ext_id\0\x2a\xf3\xf7\x81\x02\xe2\
+        \x02\x46\x08\x00\x00\x00\x00\x00\x00\x00\x00\x18\x2b\xe0\x00relat_ptr\0"
+        .to_vec();
+    let data = build_prt(
+        "c",
+        &[
+            ("FeatDefs", payload),
+            ("MdlStatus", b"Extrude id 40\0".to_vec()),
+        ],
+    );
+    let scan = container::scan_bytes(data.clone());
+    let dimensions = scan.feature_definitions[0]
+        .dimensions
+        .as_ref()
+        .expect("dimension table");
+    assert_eq!(dimensions.declared_count, 3);
+    assert_eq!(dimensions.rows.len(), 2);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode incomplete dimension table");
+
+    assert_eq!(result.ir.model.parameters.len(), 2);
+    assert!(result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .all(|parameter| parameter.owner.as_str() == "creo:model:sketch_feature#917"));
+    let source = result.ir.source.as_ref().expect("source metadata");
+    assert_eq!(source.attributes["decoded_feature_dimension_count"], "2");
+    assert_eq!(
+        source.attributes["transferred_feature_dimension_parameter_count"],
+        "2"
+    );
+    assert_eq!(
+        source.attributes["resolved_feature_dimension_value_count"],
+        "2"
+    );
+}
+
+#[test]
 fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     let payload = b"feat_defs_917\0\xe0\x01feat_id\0\x28\xe0\x00gsec2d_ptr\0\
         dimtab_ptr\0\xf8\x03\xf7\x81\x02\xfb\xe2\

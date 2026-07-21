@@ -43,6 +43,9 @@ fixtures, claims above L1 remain unproven.
 - Feature rows, parent/input tables, affected geometry and edge identifiers,
   recipe effects, saved sections, and operation states retain stable native
   identities when neutral semantics remain incomplete.
+- Every decoded section-dimension row transfers as a definition-scoped design
+  parameter; table completeness gates ordinal relation joins, not row
+  preservation.
 
 ## Evidence required to raise the score
 
@@ -59,8 +62,10 @@ fixtures, claims above L1 remain unproven.
    metadata separately counts decoded, transferred, typed, and native
    `relat_ptr` and `skamp_ptr` constraints.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
-   connected topology, feature order, dependencies, sketches, dimensions,
-   constraints, expressions, and configuration state.
+   connected topology, feature order, dependencies, sketches, constraints,
+   dimensions, expressions, and configuration state. Source
+   metadata counts decoded and transferred section dimensions separately and
+   counts dimensions whose scalar values resolve.
 5. Run malformed-input and fuzz gates for every admitted parser family.
 
 The current public score remains L1 claimed. Capabilities above L1 are extras

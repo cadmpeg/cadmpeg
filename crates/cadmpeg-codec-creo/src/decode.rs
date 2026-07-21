@@ -13513,7 +13513,7 @@ fn transfer_feature_dimensions(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> usize {
     let feature_ids = ir
         .model
         .features
@@ -13530,9 +13530,6 @@ fn transfer_feature_dimensions(
         let Some(table) = &definition.dimensions else {
             continue;
         };
-        if !feature_dimension_table_complete(table) {
-            continue;
-        }
         for (source_ordinal, dimension) in table.rows.iter().enumerate() {
             candidates.push((sketch.clone(), definition, source_ordinal, dimension));
         }
@@ -13545,8 +13542,9 @@ fn transfer_feature_dimensions(
         .map(|(sketch, _, _, dimension)| (sketch.clone(), dimension.external_id))
         .collect::<Vec<_>>();
     let Some(layout) = feature_dimension_parameter_layout(&keys) else {
-        return;
+        return 0;
     };
+    let transferred = layout.len();
     for ((sketch, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in
         candidates.into_iter().zip(layout)
     {
@@ -13629,6 +13627,7 @@ fn transfer_feature_dimensions(
                 .push(FeatureSourceContent::Parameter(id));
         }
     }
+    transferred
 }
 
 fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
@@ -34777,7 +34776,33 @@ fn build_ir(
     link_feature_sketch_history(scan, &mut ir);
     reconcile_feature_links(scan, &mut ir);
     transfer_curve_expression_features(scan, &mut ir, &mut annotations);
-    transfer_feature_dimensions(scan, &mut ir, &mut annotations);
+    let transferred_feature_dimension_count =
+        transfer_feature_dimensions(scan, &mut ir, &mut annotations);
+    if let Some(source) = &mut ir.source {
+        let (decoded_dimension_count, resolved_dimension_count) = scan
+            .feature_definitions
+            .iter()
+            .filter_map(|definition| definition.dimensions.as_ref())
+            .flat_map(|table| &table.rows)
+            .fold((0usize, 0usize), |(decoded, resolved), dimension| {
+                (
+                    decoded + 1,
+                    resolved + usize::from(dimension.value.is_some()),
+                )
+            });
+        source.attributes.insert(
+            "decoded_feature_dimension_count".to_string(),
+            decoded_dimension_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_feature_dimension_parameter_count".to_string(),
+            transferred_feature_dimension_count.to_string(),
+        );
+        source.attributes.insert(
+            "resolved_feature_dimension_value_count".to_string(),
+            resolved_dimension_count.to_string(),
+        );
+    }
     close_sketch_constraint_parameter_references(&mut ir);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     let surface_rows = surface_row_records(scan, &scan.surface_rows, "visibgeom");

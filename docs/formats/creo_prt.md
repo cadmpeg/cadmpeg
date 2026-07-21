@@ -1014,9 +1014,11 @@ is present, complete, or contains the same external identifiers. Cross-table
 agreement is required only when deriving solved section topology.
 The `dimtab_ptr` header retains its declared count and table-class reference
 when no dimension row body validates.
-Dimension rows form an ordinal parameter table only when the number of decoded
-rows equals the declared count. An incomplete table contributes no neutral
-parameters and does not resolve a relation's dimension selector.
+Every decoded dimension row transfers as a neutral parameter with identity
+scoped by its feature definition, external identifier, and repeated-row
+occurrence. Dimension rows form an ordinal relation target only when the
+number of decoded rows equals the declared count. An incomplete table does not
+resolve a relation's dimension selector.
 The `var_arr` header retains its declared count and table-class reference when
 no variable row body validates; its derived point set is then empty.
 The `segtab_ptr` header retains its declared count and table-class reference
