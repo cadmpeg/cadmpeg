@@ -833,12 +833,11 @@ mod marker_tests {
         component_profile_source_at, component_reference_curve_path_at,
         consecutive_legacy_profile_line_endpoints, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_marker_local_links,
-        cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
-        enrich_history_revolution_inputs, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, extended_compact_arc_record, fixed_reference_plane_frame,
-        generated_surface_identities, indexed_profile_vertex, inline_surface_reference_at,
-        legacy_coordinate_roster_curve_endpoint_markers,
-        legacy_coordinate_roster_selected_axis_endpoint_indices,
+        coordinate_roster_curve_endpoint_markers, cosmetic_thread_component_face_reference_at,
+        cosmetic_thread_cylinder_reference_at, enrich_history_revolution_inputs,
+        explicit_reference_axis_frame, explicit_reference_plane_frame, extended_compact_arc_record,
+        fixed_reference_plane_frame, generated_surface_identities, indexed_profile_vertex,
+        inline_surface_reference_at, legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
         legacy_feature_input_section, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
@@ -3495,7 +3494,7 @@ mod marker_tests {
         let markers = entities.iter().collect::<Vec<_>>();
 
         assert_eq!(
-            legacy_coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+            coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
                 .iter()
                 .map(|marker| marker.coordinates_m)
                 .collect::<Vec<_>>(),
@@ -3505,7 +3504,7 @@ mod marker_tests {
         payload[curve_offset + 23..curve_offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         payload[curve_offset + 35..curve_offset + 39].copy_from_slice(&[0x00, 0x00, 0x05, 0x00]);
         assert_eq!(
-            legacy_coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+            coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
                 .iter()
                 .map(|marker| marker.coordinates_m)
                 .collect::<Vec<_>>(),
@@ -3519,7 +3518,7 @@ mod marker_tests {
         payload[curve_offset + 84..curve_offset + 84 + LEGACY_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_SKETCH_MARKER);
         assert_eq!(
-            legacy_coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+            coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
                 .iter()
                 .map(|marker| marker.coordinates_m)
                 .collect::<Vec<_>>(),
@@ -3529,6 +3528,22 @@ mod marker_tests {
             &payload,
             curve_offset
         ));
+
+        payload[curve_offset..curve_offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[curve_offset + 84..curve_offset + 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        assert_eq!(
+            compact_indexed_curve_endpoint_indices(&payload, curve_offset),
+            Some([2, 3])
+        );
+        assert_eq!(
+            coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+                .iter()
+                .map(|marker| marker.coordinates_m)
+                .collect::<Vec<_>>(),
+            vec![Some([3.0, 4.0]), Some([5.0, 6.0])]
+        );
     }
 
     #[test]
@@ -20214,8 +20229,8 @@ fn roster_curve_endpoint_markers<'a>(
         .or_else(|| current_vertical_axis_endpoint_indices(payload, offset))
         .or_else(|| extended_wide_horizontal_relation_endpoint_indices(payload, offset))
     {
-        if legacy_coordinate_roster_curve_layout(payload, offset) {
-            return legacy_coordinate_roster_curve_endpoint_markers(payload, curve, markers);
+        if coordinate_roster_curve_layout(payload, offset) {
+            return coordinate_roster_curve_endpoint_markers(payload, curve, markers);
         }
         return indices
             .into_iter()
@@ -20335,7 +20350,7 @@ fn compact_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32;
     (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
-fn legacy_coordinate_roster_curve_endpoint_markers<'a>(
+fn coordinate_roster_curve_endpoint_markers<'a>(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
@@ -20343,7 +20358,7 @@ fn legacy_coordinate_roster_curve_endpoint_markers<'a>(
     let Some(offset) = usize::try_from(curve.offset).ok() else {
         return Vec::new();
     };
-    if !legacy_coordinate_roster_curve_layout(payload, offset) {
+    if !coordinate_roster_curve_layout(payload, offset) {
         return Vec::new();
     }
     let mut coordinates = markers
@@ -20362,7 +20377,7 @@ fn legacy_coordinate_roster_curve_endpoint_markers<'a>(
         })
         .collect::<Vec<_>>();
     coordinates.sort_unstable_by_key(|marker| marker.offset);
-    let Some(endpoint_offset) = legacy_coordinate_roster_endpoint_offset(payload, offset) else {
+    let Some(endpoint_offset) = coordinate_roster_endpoint_offset(payload, offset) else {
         return Vec::new();
     };
     let endpoint = |relative: usize| {
@@ -20383,12 +20398,24 @@ fn legacy_coordinate_roster_curve_endpoint_markers<'a>(
         .unwrap_or_default()
 }
 
-fn legacy_coordinate_roster_curve_layout(payload: &[u8], offset: usize) -> bool {
-    legacy_coordinate_roster_endpoint_offset(payload, offset).is_some()
+fn coordinate_roster_curve_layout(payload: &[u8], offset: usize) -> bool {
+    coordinate_roster_endpoint_offset(payload, offset).is_some()
 }
 
-fn legacy_coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<usize> {
-    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER) {
+fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<usize> {
+    let prefix = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?;
+    if prefix == LEGACY_EXTENDED_SKETCH_MARKER {
+        return if compact_indexed_curve_endpoint_indices(payload, offset).is_some()
+            || compact_curve_endpoint_indices(payload, offset).is_some()
+        {
+            Some(56)
+        } else if wide_indexed_curve_endpoint_indices(payload, offset).is_some() {
+            Some(64)
+        } else {
+            None
+        };
+    }
+    if prefix != LEGACY_SKETCH_MARKER {
         return None;
     }
     if legacy_coordinate_roster_selected_axis_endpoint_indices(payload, offset).is_some() {
@@ -20641,7 +20668,10 @@ fn compact_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Opti
     let code = u32::from_le_bytes(payload.get(offset + 17..offset + 21)?.try_into().ok()?);
     if !matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
-        Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_SKETCH_MARKER
+        Some(prefix)
+            if prefix == SKETCH_MARKER
+                || prefix == LEGACY_SKETCH_MARKER
+                || prefix == LEGACY_EXTENDED_SKETCH_MARKER
     ) || !matches!(code, 0..=2)
         || !(marker_is_geometry_locus(payload, offset)
             || payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]))
