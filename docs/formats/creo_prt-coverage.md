@@ -50,6 +50,9 @@ fixtures, claims above L1 remain unproven.
    negative and ambiguity cases.
 3. Record per-fixture geometry, topology, design, and configuration loss
    expectations and require no blocking loss through the claimed level.
+   Creo source metadata records unique, transferred, and untransferred visible
+   surface-row counts, with transferred counts partitioned by surface family.
+   Duplicate native identifiers are counted separately as ambiguous rows.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, dimensions,
    constraints, expressions, and configuration state.

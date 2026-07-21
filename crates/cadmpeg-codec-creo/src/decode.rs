@@ -1978,6 +1978,62 @@ fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
     }
 }
 
+#[derive(Default)]
+struct SurfaceTransferCoverage {
+    unique_rows: usize,
+    transferred_rows: usize,
+    ambiguous_rows: usize,
+    by_family: BTreeMap<&'static str, (usize, usize)>,
+}
+
+fn surface_transfer_coverage(
+    rows: &[crate::surface::SurfaceRow],
+    surfaces: &[Surface],
+) -> SurfaceTransferCoverage {
+    let unique_rows = crate::surface::uniquely_identified_rows(rows);
+    let transferred = surfaces
+        .iter()
+        .filter_map(|surface| {
+            let id = surface
+                .source_object
+                .as_ref()
+                .filter(|source| source.format == "creo")?
+                .object_id
+                .strip_prefix("VisibGeom:")?
+                .parse::<u32>()
+                .ok()?;
+            Some((id, surface_kind_for_geometry(&surface.geometry)?))
+        })
+        .collect::<Vec<_>>();
+    let mut coverage = SurfaceTransferCoverage {
+        unique_rows: unique_rows.len(),
+        ambiguous_rows: rows.len().saturating_sub(unique_rows.len()),
+        ..SurfaceTransferCoverage::default()
+    };
+    for kind in [
+        crate::surface::SurfaceKind::Plane,
+        crate::surface::SurfaceKind::Cylinder,
+        crate::surface::SurfaceKind::Cone,
+        crate::surface::SurfaceKind::TorusOrSphere,
+        crate::surface::SurfaceKind::Spline,
+        crate::surface::SurfaceKind::Fillet,
+        crate::surface::SurfaceKind::Extrusion,
+    ] {
+        coverage.by_family.insert(surface_family(kind), (0, 0));
+    }
+    for row in unique_rows {
+        let is_transferred = transferred
+            .iter()
+            .any(|(id, kind)| *id == row.id && *kind == row.kind);
+        coverage.transferred_rows += usize::from(is_transferred);
+        let family = surface_family(row.kind);
+        let family_coverage = coverage.by_family.entry(family).or_default();
+        family_coverage.0 += 1;
+        family_coverage.1 += usize::from(is_transferred);
+    }
+    coverage
+}
+
 fn surface_variant(type_byte: u8) -> Option<&'static str> {
     match type_byte {
         0x2a => Some("ruled_surface"),
@@ -16822,6 +16878,56 @@ mod resolved_sketch_tests {
             &[table],
             &rows,
         ));
+    }
+
+    #[test]
+    fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
+        let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+            id,
+            type_byte: kind.canonical_type_byte(),
+            kind,
+            feature_id: 17,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 0,
+        };
+        let rows = vec![
+            row(41, crate::surface::SurfaceKind::Plane),
+            row(42, crate::surface::SurfaceKind::Cylinder),
+            row(43, crate::surface::SurfaceKind::Cone),
+            row(43, crate::surface::SurfaceKind::Cone),
+        ];
+        let plane = |id: &str, native_id: u32| Surface {
+            id: SurfaceId(id.to_string()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{native_id}"),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        };
+        let surfaces = vec![
+            plane("derived-id-independent-of-native-id", 41),
+            plane("wrong-family", 42),
+        ];
+
+        let coverage = surface_transfer_coverage(&rows, &surfaces);
+
+        assert_eq!(coverage.unique_rows, 2);
+        assert_eq!(coverage.transferred_rows, 1);
+        assert_eq!(coverage.ambiguous_rows, 2);
+        assert_eq!(coverage.by_family["plane"], (1, 1));
+        assert_eq!(coverage.by_family["cylinder"], (1, 0));
+        assert_eq!(coverage.by_family["cone"], (0, 0));
     }
 
     #[test]
@@ -33954,7 +34060,37 @@ fn build_ir(
     let transferred_typed_feature_skamp_constraint_count =
         transferred_feature_skamp_constraint_count
             .saturating_sub(transferred_native_feature_skamp_constraint_count);
+    let surface_coverage = surface_transfer_coverage(&scan.surface_rows, &ir.model.surfaces);
     if let Some(source) = &mut ir.source {
+        source.attributes.insert(
+            "unique_visible_surface_row_count".to_string(),
+            surface_coverage.unique_rows.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_visible_surface_row_count".to_string(),
+            surface_coverage.transferred_rows.to_string(),
+        );
+        source.attributes.insert(
+            "untransferred_visible_surface_row_count".to_string(),
+            surface_coverage
+                .unique_rows
+                .saturating_sub(surface_coverage.transferred_rows)
+                .to_string(),
+        );
+        source.attributes.insert(
+            "ambiguous_visible_surface_row_count".to_string(),
+            surface_coverage.ambiguous_rows.to_string(),
+        );
+        for (family, (rows, transferred)) in &surface_coverage.by_family {
+            source.attributes.insert(
+                format!("visible_{family}_surface_row_count"),
+                rows.to_string(),
+            );
+            source.attributes.insert(
+                format!("transferred_visible_{family}_surface_row_count"),
+                transferred.to_string(),
+            );
+        }
         source.attributes.insert(
             "transferred_cross_section_plane_count".to_string(),
             cross_section_plane_count.to_string(),
