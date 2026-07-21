@@ -2283,6 +2283,40 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
 }
 
 #[test]
+fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
+    use cadmpeg_ir::features::{Extent, FaceSelection, HoleKind, Length, ProfileRef};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    assert!(!crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        Some(Point3::new(1.0, 2.0, 3.0)),
+        Some(Vector3::new(0.0, 0.0, 1.0)),
+        &HoleKind::Simple,
+        Some(Length(5.0)),
+        Some(&Extent::ThroughAll),
+    ));
+    assert!(crate::decode::hole_feature_is_incomplete(
+        Some(&ProfileRef::Unresolved),
+        Some(&FaceSelection::Unresolved),
+        None,
+        None,
+        &HoleKind::Simple,
+        Some(Length(5.0)),
+        Some(&Extent::ThroughAll),
+    ));
+    assert!(crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        Some(Point3::new(1.0, 2.0, 3.0)),
+        Some(Vector3::new(0.0, 0.0, 1.0)),
+        &HoleKind::Simple,
+        Some(Length(5.0)),
+        Some(&Extent::Unresolved),
+    ));
+}
+
+#[test]
 fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, ProfileRef};
 
