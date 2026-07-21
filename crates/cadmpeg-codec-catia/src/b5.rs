@@ -2169,22 +2169,7 @@ fn parse_face(
     loops: &BTreeMap<u32, B5Loop>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Face> {
-    let references = if let Some(count) = record
-        .payload
-        .first()
-        .and_then(|lead| lead.checked_sub(0x80))
-    {
-        let mut position = 1;
-        let references = (0..count)
-            .map(|_| reference(&record.payload, &mut position, record.object_id))
-            .collect::<Option<Vec<_>>>()?;
-        if position < record.payload.len() && record.payload[position] != 0x05 {
-            return None;
-        }
-        references
-    } else {
-        uncounted_references(&record.payload, record.object_id)?
-    };
+    let references = face_references(record)?;
     let surface = *references.first()?;
     if !surfaces.contains_key(&surface) {
         return None;
@@ -2202,6 +2187,46 @@ fn parse_face(
         surface,
         loops: loop_ids,
     })
+}
+
+fn face_references(record: &B5Record) -> Option<Vec<u32>> {
+    if record.class != 0x5f {
+        return None;
+    }
+    if let Some(count) = record
+        .payload
+        .first()
+        .and_then(|lead| lead.checked_sub(0x80))
+    {
+        let mut position = 1;
+        let references = (0..count)
+            .map(|_| reference(&record.payload, &mut position, record.object_id))
+            .collect::<Option<Vec<_>>>()?;
+        if position < record.payload.len() && record.payload[position] != 0x05 {
+            return None;
+        }
+        Some(references)
+    } else {
+        uncounted_references(&record.payload, record.object_id)
+    }
+}
+
+/// Read each face's leading surface reference independently of its loop grammar.
+pub(crate) fn face_surface_references(bytes: &[u8]) -> BTreeMap<u32, u32> {
+    records(bytes)
+        .into_iter()
+        .filter_map(|record| {
+            if record.class != 0x5f {
+                return None;
+            }
+            let mut position = usize::from(*record.payload.first()? >= 0x80);
+            if position == 1 && record.payload[0] == 0x80 {
+                return None;
+            }
+            let surface = reference(&record.payload, &mut position, record.object_id)?;
+            Some((record.object_id, surface))
+        })
+        .collect()
 }
 
 fn parse_loop(
@@ -2321,6 +2346,20 @@ fn reference(bytes: &[u8], position: &mut usize, _anchor: u32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn face_surface_references_do_not_require_resolved_loops() {
+        let mut bytes = Vec::new();
+        for object_id in [500u32, 501] {
+            bytes.extend_from_slice(&[0xb5, 0x03, 0x5f, 5]);
+            bytes.extend_from_slice(&object_id.to_le_bytes());
+            bytes.extend_from_slice(&[0x82, 0x08, 100, 0x00, 0x05]);
+        }
+        assert_eq!(
+            face_surface_references(&bytes),
+            BTreeMap::from([(500, 100), (501, 100)])
+        );
+    }
 
     #[test]
     fn one_edge_loop_closes_on_one_native_vertex() {

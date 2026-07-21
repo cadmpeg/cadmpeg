@@ -3825,12 +3825,25 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
 
 #[test]
 fn standard_freeform_tag_resolves_object_stream_face_carrier() {
+    let mut stream = b5_closed_triangle_stream();
+    let vertex_start = stream
+        .windows(3)
+        .position(|bytes| bytes == [0x05, 0x08, 0x01])
+        .unwrap();
+    let mut unresolved_face = Vec::new();
+    append_b5_record(
+        &mut unresolved_face,
+        0x5f,
+        501,
+        &[0x82, 0x18, 100, 0, 0x18, 231, 3, 0x05],
+    );
+    stream.splice(vertex_start..vertex_start, unresolved_face);
     let carriers = crate::decode::standard_object_surface_geometries_from_streams(
-        [b5_closed_triangle_stream()],
-        &HashSet::from([500]),
+        [stream],
+        &HashSet::from([501]),
     );
     assert!(matches!(
-        carriers.get(&500),
+        carriers.get(&501),
         Some(SurfaceGeometry::Plane { .. })
     ));
 }

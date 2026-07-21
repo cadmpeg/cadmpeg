@@ -5621,21 +5621,20 @@ pub(crate) fn standard_object_surface_geometries_from_streams(
 ) -> HashMap<u32, SurfaceGeometry> {
     let mut candidates = HashMap::<u32, Option<SurfaceGeometry>>::new();
     for stream in streams {
+        let face_surfaces = crate::b5::face_surface_references(&stream);
         let Some(graph) = crate::b5::parse(&stream) else {
             continue;
         };
-        for face in graph
-            .faces
+        for (&face_id, &surface_id) in face_surfaces
             .iter()
-            .filter(|face| tags.contains(&face.object_id))
+            .filter(|(face_id, _)| tags.contains(face_id))
         {
-            let Some(geometry) =
-                crate::b5_transfer::resolved_surface_geometry(&graph, face.surface)
+            let Some(geometry) = crate::b5_transfer::resolved_surface_geometry(&graph, surface_id)
             else {
                 continue;
             };
             candidates
-                .entry(face.object_id)
+                .entry(face_id)
                 .and_modify(|stored| {
                     if stored.as_ref().is_some_and(|stored| *stored != geometry) {
                         *stored = None;
