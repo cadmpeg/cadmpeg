@@ -16539,9 +16539,9 @@ pub(crate) fn project_compact_edge_selections(
         };
         if matches!(edges, cadmpeg_ir::features::EdgeSelection::Unresolved) {
             let native = compact_edge_selection_set_value(edge_selections);
-            let generated = edge_selections
-                .iter()
-                .map(|selection| {
+            let generated = edge_selections.iter().try_fold(
+                Vec::<cadmpeg_ir::features::GeneratedEdgeRef>::new(),
+                |mut edges, selection| {
                     let native_feature = selection.terminal_feature_ref.as_ref()?;
                     let feature = feature_ids_by_native.get(native_feature)?.clone();
                     let local_id = selection
@@ -16550,9 +16550,13 @@ pub(crate) fn project_compact_edge_selections(
                         .map(u32::to_string)
                         .collect::<Vec<_>>()
                         .join(",");
-                    Some(cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id })
-                })
-                .collect::<Option<Vec<_>>>();
+                    let edge = cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id };
+                    if !edges.contains(&edge) {
+                        edges.push(edge);
+                    }
+                    Some(edges)
+                },
+            );
             *edges = match generated.filter(|edges| !edges.is_empty()) {
                 Some(edges) => cadmpeg_ir::features::EdgeSelection::Generated { edges, native },
                 None => cadmpeg_ir::features::EdgeSelection::Native(native),
@@ -24534,35 +24538,36 @@ mod profile_join_tests {
         dimensioned_circle_surface_transforms, dimensioned_circle_transform, fitted_marker_circle,
         implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
         marker_point_locus, owned_relation_parameters, profile_loci_by_marker,
-        project_dimensioned_sketch_geometry, project_dissected_sketches,
-        project_marker_backed_sketches, project_marker_dimensioned_circles,
-        project_relation_point_geometry, project_relation_solved_point_geometry,
-        relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
-        resolve_connected_marker_arcs, resolved_marker_locus, select_marker_transforms_by_frame,
-        single_marker_curve_entity, single_marker_line_entity, sketch_frame_marker_transform,
-        type_display_relation_parameters, typed_marker_relation_definition,
-        typed_marker_relation_definition_in_sketch, typed_relation_definition,
-        unique_axis_aligned_linked_loci, unique_compatible_marker_transform,
-        unique_linked_endpoint_locus, unique_marker_transform, unique_profile_axis_distance_locus,
-        unique_profile_axis_distance_pair, unique_profile_distance_loci_pair,
-        unique_profile_distance_locus, unique_profile_line_angle_entity,
-        unique_profile_line_angle_pair, unique_profile_line_distance_entity,
-        unique_profile_line_distance_pair, unique_profile_line_point_locus,
-        unique_profile_point_line_entity, unique_profile_point_line_pair,
-        unique_repaired_profile_line_angle_pair, unique_repaired_profile_line_distance_pair,
-        unique_repaired_profile_point_line_pair, MarkerTransform, LEGACY_SKETCH_MARKER,
+        project_compact_edge_selections, project_dimensioned_sketch_geometry,
+        project_dissected_sketches, project_marker_backed_sketches,
+        project_marker_dimensioned_circles, project_relation_point_geometry,
+        project_relation_solved_point_geometry, relation_operand_marker, relation_owner_markers,
+        relation_parameter_by_display_name, resolve_connected_marker_arcs, resolved_marker_locus,
+        select_marker_transforms_by_frame, single_marker_curve_entity, single_marker_line_entity,
+        sketch_frame_marker_transform, type_display_relation_parameters,
+        typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
+        typed_relation_definition, unique_axis_aligned_linked_loci,
+        unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
+        unique_profile_axis_distance_locus, unique_profile_axis_distance_pair,
+        unique_profile_distance_loci_pair, unique_profile_distance_locus,
+        unique_profile_line_angle_entity, unique_profile_line_angle_pair,
+        unique_profile_line_distance_entity, unique_profile_line_distance_pair,
+        unique_profile_line_point_locus, unique_profile_point_line_entity,
+        unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
+        unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
+        MarkerTransform, LEGACY_SKETCH_MARKER,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-        FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
-        FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
-        FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchInputLink,
-        SketchRelationKind,
+        FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureInputOperand,
+        FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
+        FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
+        SketchInputLink, SketchRelationKind,
     };
     use cadmpeg_ir::features::{
-        Angle, BooleanOp, DesignParameter, DimensionDisplay, Extent, Feature, FeatureDefinition,
-        FeatureId, Length, ParameterId, ParameterValue, PathRef, PatternKind, PatternSeed,
-        ProfileRef, SketchSpace, SweepMode,
+        Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, Extent, Feature,
+        FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue, PathRef, PatternKind,
+        PatternSeed, ProfileRef, RadiusSpec, SketchSpace, SweepMode,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
@@ -24588,6 +24593,98 @@ mod profile_join_tests {
             links: Vec::new(),
             link_selector: None,
         }
+    }
+
+    #[test]
+    fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
+        let feature = |id: &str, native_ref: &str, definition| Feature {
+            id: FeatureId(id.into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: Some(native_ref.into()),
+        };
+        let producer = feature(
+            "producer",
+            "producer-native",
+            FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: None,
+            },
+        );
+        let target = feature(
+            "target",
+            "target-native",
+            FeatureDefinition::Fillet {
+                edges: EdgeSelection::Unresolved,
+                radius: RadiusSpec::Constant {
+                    radius: Length(1.0),
+                },
+            },
+        );
+        let selection = |ordinal, offset, local_edge_ids| FeatureInputEdgeSelection {
+            id: format!("selection-{ordinal}"),
+            parent: "lane".into(),
+            ordinal,
+            offset,
+            object_name_ref: "name".into(),
+            feature_ref: "target-native".into(),
+            local_edge_ids,
+            components: Vec::new(),
+            producer_feature_refs: vec!["producer-native".into()],
+            terminal_feature_ref: Some("producer-native".into()),
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: vec![
+                selection(0, 10, vec![1, 2]),
+                selection(1, 20, vec![3, 4]),
+                selection(2, 30, vec![1, 2]),
+            ],
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let mut features = vec![producer, target];
+
+        project_compact_edge_selections(&mut features, &[lane]);
+
+        let FeatureDefinition::Fillet {
+            edges: EdgeSelection::Generated { edges, native },
+            ..
+        } = &features[1].definition
+        else {
+            panic!("generated edge selection");
+        };
+        assert_eq!(
+            edges
+                .iter()
+                .map(|edge| edge.local_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["1,2", "3,4"]
+        );
+        assert_eq!(
+            native,
+            "sldprt:feature-input:edge-selection-vectors:1,2;3,4;1,2"
+        );
+        assert_eq!(features[1].dependencies, vec![FeatureId("producer".into())]);
     }
 
     #[test]
