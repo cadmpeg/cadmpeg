@@ -5253,6 +5253,22 @@ mod marker_tests {
             ),
             Some("other".into())
         );
+        mixed.push(FeatureInputComponentPathEntry {
+            instance: Some(0x8040),
+            type_signature: {
+                let mut signature = [0; 12];
+                signature[4..8].copy_from_slice(&99u32.to_le_bytes());
+                signature
+            },
+            local_id: Some(5),
+        });
+        assert_eq!(
+            component_path_terminal_feature(
+                &mixed,
+                &[feature("producer", "42"), feature("other", "43")]
+            ),
+            Some("other".into())
+        );
 
         let owner = feature("mirror", "44");
         mixed.push(FeatureInputComponentPathEntry {
@@ -18289,19 +18305,33 @@ pub(crate) fn component_path_terminal_feature(
     components: &[FeatureInputComponentPathEntry],
     features: &[crate::records::Feature],
 ) -> Option<String> {
-    let component = components.last()?;
-    let mut source_id = [0; 4];
-    source_id.copy_from_slice(&component.type_signature[4..8]);
-    let source_id = u32::from_le_bytes(source_id);
-    let mut candidates = features.iter().filter(|feature| {
-        feature
+    let mut by_source = HashMap::<u32, Option<&str>>::new();
+    for feature in features {
+        let Some(source_id) = feature
             .source_id
             .as_deref()
             .and_then(|id| id.parse::<u32>().ok())
-            == Some(source_id)
-    });
-    let feature = candidates.next()?;
-    candidates.next().is_none().then(|| feature.id.clone())
+        else {
+            continue;
+        };
+        by_source
+            .entry(source_id)
+            .and_modify(|candidate| *candidate = None)
+            .or_insert(Some(feature.id.as_str()));
+    }
+    for component in components.iter().rev() {
+        let source_id = u32::from_le_bytes(
+            component.type_signature[4..8]
+                .try_into()
+                .expect("four-byte component source"),
+        );
+        match by_source.get(&source_id) {
+            Some(Some(feature)) => return Some((*feature).to_string()),
+            Some(None) => return None,
+            None => {}
+        }
+    }
+    None
 }
 
 fn component_path_preceding_feature<'a>(
