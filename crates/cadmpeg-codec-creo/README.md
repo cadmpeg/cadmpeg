@@ -60,6 +60,7 @@ Writing `.prt` files is not supported.
 - [API reference][docs]
 - [Format support][support]
 - [Format specification][spec]
+- [Coverage contract][coverage]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]
 
@@ -76,4 +77,5 @@ CAD vendor. See the [clean-room and legal policy][legal].
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
 [repo]: https://github.com/cadmpeg/cadmpeg
 [spec]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md
+[coverage]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt-coverage.md
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-parametric-prt

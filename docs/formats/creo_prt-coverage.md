@@ -1,0 +1,59 @@
+# Creo Parametric `.prt` coverage
+
+This document applies the cumulative support ladder to the Creo PSB reader.
+It records implementation coverage and verification gates. Byte semantics
+belong in [creo_prt.md](creo_prt.md); unresolved byte meanings belong in
+[creo_prt-open-items.md](creo_prt-open-items.md).
+
+## Envelope
+
+The implemented format band is `#UGC:2` PSB part documents using the ND or
+DEPDB section layouts recognized by the container scanner. This is not yet a
+closed support envelope: supported Creo release bounds, required and optional
+section combinations, and the admitted geometry and feature-family matrix have
+not been fixed. Until that matrix is closed and exercised by representative
+fixtures, claims above L1 remain unproven.
+
+## Cumulative gates
+
+| Level | Required evidence | Current result | Remaining gate |
+| --- | --- | --- | --- |
+| L0 | Signature and part-kind detection; bounded container metadata; preview or tessellation when present | Pass in implementation | Representative release-band fixtures |
+| L1 | Section/stream navigation; ND and DEPDB dispatch; bounded Unix-compress expansion; version/layout reporting; named opaque sections | Claimed | Close the release and layout envelope and verify every admitted section combination |
+| L2 | Placed points; analytic and NURBS curves and surfaces; correct units and parameterization across the envelope | Incomplete | Remaining positional curve and surface bodies, prototype-instance joins, spline joins, type-26 placements, and lane-specific scalar forms |
+| L3 | Connected bodies through vertices with ownership, orientation, trimming, placements, and transforms; unknown carriers permitted | Incomplete | Complete face-instance partitioning, rowless face-use binding, loop classification, vertex coordinates, and shell-to-body ownership |
+| L4 | Typed feature operations, sketches, ordering, dependencies, profiles, directions, and extents | Incomplete | Resolve the remaining operation families and incomplete operands, including chamfer, draft, mirror, boundary, merge, fill, thicken, and non-default sweep termination |
+| L5 | Every admitted carrier and topology case; typed mainstream bodies throughout; body and face colors | Incomplete | Close all L2/L3 families, transfer appearance bindings and precedence, then demonstrate zero shape-domain loss across the envelope |
+| L6 | Complete constraints, dimensions, parameters, expressions, feature semantics, configurations, and coherent re-derivation history | Incomplete | Complete solver relation/incidence families, dimension-variable joins, expressions, every admitted feature family, configuration driver tables, and history replay coherence |
+
+## Implemented design slices
+
+- Saved planar sections transfer placed sketch points, lines, arcs, splines,
+  dimensions, and typed or identity-preserving native constraints.
+- Active solver incidences drive coordinate, orientation, equality, radius,
+  and supported dimensional equations; disabled incidences remain retained but
+  do not affect solved geometry.
+- Linear extrusions and rotations transfer when profile, placement, direction,
+  and termination have independent byte-backed proofs.
+- Holes and rounds transfer typed operation definitions where their affected
+  geometry, edge identities, radii, and extents resolve uniquely.
+- Curve-equation assignments retain source order and dependency identity;
+  closed arithmetic values and recognized cylindrical helices transfer.
+- Feature rows, parent/input tables, affected geometry and edge identifiers,
+  recipe effects, saved sections, and operation states retain stable native
+  identities when neutral semantics remain incomplete.
+
+## Evidence required to raise the score
+
+1. Declare a finite release/layout/feature matrix for the primary envelope.
+2. Manifest representative fixtures for every admitted matrix cell, including
+   negative and ambiguity cases.
+3. Record per-fixture geometry, topology, design, and configuration loss
+   expectations and require no blocking loss through the claimed level.
+4. Validate semantic fingerprints for units, placements, carrier parameters,
+   connected topology, feature order, dependencies, sketches, dimensions,
+   constraints, expressions, and configuration state.
+5. Run malformed-input and fuzz gates for every admitted parser family.
+
+The current public score remains L1 claimed. Capabilities above L1 are extras
+until every cumulative gate through their level passes for a closed envelope.
