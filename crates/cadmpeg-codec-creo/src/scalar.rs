@@ -449,6 +449,15 @@ pub fn decode_positional_plane_local_system_slots(
     decode_local_system_slots(body, cache, LocalSystemVariant::PositionalPlane)
 }
 
+/// Decode a positional cylinder local system whose origin uses the cylinder
+/// first-coordinate lane.
+pub fn decode_positional_cylinder_local_system_slots(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<[f64; 12]> {
+    decode_local_system_slots(body, cache, LocalSystemVariant::PositionalCylinder)
+}
+
 /// Decode a positional plane support frame whose origin uses the named
 /// local-system sign for compact one-half coordinates.
 pub(crate) fn decode_plane_support_local_system_slots(
@@ -463,6 +472,7 @@ enum LocalSystemVariant {
     Explicit,
     Feature,
     PositionalPlane,
+    PositionalCylinder,
     PlaneSupport,
 }
 
@@ -515,6 +525,9 @@ fn decode_local_system_slots(
             }
             (LocalSystemVariant::PositionalPlane | LocalSystemVariant::PlaneSupport, 10 | 11) => {
                 row.or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache))?
+            }
+            (LocalSystemVariant::PositionalCylinder, 9..=11) => {
+                decode_tabulated_cylinder_first_coordinate(body, cursor, cache).or(row)?
             }
             _ => row?,
         };

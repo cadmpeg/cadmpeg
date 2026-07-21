@@ -1995,6 +1995,7 @@ fn decode_positional_cylinder_frame(
         .or_else(|| decode_signed_radial_envelope_cylinder_frame(body, cache))
         .or_else(|| decode_precise_center_edge_cylinder_frame(body, cache))
         .or_else(|| decode_precise_held_center_cylinder_frame(body, cache))
+        .or_else(|| decode_local_system_suffix_cylinder_frame(body, cache))
         .or_else(|| decode_referenced_planar_envelope_cylinder_frame(body, cache))
         .or_else(|| decode_held_axis_cylinder_frame(body, cache))
         .or_else(|| decode_axial_radial_cylinder_frame(body, cache))
@@ -2904,6 +2905,79 @@ fn decode_precise_held_center_cylinder_frame(
         ref_direction: [0.0, 0.0, (radial_edge - held_center).signum()],
         radius: first_radius,
         length: Some(signed_length.abs()),
+    })
+}
+
+fn decode_local_system_suffix_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    let radius_starts = (1..body.len())
+        .filter_map(|start| {
+            let (radius, end) = scalar::decode(body, start)?;
+            (end == body.len() && radius.is_finite() && radius > 0.0).then_some((start, radius))
+        })
+        .collect::<Vec<_>>();
+    let [(radius_start, radius)] = radius_starts.as_slice() else {
+        return None;
+    };
+    let frames = (0..*radius_start)
+        .filter_map(|start| {
+            scalar::decode_positional_cylinder_local_system_slots(
+                body.get(start..*radius_start)?,
+                cache,
+            )
+        })
+        .filter(|slots| {
+            let first: [f64; 3] = slots[0..3].try_into().expect("three support slots");
+            let second: [f64; 3] = slots[3..6].try_into().expect("three support slots");
+            let first_magnitude = first.iter().map(|value| value * value).sum::<f64>().sqrt();
+            let second_magnitude = second.iter().map(|value| value * value).sum::<f64>().sqrt();
+            let scale = first_magnitude.max(second_magnitude).max(1.0);
+            first_magnitude > 0.0
+                && (first_magnitude - second_magnitude).abs() <= 1e-9 * scale
+                && first
+                    .iter()
+                    .zip(second)
+                    .map(|(left, right)| left * right)
+                    .sum::<f64>()
+                    .abs()
+                    <= 1e-9 * scale
+        })
+        .collect::<Vec<_>>();
+    let [slots] = frames.as_slice() else {
+        return None;
+    };
+    let normalize = |vector: [f64; 3]| {
+        let magnitude = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
+        (magnitude.is_finite() && magnitude > 0.0).then(|| vector.map(|value| value / magnitude))
+    };
+    let first = normalize(slots[0..3].try_into().ok()?)?;
+    let second = normalize(slots[3..6].try_into().ok()?)?;
+    let scale = slots
+        .iter()
+        .chain(std::iter::once(radius))
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    (first
+        .iter()
+        .zip(second)
+        .map(|(left, right)| left * right)
+        .sum::<f64>()
+        .abs()
+        <= 1e-9 * scale)
+        .then_some(())?;
+    let axis = normalize([
+        first[1] * second[2] - first[2] * second[1],
+        first[2] * second[0] - first[0] * second[2],
+        first[0] * second[1] - first[1] * second[0],
+    ])?;
+    Some(PositionalCylinderFrame {
+        origin: slots[9..12].try_into().ok()?,
+        axis,
+        ref_direction: first,
+        radius: *radius,
+        length: None,
     })
 }
 
@@ -4787,6 +4861,39 @@ mod tests {
             &scalar::ScalarCache::default()
         )
         .is_none());
+    }
+
+    #[test]
+    fn positional_cylinder_frame_decodes_local_system_suffix() {
+        let body = [
+            90, 178, 14, 217, 114, 169, 0, 45, 53, 168, 169, 253, 44, 199, 226, 120, 172, 103, 5,
+            97, 187, 80, 45, 58, 197, 27, 196, 73, 57, 170, 47, 28, 0, 47, 65, 0, 24, 45, 32, 56,
+            227, 142, 56, 227, 142, 45, 66, 146, 67, 227, 143, 242, 96, 159, 113, 199, 28, 113,
+            199, 32, 227, 66, 227, 51, 66, 233, 153, 24, 41, 233, 153, 66, 227, 51, 24, 229, 15,
+            47, 40, 0, 47, 65, 0, 70, 53, 168, 169, 253, 44, 199, 226, 47, 20, 0,
+        ];
+        let frame = decode_positional_cylinder_frame(&body, &scalar::ScalarCache::default())
+            .expect("complete local-system suffix");
+        assert_eq!(frame.origin[0..2], [12.0, 34.0]);
+        assert!((frame.origin[2] + 21.658_843_825_753_03).abs() < 1e-12);
+        assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
+        assert!((frame.ref_direction[0] + 0.6).abs() < 1e-12);
+        assert!((frame.ref_direction[1] + 0.8).abs() < 1e-12);
+        assert_eq!(frame.ref_direction[2], 0.0);
+        assert_eq!(frame.radius, 5.0);
+        assert_eq!(frame.length, None);
+
+        assert!(decode_positional_cylinder_frame(
+            &body[..body.len() - 3],
+            &scalar::ScalarCache::default()
+        )
+        .is_none());
+        let mut nonorthogonal = body;
+        nonorthogonal[68..71].copy_from_slice(&[41, 227, 51]);
+        assert!(
+            decode_positional_cylinder_frame(&nonorthogonal, &scalar::ScalarCache::default())
+                .is_none()
+        );
     }
 
     #[test]

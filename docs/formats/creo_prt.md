@@ -384,6 +384,17 @@ cylinder's Y and Z origin coordinates both equal the held center. Its axis has
 the sign of the signed extent on model X, and its reference direction is model
 Z from the held center toward the radial edge.
 
+A local-system-suffix positional cylinder ends with one complete twelve-slot
+support frame and one positive scalar radius. Exactly one suffix before the
+radius decodes as a cylinder local system whose first and second three-slot
+support vectors are nonzero, equal-length, and orthogonal. Their normalized
+cross product is the cylinder axis; the normalized first vector is the
+parameter-space reference direction. Slots 9 through 11 are the model-space
+origin and use the first tabulated-cylinder coordinate lane, including its
+signed `46` form. The terminal scalar is the radius. This body defines an
+unbounded carrier and no axial extent. Prefix bytes before the unique complete
+suffix do not contribute carrier geometry.
+
 A referenced planar-envelope positional cylinder begins `11 18 13` and stores
 positive axial length, first radial bound, first axial bound, one complete
 `19` or `32` model-reference token, second radial bound, second axial bound,
