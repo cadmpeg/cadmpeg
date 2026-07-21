@@ -671,9 +671,13 @@ and its finite length is the X span. Both spans are nonzero.
 A bounded type-24 round envelope stores two diameter endpoints and two
 three-coordinate extent endpoints. The diameter endpoints occur around a held
 coordinate after `15` or `00 15 1c`, or across the single-byte `12` separator
-between a two-scalar leading frame and a seven-scalar trailing frame. At least
-one corresponding extent-coordinate delta repeats the positive diameter. Half
-that repeated diameter is the rolling radius; it is independent of the
+between a two-scalar leading frame and a seven-scalar trailing frame. A split
+zero-coordinate form has frame slot counts two, three, and three. Its leading
+frame ends before `12`; the middle frame stores the second diameter endpoint
+and the first two coordinates; the exact token `34 f0 00` supplies the third
+coordinate as zero; and the terminal frame stores the second endpoint. At
+least one corresponding extent-coordinate delta repeats the positive diameter.
+Half that repeated diameter is the rolling radius; it is independent of the
 generated cylinder carrier radius.
 
 When all three extent-coordinate deltas equal the diameter, the envelope does

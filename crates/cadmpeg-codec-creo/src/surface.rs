@@ -855,7 +855,57 @@ impl SurfaceParameterRecord {
     fn type24_round_layout(&self, cache: &scalar::ScalarCache) -> Option<Type24RoundEnvelope> {
         self.type24_scalar_frame_round_layout()
             .or_else(|| self.type24_first_coordinate_round_layout(cache))
+            .or_else(|| self.type24_split_coordinate_round_layout())
             .or_else(|| self.type24_segmented_first_coordinate_round_layout(cache))
+    }
+
+    fn type24_split_coordinate_round_layout(&self) -> Option<Type24RoundEnvelope> {
+        let contiguous_end = |frame: &SurfaceParameterScalarFrame| {
+            frame.slots.iter().try_fold(frame.offset, |cursor, slot| {
+                (slot.offset == cursor).then(|| cursor + slot.length)
+            })
+        };
+        let [leading, middle, terminal] = self.scalar_frames.as_slice() else {
+            return None;
+        };
+        let [zero, first_diameter] = leading.slots.as_slice() else {
+            return None;
+        };
+        let [second_diameter, a0, a1] = middle.slots.as_slice() else {
+            return None;
+        };
+        let [b0, b1, b2] = terminal.slots.as_slice() else {
+            return None;
+        };
+        let middle_end = contiguous_end(middle)?;
+        (leading.offset == 0
+            && zero.value == Some(0.0)
+            && contiguous_end(leading) == Some(9)
+            && self.body.get(9) == Some(&0x12)
+            && middle.offset == 10
+            && self.body.get(middle_end..terminal.offset) == Some(&[0x34, 0xf0, 0x00])
+            && contiguous_end(terminal) == Some(self.body.len()))
+        .then_some(())?;
+        let diameter_endpoints = [first_diameter.value?, second_diameter.value?];
+        let extent_endpoints = [
+            [a0.value?, a1.value?, 0.0],
+            [b0.value?, b1.value?, b2.value?],
+        ];
+        let diameter = (diameter_endpoints[1] - diameter_endpoints[0]).abs();
+        let scale = diameter_endpoints
+            .iter()
+            .chain(extent_endpoints.iter().flatten())
+            .map(|value| value.abs())
+            .fold(1.0, f64::max);
+        (diameter > 1e-12 * scale
+            && extent_endpoints[0]
+                .iter()
+                .zip(extent_endpoints[1])
+                .any(|(first, second)| ((second - first).abs() - diameter).abs() <= 1e-9 * scale))
+        .then_some(Type24RoundEnvelope {
+            diameter,
+            extent_endpoints,
+        })
     }
 
     fn type24_first_coordinate_round_layout(
@@ -5547,6 +5597,39 @@ mod tests {
         let mut wrong_separator = segmented.body.clone();
         wrong_separator[9] = 0x71;
         assert!(record(&wrong_separator).positional_cylinder_frame.is_none());
+
+        let split_coordinate = [
+            24, 45, 49, 164, 168, 193, 84, 201, 133, 18, 45, 53, 164, 168, 193, 84, 201, 136, 47,
+            0, 0, 47, 34, 0, 52, 240, 0, 47, 28, 0, 47, 44, 0, 47, 16, 0,
+        ];
+        let split_frame = record(&split_coordinate)
+            .positional_cylinder_frame
+            .expect("split first-coordinate round carrier");
+        assert_eq!(split_frame.origin, [2.0, 9.0, 2.0]);
+        assert_eq!(
+            split_frame.axis,
+            [1.0 / 2.0_f64.sqrt(), 1.0 / 2.0_f64.sqrt(), 0.0]
+        );
+        assert_eq!(split_frame.ref_direction, [0.0, 0.0, 1.0]);
+        assert!((split_frame.radius - 2.0).abs() < 1.0e-12);
+        assert_eq!(split_frame.length, Some(50.0_f64.sqrt()));
+
+        let opposite_split = [
+            24, 45, 49, 164, 168, 193, 84, 201, 133, 18, 45, 53, 164, 168, 193, 84, 201, 136, 72,
+            28, 0, 47, 34, 0, 52, 240, 0, 72, 0, 0, 47, 44, 0, 47, 16, 0,
+        ];
+        let opposite_frame = record(&opposite_split)
+            .positional_cylinder_frame
+            .expect("opposite split first-coordinate round carrier");
+        assert_eq!(opposite_frame.origin, [-7.0, 9.0, 2.0]);
+        assert_eq!(opposite_frame.axis, split_frame.axis);
+        assert!((opposite_frame.radius - 2.0).abs() < 1.0e-12);
+
+        let mut incomplete_split = split_coordinate;
+        incomplete_split[24] = 0x18;
+        assert!(record(&incomplete_split)
+            .positional_cylinder_frame
+            .is_none());
     }
 
     #[test]
