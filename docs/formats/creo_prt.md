@@ -1885,10 +1885,11 @@ is the pcurve direction and its parameter interval is `[0, 1]`. Agreeing
 positional and labeled forms define one pcurve. Distinct matching paths, or a
 pair that matches neither endpoint order or both orders, do not define a
 pcurve.
-Mapping a straight pcurve through a planar face chart defines an exact
-model-space line carrier. Every positional and labeled path for that curve
-which maps through a placed planar chart must produce the same ordered
-model-space endpoint pair.
+Mapping a linear pcurve through a planar face chart defines an exact model-space
+line carrier. A linear pcurve with constant `u` through a cylindrical or
+conical face chart defines an exact generator line. Every positional and
+labeled path for that curve which maps through a placed face chart must produce
+the same ordered model-space endpoint pair.
 Mapping endpoint A and endpoint B through every evaluable adjacent face chart
 must produce the same ordered model-space pair. For one topological vertex
 orbit, the common point among the unordered mapped endpoint pairs of at least

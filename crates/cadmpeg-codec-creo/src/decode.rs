@@ -27155,24 +27155,17 @@ fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f6
         .collect()
 }
 
-fn agreed_planar_pcurve_line(candidates: &[[[f64; 3]; 2]]) -> Option<CurveGeometry> {
-    let points = *candidates.first()?;
-    candidates
-        .iter()
-        .all(|candidate| {
-            model_points_agree(points[0], candidate[0])
-                && model_points_agree(points[1], candidate[1])
-        })
-        .then_some(())?;
-    let delta = std::array::from_fn(|axis| points[1][axis] - points[0][axis]);
-    let direction = normalized(delta)?;
-    Some(CurveGeometry::Line {
-        origin: Point3::new(points[0][0], points[0][1], points[0][2]),
-        direction: Vector3::new(direction[0], direction[1], direction[2]),
-    })
+fn linear_pcurve_is_straight(surface: &SurfaceGeometry, endpoints: [[f64; 2]; 2]) -> bool {
+    match surface {
+        SurfaceGeometry::Plane { .. } => true,
+        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
+            endpoints[0][0] == endpoints[1][0]
+        }
+        _ => false,
+    }
 }
 
-fn transfer_planar_pcurve_lines(
+fn transfer_straight_pcurve_lines(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -27202,10 +27195,12 @@ fn transfer_planar_pcurve_lines(
         for (face_id, endpoints) in faces.into_iter().zip(endpoint_sets) {
             let Some(surface) = ir.model.surfaces.iter().find(|surface| {
                 surface.id == SurfaceId(format!("creo:visibgeom:surface#{face_id}"))
-                    && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
             }) else {
                 continue;
             };
+            if !linear_pcurve_is_straight(&surface.geometry, endpoints) {
+                continue;
+            }
             let [Some(first), Some(second)] = endpoints.map(|uv| {
                 cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1])
                     .map(|point| [point.x, point.y, point.z])
@@ -27222,8 +27217,13 @@ fn transfer_planar_pcurve_lines(
         let Some(points) = reconciled_endpoints.get(&curve_id).copied() else {
             continue;
         };
-        let Some(geometry) = agreed_planar_pcurve_line(&[points]) else {
+        let delta = std::array::from_fn(|axis| points[1][axis] - points[0][axis]);
+        let Some(direction) = normalized(delta) else {
             continue;
+        };
+        let geometry = CurveGeometry::Line {
+            origin: Point3::new(points[0][0], points[0][1], points[0][2]),
+            direction: Vector3::new(direction[0], direction[1], direction[2]),
         };
         let offset = offsets.into_iter().min().unwrap_or(0);
         let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
@@ -27235,7 +27235,7 @@ fn transfer_planar_pcurve_lines(
             &id,
             "VisibGeom",
             offset as u64,
-            "planar_pcurve_line",
+            "straight_pcurve_line",
             Exactness::Derived,
         );
         ir.model.curves.push(Curve {
@@ -29033,17 +29033,47 @@ mod native_pcurve_tests {
     }
 
     #[test]
-    fn planar_pcurve_paths_define_one_nonzero_model_line() {
-        let points = [[1.0, 2.0, 3.0], [4.0, 6.0, 3.0]];
-        let Some(CurveGeometry::Line { origin, direction }) =
-            agreed_planar_pcurve_line(&[points, points])
-        else {
-            panic!("line");
+    fn identifies_linear_pcurves_that_are_exact_model_lines() {
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
         };
-        assert_eq!(origin, Point3::new(1.0, 2.0, 3.0));
-        assert_eq!(direction, Vector3::new(0.6, 0.8, 0.0));
-        assert!(agreed_planar_pcurve_line(&[points, [points[0], [4.0, 7.0, 3.0]]]).is_none());
-        assert!(agreed_planar_pcurve_line(&[[points[0], points[0]]]).is_none());
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let cone = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+            ratio: 0.5,
+            half_angle: 0.25,
+        };
+        let sphere = SurfaceGeometry::Sphere {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+
+        assert!(linear_pcurve_is_straight(&plane, [[1.0, 2.0], [3.0, 4.0]]));
+        assert!(linear_pcurve_is_straight(
+            &cylinder,
+            [[1.0, 2.0], [1.0, 4.0]]
+        ));
+        assert!(linear_pcurve_is_straight(&cone, [[1.0, 2.0], [1.0, 4.0]]));
+        assert!(!linear_pcurve_is_straight(
+            &cylinder,
+            [[1.0, 2.0], [2.0, 4.0]]
+        ));
+        assert!(!linear_pcurve_is_straight(
+            &sphere,
+            [[1.0, 2.0], [1.0, 4.0]]
+        ));
     }
 
     #[test]
@@ -29580,7 +29610,7 @@ fn transfer_native_brep(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     derived_intersection_curves: &BTreeSet<CurveId>,
-    planar_pcurve_lines: &BTreeSet<CurveId>,
+    straight_pcurve_lines: &BTreeSet<CurveId>,
 ) -> (usize, usize) {
     let planes = placed_planes(scan);
     let carriers = placed_carriers(scan, ir);
@@ -29766,7 +29796,7 @@ fn transfer_native_brep(
                     .any(|face_id| native_pcurves.contains_key(&(*curve_id, *face_id)))
             });
         let derived_line = (derived_intersection_curves.contains(&curve)
-            || planar_pcurve_lines.contains(&curve))
+            || straight_pcurve_lines.contains(&curve))
             && ir.model.curves.iter().any(|candidate| {
                 candidate.id == curve && matches!(candidate.geometry, CurveGeometry::Line { .. })
             });
@@ -34102,8 +34132,8 @@ fn build_ir(
         transfer_constrained_slot_fillet_cylinders(scan, &mut ir, &mut annotations);
     let rowless_round_cylinder_count =
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
-    let planar_pcurve_lines = transfer_planar_pcurve_lines(scan, &mut ir, &mut annotations);
-    let planar_pcurve_line_count = planar_pcurve_lines.len();
+    let straight_pcurve_lines = transfer_straight_pcurve_lines(scan, &mut ir, &mut annotations);
+    let straight_pcurve_line_count = straight_pcurve_lines.len();
     let derived_intersection_curves =
         transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
     let (topological_point_count, native_topological_edge_count) = transfer_native_brep(
@@ -34111,7 +34141,7 @@ fn build_ir(
         &mut ir,
         &mut annotations,
         &derived_intersection_curves,
-        &planar_pcurve_lines,
+        &straight_pcurve_lines,
     );
     let feature_revolution_brep_count =
         transfer_resolved_revolution_breps(scan, &mut ir, &mut annotations);
@@ -34242,8 +34272,8 @@ fn build_ir(
             native_topological_edge_count.to_string(),
         );
         source.attributes.insert(
-            "transferred_planar_pcurve_line_count".to_string(),
-            planar_pcurve_line_count.to_string(),
+            "transferred_straight_pcurve_line_count".to_string(),
+            straight_pcurve_line_count.to_string(),
         );
         source.attributes.insert(
             "transferred_feature_revolution_surface_count".to_string(),
@@ -36237,22 +36267,22 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         });
     }
 
-    let planar_pcurve_line_count = ir
+    let straight_pcurve_line_count = ir
         .source
         .as_ref()
         .and_then(|source| {
             source
                 .attributes
-                .get("transferred_planar_pcurve_line_count")
+                .get("transferred_straight_pcurve_line_count")
         })
         .and_then(|count| count.parse::<usize>().ok())
         .unwrap_or(0);
-    if !container_only && planar_pcurve_line_count != 0 {
+    if !container_only && straight_pcurve_line_count != 0 {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Transferred {planar_pcurve_line_count} exact line carrier(s) by mapping native straight pcurves through placed planar face charts."
+                "Transferred {straight_pcurve_line_count} exact line carrier(s) by mapping native linear pcurves through placed planar, cylindrical, or conical face charts."
             ),
             provenance: None,
         });
