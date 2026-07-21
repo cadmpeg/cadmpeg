@@ -7229,6 +7229,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
 
     let mut incomplete_feature_families = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
+        if feature.suppressed != Some(true) && feature.outputs.is_empty() {
+            if let Some(family) = body_output_feature_family(&feature.definition) {
+                *incomplete_feature_families.entry(family).or_default() += 1;
+                continue;
+            }
+        }
         let family = match &feature.definition {
             FeatureDefinition::Block {
                 dimensions,
@@ -7396,7 +7402,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             severity: Severity::Warning,
             message: format!(
                 "NX feature families were transferred as typed neutral operations, but \
-                 construction fields remain unresolved or native-only: {families}."
+                 construction fields or output lineage remain unresolved or native-only: \
+                 {families}."
             ),
             provenance: None,
         });
@@ -7441,6 +7448,28 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             ),
             provenance: None,
         });
+    }
+}
+
+pub(crate) fn body_output_feature_family(definition: &FeatureDefinition) -> Option<&'static str> {
+    match definition {
+        FeatureDefinition::Block { .. } => Some("block"),
+        FeatureDefinition::ExtractBody { .. } => Some("extract body"),
+        FeatureDefinition::TrimSurface { .. } => Some("trim surface"),
+        FeatureDefinition::ExtendSurface { .. } => Some("extend surface"),
+        FeatureDefinition::Hole { .. } => Some("hole"),
+        FeatureDefinition::Rib { .. } => Some("rib"),
+        FeatureDefinition::Chamfer { .. } => Some("chamfer"),
+        FeatureDefinition::Fillet { .. } => Some("fillet"),
+        FeatureDefinition::FaceBlend { .. } => Some("face blend"),
+        FeatureDefinition::SewBodies { .. } => Some("sew bodies"),
+        FeatureDefinition::TrimBodies { .. } => Some("trim bodies"),
+        FeatureDefinition::Extrude { .. } => Some("extrude"),
+        FeatureDefinition::OffsetSurface { .. } => Some("offset surface"),
+        FeatureDefinition::Thicken { .. } => Some("thicken"),
+        FeatureDefinition::Pattern { .. } => Some("pattern"),
+        FeatureDefinition::Combine { .. } => Some("body combine"),
+        _ => None,
     }
 }
 

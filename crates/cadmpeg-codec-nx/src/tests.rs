@@ -3777,6 +3777,54 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
 }
 
 #[test]
+fn nx_body_producing_feature_families_require_history_outputs() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length};
+    use std::collections::BTreeMap;
+
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#block".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Block {
+            dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
+            placement: Some(cadmpeg_ir::transform::Transform::identity()),
+        },
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("block (1)"));
+
+    ir.model.features[0].suppressed = Some(true);
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    assert_eq!(
+        crate::decode::body_output_feature_family(&FeatureDefinition::DatumPointUnresolved),
+        None
+    );
+    assert_eq!(
+        crate::decode::body_output_feature_family(&FeatureDefinition::DeleteBody {
+            bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+        }),
+        None
+    );
+}
+
+#[test]
 fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let dimensions = [10.0, 20.0, 30.0];
