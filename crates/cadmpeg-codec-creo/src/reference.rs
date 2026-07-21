@@ -329,7 +329,7 @@ fn named_point(
 }
 
 fn conic_local_system(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
-    if let Some(slots) = scalar::decode_curve_expression_local_system_slots(body, cache) {
+    if let Some(slots) = scalar::decode_explicit_local_system_slots(body, cache) {
         return Some(slots);
     }
     let mut values = Vec::with_capacity(12);

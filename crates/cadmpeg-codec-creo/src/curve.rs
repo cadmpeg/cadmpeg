@@ -479,7 +479,7 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
                 dimensions,
                 count,
                 explicit_slots: ((dimensions, count) == (4, 3))
-                    .then(|| scalar::decode_curve_expression_local_system_slots(&body, &cache))
+                    .then(|| scalar::decode_explicit_local_system_slots(&body, &cache))
                     .flatten(),
                 body,
                 offset,

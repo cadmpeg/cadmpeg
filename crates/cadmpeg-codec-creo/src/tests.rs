@@ -1278,6 +1278,40 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
 }
 
 #[test]
+fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[0x0f; 10]);
+    payload.push(0xe3);
+    payload.extend_from_slice(&[
+        0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe1, 0xe3,
+    ]);
+
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert_eq!(
+        result.ir.model.surfaces[0].geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        }
+    );
+    let attributes = &result.ir.source.expect("source metadata").attributes;
+    assert_eq!(attributes["visible_plane_surface_row_count"], "1");
+    assert_eq!(
+        attributes["transferred_visible_plane_surface_row_count"],
+        "1"
+    );
+    assert_eq!(attributes["untransferred_visible_surface_row_count"], "0");
+}
+
+#[test]
 fn decode_withholds_axis_aligned_surface_without_parameter_chart() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

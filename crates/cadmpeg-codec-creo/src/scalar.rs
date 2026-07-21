@@ -425,17 +425,6 @@ pub fn decode_explicit_local_system_slots(body: &[u8], cache: &ScalarCache) -> O
     decode_local_system_slots(body, cache, LocalSystemVariant::Explicit)
 }
 
-/// Decode the rank-two local-system lane used by curve-equation entities.
-pub fn decode_curve_expression_local_system_slots(
-    body: &[u8],
-    cache: &ScalarCache,
-) -> Option<[f64; 12]> {
-    if body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6] {
-        return Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-    }
-    decode_local_system_slots(body, cache, LocalSystemVariant::Explicit)
-}
-
 /// Decode the feature-definition variant of the twelve-slot support frame.
 pub fn decode_feature_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
     decode_local_system_slots(body, cache, LocalSystemVariant::Feature)
@@ -481,6 +470,9 @@ fn decode_local_system_slots(
     cache: &ScalarCache,
     variant: LocalSystemVariant,
 ) -> Option<[f64; 12]> {
+    if body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6] {
+        return Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    }
     let mut values = Vec::with_capacity(12);
     let mut cursor = 0;
     while cursor < body.len() && values.len() < 12 {
@@ -692,6 +684,34 @@ mod tests {
                 f64::from_be_bytes([0xc0, 0x1e, 0, 0, 0, 0, 0, 0x65]),
                 f64::from_be_bytes([0xbf, 0x11, 0x9e, 0xed, 0x48, 0x6f, 0x9e, 0]),
             ])
+        );
+    }
+
+    #[test]
+    fn rank_two_image_is_shared_by_all_twelve_slot_local_system_lanes() {
+        let body = [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6];
+        let expected = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let cache = ScalarCache::default();
+
+        assert_eq!(
+            decode_positional_plane_local_system_slots(&body, &cache),
+            Some(expected)
+        );
+        assert_eq!(
+            decode_explicit_local_system_slots(&body, &cache),
+            Some(expected)
+        );
+        assert_eq!(
+            decode_feature_local_system_slots(&body, &cache),
+            Some(expected)
+        );
+        assert_eq!(
+            decode_positional_cylinder_local_system_slots(&body, &cache),
+            Some(expected)
+        );
+        assert_eq!(
+            decode_plane_support_local_system_slots(&body, &cache),
+            Some(expected)
         );
     }
 

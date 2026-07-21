@@ -5959,6 +5959,22 @@ mod tests {
     }
 
     #[test]
+    fn positional_plane_frame_decodes_rank_two_image_before_null_tail() {
+        let body = [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe1];
+
+        let slots = complete_plane_local_system_slots(&body, &scalar::ScalarCache::default())
+            .expect("complete rank-two frame");
+        assert_eq!(
+            slots,
+            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        );
+        let frame = plane_frame(&slots.map(Some));
+        assert_eq!(frame.origin, Some([0.0, 0.0, 0.0]));
+        assert_eq!(frame.u_axis, Some([0.0, 1.0, 0.0]));
+        assert_eq!(frame.normal, Some([0.0, 0.0, -1.0]));
+    }
+
+    #[test]
     fn positional_plane_frame_rejects_unconsumed_row_bytes() {
         let body = [
             0x18, 0xe4, 0x0f, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x2f, 0x18, 0x00, 0x2d, 0x29, 0x3d,
