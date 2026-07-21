@@ -7491,33 +7491,43 @@ pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
     }
 }
 
-fn body_selection_is_opaque(selection: &BodySelection) -> bool {
-    matches!(
-        selection,
-        BodySelection::Unresolved | BodySelection::Native(_)
-    )
+pub(crate) fn body_selection_is_opaque(selection: &BodySelection) -> bool {
+    match selection {
+        BodySelection::Unresolved | BodySelection::Native(_) => true,
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
+    }
 }
 
-fn face_selection_is_opaque(selection: &FaceSelection) -> bool {
-    matches!(
-        selection,
-        FaceSelection::Unresolved | FaceSelection::Native(_)
-    )
+pub(crate) fn face_selection_is_opaque(selection: &FaceSelection) -> bool {
+    match selection {
+        FaceSelection::Unresolved | FaceSelection::Native(_) => true,
+        FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces.is_empty(),
+    }
 }
 
-fn edge_selection_is_opaque(selection: &EdgeSelection) -> bool {
-    matches!(
-        selection,
-        EdgeSelection::Unresolved | EdgeSelection::Native(_)
-    )
+pub(crate) fn edge_selection_is_opaque(selection: &EdgeSelection) -> bool {
+    match selection {
+        EdgeSelection::Unresolved | EdgeSelection::Native(_) => true,
+        EdgeSelection::All => false,
+        EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => edges.is_empty(),
+    }
 }
 
-fn profile_ref_is_opaque(profile: &ProfileRef) -> bool {
-    matches!(profile, ProfileRef::Unresolved | ProfileRef::Native(_))
+pub(crate) fn profile_ref_is_opaque(profile: &ProfileRef) -> bool {
+    match profile {
+        ProfileRef::Unresolved | ProfileRef::Native(_) => true,
+        ProfileRef::Sketch(_) => false,
+        ProfileRef::Faces(faces) => faces.is_empty(),
+    }
 }
 
-fn path_ref_is_opaque(path: &PathRef) -> bool {
-    matches!(path, PathRef::Unresolved | PathRef::Native(_))
+pub(crate) fn path_ref_is_opaque(path: &PathRef) -> bool {
+    match path {
+        PathRef::Unresolved | PathRef::Native(_) => true,
+        PathRef::Sketch(_) => false,
+        PathRef::Edges(edges) => edges.is_empty(),
+        PathRef::Curves(curves) => curves.is_empty(),
+    }
 }
 
 fn attach_native_object_model(

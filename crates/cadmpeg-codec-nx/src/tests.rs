@@ -2421,6 +2421,33 @@ fn nx_variable_radius_completeness_requires_a_law_interval() {
 }
 
 #[test]
+fn nx_empty_resolved_selections_remain_incomplete() {
+    use cadmpeg_ir::features::{BodySelection, EdgeSelection, FaceSelection, PathRef, ProfileRef};
+
+    assert!(crate::decode::body_selection_is_opaque(
+        &BodySelection::Bodies(Vec::new())
+    ));
+    assert!(crate::decode::face_selection_is_opaque(
+        &FaceSelection::Resolved {
+            faces: Vec::new(),
+            native: "nx:faces".into(),
+        }
+    ));
+    assert!(crate::decode::edge_selection_is_opaque(
+        &EdgeSelection::Edges(Vec::new())
+    ));
+    assert!(!crate::decode::edge_selection_is_opaque(
+        &EdgeSelection::All
+    ));
+    assert!(crate::decode::profile_ref_is_opaque(&ProfileRef::Faces(
+        Vec::new()
+    )));
+    assert!(crate::decode::path_ref_is_opaque(&PathRef::Curves(
+        Vec::new()
+    )));
+}
+
+#[test]
 fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, ProfileRef};
 
