@@ -5058,6 +5058,29 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
             }
         )
     ));
+
+    let mut descriptor_payload = vec![0x08, 0x34, 0x12, 0x02];
+    descriptor_payload.extend_from_slice(&3.0_f64.to_le_bytes());
+    descriptor_payload.extend_from_slice(&7.0_f64.to_le_bytes());
+    let mut described = vec![0xb2, 0x03, 0x18, descriptor_payload.len() as u8, 0x05];
+    described.extend_from_slice(&descriptor_payload);
+    described.extend_from_slice(&bytes);
+    let runs = crate::geometry::consolidated_class25_edge_runs(&described);
+    let [run] = runs.as_slice() else {
+        panic!("one described class-25 edge run");
+    };
+    assert_eq!(run.descriptor.record_id, 0x1234);
+    assert_eq!(run.descriptor.values, [3.0, 7.0]);
+    assert!(run.identity_chain_consistent);
+    let native = crate::native::CatiaNative::decode(&described);
+    assert_eq!(
+        native.consolidated_edge_nodes[0]
+            .class25_descriptor
+            .as_ref()
+            .expect("native class-25 descriptor")
+            .control,
+        0x02
+    );
 }
 
 #[test]

@@ -1549,6 +1549,33 @@ pub fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
         .collect()
 }
 
+/// Decode class-`0x18` descriptors that prefix class-`0x25` edge definitions.
+#[must_use]
+pub fn b2_class25_descriptors(data: &[u8]) -> Vec<B2Class25Descriptor> {
+    b_family_frames(data, 0x18)
+        .into_iter()
+        .filter_map(|frame| {
+            if frame.header_token != 5 {
+                return None;
+            }
+            let mut at = frame.payload;
+            let record_id = compact_int(data, &mut at)?;
+            let control = *data.get(at)?;
+            at += 1;
+            if !matches!(control, 0x02 | 0x0a) {
+                return None;
+            }
+            let values = finite_f64_lane(data.get(at..frame.end)?)?;
+            matches!(values.len(), 2 | 3).then_some(B2Class25Descriptor {
+                pos: frame.pos,
+                record_id,
+                control,
+                values,
+            })
+        })
+        .collect()
+}
+
 /// Shared-edge parameter range stored in a `b2 03 23` packet.
 #[derive(Debug, Clone)]
 pub struct B2EdgeParameters {
@@ -1617,6 +1644,34 @@ pub struct ConsolidatedAnalyticCircleDescriptor {
     pub header_token: u32,
     /// Complete class-specific payload.
     pub payload: Vec<u8>,
+}
+
+/// Typed class-`0x18` descriptor immediately preceding a class-`0x25` edge.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2Class25Descriptor {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded allocation identity.
+    pub record_id: u32,
+    /// Descriptor control byte (`0x02` or `0x0a`).
+    pub control: u8,
+    /// Complete finite scalar lane containing two or three values.
+    pub values: Vec<f64>,
+}
+
+/// Complete class-`0x25` edge run with its adjacent class-`0x18` descriptor.
+#[derive(Debug, Clone)]
+pub struct ConsolidatedClass25EdgeRun {
+    /// Typed class-`0x18` descriptor.
+    pub descriptor: B2Class25Descriptor,
+    /// Typed class-`0x25` edge definition.
+    pub definition: ConsolidatedEdgeDefinition,
+    /// The two serialized edge uses, in side order.
+    pub uses: [B2UseMetadata; 2],
+    /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
+    pub node: B2EdgeNode,
+    /// Whether the use references and endpoint selectors close one allocation chain.
+    pub identity_chain_consistent: bool,
 }
 
 /// Two adjacent oriented uses and their terminal native edge node.
@@ -1997,6 +2052,59 @@ pub fn consolidated_analytic_circle_edge_runs(
                     payload: data[parameter.payload.clone()].to_vec(),
                 },
                 circle: circles.get(&circle.range.start)?.clone(),
+                definition,
+                uses: use_run.uses.clone(),
+                node: use_run.node,
+                identity_chain_consistent: use_run.identity_chain_consistent,
+            })
+        })
+        .collect()
+}
+
+/// Decode adjacent `18,25,06,06,5e` edge runs whose descriptor and definition
+/// both close under their typed grammars.
+#[must_use]
+pub fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
+    let descriptors = b2_class25_descriptors(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    let use_runs = consolidated_edge_use_runs(data)
+        .into_iter()
+        .map(|value| (value.uses[0].pos, value))
+        .collect::<BTreeMap<_, _>>();
+    consolidated_records(data)
+        .windows(5)
+        .filter_map(|window| {
+            let [descriptor, definition, use0, use1, node] = window else {
+                return None;
+            };
+            if descriptor.family != ConsolidatedFamily::B
+                || descriptor.class != 0x18
+                || definition.family != ConsolidatedFamily::B
+                || definition.class != 0x25
+                || use0.family != ConsolidatedFamily::B
+                || use0.class != 0x06
+                || use1.family != ConsolidatedFamily::B
+                || use1.class != 0x06
+                || node.family != ConsolidatedFamily::B
+                || node.class != 0x5e
+            {
+                return None;
+            }
+            let use_run = use_runs.get(&use0.range.start)?;
+            let definition = use_run.definition.clone()?;
+            if !matches!(
+                definition.data.as_ref(),
+                Some(
+                    ConsolidatedEdgeDefinitionData::Scalar25 { .. }
+                        | ConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
+                )
+            ) {
+                return None;
+            }
+            Some(ConsolidatedClass25EdgeRun {
+                descriptor: descriptors.get(&descriptor.range.start)?.clone(),
                 definition,
                 uses: use_run.uses.clone(),
                 node: use_run.node,

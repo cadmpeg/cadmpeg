@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 70;
+pub const CATIA_NATIVE_VERSION: u32 = 71;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -148,6 +148,22 @@ pub struct CatiaConsolidatedEdgeNode {
     /// Analytic circle carrier structurally bound by an adjacent six-record run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub analytic_circle: Option<CatiaConsolidatedAnalyticCircleCarrier>,
+    /// Typed class-`0x18` descriptor bound to a class-`0x25` edge run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class25_descriptor: Option<CatiaConsolidatedClass25Descriptor>,
+}
+
+/// Typed class-`0x18` descriptor bound to a class-`0x25` edge definition.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedClass25Descriptor {
+    /// Record byte offset.
+    pub byte_offset: u64,
+    /// Width-coded allocation identity.
+    pub record_id: u32,
+    /// Descriptor control byte.
+    pub control: u8,
+    /// Complete finite scalar lane.
+    pub values: Vec<f64>,
 }
 
 /// Descriptor and circle records structurally bound to an analytic edge.
@@ -907,6 +923,21 @@ fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
             )
         })
         .collect::<HashMap<_, _>>();
+    let class25_descriptors = geometry::consolidated_class25_edge_runs(bytes)
+        .into_iter()
+        .filter(|run| run.identity_chain_consistent)
+        .map(|run| {
+            (
+                run.node.pos,
+                CatiaConsolidatedClass25Descriptor {
+                    byte_offset: run.descriptor.pos as u64,
+                    record_id: run.descriptor.record_id,
+                    control: run.descriptor.control,
+                    values: run.descriptor.values,
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
     geometry::b2_edge_nodes(bytes)
         .into_iter()
         .enumerate()
@@ -926,6 +957,7 @@ fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
                 definition: use_runs.get(&node.pos).and_then(|(_, value)| value.clone()),
                 uses: use_runs.get(&node.pos).map(|(value, _)| value.clone()),
                 analytic_circle: analytic_circles.get(&node.pos).cloned(),
+                class25_descriptor: class25_descriptors.get(&node.pos).cloned(),
             })
         })
         .collect()
@@ -1192,6 +1224,22 @@ fn validate_consolidated_edge_runs(
                 && carrier.range.iter().all(|value| value.is_finite())
                 && carrier.range[0] < carrier.range[1]
         });
+        let class25_descriptor_valid =
+            node.class25_descriptor.as_ref().is_none_or(|descriptor| {
+                node.uses.is_some() && node.definition.as_ref().is_some_and(|definition| {
+                    definition.class == 0x25
+                        && matches!(
+                            definition.data,
+                            Some(
+                                CatiaConsolidatedEdgeDefinitionData::Scalar25 { .. }
+                                    | CatiaConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
+                            )
+                        )
+                        && descriptor.byte_offset < definition.byte_offset
+                }) && matches!(descriptor.control, 0x02 | 0x0a)
+                    && matches!(descriptor.values.len(), 2 | 3)
+                    && descriptor.values.iter().all(|value| value.is_finite())
+            });
         if node.id != format!("catia:consolidated:edge-node#{index}")
             || !matches!(node.width, 1..=3)
             || !matches!(node.flag, 0x03 | 0x13 | 0x83)
@@ -1199,6 +1247,7 @@ fn validate_consolidated_edge_runs(
             || !uses_valid
             || !definition_valid
             || !analytic_circle_valid
+            || !class25_descriptor_valid
             || index > 0 && nodes[index - 1].byte_offset >= node.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
