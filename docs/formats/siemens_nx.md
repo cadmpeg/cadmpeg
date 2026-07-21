@@ -166,6 +166,9 @@ lineage, preserving tool order and omitting duplicate dependencies. When the
 primary body object has a segment body-image binding, every surviving neutral
 body from that image is an output of the operation. An unbound primary body
 retains its object index but has no neutral output.
+`DELETE` is a body-deletion operation only when its bounded record contains the
+primary-body field. A `DELETE` record without that field does not identify a
+body target and remains native.
 
 An operation label equal to `SKETCH` denotes a sketch history operation. Its
 position in the operation sequence is the sketch's history position. The

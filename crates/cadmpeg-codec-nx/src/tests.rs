@@ -2257,6 +2257,17 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             properties: std::collections::BTreeMap::new(),
         }
     );
+    assert!(matches!(
+        crate::decode::non_boolean_feature_definition_with_parameters(
+            "DELETE",
+            &[],
+            None,
+            None,
+            crate::decode::HoleProjection::default(),
+            Default::default(),
+        ),
+        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "DELETE"
+    ));
 
     let duplicate_expressions = vec![
         expression("expression-a", "p1_length", "1"),
@@ -2951,6 +2962,30 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
     );
     assert_eq!(
         crate::decode::sew_body_feature_definition(&[], &bodies),
+        None
+    );
+}
+
+#[test]
+fn nx_delete_body_requires_a_primary_body_field() {
+    use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, FeatureDefinition};
+    use cadmpeg_ir::ids::BodyId;
+    use std::collections::BTreeMap;
+
+    let body = BodyId("body#20".to_string());
+    let bodies = BTreeMap::from([(20, vec![body.clone()])]);
+    assert_eq!(
+        crate::decode::delete_body_feature_definition(Some(20), &bodies),
+        Some(FeatureDefinition::DeleteBody {
+            bodies: BodySelection::Resolved {
+                bodies: vec![body],
+                native: "nx:om-object-index#20".to_string(),
+            },
+            mode: BodyRetentionMode::DeleteSelected,
+        })
+    );
+    assert_eq!(
+        crate::decode::delete_body_feature_definition(None, &bodies),
         None
     );
 }
