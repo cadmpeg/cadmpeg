@@ -20,7 +20,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The `a5 03 32` header token byte at `record + 7` is a small repeating type code; its value space and semantics are unresolved.
 - The numeric continuation following the three aligned `a5 03 32` jet blocks has multiple length classes. Its lane counts, terminal fields, and relationship to the rolling-ball definition are unresolved.
 - The semantic assignments of the width-coded `b2/b3/b4 03 5e` header token and terminal byte are unresolved.
-- The field semantics of the class-`0x18` analytic-circle descriptor and the operands and individual eight-scalar lanes in its class-`0x23` edge definition are unresolved. The corresponding roles in standalone class-`0x24` records are unresolved. Class-`0x25` scalar-lane roles and long continuation forms remain unresolved.
+- The field semantics of the class-`0x18` analytic-circle descriptor and the operands and individual eight-scalar lanes in its class-`0x23` edge definition are unresolved. The corresponding roles in standalone class-`0x24` records and the class-`0x25` scalar lanes are unresolved.
 
 - The byte relation assigning logical vertex components to `05 08 01` allocation rows is unspecified.
 - Standard spline cache poles, knots, and native parameterization. The exact two-surface intersection construction and endpoint trim are resolved, but the serialized cache referenced by the standard row remains unresolved.

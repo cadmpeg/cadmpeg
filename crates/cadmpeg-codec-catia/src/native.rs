@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 69;
+pub const CATIA_NATIVE_VERSION: u32 = 70;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",

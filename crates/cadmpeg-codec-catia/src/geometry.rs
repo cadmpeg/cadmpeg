@@ -1683,7 +1683,7 @@ pub enum ConsolidatedEdgeDefinitionData {
         persistent_lead: Option<u8>,
         /// Five finite scalars preceding the segment marker.
         leading: [f64; 5],
-        /// Scalar-lane boundary marker (`0x82` or `0x83`).
+        /// Scalar-lane boundary marker (`0x82`, `0x83`, `0x89`, or `0x8b`).
         marker: u8,
         /// Complete finite scalar lane following the marker.
         trailing: Vec<f64>,
@@ -1722,7 +1722,10 @@ pub fn consolidated_edge_definition_data(
         let marker = *scalar_bytes.get(40)?;
         let trailing = finite_f64_lane(scalar_bytes.get(41..)?)?;
         if leading.iter().all(|value| value.is_finite())
-            && matches!((marker, trailing.len()), (0x82, 5..=7) | (0x83, 8..=9))
+            && matches!(
+                (marker, trailing.len()),
+                (0x82, 5..=7) | (0x83, 8..=9) | (0x89, 20) | (0x8b, 24)
+            )
         {
             return Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
                 operands,

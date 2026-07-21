@@ -5024,6 +5024,23 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         }) if values.len() == 7
     ));
 
+    let mut long_segment = operands.to_vec();
+    for value in [1.0_f64, 2.0, 1e-6, 3.0, 4.0] {
+        long_segment.extend_from_slice(&value.to_le_bytes());
+    }
+    long_segment.push(0x89);
+    for value in 0..20 {
+        long_segment.extend_from_slice(&f64::from(value).to_le_bytes());
+    }
+    assert!(matches!(
+        crate::geometry::consolidated_edge_definition_data(0x25, &long_segment),
+        Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
+            marker: 0x89,
+            ref trailing,
+            ..
+        }) if trailing.len() == 20
+    ));
+
     let mut bytes = vec![0xb2, 0x03, 0x25, plain.len() as u8, 0x05];
     bytes.extend_from_slice(&plain);
     bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
