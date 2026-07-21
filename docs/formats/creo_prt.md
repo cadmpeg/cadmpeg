@@ -675,6 +675,13 @@ parameter-space reference direction. The frame origin must lie on the held
 plane. A support triple that is neither parallel nor perpendicular leaves the
 chart unresolved.
 
+In the frame-bound held-coordinate outline form, the support frame establishes
+the normal and parameter direction. The matching held outline coordinate,
+including its shortened terminal form, establishes the plane offset. The plane
+chart projects local-system slots 9 through 11 onto that plane, replacing only
+their normal component with the held coordinate. A second held outline axis
+makes the frame-bound plane degenerate and leaves it unresolved.
+
 When exactly one coordinate is held constant across both corners, its axis is the positive basis normal and its value is the model-space plane offset. The other two coordinate pairs need only be known to be distinct; their magnitudes are not required. In the absence of a complete local-system chart, the first positive basis direction perpendicular to the normal is the neutral parameter reference direction. A complete local-system chart takes precedence. Zero or multiple held coordinates do not establish a plane equation from the outline.
 The held coordinate establishes only the plane equation. It does not establish
 the parameter-chart origin or either parameter direction.

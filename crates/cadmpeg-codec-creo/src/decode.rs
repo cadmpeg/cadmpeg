@@ -25781,10 +25781,12 @@ fn agreed_plane_surface(candidates: &[PlaneCandidate]) -> Option<(PlaneEquation,
 mod plane_reconciliation_tests {
     use super::{
         agreed_plane, agreed_plane_surface, dot, envelope_reconciled_plane_candidate,
-        held_coordinate_plane, PlaneCandidate, PlaneChart, PlaneEquation,
+        frame_bound_outline_plane_candidate, held_coordinate_plane, PlaneCandidate, PlaneChart,
+        PlaneEquation,
     };
     use crate::surface::{
-        LocalSystemClassification, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
+        LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord,
+        PlaneLocalSystem,
     };
 
     #[test]
@@ -25904,6 +25906,37 @@ mod plane_reconciliation_tests {
         frame.origin = Some([8.0, 0.0, 1.0]);
         assert!(envelope_reconciled_plane_candidate(&frame, equation).is_none());
     }
+
+    #[test]
+    fn frame_bound_outline_supplies_the_plane_chart_origin() {
+        let frame = PlaneLocalSystem {
+            surface_id: 52,
+            body: Vec::new(),
+            slots: vec![Some(0.0); 12],
+            origin: Some([-9.0, 48.0, 0.0]),
+            u_axis: Some([0.0, 0.0, 1.0]),
+            normal: Some([0.0, 1.0, 0.0]),
+            classification: LocalSystemClassification::Simple,
+            row_offset: 10,
+            offset: 20,
+        };
+        let outline = OutlinePlane {
+            surface_id: 52,
+            origin: [0.0, -4.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [0.0, 0.0, 1.0],
+            offset: 15,
+        };
+        let candidate =
+            frame_bound_outline_plane_candidate(&frame, &outline).expect("composite chart");
+        assert_eq!(candidate.equation.origin, outline.origin);
+        assert_eq!(candidate.equation.normal, outline.normal);
+        assert_eq!(candidate.chart.expect("chart").origin, [-9.0, -4.0, 0.0]);
+
+        let mut conflicting = outline;
+        conflicting.u_axis = [1.0, 0.0, 0.0];
+        assert!(frame_bound_outline_plane_candidate(&frame, &conflicting).is_none());
+    }
 }
 
 fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> {
@@ -25921,6 +25954,43 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
         .into_iter()
         .filter_map(|(surface_id, planes)| agreed_plane(&planes).map(|plane| (surface_id, plane)))
         .collect::<BTreeMap<_, _>>();
+    let frame_bound_outlines = crate::surface::frame_bound_outline_planes(
+        &scan.plane_envelopes,
+        &scan.plane_local_systems,
+    )
+    .into_iter()
+    .filter(|outline| {
+        let axis = outline
+            .normal
+            .iter()
+            .position(|component| component.abs() > 1e-9);
+        scan.plane_envelopes.iter().any(|envelope| {
+            envelope.surface_id == outline.surface_id
+                && envelope.offset == outline.offset
+                && axis.is_some_and(|axis| {
+                    outline
+                        .normal
+                        .iter()
+                        .enumerate()
+                        .all(|(candidate, component)| candidate == axis || component.abs() <= 1e-9)
+                        && envelope
+                            .corner_coordinate_equal
+                            .iter()
+                            .enumerate()
+                            .all(|(candidate, equal)| candidate == axis || *equal != Some(true))
+                })
+        })
+    })
+    .fold(
+        BTreeMap::<u32, Vec<crate::surface::OutlinePlane>>::new(),
+        |mut outlines, outline| {
+            outlines
+                .entry(outline.surface_id)
+                .or_default()
+                .push(outline);
+            outlines
+        },
+    );
     let mut candidates = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     for frame in &scan.plane_local_systems {
         let (Some(origin), Some(normal)) = (frame.origin, frame.normal) else {
@@ -25938,10 +26008,20 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
             }),
             offset: frame.offset,
         };
-        let candidate = held_planes
+        let candidate = frame_bound_outlines
             .get(&frame.surface_id)
-            .filter(|held| agreed_plane(&[frame_candidate.equation, **held]).is_none())
-            .and_then(|held| envelope_reconciled_plane_candidate(frame, *held))
+            .and_then(|outlines| {
+                let [outline] = outlines.as_slice() else {
+                    return None;
+                };
+                frame_bound_outline_plane_candidate(frame, outline)
+            })
+            .or_else(|| {
+                held_planes
+                    .get(&frame.surface_id)
+                    .filter(|held| agreed_plane(&[frame_candidate.equation, **held]).is_none())
+                    .and_then(|held| envelope_reconciled_plane_candidate(frame, *held))
+            })
             .unwrap_or(frame_candidate);
         candidates
             .entry(frame.surface_id)
@@ -25995,6 +26075,35 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                 < 2
         })
         .collect()
+}
+
+fn frame_bound_outline_plane_candidate(
+    frame: &crate::surface::PlaneLocalSystem,
+    outline: &crate::surface::OutlinePlane,
+) -> Option<PlaneCandidate> {
+    (frame.surface_id == outline.surface_id).then_some(())?;
+    let frame_normal = normalized(frame.normal?)?;
+    let frame_u_axis = normalized(frame.u_axis?)?;
+    let outline_normal = normalized(outline.normal)?;
+    let outline_u_axis = normalized(outline.u_axis)?;
+    (dot(frame_normal, outline_normal) >= 1.0 - 1e-9).then_some(())?;
+    (dot(frame_u_axis, outline_u_axis) >= 1.0 - 1e-9).then_some(())?;
+    let frame_origin = frame.origin?;
+    let displacement = dot(outline_normal, outline.origin) - dot(outline_normal, frame_origin);
+    let chart_origin =
+        std::array::from_fn(|axis| displacement.mul_add(outline_normal[axis], frame_origin[axis]));
+    Some(PlaneCandidate {
+        equation: PlaneEquation {
+            origin: outline.origin,
+            normal: outline.normal,
+        },
+        chart: Some(PlaneChart {
+            origin: chart_origin,
+            normal: frame.normal?,
+            u_axis: frame.u_axis?,
+        }),
+        offset: frame.offset,
+    })
 }
 
 fn envelope_reconciled_plane_candidate(
