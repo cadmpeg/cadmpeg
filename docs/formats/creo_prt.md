@@ -631,6 +631,12 @@ An untagged type-26 body can have the complete form `18 18 01 11 <scalar>
 coordinate slot. The five coordinates are contiguous positional-row scalars;
 the terminal `18` closes the envelope and is not a sixth coordinate.
 
+A type-26 body ending in `f7 1c` can store five terminal coordinates before
+that close. The coordinates either occupy one contiguous five-scalar frame or
+the final three scalars of one frame followed by a nonempty control payload and
+a terminal two-scalar frame. Scalars preceding the final three-coordinate
+suffix are body-local controls and do not occupy coordinate slots.
+
 The untagged torus-envelope prefix begins after eight body-local bytes with
 `18 94 3f 02 70 16 be fc 00 12 20`. Its direct form stores five contiguous
 coordinates followed by `21`. Its split form stores two coordinates, `3a`, a
@@ -706,9 +712,9 @@ the row.
 Each bounded positional body transfers to the Creo native
 `surface_parameters` arena with its surface identifier, family, boundary kind,
 exact body bytes, ordered decoded or opaque scalar slots, and maximal opaque
-spans covering every byte outside those slots. Defined type-26 direct and split
-coordinate envelopes retain their ordered coordinates and body-relative first
-coordinate offset in that arena. Scalar frames are the maximal
+spans covering every byte outside those slots. Defined type-26 contiguous and
+control-split coordinate envelopes retain their ordered coordinates and
+body-relative first coordinate offset in that arena. Scalar frames are the maximal
 contiguous scalar-token sequences in byte order. The terminal scalar frame is
 the final frame only when it ends at the body boundary.
 

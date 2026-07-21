@@ -560,6 +560,71 @@ impl SurfaceParameterRecord {
         type_byte: u8,
     ) -> Option<Type26FiveCoordinateEnvelope> {
         (type_byte == 0x26).then_some(())?;
+        if self.body.ends_with(&[0xf7, 0x1c]) {
+            let frame_end = self.body.len().checked_sub(2)?;
+            if let Some(frame) = self.scalar_frames.last() {
+                let end = frame
+                    .slots
+                    .last()
+                    .and_then(|slot| slot.offset.checked_add(slot.length));
+                if frame.slots.len() == 5 && end == Some(frame_end) {
+                    let [coordinate0, coordinate1, coordinate2, coordinate3, coordinate4] =
+                        frame.slots.as_slice()
+                    else {
+                        unreachable!("five slots were checked above");
+                    };
+                    let values = [
+                        coordinate0.value?,
+                        coordinate1.value?,
+                        coordinate2.value?,
+                        coordinate3.value?,
+                        coordinate4.value?,
+                    ];
+                    return values.iter().all(|value| value.is_finite()).then_some(
+                        Type26FiveCoordinateEnvelope {
+                            values,
+                            offset: frame.offset,
+                        },
+                    );
+                }
+            }
+            if let [.., first, second] = self.scalar_frames.as_slice() {
+                let first_end = first
+                    .slots
+                    .last()
+                    .and_then(|slot| slot.offset.checked_add(slot.length))?;
+                let second_end = second
+                    .slots
+                    .last()
+                    .and_then(|slot| slot.offset.checked_add(slot.length))?;
+                if first.slots.len() >= 3
+                    && second.slots.len() == 2
+                    && first_end < second.offset
+                    && second_end == frame_end
+                {
+                    let first_coordinates = &first.slots[first.slots.len() - 3..];
+                    let [coordinate0, coordinate1, coordinate2] = first_coordinates else {
+                        unreachable!("three trailing slots were selected");
+                    };
+                    let [coordinate3, coordinate4] = second.slots.as_slice() else {
+                        unreachable!("two slots were checked above");
+                    };
+                    let values = [
+                        coordinate0.value?,
+                        coordinate1.value?,
+                        coordinate2.value?,
+                        coordinate3.value?,
+                        coordinate4.value?,
+                    ];
+                    return values.iter().all(|value| value.is_finite()).then_some(
+                        Type26FiveCoordinateEnvelope {
+                            values,
+                            offset: coordinate0.offset,
+                        },
+                    );
+                }
+            }
+        }
         let (frame_offset, leading_count, frame_end) =
             if self.body.starts_with(&[0x18, 0x18, 0x01, 0x11]) && self.body.ends_with(&[0x18]) {
                 (4, 1, self.body.len() - 1)
@@ -5258,6 +5323,37 @@ mod tests {
         assert!(parameter_records(&payload)[0]
             .type26_five_coordinate_envelope(0x26)
             .is_none());
+    }
+
+    #[test]
+    fn decodes_terminal_and_control_split_type26_five_coordinate_envelopes() {
+        let bodies = [
+            vec![
+                0xcc, 0x4e, 0xb7, 0xaa, 0xa1, 0x3a, 0x60, 0x12, 0x41, 0x86, 0x5e, 0x2b, 0x2e, 0x79,
+                0xa2, 0x91, 0x11, 0x2d, 0x1b, 0xff, 0xff, 0xff, 0xff, 0xf8, 0xf6, 0x2f, 0x14, 0x00,
+                0x2f, 0x14, 0x00, 0x2f, 0x24, 0x00, 0x2d, 0x20, 0x00, 0x00, 0x00, 0x00, 0x06, 0x3c,
+                0x2f, 0x18, 0x00, 0xf7, 0x1c,
+            ],
+            vec![
+                0x28, 0x7f, 0x7d, 0xdf, 0x28, 0xe6, 0x8d, 0xaf, 0x15, 0x84, 0x41, 0x79, 0x33, 0x6d,
+                0x2d, 0xaa, 0x16, 0x48, 0x24, 0x00, 0x2f, 0x14, 0x00, 0xe4, 0x4a, 0x1b, 0xff, 0xff,
+                0xff, 0xff, 0xf9, 0x2d, 0x20, 0x00, 0x00, 0x00, 0x00, 0x06, 0x41, 0x2f, 0x18, 0x00,
+                0xf7, 0x1c,
+            ],
+        ];
+        let expected = [[5.0, 5.0, 10.0, -8.0, 6.0], [-10.0, 5.0, 1.0, -8.0, 6.0]];
+        for (body, expected) in bodies.into_iter().zip(expected) {
+            let mut payload = vec![7, 0x26, 4, 0x01, 0, 0];
+            payload.extend_from_slice(&body);
+            payload.push(0xe3);
+            let records = parameter_records(&payload);
+            let envelope = records[0]
+                .type26_five_coordinate_envelope(0x26)
+                .expect("terminal five-coordinate envelope");
+            for (actual, expected) in envelope.values.into_iter().zip(expected) {
+                assert!((actual - expected).abs() < 1e-11);
+            }
+        }
     }
 
     #[test]
