@@ -4986,6 +4986,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         crate::geometry::consolidated_edge_definition_data(0x25, &plain),
         Some(ConsolidatedEdgeDefinitionData::Scalar25 {
             operands: [1, 0xe7, 3463],
+            persistent_lead: Some(0x0a),
             values: vec![1.0, 2.0, 1e-6, 3.0, 4.0, 1.0, 5.0, 1e-6],
         })
     );
@@ -5002,6 +5003,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         crate::geometry::consolidated_edge_definition_data(0x25, &segmented),
         Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
             operands: [1, 0xe7, 3463],
+            persistent_lead: Some(0x0a),
             marker: 0x82,
             ref trailing,
             ..
@@ -5009,6 +5011,18 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     ));
     segmented[46] = 0x84;
     assert!(crate::geometry::consolidated_edge_definition_data(0x25, &segmented).is_none());
+
+    let mut odd_lead = plain.clone();
+    odd_lead[3] = 0x0b;
+    odd_lead.drain(odd_lead.len() - 8..);
+    assert!(matches!(
+        crate::geometry::consolidated_edge_definition_data(0x25, &odd_lead),
+        Some(ConsolidatedEdgeDefinitionData::Scalar25 {
+            persistent_lead: Some(0x0b),
+            ref values,
+            ..
+        }) if values.len() == 7
+    ));
 
     let mut bytes = vec![0xb2, 0x03, 0x25, plain.len() as u8, 0x05];
     bytes.extend_from_slice(&plain);
@@ -5022,6 +5036,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         Some(
             crate::native::CatiaConsolidatedEdgeDefinitionData::Scalar25 {
                 operands: [1, 0xe7, 3463],
+                persistent_lead: Some(0x0a),
                 ..
             }
         )

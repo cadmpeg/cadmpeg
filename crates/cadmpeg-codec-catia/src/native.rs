@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 68;
+pub const CATIA_NATIVE_VERSION: u32 = 69;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -226,6 +226,8 @@ pub enum CatiaConsolidatedEdgeDefinitionData {
     Scalar25 {
         /// Two mixed-width allocation operands followed by one persistent operand.
         operands: [u32; 3],
+        /// Explicit third-operand lead, or `None` for compact encoding.
+        persistent_lead: Option<u8>,
         /// Complete finite scalar lane.
         values: Vec<f64>,
     },
@@ -233,6 +235,8 @@ pub enum CatiaConsolidatedEdgeDefinitionData {
     SegmentedScalar25 {
         /// Two mixed-width allocation operands followed by one persistent operand.
         operands: [u32; 3],
+        /// Explicit third-operand lead, or `None` for compact encoding.
+        persistent_lead: Option<u8>,
         /// Five finite scalars preceding the segment marker.
         leading: [f64; 5],
         /// Scalar-lane boundary marker.
@@ -975,16 +979,24 @@ fn native_consolidated_edge_definition_data(
         geometry::ConsolidatedEdgeDefinitionData::Scalar { operands, values } => {
             CatiaConsolidatedEdgeDefinitionData::Scalar { operands, values }
         }
-        geometry::ConsolidatedEdgeDefinitionData::Scalar25 { operands, values } => {
-            CatiaConsolidatedEdgeDefinitionData::Scalar25 { operands, values }
-        }
+        geometry::ConsolidatedEdgeDefinitionData::Scalar25 {
+            operands,
+            persistent_lead,
+            values,
+        } => CatiaConsolidatedEdgeDefinitionData::Scalar25 {
+            operands,
+            persistent_lead,
+            values,
+        },
         geometry::ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
             operands,
+            persistent_lead,
             leading,
             marker,
             trailing,
         } => CatiaConsolidatedEdgeDefinitionData::SegmentedScalar25 {
             operands,
+            persistent_lead,
             leading,
             marker,
             trailing,

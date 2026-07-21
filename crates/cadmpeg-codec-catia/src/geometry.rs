@@ -1670,6 +1670,8 @@ pub enum ConsolidatedEdgeDefinitionData {
     Scalar25 {
         /// Two mixed-width allocation operands followed by one persistent operand.
         operands: [u32; 3],
+        /// Explicit third-operand lead (`0x0a` or `0x0b`), or `None` for compact encoding.
+        persistent_lead: Option<u8>,
         /// Complete finite scalar lane.
         values: Vec<f64>,
     },
@@ -1677,6 +1679,8 @@ pub enum ConsolidatedEdgeDefinitionData {
     SegmentedScalar25 {
         /// Two mixed-width allocation operands followed by one persistent operand.
         operands: [u32; 3],
+        /// Explicit third-operand lead (`0x0a` or `0x0b`), or `None` for compact encoding.
+        persistent_lead: Option<u8>,
         /// Five finite scalars preceding the segment marker.
         leading: [f64; 5],
         /// Scalar-lane boundary marker (`0x82` or `0x83`).
@@ -1701,15 +1705,18 @@ pub fn consolidated_edge_definition_data(
     }
     if class == 0x25 && payload.first() == Some(&0x82) {
         let mut at = 1;
-        let operands = [
-            allocation_ref(payload, &mut at)?,
-            allocation_ref(payload, &mut at)?,
-            persistent_ref(payload, &mut at)?,
-        ];
+        let first = allocation_ref(payload, &mut at)?;
+        let second = allocation_ref(payload, &mut at)?;
+        let (third, persistent_lead) = class25_persistent_ref(payload, &mut at)?;
+        let operands = [first, second, third];
         let scalar_bytes = payload.get(at..)?;
-        if matches!(scalar_bytes.len(), 64 | 72 | 80) {
+        if matches!(scalar_bytes.len(), 56 | 64 | 72 | 80) {
             let values = finite_f64_lane(scalar_bytes)?;
-            return Some(ConsolidatedEdgeDefinitionData::Scalar25 { operands, values });
+            return Some(ConsolidatedEdgeDefinitionData::Scalar25 {
+                operands,
+                persistent_lead,
+                values,
+            });
         }
         let leading = read_f64_array::<5>(scalar_bytes, 0)?;
         let marker = *scalar_bytes.get(40)?;
@@ -1719,6 +1726,7 @@ pub fn consolidated_edge_definition_data(
         {
             return Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
                 operands,
+                persistent_lead,
                 leading,
                 marker,
                 trailing,
@@ -1753,6 +1761,17 @@ pub fn consolidated_edge_definition_data(
         return None;
     }
     Some(ConsolidatedEdgeDefinitionData::Scalar { operands, values })
+}
+
+fn class25_persistent_ref(bytes: &[u8], at: &mut usize) -> Option<(u32, Option<u8>)> {
+    match *bytes.get(*at)? {
+        lead @ (0x0a | 0x0b) => {
+            let value = u32::from(u16_le(bytes, *at + 1)?);
+            *at += 3;
+            Some((value, Some(lead)))
+        }
+        _ => Some((compact_int(bytes, at)?, None)),
+    }
 }
 
 fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<f64>> {
