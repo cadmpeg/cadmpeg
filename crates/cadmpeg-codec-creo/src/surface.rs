@@ -406,10 +406,13 @@ struct TorusRadiusOverrideLayout {
     radius1_start: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct Type24RoundLayout {
-    diameter: f64,
-    extent_endpoints: [[f64; 3]; 2],
+/// Diameter and model-space extent endpoints from a bounded type-24 round body.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Type24RoundEnvelope {
+    /// Positive difference between the two stored diameter endpoints.
+    pub diameter: f64,
+    /// Opposite model-space extent corners.
+    pub extent_endpoints: [[f64; 3]; 2],
 }
 
 /// One contiguous positional scalar frame with no intervening bytes.
@@ -645,6 +648,13 @@ impl SurfaceParameterRecord {
             })
     }
 
+    /// Decode the diameter and extent envelope of a scalar-frame type-24 row.
+    #[must_use]
+    pub fn type24_scalar_frame_round_envelope(&self, type_byte: u8) -> Option<Type24RoundEnvelope> {
+        (type_byte == 0x24).then_some(())?;
+        self.type24_scalar_frame_round_layout()
+    }
+
     fn type24_round_frame(
         &self,
         type_byte: u8,
@@ -760,7 +770,7 @@ impl SurfaceParameterRecord {
             })
     }
 
-    fn type24_round_layout(&self, cache: &scalar::ScalarCache) -> Option<Type24RoundLayout> {
+    fn type24_round_layout(&self, cache: &scalar::ScalarCache) -> Option<Type24RoundEnvelope> {
         self.type24_scalar_frame_round_layout()
             .or_else(|| self.type24_first_coordinate_round_layout(cache))
             .or_else(|| self.type24_segmented_first_coordinate_round_layout(cache))
@@ -769,7 +779,7 @@ impl SurfaceParameterRecord {
     fn type24_first_coordinate_round_layout(
         &self,
         cache: &scalar::ScalarCache,
-    ) -> Option<Type24RoundLayout> {
+    ) -> Option<Type24RoundEnvelope> {
         self.is_type24_first_coordinate_round_body().then_some(())?;
         let decode_at = |offset| {
             let (value, end) =
@@ -797,7 +807,7 @@ impl SurfaceParameterRecord {
             .chain(coordinates.iter().copied())
             .map(f64::abs)
             .fold(1.0, f64::max);
-        (diameter > 1e-12 * scale).then_some(Type24RoundLayout {
+        (diameter > 1e-12 * scale).then_some(Type24RoundEnvelope {
             diameter,
             extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
         })
@@ -806,7 +816,7 @@ impl SurfaceParameterRecord {
     fn type24_segmented_first_coordinate_round_layout(
         &self,
         cache: &scalar::ScalarCache,
-    ) -> Option<Type24RoundLayout> {
+    ) -> Option<Type24RoundEnvelope> {
         self.is_type24_segmented_first_coordinate_round_body()
             .then_some(())?;
         let decode_at = |offset| {
@@ -834,7 +844,7 @@ impl SurfaceParameterRecord {
             .chain(coordinates.iter().copied())
             .map(f64::abs)
             .fold(1.0, f64::max);
-        (diameter > 1e-12 * scale).then_some(Type24RoundLayout {
+        (diameter > 1e-12 * scale).then_some(Type24RoundEnvelope {
             diameter,
             extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
         })
@@ -854,7 +864,7 @@ impl SurfaceParameterRecord {
             && self.body.get(54..56) == Some(&[0xf7, 0x19])
     }
 
-    fn type24_scalar_frame_round_layout(&self) -> Option<Type24RoundLayout> {
+    fn type24_scalar_frame_round_layout(&self) -> Option<Type24RoundEnvelope> {
         let contiguous_values = |frame: &SurfaceParameterScalarFrame| {
             let mut cursor = frame.offset;
             let mut values = Vec::with_capacity(frame.slots.len());
@@ -908,7 +918,7 @@ impl SurfaceParameterRecord {
             .iter()
             .zip(extent_endpoints[1])
             .any(|(first, second)| ((second - first).abs() - diameter).abs() <= 1e-9 * scale)
-            .then_some(Type24RoundLayout {
+            .then_some(Type24RoundEnvelope {
                 diameter,
                 extent_endpoints,
             })
@@ -4720,7 +4730,7 @@ mod tests {
             decode_positional_cylinder_frame(&forward_trailer, &scalar::ScalarCache::default())
                 .expect("complete forward-oriented directrix-lane cylinder");
         assert!((frame.origin[0] - 0.82).abs() < 1e-12);
-        assert!((frame.origin[1] + 13.769563324412964).abs() < 1e-12);
+        assert!((frame.origin[1] + 13.769_563_324_412_964).abs() < 1e-12);
         assert!((frame.origin[2] - 2.41).abs() < 1e-12);
         assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
@@ -4848,7 +4858,7 @@ mod tests {
         assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
         assert_eq!(frame.ref_direction, [0.0, 0.0, -1.0]);
         assert!((frame.radius - 1.0).abs() < 1e-12);
-        assert!((frame.length.expect("axial extent") - 6.528189135889739).abs() < 1e-12);
+        assert!((frame.length.expect("axial extent") - 6.528_189_135_889_739).abs() < 1e-12);
 
         let second_endpoint_axial_radial = [
             17, 24, 19, 45, 26, 27, 232, 154, 196, 109, 12, 70, 66, 41, 227, 121, 190, 244, 8, 66,
@@ -4864,7 +4874,7 @@ mod tests {
         assert_eq!(frame.axis, [-1.0, 0.0, 0.0]);
         assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
         assert!((frame.radius - 1.0).abs() < 1e-12);
-        assert!((frame.length.expect("axial extent") - 6.527254503477945).abs() < 1e-12);
+        assert!((frame.length.expect("axial extent") - 6.527_254_503_477_945).abs() < 1e-12);
 
         let mut inconsistent = negative_x.to_vec();
         inconsistent[58] = 0xd0;
@@ -5329,6 +5339,19 @@ mod tests {
         assert!((frame.axis[2] - 2.9 / frame.length.unwrap()).abs() < 1.0e-12);
         assert!((record(&prefixed_panel).type24_round_radius(0x24).unwrap() - 0.2).abs() < 1.0e-12);
         assert!((record(&separated).type24_round_radius(0x24).unwrap() - 2.0).abs() < 1.0e-12);
+
+        let equal_span = record(&[
+            24, 45, 47, 73, 81, 130, 169, 147, 32, 18, 45, 49, 164, 168, 193, 84, 201, 144, 47, 12,
+            0, 47, 32, 0, 72, 24, 0, 47, 22, 0, 47, 36, 0, 72, 16, 0,
+        ]);
+        assert_eq!(
+            equal_span.type24_scalar_frame_round_envelope(0x24),
+            Some(Type24RoundEnvelope {
+                diameter: 2.0,
+                extent_endpoints: [[3.5, 8.0, -6.0], [5.5, 10.0, -4.0]],
+            })
+        );
+        assert!(equal_span.positional_cylinder_frame.is_none());
 
         let mut inconsistent = separated;
         inconsistent[31..34].copy_from_slice(&[0x2f, 0x12, 0x00]);

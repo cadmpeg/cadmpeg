@@ -656,6 +656,15 @@ one corresponding extent-coordinate delta repeats the positive diameter. Half
 that repeated diameter is the rolling radius; it is independent of the
 generated cylinder carrier radius.
 
+When all three extent-coordinate deltas equal the diameter, the envelope does
+not select a cylinder axis. Two circular `MdlRefInfo` entities owned by the
+same feature select an axis when their normals are parallel to that candidate
+axis, they occupy its opposite extent-coordinate values, and each joins the
+two envelope corners projected onto its plane. The cylinder origin is the
+radial midpoint on the first cap, the axis points toward the second cap, the
+radius is half the diameter, and the cap separation is the finite length.
+Exactly one candidate axis must satisfy both cap records.
+
 The first-coordinate bounded round form is 50 bytes. It begins with `4c b7`,
 stores the first diameter endpoint at offset 7, `12` at offset 15, the second
 diameter endpoint at offset 16, and five contiguous first-coordinate-lane

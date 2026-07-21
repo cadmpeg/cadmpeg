@@ -17718,6 +17718,41 @@ mod resolved_sketch_tests {
     }
 
     #[test]
+    fn opposite_reference_caps_select_one_round_envelope_axis() {
+        let circle = |entity_id, axis, start, end| crate::reference::ReferenceCircle {
+            entity_id,
+            center: [0.0; 3],
+            center_stored: true,
+            radius: 2.0,
+            axis,
+            start,
+            end,
+            offset: 0,
+        };
+        let envelope = crate::surface::Type24RoundEnvelope {
+            diameter: 2.0,
+            extent_endpoints: [[3.5, 8.0, -6.0], [5.5, 10.0, -4.0]],
+        };
+        let first = circle(367, [0.0, 0.0, 1.0], [3.5, 8.0, -6.0], [5.5, 10.0, -6.0]);
+        let second = circle(368, [0.0, 0.0, -1.0], [5.5, 10.0, -4.0], [3.5, 8.0, -4.0]);
+        let frame =
+            reference_cap_bound_round_frame(envelope, &[&first, &second]).expect("opposite Z caps");
+        assert_eq!(frame.origin, [4.5, 9.0, -6.0]);
+        assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
+        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+        assert_eq!(frame.radius, 1.0);
+        assert_eq!(frame.length, Some(2.0));
+        assert!(reference_cap_bound_round_frame(envelope, &[&first]).is_none());
+
+        let x_first = circle(371, [1.0, 0.0, 0.0], [3.5, 8.0, -6.0], [3.5, 10.0, -4.0]);
+        let x_second = circle(372, [-1.0, 0.0, 0.0], [5.5, 10.0, -4.0], [5.5, 8.0, -6.0]);
+        assert!(
+            reference_cap_bound_round_frame(envelope, &[&first, &second, &x_first, &x_second])
+                .is_none()
+        );
+    }
+
+    #[test]
     fn asymmetric_cap_planes_define_two_sided_extent() {
         assert_eq!(
             extrusion_extent_and_direction(
@@ -32669,9 +32704,6 @@ fn transfer_positional_cylinders(
 ) -> usize {
     let mut transferred = 0;
     for record in &scan.surface_parameters {
-        let Some(frame) = record.positional_cylinder_frame else {
-            continue;
-        };
         if crate::surface::unique_surface_parameter(&scan.surface_parameters, record.surface_id)
             != Some(record)
         {
@@ -32682,6 +32714,30 @@ fn transfer_positional_cylinders(
         else {
             continue;
         };
+        let reference_cap_frame = || {
+            let envelope = record.type24_scalar_frame_round_envelope(row.type_byte)?;
+            let entity_ids = scan
+                .feature_entity_tables
+                .iter()
+                .filter(|table| table.feature_id == Some(row.feature_id))
+                .flat_map(|table| table.entry_ids.iter().copied())
+                .collect::<BTreeSet<_>>();
+            let circles = scan
+                .reference_circles
+                .iter()
+                .filter(|circle| entity_ids.contains(&circle.entity_id))
+                .collect::<Vec<_>>();
+            reference_cap_bound_round_frame(envelope, &circles)
+        };
+        let (frame, mechanism) = match record.positional_cylinder_frame {
+            Some(frame) => (frame, "positional_cylinder_frame"),
+            None => {
+                let Some(frame) = reference_cap_frame() else {
+                    continue;
+                };
+                (frame, "round_reference_cap_cylinder_frame")
+            }
+        };
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", record.surface_id));
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
@@ -32691,7 +32747,7 @@ fn transfer_positional_cylinders(
             &id,
             "VisibGeom",
             row.offset as u64,
-            "positional_cylinder_frame",
+            mechanism,
             Exactness::Derived,
         );
         ir.model.surfaces.push(Surface {
@@ -32719,6 +32775,93 @@ fn transfer_positional_cylinders(
         transferred += 1;
     }
     transferred
+}
+
+fn reference_cap_bound_round_frame(
+    envelope: crate::surface::Type24RoundEnvelope,
+    circles: &[&crate::reference::ReferenceCircle],
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    let [first, second] = envelope.extent_endpoints;
+    let scale = first
+        .iter()
+        .chain(&second)
+        .copied()
+        .map(f64::abs)
+        .fold(envelope.diameter.max(1.0), f64::max);
+    let tolerance = 1.0e-9 * scale;
+    let point_matches = |actual: [f64; 3], expected: [f64; 3]| {
+        actual
+            .iter()
+            .zip(expected)
+            .all(|(actual, expected)| (actual - expected).abs() <= tolerance)
+    };
+    let mut candidates = Vec::new();
+    for axis_index in 0..3 {
+        let radial_indices = (0..3)
+            .filter(|index| *index != axis_index)
+            .collect::<Vec<_>>();
+        if radial_indices.iter().any(|index| {
+            ((second[*index] - first[*index]).abs() - envelope.diameter).abs() > tolerance
+        }) || (second[axis_index] - first[axis_index]).abs() <= tolerance
+        {
+            continue;
+        }
+        let cap_pair = |coordinate: f64| {
+            let mut diagonal = second;
+            diagonal[axis_index] = coordinate;
+            circles.iter().any(|circle| {
+                circle.axis.iter().enumerate().all(|(index, component)| {
+                    if index == axis_index {
+                        (component.abs() - 1.0).abs() <= 1.0e-9
+                    } else {
+                        component.abs() <= 1.0e-9
+                    }
+                }) && ((point_matches(circle.start, first) && point_matches(circle.end, diagonal))
+                    || (point_matches(circle.end, first) && point_matches(circle.start, diagonal)))
+            })
+        };
+        if !cap_pair(first[axis_index]) {
+            continue;
+        }
+        let mut opposite_first = first;
+        opposite_first[axis_index] = second[axis_index];
+        let opposite_pair = |circle: &&crate::reference::ReferenceCircle| {
+            circle.axis.iter().enumerate().all(|(index, component)| {
+                if index == axis_index {
+                    (component.abs() - 1.0).abs() <= 1.0e-9
+                } else {
+                    component.abs() <= 1.0e-9
+                }
+            }) && ((point_matches(circle.start, opposite_first)
+                && point_matches(circle.end, second))
+                || (point_matches(circle.end, opposite_first)
+                    && point_matches(circle.start, second)))
+        };
+        if !circles.iter().any(opposite_pair) {
+            continue;
+        }
+        let mut origin = first;
+        for index in &radial_indices {
+            origin[*index] = first[*index].midpoint(second[*index]);
+        }
+        let mut axis = [0.0; 3];
+        axis[axis_index] = (second[axis_index] - first[axis_index]).signum();
+        let mut ref_direction = [0.0; 3];
+        let reference_index = radial_indices[0];
+        ref_direction[reference_index] =
+            (second[reference_index] - first[reference_index]).signum();
+        candidates.push(crate::surface::PositionalCylinderFrame {
+            origin,
+            axis,
+            ref_direction,
+            radius: envelope.diameter / 2.0,
+            length: Some((second[axis_index] - first[axis_index]).abs()),
+        });
+    }
+    let [frame] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*frame)
 }
 
 fn transfer_positional_cones(
