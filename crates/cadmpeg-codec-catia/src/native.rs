@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 66;
+pub const CATIA_NATIVE_VERSION: u32 = 67;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -145,6 +145,45 @@ pub struct CatiaConsolidatedEdgeNode {
     /// Adjacent oriented uses whose references close on this edge node.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uses: Option<CatiaConsolidatedEdgeUses>,
+    /// Analytic circle carrier structurally bound by an adjacent six-record run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analytic_circle: Option<CatiaConsolidatedAnalyticCircleCarrier>,
+}
+
+/// Descriptor and circle records structurally bound to an analytic edge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedAnalyticCircleCarrier {
+    /// Exact class-`0x18` descriptor frame.
+    pub descriptor: CatiaConsolidatedAnalyticCircleDescriptor,
+    /// Circle record byte offset.
+    pub circle_byte_offset: u64,
+    /// Compact persistent circle-record identity.
+    pub record_id: u32,
+    /// Width-coded circle frame token.
+    pub frame_token: u8,
+    /// Two center coordinates in the host-implied carrier plane.
+    pub center_pair: [f64; 2],
+    /// Circle radius in millimetres.
+    pub radius: f64,
+    /// Arc-length parameter interval.
+    pub range: [f64; 2],
+    /// Whether the interval spans one complete circumference.
+    pub full_circle: bool,
+}
+
+/// Exact class-`0x18` descriptor frame attached to an analytic circle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedAnalyticCircleDescriptor {
+    /// Record byte offset.
+    pub byte_offset: u64,
+    /// Header-token width in bytes.
+    pub width: u8,
+    /// Independent framing flag.
+    pub flag: u8,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Complete class-specific payload.
+    pub payload: Vec<u8>,
 }
 
 /// Exact class-specific edge-definition frame owned by one consolidated edge node.
@@ -836,6 +875,16 @@ fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
             ))
         })
         .collect::<HashMap<_, _>>();
+    let analytic_circles = geometry::consolidated_analytic_circle_edge_runs(bytes)
+        .into_iter()
+        .filter(|run| run.identity_chain_consistent)
+        .map(|run| {
+            (
+                run.node.pos,
+                native_consolidated_analytic_circle(&run.descriptor, &run.circle),
+            )
+        })
+        .collect::<HashMap<_, _>>();
     geometry::b2_edge_nodes(bytes)
         .into_iter()
         .enumerate()
@@ -854,9 +903,32 @@ fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
                 tail: node.tail,
                 definition: use_runs.get(&node.pos).and_then(|(_, value)| value.clone()),
                 uses: use_runs.get(&node.pos).map(|(value, _)| value.clone()),
+                analytic_circle: analytic_circles.get(&node.pos).cloned(),
             })
         })
         .collect()
+}
+
+fn native_consolidated_analytic_circle(
+    descriptor: &geometry::ConsolidatedAnalyticCircleDescriptor,
+    circle: &geometry::B2Circle,
+) -> CatiaConsolidatedAnalyticCircleCarrier {
+    CatiaConsolidatedAnalyticCircleCarrier {
+        descriptor: CatiaConsolidatedAnalyticCircleDescriptor {
+            byte_offset: descriptor.pos as u64,
+            width: descriptor.width,
+            flag: descriptor.flag,
+            header_token: descriptor.header_token,
+            payload: descriptor.payload.clone(),
+        },
+        circle_byte_offset: circle.pos as u64,
+        record_id: circle.record_id,
+        frame_token: circle.frame_token,
+        center_pair: circle.center_pair,
+        radius: circle.radius,
+        range: circle.range,
+        full_circle: circle.full_circle,
+    }
 }
 
 fn native_consolidated_edge_definition(
@@ -1049,12 +1121,40 @@ fn validate_consolidated_edge_runs(
                 && definition.byte_offset < node.byte_offset
                 && definition.data == expected_data
         });
+        let analytic_circle_valid = node.analytic_circle.as_ref().is_none_or(|carrier| {
+            let definition = node.definition.as_ref();
+            node.uses.is_some()
+                && definition.is_some_and(|definition| {
+                    definition.class == 0x23
+                        && matches!(
+                            definition.data,
+                            Some(CatiaConsolidatedEdgeDefinitionData::Scalar {
+                                ref values,
+                                ..
+                            }) if values.len() == 8
+                        )
+                        && carrier.descriptor.byte_offset < carrier.circle_byte_offset
+                        && carrier.circle_byte_offset < definition.byte_offset
+                })
+                && matches!(carrier.descriptor.width, 1..=3)
+                && matches!(carrier.descriptor.flag, 0x03 | 0x13 | 0x83)
+                && 1u32
+                    .checked_shl(u32::from(carrier.descriptor.width) * 8)
+                    .is_some_and(|limit| carrier.descriptor.header_token < limit)
+                && !carrier.descriptor.payload.is_empty()
+                && carrier.center_pair.iter().all(|value| value.is_finite())
+                && carrier.radius.is_finite()
+                && carrier.radius > 0.0
+                && carrier.range.iter().all(|value| value.is_finite())
+                && carrier.range[0] < carrier.range[1]
+        });
         if node.id != format!("catia:consolidated:edge-node#{index}")
             || !matches!(node.width, 1..=3)
             || !matches!(node.flag, 0x03 | 0x13 | 0x83)
             || token_limit.is_some_and(|limit| node.header_token >= limit)
             || !uses_valid
             || !definition_valid
+            || !analytic_circle_valid
             || index > 0 && nodes[index - 1].byte_offset >= node.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(

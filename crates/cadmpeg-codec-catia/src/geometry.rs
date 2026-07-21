@@ -1586,6 +1586,39 @@ pub struct ConsolidatedTopologyEdgeRun {
     pub identity_chain_consistent: bool,
 }
 
+/// Complete analytic-circle edge run serialized as a class-`0x18` descriptor,
+/// circle carrier, scalar definition, two oriented uses, and one edge node.
+#[derive(Debug, Clone)]
+pub struct ConsolidatedAnalyticCircleEdgeRun {
+    /// Class-`0x18` descriptor immediately preceding the circle carrier.
+    pub descriptor: ConsolidatedAnalyticCircleDescriptor,
+    /// Arc-length circle carrier.
+    pub circle: B2Circle,
+    /// Eight-scalar class-`0x23` edge definition.
+    pub definition: ConsolidatedEdgeDefinition,
+    /// The two serialized edge uses, in side order.
+    pub uses: [B2UseMetadata; 2],
+    /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
+    pub node: B2EdgeNode,
+    /// Whether the use references and endpoint selectors close one allocation chain.
+    pub identity_chain_consistent: bool,
+}
+
+/// Exact class-`0x18` frame attached to an analytic circle carrier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConsolidatedAnalyticCircleDescriptor {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Header-token width in bytes.
+    pub width: u8,
+    /// Independent framing flag.
+    pub flag: u8,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Complete class-specific payload.
+    pub payload: Vec<u8>,
+}
+
 /// Two adjacent oriented uses and their terminal native edge node.
 #[derive(Debug, Clone)]
 pub struct ConsolidatedEdgeUseRun {
@@ -1833,6 +1866,65 @@ pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyE
             } else {
                 None
             }
+        })
+        .collect()
+}
+
+/// Decode adjacent `18,19,23,06,06,5e` analytic-circle edge runs. The
+/// class-`0x23` definition must close under the eight-scalar grammar.
+#[must_use]
+pub fn consolidated_analytic_circle_edge_runs(
+    data: &[u8],
+) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
+    let circles = b2_circles(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    let use_runs = consolidated_edge_use_runs(data)
+        .into_iter()
+        .map(|value| (value.uses[0].pos, value))
+        .collect::<BTreeMap<_, _>>();
+    consolidated_records(data)
+        .windows(6)
+        .filter_map(|window| {
+            let [parameter, circle, definition, use0, use1, node] = window else {
+                return None;
+            };
+            if parameter.family != ConsolidatedFamily::B
+                || parameter.class != 0x18
+                || circle.family != ConsolidatedFamily::B
+                || circle.class != 0x19
+                || definition.family != ConsolidatedFamily::B
+                || definition.class != 0x23
+                || use0.family != ConsolidatedFamily::B
+                || use0.class != 0x06
+                || use1.family != ConsolidatedFamily::B
+                || use1.class != 0x06
+                || node.family != ConsolidatedFamily::B
+                || node.class != 0x5e
+            {
+                return None;
+            }
+            let use_run = use_runs.get(&use0.range.start)?;
+            let definition = use_run.definition.clone()?;
+            match definition.data.as_ref()? {
+                ConsolidatedEdgeDefinitionData::Scalar { values, .. } if values.len() == 8 => {}
+                _ => return None,
+            }
+            Some(ConsolidatedAnalyticCircleEdgeRun {
+                descriptor: ConsolidatedAnalyticCircleDescriptor {
+                    pos: parameter.range.start,
+                    width: parameter.width,
+                    flag: parameter.flag,
+                    header_token: parameter.header_token,
+                    payload: data[parameter.payload.clone()].to_vec(),
+                },
+                circle: circles.get(&circle.range.start)?.clone(),
+                definition,
+                uses: use_run.uses.clone(),
+                node: use_run.node,
+                identity_chain_consistent: use_run.identity_chain_consistent,
+            })
         })
         .collect()
 }

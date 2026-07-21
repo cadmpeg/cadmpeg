@@ -4974,6 +4974,56 @@ fn consolidated_edge_definition_decodes_general_scalar_layout() {
 }
 
 #[test]
+fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
+    fn record(class: u8, token: u8, payload: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0xb2, 0x03, class, payload.len() as u8, token];
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+
+    let mut parameter = vec![0x05, 0x00];
+    parameter.extend_from_slice(&12.0_f64.to_le_bytes());
+    parameter.extend_from_slice(&34.0_f64.to_le_bytes());
+    let mut circle = vec![0x05];
+    for value in [12.0_f64, 34.0, 5.0, 0.0, 10.0] {
+        circle.extend_from_slice(&value.to_le_bytes());
+    }
+    circle.extend_from_slice(&[0; 9]);
+    let mut definition = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
+    for value in [0.0_f64, 10.0, 1e-6, 4.0, 9.0, 1.0, -2.0, 1e-6] {
+        definition.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut bytes = record(0x18, 0x15, &parameter);
+    bytes.extend_from_slice(&record(0x19, 0x05, &circle));
+    bytes.extend_from_slice(&record(0x23, 0x05, &definition));
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+
+    let runs = crate::geometry::consolidated_analytic_circle_edge_runs(&bytes);
+    let [run] = runs.as_slice() else {
+        panic!("one analytic-circle edge run");
+    };
+    assert_eq!(run.circle.center_pair, [12.0, 34.0]);
+    assert_eq!(run.circle.radius, 5.0);
+    assert_eq!(run.descriptor.header_token, 0x15);
+    assert_eq!(run.definition.pos, parameter.len() + circle.len() + 10);
+    assert!(run.identity_chain_consistent);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let carrier = native.consolidated_edge_nodes[0]
+        .analytic_circle
+        .as_ref()
+        .expect("native analytic circle");
+    assert_eq!(carrier.center_pair, [12.0, 34.0]);
+    assert_eq!(carrier.range, [0.0, 10.0]);
+
+    let circle_end = parameter.len() + circle.len() + 10;
+    let mut broken = bytes[..circle_end].to_vec();
+    broken.extend_from_slice(&record(0x05, 0x05, &[0x00]));
+    broken.extend_from_slice(&bytes[circle_end..]);
+    assert!(crate::geometry::consolidated_analytic_circle_edge_runs(&broken).is_empty());
+}
+
+#[test]
 fn a5_topology_edge_run_preserves_uses_and_native_endpoint_identities() {
     use crate::geometry::B2UseSense;
 
