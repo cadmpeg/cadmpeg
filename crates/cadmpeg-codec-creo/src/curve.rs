@@ -623,18 +623,23 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
     })
 }
 
-trait ArithmeticValue: Copy {
+trait ExpressionValue: Copy {
     fn number(value: f64) -> Self;
     fn add(self, right: Self) -> Option<Self>;
     fn subtract(self, right: Self) -> Option<Self>;
     fn multiply(self, right: Self) -> Option<Self>;
     fn divide(self, right: Self) -> Option<Self>;
+    fn power(self, right: Self) -> Option<Self>;
+    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self>;
+    fn logical_and(self, right: Self) -> Option<Self>;
+    fn logical_or(self, right: Self) -> Option<Self>;
+    fn logical_not(self) -> Option<Self>;
     fn function(name: CreoMathFunction, arguments: &[Self]) -> Option<Self>;
     fn negate(self) -> Self;
     fn finite(self) -> bool;
 }
 
-impl ArithmeticValue for f64 {
+impl ExpressionValue for f64 {
     fn number(value: f64) -> Self {
         value
     }
@@ -653,6 +658,26 @@ impl ArithmeticValue for f64 {
 
     fn divide(self, right: Self) -> Option<Self> {
         Some(self / right)
+    }
+
+    fn power(self, right: Self) -> Option<Self> {
+        Some(self.powf(right))
+    }
+
+    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
+        Some(f64::from(operator.evaluate(self, right)))
+    }
+
+    fn logical_and(self, right: Self) -> Option<Self> {
+        Some(f64::from(self != 0.0 && right != 0.0))
+    }
+
+    fn logical_or(self, right: Self) -> Option<Self> {
+        Some(f64::from(self != 0.0 || right != 0.0))
+    }
+
+    fn logical_not(self) -> Option<Self> {
+        Some(f64::from(self == 0.0))
     }
 
     fn function(name: CreoMathFunction, arguments: &[Self]) -> Option<Self> {
@@ -674,7 +699,7 @@ struct AffineValue {
     linear: f64,
 }
 
-impl ArithmeticValue for AffineValue {
+impl ExpressionValue for AffineValue {
     fn number(value: f64) -> Self {
         Self {
             constant: value,
@@ -710,6 +735,38 @@ impl ArithmeticValue for AffineValue {
         })
     }
 
+    fn power(self, right: Self) -> Option<Self> {
+        if right.linear == 0.0 && right.constant == 1.0 {
+            return Some(self);
+        }
+        if right.linear == 0.0 && right.constant == 0.0 {
+            return Some(Self::number(1.0));
+        }
+        (self.linear == 0.0 && right.linear == 0.0)
+            .then(|| self.constant.powf(right.constant))
+            .filter(|value| value.is_finite())
+            .map(Self::number)
+    }
+
+    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
+        (self.linear == 0.0 && right.linear == 0.0)
+            .then(|| Self::number(f64::from(operator.evaluate(self.constant, right.constant))))
+    }
+
+    fn logical_and(self, right: Self) -> Option<Self> {
+        (self.linear == 0.0 && right.linear == 0.0)
+            .then(|| Self::number(f64::from(self.constant != 0.0 && right.constant != 0.0)))
+    }
+
+    fn logical_or(self, right: Self) -> Option<Self> {
+        (self.linear == 0.0 && right.linear == 0.0)
+            .then(|| Self::number(f64::from(self.constant != 0.0 || right.constant != 0.0)))
+    }
+
+    fn logical_not(self) -> Option<Self> {
+        (self.linear == 0.0).then(|| Self::number(f64::from(self.constant == 0.0)))
+    }
+
     fn function(name: CreoMathFunction, arguments: &[Self]) -> Option<Self> {
         let constants = arguments
             .iter()
@@ -730,14 +787,39 @@ impl ArithmeticValue for AffineValue {
     }
 }
 
-struct ArithmeticParser<'a, V> {
+struct ExpressionParser<'a, V> {
     source: &'a [u8],
     cursor: usize,
     values: &'a BTreeMap<String, V>,
     nesting: usize,
 }
 
-impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
+const MAX_EXPRESSION_NESTING: usize = 128;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComparisonOperator {
+    Equal,
+    NotEqual,
+    Greater,
+    GreaterOrEqual,
+    Less,
+    LessOrEqual,
+}
+
+impl ComparisonOperator {
+    fn evaluate(self, left: f64, right: f64) -> bool {
+        match self {
+            Self::Equal => left == right,
+            Self::NotEqual => left != right,
+            Self::Greater => left > right,
+            Self::GreaterOrEqual => left >= right,
+            Self::Less => left < right,
+            Self::LessOrEqual => left <= right,
+        }
+    }
+}
+
+impl<V: ExpressionValue> ExpressionParser<'_, V> {
     fn whitespace(&mut self) {
         while self
             .source
@@ -746,6 +828,46 @@ impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
         {
             self.cursor += 1;
         }
+    }
+
+    fn logical_or(&mut self) -> Option<V> {
+        let mut value = self.logical_and()?;
+        loop {
+            self.whitespace();
+            if self.source.get(self.cursor) != Some(&b'|') {
+                return Some(value);
+            }
+            self.cursor += 1;
+            value = value.logical_or(self.logical_and()?)?;
+        }
+    }
+
+    fn logical_and(&mut self) -> Option<V> {
+        let mut value = self.comparison()?;
+        loop {
+            self.whitespace();
+            if self.source.get(self.cursor) != Some(&b'&') {
+                return Some(value);
+            }
+            self.cursor += 1;
+            value = value.logical_and(self.comparison()?)?;
+        }
+    }
+
+    fn comparison(&mut self) -> Option<V> {
+        let value = self.expression()?;
+        self.whitespace();
+        let (operator, width) = match self.source.get(self.cursor..) {
+            Some([b'=', b'=', ..]) => (ComparisonOperator::Equal, 2),
+            Some([b'!' | b'~', b'=', ..] | [b'<', b'>', ..]) => (ComparisonOperator::NotEqual, 2),
+            Some([b'>', b'=', ..]) => (ComparisonOperator::GreaterOrEqual, 2),
+            Some([b'<', b'=', ..]) => (ComparisonOperator::LessOrEqual, 2),
+            Some([b'>', ..]) => (ComparisonOperator::Greater, 1),
+            Some([b'<', ..]) => (ComparisonOperator::Less, 1),
+            _ => return Some(value),
+        };
+        self.cursor += width;
+        value.compare(self.expression()?, operator)
     }
 
     fn expression(&mut self) -> Option<V> {
@@ -767,38 +889,74 @@ impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
     }
 
     fn term(&mut self) -> Option<V> {
-        let mut value = self.factor()?;
+        let mut value = self.unary()?;
         loop {
             self.whitespace();
             match self.source.get(self.cursor) {
                 Some(b'*') => {
                     self.cursor += 1;
-                    value = value.multiply(self.factor()?)?;
+                    value = value.multiply(self.unary()?)?;
                 }
                 Some(b'/') => {
                     self.cursor += 1;
-                    value = value.divide(self.factor()?)?;
+                    value = value.divide(self.unary()?)?;
                 }
                 _ => return Some(value),
             }
         }
     }
 
-    fn factor(&mut self) -> Option<V> {
+    fn unary(&mut self) -> Option<V> {
         self.whitespace();
-        let mut negate = false;
-        while let Some(sign @ (b'+' | b'-')) = self.source.get(self.cursor) {
-            negate ^= *sign == b'-';
-            self.cursor += 1;
+        let mut operators = Vec::new();
+        loop {
+            match self.source.get(self.cursor) {
+                Some(b'+') => self.cursor += 1,
+                Some(b'-') => {
+                    operators.push(b'-');
+                    self.cursor += 1;
+                }
+                Some(b'!' | b'~') => {
+                    operators.push(b'!');
+                    self.cursor += 1;
+                }
+                _ => break,
+            }
             self.whitespace();
         }
+        let mut value = self.power()?;
+        for operator in operators.into_iter().rev() {
+            value = if operator == b'-' {
+                value.negate()
+            } else {
+                value.logical_not()?
+            };
+        }
+        Some(value)
+    }
+
+    fn power(&mut self) -> Option<V> {
+        let value = self.primary()?;
+        self.whitespace();
+        if self.source.get(self.cursor) != Some(&b'^') {
+            return Some(value);
+        }
+        (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
+        self.cursor += 1;
+        self.nesting += 1;
+        let exponent = self.unary()?;
+        self.nesting -= 1;
+        value.power(exponent)
+    }
+
+    fn primary(&mut self) -> Option<V> {
+        self.whitespace();
         let value = match self.source.get(self.cursor)? {
             b'(' => {
-                const MAX_NESTING: usize = 128;
-                (self.nesting < MAX_NESTING).then_some(())?;
+                (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
                 self.cursor += 1;
                 self.nesting += 1;
-                let value = self.expression()?;
+                let value = self.logical_or()?;
                 self.nesting -= 1;
                 self.whitespace();
                 (self.source.get(self.cursor) == Some(&b')')).then(|| {
@@ -810,7 +968,7 @@ impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
             byte if byte.is_ascii_alphabetic() || *byte == b'_' => self.identifier_or_function(),
             _ => None,
         }?;
-        Some(if negate { value.negate() } else { value })
+        Some(value)
     }
 
     fn number(&mut self) -> Option<V> {
@@ -847,8 +1005,6 @@ impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
     }
 
     fn identifier_or_function(&mut self) -> Option<V> {
-        const MAX_NESTING: usize = 128;
-
         let start = self.cursor;
         self.cursor += 1;
         while self.source.get(self.cursor).is_some_and(|byte| {
@@ -861,7 +1017,7 @@ impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
         if self.source.get(self.cursor) != Some(&b'(') {
             return self.values.get(name).copied();
         }
-        (self.nesting < MAX_NESTING).then_some(())?;
+        (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
         let function = creo_math_function(name)?;
         self.cursor += 1;
         self.nesting += 1;
@@ -869,7 +1025,7 @@ impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
         let mut arguments = Vec::new();
         if self.source.get(self.cursor) != Some(&b')') {
             loop {
-                arguments.push(self.expression()?);
+                arguments.push(self.logical_or()?);
                 self.whitespace();
                 if self.source.get(self.cursor) != Some(&b',') {
                     break;
@@ -1008,13 +1164,13 @@ fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Opt
 }
 
 fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Option<f64> {
-    let mut parser = ArithmeticParser {
+    let mut parser = ExpressionParser {
         source: expression.as_bytes(),
         cursor: 0,
         values,
         nesting: 0,
     };
-    let value = parser.expression()?;
+    let value = parser.logical_or()?;
     parser.whitespace();
     (parser.cursor == parser.source.len() && value.finite()).then_some(value)
 }
@@ -1023,13 +1179,13 @@ fn evaluate_affine_expression(
     expression: &str,
     values: &BTreeMap<String, AffineValue>,
 ) -> Option<AffineValue> {
-    let mut parser = ArithmeticParser {
+    let mut parser = ExpressionParser {
         source: expression.as_bytes(),
         cursor: 0,
         values,
         nesting: 0,
     };
-    let value = parser.expression()?;
+    let value = parser.logical_or()?;
     parser.whitespace();
     (parser.cursor == parser.source.len() && value.finite()).then_some(value)
 }
@@ -2203,6 +2359,16 @@ mod tests {
             ("abs(-2)", 2.0),
             ("ceil(2.1)+floor(2.9)", 5.0),
             ("dbl_in_tol(2,2.1,0.2)", 1.0),
+            ("2^3^2", 512.0),
+            ("-2^2", -4.0),
+            ("(-2)^2", 4.0),
+            ("2^-2", 0.25),
+            ("2+3*4==14", 1.0),
+            ("2>=2 & 3<>4", 1.0),
+            ("2<1 | 3~=4", 1.0),
+            ("!(2<=3)", 0.0),
+            ("~-1", 0.0),
+            ("if(2^3==8,5,6)", 5.0),
         ];
         for (expression, expected) in cases {
             let actual = evaluate_expression(expression, &values).expect(expression);
@@ -2212,6 +2378,11 @@ mod tests {
         assert_eq!(evaluate_expression("sinh(86)", &values), None);
         assert_eq!(evaluate_expression("bound(1,2,1)", &values), None);
         assert_eq!(evaluate_expression("sin()", &values), None);
+        assert_eq!(evaluate_expression("1<2<3", &values), None);
+        let excessive_power_depth = format!("{}2", "2^".repeat(129));
+        assert_eq!(evaluate_expression(&excessive_power_depth, &values), None);
+        let long_unary_chain = format!("{}1", "-".repeat(1024));
+        assert_eq!(evaluate_expression(&long_unary_chain, &values), Some(1.0));
     }
 
     #[test]
@@ -2292,6 +2463,20 @@ mod tests {
                 z_start: 0.0,
                 revolutions: 1.0,
                 start_angle: std::f64::consts::FRAC_PI_4,
+                clockwise: false,
+            })
+        );
+
+        let identity_powers = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x08\
+            \xe0\x0aexpression\0\xf8\x03r=5^1\0theta=t^1*360\0z=8*t^1\0";
+        assert_eq!(
+            expression_helix(&expression_records(identity_powers)[0]),
+            Some(CurveExpressionHelix {
+                radius: 5.0,
+                height: 8.0,
+                z_start: 0.0,
+                revolutions: 1.0,
+                start_angle: 0.0,
                 clockwise: false,
             })
         );

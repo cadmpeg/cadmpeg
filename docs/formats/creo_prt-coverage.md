@@ -38,7 +38,7 @@ fixtures, claims above L1 remain unproven.
 - Holes and rounds transfer typed operation definitions where their affected
   geometry, edge identities, radii, and extents resolve uniquely.
 - Curve-equation assignments retain source order and dependency identity;
-  closed arithmetic and standard mathematical-function values transfer, and
+  closed scalar operator and standard mathematical-function values transfer, and
   affine cylindrical-coordinate programs transfer as helices.
 - Feature rows, parent/input tables, affected geometry and edge identifiers,
   recipe effects, saved sections, and operation states retain stable native

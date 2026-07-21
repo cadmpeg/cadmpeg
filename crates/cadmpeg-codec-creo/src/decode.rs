@@ -36495,7 +36495,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         message: format!(
             "Named feature operations and their decoded dependency/input tables transfer as typed \
              or native design records. Curve-equation assignments transfer with their source, \
-             dependencies, and closed arithmetic and standard mathematical-function values. \
+             dependencies, and closed scalar operator and standard mathematical-function values. \
              Full neutral operation semantics\
              {configuration_gap}, remaining expression families, materials, and display data \
              remain untransferred."
