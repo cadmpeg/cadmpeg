@@ -939,6 +939,57 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
 }
 
 #[test]
+fn decode_retains_type26_coordinate_envelope_in_native_ir() {
+    let body = [
+        0x18, 0x18, 0x01, 0x11, 0x2e, 0xb0, 0x12, 0x47, 0x05, 0x33, 0x2d, 0x2d, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0x29, 0x47, 0x05, 0x33, 0x2e, 0x05, 0x33, 0x2d, 0x31, 0xa6, 0x66, 0x66, 0x66,
+        0x66, 0x66, 0x18,
+    ];
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&body);
+    payload.push(0xe3);
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode type-26 envelope");
+    let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    let envelope = &record.fields["type26_five_coordinate_envelope"];
+    assert_eq!(envelope["offset"], 7);
+    let values = envelope["values"].as_array().expect("coordinate values");
+    for (actual, expected) in values.iter().zip([-2.65, -15.0, -2.65, 2.65, -17.65]) {
+        assert!((actual.as_f64().expect("finite coordinate") - expected).abs() < 1.0e-12);
+    }
+    assert!(record.fields["type26_split_coordinate_envelope"].is_null());
+}
+
+#[test]
+fn decode_retains_split_type26_coordinate_envelope_in_native_ir() {
+    let body = [
+        0x28, 0x8d, 0x07, 0x1b, 0xd2, 0x65, 0x6f, 0x6c, 0x18, 0x94, 0x3f, 0x02, 0x70, 0x16, 0xbe,
+        0xfc, 0x00, 0x12, 0x20, 0x47, 0x13, 0xcc, 0x46, 0x31, 0x3d, 0x70, 0xa3, 0xd7, 0x0a, 0x3e,
+        0x3a, 0xb1, 0x47, 0xba, 0x2e, 0x13, 0xcc, 0x46, 0x30, 0xbd, 0x70, 0xa3, 0xd7, 0x0a, 0x3e,
+        0x2e, 0x13, 0xcc,
+    ];
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&body);
+    payload.push(0xe3);
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode split type-26 envelope");
+    let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    let envelope = &record.fields["type26_split_coordinate_envelope"];
+    assert_eq!(envelope["offset"], 19);
+    let values = envelope["values"].as_array().expect("coordinate values");
+    for (actual, expected) in values.iter().zip([-4.95, 17.24, 16.74, 4.95]) {
+        assert!((actual.as_f64().expect("finite coordinate") - expected).abs() < 1.0e-12);
+    }
+    assert!(record.fields["type26_five_coordinate_envelope"].is_null());
+}
+
+#[test]
 fn decode_preserves_unframed_surface_parameter_spans() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);

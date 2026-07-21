@@ -1650,6 +1650,8 @@ struct CreoSurfaceParameterRecord {
     split_cylinder_outline_bounds: Option<[[f64; 2]; 2]>,
     positional_cone_frame: Option<CreoPositionalConeFrame>,
     torus_outline_frame: Option<CreoTorusOutlineFrame>,
+    type26_five_coordinate_envelope: Option<CreoType26FiveCoordinateEnvelope>,
+    type26_split_coordinate_envelope: Option<CreoType26SplitCoordinateEnvelope>,
     torus_radius_overrides: Option<CreoTorusRadiusOverrides>,
     cone_half_angle_override: Option<CreoConeHalfAngleOverride>,
     extrusion_direction: Option<[f64; 3]>,
@@ -1685,6 +1687,18 @@ struct CreoPositionalConeFrame {
 struct CreoTorusOutlineFrame {
     values: [f64; 6],
     selector: u32,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoType26FiveCoordinateEnvelope {
+    values: [f64; 5],
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoType26SplitCoordinateEnvelope {
+    values: [f64; 4],
     offset: usize,
 }
 
@@ -2301,6 +2315,18 @@ fn surface_parameter_records(
                         offset: frame.offset,
                     }
                 }),
+                type26_five_coordinate_envelope: record
+                    .type26_five_coordinate_envelope(row.type_byte)
+                    .map(|envelope| CreoType26FiveCoordinateEnvelope {
+                        values: envelope.values,
+                        offset: envelope.offset,
+                    }),
+                type26_split_coordinate_envelope: record
+                    .type26_split_coordinate_envelope(row.type_byte)
+                    .map(|envelope| CreoType26SplitCoordinateEnvelope {
+                        values: envelope.values,
+                        offset: envelope.offset,
+                    }),
                 torus_radius_overrides: record.torus_radius_overrides(row.type_byte).map(
                     |overrides| CreoTorusRadiusOverrides {
                         radius1: overrides.radius1,
