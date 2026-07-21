@@ -3515,6 +3515,7 @@ mod marker_tests {
         payload[curve_offset + 64..curve_offset + 66].copy_from_slice(&1u16.to_le_bytes());
         let mut centered_entities = entities.clone();
         centered_entities[0].coordinates_m = Some([0.0, 0.0]);
+        centered_entities[0].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
         centered_entities[1].coordinates_m = Some([1.0, 0.0]);
         centered_entities[2].coordinates_m = Some([0.0, 1.0]);
         let centered_markers = centered_entities.iter().collect::<Vec<_>>();
@@ -20720,17 +20721,6 @@ fn coordinate_roster_arc_center(
     {
         return None;
     }
-    let roster_endpoints = coordinate_roster_curve_endpoint_markers(payload, curve, markers);
-    let [roster_first, roster_second] = roster_endpoints.as_slice() else {
-        return None;
-    };
-    let same_pair = (resolved_endpoints[0].id == roster_first.id
-        && resolved_endpoints[1].id == roster_second.id)
-        || (resolved_endpoints[0].id == roster_second.id
-            && resolved_endpoints[1].id == roster_first.id);
-    if !same_pair {
-        return None;
-    }
     let first_index = usize::from(u16::from_le_bytes(
         payload.get(offset + 64..offset + 66)?.try_into().ok()?,
     ));
@@ -20738,28 +20728,56 @@ fn coordinate_roster_arc_center(
         payload.get(offset + 66..offset + 68)?.try_into().ok()?,
     ));
     let center_index = first_index.min(second_index).checked_sub(1)?;
-    let mut coordinates = markers
-        .iter()
-        .copied()
-        .filter(|marker| {
-            marker.feature_ref == curve.feature_ref
-                && marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind,
-                    SketchInputKind::Point
-                        | SketchInputKind::ConstrainedPoint
-                        | SketchInputKind::LineOrCircle
-                        | SketchInputKind::Arc
-                )
-        })
-        .collect::<Vec<_>>();
-    coordinates.sort_unstable_by_key(|marker| marker.offset);
-    let center = coordinates.get(center_index)?.coordinates_m?;
     let first = resolved_endpoints[0].coordinates_m?;
     let second = resolved_endpoints[1].coordinates_m?;
-    let first_radius = (first[0] - center[0]).hypot(first[1] - center[1]);
-    let second_radius = (second[0] - center[0]).hypot(second[1] - center[1]);
-    (first_radius > 0.0 && same_dimension_length(first_radius, second_radius)).then_some(center)
+    let roster = |include_relations: bool| {
+        let mut coordinates = markers
+            .iter()
+            .copied()
+            .filter(|marker| {
+                marker.feature_ref == curve.feature_ref
+                    && marker.coordinates_m.is_some()
+                    && (include_relations
+                        || matches!(
+                            marker.kind,
+                            SketchInputKind::Point
+                                | SketchInputKind::ConstrainedPoint
+                                | SketchInputKind::LineOrCircle
+                                | SketchInputKind::Arc
+                        ))
+            })
+            .collect::<Vec<_>>();
+        coordinates.sort_unstable_by_key(|marker| marker.offset);
+        let roster_endpoints = [
+            *coordinates.get(first_index)?,
+            *coordinates.get(second_index)?,
+        ];
+        let same_pair = (resolved_endpoints[0].id == roster_endpoints[0].id
+            && resolved_endpoints[1].id == roster_endpoints[1].id)
+            || (resolved_endpoints[0].id == roster_endpoints[1].id
+                && resolved_endpoints[1].id == roster_endpoints[0].id);
+        if !same_pair {
+            return None;
+        }
+        let center = coordinates.get(center_index)?.coordinates_m?;
+        let first_radius = (first[0] - center[0]).hypot(first[1] - center[1]);
+        let second_radius = (second[0] - center[0]).hypot(second[1] - center[1]);
+        (first_radius > 0.0 && same_dimension_length(first_radius, second_radius)).then_some(center)
+    };
+    let mut centers = [roster(false), roster(true)]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    centers.sort_by(|left, right| {
+        left[0]
+            .total_cmp(&right[0])
+            .then_with(|| left[1].total_cmp(&right[1]))
+    });
+    centers.dedup();
+    let [center] = centers.as_slice() else {
+        return None;
+    };
+    Some(*center)
 }
 
 fn coordinate_circle_radius(
