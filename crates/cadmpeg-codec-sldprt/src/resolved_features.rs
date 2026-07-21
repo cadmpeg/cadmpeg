@@ -3534,7 +3534,7 @@ mod marker_tests {
         payload[curve_offset + 84..curve_offset + 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         assert_eq!(
-            compact_indexed_curve_endpoint_indices(&payload, curve_offset),
+            super::extended_compact_indexed_curve_endpoint_indices(&payload, curve_offset),
             Some([2, 3])
         );
         assert_eq!(
@@ -20217,6 +20217,7 @@ fn roster_curve_endpoint_markers<'a>(
     }
     if let Some(indices) = wide_indexed_curve_endpoint_indices(payload, offset)
         .or_else(|| compact_indexed_curve_endpoint_indices(payload, offset))
+        .or_else(|| extended_compact_indexed_curve_endpoint_indices(payload, offset))
         .or_else(|| compact_legacy_curve_endpoint_indices(payload, offset))
         .or_else(|| alternate_current_indexed_curve_endpoint_indices(payload, offset))
         .or_else(|| legacy_state_five_curve_endpoint_indices(payload, offset))
@@ -20229,10 +20230,7 @@ fn roster_curve_endpoint_markers<'a>(
         .or_else(|| current_vertical_axis_endpoint_indices(payload, offset))
         .or_else(|| extended_wide_horizontal_relation_endpoint_indices(payload, offset))
     {
-        if coordinate_roster_curve_layout(payload, offset) {
-            return coordinate_roster_curve_endpoint_markers(payload, curve, markers);
-        }
-        return indices
+        let indexed = indices
             .into_iter()
             .filter_map(|index| {
                 let mut candidates = markers.iter().copied().filter(|marker| {
@@ -20248,7 +20246,16 @@ fn roster_curve_endpoint_markers<'a>(
                 let candidate = candidates.next()?;
                 candidates.next().is_none().then_some(candidate)
             })
-            .collect();
+            .collect::<Vec<_>>();
+        if coordinate_roster_curve_layout(payload, offset) {
+            let roster = coordinate_roster_curve_endpoint_markers(payload, curve, markers);
+            let legacy = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
+                == Some(LEGACY_SKETCH_MARKER);
+            if legacy || indexed.len() != 2 {
+                return if roster.len() == 2 { roster } else { indexed };
+            }
+        }
+        return indexed;
     }
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -20405,7 +20412,7 @@ fn coordinate_roster_curve_layout(payload: &[u8], offset: usize) -> bool {
 fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<usize> {
     let prefix = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?;
     if prefix == LEGACY_EXTENDED_SKETCH_MARKER {
-        return if compact_indexed_curve_endpoint_indices(payload, offset).is_some()
+        return if extended_compact_indexed_curve_endpoint_indices(payload, offset).is_some()
             || compact_curve_endpoint_indices(payload, offset).is_some()
         {
             Some(56)
@@ -20665,14 +20672,37 @@ fn one_based_u16_endpoint_pair(payload: &[u8], offset: usize, relative: usize) -
 }
 
 fn compact_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    compact_indexed_curve_endpoint_indices_for_prefixes(
+        payload,
+        offset,
+        &[SKETCH_MARKER, LEGACY_SKETCH_MARKER],
+    )
+}
+
+fn extended_compact_indexed_curve_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
+    if !sketch_marker_prefix_at(payload, offset.checked_add(84)?) {
+        return None;
+    }
+    compact_indexed_curve_endpoint_indices_for_prefixes(
+        payload,
+        offset,
+        &[LEGACY_EXTENDED_SKETCH_MARKER],
+    )
+}
+
+fn compact_indexed_curve_endpoint_indices_for_prefixes(
+    payload: &[u8],
+    offset: usize,
+    prefixes: &[&[u8]],
+) -> Option<[u32; 2]> {
     let code = u32::from_le_bytes(payload.get(offset + 17..offset + 21)?.try_into().ok()?);
-    if !matches!(
-        payload.get(offset..offset + SKETCH_MARKER.len()),
-        Some(prefix)
-            if prefix == SKETCH_MARKER
-                || prefix == LEGACY_SKETCH_MARKER
-                || prefix == LEGACY_EXTENDED_SKETCH_MARKER
-    ) || !matches!(code, 0..=2)
+    if !payload
+        .get(offset..offset + SKETCH_MARKER.len())
+        .is_some_and(|prefix| prefixes.contains(&prefix))
+        || !matches!(code, 0..=2)
         || !(marker_is_geometry_locus(payload, offset)
             || payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]))
         || marker_profile_curve_role(payload, offset) != Some(1)
