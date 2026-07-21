@@ -1994,6 +1994,42 @@ struct CurveTransferCoverage {
     by_type: BTreeMap<u8, (usize, usize)>,
 }
 
+#[derive(Default)]
+struct DesignConstraintTransferCoverage {
+    transferred: usize,
+    native: usize,
+}
+
+impl DesignConstraintTransferCoverage {
+    fn typed(&self) -> usize {
+        self.transferred.saturating_sub(self.native)
+    }
+}
+
+fn design_constraint_transfer_coverage(
+    constraints: &[SketchConstraint],
+    id_marker: &str,
+    native_kind_prefix: &str,
+) -> DesignConstraintTransferCoverage {
+    constraints
+        .iter()
+        .filter(|constraint| constraint.id.0.contains(id_marker))
+        .fold(
+            DesignConstraintTransferCoverage::default(),
+            |mut coverage, constraint| {
+                coverage.transferred += 1;
+                if matches!(
+                    &constraint.definition,
+                    SketchConstraintDefinition::Native { native_kind, .. }
+                        if native_kind.starts_with(native_kind_prefix)
+                ) {
+                    coverage.native += 1;
+                }
+                coverage
+            },
+        )
+}
+
 fn curve_transfer_coverage(
     rows: &[crate::curve::CurveTopologyRow],
     curves: &[Curve],
@@ -17008,6 +17044,55 @@ mod resolved_sketch_tests {
         assert_eq!(coverage.ambiguous_rows, 2);
         assert_eq!(coverage.by_type[&0x05], (1, 1));
         assert_eq!(coverage.by_type[&0x13], (1, 0));
+    }
+
+    #[test]
+    fn design_constraint_coverage_separates_typed_and_native_constraints() {
+        let sketch = SketchId("sketch".to_string());
+        let constraint = |id: &str, definition| SketchConstraint {
+            id: SketchConstraintId(id.to_string()),
+            sketch: sketch.clone(),
+            definition,
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        };
+        let entity = SketchEntityId("entity".to_string());
+        let constraints = vec![
+            constraint(
+                "sketch:relation:1",
+                SketchConstraintDefinition::Fixed {
+                    entity: entity.clone(),
+                },
+            ),
+            constraint(
+                "sketch:relation:2",
+                SketchConstraintDefinition::Native {
+                    native_kind: "creo:relation:9".to_string(),
+                    entities: vec![entity.clone()],
+                    parameter: None,
+                    operands: Vec::new(),
+                },
+            ),
+            constraint(
+                "sketch:skamp:3",
+                SketchConstraintDefinition::Fixed { entity },
+            ),
+        ];
+
+        let coverage =
+            design_constraint_transfer_coverage(&constraints, ":relation:", "creo:relation:");
+
+        assert_eq!(coverage.transferred, 2);
+        assert_eq!(coverage.native, 1);
+        assert_eq!(coverage.typed(), 1);
     }
 
     #[test]
@@ -34207,28 +34292,19 @@ fn build_ir(
         .filter_map(|definition| definition.relations.as_ref())
         .map(|relations| relations.skamps.len())
         .sum::<usize>();
-    let transferred_feature_skamp_constraint_count = ir
-        .model
-        .sketch_constraints
+    let skamp_constraint_coverage =
+        design_constraint_transfer_coverage(&ir.model.sketch_constraints, ":skamp:", "creo:skamp:");
+    let decoded_feature_relation_count = scan
+        .feature_definitions
         .iter()
-        .filter(|constraint| constraint.id.0.contains(":skamp:"))
-        .count();
-    let transferred_native_feature_skamp_constraint_count = ir
-        .model
-        .sketch_constraints
-        .iter()
-        .filter(|constraint| {
-            constraint.id.0.contains(":skamp:")
-                && matches!(
-                    &constraint.definition,
-                    SketchConstraintDefinition::Native { native_kind, .. }
-                        if native_kind.starts_with("creo:skamp:")
-                )
-        })
-        .count();
-    let transferred_typed_feature_skamp_constraint_count =
-        transferred_feature_skamp_constraint_count
-            .saturating_sub(transferred_native_feature_skamp_constraint_count);
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| relations.rows.len())
+        .sum::<usize>();
+    let relation_constraint_coverage = design_constraint_transfer_coverage(
+        &ir.model.sketch_constraints,
+        ":relation:",
+        "creo:relation:",
+    );
     let surface_coverage = surface_transfer_coverage(&scan.surface_rows, &ir.model.surfaces);
     let curve_coverage = curve_transfer_coverage(&scan.curve_topology_rows, &ir.model.curves);
     if let Some(source) = &mut ir.source {
@@ -34392,15 +34468,31 @@ fn build_ir(
         );
         source.attributes.insert(
             "transferred_feature_skamp_constraint_count".to_string(),
-            transferred_feature_skamp_constraint_count.to_string(),
+            skamp_constraint_coverage.transferred.to_string(),
         );
         source.attributes.insert(
             "transferred_native_feature_skamp_constraint_count".to_string(),
-            transferred_native_feature_skamp_constraint_count.to_string(),
+            skamp_constraint_coverage.native.to_string(),
         );
         source.attributes.insert(
             "transferred_typed_feature_skamp_constraint_count".to_string(),
-            transferred_typed_feature_skamp_constraint_count.to_string(),
+            skamp_constraint_coverage.typed().to_string(),
+        );
+        source.attributes.insert(
+            "decoded_feature_relation_count".to_string(),
+            decoded_feature_relation_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.transferred.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_native_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.native.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_typed_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.typed().to_string(),
         );
     }
     let operation_feature_ids = scan

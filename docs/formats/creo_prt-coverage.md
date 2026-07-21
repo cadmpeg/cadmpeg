@@ -54,7 +54,9 @@ fixtures, claims above L1 remain unproven.
    surface- and curve-row counts. Surface counts are partitioned by family;
    curve counts are partitioned by raw type byte because the curve namespace
    does not independently define geometric families. Duplicate native
-   identifiers are counted separately as ambiguous rows.
+   identifiers are counted separately as ambiguous rows. Feature solver
+   metadata separately counts decoded, transferred, typed, and native
+   `relat_ptr` and `skamp_ptr` constraints.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, dimensions,
    constraints, expressions, and configuration state.
