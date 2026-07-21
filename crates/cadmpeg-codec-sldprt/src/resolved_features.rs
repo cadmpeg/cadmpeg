@@ -3553,6 +3553,17 @@ mod marker_tests {
             legacy_state_five_curve_endpoint_indices(&payload, 0),
             Some([7, 10])
         );
+
+        let mut compact = vec![0; 84 + LEGACY_SKETCH_MARKER.len()];
+        compact[..56].copy_from_slice(&payload[..56]);
+        compact[56..58].copy_from_slice(&6u16.to_le_bytes());
+        compact[58..60].copy_from_slice(&9u16.to_le_bytes());
+        compact[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        compact[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert_eq!(
+            legacy_state_five_curve_endpoint_indices(&compact, 0),
+            Some([7, 10])
+        );
     }
 
     #[test]
@@ -20321,8 +20332,8 @@ fn legacy_coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Op
     if legacy_coordinate_roster_selected_axis_endpoint_indices(payload, offset).is_some() {
         return Some(64);
     }
-    if legacy_state_five_curve_endpoint_indices(payload, offset).is_some() {
-        return Some(64);
+    if let Some(relative) = legacy_state_five_curve_endpoint_offset(payload, offset) {
+        return Some(relative);
     }
     if !matches!(
         payload.get(offset + 23..offset + 27),
@@ -20340,6 +20351,11 @@ fn legacy_coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Op
 }
 
 fn legacy_state_five_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    let relative = legacy_state_five_curve_endpoint_offset(payload, offset)?;
+    one_based_u16_endpoint_pair(payload, offset, relative)
+}
+
+fn legacy_state_five_curve_endpoint_offset(payload: &[u8], offset: usize) -> Option<usize> {
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -20352,14 +20368,24 @@ fn legacy_state_five_curve_endpoint_indices(payload: &[u8], offset: usize) -> Op
         || payload.get(offset + 31..offset + 39)
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00])
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || payload.get(offset + 60..offset + 64) != Some(&0u32.to_le_bytes())
-        || payload.get(offset + 68..offset + 72) != Some(&0u32.to_le_bytes())
-        || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
-        || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
     {
         return None;
     }
-    one_based_u16_endpoint_pair(payload, offset, 64)
+    if payload.get(offset + 60..offset + 64) == Some(&0u32.to_le_bytes())
+        && payload.get(offset + 68..offset + 72) == Some(&0u32.to_le_bytes())
+        && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
+        && sketch_marker_prefix_at(payload, offset.checked_add(92)?)
+    {
+        Some(64)
+    } else if payload.get(offset + 60..offset + 64) == Some(&0u32.to_le_bytes())
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 72..offset + 80) == Some(&[0; 8])
+        && sketch_marker_prefix_at(payload, offset.checked_add(84)?)
+    {
+        Some(56)
+    } else {
+        None
+    }
 }
 
 fn legacy_coordinate_roster_undetailed_line(payload: &[u8], offset: usize) -> bool {
