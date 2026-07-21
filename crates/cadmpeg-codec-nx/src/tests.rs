@@ -3846,6 +3846,46 @@ fn nx_body_operation_completeness_requires_disjoint_roles() {
 }
 
 #[test]
+fn nx_configuration_completeness_requires_one_active_full_body_set() {
+    use cadmpeg_ir::features::{ConfigurationBodies, ConfigurationId, DesignConfiguration};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let bodies = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId("test:configuration#0".into()),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: "Model".into(),
+        material: None,
+        properties: Default::default(),
+        bodies: ConfigurationBodies::Resolved(Vec::new()),
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1 NX design configuration"));
+
+    ir.model.configurations[0].bodies = ConfigurationBodies::Resolved(bodies);
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    ir.model.configurations[0].active = false;
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1 NX design configuration"));
+}
+
+#[test]
 fn nx_body_producing_feature_families_require_history_outputs() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length};
     use std::collections::BTreeMap;

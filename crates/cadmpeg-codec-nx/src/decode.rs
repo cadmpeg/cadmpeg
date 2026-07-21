@@ -7143,19 +7143,39 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         });
     }
 
-    let unresolved_configuration_count = ir
+    let active_configuration_count = ir
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.bodies.is_unresolved())
+        .filter(|configuration| configuration.active)
         .count();
-    if unresolved_configuration_count != 0 {
+    let current_bodies = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| &body.id)
+        .collect::<BTreeSet<_>>();
+    let incomplete_configuration_count = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| {
+            configuration.bodies.is_unresolved()
+                || active_configuration_count != 1
+                || (configuration.active
+                    && configuration.bodies.resolved().is_none_or(|bodies| {
+                        bodies.len() != current_bodies.len()
+                            || bodies.iter().collect::<BTreeSet<_>>() != current_bodies
+                    }))
+        })
+        .count();
+    if incomplete_configuration_count != 0 {
         losses.push(LossNote {
             category: LossCategory::Feature,
             severity: Severity::Warning,
             message: format!(
-                "Complete body membership remains unresolved for {unresolved_configuration_count} \
-                 NX design configuration(s)."
+                "Activation or complete body membership remains unresolved for \
+                 {incomplete_configuration_count} NX design configuration(s)."
             ),
             provenance: None,
         });
