@@ -3893,9 +3893,60 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
+    ir.model.features[0].definition = FeatureDefinition::Loft {
+        profiles: Vec::new(),
+        guides: Vec::new(),
+        op: cadmpeg_ir::features::BooleanOp::Unresolved,
+        closed: false,
+        solid: false,
+        ruled: false,
+        max_degree: None,
+        check_compatibility: None,
+        allow_multi_profile_faces: None,
+    };
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("loft (1)"));
+
+    ir.model.features[0].definition = FeatureDefinition::Draft {
+        faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+        neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+        pull_direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        angle: cadmpeg_ir::features::Angle(0.1),
+        outward: false,
+    };
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("draft (1)"));
+
     assert_eq!(
         crate::decode::body_output_feature_family(&FeatureDefinition::DatumPointUnresolved),
         None
+    );
+    assert_eq!(
+        crate::decode::body_output_feature_family(&FeatureDefinition::Loft {
+            profiles: Vec::new(),
+            guides: Vec::new(),
+            op: cadmpeg_ir::features::BooleanOp::NewBody,
+            closed: false,
+            solid: false,
+            ruled: false,
+            max_degree: None,
+            check_compatibility: None,
+            allow_multi_profile_faces: None,
+        }),
+        Some("loft")
+    );
+    assert_eq!(
+        crate::decode::body_output_feature_family(&FeatureDefinition::Draft {
+            faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+            neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+            pull_direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            angle: cadmpeg_ir::features::Angle(0.1),
+            outward: false,
+        }),
+        Some("draft")
     );
     assert_eq!(
         crate::decode::body_output_feature_family(&FeatureDefinition::DeleteBody {

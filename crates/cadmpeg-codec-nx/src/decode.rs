@@ -7256,6 +7256,18 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "sketch"
             }
+            FeatureDefinition::Loft {
+                profiles,
+                guides,
+                op,
+                ..
+            } if profiles.len() < 2
+                || profiles.iter().any(profile_ref_is_opaque)
+                || guides.iter().any(path_ref_is_opaque)
+                || matches!(op, BooleanOp::Unresolved) =>
+            {
+                "loft"
+            }
             FeatureDefinition::ProjectedCurve {
                 source,
                 target_faces,
@@ -7379,6 +7391,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             } if face_selection_is_opaque(faces) || thickness.is_none() || side.is_none() => {
                 "thicken"
             }
+            FeatureDefinition::Draft {
+                faces,
+                neutral_plane,
+                ..
+            } if face_selection_is_opaque(faces) || face_selection_is_opaque(neutral_plane) => {
+                "draft"
+            }
             FeatureDefinition::Pattern { seeds, pattern }
                 if pattern_feature_is_incomplete(seeds, pattern) =>
             {
@@ -7466,6 +7485,7 @@ pub(crate) fn body_output_feature_family(definition: &FeatureDefinition) -> Opti
     match definition {
         FeatureDefinition::Block { .. } => Some("block"),
         FeatureDefinition::ExtractBody { .. } => Some("extract body"),
+        FeatureDefinition::Loft { .. } => Some("loft"),
         FeatureDefinition::TrimSurface { .. } => Some("trim surface"),
         FeatureDefinition::ExtendSurface { .. } => Some("extend surface"),
         FeatureDefinition::Hole { .. } => Some("hole"),
@@ -7478,6 +7498,7 @@ pub(crate) fn body_output_feature_family(definition: &FeatureDefinition) -> Opti
         FeatureDefinition::Extrude { .. } => Some("extrude"),
         FeatureDefinition::OffsetSurface { .. } => Some("offset surface"),
         FeatureDefinition::Thicken { .. } => Some("thicken"),
+        FeatureDefinition::Draft { .. } => Some("draft"),
         FeatureDefinition::Pattern { .. } => Some("pattern"),
         FeatureDefinition::Combine { .. } => Some("body combine"),
         _ => None,
