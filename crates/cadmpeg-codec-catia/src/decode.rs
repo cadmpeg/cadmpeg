@@ -5326,7 +5326,8 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
             geometry::StandardSurfaceRecord::Analytic(_) => None,
         })
         .collect::<HashSet<_>>();
-    let freeform_geometries = standard_object_surface_geometries(scan, &freeform_tags);
+    let object_evidence = standard_object_evidence(scan, &freeform_tags);
+    let freeform_geometries = &object_evidence.surface_geometries;
     let unresolved_freeform_record_count = records
         .iter()
         .filter(|record| {
@@ -5566,8 +5567,10 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         &mut topology_ir,
         &mut topology_annotations,
         &face_bindings,
+        &records,
         brep,
         &scan.data,
+        &object_evidence.edge_owner_faces,
     ) && neutral_model_is_admissible(&topology_ir, &unknowns);
     if topology_attached {
         ir = topology_ir;
@@ -5600,10 +5603,13 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
     Some((ir, report, annotations, unknowns))
 }
 
-fn standard_object_surface_geometries(
-    scan: &ContainerScan,
-    tags: &HashSet<u32>,
-) -> HashMap<u32, SurfaceGeometry> {
+#[derive(Default)]
+pub(crate) struct StandardObjectEvidence {
+    pub(crate) surface_geometries: HashMap<u32, SurfaceGeometry>,
+    pub(crate) edge_owner_faces: HashMap<u32, HashSet<u32>>,
+}
+
+fn standard_object_evidence(scan: &ContainerScan, tags: &HashSet<u32>) -> StandardObjectEvidence {
     let streams = [scan.outer.as_ref(), scan.inner.as_ref()]
         .into_iter()
         .flatten()
@@ -5612,19 +5618,44 @@ fn standard_object_surface_geometries(
                 container::reconstruct_logical_stream(&scan.data, descriptor, directory.inner)
             })
         });
-    standard_object_surface_geometries_from_streams(streams, tags)
+    standard_object_evidence_from_streams(streams, tags)
 }
 
-pub(crate) fn standard_object_surface_geometries_from_streams(
+pub(crate) fn standard_object_evidence_from_streams(
     streams: impl IntoIterator<Item = Vec<u8>>,
     tags: &HashSet<u32>,
-) -> HashMap<u32, SurfaceGeometry> {
+) -> StandardObjectEvidence {
     let mut candidates = HashMap::<u32, Option<SurfaceGeometry>>::new();
+    let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     for stream in streams {
         let face_surfaces = crate::b5::face_surface_references(&stream);
         let Some(graph) = crate::b5::parse(&stream) else {
             continue;
         };
+        let mut stream_edge_faces = HashMap::<u32, HashSet<u32>>::new();
+        for face in &graph.faces {
+            for edge in face
+                .loops
+                .iter()
+                .filter_map(|loop_id| graph.loops.get(loop_id))
+                .flat_map(|loop_| loop_.edges.iter().copied())
+            {
+                stream_edge_faces
+                    .entry(edge)
+                    .or_default()
+                    .insert(face.object_id);
+            }
+        }
+        for (edge, owners) in stream_edge_faces {
+            edge_face_candidates
+                .entry(edge)
+                .and_modify(|stored| {
+                    if stored.as_ref().is_some_and(|stored| *stored != owners) {
+                        *stored = None;
+                    }
+                })
+                .or_insert(Some(owners));
+        }
         for (&face_id, &surface_id) in face_surfaces
             .iter()
             .filter(|(face_id, _)| tags.contains(face_id))
@@ -5643,10 +5674,16 @@ pub(crate) fn standard_object_surface_geometries_from_streams(
                 .or_insert(Some(geometry));
         }
     }
-    candidates
-        .into_iter()
-        .filter_map(|(tag, geometry)| Some((tag, geometry?)))
-        .collect()
+    StandardObjectEvidence {
+        surface_geometries: candidates
+            .into_iter()
+            .filter_map(|(tag, geometry)| Some((tag, geometry?)))
+            .collect(),
+        edge_owner_faces: edge_face_candidates
+            .into_iter()
+            .filter_map(|(edge, owners)| Some((edge, owners?)))
+            .collect(),
+    }
 }
 
 /// Attach standard analytic carriers to faces only when every FBB face has a
@@ -5888,12 +5925,52 @@ fn partition_standard_face_components(
     true
 }
 
+pub(crate) fn apply_standard_native_edge_faces(
+    edge_faces: &mut [[usize; 2]],
+    supports: &[geometry::StandardCurveSupport],
+    records: &[geometry::StandardSurfaceRecord],
+    native_edge_faces: &HashMap<u32, HashSet<u32>>,
+) {
+    if edge_faces.len() != supports.len() {
+        return;
+    }
+    let mut face_by_carrier = HashMap::<u32, Option<usize>>::new();
+    for (face, record) in records.iter().enumerate() {
+        let carrier = match record {
+            geometry::StandardSurfaceRecord::Analytic(prefix) => prefix.target,
+            geometry::StandardSurfaceRecord::Freeform { tag, .. } => *tag,
+        };
+        face_by_carrier
+            .entry(carrier)
+            .and_modify(|stored| *stored = None)
+            .or_insert(Some(face));
+    }
+    for (faces, support) in edge_faces.iter_mut().zip(supports) {
+        if faces[0] != faces[1] {
+            continue;
+        }
+        let Some(owner_ids) = native_edge_faces.get(&support.tag) else {
+            continue;
+        };
+        let candidates = owner_ids
+            .iter()
+            .filter_map(|owner| face_by_carrier.get(owner).copied().flatten())
+            .filter(|face| *face != faces[0])
+            .collect::<HashSet<_>>();
+        if let Some(&face) = candidates.iter().next().filter(|_| candidates.len() == 1) {
+            faces[1] = face;
+        }
+    }
+}
+
 fn attach_standard_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
+    records: &[geometry::StandardSurfaceRecord],
     brep: &[u8],
     source: &[u8],
+    native_edge_faces: &HashMap<u32, HashSet<u32>>,
 ) -> bool {
     let face_count = ir.model.faces.len();
     let mut supports = geometry::standard_curve_supports(brep, face_count);
@@ -5908,6 +5985,7 @@ fn attach_standard_topology(
     else {
         return false;
     };
+    apply_standard_native_edge_faces(&mut edge_faces, &supports, records, native_edge_faces);
     for (support, faces) in supports.iter_mut().zip(&edge_faces) {
         support.faces = *faces;
     }
@@ -5918,17 +5996,15 @@ fn attach_standard_topology(
         .enumerate()
         .map(|(index, surface)| (surface.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let face_bounds = geometry::standard_surface_records(brep, face_count)
-        .map(|records| {
-            records
-                .into_iter()
-                .map(|record| match record {
-                    geometry::StandardSurfaceRecord::Freeform { bounds, .. } => Some(bounds),
-                    geometry::StandardSurfaceRecord::Analytic(_) => None,
-                })
-                .collect::<Vec<_>>()
-        })
-        .filter(|bounds| bounds.len() == face_count);
+    let face_bounds = (records.len() == face_count).then(|| {
+        records
+            .iter()
+            .map(|record| match record {
+                geometry::StandardSurfaceRecord::Freeform { bounds, .. } => Some(*bounds),
+                geometry::StandardSurfaceRecord::Analytic(_) => None,
+            })
+            .collect::<Vec<_>>()
+    });
     let mut endpoint_candidates = Vec::with_capacity(supports.len());
     let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
     let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();

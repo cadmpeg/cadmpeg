@@ -3838,14 +3838,74 @@ fn standard_freeform_tag_resolves_object_stream_face_carrier() {
         &[0x82, 0x18, 100, 0, 0x18, 231, 3, 0x05],
     );
     stream.splice(vertex_start..vertex_start, unresolved_face);
-    let carriers = crate::decode::standard_object_surface_geometries_from_streams(
-        [stream],
-        &HashSet::from([501]),
-    );
+    let evidence =
+        crate::decode::standard_object_evidence_from_streams([stream], &HashSet::from([501]));
     assert!(matches!(
-        carriers.get(&501),
+        evidence.surface_geometries.get(&501),
         Some(SurfaceGeometry::Plane { .. })
     ));
+}
+
+#[test]
+fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
+    let first = b5_closed_triangle_stream();
+    let mut second = first.clone();
+    let face = second
+        .windows(3)
+        .position(|bytes| bytes == [0xb5, 0x03, 0x5f])
+        .expect("face record");
+    second[face + 4..face + 8].copy_from_slice(&501u32.to_le_bytes());
+
+    let evidence =
+        crate::decode::standard_object_evidence_from_streams([first, second], &HashSet::new());
+    assert!(evidence.edge_owner_faces.is_empty());
+}
+
+#[test]
+fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
+    use crate::geometry::{StandardCurveGeometry, StandardCurveSupport, StandardSurfaceRecord};
+
+    let mut edge_faces = vec![[0, 0]];
+    let supports = vec![StandardCurveSupport {
+        pos: 0,
+        tag: 700,
+        faces: [0, 0],
+        geometry: StandardCurveGeometry::Bspline,
+    }];
+    let records = [10u32, 20]
+        .into_iter()
+        .map(|target| {
+            StandardSurfaceRecord::Analytic(crate::geometry::SurfacePrefix {
+                pos: 0,
+                target,
+                kind: 0x33,
+            })
+        })
+        .collect::<Vec<_>>();
+    crate::decode::apply_standard_native_edge_faces(
+        &mut edge_faces,
+        &supports,
+        &records,
+        &HashMap::from([(700, HashSet::from([20, 900]))]),
+    );
+    assert_eq!(edge_faces, [[0, 1]]);
+
+    let mut ambiguous = vec![[0, 0]];
+    let mut repeated_records = records;
+    repeated_records.push(StandardSurfaceRecord::Analytic(
+        crate::geometry::SurfacePrefix {
+            pos: 0,
+            target: 20,
+            kind: 0x33,
+        },
+    ));
+    crate::decode::apply_standard_native_edge_faces(
+        &mut ambiguous,
+        &supports,
+        &repeated_records,
+        &HashMap::from([(700, HashSet::from([20]))]),
+    );
+    assert_eq!(ambiguous, [[0, 0]]);
 }
 
 #[test]
