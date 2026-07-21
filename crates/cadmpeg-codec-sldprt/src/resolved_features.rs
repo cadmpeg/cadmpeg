@@ -21042,20 +21042,27 @@ fn coordinate_roster_arc_center(
         .filter(|marker| marker.feature_ref == curve.feature_ref && marker.coordinates_m.is_some())
         .collect::<Vec<_>>();
     complete_roster.sort_unstable_by_key(|marker| marker.offset);
-    let mut centers = complete_roster
+    let equidistant = |center: [f64; 2]| {
+        let first_radius = (first[0] - center[0]).hypot(first[1] - center[1]);
+        let second_radius = (second[0] - center[0]).hypot(second[1] - center[1]);
+        first_radius > 0.0 && same_dimension_length(first_radius, second_radius)
+    };
+    if let Some(center) = complete_roster
         .get(center_index)
+        .and_then(|marker| marker.coordinates_m)
+        .filter(|center| equidistant(*center))
+    {
+        return Some(center);
+    }
+    let mut centers = markers
+        .iter()
         .copied()
-        .into_iter()
-        .chain(markers.iter().copied().filter(|marker| {
+        .filter(|marker| {
             marker.feature_ref == curve.feature_ref
                 && marker.object_index == u32::try_from(center_index).ok()
-        }))
-        .filter_map(|marker| marker.coordinates_m)
-        .filter(|center| {
-            let first_radius = (first[0] - center[0]).hypot(first[1] - center[1]);
-            let second_radius = (second[0] - center[0]).hypot(second[1] - center[1]);
-            first_radius > 0.0 && same_dimension_length(first_radius, second_radius)
         })
+        .filter_map(|marker| marker.coordinates_m)
+        .filter(|center| equidistant(*center))
         .collect::<Vec<_>>();
     centers.sort_by(|left, right| {
         left[0]
