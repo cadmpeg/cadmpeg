@@ -987,7 +987,7 @@ mod marker_tests {
 
     #[test]
     fn sketch_block_identity_normalization_is_inverted_for_placement() {
-        let mut payload = vec![0; 240];
+        let mut payload = vec![0; 300];
         payload.extend_from_slice(CLASS_MARKER);
         payload.extend_from_slice(&7_u16.to_le_bytes());
         payload.extend_from_slice(b"sgBlock");
@@ -2476,6 +2476,48 @@ mod marker_tests {
 
         assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
         payload[0] = 2;
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
+    }
+
+    #[test]
+    fn compact_extrusion_to_face_accepts_extended_legacy_face_path_padding() {
+        let mut payload = vec![0; 300];
+        payload[..2].copy_from_slice(&[0x34, 0x80]);
+        payload[4] = 1;
+        payload[18] = 4;
+        payload[30..33].copy_from_slice(&[1, 1, 0]);
+        let declaration = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
+        payload[33..33 + declaration.len()].copy_from_slice(declaration);
+        let body = 33 + declaration.len();
+        payload[body..body + 19].copy_from_slice(&[
+            0x30, 0x80, 0x2e, 0x80, 2, 0, 0, 0, 0x40, 0, 0, 108, 0, 0, 0, 108, 0, 0, 0,
+        ]);
+        payload[body + 47..body + 63].fill(0xff);
+        let control = body + 84;
+        payload[control..control + 2].copy_from_slice(&[0x33, 0x80]);
+        payload[control + 2..control + 6].copy_from_slice(&1u32.to_le_bytes());
+        payload[control + 10..control + 14].copy_from_slice(&5u32.to_le_bytes());
+        payload[control + 14..control + 18].copy_from_slice(&[0, 3, 0, 0]);
+        payload[control + 22..control + 30].copy_from_slice(&[1; 8]);
+        payload[control + 30..control + 38].copy_from_slice(&[1; 8]);
+        let entries = [control + 40, control + 64, control + 90];
+        for (entry, local_id) in entries.into_iter().zip([3u32, 2, 4]) {
+            payload[entry..entry + 4].copy_from_slice(&[0x4c, 0x80, 0, 0]);
+            payload[entry + 4..entry + 16].copy_from_slice(&[2; 12]);
+            payload[entry + 16..entry + 20].copy_from_slice(&local_id.to_le_bytes());
+            payload[entry + 20..entry + 24].copy_from_slice(&33u32.to_le_bytes());
+        }
+        let terminal = entries[2] + 24;
+        payload[terminal..terminal + 24].fill(0);
+        payload[terminal + 24..terminal + 28].copy_from_slice(&101u32.to_le_bytes());
+
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(body));
+        let path = legacy_single_face_reference_path_at(&payload, body).unwrap();
+        assert_eq!(
+            path.iter().map(|entry| entry.local_id).collect::<Vec<_>>(),
+            [Some(3), Some(2), Some(4)]
+        );
+        payload[body + 47] = 0xfe;
         assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
     }
 
@@ -17904,6 +17946,7 @@ fn legacy_single_face_reference_path_at(
         terminal: &impl Fn(usize) -> bool,
         cursor: usize,
         remaining: usize,
+        has_path_slots: bool,
         entries: &mut Vec<FeatureInputComponentPathEntry>,
         complete: &mut Vec<Vec<FeatureInputComponentPathEntry>>,
     ) {
@@ -17919,6 +17962,33 @@ fn legacy_single_face_reference_path_at(
         let Some(entry) = entry_at(cursor) else {
             return;
         };
+        let next_offsets = |end: usize| {
+            let mut offsets = Vec::new();
+            for slot_bytes in [0usize, 4] {
+                if slot_bytes == 4 && !has_path_slots {
+                    continue;
+                }
+                if slot_bytes == 4
+                    && !payload
+                        .get(end..end + 4)
+                        .and_then(|bytes| bytes.try_into().ok())
+                        .map(u32::from_le_bytes)
+                        .is_some_and(|slot| (1..=u32::from(u16::MAX)).contains(&slot))
+                {
+                    continue;
+                }
+                for gap in [0usize, 2, 4, 6, 8] {
+                    let next = end + slot_bytes;
+                    if payload
+                        .get(next..next + gap)
+                        .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+                    {
+                        offsets.push(next + gap);
+                    }
+                }
+            }
+            offsets
+        };
         for with_local_id in [true, false] {
             let mut entry = entry.clone();
             let end = if with_local_id {
@@ -17931,38 +18001,36 @@ fn legacy_single_face_reference_path_at(
                 cursor + 16
             };
             entries.push(entry);
-            if remaining == 1 {
-                parse_entries(payload, entry_at, terminal, end, 0, entries, complete);
-            } else {
-                for gap in [0usize, 2, 4, 6, 8] {
-                    if payload
-                        .get(end..end + gap)
-                        .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-                    {
-                        parse_entries(
-                            payload,
-                            entry_at,
-                            terminal,
-                            end + gap,
-                            remaining - 1,
-                            entries,
-                            complete,
-                        );
-                    }
-                }
+            for next in next_offsets(end) {
+                parse_entries(
+                    payload,
+                    entry_at,
+                    terminal,
+                    next,
+                    remaining - 1,
+                    has_path_slots,
+                    entries,
+                    complete,
+                );
             }
             entries.pop();
         }
     }
     let mut candidates = Vec::new();
-    for control in [body + 44, body + 48] {
+    for control in [body + 44, body + 48, body + 84, body + 88] {
         let Some(prefix) = payload.get(control..control + 40) else {
             continue;
         };
-        if !payload
-            .get(body + 19..control)
-            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-        {
+        let Some(filler) = payload.get(body + 19..control) else {
+            continue;
+        };
+        let padded = filler.len() >= 16
+            && filler.windows(16).enumerate().any(|(start, window)| {
+                window.iter().all(|byte| *byte == 0xff)
+                    && filler[..start].iter().all(|byte| *byte == 0)
+                    && filler[start + 16..].iter().all(|byte| *byte == 0)
+            });
+        if !filler.iter().all(|byte| *byte == 0) && !padded {
             continue;
         }
         let token = u16::from_le_bytes(prefix[0..2].try_into().ok()?);
@@ -17972,7 +18040,7 @@ fn legacy_single_face_reference_path_at(
             || prefix[2..6] != 1u32.to_le_bytes()
             || prefix[6..10] != [0; 4]
             || !(1..=64).contains(&count)
-            || prefix[14..18] != [0, 2, 0, 0]
+            || !matches!(&prefix[14..18], [0, 2, 0, 0] | [0, 3, 0, 0])
             || prefix[22..30] != prefix[30..38]
             || prefix[38..40] != [0, 0]
         {
@@ -17991,6 +18059,7 @@ fn legacy_single_face_reference_path_at(
                 &terminal,
                 control + 40,
                 entry_count,
+                prefix[15] == 3,
                 &mut Vec::new(),
                 &mut candidates,
             );
