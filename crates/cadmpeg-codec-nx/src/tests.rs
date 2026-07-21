@@ -3789,6 +3789,32 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
 }
 
 #[test]
+fn nx_face_blend_completeness_requires_disjoint_supports() {
+    use cadmpeg_ir::features::FaceSelection;
+    use cadmpeg_ir::ids::FaceId;
+
+    let shared = FaceId("test:face#shared".into());
+    let distinct = FaceId("test:face#distinct".into());
+    let first = FaceSelection::Faces(vec![shared.clone()]);
+
+    assert!(crate::decode::face_selections_overlap(
+        &first,
+        &FaceSelection::Resolved {
+            faces: vec![shared],
+            native: "test:first-support".into(),
+        },
+    ));
+    assert!(!crate::decode::face_selections_overlap(
+        &first,
+        &FaceSelection::Faces(vec![distinct]),
+    ));
+    assert!(!crate::decode::face_selections_overlap(
+        &first,
+        &FaceSelection::Unresolved,
+    ));
+}
+
+#[test]
 fn nx_body_producing_feature_families_require_history_outputs() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length};
     use std::collections::BTreeMap;

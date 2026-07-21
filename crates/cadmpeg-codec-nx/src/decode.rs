@@ -7336,6 +7336,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 radius,
             } if face_selection_is_opaque(first_faces)
                 || face_selection_is_opaque(second_faces)
+                || face_selections_overlap(first_faces, second_faces)
                 || radius_spec_is_incomplete(radius) =>
             {
                 "face blend"
@@ -7666,6 +7667,18 @@ pub(crate) fn face_selection_is_opaque(selection: &FaceSelection) -> bool {
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces.is_empty(),
     }
+}
+
+pub(crate) fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> bool {
+    let first = match first {
+        FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces,
+        FaceSelection::Unresolved | FaceSelection::Native(_) => return false,
+    };
+    let second = match second {
+        FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces,
+        FaceSelection::Unresolved | FaceSelection::Native(_) => return false,
+    };
+    first.iter().any(|face| second.contains(face))
 }
 
 pub(crate) fn edge_selection_is_opaque(selection: &EdgeSelection) -> bool {
