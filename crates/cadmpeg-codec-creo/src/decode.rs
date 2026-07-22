@@ -428,49 +428,59 @@ fn attach_expanded_sections(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
+    // The whole expansion namespace is gated on there being expanded sections at
+    // all: with none, the double-xar and primitive-scalar arenas are skipped even
+    // when their scan tables are non-empty. Preserve that early return.
     let records = expanded_section_records(scan);
     if records.is_empty() {
         return Ok(());
     }
-    for record in &records {
-        annotate(
-            annotations,
-            &record.id,
-            &record.name,
-            record.source_offset as u64,
-            "unix_compress_expanded_section",
-            Exactness::Derived,
-        );
-    }
-    let namespace = ir.native.namespace_mut("creo");
-    namespace.version = 1;
-    namespace.set_arena("expanded_sections", &records)?;
-    if !scan.double_xar_tables.is_empty() {
-        let tables = scan
-            .double_xar_tables
-            .iter()
-            .map(|table| CreoDoubleXarTableRecord {
-                id: format!(
-                    "creo:{}:double_xar#{}:{}",
-                    table.section_name, table.section_source_offset, table.expanded_offset
-                ),
-                section_name: table.section_name.clone(),
-                section_source_offset: table.section_source_offset,
-                expanded_offset: table.expanded_offset,
-                count: table.count,
-                entries: table
-                    .entries
-                    .iter()
-                    .map(|entry| CreoDoubleXarEntryRecord {
-                        index: entry.index,
-                        raw: entry.raw.clone(),
-                        value: entry.value,
-                        kind: entry.kind,
-                    })
-                    .collect(),
-            })
-            .collect::<Vec<_>>();
-        for table in &tables {
+    emit_arena(
+        ir,
+        annotations,
+        "expanded_sections",
+        &records,
+        |annotations, record| {
+            annotate(
+                annotations,
+                &record.id,
+                &record.name,
+                record.source_offset as u64,
+                "unix_compress_expanded_section",
+                Exactness::Derived,
+            );
+        },
+    )?;
+    let tables = scan
+        .double_xar_tables
+        .iter()
+        .map(|table| CreoDoubleXarTableRecord {
+            id: format!(
+                "creo:{}:double_xar#{}:{}",
+                table.section_name, table.section_source_offset, table.expanded_offset
+            ),
+            section_name: table.section_name.clone(),
+            section_source_offset: table.section_source_offset,
+            expanded_offset: table.expanded_offset,
+            count: table.count,
+            entries: table
+                .entries
+                .iter()
+                .map(|entry| CreoDoubleXarEntryRecord {
+                    index: entry.index,
+                    raw: entry.raw.clone(),
+                    value: entry.value,
+                    kind: entry.kind,
+                })
+                .collect(),
+        })
+        .collect::<Vec<_>>();
+    emit_arena(
+        ir,
+        annotations,
+        "double_xar_tables",
+        &tables,
+        |annotations, table| {
             annotate(
                 annotations,
                 &table.id,
@@ -479,9 +489,8 @@ fn attach_expanded_sections(
                 "model_scalar_dictionary",
                 Exactness::ByteExact,
             );
-        }
-        namespace.set_arena("double_xar_tables", &tables)?;
-    }
+        },
+    )?;
     let primitive_arrays = scan
         .primitive_scalar_arrays
         .iter()
@@ -496,9 +505,7 @@ fn attach_expanded_sections(
             values: array.values.clone(),
         })
         .collect::<Vec<_>>();
-    if !primitive_arrays.is_empty() {
-        namespace.set_arena("primitive_scalar_arrays", &primitive_arrays)?;
-    }
+    store_arena(ir, "primitive_scalar_arrays", &primitive_arrays)?;
     Ok(())
 }
 
