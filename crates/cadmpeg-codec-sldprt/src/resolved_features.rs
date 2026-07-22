@@ -963,7 +963,10 @@ fn indexed_profile_vertex(payload: &[u8], offset: usize) -> bool {
         && marker_profile_curve_role(payload, offset) == Some(1)
 }
 
-fn current_linked_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn current_linked_profile_point(
+    payload: &[u8],
+    offset: usize,
+) -> Option<([f64; 2], [(u16, u16); 2])> {
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(0)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
@@ -977,7 +980,8 @@ fn current_linked_profile_point_coordinates(payload: &[u8], offset: usize) -> Op
         || payload.get(offset + 76..offset + 78) != Some(&2u16.to_le_bytes())
         || payload.get(offset + 102..offset + 108)
             != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
-        || payload.get(offset + 108..offset + 150) != Some(&[0; 42])
+        || payload.get(offset + 108..offset + 146) != Some(&[0; 38])
+        || payload.get(offset + 146..offset + 150) == Some(&u32::MAX.to_le_bytes())
         || !sketch_marker_prefix_at(payload, offset.checked_add(154)?)
     {
         return None;
@@ -992,9 +996,6 @@ fn current_linked_profile_point_coordinates(payload: &[u8], offset: usize) -> Op
     };
     if !typed_curve_link(first)
         || !typed_curve_link(second)
-        || first[2..4] == [0; 2]
-        || second[2..4] == [0; 2]
-        || first[2..4] == second[2..4]
         || first[4..8] != [0xff; 4]
         || second[4..8] != [0xff; 4]
         || first[8..12] != [0; 4]
@@ -1002,7 +1003,54 @@ fn current_linked_profile_point_coordinates(payload: &[u8], offset: usize) -> Op
     {
         return None;
     }
-    finite_coordinate_pair(payload, offset + 58)
+    Some((
+        finite_coordinate_pair(payload, offset + 58)?,
+        [first, second].map(|cell| {
+            (
+                u16::from_le_bytes([cell[0], cell[1]]),
+                u16::from_le_bytes([cell[2], cell[3]]),
+            )
+        }),
+    ))
+}
+
+fn current_reverse_incidence_endpoint_offsets(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+) -> Option<[u64; 2]> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    let curve_index = u16::try_from(curve.object_index?).ok()?;
+    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(1)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || compact_indexed_curve_endpoint_indices(payload, offset).is_none()
+    {
+        return None;
+    }
+    let mut by_selector = BTreeMap::<u16, Vec<u64>>::new();
+    for marker in markers
+        .iter()
+        .copied()
+        .filter(|marker| marker.feature_ref == curve.feature_ref)
+    {
+        let marker_offset = usize::try_from(marker.offset).ok()?;
+        let Some((_, links)) = current_linked_profile_point(payload, marker_offset) else {
+            continue;
+        };
+        for (selector, linked_curve) in links {
+            if linked_curve == curve_index {
+                by_selector.entry(selector).or_default().push(marker.offset);
+            }
+        }
+    }
+    let mut candidates = by_selector.into_values().filter_map(|mut offsets| {
+        offsets.sort_unstable();
+        offsets.dedup();
+        <[u64; 2]>::try_from(offsets).ok()
+    });
+    let endpoints = candidates.next()?;
+    candidates.next().is_none().then_some(endpoints)
 }
 
 fn linked_profile_vertex(payload: &[u8], offset: usize) -> bool {
@@ -1094,7 +1142,8 @@ mod marker_tests {
         coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, cosmetic_thread_component_face_reference_at,
         cosmetic_thread_cylinder_reference_at, current_coordinate_linked_line_endpoints,
-        current_indexed_arc_reverses_center_sweep, current_linked_profile_point_coordinates,
+        current_indexed_arc_reverses_center_sweep, current_linked_profile_point,
+        current_reverse_incidence_endpoint_offsets,
         current_wide_arc_direct_markers,
         current_wide_undetailed_line,
         direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
@@ -3842,8 +3891,85 @@ mod marker_tests {
         payload[offset + 154..].copy_from_slice(SKETCH_MARKER);
 
         assert_eq!(
-            current_linked_profile_point_coordinates(&payload, offset),
-            Some([1.25, -2.5])
+            current_linked_profile_point(&payload, offset),
+            Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
+        );
+    }
+
+    #[test]
+    fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
+        let first = 84;
+        let second = first + 154;
+        let end = second + 154;
+        let mut payload = vec![0; end + SKETCH_MARKER.len()];
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[31..39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..60].copy_from_slice(&[2, 0, 5, 0]);
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+
+        for (offset, coordinates, other) in
+            [
+                (first, [1.0f64, 2.0], 11u16),
+                (second, [3.0f64, 4.0], 12u16),
+            ]
+        {
+            payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+            payload[offset + 5..offset + 13].fill(0xff);
+            payload[offset + 13..offset + 17]
+                .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+            payload[offset + 23..offset + 29]
+                .copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+            payload[offset + 31..offset + 39]
+                .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+            payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+            payload[offset + 56..offset + 58].copy_from_slice(&[0x1e, 0x00]);
+            payload[offset + 58..offset + 66].copy_from_slice(&coordinates[0].to_le_bytes());
+            payload[offset + 66..offset + 74].copy_from_slice(&coordinates[1].to_le_bytes());
+            payload[offset + 76..offset + 78].copy_from_slice(&2u16.to_le_bytes());
+            for (start, selector, id) in
+                [(78, 0x8178u16, 7u16), (90, 0x8132u16, other)]
+            {
+                payload[offset + start..offset + start + 2]
+                    .copy_from_slice(&selector.to_le_bytes());
+                payload[offset + start + 2..offset + start + 4]
+                    .copy_from_slice(&id.to_le_bytes());
+                payload[offset + start + 4..offset + start + 8].fill(0xff);
+            }
+            payload[offset + 102..offset + 108]
+                .copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        }
+        payload[end..].copy_from_slice(SKETCH_MARKER);
+        let entity = |id: &str, offset, object_index| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("profile".into()),
+            ordinal: 0,
+            offset,
+            object_index,
+            local_id: None,
+            kind: SketchInputKind::LineOrCircle,
+            state_value: Some(1.0),
+            coordinates_m: None,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let entities = [
+            entity("curve", 0, Some(7)),
+            entity("first", first as u64, Some(20)),
+            entity("second", second as u64, Some(21)),
+        ];
+        let markers = entities.iter().collect::<Vec<_>>();
+
+        assert_eq!(
+            current_reverse_incidence_endpoint_offsets(&payload, &entities[0], &markers),
+            Some([first as u64, second as u64])
         );
     }
 
@@ -9336,53 +9462,34 @@ fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
         })
         .flatten()
         .collect::<HashSet<_>>();
-    let linked_endpoint_coordinates = lane
-        .sketch_entities
-        .iter()
-        .filter_map(|curve| {
-            let feature = curve.feature_ref.as_ref()?;
-            let offset = usize::try_from(curve.offset).ok()?;
-            let indices = wide_indexed_curve_endpoint_indices(&lane.native_payload, offset)
-                .or_else(|| compact_indexed_curve_endpoint_indices(&lane.native_payload, offset))
-                .or_else(|| compact_legacy_curve_endpoint_indices(&lane.native_payload, offset))
-                .or_else(|| {
-                    alternate_current_indexed_curve_endpoint_indices(&lane.native_payload, offset)
-                })?;
-            let endpoint = |index| {
-                let mut candidates = lane.sketch_entities.iter().filter_map(|marker| {
-                    (marker.feature_ref.as_ref() == Some(feature)
-                        && marker.object_index == Some(index))
-                    .then(|| {
-                        marker.coordinates_m.map(|coordinates| (coordinates, false)).or_else(|| {
-                            usize::try_from(marker.offset).ok().and_then(|offset| {
-                                current_linked_profile_point_coordinates(
-                                    &lane.native_payload,
-                                    offset,
-                                ).map(|coordinates| (coordinates, true))
-                            })
-                        })
-                    })
-                    .flatten()
-                    .map(|(coordinates, linked)| ((feature.clone(), index), coordinates, linked))
-                });
-                let candidate = candidates.next()?;
-                candidates.next().is_none().then_some(candidate)
-            };
-            let endpoints = [endpoint(indices[0])?, endpoint(indices[1])?];
-            (endpoints.iter().filter(|endpoint| endpoint.2).count() == 1).then_some(endpoints)
-        })
-        .flatten()
-        .filter(|endpoint| endpoint.2)
-        .map(|(key, coordinates, _)| (key, coordinates))
-        .collect::<HashMap<_, _>>();
+    let linked_endpoint_coordinates = {
+        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
+        lane.sketch_entities
+            .iter()
+            .filter_map(|curve| {
+                current_reverse_incidence_endpoint_offsets(
+                    &lane.native_payload,
+                    curve,
+                    &markers,
+                )
+            })
+            .flatten()
+            .filter_map(|offset| {
+                let native_offset = usize::try_from(offset).ok()?;
+                let (coordinates, _) =
+                    current_linked_profile_point(&lane.native_payload, native_offset)?;
+                Some((offset, coordinates))
+            })
+            .collect::<HashMap<_, _>>()
+    };
     for marker in &mut lane.sketch_entities {
         let Some(key) = marker.feature_ref.clone().zip(marker.object_index) else {
             continue;
         };
-        if endpoints.contains(&key) {
-            if marker.coordinates_m.is_none() {
-                marker.coordinates_m = linked_endpoint_coordinates.get(&key).copied();
-            }
+        if marker.coordinates_m.is_none() {
+            marker.coordinates_m = linked_endpoint_coordinates.get(&marker.offset).copied();
+        }
+        if endpoints.contains(&key) || linked_endpoint_coordinates.contains_key(&marker.offset) {
             if marker.coordinates_m.is_some() {
                 marker.kind = SketchInputKind::Point;
             }
@@ -23972,6 +24079,24 @@ fn roster_curve_endpoint_markers<'a>(
     }
     if let Some((endpoints, _)) = current_wide_arc_direct_markers(payload, curve, markers) {
         return endpoints.to_vec();
+    }
+    if let Some(offsets) = current_reverse_incidence_endpoint_offsets(payload, curve, markers) {
+        let endpoints = offsets
+            .into_iter()
+            .filter_map(|offset| {
+                markers.iter().copied().find(|marker| {
+                    marker.offset == offset
+                        && marker.coordinates_m.is_some()
+                        && matches!(
+                            marker.kind,
+                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                        )
+                })
+            })
+            .collect::<Vec<_>>();
+        if endpoints.len() == 2 {
+            return endpoints;
+        }
     }
     if let Some(indices) = wide_indexed_curve_endpoint_indices(payload, offset)
         .or_else(|| compact_indexed_curve_endpoint_indices(payload, offset))
