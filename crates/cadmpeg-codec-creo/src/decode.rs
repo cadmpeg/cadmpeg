@@ -56,17 +56,6 @@ use serde::Serialize;
 use crate::container::{self, role, ContainerScan};
 use crate::topology::HalfEdgeId;
 
-fn unique_feature_definition(
-    definitions: &[crate::feature::FeatureDefinition],
-    definition_id: u32,
-) -> Option<&crate::feature::FeatureDefinition> {
-    let mut matches = definitions
-        .iter()
-        .filter(|definition| definition.id == definition_id);
-    let definition = matches.next()?;
-    matches.next().is_none().then_some(definition)
-}
-
 fn unique_owned_feature_definition(
     definitions: &[crate::feature::FeatureDefinition],
     feature_id: u32,
@@ -81,10 +70,11 @@ fn unique_owned_feature_definition(
 fn unique_feature_section_transform(
     transforms: &[crate::placement::FeatureSectionTransform],
     definition_id: u32,
+    section_offset: usize,
 ) -> Option<&crate::placement::FeatureSectionTransform> {
-    let mut matches = transforms
-        .iter()
-        .filter(|transform| transform.definition_id == definition_id);
+    let mut matches = transforms.iter().filter(|transform| {
+        transform.definition_id == definition_id && transform.offset == section_offset
+    });
     let transform = matches.next()?;
     matches.next().is_none().then_some(())?;
     if let Some(feature_id) = transform.feature_id {
@@ -95,6 +85,21 @@ fn unique_feature_section_transform(
         (feature_matches == 1).then_some(())?;
     }
     Some(transform)
+}
+
+fn unique_feature_definition_for_transform<'a>(
+    definitions: &'a [crate::feature::FeatureDefinition],
+    transform: &crate::placement::FeatureSectionTransform,
+) -> Option<&'a crate::feature::FeatureDefinition> {
+    let mut matches = definitions.iter().filter(|definition| {
+        definition.id == transform.definition_id
+            && definition
+                .section_3d
+                .as_ref()
+                .is_some_and(|section| section.offset == transform.offset)
+    });
+    let definition = matches.next()?;
+    matches.next().is_none().then_some(definition)
 }
 
 fn unique_feature_datum_plane(
@@ -7472,13 +7477,14 @@ fn transfer_saved_spline_curves(
         if unique_feature_section_transform(
             &scan.feature_section_transforms,
             transform.definition_id,
+            transform.offset,
         )
         .is_none()
         {
             continue;
         }
         let Some(definition) =
-            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
+            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
         else {
             continue;
         };
@@ -7678,13 +7684,14 @@ fn transfer_feature_extrusion_surfaces(
         if unique_feature_section_transform(
             &scan.feature_section_transforms,
             transform.definition_id,
+            transform.offset,
         )
         .is_none()
         {
             continue;
         }
         let Some(definition) =
-            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
+            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
         else {
             continue;
         };
@@ -8728,6 +8735,7 @@ fn transfer_resolved_revolution_breps(
         if unique_feature_section_transform(
             &scan.feature_section_transforms,
             transform.definition_id,
+            transform.offset,
         )
         .is_none()
         {
@@ -8745,14 +8753,14 @@ fn transfer_resolved_revolution_breps(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
+            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
         else {
             continue;
         };
         let Some(axis) = resolved_revolution_axis(definition, transform) else {
             continue;
         };
-        let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
+        let sketch_id = model_sketch_id(scan, definition);
         let Some(mut profiles) = resolved_sketch_profiles(ir, &sketch_id, 2) else {
             continue;
         };
@@ -8980,6 +8988,7 @@ fn transfer_resolved_circular_extrusion_breps(
         if unique_feature_section_transform(
             &scan.feature_section_transforms,
             transform.definition_id,
+            transform.offset,
         )
         .is_none()
         {
@@ -8993,7 +9002,12 @@ fn transfer_resolved_circular_extrusion_breps(
         {
             continue;
         }
-        let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
+        let Some(definition) =
+            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+        else {
+            continue;
+        };
+        let sketch_id = model_sketch_id(scan, definition);
         let Some((section_center, radius)) =
             resolved_circular_extrusion_profile(scan, ir, transform, feature_id, &sketch_id)
         else {
@@ -9357,6 +9371,7 @@ fn transfer_resolved_extrusion_breps(
         if unique_feature_section_transform(
             &scan.feature_section_transforms,
             transform.definition_id,
+            transform.offset,
         )
         .is_none()
         {
@@ -9370,12 +9385,12 @@ fn transfer_resolved_extrusion_breps(
         {
             continue;
         }
-        let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
         let Some(definition) =
-            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
+            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
         else {
             continue;
         };
+        let sketch_id = model_sketch_id(scan, definition);
         let Some(span) = resolved_feature_extrusion_span(scan, definition, transform) else {
             continue;
         };
@@ -11966,13 +11981,13 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         .iter()
         .filter(|definition| feature_definition_has_sketch_design(definition))
     {
-        let unique_definition =
-            unique_feature_definition(&scan.feature_definitions, definition.id).is_some();
-        let transform = unique_definition
-            .then(|| {
-                unique_feature_section_transform(&scan.feature_section_transforms, definition.id)
-            })
-            .flatten();
+        let transform = definition.section_3d.as_ref().and_then(|section| {
+            unique_feature_section_transform(
+                &scan.feature_section_transforms,
+                definition.id,
+                section.offset,
+            )
+        });
         let sketch_id = model_sketch_id(scan, definition);
         let segments = section_segment_rows(definition);
         let unique_segment_ids = unique_section_segment_external_ids(definition);
@@ -12812,12 +12827,15 @@ fn link_feature_sketch_history(scan: &ContainerScan, ir: &mut CadIr) {
             unique_feature_section_transform(
                 &scan.feature_section_transforms,
                 transform.definition_id,
+                transform.offset,
             )
             .is_some()
         })
         .filter_map(|transform| {
             let owner = IrFeatureId(format!("creo:model:feature#{}", transform.feature_id?));
-            let sketch = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
+            let definition =
+                unique_feature_definition_for_transform(&scan.feature_definitions, transform)?;
+            let sketch = model_sketch_id(scan, definition);
             let sketch_feature = section_owner_feature_id(scan, transform.definition_id, &sketch);
             ir.model
                 .features
@@ -13030,6 +13048,7 @@ fn transfer_resolved_revolution_surfaces(
         if unique_feature_section_transform(
             &scan.feature_section_transforms,
             transform.definition_id,
+            transform.offset,
         )
         .is_none()
         {
@@ -13047,7 +13066,7 @@ fn transfer_resolved_revolution_surfaces(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
+            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
         else {
             continue;
         };
@@ -13346,6 +13365,7 @@ fn transfer_resolved_revolution_vertex_orbit_curves(
         if unique_feature_section_transform(
             &scan.feature_section_transforms,
             transform.definition_id,
+            transform.offset,
         )
         .is_none()
         {
@@ -13358,7 +13378,7 @@ fn transfer_resolved_revolution_vertex_orbit_curves(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
+            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
         else {
             continue;
         };
@@ -13425,6 +13445,7 @@ fn transfer_resolved_extrusion_vertex_orbit_curves(
         if unique_feature_section_transform(
             &scan.feature_section_transforms,
             transform.definition_id,
+            transform.offset,
         )
         .is_none()
         {
@@ -13436,7 +13457,12 @@ fn transfer_resolved_extrusion_vertex_orbit_curves(
         if !feature_allows_linear_extrusion(scan, feature_id) {
             continue;
         }
-        let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
+        let Some(definition) =
+            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+        else {
+            continue;
+        };
+        let sketch_id = model_sketch_id(scan, definition);
         for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
             for (vertex_index, point) in vertices.iter().enumerate() {
                 let Some(geometry) = extruded_section_line(transform, *point) else {
@@ -14078,10 +14104,15 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         .iter()
         .filter(|transform| transform.feature_id == Some(feature_id))
     {
+        let Some(definition) =
+            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+        else {
+            continue;
+        };
         insert_feature_parameter(
             &mut parameters,
             "profile_sketch",
-            format!("creo:model:sketch#{}", transform.definition_id),
+            model_sketch_id(scan, definition).0,
         );
         if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude) {
             insert_feature_parameter(
@@ -14468,8 +14499,8 @@ fn resolved_revolution_axis(
     Some(*axis)
 }
 
-fn section_profile_ref(ir: &CadIr, definition_id: u32, native_ref: String) -> ProfileRef {
-    let sketch_id = SketchId(format!("creo:model:sketch#{definition_id}"));
+fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {
+    let sketch_id = SketchId(native_ref.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1));
     let Some(sketch) = ir
         .model
         .sketches
@@ -15015,24 +15046,21 @@ fn schema_feature_definition(
         return definition;
     }
     if schema_class == 926 {
-        let transforms = section_definition_for_history_feature(scan, feature_id)
-            .into_iter()
-            .flat_map(|definition| {
-                scan.feature_section_transforms
+        let sketch =
+            section_definition_for_history_feature(scan, feature_id).and_then(|definition| {
+                let section = definition.section_3d.as_ref()?;
+                unique_feature_section_transform(
+                    &scan.feature_section_transforms,
+                    definition.id,
+                    section.offset,
+                )?;
+                let sketch = model_sketch_id(scan, definition);
+                ir.model
+                    .sketches
                     .iter()
-                    .filter(move |transform| transform.definition_id == definition.id)
-            })
-            .collect::<Vec<_>>();
-        let sketch = if let [transform] = transforms.as_slice() {
-            let sketch = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
-            ir.model
-                .sketches
-                .iter()
-                .any(|candidate| candidate.id == sketch)
-                .then_some(sketch)
-        } else {
-            None
-        };
+                    .any(|candidate| candidate.id == sketch)
+                    .then_some(sketch)
+            });
         return IrFeatureDefinition::Sketch {
             space: SketchSpace::Planar,
             sketch,
@@ -15174,11 +15202,8 @@ fn schema_feature_definition(
                 .is_none_or(|definition_id| definition_id == definition.id)
             {
                 let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
-                let profile = section_profile_ref(
-                    ir,
-                    definition.id,
-                    feature_sketch_record_id_in_scan(scan, definition),
-                );
+                let profile =
+                    section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition));
                 return circular_sweep_feature_definition(
                     profile,
                     &sweep,
@@ -15202,7 +15227,7 @@ fn schema_feature_definition(
             .collect::<Vec<_>>();
         let (definition, transform) = match transforms.as_slice() {
             [transform] => (
-                unique_feature_definition(&scan.feature_definitions, transform.definition_id),
+                unique_feature_definition_for_transform(&scan.feature_definitions, transform),
                 Some(*transform),
             ),
             [] => (
@@ -15212,11 +15237,7 @@ fn schema_feature_definition(
             _ => (None, None),
         };
         let profile = definition.map(|definition| {
-            section_profile_ref(
-                ir,
-                definition.id,
-                feature_sketch_record_id_in_scan(scan, definition),
-            )
+            section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
         });
         let axis = definition
             .zip(transform)
@@ -15250,17 +15271,13 @@ fn schema_feature_definition(
             .collect::<Vec<_>>();
         let definition = match transforms.as_slice() {
             [transform] => {
-                unique_feature_definition(&scan.feature_definitions, transform.definition_id)
+                unique_feature_definition_for_transform(&scan.feature_definitions, transform)
             }
             [] => unique_owned_feature_definition(&scan.feature_definitions, feature_id),
             _ => None,
         };
         let profile = definition.map(|definition| {
-            section_profile_ref(
-                ir,
-                definition.id,
-                feature_sketch_record_id_in_scan(scan, definition),
-            )
+            section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
         });
         let construction = if let ([transform], Some(profile), Some(definition)) =
             (transforms.as_slice(), profile.clone(), definition)
@@ -18273,7 +18290,7 @@ mod resolved_sketch_tests {
     fn section_profile_prefers_a_resolved_sketch_chain() {
         let mut ir = CadIr::empty(Units::default());
         ir.model.sketches.push(Sketch {
-            id: SketchId("creo:model:sketch#917".to_string()),
+            id: SketchId("creo:model:sketch#offset:40".to_string()),
             name: None,
             configuration: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
@@ -18282,23 +18299,23 @@ mod resolved_sketch_tests {
                 u_axis: Vector3::new(1.0, 0.0, 0.0),
             },
             profiles: Vec::new(),
-            native_ref: Some("creo:featdefs:sketch#917".to_string()),
+            native_ref: Some("creo:featdefs:sketch#offset:40".to_string()),
         });
         assert_eq!(
-            section_profile_ref(&ir, 917, "creo:featdefs:sketch#offset:40".to_string(),),
+            section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
             ProfileRef::Native("creo:featdefs:sketch#offset:40".to_string())
         );
 
         ir.model.sketches[0].profiles.push(vec![SketchEntityUse {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:4".to_string()),
+            entity: SketchEntityId("creo:featdefs:sketch_entity#offset:40:4".to_string()),
             reversed: false,
         }]);
         assert_eq!(
-            section_profile_ref(&ir, 917, "creo:featdefs:sketch#offset:40".to_string(),),
-            ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string()))
+            section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
+            ProfileRef::Sketch(SketchId("creo:model:sketch#offset:40".to_string()))
         );
         assert_eq!(
-            section_profile_ref(&ir, 918, "creo:featdefs:sketch#918".to_string(),),
+            section_profile_ref(&ir, "creo:featdefs:sketch#918".to_string()),
             ProfileRef::Native("creo:featdefs:sketch#918".to_string())
         );
     }
@@ -19078,11 +19095,6 @@ mod resolved_sketch_tests {
             })
         );
         assert_eq!(
-            unique_feature_definition(std::slice::from_ref(&definition), definition.id)
-                .map(|matched| matched.offset),
-            Some(0)
-        );
-        assert_eq!(
             unique_owned_feature_definition(std::slice::from_ref(&definition), 6)
                 .map(|matched| matched.id),
             Some(5)
@@ -19090,7 +19102,6 @@ mod resolved_sketch_tests {
         assert!(
             unique_owned_feature_definition(&[definition.clone(), definition.clone()], 6).is_none()
         );
-        assert!(unique_feature_definition(&[definition.clone(), definition], 5).is_none());
         let operation = crate::feature::FeatureOperation {
             feature_id: 6,
             kind: "Extrude".to_string(),
@@ -19201,19 +19212,32 @@ mod resolved_sketch_tests {
             offset: 40,
         };
         assert_eq!(
-            unique_feature_section_transform(std::slice::from_ref(&transform), 5)
+            unique_feature_section_transform(std::slice::from_ref(&transform), 5, 40)
                 .map(|placed| placed.offset),
             Some(40)
         );
         assert!(
-            unique_feature_section_transform(&[transform.clone(), transform.clone()], 5).is_none()
+            unique_feature_section_transform(&[transform.clone(), transform.clone()], 5, 40)
+                .is_none()
+        );
+        let repeated_schema = crate::placement::FeatureSectionTransform {
+            feature_id: Some(7),
+            offset: 50,
+            ..transform.clone()
+        };
+        assert_eq!(
+            unique_feature_section_transform(&[transform.clone(), repeated_schema], 5, 40)
+                .map(|placed| placed.offset),
+            Some(40)
         );
         let competing_definition = crate::placement::FeatureSectionTransform {
             definition_id: 7,
             offset: 50,
             ..transform.clone()
         };
-        assert!(unique_feature_section_transform(&[transform, competing_definition], 5).is_none());
+        assert!(
+            unique_feature_section_transform(&[transform, competing_definition], 5, 40).is_none()
+        );
         let affected = |ids: &[u32], offset| crate::feature::FeatureAffectedIds {
             feature_id: 6,
             kind: crate::feature::AffectedIdKind::Edges,
@@ -20739,9 +20763,6 @@ mod resolved_sketch_tests {
                 1,
             ),
             None
-        );
-        assert!(
-            unique_feature_definition(&[definition.clone(), definition.clone()], 917).is_none()
         );
     }
 

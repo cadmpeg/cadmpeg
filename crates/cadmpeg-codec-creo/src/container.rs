@@ -1753,6 +1753,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_reference_names = feature_reference_names(&data, &sections);
     let mut feature_definitions = feature_definitions(&data, &sections);
     feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
+    feature::bind_trimmed_definition_owners(&mut feature_definitions, &feature_entity_tables);
     feature_definitions.extend(feature_row_definitions(&feature_rows));
     feature_definitions.sort_by_key(|definition| definition.offset);
     let claimed_definition_owners = feature_definitions

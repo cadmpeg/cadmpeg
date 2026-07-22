@@ -1793,10 +1793,12 @@ containing the section's `sketch_plane_entity_id` identifies the owning
 modeling feature. The definition and feature identifiers are not
 interchangeable.
 
-A definition identifier selects geometry, placement, and operation semantics
-only when exactly one bounded feature-definition record carries that identifier.
-Repeated identifiers are ambiguous and do not join to a section transform or
-feature operation.
+A definition instance selects geometry, placement, and operation semantics by
+its bounded record identity. The `feat_defs_<id>` value alone identifies an
+instance only when exactly one bounded definition carries it. When the schema
+identifier repeats, the absolute `gsec3d_ptr` offset qualifies the instance and
+joins its section transform; an identifier without that offset remains
+ambiguous.
 
 An instantiated positional definition begins at
 `e0 01 feat_id 00 <canonical-reference> e0 00 ref_model_info 00`. The reference
@@ -1810,6 +1812,13 @@ instance's `order_table.ext_id` set, provided that feature selects exactly one
 unlabeled instance. Definitions without this reciprocal unique join have no
 owner. They remain section definitions and retain their complete bounded body.
 Replay order does not define feature identity.
+
+An unowned instantiated saved section joins the unique unclaimed feature whose
+nonempty class-200 source-entity identifier set exactly equals the section's
+`ent_tab.ext_id` set, provided that feature selects exactly one such section.
+This join assigns the canonical feature owner and preserves the stored
+`feat_defs_<id>` schema identifier. A partial, competing, or reused set does not
+assign an owner.
 
 DEPDB also stores an internal sketch-datum chain. A procedural recipe feature
 `F` immediately followed in feature-state order by a non-recipe feature

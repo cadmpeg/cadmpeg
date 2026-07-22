@@ -6451,6 +6451,68 @@ pub fn bind_definition_owners(
     }
 }
 
+/// Bind instantiated saved sections through the exact set of trimmed section
+/// entities copied into the owning feature's generated-entity table. Schema
+/// identifiers remain unchanged; only the omitted canonical owner is filled.
+pub fn bind_trimmed_definition_owners(
+    definitions: &mut [FeatureDefinition],
+    entity_tables: &[FeatureEntityTable],
+) {
+    let claimed_owner_ids = definitions
+        .iter()
+        .filter_map(|definition| definition.owner_feature_id)
+        .collect::<BTreeSet<_>>();
+    let candidates = definitions
+        .iter()
+        .map(|definition| {
+            let external_ids = definition
+                .trim_entities
+                .as_ref()
+                .map(|table| {
+                    table
+                        .rows
+                        .iter()
+                        .map(|row| row.external_id)
+                        .collect::<BTreeSet<_>>()
+                })
+                .unwrap_or_default();
+            if definition.owner_feature_id.is_some() || external_ids.is_empty() {
+                return BTreeSet::new();
+            }
+            entity_tables
+                .iter()
+                .filter_map(|table| {
+                    let owner = table.feature_id?;
+                    if claimed_owner_ids.contains(&owner) {
+                        return None;
+                    }
+                    let source_ids = table
+                        .entries
+                        .iter()
+                        .filter_map(|entry| entry.source_entity_id)
+                        .collect::<BTreeSet<_>>();
+                    (source_ids == external_ids).then_some(owner)
+                })
+                .collect::<BTreeSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut owner_candidate_counts = BTreeMap::new();
+    for owner in candidates.iter().flat_map(|owners| owners.iter()) {
+        *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
+    }
+    for (definition, owners) in definitions.iter_mut().zip(candidates) {
+        let Some(owner) = owners
+            .first()
+            .copied()
+            .filter(|_| owners.len() == 1)
+            .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
+        else {
+            continue;
+        };
+        definition.owner_feature_id = Some(owner);
+    }
+}
+
 /// Bind unlabeled positional definitions through exact section-entity IDs in
 /// the owning generated-entity table. Empty and non-unique joins remain
 /// unbound.
@@ -7000,6 +7062,32 @@ mod tests {
         }
     }
 
+    fn pending_trimmed_definition(external_ids: &[u32]) -> FeatureDefinition {
+        let mut definition = pending_replay(&[]);
+        definition.id = 917;
+        definition.trim_entities = Some(FeatureTrimEntityTable {
+            declared_count: Some(external_ids.len() as u32),
+            entity_ref: Some(1),
+            entry_ref: None,
+            buckets: Vec::new(),
+            rows: external_ids
+                .iter()
+                .enumerate()
+                .map(|(index, external_id)| FeatureTrimEntity {
+                    external_id: *external_id,
+                    kind: TrimEntityKind::Line,
+                    mode: Some(0),
+                    vertices: [index as u32, index as u32 + 1],
+                    center_vertex: None,
+                    offset: index,
+                })
+                .collect(),
+            solved_external_ids: external_ids.to_vec(),
+            offset: 0,
+        });
+        definition
+    }
+
     fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable {
         FeatureEntityTable {
             feature_id: Some(owner),
@@ -7034,6 +7122,34 @@ mod tests {
 
         assert_eq!(definitions[0].id, 42);
         assert_eq!(definitions[0].owner_feature_id, Some(42));
+    }
+
+    #[test]
+    fn binds_saved_section_owner_from_exact_trimmed_entity_set() {
+        let mut definitions = [pending_trimmed_definition(&[9, 10, 11, 14, 21])];
+        bind_trimmed_definition_owners(
+            &mut definitions,
+            &[generated_entity_table(667, &[14, 21, 11, 10, 9])],
+        );
+
+        assert_eq!(definitions[0].id, 917);
+        assert_eq!(definitions[0].owner_feature_id, Some(667));
+    }
+
+    #[test]
+    fn withholds_saved_section_owner_for_partial_or_reused_entity_sets() {
+        let mut partial = [pending_trimmed_definition(&[9, 10, 11])];
+        bind_trimmed_definition_owners(&mut partial, &[generated_entity_table(667, &[9, 10])]);
+        assert_eq!(partial[0].owner_feature_id, None);
+
+        let mut reused = [
+            pending_trimmed_definition(&[9, 10]),
+            pending_trimmed_definition(&[9, 10]),
+        ];
+        bind_trimmed_definition_owners(&mut reused, &[generated_entity_table(667, &[9, 10])]);
+        assert!(reused
+            .iter()
+            .all(|definition| definition.owner_feature_id.is_none()));
     }
 
     #[test]
