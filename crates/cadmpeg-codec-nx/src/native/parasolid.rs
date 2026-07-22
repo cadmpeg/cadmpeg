@@ -181,18 +181,6 @@ pub fn parasolid_blend_bound_records(streams: &[Stream]) -> Vec<ParasolidBlendBo
     records
 }
 
-/// Serialized framing of a Parasolid `term_use` record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ParasolidTermUseFraming {
-    /// Direct `0x0029` tag.
-    Direct,
-    /// `0x0029ff` escaped tag.
-    Escaped,
-    /// Payload following the inline descriptor.
-    DescriptorInline,
-}
-
 /// Complete typed source record for one Parasolid `term_use` endpoint.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParasolidTermUseRecord {
@@ -209,7 +197,7 @@ pub struct ParasolidTermUseRecord {
     /// Endpoint position in millimetres.
     pub point: [f64; 3],
     /// Serialized record framing.
-    pub framing: ParasolidTermUseFraming,
+    pub framing: crate::intersection::TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -222,13 +210,6 @@ pub fn parasolid_term_use_records(streams: &[Stream]) -> Vec<ParasolidTermUseRec
             continue;
         }
         for term in crate::intersection::term_use_records(&stream.inflated) {
-            let framing = match term.framing {
-                crate::intersection::TermUseFraming::Direct => ParasolidTermUseFraming::Direct,
-                crate::intersection::TermUseFraming::Escaped => ParasolidTermUseFraming::Escaped,
-                crate::intersection::TermUseFraming::DescriptorInline => {
-                    ParasolidTermUseFraming::DescriptorInline
-                }
-            };
             records.push(ParasolidTermUseRecord {
                 id: format!("nx:s{stream_ordinal}:term-use-record#{}", term.xmt),
                 stream_ordinal: stream_ordinal as u32,
@@ -236,25 +217,13 @@ pub fn parasolid_term_use_records(streams: &[Stream]) -> Vec<ParasolidTermUseRec
                 count: term.count,
                 form: String::from_utf8_lossy(&term.form).into_owned(),
                 point: [term.point.x, term.point.y, term.point.z],
-                framing,
+                framing: term.framing,
                 inflated_offset: term.pos as u64,
             });
         }
     }
     records.sort_by(|left, right| left.id.cmp(&right.id));
     records
-}
-
-/// Serialized framing of a Parasolid support-UV values array.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ParasolidSupportUvFraming {
-    /// Direct `0x00cc` tag.
-    Direct,
-    /// `0x00ccff` escaped tag.
-    Escaped,
-    /// Payload following the inline descriptor.
-    DescriptorInline,
 }
 
 /// Complete typed source record for one Parasolid support-UV values array.
@@ -273,7 +242,7 @@ pub struct ParasolidSupportUvRecord {
     /// Ordered serialized scalar values.
     pub values: Vec<f64>,
     /// Serialized record framing.
-    pub framing: ParasolidSupportUvFraming,
+    pub framing: crate::intersection::SupportUvFraming,
     /// Tag or inline-payload offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -286,15 +255,6 @@ pub fn parasolid_support_uv_records(streams: &[Stream]) -> Vec<ParasolidSupportU
             continue;
         }
         for record in crate::intersection::support_uv_records(&stream.inflated) {
-            let framing = match record.framing {
-                crate::intersection::SupportUvFraming::Direct => ParasolidSupportUvFraming::Direct,
-                crate::intersection::SupportUvFraming::Escaped => {
-                    ParasolidSupportUvFraming::Escaped
-                }
-                crate::intersection::SupportUvFraming::DescriptorInline => {
-                    ParasolidSupportUvFraming::DescriptorInline
-                }
-            };
             records.push(ParasolidSupportUvRecord {
                 id: format!("nx:s{stream_ordinal}:support-uv-record#{}", record.xmt),
                 stream_ordinal: stream_ordinal as u32,
@@ -302,33 +262,13 @@ pub fn parasolid_support_uv_records(streams: &[Stream]) -> Vec<ParasolidSupportU
                 count: record.count,
                 marker: record.marker,
                 values: record.values,
-                framing,
+                framing: record.framing,
                 inflated_offset: record.pos as u64,
             });
         }
     }
     records.sort_by(|left, right| left.id.cmp(&right.id));
     records
-}
-
-/// Hvec point layout of a Parasolid chart record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ParasolidChartPointLayout {
-    /// Three model-space coordinates per point.
-    Xyz3,
-    /// Eleven scalars containing point, UV lanes, tangent, and parameter.
-    Ext11,
-}
-
-/// Serialized framing of a Parasolid chart record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ParasolidChartFraming {
-    /// Direct `0x0028` tag.
-    Direct,
-    /// `0x0028ff` escaped tag.
-    Escaped,
 }
 
 /// Complete typed source record for one physical Parasolid `CHART_s` record.
@@ -361,9 +301,9 @@ pub struct ParasolidChartRecord {
     /// Two ordered ext11 support-UV lanes.
     pub ext_support_uv: [Option<Vec<[f64; 2]>>; 2],
     /// Hvec point layout.
-    pub point_layout: ParasolidChartPointLayout,
+    pub point_layout: crate::intersection::ChartPointLayout,
     /// Serialized record framing.
-    pub framing: ParasolidChartFraming,
+    pub framing: crate::intersection::ChartFraming,
     /// Type-tag offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -376,14 +316,6 @@ pub fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartRecord> 
             continue;
         }
         for chart in crate::intersection::chart_source_records(&stream.inflated) {
-            let point_layout = match chart.point_layout {
-                crate::intersection::ChartPointLayout::Xyz3 => ParasolidChartPointLayout::Xyz3,
-                crate::intersection::ChartPointLayout::Ext11 => ParasolidChartPointLayout::Ext11,
-            };
-            let framing = match chart.framing {
-                crate::intersection::ChartFraming::Direct => ParasolidChartFraming::Direct,
-                crate::intersection::ChartFraming::Escaped => ParasolidChartFraming::Escaped,
-            };
             records.push(ParasolidChartRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:chart-record#{}-{}",
@@ -405,8 +337,8 @@ pub fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartRecord> 
                     .collect(),
                 native_parameters: chart.native_parameters,
                 ext_support_uv: chart.ext_support_uv,
-                point_layout,
-                framing,
+                point_layout: chart.point_layout,
+                framing: chart.framing,
                 inflated_offset: chart.pos as u64,
             });
         }

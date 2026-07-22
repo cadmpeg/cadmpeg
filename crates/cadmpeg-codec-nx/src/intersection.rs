@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::be;
 use cadmpeg_ir::math::Point3;
+use serde::{Deserialize, Serialize};
 
 use crate::topology::{self, CompositeCurve};
 
@@ -15,7 +16,8 @@ const INLINE_UV_TAIL: &[u8] = b"\x00\x00\x00\x02\x01\x66\x01";
 pub type SupportUv = [Option<Vec<[f64; 2]>>; 2];
 
 /// Serialized framing of one `CHART_s` record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ChartFraming {
     /// Direct `0x0028` tag.
     Direct,
@@ -24,7 +26,8 @@ pub enum ChartFraming {
 }
 
 /// Serialized Hvec layout of one `CHART_s` record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ChartPointLayout {
     /// Three model-space coordinates per point.
     Xyz3,
@@ -85,7 +88,8 @@ pub struct BlendBound {
 }
 
 /// Serialized framing of one `term_use` endpoint record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TermUseFraming {
     /// Direct `0x0029` tag.
     Direct,
@@ -113,7 +117,8 @@ pub struct TermUse {
 }
 
 /// Serialized framing of one support-UV values array.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SupportUvFraming {
     /// Direct `0x00cc` tag.
     Direct,

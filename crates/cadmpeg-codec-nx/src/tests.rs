@@ -16296,7 +16296,7 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(terms[1].point, [10.0, 0.0, 0.0]);
     assert!(terms
         .iter()
-        .all(|term| matches!(term.framing, crate::native::ParasolidTermUseFraming::Direct)));
+        .all(|term| matches!(term.framing, crate::intersection::TermUseFraming::Direct)));
     let support_uv = result
         .ir
         .native
@@ -16310,7 +16310,7 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(support_uv[0].values, [0.0, 0.0, 0.01, 0.0]);
     assert!(matches!(
         support_uv[0].framing,
-        crate::native::ParasolidSupportUvFraming::Direct
+        crate::intersection::SupportUvFraming::Direct
     ));
     let charts = result
         .ir
@@ -16329,7 +16329,7 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(charts[0].points, [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]);
     assert!(matches!(
         charts[0].point_layout,
-        crate::native::ParasolidChartPointLayout::Xyz3
+        crate::intersection::ChartPointLayout::Xyz3
     ));
 
     let procedural = result
