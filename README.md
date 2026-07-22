@@ -65,8 +65,9 @@ wrote part.step (2125 entities)
 
 ## Format support
 
-The repository contains six native-format codecs:
+Current format support includes:
 
+- **FreeCAD `.FCStd` — [L9](docs/format-support.md#support-ladder) for schema 4/file 1:** complete application graph read, deterministic retained writes, checked edits, and source-less generation.
 - **Autodesk Fusion `.f3d` — [L4](docs/format-support.md#support-ladder):** readable design records; partial B-rep and appearance decode; native replay, patching, and generation.
 - **SolidWorks `.sldprt` — [L4](docs/format-support.md#support-ladder):** connected model read; typed design records; native write and round-trip paths.
 - **Rhino `.3dm` — [L9](docs/format-support.md#support-ladder) for archive 50/60/70/80:** complete built-in model, product structure, presentation, annotations, application-data retention, and bounded semantic native writing; older bands have inspection and metadata support.
@@ -74,6 +75,7 @@ The repository contains six native-format codecs:
 - **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.
 - **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** structural decode with partial placed geometry, topology, sketches, and design records.
 - **STEP Part 21 AP203/AP214/AP242 — [L9](docs/format-support.md#support-ladder):** full-document read and semantic clear-text write with target-schema selection and strict fidelity checks.
+- **IGES 5.3 Fixed ASCII — [L8](docs/format-support.md#support-ladder):** complete mechanical and document read with full byte accounting; read only.
 
 The pure-Rust STEP writer re-decodes generated files and can reject every reported semantic loss before writing.
 
