@@ -609,11 +609,12 @@ fn project_feature_content(
     if feature.text.is_some() {
         return Vec::new();
     }
-    let parameters = parameter_names(feature)
+    let parameters = projected_parameter_names(feature)
         .into_iter()
         .enumerate()
         .map(|(ordinal, name)| (name, neutral_parameter_id(feature, ordinal)))
         .collect::<HashMap<_, _>>();
+    let mut emitted_parameters = HashSet::new();
     feature
         .content
         .iter()
@@ -621,6 +622,7 @@ fn project_feature_content(
             FeatureContent::Text(text) => Some(FeatureSourceContent::Text(text.clone())),
             FeatureContent::Dimension(name) => parameters
                 .get(name)
+                .filter(|parameter| emitted_parameters.insert((*parameter).clone()))
                 .cloned()
                 .map(FeatureSourceContent::Parameter),
             FeatureContent::Feature(id) => by_native
@@ -650,6 +652,14 @@ fn parameter_names(feature: &Feature) -> Vec<String> {
         .collect::<Vec<_>>();
     names.extend(missing);
     names
+}
+
+fn projected_parameter_names(feature: &Feature) -> Vec<String> {
+    let mut seen = HashSet::new();
+    parameter_names(feature)
+        .into_iter()
+        .filter(|name| seen.insert(name.clone()))
+        .collect()
 }
 
 fn neutral_parameter_id(feature: &Feature, ordinal: usize) -> ParameterId {
@@ -742,7 +752,7 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                 .filter(|feature| !is_history_metadata_record(feature, &history.features))
         })
         .flat_map(|feature| {
-            parameter_names(feature)
+            projected_parameter_names(feature)
                 .into_iter()
                 .enumerate()
                 .map(move |(ordinal, name)| {
@@ -1951,6 +1961,25 @@ mod history_reference_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         }
+    }
+
+    #[test]
+    fn repeated_dimension_content_projects_one_owned_parameter() {
+        let mut feature = feature("sldprt:history:feature#1:2", None, 2);
+        feature.parameters.insert("D1".into(), "2".into());
+        feature.content = vec![
+            FeatureContent::Dimension("D1".into()),
+            FeatureContent::Dimension("D1".into()),
+        ];
+
+        assert_eq!(parameter_names(&feature), vec!["D1", "D1"]);
+        assert_eq!(projected_parameter_names(&feature), vec!["D1"]);
+        assert_eq!(
+            project_feature_content(&feature, &HashMap::new()),
+            vec![FeatureSourceContent::Parameter(ParameterId(
+                "sldprt:model:parameter#1:2:0".into()
+            ))]
+        );
     }
 
     #[test]
