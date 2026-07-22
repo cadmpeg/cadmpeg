@@ -10927,6 +10927,63 @@ fn display_jt_basic_stream() -> Vec<u8> {
     data
 }
 
+/// Raw bytes for a `/Root/UG_PART/DisplayJT` container entry whose single type-7
+/// shape-LOD segment frames one tri-strip LOD element. The element's base type,
+/// object-type UUID, and tri-strip LOD header body decode
+/// `display_jt_shape_lod_elements` and `display_jt_tri_strip_lod_headers`.
+fn display_jt_shape_lod_stream() -> Vec<u8> {
+    const TRI_STRIP_LOD_TYPE: [u8; 16] = [
+        0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    // Tri-strip LOD header body: fixed version/binding fields then a short
+    // compressed-representation tail (only hashed, not decoded, by the header).
+    let mut body = Vec::new();
+    body.extend_from_slice(&1u16.to_le_bytes()); // base version
+    body.extend_from_slice(&1u16.to_le_bytes()); // vertex version
+    body.extend_from_slice(&0u64.to_le_bytes()); // vertex bindings
+    body.extend_from_slice(&1u16.to_le_bytes()); // topological mesh version
+    body.extend_from_slice(&0u32.to_le_bytes()); // vertex records object id
+    body.extend_from_slice(&1u16.to_le_bytes()); // compressed LOD version
+    body.extend_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]); // representation tail
+
+    let element = jt_scene_element(TRI_STRIP_LOD_TYPE, 4, 42, &body);
+    let mut payload = element;
+    payload.extend_from_slice(&16u32.to_le_bytes());
+    payload.extend_from_slice(&[0xff; 16]);
+    payload.extend_from_slice(&[1, 0, 0, 0, 0, 0]); // segment tail
+
+    let segment_byte_len = 24 + payload.len() as u32;
+    let mut segment = Vec::new();
+    segment.extend_from_slice(&[2; 16]); // segment id
+    segment.extend_from_slice(&7u32.to_le_bytes()); // segment type
+    segment.extend_from_slice(&segment_byte_len.to_le_bytes()); // header byte len
+    segment.extend_from_slice(&payload);
+
+    let mut data = Vec::new();
+    data.extend_from_slice(&9_u32.to_le_bytes());
+    data.extend_from_slice(&1_u32.to_le_bytes());
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&100_u32.to_le_bytes());
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&28_u32.to_le_bytes());
+    data.extend_from_slice(&[0; 4]);
+    let mut version = [b' '; 80];
+    version[..14].copy_from_slice(b"Version 9.4 JT");
+    data.extend_from_slice(&version);
+    data.push(0);
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&105_u32.to_le_bytes());
+    data.extend_from_slice(&[1; 16]);
+    data.extend_from_slice(&1_u32.to_le_bytes());
+    data.extend_from_slice(&[2; 16]);
+    data.extend_from_slice(&137_u32.to_le_bytes());
+    data.extend_from_slice(&segment_byte_len.to_le_bytes());
+    data.extend_from_slice(&7_u32.to_be_bytes()); // attribute type 7
+    data.extend_from_slice(&segment);
+    data
+}
+
 /// Frame one JT logical element: length-prefixed `[type_id][base_type][object_id]
 /// [body]`, matching `parse_jt_element_sequence`.
 fn jt_scene_element(type_id: [u8; 16], base_type: u8, object_id: u32, body: &[u8]) -> Vec<u8> {
@@ -19953,7 +20010,7 @@ mod golden {
     /// Frozen from the generated snapshots; if a refactor drops an arena from
     /// every fixture, `arena_coverage_meets_floor` fails. Raise it (never lower
     /// it) when new covering fixtures are added.
-    const ARENA_COVERAGE_FLOOR: usize = 72;
+    const ARENA_COVERAGE_FLOOR: usize = 74;
 
     /// Build the covering fixture set: `(golden name, full `.prt` bytes)`. Each
     /// stream builder is wrapped exactly as its originating white-box test wraps
@@ -20018,6 +20075,13 @@ mod golden {
             prt_with_named_payloads(&[
                 ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
                 ("/Root/UG_PART/DisplayJT", display_jt_scene_graph_stream()),
+            ]),
+        ));
+        f.push((
+            "display_jt_shape_lod",
+            prt_with_named_payloads(&[
+                ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+                ("/Root/UG_PART/DisplayJT", display_jt_shape_lod_stream()),
             ]),
         ));
 
