@@ -89,8 +89,31 @@ pub struct CurveExpressionAssignment {
     pub dependencies: Vec<String>,
     /// Sequentially evaluated scalar when every dependency is resolved.
     pub value: Option<f64>,
+    /// Whether the source-ordered conditional program executes this assignment.
+    pub activation: CurveExpressionActivation,
     /// Byte offset of the assignment source line.
     pub offset: usize,
+}
+
+/// Evaluation state of an assignment inside relation conditionals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CurveExpressionActivation {
+    /// The assignment executes in the current source-ordered evaluation.
+    Active,
+    /// A resolved enclosing condition excludes the assignment.
+    Inactive,
+    /// An enclosing condition cannot be evaluated from available scalar values.
+    Conditional,
+}
+
+impl CurveExpressionActivation {
+    pub(crate) const fn token(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Inactive => "inactive",
+            Self::Conditional => "conditional",
+        }
+    }
 }
 
 /// Exact cylindrical helix parameters from a `crv_fr_eqn` program.
@@ -514,20 +537,7 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
             cursor = line_end + 1;
         }
         if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
-            let mut values = BTreeMap::new();
-            let assignments = lines
-                .iter()
-                .filter_map(expression_assignment)
-                .map(|mut assignment| {
-                    assignment.value = evaluate_expression(&assignment.expression, &values);
-                    if let Some(value) = assignment.value {
-                        values.insert(expression_identifier_key(&assignment.name), value);
-                    } else {
-                        values.remove(&expression_identifier_key(&assignment.name));
-                    }
-                    assignment
-                })
-                .collect();
+            let assignments = evaluate_expression_program(&lines);
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
@@ -601,7 +611,7 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
             let function = bytes.get(following) == Some(&b'(')
                 && !dependency.contains(':')
                 && creo_math_function(dependency).is_some();
-            let constant = dependency.eq_ignore_ascii_case("pi");
+            let constant = reserved_relation_scalar(dependency).is_some();
             if !function
                 && !constant
                 && !dependencies
@@ -619,12 +629,25 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
         expression: expression.to_owned(),
         dependencies,
         value: None,
+        activation: CurveExpressionActivation::Active,
         offset: line.offset,
     })
 }
 
 pub(crate) fn expression_identifier_key(name: &str) -> String {
     name.to_ascii_lowercase()
+}
+
+fn reserved_relation_scalar(name: &str) -> Option<f64> {
+    if name.eq_ignore_ascii_case("pi") {
+        Some(std::f64::consts::PI)
+    } else if name.eq_ignore_ascii_case("true") || name.eq_ignore_ascii_case("yes") {
+        Some(1.0)
+    } else if name.eq_ignore_ascii_case("false") || name.eq_ignore_ascii_case("no") {
+        Some(0.0)
+    } else {
+        None
+    }
 }
 
 fn expression_identifier_end(source: &[u8], start: usize) -> Option<usize> {
@@ -652,6 +675,143 @@ fn expression_identifier_end(source: &[u8], start: usize) -> Option<usize> {
         }
     }
     Some(cursor)
+}
+
+#[derive(Debug, Clone)]
+struct ConditionalFrame {
+    parent: CurveExpressionActivation,
+    condition: Option<bool>,
+}
+
+fn conditional_keyword_expression<'a>(source: &'a str, keyword: &str) -> Option<&'a str> {
+    let source = source.trim();
+    let prefix = source.get(..keyword.len())?;
+    prefix.eq_ignore_ascii_case(keyword).then_some(())?;
+    source
+        .as_bytes()
+        .get(keyword.len())
+        .is_some_and(u8::is_ascii_whitespace)
+        .then_some(())?;
+    let expression = source.get(keyword.len()..)?.trim_start();
+    (!expression.is_empty()).then_some(expression)
+}
+
+fn starts_relation_keyword(source: &str, keyword: &str) -> bool {
+    let source = source.trim();
+    source
+        .get(..keyword.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(keyword))
+        && source
+            .as_bytes()
+            .get(keyword.len())
+            .is_none_or(u8::is_ascii_whitespace)
+}
+
+fn expression_program_control_is_valid(lines: &[CurveExpressionLine]) -> bool {
+    let mut else_seen = Vec::new();
+    for line in lines {
+        let source = line.text.trim();
+        if starts_relation_keyword(source, "if") {
+            if conditional_keyword_expression(source, "if").is_none() {
+                return false;
+            }
+            else_seen.push(false);
+        } else if starts_relation_keyword(source, "else") {
+            if !source.eq_ignore_ascii_case("else") {
+                return false;
+            }
+            let Some(seen) = else_seen.last_mut() else {
+                return false;
+            };
+            if *seen {
+                return false;
+            }
+            *seen = true;
+        } else if starts_relation_keyword(source, "endif")
+            && (!source.eq_ignore_ascii_case("endif") || else_seen.pop().is_none())
+        {
+            return false;
+        }
+    }
+    else_seen.is_empty()
+}
+
+fn branch_activation(
+    parent: CurveExpressionActivation,
+    condition: Option<bool>,
+    alternative: bool,
+) -> CurveExpressionActivation {
+    match parent {
+        CurveExpressionActivation::Inactive => CurveExpressionActivation::Inactive,
+        CurveExpressionActivation::Conditional => CurveExpressionActivation::Conditional,
+        CurveExpressionActivation::Active => match condition {
+            Some(selected) if selected != alternative => CurveExpressionActivation::Active,
+            Some(_) => CurveExpressionActivation::Inactive,
+            None => CurveExpressionActivation::Conditional,
+        },
+    }
+}
+
+fn evaluate_expression_program(lines: &[CurveExpressionLine]) -> Vec<CurveExpressionAssignment> {
+    if !expression_program_control_is_valid(lines) {
+        return lines
+            .iter()
+            .filter_map(expression_assignment)
+            .map(|mut assignment| {
+                assignment.activation = CurveExpressionActivation::Conditional;
+                assignment
+            })
+            .collect();
+    }
+
+    let mut values = BTreeMap::new();
+    let mut stack = Vec::<ConditionalFrame>::new();
+    let mut activity = CurveExpressionActivation::Active;
+    let mut assignments = Vec::new();
+    for line in lines {
+        let source = line.text.trim();
+        if let Some(condition_source) = conditional_keyword_expression(source, "if") {
+            let condition = (activity == CurveExpressionActivation::Active)
+                .then(|| evaluate_expression(condition_source, &values))
+                .flatten()
+                .map(|value| value != 0.0);
+            let parent = activity;
+            activity = branch_activation(parent, condition, false);
+            stack.push(ConditionalFrame { parent, condition });
+            continue;
+        }
+        if source.eq_ignore_ascii_case("else") {
+            let frame = stack.last().expect("validated conditional stack");
+            activity = branch_activation(frame.parent, frame.condition, true);
+            continue;
+        }
+        if source.eq_ignore_ascii_case("endif") {
+            let frame = stack.pop().expect("validated conditional stack");
+            activity = frame.parent;
+            continue;
+        }
+        let Some(mut assignment) = expression_assignment(line) else {
+            continue;
+        };
+        assignment.activation = activity;
+        let key = expression_identifier_key(&assignment.name);
+        match activity {
+            CurveExpressionActivation::Active => {
+                assignment.value = evaluate_expression(&assignment.expression, &values);
+                if let Some(value) = assignment.value {
+                    values.insert(key, value);
+                } else {
+                    values.remove(&key);
+                }
+            }
+            CurveExpressionActivation::Inactive => {}
+            CurveExpressionActivation::Conditional => {
+                values.remove(&key);
+            }
+        }
+        assignments.push(assignment);
+    }
+    assignments
 }
 
 trait ExpressionValue: Copy {
@@ -1041,8 +1201,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         let name = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
         self.whitespace();
         if self.source.get(self.cursor) != Some(&b'(') {
-            if name.eq_ignore_ascii_case("pi") {
-                return Some(V::number(std::f64::consts::PI));
+            if let Some(value) = reserved_relation_scalar(name) {
+                return Some(V::number(value));
             }
             return self.values.get(&expression_identifier_key(name)).copied();
         }
@@ -1229,10 +1389,19 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
         },
     )]);
     for assignment in &record.assignments {
-        if let Some(value) = evaluate_affine_expression(&assignment.expression, &values) {
-            values.insert(expression_identifier_key(&assignment.name), value);
-        } else {
-            values.remove(&expression_identifier_key(&assignment.name));
+        let key = expression_identifier_key(&assignment.name);
+        match assignment.activation {
+            CurveExpressionActivation::Active => {
+                if let Some(value) = evaluate_affine_expression(&assignment.expression, &values) {
+                    values.insert(key, value);
+                } else {
+                    values.remove(&key);
+                }
+            }
+            CurveExpressionActivation::Inactive => {}
+            CurveExpressionActivation::Conditional => {
+                values.remove(&key);
+            }
         }
     }
     values
@@ -2431,6 +2600,54 @@ mod tests {
             evaluate_expression("pi", &BTreeMap::new()),
             Some(std::f64::consts::PI)
         );
+    }
+
+    #[test]
+    fn evaluates_nested_relation_conditionals_in_source_order() {
+        let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x0aexpression\0\xf8\x0eA=0\0IF a==0\0b=5\0IF NO\0c=1\0\
+            ELSE\0c=b+1\0ENDIF\0ELSE\0b=10\0ENDIF\0a=5\0d=B\0iffy=9\0";
+        let assignments = &expression_records(payload)[0].assignments;
+
+        assert_eq!(assignments.len(), 8);
+        assert_eq!(assignments[0].value, Some(0.0));
+        assert_eq!(assignments[1].value, Some(5.0));
+        assert_eq!(
+            assignments[2].activation,
+            CurveExpressionActivation::Inactive
+        );
+        assert_eq!(assignments[2].value, None);
+        assert_eq!(assignments[3].value, Some(6.0));
+        assert_eq!(
+            assignments[4].activation,
+            CurveExpressionActivation::Inactive
+        );
+        assert_eq!(assignments[5].value, Some(5.0));
+        assert_eq!(assignments[6].value, Some(5.0));
+        assert_eq!(assignments[7].name, "iffy");
+        assert_eq!(assignments[7].value, Some(9.0));
+    }
+
+    #[test]
+    fn unresolved_and_malformed_conditionals_do_not_choose_a_branch() {
+        let unresolved = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x0aexpression\0\xf8\x06IF external\0x=1\0ELSE\0x=2\0ENDIF\0y=x+1\0";
+        let assignments = &expression_records(unresolved)[0].assignments;
+        assert_eq!(assignments.len(), 3);
+        assert!(assignments[..2]
+            .iter()
+            .all(|assignment| assignment.activation == CurveExpressionActivation::Conditional));
+        assert_eq!(assignments[2].activation, CurveExpressionActivation::Active);
+        assert_eq!(assignments[2].value, None);
+
+        let malformed = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x08\
+            \xe0\x0aexpression\0\xf8\x04IF YES\0x=1\0ELSE trailing\0ENDIF\0";
+        let assignments = &expression_records(malformed)[0].assignments;
+        assert_eq!(
+            assignments[0].activation,
+            CurveExpressionActivation::Conditional
+        );
+        assert_eq!(assignments[0].value, None);
     }
 
     #[test]

@@ -392,6 +392,7 @@ struct CreoCurveExpressionAssignment {
     expression: String,
     dependencies: Vec<String>,
     value: Option<f64>,
+    activation: &'static str,
     offset: usize,
 }
 
@@ -2728,6 +2729,7 @@ fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionReco
                     expression: assignment.expression.clone(),
                     dependencies: assignment.dependencies.clone(),
                     value: assignment.value,
+                    activation: assignment.activation.token(),
                     offset: assignment.offset,
                 })
                 .collect(),
@@ -2930,6 +2932,9 @@ fn transfer_curve_expression_features(
         ));
         let mut assignment_indices_by_name = BTreeMap::<String, Option<usize>>::new();
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
+            if assignment.activation == crate::curve::CurveExpressionActivation::Inactive {
+                continue;
+            }
             assignment_indices_by_name
                 .entry(crate::curve::expression_identifier_key(&assignment.name))
                 .and_modify(|index| *index = None)
@@ -3020,6 +3025,10 @@ fn transfer_curve_expression_features(
             properties.insert(
                 "source_assignment_ordinal".to_string(),
                 assignment_ordinal.to_string(),
+            );
+            properties.insert(
+                "activation".to_string(),
+                assignment.activation.token().to_string(),
             );
             if parameter_names[assignment_ordinal] != assignment.name {
                 properties.insert("source_name".to_string(), assignment.name.clone());
@@ -34809,9 +34818,17 @@ fn build_ir(
             .map(|record| record.assignments.len())
             .sum::<usize>();
         let evaluated_curve_expression_assignment_count = active_expressions
+            .clone()
             .flat_map(|record| &record.assignments)
             .filter(|assignment| assignment.value.is_some())
             .count();
+        let activation_count = |activation| {
+            active_expressions
+                .clone()
+                .flat_map(|record| &record.assignments)
+                .filter(|assignment| assignment.activation == activation)
+                .count()
+        };
         source.attributes.insert(
             "decoded_active_curve_expression_assignment_count".to_string(),
             decoded_curve_expression_assignment_count.to_string(),
@@ -34824,6 +34841,22 @@ fn build_ir(
             "evaluated_active_curve_expression_assignment_count".to_string(),
             evaluated_curve_expression_assignment_count.to_string(),
         );
+        for (name, activation) in [
+            ("active", crate::curve::CurveExpressionActivation::Active),
+            (
+                "inactive",
+                crate::curve::CurveExpressionActivation::Inactive,
+            ),
+            (
+                "conditional",
+                crate::curve::CurveExpressionActivation::Conditional,
+            ),
+        ] {
+            source.attributes.insert(
+                format!("{name}_curve_expression_assignment_count"),
+                activation_count(activation).to_string(),
+            );
+        }
         let (decoded_dimension_count, resolved_dimension_count) = scan
             .feature_definitions
             .iter()
@@ -36567,7 +36600,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              or native design records. Curve-equation assignments transfer with their source, \
              dependencies, and closed scalar operator and standard mathematical-function values. \
              Full neutral operation semantics\
-             {configuration_gap}, non-scalar relation statements, materials, and display data \
+             {configuration_gap}, string-valued relation semantics, materials, and display data \
              remain untransferred."
         ),
         provenance: None,

@@ -2504,11 +2504,21 @@ connectivity uses the first and last evaluated control points.
 
 A curve-from-equation entity stores `expression f8 <count>` followed by exactly `count` NUL-terminated UTF-8 source lines. `entity(crv_fr_eqn)` is the active equation record and `backup_ents(crv_fr_eqn)` is its separately identified backup record. Source-line order is significant. Lines beginning with `/*` are comments. Executable lines use `identifier = expression`; identifiers referenced on the right-hand side are expression dependencies. Identifier binding is ASCII case-insensitive while source spelling is retained. A dependency symbol may carry one or more colon-delimited alphanumeric or underscore scope segments; the complete scoped symbol is one dependency. Numeric literals, previously assigned identifiers, the reserved immutable geometric constant `PI`, and parentheses form scalar expressions. `PI` has the value π and is not a dependency. Operator precedence from highest to lowest is grouping and function calls, right-associative exponentiation `^`, unary `+`, `-`, `!`, and `~`, multiplication and division, addition and subtraction, one comparison, logical AND `&`, and logical OR `|`. Comparisons are `==`, `>`, `>=`, `<`, `<=`, and the equivalent not-equal forms `!=`, `<>`, and `~=`. Comparisons and logical operators return numeric one or zero; zero is false and every nonzero scalar is true. Function names followed by an argument list are operators rather than dependencies. The scalar function set is `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `sign`, `mod`, `if`, `bound`, `dead`, `near`, `min`, `max`, `log`, `ln`, `exp`, `pow`, `sqrt`, `abs`, `ceil`, `floor`, and `dbl_in_tol`; names are case-insensitive. Circular trigonometric arguments and inverse-trigonometric results use degrees. `log` is base ten and `ln` is natural logarithm. A right-hand reference to a uniquely assigned program identifier binds to that assignment independent of source order. Evaluate assignments in source order; an assignment remains symbolic when a dependency has not yet acquired a value or an operation is outside its domain. Reassigning an identifier in any letter case replaces its preceding scalar state; an unresolved reassignment leaves the identifier unresolved for following lines.
 
+`IF <condition>`, optional `ELSE`, and `ENDIF` occupy separate source lines and
+may nest. `TRUE` and `YES` are numeric true; `FALSE` and `NO` are numeric
+false. A resolved condition executes exactly one branch. An inactive assignment
+does not change scalar state. When a condition cannot be evaluated, every
+assignment it may execute is conditional and invalidates the preceding scalar
+state for that identifier. An unbalanced conditional program does not evaluate
+any assignment. Assignment activation transfers as `active`, `inactive`, or
+`conditional` while every source assignment retains its identity.
+
 Every assignment is a distinct neutral design parameter. A source identifier
 assigned once is its parameter name. Repeated assignments use the parameter
 names `<identifier>#1`, `<identifier>#2`, and so on in source order and retain
-the unqualified identifier as `source_name`. A reference to a repeated
-identifier is an ambiguous dependency and does not bind to one occurrence.
+the unqualified identifier as `source_name`. A reference to multiple executing
+or conditional assignments of one identifier is ambiguous and does not bind to
+one occurrence. Inactive assignments do not define the current dependency.
 Parameter dependencies precede their consumers when the unique dependency
 graph is acyclic. A cyclic edge remains source metadata instead of forming an
 invalid neutral dependency order.
