@@ -16,6 +16,7 @@ use crate::decode::Scan;
 use crate::parasolid::{Stream, StreamKind};
 
 mod attach;
+pub(crate) mod catalogue;
 mod display_jt;
 mod features;
 mod model;

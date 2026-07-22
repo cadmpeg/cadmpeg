@@ -20217,4 +20217,44 @@ mod golden {
             "arena coverage regressed: {hit} < floor {ARENA_COVERAGE_FLOOR}"
         );
     }
+
+    /// The catalogue is the single source of truth for arena names: every arena
+    /// appears exactly once across `CATALOGUE`, there is one row per model field
+    /// (179), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// equality is the relationship the fixtures confirm — every arena a fixture
+    /// can populate is a catalogue arena, and every catalogue arena is a name
+    /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
+    /// arenas, all of them catalogue-driven, so no non-catalogued arena exists.
+    #[test]
+    fn catalogue_arenas_match_known_arenas() {
+        use crate::native::catalogue::CATALOGUE;
+
+        assert_eq!(CATALOGUE.len(), 179, "one catalogue row per model field");
+
+        let mut catalogue_arenas = BTreeSet::new();
+        for row in CATALOGUE {
+            assert!(
+                catalogue_arenas.insert(row.arena),
+                "arena {:?} appears in more than one catalogue row",
+                row.arena
+            );
+        }
+        assert_eq!(
+            catalogue_arenas.len(),
+            CATALOGUE.len(),
+            "every catalogue row owns a distinct arena"
+        );
+
+        let known: BTreeSet<&str> = KNOWN_ARENAS.iter().copied().collect();
+        let catalogue_not_known: Vec<&str> = catalogue_arenas.difference(&known).copied().collect();
+        let known_not_catalogue: Vec<&str> = known.difference(&catalogue_arenas).copied().collect();
+        assert!(
+            catalogue_not_known.is_empty(),
+            "catalogue arenas absent from KNOWN_ARENAS: {catalogue_not_known:?}"
+        );
+        assert!(
+            known_not_catalogue.is_empty(),
+            "KNOWN_ARENAS entries absent from CATALOGUE: {known_not_catalogue:?}"
+        );
+    }
 }
