@@ -5,7 +5,7 @@
 //! add the two face sides and successor curve for each native half-edge. Curve
 //! parameter bodies are not interpreted here.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::cursor::bounded_len;
 
@@ -803,6 +803,15 @@ fn evaluate_expression_program(
             .collect();
     }
 
+    let declared_symbols = lines
+        .iter()
+        .filter_map(expression_assignment)
+        .map(|assignment| expression_identifier_key(&assignment.name))
+        .collect::<BTreeSet<_>>();
+    let context = RelationEvaluationContext {
+        model_name,
+        declared_symbols: Some(&declared_symbols),
+    };
     let mut values = BTreeMap::new();
     let mut stack = Vec::<ConditionalFrame>::new();
     let mut activity = CurveExpressionActivation::Active;
@@ -811,7 +820,7 @@ fn evaluate_expression_program(
         let source = line.text.trim();
         if let Some(condition_source) = conditional_keyword_expression(source, "if") {
             let condition = (activity == CurveExpressionActivation::Active)
-                .then(|| evaluate_relation_expression(condition_source, &values, model_name))
+                .then(|| evaluate_relation_expression(condition_source, &values, context))
                 .flatten()
                 .and_then(|value| value.truth());
             let parent = activity;
@@ -837,7 +846,7 @@ fn evaluate_expression_program(
         match activity {
             CurveExpressionActivation::Active => {
                 assignment.value =
-                    evaluate_relation_expression(&assignment.expression, &values, model_name);
+                    evaluate_relation_expression(&assignment.expression, &values, context);
                 if let Some(value) = assignment.value.clone() {
                     values.insert(key, value);
                 } else {
@@ -852,6 +861,12 @@ fn evaluate_expression_program(
         assignments.push(assignment);
     }
     assignments
+}
+
+#[derive(Clone, Copy, Default)]
+struct RelationEvaluationContext<'a> {
+    model_name: Option<&'a str>,
+    declared_symbols: Option<&'a BTreeSet<String>>,
 }
 
 trait ExpressionValue: Clone {
@@ -871,7 +886,7 @@ trait ExpressionValue: Clone {
     fn function(
         name: CreoMathFunction,
         arguments: &[Self],
-        model_name: Option<&str>,
+        context: RelationEvaluationContext<'_>,
     ) -> Option<Self>;
     fn negate(self) -> Option<Self>;
     fn finite(self) -> bool;
@@ -921,7 +936,7 @@ impl ExpressionValue for f64 {
     fn function(
         name: CreoMathFunction,
         arguments: &[Self],
-        _model_name: Option<&str>,
+        _context: RelationEvaluationContext<'_>,
     ) -> Option<Self> {
         evaluate_creo_math_function(name, arguments)
     }
@@ -1012,7 +1027,7 @@ impl ExpressionValue for AffineValue {
     fn function(
         name: CreoMathFunction,
         arguments: &[Self],
-        _model_name: Option<&str>,
+        _context: RelationEvaluationContext<'_>,
     ) -> Option<Self> {
         let constants = arguments
             .iter()
@@ -1104,9 +1119,9 @@ impl ExpressionValue for CurveExpressionValue {
     fn function(
         name: CreoMathFunction,
         arguments: &[Self],
-        model_name: Option<&str>,
+        context: RelationEvaluationContext<'_>,
     ) -> Option<Self> {
-        evaluate_creo_relation_function(name, arguments, model_name)
+        evaluate_creo_relation_function(name, arguments, context)
     }
 
     fn negate(self) -> Option<Self> {
@@ -1141,7 +1156,7 @@ struct ExpressionParser<'a, V> {
     source: &'a [u8],
     cursor: usize,
     values: &'a BTreeMap<String, V>,
-    model_name: Option<&'a str>,
+    context: RelationEvaluationContext<'a>,
     nesting: usize,
 }
 
@@ -1407,7 +1422,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         (self.source.get(self.cursor) == Some(&b')')).then_some(())?;
         self.cursor += 1;
         self.nesting -= 1;
-        V::function(function, &arguments, self.model_name)
+        V::function(function, &arguments, self.context)
     }
 }
 
@@ -1444,6 +1459,7 @@ enum CreoMathFunction {
     Rtos,
     RelModelName,
     RelModelType,
+    Exists,
     Search,
     Extract,
     StringLength,
@@ -1484,6 +1500,7 @@ fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
         "rtos" => Some(CreoMathFunction::Rtos),
         "rel_model_name" => Some(CreoMathFunction::RelModelName),
         "rel_model_type" => Some(CreoMathFunction::RelModelType),
+        "exists" => Some(CreoMathFunction::Exists),
         "search" => Some(CreoMathFunction::Search),
         "extract" => Some(CreoMathFunction::Extract),
         "string_length" => Some(CreoMathFunction::StringLength),
@@ -1554,7 +1571,7 @@ fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Opt
 fn evaluate_creo_relation_function(
     name: CreoMathFunction,
     arguments: &[CurveExpressionValue],
-    model_name: Option<&str>,
+    context: RelationEvaluationContext<'_>,
 ) -> Option<CurveExpressionValue> {
     use CurveExpressionValue::{Number, String};
     let value = match (name, arguments) {
@@ -1581,8 +1598,15 @@ fn evaluate_creo_relation_function(
                 *scientific != 0.0,
             )?)
         }
-        (CreoMathFunction::RelModelName, []) => String(model_name?.to_owned()),
+        (CreoMathFunction::RelModelName, []) => String(context.model_name?.to_owned()),
         (CreoMathFunction::RelModelType, []) => String("part".to_owned()),
+        (CreoMathFunction::Exists, [String(name)])
+            if context
+                .declared_symbols?
+                .contains(&expression_identifier_key(name)) =>
+        {
+            Number(1.0)
+        }
         (CreoMathFunction::Search, [String(value), String(needle)]) => {
             let position = value
                 .find(needle)
@@ -1665,13 +1689,13 @@ fn integer_pair(first: f64, second: f64) -> Option<(usize, usize)> {
 fn evaluate_relation_expression(
     expression: &str,
     values: &BTreeMap<String, CurveExpressionValue>,
-    model_name: Option<&str>,
+    context: RelationEvaluationContext<'_>,
 ) -> Option<CurveExpressionValue> {
     let mut parser = ExpressionParser {
         source: expression.as_bytes(),
         cursor: 0,
         values,
-        model_name,
+        context,
         nesting: 0,
     };
     let value = parser.logical_or()?;
@@ -1685,7 +1709,7 @@ fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Opti
         source: expression.as_bytes(),
         cursor: 0,
         values,
-        model_name: None,
+        context: RelationEvaluationContext::default(),
         nesting: 0,
     };
     let value = parser.logical_or()?;
@@ -1701,7 +1725,7 @@ fn evaluate_affine_expression(
         source: expression.as_bytes(),
         cursor: 0,
         values,
-        model_name: None,
+        context: RelationEvaluationContext::default(),
         nesting: 0,
     };
     let value = parser.logical_or()?;
@@ -2988,35 +3012,106 @@ mod tests {
         ];
         for (expression, expected) in cases {
             assert_eq!(
-                evaluate_relation_expression(expression, &values, None),
+                evaluate_relation_expression(
+                    expression,
+                    &values,
+                    RelationEvaluationContext::default()
+                ),
                 Some(CurveExpressionValue::String(expected.to_owned())),
                 "{expression}"
             );
         }
         assert_eq!(
-            evaluate_relation_expression("rtos(1,-1)", &values, None),
+            evaluate_relation_expression(
+                "rtos(1,-1)",
+                &values,
+                RelationEvaluationContext::default()
+            ),
             None
         );
         assert_eq!(
-            evaluate_relation_expression("rtos(1,1.5)", &values, None),
+            evaluate_relation_expression(
+                "rtos(1,1.5)",
+                &values,
+                RelationEvaluationContext::default()
+            ),
             None
         );
         assert_eq!(
-            evaluate_relation_expression("rtos(1,129)", &values, None),
+            evaluate_relation_expression(
+                "rtos(1,129)",
+                &values,
+                RelationEvaluationContext::default()
+            ),
             None
         );
         assert_eq!(
-            evaluate_relation_expression("rtos(1,2,YES,NO)", &values, None),
+            evaluate_relation_expression(
+                "rtos(1,2,YES,NO)",
+                &values,
+                RelationEvaluationContext::default()
+            ),
             None
         );
         assert_eq!(
-            evaluate_relation_expression("rel_model_name()", &values, Some("widget")),
+            evaluate_relation_expression(
+                "rel_model_name()",
+                &values,
+                RelationEvaluationContext {
+                    model_name: Some("widget"),
+                    ..RelationEvaluationContext::default()
+                },
+            ),
             Some(CurveExpressionValue::String("widget".to_owned()))
         );
         assert_eq!(
-            evaluate_relation_expression("rel_model_name()", &values, None),
+            evaluate_relation_expression(
+                "rel_model_name()",
+                &values,
+                RelationEvaluationContext::default(),
+            ),
             None
         );
+    }
+
+    #[test]
+    fn proves_exists_only_for_declared_local_relation_symbols() {
+        let sources = [
+            "IF exists('later')",
+            "selected=1",
+            "ELSE",
+            "selected=2",
+            "ENDIF",
+            "later=5",
+            "IF exists('external')",
+            "unknown=1",
+            "ENDIF",
+        ];
+        let lines = sources
+            .iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: (*text).to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+        let assignments = evaluate_expression_program(&lines, None);
+
+        assert_eq!(assignments.len(), 4);
+        assert!(assignments[0].dependencies.is_empty());
+        assert_eq!(assignments[0].activation, CurveExpressionActivation::Active);
+        assert_eq!(assignments[0].value, number(1.0));
+        assert_eq!(
+            assignments[1].activation,
+            CurveExpressionActivation::Inactive
+        );
+        assert_eq!(assignments[1].value, None);
+        assert_eq!(assignments[2].value, number(5.0));
+        assert_eq!(
+            assignments[3].activation,
+            CurveExpressionActivation::Conditional
+        );
+        assert_eq!(assignments[3].value, None);
     }
 
     #[test]

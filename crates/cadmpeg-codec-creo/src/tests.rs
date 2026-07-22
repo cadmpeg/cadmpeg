@@ -4856,6 +4856,30 @@ fn decode_transfers_curve_expression_conditional_activation() {
 }
 
 #[test]
+fn decode_resolves_positive_local_exists_before_declaration() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x06IF exists('later')\0value=5\0ELSE\0\
+        value=9\0ENDIF\0later=1\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let parameters = &result.ir.model.parameters;
+    assert_eq!(parameters.len(), 3);
+    assert_eq!(parameters[0].properties["activation"], "active");
+    assert_eq!(
+        parameters[0].value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(5.0))
+    );
+    assert_eq!(parameters[1].properties["activation"], "inactive");
+    assert_eq!(parameters[1].value, None);
+    assert_eq!(
+        parameters[2].value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(1.0))
+    );
+}
+
+#[test]
 fn decode_retains_cyclic_curve_expression_dependencies_without_invalid_edges() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x04r=a\0a=r\0theta=t*360\0z=1\0"
