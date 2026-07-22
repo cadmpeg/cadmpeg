@@ -2113,8 +2113,11 @@ fn scalar_tokens(
     cache: &scalar::ScalarCache,
 ) -> Vec<SurfaceParameterScalar> {
     let mut tokens = Vec::new();
-    let reflected_plane_corners = (kind == SurfaceKind::Plane)
-        .then(|| reflected_first_coordinate_plane_corner_tokens(body, cache))
+    let positional_plane_corners = (kind == SurfaceKind::Plane)
+        .then(|| {
+            direct_plane_corner_tokens(body, cache)
+                .or_else(|| reflected_first_coordinate_plane_corner_tokens(body, cache))
+        })
         .flatten()
         .unwrap_or_default();
     let outline_markers = if kind == SurfaceKind::TorusOrSphere {
@@ -2134,7 +2137,7 @@ fn scalar_tokens(
     };
     let mut cursor = 0;
     while cursor < body.len() {
-        if let Some(token) = reflected_plane_corners
+        if let Some(token) = positional_plane_corners
             .iter()
             .find(|token| token.offset == cursor)
         {
@@ -2172,6 +2175,13 @@ fn scalar_tokens(
             }
         }
         if let Some((value, next)) = decode_row_scalar(kind, body, cursor, cache) {
+            if positional_plane_corners
+                .iter()
+                .any(|token| cursor < token.offset && next > token.offset)
+            {
+                cursor += 1;
+                continue;
+            }
             if outline_markers
                 .iter()
                 .any(|(offset, _, _)| cursor < *offset && next > *offset)
@@ -2203,6 +2213,38 @@ fn scalar_tokens(
     tokens
 }
 
+fn direct_plane_corner_tokens(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<SurfaceParameterScalar>> {
+    let frame_end = if body.ends_with(&[0xf7, 0x0c]) {
+        body.len().checked_sub(2)?
+    } else {
+        body.len()
+    };
+    let mut candidates = (0..frame_end).filter_map(|start| {
+        (start >= 4 && body.get(start - 4..start) == Some(&[0xa0, 0x00, 0x0c, 0x9a]))
+            .then_some(())?;
+        let mut values = Vec::with_capacity(6);
+        let mut cursor = start;
+        for _ in 0..6 {
+            let slot_start = cursor;
+            let (value, end) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+            (end > cursor && value.is_finite()).then_some(())?;
+            values.push(SurfaceParameterScalar {
+                value: Some(value),
+                raw: body[slot_start..end].to_vec(),
+                offset: slot_start,
+                length: end - slot_start,
+            });
+            cursor = end;
+        }
+        (cursor == frame_end).then_some(values)
+    });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
 fn reflected_first_coordinate_plane_corner_tokens(
     body: &[u8],
     cache: &scalar::ScalarCache,
@@ -2213,7 +2255,10 @@ fn reflected_first_coordinate_plane_corner_tokens(
         body.len()
     };
     let mut candidates = (0..frame_end).filter_map(|start| {
-        (start >= 3 && body.get(start - 3..start) == Some(&[0x00, 0x0c, 0x9a])).then_some(())?;
+        (start >= 3
+            && body.get(start - 3..start) == Some(&[0x00, 0x0c, 0x9a])
+            && body.get(start.wrapping_sub(4)) != Some(&0xa0))
+        .then_some(())?;
         let (stored_first_x, first_end) =
             scalar::decode_tabulated_cylinder_first_coordinate(body, start, cache)?;
         (first_end > start && stored_first_x.is_finite() && stored_first_x < 0.0).then_some(())?;
@@ -6185,7 +6230,7 @@ mod tests {
     }
 
     #[test]
-    fn derives_plane_from_reflected_held_corner_frame() {
+    fn derives_plane_from_marker_bounded_corner_frames() {
         let body = vec![
             0x18, 0xe4, 0x28, 0xad, 0xfb, 0xcd, 0xe8, 0xf5, 0xc2, 0x80, 0x00, 0x0c, 0x9a, 0xdc,
             0x9c, 0x95, 0x35, 0x00, 0x80, 0xf8, 0x46, 0x1a, 0xdf, 0x09, 0x9b, 0x3c, 0x32, 0xed,
@@ -6235,6 +6280,30 @@ mod tests {
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [3.326_456_464_841_722_7, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                u_axis: [0.0, 1.0, 0.0],
+                offset: 24,
+            }]
+        );
+
+        let mut direct = record.clone();
+        direct.body = vec![
+            0x18, 0xe4, 0x28, 0xc6, 0xc6, 0xa8, 0x58, 0x51, 0xeb, 0xa0, 0x00, 0x0c, 0x9a, 0x46,
+            0x1e, 0x3e, 0x61, 0xf5, 0x38, 0x92, 0x68, 0x46, 0x19, 0xb0, 0xe5, 0x1d, 0x83, 0xe1,
+            0x02, 0x2f, 0x20, 0x00, 0x46, 0x1e, 0x3e, 0x61, 0xf5, 0x38, 0x92, 0x68, 0x46, 0x18,
+            0xfa, 0xaf, 0xda, 0xc1, 0x51, 0xa5, 0x2e, 0x20, 0x33,
+        ];
+        direct.scalar_tokens = scalar_tokens(
+            SurfaceKind::Plane,
+            &direct.body,
+            &scalar::ScalarCache::default(),
+        );
+        direct.scalar_frames = scalar_frames(&direct.scalar_tokens);
+        assert_eq!(
+            positional_frame_planes(&[direct], &[row.clone()]),
+            vec![OutlinePlane {
+                surface_id: 41,
+                origin: [7.560_920_554_712_176, 0.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
                 u_axis: [0.0, 1.0, 0.0],
                 offset: 24,

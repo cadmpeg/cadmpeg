@@ -850,6 +850,12 @@ Negating each stored value gives its model-space X coordinate. The other four
 slots use the positional surface-row scalar lane and give the two YZ coordinate
 pairs. The resulting corners use the unique-held-coordinate plane rule.
 
+A direct-coordinate positional plane body stores the same six-scalar XYZ
+corner frame immediately after `a0 00 0c 9a`. All six slots use the positional
+surface-row scalar lane and retain their decoded signs. The frame reaches the
+bounded body end or is followed only by `f7 0c`. The resulting corners use the
+unique-held-coordinate plane rule.
+
 For a generated section plane selected through the parent-datum rule, multiple
 held envelope coordinates are filtered against the orientation plane. The
 unique perpendicular held axis defines the section plane.
