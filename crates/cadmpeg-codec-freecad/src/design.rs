@@ -12,11 +12,11 @@ use cadmpeg_ir::features::{
     FeatureDefinition, FeatureId, FeatureTreeNodeRole, FuzzyTolerance, GeometryImportFormat,
     HelicalSweepConstruction, HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleKind,
     HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper, Length, ParameterId,
-    ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternStage,
+    ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternSeed, PatternStage,
     PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
     RevolutionConstruction, RevolutionFuseOrder, RuledCurveOrientation, ScaleCenter, ScaleFactors,
-    ShellJoin, ShellMode, SketchSpace, SurfaceProjectionMode, SweepMode, SweepOrientation,
-    SweepTransformation, SweepTransition, ThreadHand,
+    ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation,
+    SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -132,7 +132,6 @@ pub(crate) fn transfer(
             ir.model.sketch_constraints.extend(decoded.constraints);
             ir.model.parameters.extend(decoded.parameters);
             FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
                 sketch: Some(sketch_id),
             }
         } else if is_stored_geometry_feature(&object.type_name) {
@@ -2254,6 +2253,7 @@ fn parametric_helix_definition(
         radius: Length(radius),
         pitch: Length(pitch),
         revolutions,
+        start_angle: cadmpeg_ir::features::Angle(0.0),
         clockwise,
         radial_growth,
         cone_angle,
@@ -3408,6 +3408,7 @@ fn hole_definition(
         face: None,
         position: None,
         direction,
+        placements: Vec::new(),
         kind,
         diameter: Some(Length(diameter)),
         extent: Some(extent),
@@ -3651,7 +3652,10 @@ fn pattern_definition(
     } else {
         pattern_kind(kind, properties, objects, properties_by_owner)?
     };
-    Some(FeatureDefinition::Pattern { seeds, pattern })
+    Some(FeatureDefinition::Pattern {
+        seeds: seeds.into_iter().map(PatternSeed::Feature).collect(),
+        pattern,
+    })
 }
 
 fn pattern_kind(
@@ -3768,6 +3772,7 @@ fn linear_pattern_axis(
             direction: Some(direction),
             spacing: Length(spacing),
             count,
+            second: None,
         })
     } else {
         Some(PatternKind::LinearOffsets {

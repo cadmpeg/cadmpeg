@@ -9,6 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
+use cadmpeg_ir::eval::nurbs_curve_point;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
 };
@@ -23,6 +24,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
 
 use super::entity;
+use super::sweep::{self, SweepKind};
 use super::topology::{self, Record};
 use super::{scan_carriers, Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
@@ -244,6 +246,8 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
 /// Transfer limitations found while building a [`Brep`].
 #[derive(Default)]
 pub struct Stats {
+    /// Framed top-level model entity records across the selected stream site.
+    pub source_entity_records: usize,
     /// Faces on a support surface this codec does not type; emitted with an
     /// unknown-geometry carrier.
     pub unknown_surface_faces: usize,
@@ -295,6 +299,89 @@ struct WalkedFace {
 
 /// Follow the sibling loop-head chain of a bridge and each loop's coedge ring,
 /// returning the ordered structure with cycles guarded.
+/// Resolve a face whose `refs[4]` carrier is a swept/spun construction to a
+/// solved NURBS patch. Returns `(geometry, record offset, annotation tag,
+/// derived exactness)`. A spun surface is exact for an exact profile; a swept
+/// surface patch is derived because its ruling extent comes from the face's
+/// vertex points rather than a stored interval.
+fn resolve_sweep_surface(
+    carriers: &CarrierIndex,
+    tables: &topology::Tables,
+    face: &WalkedFace,
+) -> Option<(SurfaceGeometry, usize, &'static str, bool)> {
+    let construction = carriers.sweep(face.surface_attr)?;
+    let profile = carriers.curve(construction.profile_attr)?;
+    let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &profile.geometry else {
+        return None;
+    };
+    let profile_derived = carriers.curve_is_derived(construction.profile_attr);
+    match &construction.kind {
+        SweepKind::Spun { base, axis } => Some((
+            SurfaceGeometry::Nurbs(sweep::spun_nurbs(curve, *base, *axis)),
+            construction.offset,
+            "00_44",
+            profile_derived,
+        )),
+        SweepKind::Swept { direction } => {
+            // Ruling extent: face vertex travel bracketed by the profile poles'
+            // own travel along the sweep direction, in millimetres.
+            let project = |p: &cadmpeg_ir::math::Point3| {
+                p.x * direction.x + p.y * direction.y + p.z * direction.z
+            };
+            let mut point_lo = f64::INFINITY;
+            let mut point_hi = f64::NEG_INFINITY;
+            for (_, ring) in &face.loops {
+                for ce_attr in ring {
+                    let Some(vuse) = tables
+                        .coedges
+                        .get(ce_attr)
+                        .and_then(|ce| ce.refs.get(4).copied())
+                    else {
+                        continue;
+                    };
+                    let Some(coordinates) = tables
+                        .vertex_uses
+                        .get(&vuse)
+                        .and_then(|vu| vu.refs.get(4).copied())
+                        .and_then(|pa| tables.points.get(&pa))
+                        .and_then(|p| p.xyz_m)
+                    else {
+                        continue;
+                    };
+                    let travel = coordinates[0] * LEN_TO_MM * direction.x
+                        + coordinates[1] * LEN_TO_MM * direction.y
+                        + coordinates[2] * LEN_TO_MM * direction.z;
+                    point_lo = point_lo.min(travel);
+                    point_hi = point_hi.max(travel);
+                }
+            }
+            if point_lo > point_hi {
+                return None;
+            }
+            let pole_travel: Vec<f64> = curve.control_points.iter().map(project).collect();
+            let pole_lo = pole_travel.iter().copied().fold(f64::INFINITY, f64::min);
+            let pole_hi = pole_travel
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max);
+            let v_start = point_lo - pole_hi;
+            let v_end = point_hi - pole_lo;
+            let pad = 1.0e-6_f64.max((v_end - v_start) * 1.0e-3);
+            Some((
+                SurfaceGeometry::Nurbs(sweep::swept_nurbs(
+                    curve,
+                    *direction,
+                    v_start - pad,
+                    v_end + pad,
+                )?),
+                construction.offset,
+                "00_43",
+                true,
+            ))
+        }
+    }
+}
+
 fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
     let surface_attr = *bridge.refs.get(4).unwrap_or(&0);
     let mut loops = Vec::new();
@@ -371,7 +458,11 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                 if facts.bodies.is_empty() {
                     facts.bodies = scanned_facts.bodies;
                 }
+                if facts.cluster_bodies.is_empty() {
+                    facts.cluster_bodies = scanned_facts.cluster_bodies;
+                }
                 facts.face_colors.append(&mut scanned_facts.face_colors);
+                facts.entity_count += scanned_facts.entity_count;
             } else {
                 tables = scanned_tables;
                 facts = scanned_facts;
@@ -381,6 +472,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
             carriers.merge_missing(scan_carriers(body));
             tables.merge_deltas(scanned_tables);
             facts.face_colors.append(&mut scanned_facts.face_colors);
+            facts.entity_count += scanned_facts.entity_count;
         }
     }
     decode_graph(&carriers, &tables, facts, stream)
@@ -399,15 +491,19 @@ fn decode_graph(
     entity_facts: entity::Facts,
     stream: &str,
 ) -> Brep {
-    let body_records = entity_facts.bodies;
+    let mut body_records = entity_facts.bodies;
+    let cluster_bodies = entity_facts.cluster_bodies;
 
     let mut out = Brep {
         face_colors: entity_facts.face_colors,
+        stats: Stats {
+            source_entity_records: entity_facts.entity_count,
+            ..Stats::default()
+        },
         ..Brep::default()
     };
     let mut annotations = AnnotationBuilder::new();
     let source_stream = annotations.stream(stream);
-    out.stats.synthetic_body_grouping = body_records.is_empty();
     if t.bridges.is_empty() {
         return out;
     }
@@ -564,6 +660,16 @@ fn decode_graph(
                             &mut out,
                             carriers.curve(curve_attr).expect("matched curve carrier"),
                         );
+                        if carriers.curve_is_derived(curve_attr) {
+                            let offset = carriers
+                                .curve(curve_attr)
+                                .expect("matched curve carrier")
+                                .offset;
+                            annotations
+                                .note(id_curve(curve_attr), source_stream, offset as u64)
+                                .tag("00_26");
+                            annotations.exactness(id_curve(curve_attr), Exactness::Derived);
+                        }
                     }
                     curve = Some(CurveId(id_curve(curve_attr)));
                 }
@@ -695,25 +801,54 @@ fn decode_graph(
     let loop_set = kept_loops;
 
     // Surfaces + faces.
-    let mut bridge_group = HashMap::new();
-    let mut bridge_shell = HashMap::new();
-    for (group, body_record) in body_records.iter().enumerate() {
-        for face in &faces {
-            let owner = t.bridges.get(&face.bridge_attr).and_then(|r| r.owner);
-            if body_record.refs.contains(&face.bridge_attr)
-                || owner.is_some_and(|owner| body_record.refs.contains(&owner))
-            {
-                bridge_group.insert(face.bridge_attr, group);
-                if let Some(shell) = body_record
-                    .regions
-                    .iter()
-                    .flat_map(|region| &region.shells)
-                    .find(|shell| {
-                        shell.refs.contains(&face.bridge_attr)
-                            || owner.is_some_and(|owner| shell.refs.contains(&owner))
-                    })
+    let bind_bridges = |body_records: &[entity::BodyRecord],
+                        faces: &[WalkedFace]|
+     -> (HashMap<u16, usize>, HashMap<u16, u16>) {
+        let mut bridge_group = HashMap::new();
+        let mut bridge_shell = HashMap::new();
+        for (group, body_record) in body_records.iter().enumerate() {
+            for face in faces {
+                let owner = t.bridges.get(&face.bridge_attr).and_then(|r| r.owner);
+                if body_record.refs.contains(&face.bridge_attr)
+                    || owner.is_some_and(|owner| body_record.refs.contains(&owner))
                 {
-                    bridge_shell.insert(face.bridge_attr, shell.attr);
+                    bridge_group.insert(face.bridge_attr, group);
+                    if let Some(shell) = body_record
+                        .regions
+                        .iter()
+                        .flat_map(|region| &region.shells)
+                        .find(|shell| {
+                            shell.refs.contains(&face.bridge_attr)
+                                || owner.is_some_and(|owner| shell.refs.contains(&owner))
+                        })
+                    {
+                        bridge_shell.insert(face.bridge_attr, shell.attr);
+                    }
+                }
+            }
+        }
+        (bridge_group, bridge_shell)
+    };
+    let (mut bridge_group, mut bridge_shell) = bind_bridges(&body_records, &faces);
+    // Primary body records that own no face are superseded by cluster-key
+    // chain bodies; a sole chain owns every canonical face in the site.
+    if (body_records.is_empty() || bridge_group.is_empty()) && !cluster_bodies.is_empty() {
+        let (cluster_group, cluster_shell) = bind_bridges(&cluster_bodies, &faces);
+        if !cluster_group.is_empty() || cluster_bodies.len() == 1 {
+            body_records = cluster_bodies;
+            bridge_group = cluster_group;
+            bridge_shell = cluster_shell;
+            if let [sole] = body_records.as_slice() {
+                let shell_attr = sole
+                    .regions
+                    .first()
+                    .and_then(|region| region.shells.first())
+                    .map(|shell| shell.attr);
+                for face in &faces {
+                    bridge_group.entry(face.bridge_attr).or_insert(0);
+                    if let Some(shell_attr) = shell_attr {
+                        bridge_shell.entry(face.bridge_attr).or_insert(shell_attr);
+                    }
                 }
             }
         }
@@ -750,16 +885,32 @@ fn decode_graph(
                 });
             }
             _ => {
-                out.stats.unknown_surface_faces += 1;
-                annotations
-                    .note(id_surf(f.bridge_attr), source_stream, surf_off as u64)
-                    .tag("unknown_surface");
-                annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
-                out.surfaces.push(Surface {
-                    id: SurfaceId(id_surf(f.bridge_attr)),
-                    source_object: None,
-                    geometry: SurfaceGeometry::Unknown { record: None },
-                });
+                if let Some((geometry, offset, tag, derived)) =
+                    resolve_sweep_surface(carriers, t, f)
+                {
+                    annotations
+                        .note(id_surf(f.bridge_attr), source_stream, offset as u64)
+                        .tag(tag);
+                    if derived {
+                        annotations.exactness(id_surf(f.bridge_attr), Exactness::Derived);
+                    }
+                    out.surfaces.push(Surface {
+                        id: SurfaceId(id_surf(f.bridge_attr)),
+                        source_object: None,
+                        geometry,
+                    });
+                } else {
+                    out.stats.unknown_surface_faces += 1;
+                    annotations
+                        .note(id_surf(f.bridge_attr), source_stream, surf_off as u64)
+                        .tag("unknown_surface");
+                    annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
+                    out.surfaces.push(Surface {
+                        id: SurfaceId(id_surf(f.bridge_attr)),
+                        source_object: None,
+                        geometry: SurfaceGeometry::Unknown { record: None },
+                    });
+                }
             }
         }
         annotations
@@ -814,13 +965,15 @@ fn decode_graph(
     synthesize_sphere_seams(&mut out, &mut annotations, source_stream);
     derive_planar_pcurves(&mut out, &mut annotations, source_stream);
     derive_cylindrical_pcurves(&mut out, &mut annotations, source_stream);
+    derive_revolved_circle_pcurves(&mut out, &mut annotations, source_stream);
     derive_spherical_pcurves(&mut out, &mut annotations, source_stream);
-    derive_nurbs_boundary_pcurves(&mut out, &mut annotations, source_stream);
+    derive_nurbs_isoparametric_pcurves(&mut out, &mut annotations, source_stream);
     prune_rejected_topology(&mut out);
 
     if out.faces.is_empty() {
         return Brep::default();
     }
+    out.stats.synthetic_body_grouping = body_records.is_empty();
 
     let group_count = body_records.len().max(1);
     for group in 0..group_count {
@@ -1158,18 +1311,11 @@ fn derive_planar_pcurves(
         let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
-        if !edge.curve.as_ref().is_some_and(|curve_id| {
-            curves
-                .get(curve_id)
-                .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Line { .. }))
-        }) {
-            continue;
-        }
-        let position =
-            |vertex_id: &VertexId| vertex_points.get(vertex_id).map(|point| point.position);
-        let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end)) else {
+        let Some(curve) = edge.curve.as_ref().and_then(|id| curves.get(id).copied()) else {
             continue;
         };
+        let position =
+            |vertex_id: &VertexId| vertex_points.get(vertex_id).map(|point| point.position);
         let uv = |point: cadmpeg_ir::math::Point3| {
             let d = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
             cadmpeg_ir::math::Point2::new(
@@ -1177,23 +1323,107 @@ fn derive_planar_pcurves(
                 d[0] * v_reference.x + d[1] * v_reference.y + d[2] * v_reference.z,
             )
         };
-        let start = uv(start);
-        let end = uv(end);
-        let (du, dv) = (end.u - start.u, end.v - start.v);
-        let norm = (du * du + dv * dv).sqrt();
-        if norm == 0.0 {
-            continue;
-        }
+        let project_direction = |direction: cadmpeg_ir::math::Vector3| {
+            let projected = cadmpeg_ir::math::Point2::new(
+                direction.x * u_reference.x
+                    + direction.y * u_reference.y
+                    + direction.z * u_reference.z,
+                direction.x * v_reference.x
+                    + direction.y * v_reference.y
+                    + direction.z * v_reference.z,
+            );
+            let norm = (projected.u * projected.u + projected.v * projected.v).sqrt();
+            (norm > 1e-12)
+                .then(|| cadmpeg_ir::math::Point2::new(projected.u / norm, projected.v / norm))
+        };
+        let plane_distance = |point: cadmpeg_ir::math::Point3| {
+            (point.x - origin.x) * normal.x
+                + (point.y - origin.y) * normal.y
+                + (point.z - origin.z) * normal.z
+        };
+        let geometry = match &curve.geometry {
+            CurveGeometry::Line { .. } => {
+                let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end)) else {
+                    continue;
+                };
+                let start = uv(start);
+                let end = uv(end);
+                let (du, dv) = (end.u - start.u, end.v - start.v);
+                let norm = (du * du + dv * dv).sqrt();
+                if norm == 0.0 {
+                    continue;
+                }
+                PcurveGeometry::Line {
+                    origin: start,
+                    direction: cadmpeg_ir::math::Point2::new(du / norm, dv / norm),
+                }
+            }
+            CurveGeometry::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            } => {
+                let axis_dot = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
+                if axis_dot.abs() < 1.0 - 1e-9
+                    || plane_distance(*center).abs() > 1e-6
+                    || *radius <= 0.0
+                {
+                    continue;
+                }
+                let Some(ref_direction) = project_direction(*ref_direction) else {
+                    continue;
+                };
+                PcurveGeometry::Circle {
+                    center: uv(*center),
+                    x_axis: ref_direction,
+                    y_axis: if axis_dot < 0.0 {
+                        cadmpeg_ir::math::Point2::new(ref_direction.v, -ref_direction.u)
+                    } else {
+                        cadmpeg_ir::math::Point2::new(-ref_direction.v, ref_direction.u)
+                    },
+                    radius: *radius,
+                }
+            }
+            CurveGeometry::Ellipse {
+                center,
+                axis,
+                major_direction,
+                major_radius,
+                minor_radius,
+            } => {
+                let axis_dot = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
+                if axis_dot.abs() < 1.0 - 1e-9
+                    || plane_distance(*center).abs() > 1e-6
+                    || *major_radius <= 0.0
+                    || *minor_radius <= 0.0
+                {
+                    continue;
+                }
+                let Some(major_direction) = project_direction(*major_direction) else {
+                    continue;
+                };
+                PcurveGeometry::Ellipse {
+                    center: uv(*center),
+                    x_axis: major_direction,
+                    y_axis: if axis_dot < 0.0 {
+                        cadmpeg_ir::math::Point2::new(major_direction.v, -major_direction.u)
+                    } else {
+                        cadmpeg_ir::math::Point2::new(-major_direction.v, major_direction.u)
+                    },
+                    major_radius: *major_radius,
+                    minor_radius: *minor_radius,
+                }
+            }
+            _ => continue,
+        };
         let id = PcurveId(format!(
             "sldprt:brep:pcurve#{}",
             coedge.id.0.rsplit('#').next().unwrap_or("0")
         ));
         let pcurve = Pcurve {
             id: id.clone(),
-            geometry: PcurveGeometry::Line {
-                origin: start,
-                direction: cadmpeg_ir::math::Point2::new(du / norm, dv / norm),
-            },
+            geometry,
             wrapper_reversed: None,
             native_tail_flags: None,
             parameter_range: None,
@@ -1282,12 +1512,13 @@ fn derive_cylindrical_pcurves(
             axis.x * u_reference.y - axis.y * u_reference.x,
         );
         let dot = |a: [f64; 3], b: cadmpeg_ir::math::Vector3| a[0] * b.x + a[1] * b.y + a[2] * b.z;
+        let mut parameter_range = None;
         let geometry = match &curve.geometry {
             CurveGeometry::Circle {
                 center,
                 axis: circle_axis,
+                ref_direction: circle_reference,
                 radius: circle_radius,
-                ..
             } if (circle_radius.abs() - radius.abs()).abs() < 1e-6
                 && (circle_axis.x * axis.x + circle_axis.y * axis.y + circle_axis.z * axis.z)
                     .abs()
@@ -1313,9 +1544,14 @@ fn derive_cylindrical_pcurves(
                 {
                     continue;
                 }
+                let Some((phase, sense)) =
+                    circle_azimuth_parameter(*axis, *u_reference, *circle_axis, *circle_reference)
+                else {
+                    continue;
+                };
                 PcurveGeometry::Line {
-                    origin: cadmpeg_ir::math::Point2::new(0.0, axial),
-                    direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    origin: cadmpeg_ir::math::Point2::new(phase, axial),
+                    direction: cadmpeg_ir::math::Point2::new(sense, 0.0),
                 }
             }
             CurveGeometry::Line { direction, .. }
@@ -1341,6 +1577,114 @@ fn derive_cylindrical_pcurves(
                     ),
                 }
             }
+            CurveGeometry::Ellipse {
+                center,
+                axis: ellipse_axis,
+                major_direction,
+                major_radius,
+                minor_radius,
+            } => {
+                let minor_direction = cadmpeg_ir::math::Vector3::new(
+                    ellipse_axis.y * major_direction.z - ellipse_axis.z * major_direction.y,
+                    ellipse_axis.z * major_direction.x - ellipse_axis.x * major_direction.z,
+                    ellipse_axis.x * major_direction.y - ellipse_axis.y * major_direction.x,
+                );
+                let relative = [
+                    center.x - origin.x,
+                    center.y - origin.y,
+                    center.z - origin.z,
+                ];
+                let major = [
+                    major_radius * major_direction.x,
+                    major_radius * major_direction.y,
+                    major_radius * major_direction.z,
+                ];
+                let minor = [
+                    minor_radius * minor_direction.x,
+                    minor_radius * minor_direction.y,
+                    minor_radius * minor_direction.z,
+                ];
+                let radial_center = cadmpeg_ir::math::Point2::new(
+                    dot(relative, *u_reference),
+                    dot(relative, cross),
+                );
+                let radial_cos =
+                    cadmpeg_ir::math::Point2::new(dot(major, *u_reference), dot(major, cross));
+                let radial_sin =
+                    cadmpeg_ir::math::Point2::new(dot(minor, *u_reference), dot(minor, cross));
+                let norm = |value: cadmpeg_ir::math::Point2| value.u.hypot(value.v);
+                let product = |a: cadmpeg_ir::math::Point2, b: cadmpeg_ir::math::Point2| {
+                    a.u * b.u + a.v * b.v
+                };
+                let tolerance = 1e-6_f64.max(radius.abs() * 1e-9);
+                if norm(radial_center) > tolerance
+                    || (norm(radial_cos) - radius.abs()).abs() > tolerance
+                    || (norm(radial_sin) - radius.abs()).abs() > tolerance
+                    || product(radial_cos, radial_sin).abs() > tolerance * radius.abs()
+                {
+                    continue;
+                }
+                PcurveGeometry::PolarHarmonic {
+                    radial_center,
+                    radial_cos,
+                    radial_sin,
+                    axial_origin: dot(relative, *axis),
+                    axial_cos: dot(major, *axis),
+                    axial_sin: dot(minor, *axis),
+                }
+            }
+            CurveGeometry::Nurbs(nurbs) => {
+                let radial_control_points = nurbs
+                    .control_points
+                    .iter()
+                    .map(|point| {
+                        let relative = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
+                        cadmpeg_ir::math::Point2::new(
+                            dot(relative, *u_reference),
+                            dot(relative, cross),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                if !quadratic_nurbs_has_constant_radius(
+                    &radial_control_points,
+                    nurbs.weights.as_deref(),
+                    &nurbs.knots,
+                    radius.abs(),
+                ) {
+                    continue;
+                }
+                let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end)) else {
+                    continue;
+                };
+                let (Some(start_parameter), Some(end_parameter)) = (
+                    nurbs_parameter_at_point(nurbs, start),
+                    nurbs_parameter_at_point(nurbs, end),
+                ) else {
+                    continue;
+                };
+                parameter_range = Some([
+                    start_parameter.min(end_parameter),
+                    start_parameter.max(end_parameter),
+                ]);
+                let axial_control_points = nurbs
+                    .control_points
+                    .iter()
+                    .map(|point| {
+                        dot(
+                            [point.x - origin.x, point.y - origin.y, point.z - origin.z],
+                            *axis,
+                        )
+                    })
+                    .collect();
+                PcurveGeometry::PolarNurbs {
+                    degree: nurbs.degree,
+                    knots: nurbs.knots.clone(),
+                    radial_control_points,
+                    axial_control_points,
+                    weights: nurbs.weights.clone(),
+                    periodic: nurbs.periodic,
+                }
+            }
             _ => continue,
         };
         let id = PcurveId(format!(
@@ -1353,6 +1697,319 @@ fn derive_cylindrical_pcurves(
             Pcurve {
                 id,
                 geometry,
+                wrapper_reversed: None,
+                native_tail_flags: None,
+                parameter_range,
+                fit_tolerance: None,
+            },
+        ));
+    }
+    let coedge_indices = out
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(index, coedge)| (coedge.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    for (coedge_id, id, pcurve) in derived {
+        if let Some(index) = coedge_indices.get(&coedge_id) {
+            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id.clone(),
+                isoparametric: None,
+            }];
+        }
+        annotations
+            .note(&id, source_stream, 0)
+            .tag("derived_cylindrical_pcurve");
+        annotations.exactness(&id, Exactness::Derived);
+        out.pcurves.push(pcurve);
+    }
+}
+
+fn nurbs_parameter_at_point(
+    nurbs: &cadmpeg_ir::geometry::NurbsCurve,
+    target: cadmpeg_ir::math::Point3,
+) -> Option<f64> {
+    let squared_distance = |parameter: f64| {
+        let point = nurbs_curve_point(
+            nurbs.degree,
+            &nurbs.knots,
+            &nurbs.control_points,
+            nurbs.weights.as_deref(),
+            parameter,
+        )?;
+        Some(
+            (point.x - target.x).powi(2)
+                + (point.y - target.y).powi(2)
+                + (point.z - target.z).powi(2),
+        )
+    };
+    let mut best = None::<(f64, f64)>;
+    for span in nurbs.knots.windows(2).filter(|span| span[0] < span[1]) {
+        let (mut left, mut right) = (span[0], span[1]);
+        let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
+        let mut a = right - ratio * (right - left);
+        let mut b = left + ratio * (right - left);
+        let mut da = squared_distance(a)?;
+        let mut db = squared_distance(b)?;
+        for _ in 0..80 {
+            if da <= db {
+                right = b;
+                b = a;
+                db = da;
+                a = right - ratio * (right - left);
+                da = squared_distance(a)?;
+            } else {
+                left = a;
+                a = b;
+                da = db;
+                b = left + ratio * (right - left);
+                db = squared_distance(b)?;
+            }
+        }
+        for parameter in [span[0], (left + right) * 0.5, span[1]] {
+            let distance = squared_distance(parameter)?;
+            if best.is_none_or(|(_, best_distance)| distance < best_distance) {
+                best = Some((parameter, distance));
+            }
+        }
+    }
+    let (parameter, squared_distance) = best?;
+    (squared_distance.sqrt() <= 0.01).then_some(parameter)
+}
+
+fn quadratic_nurbs_has_constant_radius(
+    radial_control_points: &[cadmpeg_ir::math::Point2],
+    weights: Option<&[f64]>,
+    knots: &[f64],
+    radius: f64,
+) -> bool {
+    if radial_control_points.len() < 3
+        || radial_control_points.len().is_multiple_of(2)
+        || knots.len() != radial_control_points.len() + 3
+        || weights.is_some_and(|weights| weights.len() != radial_control_points.len())
+        || !radius.is_finite()
+        || radius <= 0.0
+    {
+        return false;
+    }
+    let mut runs = Vec::new();
+    for knot in knots {
+        if !knot.is_finite() {
+            return false;
+        }
+        if let Some((value, count)) = runs.last_mut() {
+            if *value == *knot {
+                *count += 1;
+                continue;
+            }
+            if *knot <= *value {
+                return false;
+            }
+        }
+        runs.push((*knot, 1usize));
+    }
+    if runs.len() < 2
+        || runs.first().is_none_or(|(_, count)| *count != 3)
+        || runs.last().is_none_or(|(_, count)| *count != 3)
+        || runs[1..runs.len() - 1].iter().any(|(_, count)| *count != 2)
+        || runs.len() - 1 != (radial_control_points.len() - 1) / 2
+    {
+        return false;
+    }
+    let weight = |index: usize| weights.map_or(1.0, |weights| weights[index]);
+    let choose_2 = [1.0, 2.0, 1.0];
+    let choose_4 = [1.0, 4.0, 6.0, 4.0, 1.0];
+    let tolerance = 1e-6_f64.max(radius * radius * 1e-9);
+    for start in (0..radial_control_points.len() - 1).step_by(2) {
+        let homogeneous = (0..3)
+            .map(|offset| {
+                let weight = weight(start + offset);
+                let point = radial_control_points[start + offset];
+                (point.u * weight, point.v * weight, weight)
+            })
+            .collect::<Vec<_>>();
+        for (degree, &denominator) in choose_4.iter().enumerate() {
+            let mut identity = 0.0_f64;
+            for i in 0usize..=2 {
+                let Some(j) = degree.checked_sub(i) else {
+                    continue;
+                };
+                if j > 2 {
+                    continue;
+                }
+                let factor = choose_2[i] * choose_2[j] / denominator;
+                identity += factor
+                    * (homogeneous[i].0 * homogeneous[j].0 + homogeneous[i].1 * homogeneous[j].1
+                        - radius * radius * homogeneous[i].2 * homogeneous[j].2);
+            }
+            if identity.abs() > tolerance {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn circle_azimuth_parameter(
+    surface_axis: cadmpeg_ir::math::Vector3,
+    surface_reference: cadmpeg_ir::math::Vector3,
+    circle_axis: cadmpeg_ir::math::Vector3,
+    circle_reference: cadmpeg_ir::math::Vector3,
+) -> Option<(f64, f64)> {
+    let axis_dot = surface_axis.x * circle_axis.x
+        + surface_axis.y * circle_axis.y
+        + surface_axis.z * circle_axis.z;
+    if axis_dot.abs() < 1.0 - 1e-9 {
+        return None;
+    }
+    let surface_tangent = cadmpeg_ir::math::Vector3::new(
+        surface_axis.y * surface_reference.z - surface_axis.z * surface_reference.y,
+        surface_axis.z * surface_reference.x - surface_axis.x * surface_reference.z,
+        surface_axis.x * surface_reference.y - surface_axis.y * surface_reference.x,
+    );
+    let phase = (circle_reference.x * surface_tangent.x
+        + circle_reference.y * surface_tangent.y
+        + circle_reference.z * surface_tangent.z)
+        .atan2(
+            circle_reference.x * surface_reference.x
+                + circle_reference.y * surface_reference.y
+                + circle_reference.z * surface_reference.z,
+        );
+    Some((phase, axis_dot.signum()))
+}
+
+fn derive_revolved_circle_pcurves(
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+) {
+    let loop_faces: HashMap<_, _> = out
+        .loops
+        .iter()
+        .map(|lp| (lp.id.clone(), lp.face.clone()))
+        .collect();
+    let faces: HashMap<_, _> = out.faces.iter().map(|face| (&face.id, face)).collect();
+    let surfaces: HashMap<_, _> = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect();
+    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
+    let dot = |a: [f64; 3], b: cadmpeg_ir::math::Vector3| a[0] * b.x + a[1] * b.y + a[2] * b.z;
+    let mut derived = Vec::new();
+    for coedge in &out.coedges {
+        if !coedge.pcurves.is_empty() {
+            continue;
+        }
+        let Some(surface) = loop_faces
+            .get(&coedge.owner_loop)
+            .and_then(|face_id| faces.get(face_id))
+            .and_then(|face| surfaces.get(&face.surface))
+        else {
+            continue;
+        };
+        let Some(CurveGeometry::Circle {
+            center: circle_center,
+            axis: circle_axis,
+            ref_direction: circle_reference,
+            radius: circle_radius,
+        }) = edges
+            .get(&coedge.edge)
+            .and_then(|edge| edge.curve.as_ref())
+            .and_then(|curve_id| curves.get(curve_id))
+            .map(|curve| &curve.geometry)
+        else {
+            continue;
+        };
+        let (surface_axis, surface_reference, v) = match &surface.geometry {
+            SurfaceGeometry::Cone {
+                origin,
+                axis,
+                ref_direction,
+                radius,
+                ratio,
+                half_angle,
+            } if (*ratio - 1.0).abs() < 1e-12 => {
+                let d = [
+                    circle_center.x - origin.x,
+                    circle_center.y - origin.y,
+                    circle_center.z - origin.z,
+                ];
+                let v = dot(d, *axis);
+                let radial = [d[0] - v * axis.x, d[1] - v * axis.y, d[2] - v * axis.z];
+                let expected_radius = radius + v * half_angle.tan();
+                if dot(
+                    radial,
+                    cadmpeg_ir::math::Vector3::new(radial[0], radial[1], radial[2]),
+                )
+                .sqrt()
+                    > 1e-6
+                    || (circle_radius.abs() - expected_radius.abs()).abs() > 1e-6
+                {
+                    continue;
+                }
+                (*axis, *ref_direction, v)
+            }
+            SurfaceGeometry::Torus {
+                center,
+                axis,
+                ref_direction,
+                major_radius,
+                minor_radius,
+            } => {
+                let d = [
+                    circle_center.x - center.x,
+                    circle_center.y - center.y,
+                    circle_center.z - center.z,
+                ];
+                let height = dot(d, *axis);
+                let radial = [
+                    d[0] - height * axis.x,
+                    d[1] - height * axis.y,
+                    d[2] - height * axis.z,
+                ];
+                if dot(
+                    radial,
+                    cadmpeg_ir::math::Vector3::new(radial[0], radial[1], radial[2]),
+                )
+                .sqrt()
+                    > 1e-6
+                    || ((circle_radius.abs() - major_radius).hypot(height) - minor_radius.abs())
+                        .abs()
+                        > 1e-6_f64.max(minor_radius.abs() * 1e-9)
+                {
+                    continue;
+                }
+                (
+                    *axis,
+                    *ref_direction,
+                    height.atan2(circle_radius.abs() - major_radius),
+                )
+            }
+            _ => continue,
+        };
+        let Some((phase, sense)) = circle_azimuth_parameter(
+            surface_axis,
+            surface_reference,
+            *circle_axis,
+            *circle_reference,
+        ) else {
+            continue;
+        };
+        let id = PcurveId(format!(
+            "sldprt:brep:pcurve#revolved-circle:{}",
+            coedge.id.0.rsplit('#').next().unwrap_or("0")
+        ));
+        derived.push((
+            coedge.id.clone(),
+            id.clone(),
+            Pcurve {
+                id,
+                geometry: PcurveGeometry::Line {
+                    origin: cadmpeg_ir::math::Point2::new(phase, v),
+                    direction: cadmpeg_ir::math::Point2::new(sense, 0.0),
+                },
                 wrapper_reversed: None,
                 native_tail_flags: None,
                 parameter_range: None,
@@ -1375,7 +2032,7 @@ fn derive_cylindrical_pcurves(
         }
         annotations
             .note(&id, source_stream, 0)
-            .tag("derived_cylindrical_pcurve");
+            .tag("derived_revolved_circle_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
@@ -1517,7 +2174,7 @@ fn derive_spherical_pcurves(
     }
 }
 
-fn derive_nurbs_boundary_pcurves(
+fn derive_nurbs_isoparametric_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
@@ -1541,6 +2198,13 @@ fn derive_nurbs_boundary_pcurves(
                 (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9 && (a.z - b.z).abs() < 1e-9
             })
     };
+    let same_weights = |a: Option<&[f64]>, b: Option<&[f64]>| match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-12)
+        }
+        _ => false,
+    };
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -1560,7 +2224,7 @@ fn derive_nurbs_boundary_pcurves(
         let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
-        let Some(CurveGeometry::Nurbs(curve)) = edge
+        let Some(curve) = edge
             .curve
             .as_ref()
             .and_then(|id| curves.get(id).copied())
@@ -1568,9 +2232,6 @@ fn derive_nurbs_boundary_pcurves(
         else {
             continue;
         };
-        if surface.weights.is_some() || curve.weights.is_some() {
-            continue;
-        }
         let (u_min, u_max) = (
             *surface.u_knots.first().unwrap_or(&0.0),
             *surface.u_knots.last().unwrap_or(&1.0),
@@ -1593,43 +2254,124 @@ fn derive_nurbs_boundary_pcurves(
                 .map(|u| surface.control_points[u * vc + v])
                 .collect::<Vec<_>>()
         };
-        let geometry = if curve.degree == surface.v_degree
-            && curve.knots == surface.v_knots
-            && same_points(&curve.control_points, &row(0))
-        {
-            PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(u_min, v_min),
-                direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+        let row_weights = |u: usize| {
+            surface
+                .weights
+                .as_ref()
+                .map(|weights| &weights[u * vc..(u + 1) * vc])
+        };
+        let column_weights = |v: usize| {
+            surface
+                .weights
+                .as_ref()
+                .map(|weights| (0..uc).map(|u| weights[u * vc + v]).collect::<Vec<_>>())
+        };
+        let geometry = match curve {
+            CurveGeometry::Nurbs(curve) => {
+                if curve.degree == surface.v_degree
+                    && curve.knots == surface.v_knots
+                    && same_points(&curve.control_points, &row(0))
+                    && same_weights(curve.weights.as_deref(), row_weights(0))
+                {
+                    PcurveGeometry::Line {
+                        origin: cadmpeg_ir::math::Point2::new(u_min, v_min),
+                        direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                    }
+                } else if curve.degree == surface.v_degree
+                    && curve.knots == surface.v_knots
+                    && same_points(&curve.control_points, &row(uc - 1))
+                    && same_weights(curve.weights.as_deref(), row_weights(uc - 1))
+                {
+                    PcurveGeometry::Line {
+                        origin: cadmpeg_ir::math::Point2::new(u_max, v_min),
+                        direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                    }
+                } else if curve.degree == surface.u_degree
+                    && curve.knots == surface.u_knots
+                    && same_points(&curve.control_points, &column(0))
+                    && same_weights(curve.weights.as_deref(), column_weights(0).as_deref())
+                {
+                    PcurveGeometry::Line {
+                        origin: cadmpeg_ir::math::Point2::new(u_min, v_min),
+                        direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    }
+                } else if curve.degree == surface.u_degree
+                    && curve.knots == surface.u_knots
+                    && same_points(&curve.control_points, &column(vc - 1))
+                    && same_weights(curve.weights.as_deref(), column_weights(vc - 1).as_deref())
+                {
+                    PcurveGeometry::Line {
+                        origin: cadmpeg_ir::math::Point2::new(u_min, v_max),
+                        direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    }
+                } else {
+                    continue;
+                }
             }
-        } else if curve.degree == surface.v_degree
-            && curve.knots == surface.v_knots
-            && same_points(&curve.control_points, &row(uc - 1))
-        {
-            PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(u_max, v_min),
-                direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+            CurveGeometry::Line { origin, direction }
+                if surface.u_degree == 1 && surface.u_knots == [u_min, u_min, u_max, u_max] =>
+            {
+                let line_pcurve = |v_index: usize, v: f64| {
+                    let points = column(v_index);
+                    let weights_equal = surface.weights.as_ref().is_none_or(|weights| {
+                        (weights[v_index] - weights[(uc - 1) * vc + v_index]).abs() < 1e-12
+                    });
+                    if points.len() != 2 || !weights_equal || u_min == u_max {
+                        return None;
+                    }
+                    let delta = [
+                        points[1].x - points[0].x,
+                        points[1].y - points[0].y,
+                        points[1].z - points[0].z,
+                    ];
+                    let squared = delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2];
+                    if squared <= f64::EPSILON {
+                        return None;
+                    }
+                    let relative = [
+                        origin.x - points[0].x,
+                        origin.y - points[0].y,
+                        origin.z - points[0].z,
+                    ];
+                    let project = |value: [f64; 3]| {
+                        (value[0] * delta[0] + value[1] * delta[1] + value[2] * delta[2]) / squared
+                    };
+                    let offset = project(relative);
+                    let rate = project([direction.x, direction.y, direction.z]);
+                    let residual = |value: [f64; 3], factor: f64| {
+                        ((value[0] - factor * delta[0]).powi(2)
+                            + (value[1] - factor * delta[1]).powi(2)
+                            + (value[2] - factor * delta[2]).powi(2))
+                        .sqrt()
+                    };
+                    if residual(relative, offset) > 1e-6
+                        || residual([direction.x, direction.y, direction.z], rate) > 1e-9
+                        || rate == 0.0
+                    {
+                        return None;
+                    }
+                    let domain = u_max - u_min;
+                    Some(PcurveGeometry::Line {
+                        origin: cadmpeg_ir::math::Point2::new(u_min + offset * domain, v),
+                        direction: cadmpeg_ir::math::Point2::new(rate * domain, 0.0),
+                    })
+                };
+                if let Some(geometry) = line_pcurve(0, v_min) {
+                    geometry
+                } else if let Some(geometry) = line_pcurve(vc - 1, v_max) {
+                    geometry
+                } else if let Some(geometry) =
+                    ruled_surface_line_pcurve(surface, *origin, *direction, u_min, u_max)
+                {
+                    geometry
+                } else {
+                    continue;
+                }
             }
-        } else if curve.degree == surface.u_degree
-            && curve.knots == surface.u_knots
-            && same_points(&curve.control_points, &column(0))
-        {
-            PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(u_min, v_min),
-                direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-            }
-        } else if curve.degree == surface.u_degree
-            && curve.knots == surface.u_knots
-            && same_points(&curve.control_points, &column(vc - 1))
-        {
-            PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(u_min, v_max),
-                direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-            }
-        } else {
-            continue;
+            _ => continue,
         };
         let id = PcurveId(format!(
-            "sldprt:brep:pcurve#nurbs-boundary:{}",
+            "sldprt:brep:pcurve#nurbs-isoparametric:{}",
             coedge.id.0.rsplit('#').next().unwrap_or("0")
         ));
         derived.push((
@@ -1660,10 +2402,137 @@ fn derive_nurbs_boundary_pcurves(
         }
         annotations
             .note(&id, source_stream, 0)
-            .tag("derived_nurbs_boundary_pcurve");
+            .tag("derived_nurbs_isoparametric_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
+}
+
+fn ruled_surface_line_pcurve(
+    surface: &cadmpeg_ir::geometry::NurbsSurface,
+    line_origin: cadmpeg_ir::math::Point3,
+    line_direction: cadmpeg_ir::math::Vector3,
+    u_min: f64,
+    u_max: f64,
+) -> Option<PcurveGeometry> {
+    let (uc, vc) = (surface.u_count as usize, surface.v_count as usize);
+    if uc != 2
+        || surface.u_degree != 1
+        || surface.u_knots != [u_min, u_min, u_max, u_max]
+        || u_min == u_max
+        || surface
+            .weights
+            .as_ref()
+            .is_some_and(|weights| (0..vc).any(|v| (weights[v] - weights[vc + v]).abs() > 1e-12))
+    {
+        return None;
+    }
+    let row = |u: usize| &surface.control_points[u * vc..(u + 1) * vc];
+    let row_weights = |u: usize| {
+        surface
+            .weights
+            .as_ref()
+            .map(|weights| &weights[u * vc..(u + 1) * vc])
+    };
+    let evaluate_rows = |parameter: f64| {
+        Some((
+            nurbs_curve_point(
+                surface.v_degree,
+                &surface.v_knots,
+                row(0),
+                row_weights(0),
+                parameter,
+            )?,
+            nurbs_curve_point(
+                surface.v_degree,
+                &surface.v_knots,
+                row(1),
+                row_weights(1),
+                parameter,
+            )?,
+        ))
+    };
+    let direction_squared = line_direction.x * line_direction.x
+        + line_direction.y * line_direction.y
+        + line_direction.z * line_direction.z;
+    if direction_squared <= f64::EPSILON {
+        return None;
+    }
+    let perpendicular_squared = |point: cadmpeg_ir::math::Point3| {
+        let relative = [
+            point.x - line_origin.x,
+            point.y - line_origin.y,
+            point.z - line_origin.z,
+        ];
+        let along = (relative[0] * line_direction.x
+            + relative[1] * line_direction.y
+            + relative[2] * line_direction.z)
+            / direction_squared;
+        (relative[0] - along * line_direction.x).powi(2)
+            + (relative[1] - along * line_direction.y).powi(2)
+            + (relative[2] - along * line_direction.z).powi(2)
+    };
+    let objective = |parameter: f64| {
+        let (a, b) = evaluate_rows(parameter)?;
+        Some(perpendicular_squared(a).max(perpendicular_squared(b)))
+    };
+    let mut best = None::<(f64, f64)>;
+    for span in surface.v_knots.windows(2).filter(|span| span[0] < span[1]) {
+        let (mut left, mut right) = (span[0], span[1]);
+        let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
+        let mut a = right - ratio * (right - left);
+        let mut b = left + ratio * (right - left);
+        let mut da = objective(a)?;
+        let mut db = objective(b)?;
+        for _ in 0..80 {
+            if da <= db {
+                right = b;
+                b = a;
+                db = da;
+                a = right - ratio * (right - left);
+                da = objective(a)?;
+            } else {
+                left = a;
+                a = b;
+                da = db;
+                b = left + ratio * (right - left);
+                db = objective(b)?;
+            }
+        }
+        for parameter in [span[0], (left + right) * 0.5, span[1]] {
+            let error = objective(parameter)?;
+            if best.is_none_or(|(_, best_error)| error < best_error) {
+                best = Some((parameter, error));
+            }
+        }
+    }
+    let (v, error) = best?;
+    if error.sqrt() > 0.01 {
+        return None;
+    }
+    let (a, b) = evaluate_rows(v)?;
+    let delta = [b.x - a.x, b.y - a.y, b.z - a.z];
+    let delta_squared = delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2];
+    if delta_squared <= f64::EPSILON {
+        return None;
+    }
+    let project = |value: [f64; 3]| {
+        (value[0] * delta[0] + value[1] * delta[1] + value[2] * delta[2]) / delta_squared
+    };
+    let offset = project([
+        line_origin.x - a.x,
+        line_origin.y - a.y,
+        line_origin.z - a.z,
+    ]);
+    let rate = project([line_direction.x, line_direction.y, line_direction.z]);
+    if rate == 0.0 {
+        return None;
+    }
+    let domain = u_max - u_min;
+    Some(PcurveGeometry::Line {
+        origin: cadmpeg_ir::math::Point2::new(u_min + offset * domain, v),
+        direction: cadmpeg_ir::math::Point2::new(rate * domain, 0.0),
+    })
 }
 
 fn solve_face_orientation(out: &mut Brep) {
@@ -1909,6 +2778,129 @@ fn synthesize_sphere_seams(
     annotations: &mut AnnotationBuilder,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
 ) {
+    let surface_geometry = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, &surface.geometry))
+        .collect::<HashMap<_, _>>();
+    let loop_coedges = out
+        .loops
+        .iter()
+        .map(|lp| (&lp.id, &lp.coedges))
+        .collect::<HashMap<_, _>>();
+    let coedge_edges = out
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, &coedge.edge))
+        .collect::<HashMap<_, _>>();
+    let edge_indices = out
+        .edges
+        .iter()
+        .enumerate()
+        .map(|(index, edge)| (&edge.id, index))
+        .collect::<HashMap<_, _>>();
+    let curve_geometry = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<HashMap<_, _>>();
+    let vertex_points = out
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            out.points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .map(|point| (&vertex.id, point.position))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut existing = Vec::new();
+    for face in &out.faces {
+        let Some(SurfaceGeometry::Sphere {
+            center,
+            radius,
+            axis,
+            ..
+        }) = surface_geometry.get(&face.surface).copied()
+        else {
+            continue;
+        };
+        let [loop_id] = face.loops.as_slice() else {
+            continue;
+        };
+        let Some(coedge_ids) = loop_coedges.get(loop_id).copied() else {
+            continue;
+        };
+        if coedge_ids.len() != 4 {
+            continue;
+        }
+        let seam_edges = coedge_ids
+            .iter()
+            .filter_map(|coedge| coedge_edges.get(coedge).copied())
+            .filter_map(|edge| edge_indices.get(edge).map(|index| (edge.clone(), *index)))
+            .filter(|(_, index)| out.edges[*index].curve.is_none())
+            .collect::<Vec<_>>();
+        let circle_count = coedge_ids
+            .iter()
+            .filter_map(|coedge| coedge_edges.get(coedge).copied())
+            .filter_map(|edge| edge_indices.get(edge).copied())
+            .filter(|index| {
+                out.edges[*index]
+                    .curve
+                    .as_ref()
+                    .and_then(|curve| curve_geometry.get(curve))
+                    .is_some_and(|geometry| matches!(geometry, CurveGeometry::Circle { .. }))
+            })
+            .count();
+        if let [(_, edge_index)] = seam_edges.as_slice() {
+            if circle_count != 3 {
+                continue;
+            }
+            let edge = &out.edges[*edge_index];
+            let north = cadmpeg_ir::math::Point3::new(
+                center.x + radius * axis.x,
+                center.y + radius * axis.y,
+                center.z + radius * axis.z,
+            );
+            let south = cadmpeg_ir::math::Point3::new(
+                center.x - radius * axis.x,
+                center.y - radius * axis.y,
+                center.z - radius * axis.z,
+            );
+            let squared_distance =
+                |left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3| {
+                    (left.x - right.x).powi(2)
+                        + (left.y - right.y).powi(2)
+                        + (left.z - right.z).powi(2)
+                };
+            let point = vertex_points
+                .get(&edge.start)
+                .or_else(|| vertex_points.get(&edge.end))
+                .map_or(north, |endpoint| {
+                    if squared_distance(*endpoint, north) <= squared_distance(*endpoint, south) {
+                        north
+                    } else {
+                        south
+                    }
+                });
+            existing.push((*edge_index, point));
+        }
+    }
+    for (edge_index, point) in existing {
+        let suffix = out.edges[edge_index].id.0.rsplit('#').next().unwrap_or("0");
+        let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam:{suffix}"));
+        annotations
+            .note(&curve_id.0, source_stream, 0)
+            .tag("derived_sphere_seam");
+        annotations.exactness(&curve_id.0, Exactness::Derived);
+        out.curves.push(Curve {
+            id: curve_id.clone(),
+            source_object: None,
+            geometry: CurveGeometry::Degenerate { point },
+        });
+        out.edges[edge_index].curve = Some(curve_id);
+    }
+
     let surfaces: HashMap<_, _> = out
         .surfaces
         .iter()
@@ -1923,7 +2915,7 @@ fn synthesize_sphere_seams(
     let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
     let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
     let mut candidates = Vec::new();
-    for face in &out.faces {
+    for (face_index, face) in out.faces.iter().enumerate() {
         let Some(surface) = surfaces.get(&face.surface) else {
             continue;
         };
@@ -1954,13 +2946,36 @@ fn synthesize_sphere_seams(
             continue;
         };
         if all_circles {
+            let seam_point = cadmpeg_ir::math::Point3::new(
+                center.x + radius * axis.x,
+                center.y + radius * axis.y,
+                center.z + radius * axis.z,
+            );
+            let mut pole_vertices = lp
+                .coedges
+                .iter()
+                .filter_map(|id| coedges.get(id))
+                .filter_map(|coedge| edges.get(&coedge.edge))
+                .flat_map(|edge| [&edge.start, &edge.end])
+                .filter(|vertex| {
+                    vertex_points.get(vertex).is_some_and(|point| {
+                        let dx = point.x - seam_point.x;
+                        let dy = point.y - seam_point.y;
+                        let dz = point.z - seam_point.z;
+                        dx * dx + dy * dy + dz * dz <= 1e-12
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            pole_vertices.sort_by(|left, right| left.0.cmp(&right.0));
+            pole_vertices.dedup();
             candidates.push((
+                face_index,
                 face.id.clone(),
                 lp.id.clone(),
                 lp.coedges.clone(),
-                center,
-                radius,
-                axis,
+                seam_point,
+                pole_vertices.first().cloned(),
             ));
         }
     }
@@ -1970,39 +2985,61 @@ fn synthesize_sphere_seams(
         .enumerate()
         .map(|(index, coedge)| (coedge.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    for (face, loop_id, mut ring, center, radius, axis) in candidates {
-        let suffix = face.0.rsplit('#').next().unwrap_or("0");
-        let point_id = PointId(format!("sldprt:brep:point#sphere-seam:{suffix}"));
-        let vertex_id = VertexId(format!("sldprt:brep:vertex#sphere-seam:{suffix}"));
-        let edge_id = EdgeId(format!("sldprt:brep:edge#sphere-seam:{suffix}"));
-        let coedge_id = CoedgeId(format!("sldprt:brep:coedge#sphere-seam:{suffix}"));
-        for id in [&point_id.0, &vertex_id.0, &edge_id.0, &coedge_id.0] {
+    for (face_index, _face, loop_id, mut ring, seam_point, pole_vertex) in candidates {
+        let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam-face:{face_index}"));
+        let edge_id = EdgeId(format!("sldprt:brep:edge#sphere-seam-face:{face_index}"));
+        let coedge_id = CoedgeId(format!("sldprt:brep:coedge#sphere-seam-face:{face_index}"));
+        let pcurve_id = PcurveId(format!("sldprt:brep:pcurve#sphere-seam-face:{face_index}"));
+        let pole_vertex = pole_vertex.unwrap_or_else(|| {
+            let point_id = PointId(format!("sldprt:brep:point#sphere-seam-face:{face_index}"));
+            let vertex_id = VertexId(format!("sldprt:brep:vertex#sphere-seam-face:{face_index}"));
+            for id in [&point_id.0, &vertex_id.0] {
+                annotations
+                    .note(id, source_stream, 0)
+                    .tag("derived_sphere_seam");
+                annotations.exactness(id, Exactness::Derived);
+            }
+            out.points.push(Point {
+                id: point_id.clone(),
+                position: seam_point,
+                source_object: None,
+            });
+            out.vertices.push(Vertex {
+                id: vertex_id.clone(),
+                point: point_id,
+                tolerance: None,
+            });
+            vertex_id
+        });
+        for id in [&curve_id.0, &edge_id.0, &coedge_id.0, &pcurve_id.0] {
             annotations
                 .note(id, source_stream, 0)
                 .tag("derived_sphere_seam");
             annotations.exactness(id, Exactness::Derived);
         }
-        out.points.push(Point {
-            id: point_id.clone(),
-            position: cadmpeg_ir::math::Point3::new(
-                center.x + radius * axis.x,
-                center.y + radius * axis.y,
-                center.z + radius * axis.z,
-            ),
+        out.curves.push(Curve {
+            id: curve_id.clone(),
             source_object: None,
-        });
-        out.vertices.push(Vertex {
-            id: vertex_id.clone(),
-            point: point_id,
-            tolerance: None,
+            geometry: CurveGeometry::Degenerate { point: seam_point },
         });
         out.edges.push(Edge {
             id: edge_id.clone(),
-            curve: None,
-            start: vertex_id.clone(),
-            end: vertex_id,
+            curve: Some(curve_id),
+            start: pole_vertex.clone(),
+            end: pole_vertex,
             param_range: None,
             tolerance: None,
+        });
+        out.pcurves.push(Pcurve {
+            id: pcurve_id.clone(),
+            geometry: PcurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point2::new(0.0, std::f64::consts::FRAC_PI_2),
+                direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: Some([0.0, std::f64::consts::TAU]),
+            fit_tolerance: None,
         });
         ring.push(coedge_id.clone());
         coedge_indices.insert(coedge_id.clone(), out.coedges.len());
@@ -2014,7 +3051,10 @@ fn synthesize_sphere_seams(
             previous: ring[2].clone(),
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
-            pcurves: Vec::new(),
+            pcurves: vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: pcurve_id,
+                isoparametric: None,
+            }],
         });
         for (index, id) in ring.iter().enumerate() {
             if let Some(coedge_index) = coedge_indices.get(id) {
@@ -2036,5 +3076,135 @@ fn emit_curve(out: &mut Brep, carrier: &Carrier) {
             source_object: None,
             geometry: geo.clone(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn shared_edge_coedge_parity_orients_connected_faces() {
+        use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
+        use cadmpeg_ir::topology::{Coedge, Face, Loop, Sense};
+
+        let face = |id: &str, lp: &str| Face {
+            id: FaceId(id.into()),
+            shell: ShellId("shell".into()),
+            surface: SurfaceId(format!("surface-{id}")),
+            sense: Sense::Forward,
+            loops: vec![LoopId(lp.into())],
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let lp = |id: &str, face: &str, coedge: &str| Loop {
+            id: LoopId(id.into()),
+            face: FaceId(face.into()),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+            coedges: vec![CoedgeId(coedge.into())],
+            vertex_uses: Vec::new(),
+        };
+        let coedge = |id: &str, lp: &str, radial: &str, sense| Coedge {
+            id: CoedgeId(id.into()),
+            owner_loop: LoopId(lp.into()),
+            edge: EdgeId("edge".into()),
+            next: CoedgeId(id.into()),
+            previous: CoedgeId(id.into()),
+            radial_next: CoedgeId(radial.into()),
+            sense,
+            pcurves: Vec::new(),
+        };
+        let mut brep = super::Brep {
+            faces: vec![face("face-a", "loop-a"), face("face-b", "loop-b")],
+            loops: vec![
+                lp("loop-a", "face-a", "coedge-a"),
+                lp("loop-b", "face-b", "coedge-b"),
+            ],
+            coedges: vec![
+                coedge("coedge-a", "loop-a", "coedge-b", Sense::Forward),
+                coedge("coedge-b", "loop-b", "coedge-a", Sense::Forward),
+            ],
+            ..Default::default()
+        };
+
+        super::solve_face_orientation(&mut brep);
+        assert_eq!(brep.faces[0].sense, Sense::Forward);
+        assert_eq!(brep.faces[1].sense, Sense::Reversed);
+
+        brep.faces[1].sense = Sense::Reversed;
+        brep.coedges[1].sense = Sense::Reversed;
+        super::solve_face_orientation(&mut brep);
+        assert_eq!(brep.faces[0].sense, Sense::Forward);
+        assert_eq!(brep.faces[1].sense, Sense::Forward);
+    }
+
+    #[test]
+    fn geometry_free_stream_does_not_report_synthetic_body_grouping() {
+        let decoded = super::decode_body(&[], "empty");
+
+        assert!(decoded.faces.is_empty());
+        assert!(!decoded.stats.synthetic_body_grouping);
+    }
+
+    #[test]
+    fn homogeneous_quadratic_identity_proves_constant_radius() {
+        let radius = 2.0;
+        let controls = [
+            cadmpeg_ir::math::Point2::new(radius, 0.0),
+            cadmpeg_ir::math::Point2::new(radius, radius),
+            cadmpeg_ir::math::Point2::new(0.0, radius),
+        ];
+        let weights = [1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0];
+        let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        assert!(super::quadratic_nurbs_has_constant_radius(
+            &controls,
+            Some(&weights),
+            &knots,
+            radius,
+        ));
+
+        let mut invalid = controls;
+        invalid[1].u += 0.01;
+        assert!(!super::quadratic_nurbs_has_constant_radius(
+            &invalid,
+            Some(&weights),
+            &knots,
+            radius,
+        ));
+    }
+
+    #[test]
+    fn interior_ruled_surface_line_has_affine_isoparametric_inverse() {
+        let surface = cadmpeg_ir::geometry::NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(2.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let geometry = super::ruled_surface_line_pcurve(
+            &surface,
+            cadmpeg_ir::math::Point3::new(0.0, 0.5, 0.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            0.0,
+            1.0,
+        )
+        .expect("interior ruling");
+        let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } = geometry else {
+            panic!("expected affine line pcurve");
+        };
+        assert!(origin.u.abs() < 1e-12);
+        assert!((origin.v - 0.5).abs() < 1e-12);
+        assert!((direction.u - 2.0 / 3.0).abs() < 1e-12);
+        assert!(direction.v.abs() < 1e-12);
     }
 }
