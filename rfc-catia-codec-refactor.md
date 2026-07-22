@@ -33,48 +33,72 @@ pub mod fuzz {                          // ()-returning wrappers for cadmpeg-fuz
 }
 ```
 
-Internal module tree (all `pub(crate)` at most):
+Internal module tree as landed (all `pub(crate)` at most):
 
 ```
 src/
-  lib.rs            CatiaCodec + Codec impl; cfg(feature = "fuzz") facade
-  decode.rs         orchestrator (~150 lines): container scan → ordered route table → fallback
-  assemble.rs       EmitCtx: annotate, preserve_raw_payload, losses, admissibility, finish
+  lib.rs            CatiaCodec + Codec impl; cfg(feature = "fuzz") facade (fuzz.rs)
+  decode.rs         orchestrator (109 lines): container scan → ordered route table → fallback
+  assemble.rs       shared emit scaffolding as free functions: annotate, source_meta,
+                    preserve_raw_payload, admissibility, report/metadata builders, cgm_source,
+                    cross-family curve/angle helpers
   wire/
-    cursor.rs       Cursor: endian scalar reads, finite-checked f64 by default (f64_raw escape),
-                    point3/unit3/range/positive compound reads, compact_uint, object_ref
-    scan.rs         tag-record iterator; LengthRule::{Prefixed, Custom} — Custom preserves
-                    per-family resync quirks rather than contorting the shared loop
-  analytic.rs       named canonical frame readers over Cursor: cylinder_ozr, cone_ozra,
-                    torus_ozrr, frame_oxy; a fourth field order is a fourth named fn, not a DSL
-  solve/            pure-data solver library, no byte knowledge
-    union_find.rs
+    cursor.rs       Cursor: finite-checked f64 (f64_raw escape), point3/vector3/unit3/skip,
+                    compact_uint, object_ref (extended/restricted reference dialects)
+    tokens.rs       (&[u8], &mut usize)-signature adapters over Cursor for the b5/e5 scan loops
+    bytes.rs        absolute-offset readers (f64_le, f64_point, compact_int, persistent_ref, …)
+    records.rs      A/B record framing (ConsolidatedRecord/Frame, a_/b_family_frames),
+                    jet-pcurve byte vocabulary, vertex roster scanner
+  analytic.rs       named canonical frame readers over Cursor: cylinder_uvr, cone_ozra,
+                    torus_ozrr; a fourth field order is a fourth named fn, not a DSL
+  nurbs.rs          cross-family NURBS, B-spline, and analytic-curve math
+  solve/            combinatorial solvers plus the byte-table readers that feed them
+    union_find.rs  matching.rs
     incidence.rs    incidence backtracking search
     missing_edge.rs mesh missing-edge enumeration
-    mesh_quotient.rs the CSP; named Problem/Solution boundary types are required,
-                    internal file split only if propagate/search state separates cleanly
+    mesh_quotient.rs the CSP; one file — its propagate/search state does not separate
   families/
-    mod.rs          FamilyOutput (named replacement for ProjectedDecode); the ordered
-                    route table — order is fallback behavior, documented as an invariant
-    standard/       records.rs, topology.rs (StandardTopology container), fbb.rs, mod.rs, tests.rs
-    b5/             records.rs, graph.rs, transfer/{mod,surfaces,pcurves,vertices,edges,faces}.rs, tests.rs
-    e5/             records.rs, mod.rs, tests.rs
-    b2/  a5a8/  consolidated/    records.rs + tests.rs only (record vocabularies, no route)
-    zero_entity/    records.rs, mod.rs, tests.rs
-    freeform/       mod.rs (route composing a5a8 + consolidated records)
+    mod.rs          FamilyOutput; the ordered route table — order is fallback behavior,
+                    documented as an invariant
+    standard/       records.rs, topology.rs (StandardTopology container + orientation),
+                    fbb.rs (byte layer), decode.rs (route), tests.rs
+    b5/             graph.rs (parse + graph resolution, fused by shared record types),
+                    transfer/{mod,surfaces,pcurves,vertices,edges,faces}.rs, vecmath.rs, tests.rs
+    e5/             records.rs, graph.rs (E5Topology pipeline), decode.rs (route), tests.rs
+    b2/  a5a8/  consolidated/    records.rs + tests.rs (record vocabularies, no route)
+    zero_entity/    records.rs, graph.rs, decode.rs (route), tests.rs
+    freeform/       mod.rs (route: b5 object-stream transfer first, then a5a8 +
+                    consolidated surface pools)
   container.rs  catalog.rs  value_block.rs  variant.rs  object_graph.rs   (unchanged)
-  native.rs         decoration over family record types; the CatiaConsolidated* mirror deleted
+  native.rs         serialization decoration over family record types; the CatiaConsolidated*
+                    mirror is reduced, not deleted — most mirror types rename pos to
+                    byte_offset and add id/family, so they pin the namespace payload
+  tests.rs          codec-contract behavior tests + shared fixture builders
 ```
 
-Every family follows one template: `records.rs` holds a `Rec` bucket enum, a `CLASSES: &[(u16, fn(&mut Cursor) -> Option<Rec>)]` table, the parser fns, and colocated lowering. The dominant change — decoding one more record class — is one table row plus one parser fn in one file, plus a fixture test.
+Family record modules are bespoke free-function scanners over `wire` readers; the `CLASSES` dispatch-table template did not land — the deviation is uniform across families, so it is the settled shape. The dominant change — decoding one more record class — is one parser fn plus its scan-loop arm in one family file, plus a fixture test.
 
-Routes are plain structs (`id`, `applicable: fn`, `decode: fn`) in one ordered slice. Only the four real pipelines are routes; b2/a5a8/consolidated are record vocabularies consumed by routes. No stage traits: the two-axis distinction (record family vs decode route) is the honest shape, and trait plumbing over it is ceremony.
+Routes are plain structs (`applicable: fn`, `decode: fn`; no id field — nothing reads one) in one ordered slice. Only the four real pipelines are routes; b2/a5a8/consolidated are record vocabularies consumed by routes. No stage traits: the two-axis distinction (record family vs decode route) is the honest shape, and trait plumbing over it is ceremony.
 
 b5 and e5 share `wire/` and `analytic.rs` but keep separate graph and emit types. Their structural parallelism is coincidental in a reverse-engineered format; merging would encode it as a constraint.
 
 ## Dependency Strategy
 
-All in-process. Internal DAG, acyclic, no re-export shims: `wire` → (`cadmpeg_ir::{le,be,math}` only); `analytic` → `wire`; `solve` → nothing wire-level; `assemble` → `cadmpeg_ir`; `families/*` → `wire`/`analytic`/`solve`/`assemble`, never each other except explicitly imported record types (freeform → a5a8/consolidated; standard → b2/b5); `decode` → `families` + `container`. General vector ops (dot, cross, norm) move upstream into `cadmpeg_ir::math` where `Point3`/`Vector3` live; only decode-specific guards stay in `analytic.rs`. No promotion of `wire::Cursor` to a shared crate until a second codec demonstrates the same shapes.
+All in-process, no re-export shims. `wire` → `cadmpeg_ir` only; `analytic`/`nurbs` → `wire`; `assemble` → `cadmpeg_ir`; `decode` → `families` + `container` + `assemble`. The family use-edge graph is acyclic: b2 → a5a8; consolidated → a5a8 + b2; standard → freeform; e5/a5a8 have no outgoing family edges. General vector ops (dot, cross, scale, unit, distance) live in `cadmpeg_ir::math`; `families/b5/vecmath.rs` keeps the b5 `[f64;3]` helpers whose two `unit` normalisations diverge at the bit level (reciprocal-multiply vs division). No promotion of `wire::Cursor` to a shared crate until a second codec demonstrates the same shapes.
+
+Layering exceptions that hold in the landed state, recorded as debt below: `solve/missing_edge` and `solve/mesh_quotient` import standard-family types and byte parsers (the solvers are not byte-free); freeform's route runs the whole b5 transfer before its surface-pool path; consolidated and b5 reference each other through inline paths.
+
+## Recorded Debt
+
+- solve ↔ families/standard inversion: extracting real Problem/Solution boundary types across ~9.5k solver lines is its own design phase, not a review side-effect.
+- freeform → b5 whole-pipeline edge: freeform is two fused routes (b5 object-stream, then surface pools); splitting into two ROUTES entries would make the table honest but changes fallback interleaving and needs care.
+- standard → freeform edge (`append_freeform_surface_pools`): the appender belongs with the pool vocabulary, not in either route.
+- b5 ↔ consolidated inline-path cycle (`object_stream_vertices` / `framed_ranges`).
+- native mirror completion: `CatiaConsolidatedAnalyticCircleDescriptor` adds only the `pos`→`byte_offset` rename; the serde-derive-on-family-type pattern proven for `ConsolidatedEdgeDefinitionData` extends to it and the pcurve mirror, one type at a time with serialization-equality proof each.
+- `wire/records.rs` keeps `Consolidated*` names for framing types that are no longer consolidated-specific; renaming cascades ~40 sites.
+- Root `tests.rs` still holds internal-API tests beside the codec-contract tests; family-specific stragglers can continue migrating.
+- `#[cfg(test)]` fields inside production structs (test-only parse outputs) mean the tested artifact differs from the shipped one; the solve byte-parsing test-only entry points are the wrong layer regardless of the idiom.
+- `wire/tokens.rs` legacy `(&[u8], &mut usize)` adapter surface persists while the b5/e5 scan loops read through it; migrating ~50 call sites to `Cursor` is churn with no behavior gain until those loops are next reworked.
 
 ## Testing Strategy
 
@@ -85,7 +109,7 @@ All in-process. Internal DAG, acyclic, no re-export shims: `wire` → (`cadmpeg_
 
 ## Implementation Recommendations
 
-Phases land as separate additive commits; behavior suite green at every boundary; callers import from owning modules from the first commit.
+All phases below are landed (commits `ae2dbd8d..815d5e06`): separate additive commits, behavior suite green at every boundary, callers importing from owning modules from the first commit. Deviations from the plan are reflected in the module tree above and in Recorded Debt.
 
 - **Phase 0 — baseline.** Commit the in-flight extrusion-carrier work on a green suite so refactor commits are purely structural.
 - **Phase 1 — primitives.** Create `wire/` (cursor, scan, tokens) and `solve/union_find.rs`; unify the b5/e5 compact-int and reference readers; move general vector ops to `cadmpeg_ir::math` and delete all local copies; add `finite`-guard helpers. Wide but mechanical.
