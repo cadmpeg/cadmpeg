@@ -83,7 +83,7 @@ pub(crate) fn native_tolerant_coedge_extension(
             };
             let mut native_curve = curve.clone();
             if curve_reversed {
-                crate::brep::reverse_nurbs_curve(&mut native_curve);
+                crate::brep::geometry::reverse_nurbs_curve(&mut native_curve);
             }
             native_ref(records, -1);
             native_i64(records, 1);

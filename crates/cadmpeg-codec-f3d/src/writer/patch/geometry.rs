@@ -324,7 +324,7 @@ pub(crate) fn patch_framed_geometry(
             }
             if matches!(record.chunk(15), Some(sab::Token::True)) {
                 let mut native_curve = edit.curve.clone();
-                crate::brep::reverse_nurbs_curve(&mut native_curve);
+                crate::brep::geometry::reverse_nurbs_curve(&mut native_curve);
                 patch_nurbs_curve_record(
                     bytes,
                     record,

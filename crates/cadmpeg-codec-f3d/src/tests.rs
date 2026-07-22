@@ -12105,7 +12105,7 @@ fn generated_source_less_writes_multi_shell_wire_region() {
 
 #[test]
 fn analytic_carrier_decode_covers_each_shape() {
-    use crate::brep::{decode_curve, decode_surface};
+    use crate::brep::geometry::{decode_curve, decode_surface};
     use crate::sab::{Record, Token};
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
@@ -17315,7 +17315,7 @@ fn rgb_attribute_chain_decodes_body_color() {
 
     let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color = crate::brep::attribute_chain_color(&records[0], &by_index).unwrap();
+    let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
 }
 
@@ -17337,7 +17337,7 @@ fn truecolor_attribute_chain_decodes_argb() {
 
     let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color = crate::brep::attribute_chain_color(&records[0], &by_index).unwrap();
+    let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
         (color.r, color.g, color.b, color.a),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 128.0 / 255.0)
@@ -17361,7 +17361,7 @@ fn bt_text_color_attribute_chain_decodes_rgb() {
 
     let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color = crate::brep::attribute_chain_color(&records[0], &by_index).unwrap();
+    let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
         (color.r, color.g, color.b, color.a),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
@@ -17386,7 +17386,7 @@ fn bt_text_color_rejects_non_decimal_and_overwide_values() {
 
         let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
         let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-        assert!(crate::brep::attribute_chain_color(&records[0], &by_index).is_none());
+        assert!(crate::brep::attributes::attribute_chain_color(&records[0], &by_index).is_none());
     }
 }
 
@@ -17415,7 +17415,7 @@ fn invalid_color_attribute_does_not_hide_later_chain_color() {
 
     let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color = crate::brep::attribute_chain_color(&records[0], &by_index).unwrap();
+    let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
 }
 
@@ -17438,7 +17438,7 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
         offset: 0,
         len: 0,
     };
-    let transform = crate::brep::decode_transform(&record, 60.0).unwrap();
+    let transform = crate::brep::attributes::decode_transform(&record, 60.0).unwrap();
     assert_eq!(transform.rows[0], [1.0, 0.0, 0.0, 600.0]);
     assert_eq!(transform.rows[1], [0.0, 1.0, 0.0, 1200.0]);
     assert_eq!(transform.rows[2], [0.0, 0.0, 1.0, 1800.0]);
