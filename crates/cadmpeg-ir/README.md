@@ -57,8 +57,8 @@ assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);
 ```
 
 `CadIr::to_canonical_json` emits pretty JSON after the caller establishes
-canonical arena order. `CadIr::from_json` parses only `ir_version: "53"`, while
-`CadIr::migrate_json` explicitly migrates version 52. The version-53 schema
+canonical arena order. `CadIr::from_json` parses only `ir_version: "54"`, while
+`CadIr::migrate_json` explicitly migrates version 53. The version-54 schema
 requires `model.subds`. `diff` compares units,
 tolerances, annotations, and entity arenas by stable identity.
 

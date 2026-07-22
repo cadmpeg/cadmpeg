@@ -1403,34 +1403,6 @@ fn explicit_migration_upgrades_previous_version_without_semantic_changes() {
 }
 
 #[test]
-fn previous_external_occurrence_document_token_migrates_deterministically() {
-    let mut legacy = serde_json::to_value(unit_cube()).unwrap();
-    legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
-    legacy["model"]["occurrences"] = serde_json::json!([{
-        "id": "synthetic:test:occurrence#external",
-        "prototype": {
-            "scope": "external",
-            "document": "legacy-document",
-            "object": "Body"
-        },
-        "local_transform": crate::transform::Transform::identity().rows,
-        "resolved_transform": crate::transform::Transform::identity().rows,
-        "scale": [1.0, 1.0, 1.0]
-    }]);
-    let migrated = CadIr::migrate_json(&serde_json::to_string(&legacy).unwrap())
-        .expect("external occurrence migration");
-    let crate::ComponentReference::External { document, object } =
-        &migrated.model.occurrences[0].prototype
-    else {
-        panic!("migrated external prototype");
-    };
-    assert_eq!(document.path, None);
-    assert_eq!(document.document_id.as_deref(), Some("legacy-document"));
-    assert_eq!(document.resolution, crate::ExternalResolution::Unresolved);
-    assert_eq!(object.as_deref(), Some("Body"));
-}
-
-#[test]
 fn schema_constrains_version_and_requires_subd_arena() {
     let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
     assert_eq!(
@@ -2995,6 +2967,6 @@ fn current_document_excludes_source_byte_accounting() {
     let ir = CadIr::empty(crate::units::Units::default());
     let json = serde_json::to_value(&ir).unwrap();
 
-    assert_eq!(json["ir_version"], "53");
+    assert_eq!(json["ir_version"], "54");
     assert!(json.get("byte_ledger").is_none());
 }

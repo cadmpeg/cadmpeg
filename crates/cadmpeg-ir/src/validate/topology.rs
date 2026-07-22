@@ -2375,6 +2375,18 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                 }
             }
+            FeatureDefinition::SpatialSketch { sketch } => {
+                if let Some(sketch) = sketch {
+                    if !ir
+                        .model
+                        .spatial_sketches
+                        .iter()
+                        .any(|value| value.id == *sketch)
+                    {
+                        ref_error(findings, &feature.id.0, "owned spatial sketch", &sketch.0);
+                    }
+                }
+            }
             FeatureDefinition::DatumCoordinateSystem {
                 origin,
                 x_axis,
@@ -2751,6 +2763,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::DatumPrincipalPlane { .. }
+            | FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }
@@ -3002,6 +3015,7 @@ fn check_feature_sketch_references(
     use crate::features::{FeatureDefinition, PathRef, ProfileRef};
 
     let mut owners = HashMap::new();
+    let mut spatial_owners = HashMap::new();
     for feature in &ir.model.features {
         if let FeatureDefinition::Sketch {
             sketch: Some(sketch),
@@ -3016,6 +3030,22 @@ fn check_feature_sketch_references(
                     check: Check::ReferentialIntegrity,
                     severity: Severity::Error,
                     message: format!("sketch `{}` has multiple owning features", sketch.0),
+                    entity: Some(feature.id.0.clone()),
+                });
+            }
+        }
+        if let FeatureDefinition::SpatialSketch {
+            sketch: Some(sketch),
+        } = &feature.definition
+        {
+            if spatial_owners
+                .insert(sketch.0.as_str(), feature.id.0.as_str())
+                .is_some()
+            {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!("spatial sketch `{}` has multiple owning features", sketch.0),
                     entity: Some(feature.id.0.clone()),
                 });
             }
