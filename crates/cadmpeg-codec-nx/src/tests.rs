@@ -941,7 +941,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     };
 
     let tessellations =
-        crate::decode::display_jt_tessellations(&crate::decode::DisplayJtTessellationInputs {
+        crate::native::display_jt_tessellations(&crate::native::DisplayJtTessellationInputs {
             meshes: &[mesh],
             coordinates: &[coordinates],
             normals: &[normals],
@@ -1830,7 +1830,7 @@ fn nx_formula_dependencies_resolve_to_section_parameters() {
     ];
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+    crate::native::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
 
     assert_eq!(ir.model.parameters[2].value, None);
     assert_eq!(
@@ -1863,7 +1863,7 @@ fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
     ];
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+    crate::native::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
 
     assert!(ir.model.parameters[2].dependencies.is_empty());
 }
@@ -1896,7 +1896,7 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+    crate::native::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
 
     assert_eq!(ir.model.features.len(), 2);
     assert_eq!(ir.model.features[0].id.0, "table-b:feature#equations");
@@ -1982,7 +1982,7 @@ fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
     ];
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+    crate::native::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
 
     assert_eq!(ir.model.parameters[0].expression, "p3 + 1");
     assert_eq!(ir.model.parameters[1].expression, "p2 + 1");
@@ -2031,7 +2031,7 @@ fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+    crate::native::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
 
     assert_eq!(
         ir.model
@@ -2102,7 +2102,7 @@ fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::attach_expression_parameters(
+    crate::native::attach_expression_parameters(
         &mut ir,
         &[expression],
         &[],
@@ -2150,7 +2150,7 @@ fn nx_parameter_consumers_follow_physical_use_order() {
     ];
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::attach_expression_parameters(
+    crate::native::attach_expression_parameters(
         &mut ir,
         &[expression],
         &[],
@@ -2194,7 +2194,7 @@ fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::attach_expression_parameters(
+    crate::native::attach_expression_parameters(
         &mut ir,
         &[expression],
         &[],
@@ -2207,7 +2207,7 @@ fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
         .iter()
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect();
-    let dependencies = crate::decode::parameter_owner_dependencies(
+    let dependencies = crate::native::parameter_owner_dependencies(
         &parameter_owners,
         &[
             cadmpeg_ir::features::FeatureSourceContent::Parameter(
@@ -2239,7 +2239,7 @@ fn nx_feature_source_content_orders_parameter_occurrences_with_text() {
         bindings: vec!["first".into(), "second".into()],
         source_offsets: vec![20, 40],
     };
-    let content = crate::decode::feature_source_content(&[&text], &[&parameter_use]);
+    let content = crate::native::feature_source_content(&[&text], &[&parameter_use]);
     assert_eq!(content.len(), 3);
     assert!(matches!(
         &content[0],
@@ -2290,7 +2290,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         parameter_use("use-b", "expression-b"),
     ];
     let use_refs = uses.iter().collect::<Vec<_>>();
-    let parameters = crate::decode::native_feature_parameters(&use_refs, &expressions);
+    let parameters = crate::native::native_feature_parameters(&use_refs, &expressions);
     assert_eq!(
         parameters,
         std::collections::BTreeMap::from([
@@ -2299,12 +2299,12 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         ])
     );
     assert_eq!(
-        crate::decode::non_boolean_feature_definition_with_parameters(
+        crate::native::non_boolean_feature_definition_with_parameters(
             "UNKNOWN OPERATION",
             &[],
             None,
             None,
-            crate::decode::HoleProjection::default(),
+            crate::native::HoleProjection::default(),
             parameters,
         ),
         cadmpeg_ir::features::FeatureDefinition::Native {
@@ -2317,12 +2317,12 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         }
     );
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition_with_parameters(
+        crate::native::non_boolean_feature_definition_with_parameters(
             "DELETE",
             &[],
             None,
             None,
-            crate::decode::HoleProjection::default(),
+            crate::native::HoleProjection::default(),
             Default::default(),
         ),
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "DELETE"
@@ -2332,9 +2332,9 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         expression("expression-a", "p1_length", "1"),
         expression("expression-b", "p1_length", "2"),
     ];
-    assert!(crate::decode::native_feature_parameters(&use_refs, &duplicate_expressions).is_empty());
+    assert!(crate::native::native_feature_parameters(&use_refs, &duplicate_expressions).is_empty());
     let unresolved = [parameter_use("use-c", "missing")];
-    assert!(crate::decode::native_feature_parameters(
+    assert!(crate::native::native_feature_parameters(
         &unresolved.iter().collect::<Vec<_>>(),
         &expressions,
     )
@@ -2595,7 +2595,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, ProfileRef};
 
     assert_eq!(
-        crate::decode::extrude_feature_definition(Some("nx:profile#1"), None, BooleanOp::NewBody,),
+        crate::native::extrude_feature_definition(Some("nx:profile#1"), None, BooleanOp::NewBody,),
         Some(FeatureDefinition::Extrude {
             profile: ProfileRef::Native("nx:profile#1".to_string()),
             direction: None,
@@ -2613,8 +2613,8 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
             allow_multi_profile_faces: None,
         })
     );
-    assert!(crate::decode::extrude_feature_definition(None, None, BooleanOp::Unresolved).is_none());
-    assert!(crate::decode::extrude_feature_definition(
+    assert!(crate::native::extrude_feature_definition(None, None, BooleanOp::Unresolved).is_none());
+    assert!(crate::native::extrude_feature_definition(
         Some("nx:profile#1"),
         Some("nx:profile#2"),
         BooleanOp::Unresolved,
@@ -2628,31 +2628,31 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
     use cadmpeg_ir::topology::BodyKind;
 
     assert_eq!(
-        crate::decode::extrude_boolean_op(false, &[BodyKind::Solid]),
+        crate::native::extrude_boolean_op(false, &[BodyKind::Solid]),
         BooleanOp::NewBody
     );
     assert_eq!(
-        crate::decode::extrude_boolean_op(true, &[BodyKind::Solid]),
+        crate::native::extrude_boolean_op(true, &[BodyKind::Solid]),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        crate::decode::extrude_boolean_op(false, &[BodyKind::Sheet]),
+        crate::native::extrude_boolean_op(false, &[BodyKind::Sheet]),
         BooleanOp::NewBody
     );
     assert_eq!(
-        crate::decode::extrude_boolean_op(false, &[BodyKind::Wire]),
+        crate::native::extrude_boolean_op(false, &[BodyKind::Wire]),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        crate::decode::extrude_boolean_op(false, &[BodyKind::General]),
+        crate::native::extrude_boolean_op(false, &[BodyKind::General]),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        crate::decode::extrude_boolean_op(false, &[BodyKind::Solid, BodyKind::Solid]),
+        crate::native::extrude_boolean_op(false, &[BodyKind::Solid, BodyKind::Solid]),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        crate::decode::extrude_boolean_op(false, &[]),
+        crate::native::extrude_boolean_op(false, &[]),
         BooleanOp::Unresolved
     );
 }
@@ -2664,7 +2664,7 @@ fn nx_block_source_content_includes_complete_ordered_dimension_run() {
     let mut content = vec![FeatureSourceContent::Parameter(ParameterId(
         "nx:test:parameter#20".into(),
     ))];
-    crate::decode::append_feature_expression_content(
+    crate::native::append_feature_expression_content(
         &mut content,
         &[
             "nx:test:expression#20".into(),
@@ -2812,7 +2812,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+    crate::native::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
     let parameter_owners = ir
         .model
         .parameters
@@ -2820,12 +2820,12 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect();
     let mut content = Vec::new();
-    crate::decode::append_feature_expression_content(&mut content, &dimensions.expressions);
+    crate::native::append_feature_expression_content(&mut content, &dimensions.expressions);
     assert_eq!(
-        crate::decode::parameter_owner_dependencies(&parameter_owners, &content),
+        crate::native::parameter_owner_dependencies(&parameter_owners, &content),
         [ir.model.features[0].id.clone()]
     );
-    crate::decode::attach_block_dimension_parameter_consumers(
+    crate::native::attach_block_dimension_parameter_consumers(
         &mut ir,
         &[dimensions],
         &mut annotations,
@@ -3210,7 +3210,7 @@ fn feature_body_selection_resolves_complete_segment_bindings_atomically() {
     let second = BodyId("nx:s4:body#3".to_string());
     let bindings = BTreeMap::from([(94, vec![first.clone()]), (122, vec![second.clone()])]);
     assert_eq!(
-        crate::decode::feature_body_selection(
+        crate::native::feature_body_selection(
             &[94, 122],
             &bindings,
             "nx:om-object-indices#94,122".to_string(),
@@ -3221,7 +3221,7 @@ fn feature_body_selection_resolves_complete_segment_bindings_atomically() {
         }
     );
     assert!(matches!(
-        crate::decode::feature_body_selection(
+        crate::native::feature_body_selection(
             &[94, 123],
             &bindings,
             "nx:om-object-indices#94,123".to_string(),
@@ -3230,7 +3230,7 @@ fn feature_body_selection_resolves_complete_segment_bindings_atomically() {
     ));
     let aliases = BTreeMap::from([(94, vec![first.clone()]), (150, vec![first])]);
     assert!(matches!(
-        crate::decode::feature_body_selection(
+        crate::native::feature_body_selection(
             &[94, 150],
             &aliases,
             "nx:om-object-indices#94,150".to_string(),
@@ -3238,10 +3238,10 @@ fn feature_body_selection_resolves_complete_segment_bindings_atomically() {
         BodySelection::Native(_)
     ));
     assert_eq!(
-        crate::decode::feature_body_outputs(94, &bindings),
+        crate::native::feature_body_outputs(94, &bindings),
         vec![BodyId("nx:s2:body#3".to_string())]
     );
-    assert!(crate::decode::feature_body_outputs(123, &bindings).is_empty());
+    assert!(crate::native::feature_body_outputs(123, &bindings).is_empty());
 }
 
 #[test]
@@ -3273,7 +3273,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
     ]);
 
     assert_eq!(
-        crate::decode::sew_body_feature_definition(10, &references, &bodies),
+        crate::native::sew_body_feature_definition(10, &references, &bodies),
         Some(FeatureDefinition::SewBodies {
             bodies: BodySelection::Resolved {
                 bodies: vec![primary.clone(), first, second],
@@ -3283,7 +3283,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         })
     );
     assert_eq!(
-        crate::decode::sew_body_feature_definition(10, &[], &bodies),
+        crate::native::sew_body_feature_definition(10, &[], &bodies),
         None
     );
 
@@ -3294,7 +3294,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         (30, vec![aliased]),
     ]);
     assert!(matches!(
-        crate::decode::sew_body_feature_definition(10, &references, &alias_bodies),
+        crate::native::sew_body_feature_definition(10, &references, &alias_bodies),
         Some(FeatureDefinition::SewBodies {
             bodies: BodySelection::Native(native),
             ..
@@ -3311,7 +3311,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
     let body = BodyId("body#20".to_string());
     let bodies = BTreeMap::from([(20, vec![body.clone()])]);
     assert_eq!(
-        crate::decode::delete_body_feature_definition(Some(20), &bodies),
+        crate::native::delete_body_feature_definition(Some(20), &bodies),
         Some(FeatureDefinition::DeleteBody {
             bodies: BodySelection::Resolved {
                 bodies: vec![body],
@@ -3321,7 +3321,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
         })
     );
     assert_eq!(
-        crate::decode::delete_body_feature_definition(None, &bodies),
+        crate::native::delete_body_feature_definition(None, &bodies),
         None
     );
 }
@@ -3349,7 +3349,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
     let bodies = BTreeMap::from([(10, vec![target.clone()]), (20, vec![tool.clone()])]);
 
     assert_eq!(
-        crate::decode::trim_body_feature_definition(10, &references, &bodies),
+        crate::native::trim_body_feature_definition(10, &references, &bodies),
         Some(FeatureDefinition::TrimBodies {
             targets: BodySelection::Resolved {
                 bodies: vec![target],
@@ -3363,14 +3363,14 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         })
     );
     assert_eq!(
-        crate::decode::trim_body_feature_definition(10, &[], &bodies),
+        crate::native::trim_body_feature_definition(10, &[], &bodies),
         None
     );
 
     let aliased_body = BodyId("body#alias".to_string());
     let same_body = BTreeMap::from([(10, vec![aliased_body.clone()]), (20, vec![aliased_body])]);
     assert!(matches!(
-        crate::decode::trim_body_feature_definition(10, &references, &same_body),
+        crate::native::trim_body_feature_definition(10, &references, &same_body),
         Some(FeatureDefinition::TrimBodies {
             targets: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
@@ -3401,7 +3401,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
     let bodies = BTreeMap::from([(10, vec![body.clone()]), (20, vec![body])]);
 
     assert_eq!(
-        crate::decode::boolean_feature_definition(&operation, &bodies),
+        crate::native::boolean_feature_definition(&operation, &bodies),
         FeatureDefinition::Combine {
             target: BodySelection::Native("nx:om-object-index#10".to_string()),
             tools: BodySelection::Native("nx:om-object-indices#20".to_string()),
@@ -3411,7 +3411,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
 
     let missing_tool = BTreeMap::from([(10, vec![BodyId("body#10".to_string())])]);
     assert!(matches!(
-        crate::decode::boolean_feature_definition(&operation, &missing_tool),
+        crate::native::boolean_feature_definition(&operation, &missing_tool),
         FeatureDefinition::Combine {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
@@ -3423,14 +3423,14 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
 #[test]
 fn nx_named_operation_families_preserve_unresolved_semantics() {
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("SKETCH", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("SKETCH", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::Sketch {
             space: cadmpeg_ir::features::SketchSpace::Unresolved,
             sketch: None,
         }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition(
+        crate::native::non_boolean_feature_definition(
             "SIMPLE HOLE",
             &["Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer"],
             None,
@@ -3461,7 +3461,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition(
+        crate::native::non_boolean_feature_definition(
             "SIMPLE HOLE",
             &["unrelated"],
             None,
@@ -3475,7 +3475,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         "Hole_Unknown",
     ] {
         assert!(matches!(
-            crate::decode::non_boolean_feature_definition(
+            crate::native::non_boolean_feature_definition(
                 "SIMPLE HOLE",
                 &[
                     "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
@@ -3494,15 +3494,15 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         ));
     }
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("DATUM_PLANE", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("DATUM_PLANE", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("DATUM_CSYS", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("DATUM_CSYS", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystemUnresolved
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition(
+        crate::native::non_boolean_feature_definition(
             "TEXT",
             &["annotation", "Arial"],
             None,
@@ -3516,18 +3516,18 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         } if children.is_empty()
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("TEXT", &["annotation"], None, None, None),
+        crate::native::non_boolean_feature_definition("TEXT", &["annotation"], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::Native { .. }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("TEXT", &["", ""], None, None, None),
+        crate::native::non_boolean_feature_definition("TEXT", &["", ""], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::TreeNode {
             role: cadmpeg_ir::features::FeatureTreeNodeRole::Annotations,
             ..
         }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition(
+        crate::native::non_boolean_feature_definition(
             "BLOCK",
             &[],
             Some([10.0, 20.0, 30.0]),
@@ -3544,7 +3544,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         }
     ));
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("BLOCK", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("BLOCK", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::Block {
             dimensions: None,
             placement: None,
@@ -3555,7 +3555,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
 #[test]
 fn nx_text_payload_projects_semantic_text_and_font_family() {
     let feature = cadmpeg_ir::features::FeatureId("feature#text".to_string());
-    let annotation = crate::decode::text_semantic_annotation(
+    let annotation = crate::native::text_semantic_annotation(
         "TEXT",
         &feature,
         "nx:text#1",
@@ -3574,12 +3574,12 @@ fn nx_text_payload_projects_semantic_text_and_font_family() {
     assert_eq!(annotation.order, 7);
 
     let empty =
-        crate::decode::text_semantic_annotation("TEXT", &feature, "nx:text#empty", 8, &["", ""])
+        crate::native::text_semantic_annotation("TEXT", &feature, "nx:text#empty", 8, &["", ""])
             .unwrap();
     assert_eq!(empty.text, [""]);
     assert_eq!(empty.parameters["font_family"], "");
 
-    assert!(crate::decode::text_semantic_annotation(
+    assert!(crate::native::text_semantic_annotation(
         "BLOCK",
         &feature,
         "nx:block#1",
@@ -3587,7 +3587,7 @@ fn nx_text_payload_projects_semantic_text_and_font_family() {
         &["10", "20"],
     )
     .is_none());
-    assert!(crate::decode::text_semantic_annotation(
+    assert!(crate::native::text_semantic_annotation(
         "TEXT",
         &feature,
         "nx:text#2",
@@ -3610,7 +3610,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         ("INTERSECT", BooleanOp::Intersect),
     ] {
         assert_eq!(
-            crate::decode::non_boolean_feature_definition(kind, &[], None, None, None),
+            crate::native::non_boolean_feature_definition(kind, &[], None, None, None),
             FeatureDefinition::Combine {
                 target: BodySelection::Unresolved,
                 tools: BodySelection::Unresolved,
@@ -3620,37 +3620,37 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     }
 
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("EXTRACT_BODY", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("EXTRACT_BODY", &[], None, None, None),
         FeatureDefinition::ExtractBody {
             source: BodySelection::Unresolved,
         }
     );
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("SKIN", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("SKIN", &[], None, None, None),
         FeatureDefinition::LoftUnresolved
     );
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("Studio Surface", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("Studio Surface", &[], None, None, None),
         FeatureDefinition::FreeformSurfaceUnresolved
     );
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("POINT", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("POINT", &[], None, None, None),
         FeatureDefinition::DatumPointUnresolved
     );
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("DRAFT", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("DRAFT", &[], None, None, None),
         FeatureDefinition::DraftUnresolved
     );
 
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None),
         FeatureDefinition::Hole {
             kind: HoleKind::Unresolved { form: None, .. },
             ..
         }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition(
+        crate::native::non_boolean_feature_definition(
             "HOLE PACKAGE",
             &[],
             None,
@@ -3664,7 +3664,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("RIB", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("RIB", &[], None, None, None),
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
                 draft: RibDraft::Unresolved,
@@ -3674,14 +3674,14 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         }
     ));
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("BLEND", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("BLEND", &[], None, None, None),
         FeatureDefinition::Fillet {
             edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Unresolved { form: None },
         }
     );
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("FACE_BLEND", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("FACE_BLEND", &[], None, None, None),
         FeatureDefinition::FaceBlend {
             first_faces: FaceSelection::Unresolved,
             second_faces: FaceSelection::Unresolved,
@@ -3690,7 +3690,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     );
     for kind in ["CPROJ", "CPROJ_CMB"] {
         assert_eq!(
-            crate::decode::non_boolean_feature_definition(kind, &[], None, None, None),
+            crate::native::non_boolean_feature_definition(kind, &[], None, None, None),
             FeatureDefinition::ProjectedCurve {
                 source: cadmpeg_ir::features::PathRef::Unresolved,
                 target_faces: FaceSelection::Unresolved,
@@ -3702,7 +3702,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         );
     }
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("TRIMMED_SH", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("TRIMMED_SH", &[], None, None, None),
         FeatureDefinition::TrimSurface {
             faces: FaceSelection::Unresolved,
             tool: cadmpeg_ir::features::PathRef::Unresolved,
@@ -3710,7 +3710,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         }
     );
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("EXTEND_SHEET", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("EXTEND_SHEET", &[], None, None, None),
         FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
@@ -3718,7 +3718,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         }
     );
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("CHAMFER", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("CHAMFER", &[], None, None, None),
         FeatureDefinition::Chamfer {
             edges: EdgeSelection::Unresolved,
             spec: ChamferSpec::Unresolved { form: None },
@@ -3726,14 +3726,14 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         }
     ));
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("SEW", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("SEW", &[], None, None, None),
         FeatureDefinition::SewBodies {
             bodies: BodySelection::Unresolved,
             gap_tolerance: None,
         }
     );
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("TRIM BODY", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("TRIM BODY", &[], None, None, None),
         FeatureDefinition::TrimBodies {
             targets: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
@@ -3741,7 +3741,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         }
     );
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("EXTRUDE", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("EXTRUDE", &[], None, None, None),
         FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved,
             direction: None,
@@ -3760,14 +3760,14 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         }
     );
     assert_eq!(
-        crate::decode::non_boolean_feature_definition("OFFSET", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("OFFSET", &[], None, None, None),
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
         }
     );
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("THICKEN_SHEET", &[], None, None, None),
+        crate::native::non_boolean_feature_definition("THICKEN_SHEET", &[], None, None, None),
         FeatureDefinition::Thicken {
             faces: FaceSelection::Unresolved,
             thickness: None,
@@ -3776,7 +3776,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     ));
     for kind in ["Pattern Feature", "Pattern Geometry", "Geometry Instance"] {
         assert!(matches!(
-            crate::decode::non_boolean_feature_definition(kind, &[], None, None, None),
+            crate::native::non_boolean_feature_definition(kind, &[], None, None, None),
             FeatureDefinition::Pattern {
                 seeds,
                 pattern: PatternKind::Unresolved { form: None },
@@ -3787,8 +3787,8 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
 
 #[test]
 fn nx_container_record_is_not_a_modeling_feature() {
-    assert!(!crate::decode::projects_neutral_feature("Container"));
-    assert!(crate::decode::projects_neutral_feature("EXTRUDE"));
+    assert!(!crate::native::projects_neutral_feature("Container"));
+    assert!(crate::native::projects_neutral_feature("EXTRUDE"));
 }
 
 #[test]
@@ -4305,19 +4305,19 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     let output = ir.model.bodies[0].id.clone();
 
     assert_eq!(
-        crate::decode::block_placement(&ir, dimensions, std::slice::from_ref(&output)),
+        crate::native::block_placement(&ir, dimensions, std::slice::from_ref(&output)),
         Some(cadmpeg_ir::transform::Transform::identity())
     );
     assert_eq!(
-        crate::decode::block_placement(&ir, dimensions, &[]),
+        crate::native::block_placement(&ir, dimensions, &[]),
         Some(cadmpeg_ir::transform::Transform::identity())
     );
     assert_eq!(
-        crate::decode::block_placement(&ir, dimensions, &[output.clone(), output.clone()],),
+        crate::native::block_placement(&ir, dimensions, &[output.clone(), output.clone()],),
         None
     );
     assert_eq!(
-        crate::decode::block_placement(&ir, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
+        crate::native::block_placement(&ir, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
         None
     );
 
@@ -4336,7 +4336,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         .expect("positive y plane");
     high_y.y = 10.0;
     assert_eq!(
-        crate::decode::block_placement(
+        crate::native::block_placement(
             &repeated,
             [10.0, 10.0, 30.0],
             std::slice::from_ref(&output),
@@ -4372,7 +4372,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         .push(intermediate_face.id.clone());
     stepped.model.faces.push(intermediate_face);
     assert_eq!(
-        crate::decode::block_placement(&stepped, dimensions, std::slice::from_ref(&output)),
+        crate::native::block_placement(&stepped, dimensions, std::slice::from_ref(&output)),
         None
     );
 
@@ -4384,7 +4384,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         radius: 1.0,
     };
     assert_eq!(
-        crate::decode::block_placement(&nonplanar, dimensions, std::slice::from_ref(&output)),
+        crate::native::block_placement(&nonplanar, dimensions, std::slice::from_ref(&output)),
         None
     );
 
@@ -4396,7 +4396,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         .iter()
         .any(|face| face.surface == removed.id));
     assert_eq!(
-        crate::decode::block_placement(&missing_surface, dimensions, &[]),
+        crate::native::block_placement(&missing_surface, dimensions, &[]),
         None
     );
 
@@ -4419,14 +4419,14 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         .push(curved_face.id.clone());
     curved_feature.model.faces.push(curved_face);
     assert_eq!(
-        crate::decode::block_placement(&curved_feature, dimensions, &[]),
+        crate::native::block_placement(&curved_feature, dimensions, &[]),
         Some(cadmpeg_ir::transform::Transform::identity())
     );
 
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
     assert_eq!(
-        crate::decode::block_placement(&sheet, dimensions, std::slice::from_ref(&output)),
+        crate::native::block_placement(&sheet, dimensions, std::slice::from_ref(&output)),
         None
     );
 
@@ -4439,7 +4439,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         .push(second_region.id.clone());
     disconnected.model.regions.push(second_region);
     assert_eq!(
-        crate::decode::block_placement(&disconnected, dimensions, std::slice::from_ref(&output)),
+        crate::native::block_placement(&disconnected, dimensions, std::slice::from_ref(&output)),
         None
     );
 }
@@ -4568,7 +4568,7 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         scalar_lanes: vec!["lane".into(), "other-lane".into()],
         block_references: vec!["blocks".into(), "other-blocks".into()],
     };
-    let properties = crate::decode::simple_hole_native_properties(
+    let properties = crate::native::simple_hole_native_properties(
         operation,
         &[template],
         &[lane],
@@ -4582,7 +4582,7 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         "blocks"
     );
     assert_eq!(properties["simple_hole_construction_group"], "group");
-    assert!(crate::decode::simple_hole_native_properties(
+    assert!(crate::native::simple_hole_native_properties(
         "nx:feature-history:operation-label#1-5",
         &[],
         &[],
@@ -4727,7 +4727,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         ("hole-b".to_string(), vec![body]),
     ]);
     assert_eq!(
-        crate::decode::simple_hole_diameters(
+        crate::native::simple_hole_diameters(
             &ir,
             &templates,
             std::slice::from_ref(&group),
@@ -4739,14 +4739,14 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         ])
     );
     assert_eq!(
-        crate::decode::simple_hole_diameters(&ir, &templates, &[], &outputs),
+        crate::native::simple_hole_diameters(&ir, &templates, &[], &outputs),
         std::collections::BTreeMap::from([
             ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
             ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
         ])
     );
     assert_eq!(
-        crate::decode::hole_diameters_for_operations(&ir, &operations, &outputs),
+        crate::native::hole_diameters_for_operations(&ir, &operations, &outputs),
         std::collections::BTreeMap::from([
             ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
             ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
@@ -4757,18 +4757,18 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         ("hole-b".into(), Vector3::new(0.0, 1.0, 0.0)),
     ]);
     assert_eq!(
-        crate::decode::hole_directions_for_operations(&ir, &operations, &outputs),
+        crate::native::hole_directions_for_operations(&ir, &operations, &outputs),
         expected_directions
     );
     assert_eq!(
-        crate::decode::hole_directions_for_operations(
+        crate::native::hole_directions_for_operations(
             &ir,
             &operations,
             &std::collections::BTreeMap::new(),
         ),
         expected_directions
     );
-    assert!(crate::decode::hole_positions_for_operations(&ir, &operations, &outputs).is_empty());
+    assert!(crate::native::hole_positions_for_operations(&ir, &operations, &outputs).is_empty());
     let mut single_hole = ir.clone();
     single_hole.model.shells[0].faces = vec![FaceId("face-1".into())];
     let single_operation = [operations[1].clone()];
@@ -4777,7 +4777,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         outputs[&operations[1]].clone(),
     )]);
     assert_eq!(
-        crate::decode::hole_positions_for_operations(
+        crate::native::hole_positions_for_operations(
             &single_hole,
             &single_operation,
             &single_output,
@@ -4790,7 +4790,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     };
     origin.y = 91.0;
     assert_eq!(
-        crate::decode::hole_positions_for_operations(
+        crate::native::hole_positions_for_operations(
             &single_hole,
             &single_operation,
             &single_output,
@@ -4815,7 +4815,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         *axis = Vector3::new(0.0, -1.0, 0.0);
     }
     assert_eq!(
-        crate::decode::hole_directions_for_operations(&opposite_axis, &operations, &outputs),
+        crate::native::hole_directions_for_operations(&opposite_axis, &operations, &outputs),
         expected_directions
     );
     let mut different_radii = ir.clone();
@@ -4836,15 +4836,15 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         *radius = 3.1;
     }
     assert!(
-        crate::decode::hole_diameters_for_operations(&different_radii, &operations, &outputs,)
+        crate::native::hole_diameters_for_operations(&different_radii, &operations, &outputs,)
             .is_empty()
     );
     assert_eq!(
-        crate::decode::hole_directions_for_operations(&different_radii, &operations, &outputs),
+        crate::native::hole_directions_for_operations(&different_radii, &operations, &outputs),
         expected_directions
     );
     assert_eq!(
-        crate::decode::simple_hole_diameters(
+        crate::native::simple_hole_diameters(
             &ir,
             &templates,
             std::slice::from_ref(&group),
@@ -4855,7 +4855,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
         ])
     );
-    assert!(crate::decode::hole_diameters_for_operations(
+    assert!(crate::native::hole_diameters_for_operations(
         &ir,
         &[operations[0].clone(), operations[0].clone()],
         &outputs,
@@ -4868,7 +4868,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     };
     *radius += 0.1;
     assert!(
-        crate::decode::hole_diameters_for_operations(&invalid_boundary, &operations, &outputs,)
+        crate::native::hole_diameters_for_operations(&invalid_boundary, &operations, &outputs,)
             .is_empty()
     );
     let mut coincident_boundaries = ir.clone();
@@ -4877,7 +4877,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     center.y = 0.0;
-    assert!(crate::decode::hole_diameters_for_operations(
+    assert!(crate::native::hole_diameters_for_operations(
         &coincident_boundaries,
         &operations,
         &outputs,
@@ -4889,18 +4889,18 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     };
     *axis = Vector3::new(0.0, 0.0, 1.0);
     assert!(
-        crate::decode::hole_directions_for_operations(&nonparallel, &operations, &outputs)
+        crate::native::hole_directions_for_operations(&nonparallel, &operations, &outputs)
             .is_empty()
     );
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
-    assert!(crate::decode::hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());
+    assert!(crate::native::hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());
     let mut disconnected = ir.clone();
     disconnected.model.bodies[0]
         .regions
         .push(RegionId("second-region".into()));
     assert!(
-        crate::decode::hole_diameters_for_operations(&disconnected, &operations, &outputs)
+        crate::native::hole_diameters_for_operations(&disconnected, &operations, &outputs)
             .is_empty()
     );
     let mut shared_carrier = ir.clone();
@@ -4918,13 +4918,13 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         tolerance: None,
     });
     assert_eq!(
-        crate::decode::simple_hole_diameters(
+        crate::native::simple_hole_diameters(
             &shared_carrier,
             &templates,
             std::slice::from_ref(&group),
             &outputs,
         ),
-        crate::decode::simple_hole_diameters(
+        crate::native::simple_hole_diameters(
             &ir,
             &templates,
             std::slice::from_ref(&group),
@@ -4976,7 +4976,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         ("hole-b".to_string(), vec![BodyId("second-body".into())]),
     ]);
     assert_eq!(
-        crate::decode::simple_hole_diameters(
+        crate::native::simple_hole_diameters(
             &distinct,
             &templates,
             std::slice::from_ref(&group),
@@ -4988,19 +4988,19 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         ])
     );
     assert_eq!(
-        crate::decode::hole_diameters_for_operations(&distinct, &operations, &distinct_outputs,),
+        crate::native::hole_diameters_for_operations(&distinct, &operations, &distinct_outputs,),
         std::collections::BTreeMap::from([
             ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
             ("hole-b".into(), cadmpeg_ir::features::Length(6.0)),
         ])
     );
-    assert!(crate::decode::hole_diameters_for_operations(
+    assert!(crate::native::hole_diameters_for_operations(
         &distinct,
         &operations,
         &std::collections::BTreeMap::new(),
     )
     .is_empty());
-    assert!(crate::decode::hole_diameters_for_operations(
+    assert!(crate::native::hole_diameters_for_operations(
         &ir,
         &operations,
         &std::collections::BTreeMap::from([("hole-a".to_string(), vec![BodyId("body".into())],)]),
@@ -5075,7 +5075,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         }
     }
     assert_eq!(
-        crate::decode::simple_hole_chamfers(&chamfered, &templates, &outputs),
+        crate::native::simple_hole_chamfers(&chamfered, &templates, &outputs),
         std::collections::BTreeMap::from([
             (
                 "hole-a".into(),
@@ -5094,16 +5094,16 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         ])
     );
     assert_eq!(
-        crate::decode::simple_hole_chamfers(
+        crate::native::simple_hole_chamfers(
             &chamfered,
             &templates,
             &std::collections::BTreeMap::new(),
         ),
-        crate::decode::simple_hole_chamfers(&chamfered, &templates, &outputs)
+        crate::native::simple_hole_chamfers(&chamfered, &templates, &outputs)
     );
     let mut sheet = chamfered.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
-    assert!(crate::decode::simple_hole_chamfers(&sheet, &templates, &outputs).is_empty());
+    assert!(crate::native::simple_hole_chamfers(&sheet, &templates, &outputs).is_empty());
     let mut unrelated = chamfered.clone();
     unrelated.model.surfaces.push(Surface {
         id: SurfaceId("unrelated-cone".into()),
@@ -5128,8 +5128,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         tolerance: None,
     });
     assert_eq!(
-        crate::decode::simple_hole_chamfers(&unrelated, &templates, &outputs),
-        crate::decode::simple_hole_chamfers(&chamfered, &templates, &outputs)
+        crate::native::simple_hole_chamfers(&unrelated, &templates, &outputs),
+        crate::native::simple_hole_chamfers(&chamfered, &templates, &outputs)
     );
     let mut unequal_chamfers = chamfered;
     let CurveGeometry::Circle { radius, .. } =
@@ -5139,7 +5139,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     };
     *radius += 0.1;
     assert!(
-        crate::decode::simple_hole_chamfers(&unequal_chamfers, &templates, &outputs).is_empty()
+        crate::native::simple_hole_chamfers(&unequal_chamfers, &templates, &outputs).is_empty()
     );
 
     let mut mismatched = ir;
@@ -5149,7 +5149,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     };
     *radius = 3.0;
     assert!(
-        crate::decode::simple_hole_diameters(&mismatched, &templates, &[group], &outputs,)
+        crate::native::simple_hole_diameters(&mismatched, &templates, &[group], &outputs,)
             .is_empty()
     );
 }
@@ -5181,7 +5181,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     }
 
     let (definition, supports) =
-        crate::decode::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+        crate::native::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
             .expect("unique offset distance");
     assert_eq!(supports.len(), 2);
     assert!(matches!(
@@ -5201,7 +5201,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         );
     }
     let (definition, _) =
-        crate::decode::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+        crate::native::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
             .expect("uniquely faced supports");
     assert!(matches!(
         definition,
@@ -5217,7 +5217,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         face.sense = cadmpeg_ir::topology::Sense::Reversed;
     }
     let (definition, _) =
-        crate::decode::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+        crate::native::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
             .expect("uniformly reversed support faces");
     assert!(matches!(
         definition,
@@ -5234,7 +5234,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         .expect("first support face")
         .sense = cadmpeg_ir::topology::Sense::Forward;
     let (definition, _) =
-        crate::decode::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+        crate::native::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
             .expect("mixed support-face orientations retain offset family");
     assert!(matches!(
         definition,
@@ -5251,7 +5251,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         SurfaceId("nx:s4:nurbs-surf#0".into()),
     );
     let (definition, _) =
-        crate::decode::offset_surface_feature_definition(&ambiguous, std::slice::from_ref(&output))
+        crate::native::offset_surface_feature_definition(&ambiguous, std::slice::from_ref(&output))
             .expect("offset semantics survive ambiguous face identity");
     assert!(matches!(
         definition,
@@ -5263,7 +5263,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 
     ir.model.procedural_surfaces.push(make_offset(99, -40.0));
     assert!(
-        crate::decode::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+        crate::native::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
             .is_some()
     );
     ir.model.procedural_surfaces.pop();
@@ -5271,7 +5271,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     let conflicting = make_offset(2, -30.0);
     attach_test_body_surface(&mut ir, &output, conflicting.surface.clone());
     ir.model.procedural_surfaces.push(conflicting);
-    assert!(crate::decode::offset_surface_feature_definition(&ir, &[output]).is_none());
+    assert!(crate::native::offset_surface_feature_definition(&ir, &[output]).is_none());
 }
 
 #[test]
@@ -5407,7 +5407,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     }
 
     let (definition, supports) =
-        crate::decode::thicken_feature_definition(&ir, std::slice::from_ref(&output))
+        crate::native::thicken_feature_definition(&ir, std::slice::from_ref(&output))
             .expect("unique nonzero offset distance");
     assert_eq!(supports.len(), 2);
     assert!(matches!(
@@ -5427,7 +5427,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         .find(|body| body.id == output)
         .expect("output body")
         .kind = cadmpeg_ir::topology::BodyKind::Sheet;
-    assert!(crate::decode::thicken_feature_definition(
+    assert!(crate::native::thicken_feature_definition(
         &sheet_output,
         std::slice::from_ref(&output)
     )
@@ -5442,7 +5442,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         );
     }
     let (definition, _) =
-        crate::decode::thicken_feature_definition(&ir, std::slice::from_ref(&output))
+        crate::native::thicken_feature_definition(&ir, std::slice::from_ref(&output))
             .expect("uniquely faced supports");
     assert!(matches!(
         definition,
@@ -5460,7 +5460,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         .expect("second support face")
         .sense = cadmpeg_ir::topology::Sense::Reversed;
     let (definition, _) =
-        crate::decode::thicken_feature_definition(&ir, std::slice::from_ref(&output))
+        crate::native::thicken_feature_definition(&ir, std::slice::from_ref(&output))
             .expect("mixed support senses preserve thicken semantics");
     assert!(matches!(
         definition,
@@ -5473,20 +5473,20 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
 
     ir.model.procedural_surfaces.push(make_offset(99, 40.0));
     assert!(
-        crate::decode::thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_some()
+        crate::native::thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_some()
     );
     ir.model.procedural_surfaces.pop();
 
     let conflicting = make_offset(2, 12.5);
     attach_test_body_surface(&mut ir, &output, conflicting.surface.clone());
     ir.model.procedural_surfaces.push(conflicting);
-    assert!(crate::decode::thicken_feature_definition(&ir, &[output]).is_none());
+    assert!(crate::native::thicken_feature_definition(&ir, &[output]).is_none());
 
     let zero_output = BodyId("nx:s4:body#4".into());
     let zero = make_offset(3, 0.0);
     attach_test_body_surface(&mut ir, &zero_output, zero.surface.clone());
     ir.model.procedural_surfaces.push(zero);
-    assert!(crate::decode::thicken_feature_definition(&ir, &[zero_output]).is_none());
+    assert!(crate::native::thicken_feature_definition(&ir, &[zero_output]).is_none());
 }
 
 #[test]
@@ -5519,7 +5519,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
     }
 
     let (definition, supports) =
-        crate::decode::thicken_feature_definition(&ir, std::slice::from_ref(&output))
+        crate::native::thicken_feature_definition(&ir, std::slice::from_ref(&output))
             .expect("matched symmetric offsets");
     assert_eq!(supports, [support.clone()]);
     assert!(matches!(
@@ -5542,7 +5542,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
         unreachable!()
     };
     *support = SurfaceId("nx:s4:nurbs-surf#other".into());
-    assert!(crate::decode::thicken_feature_definition(
+    assert!(crate::native::thicken_feature_definition(
         &mismatched_support,
         std::slice::from_ref(&output)
     )
@@ -5559,7 +5559,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
     };
     *distance = 7.0;
     assert!(
-        crate::decode::thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_none()
+        crate::native::thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_none()
     );
 }
 
@@ -5578,7 +5578,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     let support_b = SurfaceId("support-b".into());
     let support_c = SurfaceId("support-c".into());
     assert_eq!(
-        crate::decode::blend_support_bipartition(vec![
+        crate::native::blend_support_bipartition(vec![
             [support_a.clone(), support_b.clone()],
             [support_b.clone(), support_c.clone()],
         ]),
@@ -5587,13 +5587,13 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             vec![support_b.clone()],
         ))
     );
-    assert!(crate::decode::blend_support_bipartition(vec![
+    assert!(crate::native::blend_support_bipartition(vec![
         [support_a.clone(), support_b.clone()],
         [support_b.clone(), support_c.clone()],
         [support_c, support_a],
     ])
     .is_none());
-    assert!(crate::decode::blend_support_bipartition(vec![
+    assert!(crate::native::blend_support_bipartition(vec![
         [SurfaceId("a".into()), SurfaceId("b".into())],
         [SurfaceId("c".into()), SurfaceId("d".into())],
     ])
@@ -5622,10 +5622,10 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     attach_test_body_surface(&mut ir, &output, second.surface.clone());
     ir.model.procedural_surfaces.push(second);
 
-    let (definition, surfaces) = crate::decode::blend_feature_definition(
+    let (definition, surfaces) = crate::native::blend_feature_definition(
         &ir,
         std::slice::from_ref(&output),
-        crate::decode::NxBlendFamily::Edge,
+        crate::native::NxBlendFamily::Edge,
     )
     .expect("one circular constant-radius blend result");
     assert_eq!(surfaces.len(), 2);
@@ -5638,10 +5638,10 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             ..
         }
     ));
-    let (definition, _) = crate::decode::blend_feature_definition(
+    let (definition, _) = crate::native::blend_feature_definition(
         &ir,
         std::slice::from_ref(&output),
-        crate::decode::NxBlendFamily::Face,
+        crate::native::NxBlendFamily::Face,
     )
     .expect("face blend retains unresolved supports");
     assert!(matches!(
@@ -5673,10 +5673,10 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     }
     attach_test_body_surface(&mut face_blend_ir, &output, first_support);
     attach_test_body_surface(&mut face_blend_ir, &output, second_support);
-    let (definition, _) = crate::decode::blend_feature_definition(
+    let (definition, _) = crate::native::blend_feature_definition(
         &face_blend_ir,
         std::slice::from_ref(&output),
-        crate::decode::NxBlendFamily::Edge,
+        crate::native::NxBlendFamily::Edge,
     )
     .expect("complete blend supports");
     assert!(matches!(
@@ -5697,10 +5697,10 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             signed_radius: 17.0,
         },
     ));
-    let (definition, _) = crate::decode::blend_feature_definition(
+    let (definition, _) = crate::native::blend_feature_definition(
         &ir,
         std::slice::from_ref(&output),
-        crate::decode::NxBlendFamily::Edge,
+        crate::native::NxBlendFamily::Edge,
     )
     .unwrap();
     assert!(matches!(
@@ -5718,7 +5718,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     attach_test_body_surface(&mut ir, &output, conflicting.surface.clone());
     ir.model.procedural_surfaces.push(conflicting);
     let (definition, _) =
-        crate::decode::blend_feature_definition(&ir, &[output], crate::decode::NxBlendFamily::Edge)
+        crate::native::blend_feature_definition(&ir, &[output], crate::native::NxBlendFamily::Edge)
             .unwrap();
     assert!(matches!(
         definition,
@@ -5730,7 +5730,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         }
     ));
     assert!(
-        crate::decode::blend_feature_definition(&ir, &[], crate::decode::NxBlendFamily::Edge,)
+        crate::native::blend_feature_definition(&ir, &[], crate::native::NxBlendFamily::Edge,)
             .is_none()
     );
 
@@ -5752,10 +5752,10 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         conic.surface.clone(),
     );
     ir.model.procedural_surfaces.push(conic);
-    assert!(crate::decode::blend_feature_definition(
+    assert!(crate::native::blend_feature_definition(
         &ir,
         &[BodyId("nx:s4:body#3".into())],
-        crate::decode::NxBlendFamily::Edge,
+        crate::native::NxBlendFamily::Edge,
     )
     .is_none());
 }
@@ -7941,19 +7941,19 @@ fn nx_construction_dependency_requires_a_preceding_projected_operation() {
     ]);
 
     assert_eq!(
-        crate::decode::preceding_operation_dependency("csys", 2, &positions, &features),
+        crate::native::preceding_operation_dependency("csys", 2, &positions, &features),
         Some(FeatureId("nx:test:feature#csys".into()))
     );
     assert_eq!(
-        crate::decode::preceding_operation_dependency("consumer", 2, &positions, &features),
+        crate::native::preceding_operation_dependency("consumer", 2, &positions, &features),
         None
     );
     assert_eq!(
-        crate::decode::preceding_operation_dependency("later", 2, &positions, &features),
+        crate::native::preceding_operation_dependency("later", 2, &positions, &features),
         None
     );
     assert_eq!(
-        crate::decode::preceding_operation_dependency("missing", 2, &positions, &features),
+        crate::native::preceding_operation_dependency("missing", 2, &positions, &features),
         None
     );
 }
@@ -11185,9 +11185,9 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     };
     let mut annotations = AnnotationBuilder::new();
 
-    crate::decode::attach_parasolid_topology_numeric_attributes(
+    crate::native::attach_parasolid_topology_numeric_attributes(
         &mut ir,
-        &crate::decode::ParasolidNumericAttributeSources {
+        &crate::native::ParasolidNumericAttributeSources {
             topology_references: &references,
             class_uses: &[class_use],
             definitions: &[definition],

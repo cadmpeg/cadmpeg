@@ -24,7 +24,10 @@ mod om;
 mod parasolid;
 mod segments;
 mod substrate;
+pub(crate) mod vector;
 
+#[cfg(test)]
+pub(crate) use attach::*;
 pub use display_jt::*;
 pub use features::*;
 pub(crate) use model::*;

@@ -3,6 +3,10 @@
 
 use std::io::Read as _;
 
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
+use cadmpeg_ir::SourceObjectAssociation;
+
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
@@ -3218,4 +3222,535 @@ pub fn display_jt_tri_strip_shape_nodes(
         }
     }
     nodes
+}
+
+// --- JT display-model tessellation assembly (moved from decode.rs) ---
+
+const DISPLAY_JT_COLOR_CHANNEL: u32 = 0x4e58_0001;
+const DISPLAY_JT_VERTEX_FLAG_CHANNEL: u32 = 0x4e58_0002;
+const DISPLAY_JT_TEXTURE_CHANNEL_BASE: u32 = 0x4e58_0100;
+type DisplayJtMatrix = [[f64; 4]; 4];
+
+struct DisplayJtPath {
+    matrix: DisplayJtMatrix,
+    final_transform: bool,
+    node_path: Vec<u32>,
+    instance_path: Vec<String>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct DisplayJtTessellationInputs<'a> {
+    pub(crate) meshes: &'a [crate::native::DisplayJtPolygonMesh],
+    pub(crate) coordinates: &'a [crate::native::DisplayJtVertexCoordinates],
+    pub(crate) normals: &'a [crate::native::DisplayJtVertexNormals],
+    pub(crate) colors: &'a [crate::native::DisplayJtVertexColors],
+    pub(crate) texture_coordinates: &'a [crate::native::DisplayJtVertexTextureCoordinates],
+    pub(crate) vertex_flags: &'a [crate::native::DisplayJtVertexFlags],
+    pub(crate) vertex_headers: &'a [crate::native::DisplayJtCompressedVertexRecordsHeader],
+    pub(crate) coordinate_headers: &'a [crate::native::DisplayJtVertexCoordinateArrayHeader],
+    pub(crate) shape_elements: &'a [crate::native::DisplayJtShapeLodElement],
+    pub(crate) bindings: &'a [crate::native::DisplayJtShapeLodBinding],
+    pub(crate) shape_nodes: &'a [crate::native::DisplayJtTriStripShapeNode],
+    pub(crate) base_nodes: &'a [crate::native::DisplayJtBaseNodeData],
+    pub(crate) group_nodes: &'a [crate::native::DisplayJtGroupNodeData],
+    pub(crate) instance_nodes: &'a [crate::native::DisplayJtInstanceNode],
+    pub(crate) transforms: &'a [crate::native::DisplayJtGeometricTransformAttribute],
+    pub(crate) compressed_elements: &'a [crate::native::DisplayJtCompressedElement],
+}
+
+fn multiply_jt_matrices(left: DisplayJtMatrix, right: DisplayJtMatrix) -> Option<DisplayJtMatrix> {
+    let mut product = [[0.0; 4]; 4];
+    for (row, values) in product.iter_mut().enumerate() {
+        for (column, value) in values.iter_mut().enumerate() {
+            *value = (0..4)
+                .map(|inner| left[row][inner] * right[inner][column])
+                .sum();
+            if !value.is_finite() {
+                return None;
+            }
+        }
+    }
+    Some(product)
+}
+
+fn resolve_display_jt_node_transform(
+    object_id: u32,
+    by_object: &BTreeMap<u32, &crate::native::DisplayJtBaseNodeData>,
+    parents: &BTreeMap<u32, Vec<u32>>,
+    instance_ids: &BTreeMap<u32, String>,
+    transforms: &[&crate::native::DisplayJtGeometricTransformAttribute],
+    visiting: &mut BTreeSet<u32>,
+) -> Option<Vec<DisplayJtPath>> {
+    let base = by_object.get(&object_id)?;
+    if base.flags & 1 != 0 {
+        return Some(Vec::new());
+    }
+    if !visiting.insert(object_id) {
+        return None;
+    }
+    let parent_states = parents.get(&object_id).map_or_else(
+        || {
+            Some(vec![DisplayJtPath {
+                matrix: [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+                final_transform: false,
+                node_path: Vec::new(),
+                instance_path: Vec::new(),
+            }])
+        },
+        |ids| {
+            ids.iter()
+                .map(|id| {
+                    resolve_display_jt_node_transform(
+                        *id,
+                        by_object,
+                        parents,
+                        instance_ids,
+                        transforms,
+                        visiting,
+                    )
+                })
+                .collect::<Option<Vec<_>>>()
+                .map(|paths| paths.into_iter().flatten().collect())
+        },
+    )?;
+    visiting.remove(&object_id);
+    let mut results = Vec::new();
+    for mut path in parent_states {
+        for attribute_id in &base.attribute_object_ids {
+            let mut matching = transforms
+                .iter()
+                .filter(|attribute| attribute.object_id == *attribute_id);
+            let attribute = matching.next()?;
+            if matching.next().is_some() {
+                return None;
+            }
+            if attribute.state_flags & 0x04 != 0 {
+                continue;
+            }
+            if path.final_transform && attribute.state_flags & 0x02 == 0 {
+                continue;
+            }
+            let local = attribute.matrix.map(|row| row.map(f64::from));
+            path.matrix = multiply_jt_matrices(local, path.matrix)?;
+            path.final_transform |= attribute.state_flags & 0x01 != 0;
+        }
+        if let Some(instance_id) = instance_ids.get(&object_id) {
+            path.instance_path.push(instance_id.clone());
+        }
+        path.node_path.push(object_id);
+        results.push(path);
+    }
+    Some(results)
+}
+
+fn display_jt_node_transform(
+    scene_segment: &str,
+    shape_object_id: u32,
+    inputs: &DisplayJtTessellationInputs<'_>,
+) -> Option<Vec<DisplayJtPath>> {
+    let scoped = inputs
+        .base_nodes
+        .iter()
+        .filter(|base| {
+            inputs
+                .compressed_elements
+                .iter()
+                .find(|element| element.id == base.element)
+                .is_some_and(|element| element.segment == scene_segment)
+        })
+        .collect::<Vec<_>>();
+    let mut by_object = BTreeMap::new();
+    for base in &scoped {
+        if by_object.insert(base.object_id, *base).is_some() {
+            return None;
+        }
+    }
+    by_object.get(&shape_object_id)?;
+    let scoped_transforms = inputs
+        .transforms
+        .iter()
+        .filter(|attribute| {
+            inputs
+                .compressed_elements
+                .iter()
+                .find(|element| element.id == attribute.element)
+                .is_some_and(|element| element.segment == scene_segment)
+        })
+        .collect::<Vec<_>>();
+    let mut parents = BTreeMap::<u32, Vec<u32>>::new();
+    let mut instance_ids = BTreeMap::new();
+    for node in inputs.instance_nodes {
+        if !by_object.values().any(|base| base.id == node.base_node) {
+            continue;
+        }
+        if instance_ids
+            .insert(node.object_id, node.id.clone())
+            .is_some()
+        {
+            return None;
+        }
+    }
+    for (object_id, base) in &by_object {
+        let group_children = inputs
+            .group_nodes
+            .iter()
+            .filter(|node| node.base_node == base.id)
+            .map(|node| node.child_object_ids.as_slice())
+            .collect::<Vec<_>>();
+        let instance_children = inputs
+            .instance_nodes
+            .iter()
+            .filter(|node| node.base_node == base.id)
+            .map(|node| std::slice::from_ref(&node.child_object_id))
+            .collect::<Vec<_>>();
+        if group_children.len() + instance_children.len() > 1 {
+            return None;
+        }
+        let children = group_children
+            .into_iter()
+            .chain(instance_children)
+            .next()
+            .unwrap_or_default();
+        for &child in children {
+            by_object.get(&child)?;
+            parents.entry(child).or_default().push(*object_id);
+        }
+    }
+    resolve_display_jt_node_transform(
+        shape_object_id,
+        &by_object,
+        &parents,
+        &instance_ids,
+        &scoped_transforms,
+        &mut BTreeSet::new(),
+    )
+}
+
+fn transform_jt_point(matrix: [[f64; 4]; 4], point: [f32; 3]) -> Option<Point3> {
+    let point = point.map(f64::from);
+    let coordinate = |column| {
+        (matrix[3][column]
+            + (0..3)
+                .map(|row| point[row] * matrix[row][column])
+                .sum::<f64>())
+            * 1000.0
+    };
+    let point = Point3::new(coordinate(0), coordinate(1), coordinate(2));
+    [point.x, point.y, point.z]
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(point)
+}
+
+fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<Vector3> {
+    let a = matrix;
+    let determinant = a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
+        - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+        + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+    if !determinant.is_finite() || determinant == 0.0 {
+        return None;
+    }
+    let inverse = [
+        [
+            (a[1][1] * a[2][2] - a[1][2] * a[2][1]) / determinant,
+            (a[0][2] * a[2][1] - a[0][1] * a[2][2]) / determinant,
+            (a[0][1] * a[1][2] - a[0][2] * a[1][1]) / determinant,
+        ],
+        [
+            (a[1][2] * a[2][0] - a[1][0] * a[2][2]) / determinant,
+            (a[0][0] * a[2][2] - a[0][2] * a[2][0]) / determinant,
+            (a[0][2] * a[1][0] - a[0][0] * a[1][2]) / determinant,
+        ],
+        [
+            (a[1][0] * a[2][1] - a[1][1] * a[2][0]) / determinant,
+            (a[0][1] * a[2][0] - a[0][0] * a[2][1]) / determinant,
+            (a[0][0] * a[1][1] - a[0][1] * a[1][0]) / determinant,
+        ],
+    ];
+    let normal = normal.map(f64::from);
+    let transformed = Vector3::new(
+        (0..3).map(|index| normal[index] * inverse[0][index]).sum(),
+        (0..3).map(|index| normal[index] * inverse[1][index]).sum(),
+        (0..3).map(|index| normal[index] * inverse[2][index]).sum(),
+    );
+    let length = transformed.norm();
+    (length.is_finite() && length > 0.0).then(|| {
+        Vector3::new(
+            transformed.x / length,
+            transformed.y / length,
+            transformed.z / length,
+        )
+    })
+}
+
+pub(crate) fn display_jt_tessellations(
+    inputs: &DisplayJtTessellationInputs<'_>,
+) -> Option<Vec<(Tessellation, u64)>> {
+    let DisplayJtTessellationInputs {
+        meshes,
+        coordinates,
+        normals,
+        colors,
+        texture_coordinates,
+        vertex_flags,
+        vertex_headers,
+        coordinate_headers,
+        shape_elements,
+        bindings,
+        shape_nodes,
+        base_nodes,
+        compressed_elements,
+        ..
+    } = *inputs;
+    let mut tessellations = Vec::new();
+    for mesh in meshes {
+        let coordinate_header = coordinate_headers
+            .iter()
+            .find(|header| header.id == mesh.coordinate_header)?;
+        let coordinates = coordinates
+            .iter()
+            .find(|coordinates| coordinates.header == coordinate_header.id)?;
+        let shape_element = shape_elements
+            .iter()
+            .find(|element| element.id == coordinate_header.element)?;
+        let mut matching_bindings = bindings.iter().filter(|binding| {
+            binding.shape_segment == shape_element.segment
+                && binding.payload_object_id == shape_element.object_id
+        });
+        let binding = matching_bindings.next()?;
+        if matching_bindings.next().is_some() {
+            return None;
+        }
+        let mut matching_nodes = shape_nodes.iter().filter(|node| {
+            if node.object_id != binding.shape_node_object_id {
+                return false;
+            }
+            let Some(base) = base_nodes.iter().find(|base| base.id == node.base_node) else {
+                return false;
+            };
+            compressed_elements
+                .iter()
+                .find(|element| element.id == base.element)
+                .is_some_and(|element| element.segment == binding.scene_segment)
+        });
+        let shape_node = matching_nodes.next()?;
+        if matching_nodes.next().is_some() {
+            return None;
+        }
+        let paths =
+            display_jt_node_transform(&binding.scene_segment, shape_node.object_id, inputs)?;
+        let mut rendered = Vec::new();
+        for ((polygon, attributes), &group) in mesh
+            .polygons
+            .iter()
+            .zip(&mesh.vertex_attribute_indices)
+            .zip(&mesh.polygon_groups)
+        {
+            if group < 0 {
+                continue;
+            }
+            let triangle: [u32; 3] = polygon.as_slice().try_into().ok()?;
+            let attributes: [Option<u32>; 3] = attributes.as_slice().try_into().ok()?;
+            rendered.push((triangle, attributes));
+        }
+        if rendered.is_empty() {
+            return None;
+        }
+        let vertex_header = vertex_headers
+            .iter()
+            .find(|header| header.element == shape_element.id)?;
+        let normal_array = (vertex_header.vertex_bindings & 0x8 != 0)
+            .then(|| {
+                normals
+                    .iter()
+                    .find(|normals| normals.vertex_records_header == vertex_header.id)
+            })
+            .flatten();
+        if vertex_header.vertex_bindings & 0x8 != 0 && normal_array.is_none() {
+            return None;
+        }
+        let color_array = (vertex_header.vertex_bindings & 0x30 != 0)
+            .then(|| {
+                colors
+                    .iter()
+                    .find(|colors| colors.vertex_records_header == vertex_header.id)
+            })
+            .flatten();
+        if vertex_header.vertex_bindings & 0x30 != 0 && color_array.is_none() {
+            return None;
+        }
+        let texture_arrays = (0..8_u8)
+            .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
+            .map(|channel| {
+                texture_coordinates.iter().find(|coordinates| {
+                    coordinates.vertex_records_header == vertex_header.id
+                        && coordinates.channel == channel
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let vertex_flag_array = (vertex_header.vertex_bindings & 0x40 != 0)
+            .then(|| {
+                vertex_flags
+                    .iter()
+                    .find(|flags| flags.vertex_records_header == vertex_header.id)
+            })
+            .flatten();
+        if vertex_header.vertex_bindings & 0x40 != 0 && vertex_flag_array.is_none() {
+            return None;
+        }
+        for path in paths {
+            let transform = path.matrix;
+            let instance_path = path.instance_path;
+            let node_path = path
+                .node_path
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join("-");
+            let convert_point = |index: u32| {
+                let point = coordinates.points_m.get(index as usize)?;
+                transform_jt_point(transform, *point)
+            };
+            let has_vertex_attributes = normal_array.is_some()
+                || color_array.is_some()
+                || !texture_arrays.is_empty()
+                || vertex_flag_array.is_some();
+            let (vertices, triangles, normal_vectors, channels) = if has_vertex_attributes {
+                let mut vertices = Vec::with_capacity(rendered.len() * 3);
+                let mut triangles = Vec::with_capacity(rendered.len());
+                let mut normal_vectors = normal_array
+                    .map(|_| Vec::with_capacity(rendered.len() * 3))
+                    .unwrap_or_default();
+                let mut color_data = color_array
+                    .map(|_| Vec::with_capacity(rendered.len() * 3 * 16))
+                    .unwrap_or_default();
+                let texture_component_counts = texture_arrays
+                    .iter()
+                    .map(|array| {
+                        let count = array.values.first()?.len();
+                        (1..=4)
+                            .contains(&count)
+                            .then_some(count)
+                            .filter(|count| array.values.iter().all(|value| value.len() == *count))
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                let mut texture_data = texture_component_counts
+                    .iter()
+                    .map(|count| Vec::with_capacity(rendered.len() * 3 * count * 4))
+                    .collect::<Vec<_>>();
+                let mut vertex_flag_data = vertex_flag_array
+                    .map(|_| Vec::with_capacity(rendered.len() * 3 * 4))
+                    .unwrap_or_default();
+                for (triangle, attributes) in rendered.iter().copied() {
+                    let base = u32::try_from(vertices.len()).ok()?;
+                    for (coordinate, attribute) in triangle.into_iter().zip(attributes) {
+                        vertices.push(convert_point(coordinate)?);
+                        let attribute = attribute? as usize;
+                        if let Some(normal_array) = normal_array {
+                            let normal = normal_array.normals.get(attribute)?;
+                            normal_vectors.push(transform_jt_normal(transform, *normal)?);
+                        }
+                        if let Some(color_array) = color_array {
+                            for component in color_array.colors.get(attribute)? {
+                                color_data.extend_from_slice(&component.to_le_bytes());
+                            }
+                        }
+                        for (array, data) in texture_arrays.iter().zip(&mut texture_data) {
+                            for component in array.values.get(attribute)? {
+                                data.extend_from_slice(&component.to_le_bytes());
+                            }
+                        }
+                        if let Some(array) = vertex_flag_array {
+                            vertex_flag_data
+                                .extend_from_slice(&array.values.get(attribute)?.to_le_bytes());
+                        }
+                    }
+                    triangles.push([base, base.checked_add(1)?, base.checked_add(2)?]);
+                }
+                let count = u32::try_from(vertices.len()).ok()?;
+                let mut channels = Vec::new();
+                if color_array.is_some() {
+                    channels.push(TessellationChannel {
+                        item_size: 16,
+                        kind: DISPLAY_JT_COLOR_CHANNEL,
+                        flags: ((vertex_header.vertex_bindings >> 4) & 0x3) as u32,
+                        count,
+                        data: color_data,
+                    });
+                }
+                for (((array, component_count), data), ordinal) in texture_arrays
+                    .iter()
+                    .zip(texture_component_counts)
+                    .zip(texture_data)
+                    .zip(0_u32..)
+                {
+                    channels.push(TessellationChannel {
+                        item_size: u32::try_from(component_count.checked_mul(4)?).ok()?,
+                        kind: DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)?,
+                        flags: u32::from(array.channel)
+                            | (((vertex_header.vertex_bindings >> (8 + 4 * array.channel)) & 0xf)
+                                as u32)
+                                << 8,
+                        count,
+                        data,
+                    });
+                }
+                if vertex_flag_array.is_some() {
+                    channels.push(TessellationChannel {
+                        item_size: 4,
+                        kind: DISPLAY_JT_VERTEX_FLAG_CHANNEL,
+                        flags: 0,
+                        count,
+                        data: vertex_flag_data,
+                    });
+                }
+                (vertices, triangles, normal_vectors, channels)
+            } else {
+                let vertices = (0..coordinates.points_m.len())
+                    .map(|index| convert_point(index as u32))
+                    .collect::<Option<Vec<_>>>()?;
+                let triangles = rendered.iter().map(|(triangle, _)| *triangle).collect();
+                (vertices, triangles, Vec::new(), Vec::new())
+            };
+            tessellations.push((
+                Tessellation {
+                    id: if path.node_path.len() == 1 {
+                        format!(
+                            "nx:display-jt:tessellation#{}-{}",
+                            shape_element.source_offset, shape_element.object_id
+                        )
+                    } else {
+                        format!(
+                            "nx:display-jt:tessellation#{}-{}-path-{node_path}",
+                            shape_element.source_offset, shape_element.object_id
+                        )
+                    },
+                    body: None,
+                    faces: Vec::new(),
+                    chordal_deflection: None,
+                    source_object: Some(SourceObjectAssociation {
+                        format: "nx".to_string(),
+                        object_id: shape_node.id.clone(),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path,
+                    }),
+                    vertices,
+                    triangles,
+                    strip_lengths: Vec::new(),
+                    normals: normal_vectors,
+                    channels,
+                },
+                shape_node.source_offset,
+            ));
+        }
+    }
+    Some(tessellations)
 }
