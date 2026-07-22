@@ -1512,6 +1512,8 @@ enum CreoMathFunction {
     StringLength,
     StringStarts,
     StringEnds,
+    StringMatch,
+    StringPattern,
 }
 
 fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
@@ -1553,6 +1555,8 @@ fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
         "string_length" => Some(CreoMathFunction::StringLength),
         "string_starts" => Some(CreoMathFunction::StringStarts),
         "string_ends" => Some(CreoMathFunction::StringEnds),
+        "string_match" => Some(CreoMathFunction::StringMatch),
+        "string_pattern" => Some(CreoMathFunction::StringPattern),
         _ => None,
     }
 }
@@ -1674,6 +1678,12 @@ fn evaluate_creo_relation_function(
         (CreoMathFunction::StringEnds, [String(value), String(suffix)]) => {
             Number(f64::from(value.ends_with(suffix)))
         }
+        (CreoMathFunction::StringMatch, [String(value), String(expected)]) => {
+            Number(f64::from(value == expected))
+        }
+        (CreoMathFunction::StringPattern, [String(value), String(pattern)]) => {
+            Number(f64::from(relation_string_pattern(value, pattern)?))
+        }
         _ => {
             let numbers = arguments
                 .iter()
@@ -1686,6 +1696,15 @@ fn evaluate_creo_relation_function(
         }
     };
     value.clone().finite().then_some(value)
+}
+
+fn relation_string_pattern(value: &str, pattern: &str) -> Option<bool> {
+    regex::RegexBuilder::new(&format!(r"\A(?:{pattern})\z"))
+        .size_limit(1 << 20)
+        .dfa_size_limit(1 << 20)
+        .build()
+        .ok()
+        .map(|pattern| pattern.is_match(value))
 }
 
 const MAX_RELATION_STRING_PRECISION: usize = 128;
@@ -3006,8 +3025,12 @@ mod tests {
             "starts=string_starts(label,'ste')",
             "ends=string_ends(label,'-2')",
             "same=piece=='tee'",
+            "matches=string_match(label,'steel-2')",
+            "pattern=string_pattern(label,'steel-[0-9]*')",
+            "not_pattern=string_pattern(label,'steel-[A-Z]*')",
             "zero=itos(0)",
             "bad=-'text'",
+            "bad_pattern=string_pattern(label,'[')",
         ];
         let lines = sources
             .iter()
@@ -3039,11 +3062,15 @@ mod tests {
         assert_eq!(assignments[5].value, number(1.0));
         assert_eq!(assignments[6].value, number(1.0));
         assert_eq!(assignments[7].value, number(1.0));
+        assert_eq!(assignments[8].value, number(1.0));
+        assert_eq!(assignments[9].value, number(1.0));
+        assert_eq!(assignments[10].value, number(0.0));
         assert_eq!(
-            assignments[8].value,
+            assignments[11].value,
             Some(CurveExpressionValue::String(String::new()))
         );
-        assert_eq!(assignments[9].value, None);
+        assert_eq!(assignments[12].value, None);
+        assert_eq!(assignments[13].value, None);
     }
 
     #[test]

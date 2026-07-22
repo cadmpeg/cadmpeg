@@ -38,7 +38,8 @@ fixtures, claims above L1 remain unproven.
 - Holes and rounds transfer typed operation definitions where their affected
   geometry, edge identities, radii, and extents resolve uniquely.
 - Curve-equation assignments retain source order and dependency identity;
-  closed numeric and string operator and deterministic function values transfer.
+  closed numeric and string operator and deterministic function values transfer,
+  including exact and regular-expression whole-string matching.
   Local bindings are case-insensitive, scoped external symbols remain whole,
   the reserved `PI` constant evaluates, and nested `IF`/`ELSE`/`ENDIF`
   activation is evaluated without selecting unresolved branches. Positive
