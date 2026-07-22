@@ -2994,6 +2994,7 @@ fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
         }
     }
     tokens.next().is_none().then_some(())?;
+    values.iter().all(|value| value.is_finite()).then_some(())?;
     values.try_into().ok()
 }
 
@@ -3010,6 +3011,7 @@ pub fn pcurve_endpoints(
             let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
             let topology = matching.next()?;
             matching.next().is_none().then_some(())?;
+            (topology.type_byte == record.type_byte).then_some(())?;
             Some(PcurveEndpoints {
                 curve_id: record.curve_id,
                 faces: topology.faces,
@@ -3606,6 +3608,41 @@ mod tests {
         let ambiguous = parameter_record(8, CurveSuffixStatus::Ambiguous { candidate_count: 2 });
         assert!(uniquely_bounded_parameter_records(&[ambiguous]).is_empty());
         assert!(uniquely_bounded_parameter_records(&[unique.clone(), unique]).is_empty());
+    }
+
+    #[test]
+    fn pcurve_endpoint_slots_must_be_finite() {
+        let nan = [0xed, 0x7f, 0xf8, 0, 0, 0, 0, 0, 0];
+        let mut record = parameter_record(7, CurveSuffixStatus::Unique);
+        record.body.extend_from_slice(&nan);
+        record.body.extend([0x0f; 7]);
+        record.scalar_values.push(f64::NAN);
+        record.scalar_tokens.push(CurveParameterScalar {
+            value: f64::NAN,
+            raw: nan.to_vec(),
+            offset: 0,
+            length: nan.len(),
+        });
+        for offset in nan.len()..record.body.len() {
+            record.scalar_values.push(0.0);
+            record.scalar_tokens.push(CurveParameterScalar {
+                value: 0.0,
+                raw: vec![0x0f],
+                offset,
+                length: 1,
+            });
+        }
+        let topology = CurveTopologyRow {
+            id: 7,
+            type_byte: 0,
+            feature_id: 1,
+            directions: [1, 1],
+            faces: [2, 3],
+            next_edges: [7, 7],
+            offset: 1,
+        };
+
+        assert!(pcurve_endpoints(&[record], &[topology]).is_empty());
     }
 
     #[test]

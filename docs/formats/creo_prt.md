@@ -1040,8 +1040,10 @@ form opaque spans, so the three span sets partition the complete body.
 
 A direct curve body consisting of exactly eight scalar slots and no references
 has this layout. A scalar token occupies one slot. A standalone `12` occupies
-one zero-valued slot. No other unclaimed byte is permitted. The values are
-parameter coordinates in the corresponding face spaces.
+one zero-valued slot. No other unclaimed byte is permitted. All eight values
+are finite parameter coordinates in the corresponding face spaces. The
+parameter row and its uniquely identified topology row have the same raw
+`type_byte`; a same-identifier row of another type does not bind the body.
 
 | Slots  | Meaning                            |
 | ------ | ---------------------------------- |

@@ -5398,6 +5398,12 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     assert_eq!(records[0].fields["faces"][0], 10);
     assert_eq!(records[0].fields["faces"][1], 11);
     assert_eq!(records[0].fields["source_form"], "positional");
+
+    let mut mismatched_topology = scan.curve_topology_rows.clone();
+    mismatched_topology[0].type_byte = 1;
+    assert!(
+        crate::curve::pcurve_endpoints(&scan.curve_parameters, &mismatched_topology).is_empty()
+    );
 }
 
 #[test]
