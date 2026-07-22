@@ -1596,17 +1596,15 @@ fn decode_exact_scalars(
     slot_count: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<Vec<f64>> {
-    let mut cursor = 0;
     // Each slot decodes at least one payload byte and the whole payload must be
     // consumed, so a valid slot count cannot exceed the payload length.
     bounded_len(slot_count as u64, 1, payload.len())?;
     let mut values = Vec::with_capacity(slot_count);
+    let mut cursor = psb::Cursor::new(payload);
     for _ in 0..slot_count {
-        let (value, next) = scalar::decode_in_lane(payload, cursor, cache)?;
-        values.push(value);
-        cursor = next;
+        values.push(cursor.take_with(|data, pos| scalar::decode_in_lane(data, pos, cache))?);
     }
-    (cursor == payload.len()).then_some(values)
+    (cursor.pos() == payload.len()).then_some(values)
 }
 
 fn decode_optional_scalars(

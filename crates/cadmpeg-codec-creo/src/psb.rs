@@ -271,9 +271,19 @@ pub(crate) struct Cursor<'a> {
 }
 
 impl<'a> Cursor<'a> {
+    /// Start a cursor at the beginning of `data`.
+    pub(crate) fn new(data: &'a [u8]) -> Self {
+        Self { data, pos: 0 }
+    }
+
     /// Start a cursor at an explicit byte position within `data`.
     pub(crate) fn at(data: &'a [u8], pos: usize) -> Self {
         Self { data, pos }
+    }
+
+    /// The current read position, i.e. the offset of the next unread byte.
+    pub(crate) fn pos(&self) -> usize {
+        self.pos
     }
 
     /// Decode one value at the current position with `decode`, advancing to the

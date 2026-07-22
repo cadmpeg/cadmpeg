@@ -4509,25 +4509,26 @@ fn named_spline_scalar_slots(
     cache: &scalar::ScalarCache,
 ) -> Vec<ScalarTokenSlot> {
     let mut slots = Vec::with_capacity(count);
-    let mut cursor = 0;
+    let mut cursor = psb::Cursor::new(body);
     let mut continued_tuple = false;
     while slots.len() < count {
         if matches!(name, "i_pnts" | "i_points")
-            && body.get(cursor..cursor + 2) == Some(&[psb::token::SCALAR_BODY, 0x00])
+            && cursor.take_slice_if(&[psb::token::SCALAR_BODY, 0x00])
         {
-            cursor += 2;
             continued_tuple = true;
             continue;
         }
-        let Some((value, next)) = named_spline_scalar_slot(name, body, cursor, cache) else {
+        let start = cursor.pos();
+        let Some(value) =
+            cursor.take_with(|data, pos| named_spline_scalar_slot(name, data, pos, cache))
+        else {
             break;
         };
-        slots.push((value, body[cursor..next].to_vec()));
-        cursor = next;
+        slots.push((value, body[start..cursor.pos()].to_vec()));
     }
     if matches!(name, "i_pnts" | "i_points")
         && continued_tuple
-        && cursor == body.len()
+        && cursor.pos() == body.len()
         && slots.len() + 1 == count
     {
         slots.push((Some(0.0), Vec::new()));
