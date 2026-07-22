@@ -380,7 +380,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             } => (
                 "object_stream_a8_03_32",
                 carrier_object_id,
-                *definition,
+                definition,
                 Exactness::ByteExact,
             ),
             StandardSurfaceProcedure::Offset {
@@ -611,10 +611,11 @@ pub(crate) struct StandardObjectEvidence {
 }
 
 #[derive(Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum StandardSurfaceProcedure {
     RollingBall {
         carrier_object_id: u32,
-        definition: Box<ProceduralSurfaceDefinition>,
+        definition: ProceduralSurfaceDefinition,
     },
     Offset {
         carrier_object_id: u32,
@@ -626,6 +627,7 @@ pub(crate) enum StandardSurfaceProcedure {
 }
 
 #[derive(PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum StandardSurfaceEvidence {
     Geometry(SurfaceGeometry),
     Procedural(StandardSurfaceProcedure),
@@ -698,7 +700,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                             StandardSurfaceEvidence::Procedural(
                                 StandardSurfaceProcedure::RollingBall {
                                     carrier_object_id,
-                                    definition: Box::new(definition),
+                                    definition,
                                 },
                             )
                         })
@@ -2697,8 +2699,8 @@ pub(crate) fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool
             (((radial - major_radius).powi(2) + axial * axial).sqrt() - *minor_radius).abs()
         }
         SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => return false,
     };
@@ -3226,8 +3228,8 @@ pub(crate) fn circle_axis_from_carrier(
             }
         }
         SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => None,
     }

@@ -1112,15 +1112,16 @@ fn resolved_selection_member_points(
     else {
         return None;
     };
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
     let v_axis = Vector3::new(
-        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
-        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
-        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+        normal.y * u_axis.z - normal.z * u_axis.y,
+        normal.z * u_axis.x - normal.x * u_axis.z,
+        normal.x * u_axis.y - normal.y * u_axis.x,
     );
     Some(vec![Point3::new(
-        sketch.origin.x + position.u * sketch.u_axis.x + position.v * v_axis.x,
-        sketch.origin.y + position.u * sketch.u_axis.y + position.v * v_axis.y,
-        sketch.origin.z + position.u * sketch.u_axis.z + position.v * v_axis.z,
+        origin.x + position.u * u_axis.x + position.v * v_axis.x,
+        origin.y + position.u * u_axis.y + position.v * v_axis.y,
+        origin.z + position.u * u_axis.z + position.v * v_axis.z,
     )])
 }
 
@@ -1166,7 +1167,7 @@ pub(crate) fn selection_containing_points(
     let projected = points
         .iter()
         .map(|point| project_to_sketch(sketch, *point))
-        .collect::<Vec<_>>();
+        .collect::<Option<Vec<_>>>()?;
     let boundaries = sketch
         .profiles
         .iter()

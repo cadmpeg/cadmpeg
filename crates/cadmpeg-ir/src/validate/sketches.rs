@@ -210,11 +210,12 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|entity| (&entity.id, &entity.geometry))
         .collect::<HashMap<_, _>>();
     for sketch in &ir.model.sketches {
-        let normal = sketch.normal.norm();
-        let u_norm = sketch.u_axis.norm();
-        let dot = sketch.normal.x * sketch.u_axis.x
-            + sketch.normal.y * sketch.u_axis.y
-            + sketch.normal.z * sketch.u_axis.z;
+        let Some((origin, normal_axis, u_axis)) = sketch.resolved_placement() else {
+            continue;
+        };
+        let normal = normal_axis.norm();
+        let u_norm = u_axis.norm();
+        let dot = normal_axis.x * u_axis.x + normal_axis.y * u_axis.y + normal_axis.z * u_axis.z;
         if !normal.is_finite() || normal <= 0.0 || !u_norm.is_finite() || u_norm <= 0.0 {
             finding(
                 findings,
@@ -230,10 +231,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 "sketch plane axes are not perpendicular",
             );
         }
-        if !sketch.origin.x.is_finite()
-            || !sketch.origin.y.is_finite()
-            || !sketch.origin.z.is_finite()
-        {
+        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
             finding(
                 findings,
                 Check::Bounds,

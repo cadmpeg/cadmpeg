@@ -16,9 +16,7 @@ use crate::writer::{real, refs, Emitter, Ref};
 
 pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
     match surface {
-        SurfaceGeometry::Polygonal { .. }
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Unknown { .. } => false,
+        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => false,
         SurfaceGeometry::Transformed { basis, transform } => {
             similarity_transform(transform) && surface_is_supported(basis)
         }
@@ -28,7 +26,7 @@ pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
 
 pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
     match curve {
-        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
+        CurveGeometry::Unknown { .. } => false,
         CurveGeometry::Transformed { basis, transform } => {
             similarity_transform(transform) && curve_is_supported(basis)
         }
@@ -387,12 +385,12 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
             let operator = transformation_operator(e, *transform);
             e.emit("SURFACE_REPLICA", &format!("'',{parent},{operator}"))
         }
-        // Construction-backed, polygonal, and unknown surfaces have no direct
-        // STEP representation; the writer filters their faces before reaching here.
-        SurfaceGeometry::Polygonal { .. }
-        | SurfaceGeometry::Procedural { .. }
+        // Unknown surfaces have no STEP representation; the writer filters faces
+        // resting on them in `emit_face` before ever reaching here.
+        SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Unknown { .. } => {
-            unreachable!("non-emittable surfaces are filtered before surface emission")
+            unreachable!("non-explicit surfaces are filtered before surface emission")
         }
     }
 }
@@ -476,7 +474,7 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
             unreachable!("composite curves are emitted from their child graph")
         }
         CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {
-            unreachable!("non-emittable curves are filtered before emission")
+            unreachable!("non-explicit curves are filtered before emission")
         }
     }
 }

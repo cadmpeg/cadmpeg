@@ -218,12 +218,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
                     id: id.clone(),
                     name,
                     asset_guid: None,
-                    textures: Vec::new(),
                     visual_guid: None,
                     physical_token: None,
                     schema: Some("step_surface_style".into()),
                     category: None,
                     base_color: Some(color),
+                    textures: Vec::new(),
                     properties: BTreeMap::new(),
                 });
                 id

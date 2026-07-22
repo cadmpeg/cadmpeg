@@ -2,7 +2,6 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"54"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 `CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"55"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
@@ -103,7 +102,7 @@ A wire edge appears in exactly one shell's `wire_edges` and in no coedge. A free
 
 ## Geometry and canonical parameterization
 
-Surface carriers are plane, cylinder, cone, sphere, torus, NURBS, procedural, or unknown. A procedural carrier names the exact construction that produces the surface; the construction must name that same surface. Curve carriers are line, circle, ellipse, parabola, hyperbola, NURBS, or unknown. Pcurves are line or NURBS curves in a surface's `(u, v)` space. A subdivision surface is a Catmull–Clark control cage with vertices, edges, directed face edge uses, endpoint sharpness, edge tags, vertex tags, and sector coefficients.
+Surface carriers are plane, cylinder, cone, sphere, torus, NURBS, procedural, or unknown. Curve carriers are line, circle, ellipse, parabola, hyperbola, degenerate, NURBS, procedural, or unknown. Pcurves are line or NURBS curves in a surface's `(u, v)` space. A subdivision surface is a Catmull–Clark control cage with vertices, edges, directed face edge uses, endpoint sharpness, edge tags, vertex tags, and sector coefficients.
 
 Free surface, curve, subdivision-surface, and tessellation carriers may carry a `SourceObjectAssociation`. The association records the source format and native object identifier, effective name, color, visibility, layer, and outermost-to-innermost instance path. These fields preserve source-object identity and display metadata when no topology entity owns the carrier.
 
@@ -122,7 +121,6 @@ Analytic surfaces carry the frame needed to interpret parameters: plane `u_axis`
 | sphere                 | `u` is azimuth in radians; `v` is latitude in `[-π/2, π/2]`                                          |
 | torus                  | `u` is major azimuth and `v` is minor azimuth, both in `[0, 2π]`                                     |
 | NURBS curve or surface | parameters are the stored knot-domain coordinates                                                    |
-| procedural surface     | parameters are defined by the referenced construction                                                |
 
 `Edge.param_range` uses the canonical parameterization of its curve. Full circles are anchored to `[0, 2π]`. Periodic ranges may cross a seam by using an end value greater than the start value in the unwrapped domain. Pcurve coordinates use the corresponding surface conventions.
 
@@ -138,13 +136,12 @@ NURBS surfaces store degrees, full knot vectors, pole counts, u-major control po
 
 ## Procedural carriers
 
-Procedural entities retain construction semantics beside a solved carrier or as the exact definition of a procedural carrier. `cache_fit_tolerance`, when present, is the maximum millimeter deviation between the procedural definition and a solved carrier.
+Procedural entities retain construction semantics either as a surface or curve carrier or beside a solved carrier. `SurfaceGeometry::Procedural.construction` and `CurveGeometry::Procedural.construction` identify the construction that exactly defines the carrier; the referenced construction identifies that carrier in return. This bidirectional relation is required. A procedural construction with an analytic or NURBS carrier retains both the construction and its solved representation. Model-aware evaluation resolves nested offset carriers recursively and rejects reference cycles; the support normal is the normalized cross product of its parameter tangents. Other procedural families require a solved carrier or a family evaluator. `cache_fit_tolerance`, when present, is the maximum millimeter deviation between the procedural definition and solved carrier. A pcurve's `fit_tolerance` likewise bounds the model-space deviation after mapping the pcurve through its coedge's face surface.
 
 Procedural surface definitions are:
 
-- `extrusion`: directrix, its parameter interval, and sweep direction; `S(u,v) = directrix(u) + v direction`;
+- `extrusion`: directrix and sweep direction;
 - `revolution`: directrix, axis, `angular_interval`, optional source-carried `parameter_interval`, and `transposed`;
-
 - `sum`: ordered curves `first` and `second` with `basepoint`; the surface is `basepoint + first(u) + second(v)`;
 - `sweep`: profile and spine;
 - `offset`: support surface, signed distance, and optional source-carried U/V sense enums;
@@ -174,17 +171,31 @@ Absence from sidecar exactness means `byte_exact` for a decoded source-backed va
 
 Each feature has an ID, source-history `ordinal`, optional name, suppression state, optional parent, output bodies, a neutral definition, and optional `native_ref`.
 
-The feature-input topology arena identifies the bodies, faces, and edges present immediately before a feature evaluates. Historical body, face, and edge IDs are state-local typed identities and never identify entities in the solved topology arenas. A historical selection names one input topology owned by its containing feature, contains a nonempty ordered list of unique members present in the corresponding typed roster, and retains a nonempty native selection reference. Each feature owns at most one input topology. Every represented roster is complete for its entity kind.
+Neutral definitions include directly stored geometry, solid and surface construction, direct editing, body composition, sketches, datums, holes, and patterns. A stored-geometry feature has no fabricated replay construction; its outputs identify retained exact bodies. A body extraction identifies the source body selection independently of its copied outputs. Constructed datum planes, coordinate systems, lofts, and freeform surfaces have distinct unresolved-family variants when their operation kind is established but their construction operands are not. An edge fillet consumes an edge selection; a face blend keeps its two support-face selections distinct. Both carry a constant, variable, or unresolved radius law. `sew_bodies` joins an ordered body selection and carries an optional nonnegative gap tolerance. It remains distinct from `knit_surface`, whose operands are selected faces. A surface trim retains independently resolved face, path, and inside-or-outside region semantics. A surface extension independently retains its face selection, positive distance, and natural-or-linear continuation law. `trim_bodies` keeps target and tool body selections distinct and records a forward, reverse, or unresolved retained side. `native` is the sole escape hatch for a feature with no neutral definition and carries its source kind, parameter map, and non-parameter property map. Length wrappers are millimeters and angle wrappers are radians.
 
-Neutral definitions include directly stored geometry, extrude, revolve, fillet, chamfer, shell, hole, and pattern. A stored-geometry feature has no fabricated replay construction; its feature outputs identify any retained exact bodies. `native` is the sole escape hatch for a feature with no neutral definition and carries its source kind, parameter map, and non-parameter property map. Length wrappers are millimeters and angle wrappers are radians.
-
-Extents are blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles reference native identity, a whole solved sketch, specific sketch loops, exact bounded sketch regions, or solved faces. One bounded sketch region is the interior of its `outer` loop minus the interiors of its immediate `holes`; multiple regions denote their union in source selection order. All loop indices address the referenced sketch's `profiles` table. A region list is nonempty; every loop index is in range; holes are unique and exclude the outer loop; repeated regions are invalid. Loop references do not acquire region semantics implicitly. Fillets contain ordered independently dimensioned edge groups; each group uses a constant or sampled variable radius and may carry a dimensionless tangency weight. Chamfers use distance, two distances, or distance-angle. Holes are simple, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
+Datum planes retain their operation family when placement is unresolved and carry a model-space frame when resolved. Extents are unresolved, blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles reference unresolved, native, sketch, or solved-face identity. Paths reference unresolved, native, sketch, edge, or curve identity. Projected curves retain unresolved directionality independently of an absent explicit direction vector. Draft faces, neutral plane, pull direction, angle, and side state resolve independently. Filled-surface boundaries, supports, continuity, and merge state also resolve independently. Boundary surfaces retain their operation family when their directional curve networks are unresolved. Surface-knit operands, entity merging, solid conversion, and tolerance resolve independently. Fillets use constant or sampled variable radii. Chamfers use distance, two distances, or distance-angle and retain reference-side reversal only when resolved. Hole entry and optional exit shapes are simple, chamfered, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
 
 `native_ref` identifies the full-fidelity native record corresponding to a neutral projection. It does not change the neutral definition's meaning.
 
+`source_content` retains the ordered mixed content of a feature. Parameter items
+reference entries in the document parameter arena. A referenced parameter may
+be owned by another feature, including a global equations node, and may occur
+more than once when the source serializes repeated consumption slots.
+
 ## Native namespaces
 
-`native.f3d` and `native.sldprt`, when present, each contain `version: 1`. Fusion native data includes ACT, Design, persistent-reference, sketch-link, construction-recipe, and ASM-history records. SOLIDWORKS native data includes feature histories and feature-input lanes.
+`native.f3d` and `native.sldprt`, when present, each contain `version: 1`. `native.nx` contains `version: 146`. Fusion native data includes ACT, Design, persistent-reference, sketch-link, construction-recipe, and ASM-history records. SOLIDWORKS native data includes feature histories and feature-input lanes. NX native data includes the ordered UG_PART segment index and its validated compressed-stream, body-image alias, and role-classified OM-section links; Parasolid attribute-class declarations with exact field descriptors, topology attribute-list ownership, and counted integer, binary64, and string value records; internally pointed OM record-area headers and byte identities; exactly bounded ordered feature-operation records with separately identified post-label payloads, ordered self-framed payload strings and typed simple-hole templates and variable-cardinality duplicated scalar lanes and shared construction identities, redundantly witnessed simple-hole planar placements and their same-store construction-block references, resolved datum-coordinate-system construction lanes and exact operation-input block reuse, ordered body-reference field occurrences, sketch payload-to-data-block references, extrusion profile-reference lists, shifted-IEEE extrusion scalar headers, and typed post-body scalar triples; labels with their four object-index slots; unambiguous primary-body writers; ordered Boolean target/tool bindings; indexed-store product/version headers; section-scoped OM class and member declarations with exactly bounded registry suffixes and structured class-layout fingerprints; object-ID-bounded records; offset-only store control and column blocks with atomic store-local class-selection lanes, ordered references to uniquely resolved object records and parameter declarations, product-terminated control indices, complete counted same-store block-index lanes, exact sketch payloads reconstructed across ordered column boundaries, exact framed sketch scalar and name fields, name-delimited scalar groups, and complete named two-dimensional sketch points; ordered operation-input-to-parameter bindings; framed entity strings; ordered entity-reference occurrences with resolved same-section record targets; grouped persistent handles; indexed external-reference handle sets; end-anchored external child-part strings; arrangements; typed part attributes; and expressions with exact-name links to object-ID-bounded parameter declarations, parsed parameter indices, qualifiers, declaration-local constant literals, formulas, dependencies, and values.
+
+NX datum-coordinate-system payloads retain complete framed scalar fields with exact source offsets.
+
+NX native data also retains embedded TIFF material textures and exact QAF
+stored-path-to-logical-material-path catalog relations. These relations identify
+texture assets and logical names; they do not assign appearances to bodies or
+faces.
+
+Topology-owned Parasolid type-81 attribute instances retain exact class
+relations to same-stream type-79 definitions selected by their serialized
+discriminators. Class-specific field-value roles remain native-only.
 
 Native records retain typed references into the neutral model but are otherwise opaque to format-neutral consumers. A consumer must not reinterpret, normalize, discard, or synthesize native records it does not own. An exporter either preserves a supported namespace unchanged or reports its omission as loss. Native IDs participate in global uniqueness. Namespace versions change independently of `ir_version`; a consumer that does not support a namespace version may still process the neutral model while treating that namespace as opaque.
 
@@ -221,8 +232,7 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "54"`. `CadIr::migrate_json` explicitly migrates version 53. The `model.subds` arena is required, including when empty. Source-byte accounting is excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Spatial-sketch arenas, feature-input topology states, and explicit sketch-region profile references are part of the neutral product model. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version. Source-fidelity accounting versions independently as described in [byte-accounting.md](byte-accounting.md).
-Readers accept exactly `ir_version: "55"`. `CadIr::migrate_json` explicitly migrates version 54. The `model.subds` arena is required, including when empty. Source-byte accounting is excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version. Source-fidelity accounting versions independently as described in [byte-accounting.md](byte-accounting.md).
+Readers accept exactly `ir_version: "55"`. `CadIr::migrate_json` explicitly migrates version 54. A planar sketch placement is either unresolved or a complete model-space frame containing an origin, normal, and u-axis. The `model.subds` arena is required, including when empty. Source-byte accounting is excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version. Source-fidelity accounting versions independently as described in [byte-accounting.md](byte-accounting.md).
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 
@@ -244,7 +254,6 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "54",
   "ir_version": "55",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },

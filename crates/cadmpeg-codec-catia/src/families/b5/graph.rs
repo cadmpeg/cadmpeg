@@ -92,6 +92,7 @@ pub enum B5Profile {
 
 /// A resolved `b5 03` surface node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum B5Surface {
     /// A NURBS surface whose parameter lattice is decoded but whose pole
     /// representation remains opaque.
@@ -195,7 +196,7 @@ pub enum B5Surface {
         /// Persistent object id of the `a8 03 32` result carrier.
         carrier_object_id: u32,
         /// Exact procedural definition decoded from the stored jet.
-        definition: Box<ProceduralSurfaceDefinition>,
+        definition: ProceduralSurfaceDefinition,
     },
 }
 
@@ -423,7 +424,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                 jet.object_id,
                 B5Surface::RollingBall {
                     carrier_object_id: jet.object_id,
-                    definition: Box::new(definition),
+                    definition,
                 },
             );
         }

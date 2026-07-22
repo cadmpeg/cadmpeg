@@ -1946,8 +1946,8 @@ fn lift_geometry(geometry: &SurfaceGeometry, uv: [[f64; 2]; 2]) -> Option<[[f64;
             } => [u / major_radius, v / minor_radius],
             SurfaceGeometry::Plane { .. } | SurfaceGeometry::Nurbs(_) => [u, v],
             SurfaceGeometry::Sphere { .. }
-            | SurfaceGeometry::Procedural { .. }
             | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Procedural { .. }
             | SurfaceGeometry::Transformed { .. }
             | SurfaceGeometry::Unknown { .. } => return None,
         };
@@ -2136,8 +2136,8 @@ fn neutral_uv(native: [f64; 2], carrier: &SurfaceGeometry) -> Option<[f64; 2]> {
         } => [native[0] / major_radius, native[1] / minor_radius],
         SurfaceGeometry::Plane { .. } | SurfaceGeometry::Nurbs(_) => native,
         SurfaceGeometry::Sphere { .. }
-        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => return None,
     })

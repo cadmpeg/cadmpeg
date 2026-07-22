@@ -52,11 +52,12 @@ struct RevolutionPlan {
     parameter_interval: [f64; 2],
 }
 
+#[allow(clippy::large_enum_variant)]
 enum SurfaceProcedure {
     Revolution(RevolutionPlan),
     RollingBall {
         carrier_object_id: u32,
-        definition: Box<ProceduralSurfaceDefinition>,
+        definition: ProceduralSurfaceDefinition,
     },
 }
 
@@ -515,7 +516,7 @@ pub(crate) fn resolved_surface_procedural_definition(
         SurfaceProcedure::RollingBall {
             carrier_object_id,
             definition,
-        } => Some((carrier_object_id, *definition)),
+        } => Some((carrier_object_id, definition)),
         SurfaceProcedure::Revolution(_) => None,
     }
 }

@@ -44,6 +44,57 @@ impl<S: Into<String>> From<S> for FeatureId {
 #[serde(transparent)]
 pub struct ConfigurationId(pub String);
 
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+/// Resolution state of one configuration's complete body membership.
+pub enum ConfigurationBodies {
+    /// Complete ordered body membership.
+    Resolved(Vec<BodyId>),
+    /// Source configuration exists but its body membership is not established.
+    #[default]
+    Unresolved,
+}
+
+impl ConfigurationBodies {
+    /// Return complete body membership when resolved.
+    pub fn resolved(&self) -> Option<&[BodyId]> {
+        match self {
+            Self::Resolved(value) => Some(value),
+            Self::Unresolved => None,
+        }
+    }
+    /// Whether body membership remains unresolved.
+    pub fn is_unresolved(&self) -> bool {
+        matches!(self, Self::Unresolved)
+    }
+    /// Iterate over resolved membership; unresolved membership yields no values.
+    pub fn iter(&self) -> std::slice::Iter<'_, BodyId> {
+        self.resolved().unwrap_or_default().iter()
+    }
+    /// Number of resolved members; zero when unresolved.
+    pub fn len(&self) -> usize {
+        self.resolved().map_or(0, <[BodyId]>::len)
+    }
+    /// Whether resolved membership is empty; false when unresolved.
+    pub fn is_empty(&self) -> bool {
+        self.resolved().is_some_and(<[BodyId]>::is_empty)
+    }
+}
+
+impl PartialEq<Vec<BodyId>> for ConfigurationBodies {
+    fn eq(&self, other: &Vec<BodyId>) -> bool {
+        self.resolved() == Some(other.as_slice())
+    }
+}
+
+impl<'a> IntoIterator for &'a ConfigurationBodies {
+    type Item = &'a BodyId;
+    type IntoIter = std::slice::Iter<'a, BodyId>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 /// A named parametric model variant.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignConfiguration {
@@ -73,8 +124,8 @@ pub struct DesignConfiguration {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub suppressed_features: Vec<FeatureId>,
     /// Bodies present when this configuration is active.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bodies: Vec<BodyId>,
+    #[serde(default, skip_serializing_if = "ConfigurationBodies::is_unresolved")]
+    pub bodies: ConfigurationBodies,
     /// Evaluated parameter state when this configuration is active.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parameter_values: BTreeMap<ParameterId, ParameterValue>,
@@ -204,6 +255,8 @@ pub enum ParameterValue {
     Integer(i64),
     /// Boolean scalar.
     Boolean(bool),
+    /// Literal text value.
+    String(String),
 }
 
 /// A length in canonical millimeters.
@@ -228,7 +281,7 @@ pub struct Feature {
     pub name: Option<String>,
     /// Whether evaluation of this feature is disabled.
     #[serde(default)]
-    pub suppressed: bool,
+    pub suppressed: Option<bool>,
     /// Containing or logically preceding feature, when represented by the source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<FeatureId>,
@@ -367,6 +420,8 @@ pub enum FeatureDefinition {
         /// Point position in model space.
         position: Point3,
     },
+    /// Datum point whose model-space position is unresolved.
+    DatumPointUnresolved,
     /// Standalone model vertex constructed at one point.
     PointGeometry {
         /// Vertex position in the feature's local construction frame.
@@ -448,6 +503,15 @@ pub enum FeatureDefinition {
         /// Unit z-axis.
         z_axis: Vector3,
     },
+    /// Coordinate system whose model-space frame is unresolved.
+    DatumCoordinateSystemUnresolved,
+    /// Rectangular solid primitive.
+    Block {
+        /// Ordered local x, y, and z dimensions, when resolved.
+        dimensions: Option<[Length; 3]>,
+        /// Local-to-model placement, when resolved.
+        placement: Option<crate::transform::Transform>,
+    },
     /// Parametric model-space curve defined by coordinate expressions.
     EquationCurve {
         /// Independent parameter symbol used by the coordinate expressions.
@@ -469,12 +533,12 @@ pub enum FeatureDefinition {
         source: PathRef,
         /// Faces receiving the projected curve.
         target_faces: FaceSelection,
-        /// Explicit projection direction; absent for target-normal projection.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<Vector3>,
-        /// Whether projection proceeds in both directions.
+        /// Direction law used by the projection.
         #[serde(default)]
-        bidirectional: bool,
+        direction: CurveProjectionDirection,
+        /// Whether projection proceeds in both directions, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bidirectional: Option<bool>,
     },
     /// Shapes projected along a direction onto one support surface.
     ProjectOnSurface {
@@ -589,6 +653,9 @@ pub enum FeatureDefinition {
     },
     /// Solved sketch node in the construction history.
     Sketch {
+        /// Coordinate space containing the sketch geometry.
+        #[serde(default)]
+        space: SketchSpace,
         /// Neutral planar sketch geometry owned by this history node, when resolved.
         /// Neutral sketch geometry owned by this history node, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -619,6 +686,11 @@ pub enum FeatureDefinition {
     ///
     /// The feature's `outputs` identify the retained bodies when geometry is present.
     StoredGeometry,
+    /// Body geometry copied from existing bodies.
+    ExtractBody {
+        /// Bodies supplying the copied geometry.
+        source: BodySelection,
+    },
     /// Geometry copied from an earlier feature without an additional modeling operation.
     DerivedGeometry {
         /// Feature supplying the copied geometry.
@@ -747,6 +819,10 @@ pub enum FeatureDefinition {
         /// Binding and derived-shape construction semantics.
         construction: BinderConstruction,
     },
+    /// Loft-family skin whose section semantics remain unresolved.
+    LoftUnresolved,
+    /// Freeform surface whose control geometry remains unresolved.
+    FreeformSurfaceUnresolved,
     /// Loft through an ordered sequence of profile or point sections.
     Loft {
         /// Ordered cross-sections from the loft start to end.
@@ -799,6 +875,15 @@ pub enum FeatureDefinition {
     Fillet {
         /// Ordered edge groups and their radius laws.
         groups: Vec<FilletGroup>,
+    },
+    /// Blend constructed between two face sets.
+    FaceBlend {
+        /// First support-face set.
+        first_faces: FaceSelection,
+        /// Second support-face set.
+        second_faces: FaceSelection,
+        /// Radius law along the face intersection.
+        radius: RadiusSpec,
     },
     /// Edge chamfer.
     Chamfer {
@@ -912,18 +997,25 @@ pub enum FeatureDefinition {
         /// Faces supplying the source surface geometry.
         faces: FaceSelection,
         /// Signed normal offset in canonical millimeters.
-        distance: Length,
+        distance: Option<Length>,
     },
     /// Joins selected surface bodies along coincident or near-coincident boundaries.
     KnitSurface {
         /// Faces participating in the knit operation.
         faces: FaceSelection,
         /// Whether coincident face and edge entities are merged.
-        merge_entities: bool,
+        merge_entities: Option<bool>,
         /// Whether a closed result is converted to a solid body.
-        create_solid: bool,
+        create_solid: Option<bool>,
         /// Maximum boundary gap accepted by the operation.
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        gap_tolerance: Option<Length>,
+    },
+    /// Joins sheet or solid bodies along coincident boundaries.
+    SewBodies {
+        /// Bodies participating in the sew operation.
+        bodies: BodySelection,
+        /// Maximum accepted boundary gap, when resolved.
         gap_tolerance: Option<Length>,
     },
     /// Surface patch spanning a selected edge boundary.
@@ -940,6 +1032,8 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         merge_result: Option<bool>,
     },
+    /// Boundary-surface operation whose curve networks remain unresolved.
+    BoundarySurfaceUnresolved,
     /// Restricts selected surface faces to one side of a trimming path.
     TrimSurface {
         /// Surface faces modified by the operation.
@@ -954,7 +1048,7 @@ pub enum FeatureDefinition {
         /// Surface faces whose boundaries are extended.
         faces: FaceSelection,
         /// Positive extension distance in canonical millimeters.
-        distance: Length,
+        distance: Option<Length>,
         /// Geometric continuation law.
         method: SurfaceExtension,
     },
@@ -974,12 +1068,14 @@ pub enum FeatureDefinition {
         /// Neutral plane that remains fixed during the operation.
         neutral_plane: FaceSelection,
         /// Pull direction used to measure the draft angle.
-        pull_direction: Vector3,
+        pull_direction: Option<Vector3>,
         /// Signed draft angle.
-        angle: Angle,
+        angle: Option<Angle>,
         /// Whether material is added away from the pull direction.
-        outward: bool,
+        outward: Option<bool>,
     },
+    /// Draft family whose operands remain unresolved.
+    DraftUnresolved,
     /// Boolean operation between existing bodies.
     Combine {
         /// Body modified by the operation.
@@ -1004,6 +1100,15 @@ pub enum FeatureDefinition {
         tools: FaceSelection,
         /// Whether the side opposite the default tool orientation is removed.
         reverse: bool,
+    },
+    /// Removes one side of target bodies using ordered tool bodies.
+    TrimBodies {
+        /// Bodies modified by the operation.
+        targets: BodySelection,
+        /// Bodies defining the trimming boundary.
+        tools: BodySelection,
+        /// Side retained by the trim.
+        keep: BodyTrimSide,
     },
     /// Partitions selected bodies with selected surface faces while retaining
     /// every resulting side.
@@ -1108,6 +1213,9 @@ pub enum FeatureDefinition {
         placements: Vec<HolePlacement>,
         /// Structural drilling, entry-treatment, and threading form.
         kind: HoleKind,
+        /// Exit treatment at the far side, when distinct from the entry treatment.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exit_kind: Option<HoleKind>,
         /// Hole diameter, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         diameter: Option<Length>,
@@ -1478,6 +1586,8 @@ pub enum FeatureTreeNodeRole {
     AmbientLight,
     /// Comment container.
     Comments,
+    /// Cross-section container.
+    CrossSections,
     /// Design-binder container.
     DesignBinder,
     /// Detail-item container.
@@ -1549,6 +1659,57 @@ pub enum PrincipalPlane {
     Right,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+/// Coordinate space of a sketch history node.
+pub enum SketchSpace {
+    /// Planar or spatial coordinates are not established.
+    Unresolved,
+    /// Geometry lies on one plane.
+    #[default]
+    Planar,
+    /// Geometry occupies model-space coordinates.
+    Spatial,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+/// Side retained by a body-trim operation.
+pub enum BodyTrimSide {
+    /// Retained side is unresolved.
+    Unresolved,
+    /// Retain the side selected by tool orientation.
+    Forward,
+    /// Retain the side opposite tool orientation.
+    Reverse,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+/// Direction law for projected curves.
+pub enum CurveProjectionDirection {
+    /// One explicit model-space vector.
+    Vector(Vector3),
+    /// Direction state without one explicit vector.
+    State(CurveProjectionDirectionState),
+}
+
+impl Default for CurveProjectionDirection {
+    fn default() -> Self {
+        Self::State(CurveProjectionDirectionState::TargetNormal)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+/// Direction state for projection without an explicit vector.
+pub enum CurveProjectionDirectionState {
+    /// Projection direction remains unresolved.
+    Unresolved,
+    /// Project along each target face's normal.
+    TargetNormal,
+}
+
 /// Selection interpretation for a delete/keep-body operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -1599,6 +1760,8 @@ pub enum SurfaceBoundary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TrimRegion {
+    /// Source trim exists but the retained region is unresolved.
+    Unresolved,
     /// Retain the region enclosed by the trimming path.
     Inside,
     /// Retain the region outside the trimming path.
@@ -1609,6 +1772,8 @@ pub enum TrimRegion {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SurfaceExtension {
+    /// Extension law is unresolved.
+    Unresolved,
     /// Continue the source surface parameterization.
     Natural,
     /// Extend boundary tangents as ruled linear strips.
@@ -2634,6 +2799,8 @@ pub struct GeneratedCurveRef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum PathRef {
+    /// Source path exists but its neutral members remain unresolved.
+    Unresolved(String),
     /// Opaque reference into a native path record.
     Native(String),
     /// Ordered geometry from a neutral sketch.
@@ -2796,6 +2963,13 @@ pub enum HoleKind {
     },
     /// Plain cylindrical hole with no entry feature.
     Simple,
+    /// Hole with a chamfered entry.
+    Chamfer {
+        /// Entry chamfer diameter.
+        diameter: Length,
+        /// Included chamfer angle.
+        angle: Angle,
+    },
     /// Plain cylindrical hole terminating in a conical drill point.
     SimpleDrilled {
         /// Included angle of the conical drill point.
@@ -2937,6 +3111,8 @@ pub enum HoleThreadDepth {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HoleForm {
+    /// Chamfered entry.
+    Chamfer,
     /// Wider, flat-bottomed entry.
     Counterbore,
     /// Conical entry followed by a cylindrical recess.

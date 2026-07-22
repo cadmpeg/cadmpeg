@@ -249,6 +249,9 @@ fn constraint_parameters(
         | Definition::TextFrame { .. }
         | Definition::TextPath { .. }
         | Definition::CoincidentLoci { .. }
+        | Definition::SameCoordinate { .. }
+        | Definition::PointSymmetric { .. }
+        | Definition::TangentLoci { .. }
         | Definition::AtIntersection { .. }
         | Definition::Midpoint { .. }
         | Definition::Concentric { .. }
@@ -2716,6 +2719,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         format: "f3d".to_string(),
         container_only: false,
         geometry_transferred: true,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: container::summarize(scan)
             .notes
@@ -2826,6 +2830,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         format: "f3d".to_string(),
         container_only,
         geometry_transferred: false,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: summary.notes,
     }
@@ -3295,9 +3300,11 @@ mod tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: Some("native:sketch-placement".into()),
         });

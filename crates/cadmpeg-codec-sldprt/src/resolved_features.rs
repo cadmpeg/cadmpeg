@@ -6291,7 +6291,7 @@ mod marker_tests {
             id: FeatureId(id.into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -7309,9 +7309,11 @@ mod marker_tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, -1.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, -1.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, -1.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -7472,9 +7474,11 @@ mod marker_tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, -1.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, -1.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, -1.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -7549,9 +7553,11 @@ mod marker_tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, -1.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, -1.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, -1.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -8891,6 +8897,7 @@ pub(crate) fn bind_profile_revolution_axes(
                 };
                 let profile_feature = &model_features[profile_index];
                 let FeatureDefinition::Sketch {
+                    space: cadmpeg_ir::features::SketchSpace::Planar,
                     sketch: Some(sketch),
                     ..
                 } = &profile_feature.definition
@@ -8907,6 +8914,7 @@ pub(crate) fn bind_profile_revolution_axes(
                     matches!(
                         &candidate.definition,
                         FeatureDefinition::Sketch {
+                            space: cadmpeg_ir::features::SketchSpace::Planar,
                             sketch: Some(candidate),
                             ..
                         } if candidate == sketch_id
@@ -8923,35 +8931,15 @@ pub(crate) fn bind_profile_revolution_axes(
                 };
                 (native, sketch_id)
             }
-            cadmpeg_ir::features::ProfileRef::SketchProfiles { sketch, .. }
-            | cadmpeg_ir::features::ProfileRef::SketchRegions { sketch, .. }
-            | cadmpeg_ir::features::ProfileRef::SketchSelection { sketch, .. } => {
-                let mut owners = model_features.iter().filter(|candidate| {
-                    matches!(
-                        &candidate.definition,
-                        FeatureDefinition::Sketch {
-                            sketch: Some(candidate),
-                            ..
-                        } if candidate == sketch
-                    )
-                });
-                let Some(owner) = owners.next() else {
-                    continue;
-                };
-                if owners.next().is_some() {
-                    continue;
-                }
-                let Some(native) = owner.native_ref.as_deref() else {
-                    continue;
-                };
-                (native, sketch)
-            }
             cadmpeg_ir::features::ProfileRef::Generated { .. }
-            | cadmpeg_ir::features::ProfileRef::Unresolved(_)
-            | cadmpeg_ir::features::ProfileRef::Native(_)
+            | cadmpeg_ir::features::ProfileRef::SketchProfiles { .. }
+            | cadmpeg_ir::features::ProfileRef::SketchRegions { .. }
+            | cadmpeg_ir::features::ProfileRef::SketchSelection { .. }
             | cadmpeg_ir::features::ProfileRef::SpatialSketchProfiles { .. }
             | cadmpeg_ir::features::ProfileRef::SpatialSketchSelection { .. }
             | cadmpeg_ir::features::ProfileRef::HistoricalFaces { .. }
+            | cadmpeg_ir::features::ProfileRef::Unresolved(_)
+            | cadmpeg_ir::features::ProfileRef::Native(_)
             | cadmpeg_ir::features::ProfileRef::Faces(_) => continue,
         };
         if !native_by_id
@@ -9018,6 +9006,7 @@ fn profile_roster_construction_axis(
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
     const QUANTUM: f64 = 1.0e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
 
     let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
     let mut axes = lane
@@ -9073,12 +9062,12 @@ fn profile_roster_construction_axis(
     };
     let start = project(native_start)?;
     let end = project(native_end)?;
-    let v_axis = cross(sketch.normal, sketch.u_axis);
+    let v_axis = cross(normal, u_axis);
     let point = |point: Point2| {
         Point3::new(
-            sketch.origin.x + point.u * sketch.u_axis.x + point.v * v_axis.x,
-            sketch.origin.y + point.u * sketch.u_axis.y + point.v * v_axis.y,
-            sketch.origin.z + point.u * sketch.u_axis.z + point.v * v_axis.z,
+            origin.x + point.u * u_axis.x + point.v * v_axis.x,
+            origin.y + point.u * u_axis.y + point.v * v_axis.y,
+            origin.z + point.u * u_axis.z + point.v * v_axis.z,
         )
     };
     let start = point(start);
@@ -9102,26 +9091,27 @@ fn profile_generated_surface_axis(
     const QUANTUM: f64 = 1.0e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
     const LINE_TOLERANCE: f64 = 1.0e-6;
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
 
     let mut axis = common_generated_surface_axis(surfaces)?;
     let relative_origin = Vector3::new(
-        axis.origin.x - sketch.origin.x,
-        axis.origin.y - sketch.origin.y,
-        axis.origin.z - sketch.origin.z,
+        axis.origin.x - origin.x,
+        axis.origin.y - origin.y,
+        axis.origin.z - origin.z,
     );
-    if dot(axis.direction, sketch.normal).abs() > 1.0e-9
-        || dot(relative_origin, sketch.normal).abs() > LINE_TOLERANCE
+    if dot(axis.direction, normal).abs() > 1.0e-9
+        || dot(relative_origin, normal).abs() > LINE_TOLERANCE
     {
         return None;
     }
     let origin_offset = Vector3::new(
-        sketch.origin.x - axis.origin.x,
-        sketch.origin.y - axis.origin.y,
-        sketch.origin.z - axis.origin.z,
+        origin.x - axis.origin.x,
+        origin.y - axis.origin.y,
+        origin.z - axis.origin.z,
     );
     let perpendicular = cross(origin_offset, axis.direction);
     if dot(perpendicular, perpendicular).sqrt() <= LINE_TOLERANCE {
-        axis.origin = sketch.origin;
+        axis.origin = origin;
     } else {
         let projection = dot(origin_offset, axis.direction);
         axis.origin = Point3::new(
@@ -9138,7 +9128,7 @@ fn profile_generated_surface_axis(
         .filter(|endpoint| endpoint.object_index.is_some())
         .collect::<Vec<_>>();
     let mut endpoint_ids = HashSet::new();
-    let v_axis = cross(sketch.normal, sketch.u_axis);
+    let v_axis = cross(normal, u_axis);
     let mut sides = Vec::new();
     for endpoint in curve_endpoints {
         if !endpoint_ids.insert(endpoint.id.as_str()) {
@@ -9150,22 +9140,16 @@ fn profile_generated_surface_axis(
             QUANTUM,
         ))?;
         let point = Point3::new(
-            sketch.origin.x
-                + point.0 as f64 * QUANTUM * sketch.u_axis.x
-                + point.1 as f64 * QUANTUM * v_axis.x,
-            sketch.origin.y
-                + point.0 as f64 * QUANTUM * sketch.u_axis.y
-                + point.1 as f64 * QUANTUM * v_axis.y,
-            sketch.origin.z
-                + point.0 as f64 * QUANTUM * sketch.u_axis.z
-                + point.1 as f64 * QUANTUM * v_axis.z,
+            origin.x + point.0 as f64 * QUANTUM * u_axis.x + point.1 as f64 * QUANTUM * v_axis.x,
+            origin.y + point.0 as f64 * QUANTUM * u_axis.y + point.1 as f64 * QUANTUM * v_axis.y,
+            origin.z + point.0 as f64 * QUANTUM * u_axis.z + point.1 as f64 * QUANTUM * v_axis.z,
         );
         let relative = Vector3::new(
             point.x - axis.origin.x,
             point.y - axis.origin.y,
             point.z - axis.origin.z,
         );
-        sides.push(dot(cross(axis.direction, relative), sketch.normal));
+        sides.push(dot(cross(axis.direction, relative), normal));
     }
     if sides.len() < 2
         || !sides.iter().any(|side| side.abs() > LINE_TOLERANCE)
@@ -9193,8 +9177,8 @@ fn common_generated_surface_axis(
             | SurfaceGeometry::Sphere { .. }
             | SurfaceGeometry::Nurbs(_)
             | SurfaceGeometry::Polygonal { .. }
-            | SurfaceGeometry::Transformed { .. }
             | SurfaceGeometry::Procedural { .. }
+            | SurfaceGeometry::Transformed { .. }
             | SurfaceGeometry::Unknown { .. } => None,
         })
         .collect::<Vec<_>>();
@@ -9778,6 +9762,7 @@ pub(crate) fn bind_pattern_inputs(
                 continue;
             };
             let FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } = &model_features[target_index].definition
@@ -9974,6 +9959,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 continue;
             };
             let FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } = &model_features[profile_index].definition
@@ -9987,7 +9973,9 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 }
                 let path_index = *model_by_native.get(path_feature.id.as_str())?;
                 let FeatureDefinition::Sketch {
-                    sketch: Some(path), ..
+                    space: cadmpeg_ir::features::SketchSpace::Planar,
+                    sketch: Some(path),
+                    ..
                 } = &model_features[path_index].definition
                 else {
                     return None;
@@ -10547,6 +10535,7 @@ pub(crate) fn project_hole_position_sketches(
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } = &feature.definition
@@ -10557,7 +10546,7 @@ pub(crate) fn project_hole_position_sketches(
         })
         .collect::<HashMap<_, _>>();
     for feature in features.iter_mut() {
-        if feature.suppressed {
+        if feature.suppressed == Some(true) {
             continue;
         }
         let FeatureDefinition::Hole { placements, .. } = &mut feature.definition else {
@@ -10582,6 +10571,9 @@ pub(crate) fn project_hole_position_sketches(
         let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
             continue;
         };
+        let Some((origin, normal, u_axis)) = sketch.resolved_placement() else {
+            continue;
+        };
         let authored_markers = lanes
             .iter()
             .filter(|lane| lane.configuration == sketch.configuration)
@@ -10599,7 +10591,7 @@ pub(crate) fn project_hole_position_sketches(
         if authored_markers.is_empty() {
             continue;
         }
-        let v_axis = cross(sketch.normal, sketch.u_axis);
+        let v_axis = cross(normal, u_axis);
         let mut resolved = Vec::with_capacity(authored_markers.len());
         for marker in &authored_markers {
             let mut entities = sketch_entities.iter().filter(|entity| {
@@ -10620,11 +10612,11 @@ pub(crate) fn project_hole_position_sketches(
             };
             resolved.push(HolePlacement::Axis {
                 origin: Point3::new(
-                    sketch.origin.x + position.u * sketch.u_axis.x + position.v * v_axis.x,
-                    sketch.origin.y + position.u * sketch.u_axis.y + position.v * v_axis.y,
-                    sketch.origin.z + position.u * sketch.u_axis.z + position.v * v_axis.z,
+                    origin.x + position.u * u_axis.x + position.v * v_axis.x,
+                    origin.y + position.u * u_axis.y + position.v * v_axis.y,
+                    origin.z + position.u * u_axis.z + position.v * v_axis.z,
                 ),
-                axis: sketch.normal,
+                axis: normal,
             });
         }
         if resolved.len() == authored_markers.len() {
@@ -10690,7 +10682,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
         })
         .collect::<HashMap<_, _>>();
     for feature in features.iter_mut() {
-        if feature.suppressed {
+        if feature.suppressed == Some(true) {
             continue;
         }
         let FeatureDefinition::Hole {
@@ -10893,7 +10885,7 @@ pub(crate) fn project_hole_axes(
     }
 
     for feature in model_features {
-        if feature.suppressed {
+        if feature.suppressed == Some(true) {
             continue;
         }
         let FeatureDefinition::Hole {
@@ -11646,7 +11638,7 @@ mod hole_axis_tests {
             id: FeatureId("hole".into()),
             ordinal: 0,
             name: Some("Hole".into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: Default::default(),
@@ -11662,6 +11654,7 @@ mod hole_axis_tests {
                 direction: None,
                 placements: Vec::new(),
                 kind: HoleKind::Simple,
+                exit_kind: None,
                 diameter: Some(Length(4.0)),
                 extent: None,
                 bottom: None,
@@ -11980,7 +11973,7 @@ mod hole_axis_tests {
             id: FeatureId("position-sketch".into()),
             ordinal: 1,
             name: Some("Position".into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: Default::default(),
@@ -11989,6 +11982,7 @@ mod hole_axis_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(SketchId("position-geometry".into())),
             },
             native_ref: Some("native-position-sketch".into()),
@@ -12057,9 +12051,11 @@ mod hole_axis_tests {
             id: SketchId("position-geometry".into()),
             name: Some("Position".into()),
             configuration: None,
-            origin: Point3::new(10.0, 20.0, 30.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(10.0, 20.0, 30.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: Some("lane".into()),
         };
@@ -12116,7 +12112,7 @@ mod hole_axis_tests {
             id: FeatureId("position-sketch".into()),
             ordinal: 1,
             name: Some("Position".into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: Default::default(),
@@ -17825,6 +17821,7 @@ pub(crate) fn bind_sketch_profiles(
             }
             match &mut feature.definition {
                 cadmpeg_ir::features::FeatureDefinition::Sketch {
+                    space: cadmpeg_ir::features::SketchSpace::Planar,
                     sketch: feature_sketch,
                     ..
                 } => {
@@ -17880,7 +17877,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 feature.native_ref.as_deref() == Some(native_feature.id.as_str())
                     && matches!(
                         feature.definition,
-                        cadmpeg_ir::features::FeatureDefinition::Sketch { sketch: None }
+                        cadmpeg_ir::features::FeatureDefinition::Sketch { sketch: None, .. }
                     )
             }) else {
                 continue;
@@ -18011,6 +18008,7 @@ pub(crate) fn project_compact_sketch_profiles(
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
+                        space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     };
                 continue;
@@ -18019,9 +18017,11 @@ pub(crate) fn project_compact_sketch_profiles(
                 id: sketch_id.clone(),
                 name: Some(native_feature.name.clone()),
                 configuration: lane.configuration.clone(),
-                origin,
-                normal,
-                u_axis,
+                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                    origin,
+                    normal,
+                    u_axis,
+                },
                 profiles: Vec::new(),
                 native_ref: Some(lane.id.clone()),
             };
@@ -18085,6 +18085,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 sketches.push(sketch);
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
+                        space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     };
                 continue;
@@ -18192,6 +18193,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 sketches.push(sketch);
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
+                        space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     };
                 continue;
@@ -18245,6 +18247,7 @@ pub(crate) fn project_compact_sketch_profiles(
             sketch.profiles.push(profile);
             sketches.push(sketch);
             features[feature_index].definition = cadmpeg_ir::features::FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id),
             };
         }
@@ -18287,7 +18290,7 @@ pub(crate) fn project_marker_backed_sketches(
                     if feature.native_ref.as_deref() != Some(native_feature.id.as_str()) {
                         return None;
                     }
-                    let cadmpeg_ir::features::FeatureDefinition::Sketch { sketch } =
+                    let cadmpeg_ir::features::FeatureDefinition::Sketch { sketch, .. } =
                         &feature.definition
                     else {
                         return None;
@@ -18353,6 +18356,7 @@ pub(crate) fn project_marker_backed_sketches(
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
+                        space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     };
                 continue;
@@ -18367,9 +18371,11 @@ pub(crate) fn project_marker_backed_sketches(
                 id: sketch_id.clone(),
                 name: Some(native_feature.name.clone()),
                 configuration: lane.configuration.clone(),
-                origin,
-                normal,
-                u_axis,
+                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                    origin,
+                    normal,
+                    u_axis,
+                },
                 profiles: Vec::new(),
                 native_ref: Some(lane.id.clone()),
             };
@@ -18680,6 +18686,7 @@ pub(crate) fn project_marker_backed_sketches(
             sketch_entities.extend(projected);
             sketches.push(sketch);
             features[feature_index].definition = cadmpeg_ir::features::FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id),
             };
         }
@@ -20194,52 +20201,50 @@ pub(crate) fn project_compact_edge_selections(
         else {
             continue;
         };
-        let edges = match &mut feature.definition {
-            FeatureDefinition::Fillet { groups } => {
-                let [group] = groups.as_mut_slice() else {
-                    continue;
-                };
-                &mut group.edges
-            }
-            FeatureDefinition::Chamfer { groups, .. } => {
-                let [group] = groups.as_mut_slice() else {
-                    continue;
-                };
-                &mut group.edges
-            }
+        let groups = match &mut feature.definition {
+            FeatureDefinition::Fillet { groups } => groups
+                .iter_mut()
+                .map(|group| &mut group.edges)
+                .collect::<Vec<_>>(),
+            FeatureDefinition::Chamfer { groups, .. } => groups
+                .iter_mut()
+                .map(|group| &mut group.edges)
+                .collect::<Vec<_>>(),
             _ => continue,
         };
-        if matches!(edges, cadmpeg_ir::features::EdgeSelection::Unresolved) {
-            let native = compact_edge_selection_set_value(edge_selections);
-            let generated = edge_selections.iter().try_fold(
-                Vec::<cadmpeg_ir::features::GeneratedEdgeRef>::new(),
-                |mut edges, selection| {
-                    let native_feature = selection.terminal_feature_ref.as_ref()?;
-                    let feature = feature_ids_by_native.get(native_feature)?.clone();
-                    let local_id = selection
-                        .local_edge_ids
-                        .iter()
-                        .map(u32::to_string)
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    let edge = cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id };
-                    if !edges.contains(&edge) {
-                        edges.push(edge);
+        for edges in groups {
+            if matches!(edges, cadmpeg_ir::features::EdgeSelection::Unresolved) {
+                let native = compact_edge_selection_set_value(edge_selections);
+                let generated = edge_selections.iter().try_fold(
+                    Vec::<cadmpeg_ir::features::GeneratedEdgeRef>::new(),
+                    |mut edges, selection| {
+                        let native_feature = selection.terminal_feature_ref.as_ref()?;
+                        let feature = feature_ids_by_native.get(native_feature)?.clone();
+                        let local_id = selection
+                            .local_edge_ids
+                            .iter()
+                            .map(u32::to_string)
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        let edge = cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id };
+                        if !edges.contains(&edge) {
+                            edges.push(edge);
+                        }
+                        Some(edges)
+                    },
+                );
+                *edges = match generated.filter(|edges| !edges.is_empty()) {
+                    Some(edges) => cadmpeg_ir::features::EdgeSelection::Generated { edges, native },
+                    None => cadmpeg_ir::features::EdgeSelection::Native(native),
+                };
+                for dependency in edge_selections
+                    .iter()
+                    .flat_map(|selection| &selection.producer_feature_refs)
+                    .filter_map(|native| feature_ids_by_native.get(native))
+                {
+                    if dependency != &feature.id && !feature.dependencies.contains(dependency) {
+                        feature.dependencies.push(dependency.clone());
                     }
-                    Some(edges)
-                },
-            );
-            *edges = match generated.filter(|edges| !edges.is_empty()) {
-                Some(edges) => cadmpeg_ir::features::EdgeSelection::Generated { edges, native },
-                None => cadmpeg_ir::features::EdgeSelection::Native(native),
-            };
-            for dependency in edge_selections
-                .iter()
-                .flat_map(|selection| &selection.producer_feature_refs)
-                .filter_map(|native| feature_ids_by_native.get(native))
-            {
-                if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                    feature.dependencies.push(dependency.clone());
                 }
             }
         }
@@ -22271,6 +22276,7 @@ pub(crate) fn project_dissected_sketches(
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } = &feature.definition
@@ -22285,7 +22291,7 @@ pub(crate) fn project_dissected_sketches(
         .filter(|feature| {
             matches!(
                 feature.definition,
-                FeatureDefinition::Sketch { sketch: None }
+                FeatureDefinition::Sketch { sketch: None, .. }
             ) && feature
                 .native_ref
                 .as_deref()
@@ -22428,6 +22434,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } = &feature.definition
@@ -22708,6 +22715,7 @@ pub(crate) fn project_marker_dimensioned_circles(
         let (
             Some(native_ref),
             FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id),
                 ..
             },
@@ -23039,6 +23047,7 @@ pub(crate) fn project_relation_point_geometry(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } = &feature.definition
@@ -23300,6 +23309,7 @@ pub(crate) fn project_relation_solved_point_geometry(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } = &feature.definition
@@ -23477,6 +23487,7 @@ pub(crate) fn project_relation_bindings(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } = &feature.definition
@@ -23552,10 +23563,10 @@ pub(crate) fn project_relation_bindings(
                     .iter()
                     .map(|operand| SketchNativeOperand {
                         native_kind: operand_kind_name(operand.kind),
+                        native_field: None,
+                        native_role: None,
                         object_index: u32::from(operand.entity_index),
                         native_ref: operand.entity_ref.clone(),
-                        native_role: None,
-                        native_field: None,
                     })
                     .collect(),
             });
@@ -23758,18 +23769,18 @@ fn typed_marker_relation_definition_in_sketch(
             .iter()
             .map(|link| SketchNativeOperand {
                 native_kind: "sldprt:marker-local-id".into(),
+                native_field: None,
+                native_role: None,
                 object_index: u32::from(link.local_id),
                 native_ref: Some(link.entity_ref.clone()),
-                native_role: None,
-                native_field: None,
             })
             .collect::<Vec<_>>();
         operands.extend(owners.into_iter().map(|owner| SketchNativeOperand {
             native_kind: "sldprt:marker-constraint-owner".into(),
+            native_field: None,
+            native_role: None,
             object_index: owner.object_index.or(owner.local_id).unwrap_or(u32::MAX),
             native_ref: Some(owner.id.clone()),
-            native_role: None,
-            native_field: None,
         }));
         SketchConstraintDefinition::Native {
             native_kind: match marker.kind {
@@ -27680,6 +27691,7 @@ fn profile_loci_by_marker(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } = &feature.definition
@@ -28115,6 +28127,7 @@ fn marker_transform_candidates_by_feature(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } = &feature.definition
@@ -28313,14 +28326,15 @@ fn axis_aligned_sketch_frame_marker_transform(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
 ) -> Option<MarkerTransform> {
-    let normal = [sketch.normal.x, sketch.normal.y, sketch.normal.z];
-    let u_axis = [sketch.u_axis.x, sketch.u_axis.y, sketch.u_axis.z];
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
+    let normal = [normal.x, normal.y, normal.z];
+    let u_axis = [u_axis.x, u_axis.y, u_axis.z];
     let v_axis = [
-        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
-        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
-        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+        normal[1] * u_axis[2] - normal[2] * u_axis[1],
+        normal[2] * u_axis[0] - normal[0] * u_axis[2],
+        normal[0] * u_axis[1] - normal[1] * u_axis[0],
     ];
-    let origin = [sketch.origin.x, sketch.origin.y, sketch.origin.z];
+    let origin = [origin.x, origin.y, origin.z];
     let axis = |vector: [f64; 3]| {
         let matches = vector
             .iter()
@@ -28371,14 +28385,15 @@ fn affine_sketch_frame_marker_transform(
     quantum: f64,
 ) -> Option<MarkerTransform> {
     const SCALE: f64 = 1_000_000_000_000.0;
-    let normal = [sketch.normal.x, sketch.normal.y, sketch.normal.z];
-    let u_axis = [sketch.u_axis.x, sketch.u_axis.y, sketch.u_axis.z];
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
+    let normal = [normal.x, normal.y, normal.z];
+    let u_axis = [u_axis.x, u_axis.y, u_axis.z];
     let v_axis = [
-        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
-        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
-        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+        normal[1] * u_axis[2] - normal[2] * u_axis[1],
+        normal[2] * u_axis[0] - normal[0] * u_axis[2],
+        normal[0] * u_axis[1] - normal[1] * u_axis[0],
     ];
-    let origin = [sketch.origin.x, sketch.origin.y, sketch.origin.z];
+    let origin = [origin.x, origin.y, origin.z];
     if !(normal
         .into_iter()
         .chain(u_axis)
@@ -28484,10 +28499,13 @@ fn dimensioned_circle_surface_transforms(
     if circles.is_empty() {
         return Vec::new();
     }
+    let Some((frame_origin, normal, u_axis)) = sketch.resolved_placement() else {
+        return Vec::new();
+    };
     let v_axis = cadmpeg_ir::math::Vector3::new(
-        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
-        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
-        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+        normal.y * u_axis.z - normal.z * u_axis.y,
+        normal.z * u_axis.x - normal.x * u_axis.z,
+        normal.x * u_axis.y - normal.y * u_axis.x,
     );
     let mut targets_by_radius = HashMap::<i64, HashSet<(i64, i64)>>::new();
     for surface in surfaces {
@@ -28500,8 +28518,7 @@ fn dimensioned_circle_surface_transforms(
         else {
             continue;
         };
-        let alignment =
-            axis.x * sketch.normal.x + axis.y * sketch.normal.y + axis.z * sketch.normal.z;
+        let alignment = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
         if !alignment.is_finite() || (alignment.abs() - 1.0).abs() > 1.0e-8 {
             continue;
         }
@@ -28513,12 +28530,12 @@ fn dimensioned_circle_surface_transforms(
             continue;
         }
         let delta = cadmpeg_ir::math::Vector3::new(
-            origin.x - sketch.origin.x,
-            origin.y - sketch.origin.y,
-            origin.z - sketch.origin.z,
+            origin.x - frame_origin.x,
+            origin.y - frame_origin.y,
+            origin.z - frame_origin.z,
         );
         let center = Point2::new(
-            delta.x * sketch.u_axis.x + delta.y * sketch.u_axis.y + delta.z * sketch.u_axis.z,
+            delta.x * u_axis.x + delta.y * u_axis.y + delta.z * u_axis.z,
             delta.x * v_axis.x + delta.y * v_axis.y + delta.z * v_axis.z,
         );
         targets_by_radius
@@ -29092,7 +29109,7 @@ mod profile_join_tests {
             id: FeatureId(id.into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -29106,7 +29123,10 @@ mod profile_join_tests {
         let producer = feature(
             "producer",
             "producer-native",
-            FeatureDefinition::Sketch { sketch: None },
+            FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: None,
+            },
         );
         let target = feature(
             "target",
@@ -29260,7 +29280,7 @@ mod profile_join_tests {
             id: FeatureId(id.into()),
             ordinal,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -29284,7 +29304,10 @@ mod profile_join_tests {
                 "sketch",
                 "sketch-native",
                 1,
-                FeatureDefinition::Sketch { sketch: None },
+                FeatureDefinition::Sketch {
+                    space: cadmpeg_ir::features::SketchSpace::Planar,
+                    sketch: None,
+                },
             ),
         ];
         let mut payload = vec![0; 100];
@@ -29474,13 +29497,17 @@ mod profile_join_tests {
         assert!(matches!(
             features[1].definition,
             FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(_),
                 ..
             }
         ));
         let expected_sketch = sketches[0].id.clone();
         let mut configured_features = features.clone();
-        configured_features[1].definition = FeatureDefinition::Sketch { sketch: None };
+        configured_features[1].definition = FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: None,
+        };
         project_marker_backed_sketches(
             &mut configured_features,
             &mut sketches,
@@ -29494,6 +29521,7 @@ mod profile_join_tests {
         assert!(matches!(
             &configured_features[1].definition,
             FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } if sketch == &expected_sketch
@@ -29508,6 +29536,7 @@ mod profile_join_tests {
         compact_entity.sketch = compact_id.clone();
         let mut replacement_features = features.clone();
         replacement_features[1].definition = FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(compact_id),
         };
         let mut replacement_sketches = vec![compact_sketch];
@@ -29644,7 +29673,7 @@ mod profile_join_tests {
             id: FeatureId("feature".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -29653,6 +29682,7 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id.clone()),
             },
             native_ref: Some("feature-native".into()),
@@ -29661,9 +29691,11 @@ mod profile_join_tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: Some("lane".into()),
         }];
@@ -29789,7 +29821,7 @@ mod profile_join_tests {
             id: FeatureId(id.into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies,
             source_properties: BTreeMap::new(),
@@ -29797,7 +29829,10 @@ mod profile_join_tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch { sketch },
+            definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch,
+            },
             native_ref: Some(native_ref.into()),
         };
         let single = SketchId("single".into());
@@ -29826,7 +29861,7 @@ mod profile_join_tests {
                 id: FeatureId("consumer".into()),
                 ordinal: 3,
                 name: None,
-                suppressed: false,
+                suppressed: Some(false),
                 parent: None,
                 dependencies: vec![FeatureId("child".into())],
                 source_properties: BTreeMap::new(),
@@ -29869,9 +29904,11 @@ mod profile_join_tests {
             id,
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: (0..profile_count)
                 .map(|index| {
                     vec![SketchEntityUse {
@@ -30157,9 +30194,11 @@ mod profile_join_tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -30167,7 +30206,7 @@ mod profile_join_tests {
             id: FeatureId("feature".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -30176,6 +30215,7 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id.clone()),
             },
             native_ref: Some("feature-native".into()),
@@ -30234,9 +30274,11 @@ mod profile_join_tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -30244,7 +30286,7 @@ mod profile_join_tests {
             id: FeatureId("feature".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -30253,6 +30295,7 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id.clone()),
             },
             native_ref: Some("feature-native".into()),
@@ -31838,7 +31881,7 @@ mod profile_join_tests {
             id: FeatureId(id.into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -31866,7 +31909,10 @@ mod profile_join_tests {
             model_feature(
                 "path",
                 "path-native",
-                FeatureDefinition::Sketch { sketch: None },
+                FeatureDefinition::Sketch {
+                    space: cadmpeg_ir::features::SketchSpace::Planar,
+                    sketch: None,
+                },
             ),
             model_feature(
                 "seed",
@@ -31895,6 +31941,7 @@ mod profile_join_tests {
         ));
         assert_eq!(features[0].dependencies, [features[2].id.clone()]);
         features[1].definition = FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch.clone()),
         };
         bind_pattern_inputs(
@@ -32060,6 +32107,7 @@ mod profile_join_tests {
         sweep_history.features[1].input_class = Some("moSweep_c".into());
         let path_sketch = SketchId("sweep-path".into());
         features[2].definition = FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(path_sketch.clone()),
         };
         features[0].dependencies.clear();
@@ -32101,7 +32149,7 @@ mod profile_join_tests {
             id: FeatureId("feature".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -32110,6 +32158,7 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch.clone()),
             },
             native_ref: Some("feature-native".into()),
@@ -32567,7 +32616,7 @@ mod profile_join_tests {
             id: FeatureId("feature".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -32575,7 +32624,10 @@ mod profile_join_tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch { sketch: None },
+            definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: None,
+            },
             native_ref: Some("native-feature".into()),
         };
         let parameter = DesignParameter {
@@ -32745,9 +32797,11 @@ mod profile_join_tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(28.65, -35.0, 0.35),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, -1.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(28.65, -35.0, 0.35),
+                normal: Vector3::new(0.0, -1.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, -1.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -32789,9 +32843,11 @@ mod profile_join_tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(10.0, 3.0, 20.0),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(diagonal, 0.0, -diagonal),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(10.0, 3.0, 20.0),
+                normal: Vector3::new(0.0, -1.0, 0.0),
+                u_axis: Vector3::new(diagonal, 0.0, -diagonal),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -32811,7 +32867,7 @@ mod profile_join_tests {
             id: FeatureId("feature".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -32820,6 +32876,7 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch.clone()),
             },
             native_ref: Some("feature-native".into()),
@@ -32981,7 +33038,7 @@ mod profile_join_tests {
             id: FeatureId("feature".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -32990,6 +33047,7 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
             },
             native_ref: Some("feature-native".into()),
@@ -33313,7 +33371,7 @@ mod profile_join_tests {
                     entities,
                     parameter: None,
                     operands,
-                    ..
+                ..
                 }) if native_kind == format!("sldprt:marker-relation:{}", kind.native_code())
                     && entities == vec![SketchEntityId("second".into())]
                     && operands.len() == 1
@@ -33537,7 +33595,7 @@ mod profile_join_tests {
             id: FeatureId("feature".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -33546,6 +33604,7 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
             },
             native_ref: Some("feature-native".into()),
@@ -33735,7 +33794,7 @@ mod profile_join_tests {
             id: FeatureId("feature".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -33744,6 +33803,7 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
             },
             native_ref: Some("feature-native".into()),
@@ -33803,7 +33863,7 @@ mod profile_join_tests {
             id: FeatureId("feature".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -33812,6 +33872,7 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch.clone()),
             },
             native_ref: Some("feature-native".into()),
@@ -34120,9 +34181,11 @@ mod profile_join_tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(20.0, 20.0, 0.0),
-            normal: Vector3::new(-1.0, 0.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(20.0, 20.0, 0.0),
+                normal: Vector3::new(-1.0, 0.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, 1.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -34161,7 +34224,7 @@ mod profile_join_tests {
             id: FeatureId(id.into()),
             ordinal: 0,
             name: Some(name.into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -34169,7 +34232,10 @@ mod profile_join_tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch { sketch },
+            definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch,
+            },
             native_ref: Some(format!("native-{id}")),
         };
         let mut features = vec![
@@ -34197,9 +34263,11 @@ mod profile_join_tests {
             id: sketch_id.clone(),
             name: Some("Sketch2".into()),
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: vec![vec![cadmpeg_ir::sketches::SketchEntityUse {
                 entity: entity_id.clone(),
                 reversed: false,
@@ -34617,9 +34685,11 @@ fn project_brep(
             id: sketch_id,
             name: (!sketch_name.is_empty()).then(|| sketch_name.to_string()),
             configuration: configuration.map(str::to_string),
-            origin: *origin,
-            normal: *normal,
-            u_axis: *u_axis,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: *origin,
+                normal: *normal,
+                u_axis: *u_axis,
+            },
             profiles,
             native_ref: Some(native_ref.to_string()),
         });
@@ -35088,6 +35158,7 @@ fn validate_generated_marker_constraint(
         matches!(
             &feature.definition,
             FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } if sketch == &constraint.sketch
@@ -35877,6 +35948,7 @@ fn unique_planar_sketch_owner<'a>(
         matches!(
             &feature.definition,
             FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(candidate),
                 ..
             } if candidate == sketch
@@ -36109,9 +36181,11 @@ mod source_less_lane_tests {
             id: SketchId("sketch".into()),
             name: Some("Sketch".into()),
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         }
@@ -36134,7 +36208,7 @@ mod source_less_lane_tests {
             id: cadmpeg_ir::features::FeatureId("sketch-feature".into()),
             ordinal: 0,
             name: Some("Sketch".into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: Default::default(),
@@ -36143,6 +36217,7 @@ mod source_less_lane_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: cadmpeg_ir::features::FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch.id.clone()),
             },
             native_ref: None,
@@ -37118,8 +37193,8 @@ fn generated_marker_kind(geometry: &SketchGeometry) -> SketchInputKind {
         | SketchGeometry::Hyperbola { .. }
         | SketchGeometry::Parabola { .. }
         | SketchGeometry::Nurbs { .. }
-        | SketchGeometry::Text { .. }
         | SketchGeometry::Native { .. } => SketchInputKind::LineOrCircle,
+        SketchGeometry::Text { .. } => unreachable!("sketch text has no marker loci"),
     }
 }
 
@@ -37252,6 +37327,12 @@ fn sketch_brep(
     source: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
 ) -> Result<cadmpeg_ir::CadIr, cadmpeg_ir::codec::CodecError> {
+    let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT sketch {} requires resolved model-space placement",
+            sketch.id.0
+        ))
+    })?;
     let mut ir = cadmpeg_ir::CadIr::empty(source.units.clone());
     let prefix = format!("generated:sldprt:sketch:{}", sketch.id.0);
     let body_id = BodyId(format!("{prefix}:body"));
@@ -37259,13 +37340,13 @@ fn sketch_brep(
     let shell_id = ShellId(format!("{prefix}:shell"));
     let face_id = FaceId(format!("{prefix}:face"));
     let surface_id = SurfaceId(format!("{prefix}:surface"));
-    let v_axis = cross(sketch.normal, sketch.u_axis);
+    let v_axis = cross(normal, u_axis);
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {
-            origin: sketch.origin,
-            normal: sketch.normal,
-            u_axis: sketch.u_axis,
+            origin,
+            normal,
+            u_axis,
         },
         source_object: None,
     });
@@ -37342,7 +37423,8 @@ fn sketch_brep(
                 &mut vertex_by_position,
                 &prefix,
                 generated.start,
-                sketch,
+                origin,
+                u_axis,
                 v_axis,
             );
             let end_vertex = sketch_vertex(
@@ -37350,11 +37432,12 @@ fn sketch_brep(
                 &mut vertex_by_position,
                 &prefix,
                 generated.end,
-                sketch,
+                origin,
+                u_axis,
                 v_axis,
             );
-            let start_3d = lift_point(generated.start, sketch.origin, sketch.u_axis, v_axis);
-            let end_3d = lift_point(generated.end, sketch.origin, sketch.u_axis, v_axis);
+            let start_3d = lift_point(generated.start, origin, u_axis, v_axis);
+            let end_3d = lift_point(generated.end, origin, u_axis, v_axis);
             let delta = Vector3::new(
                 end_3d.x - start_3d.x,
                 end_3d.y - start_3d.y,
@@ -37396,9 +37479,9 @@ fn sketch_brep(
                 } else {
                     Sense::Forward
                 },
-                pcurves: Vec::new(),
                 use_curve: None,
                 use_curve_parameter_range: None,
+                pcurves: Vec::new(),
             });
         }
         let count = coedge_ids.len();
@@ -37430,7 +37513,7 @@ fn sketch_brep(
         let vertex_id = VertexId(format!("{prefix}:free-vertex:{ordinal}"));
         ir.model.points.push(Point {
             id: point_id.clone(),
-            position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+            position: lift_point(position, origin, u_axis, v_axis),
             source_object: None,
         });
         ir.model.vertices.push(Vertex {
@@ -37457,9 +37540,9 @@ fn sketch_brep(
             previous: coedge_id.clone(),
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
-            pcurves: Vec::new(),
             use_curve: None,
             use_curve_parameter_range: None,
+            pcurves: Vec::new(),
         });
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
@@ -37523,12 +37606,18 @@ fn generated_sketch_curve(
     sketch: &Sketch,
     v_axis: Vector3,
 ) -> Result<GeneratedSketchCurve, cadmpeg_ir::codec::CodecError> {
-    let lift = |point| lift_point(point, sketch.origin, sketch.u_axis, v_axis);
+    let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT sketch {} requires resolved model-space placement",
+            sketch.id.0
+        ))
+    })?;
+    let lift = |point| lift_point(point, origin, u_axis, v_axis);
     let vector = |u: f64, v: f64| {
         Vector3::new(
-            sketch.u_axis.x * u + v_axis.x * v,
-            sketch.u_axis.y * u + v_axis.y * v,
-            sketch.u_axis.z * u + v_axis.z * v,
+            u_axis.x * u + v_axis.x * v,
+            u_axis.y * u + v_axis.y * v,
+            u_axis.z * u + v_axis.z * v,
         )
     };
     match geometry {
@@ -37565,8 +37654,8 @@ fn generated_sketch_curve(
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Circle {
                     center: lift(*center),
-                    axis: sketch.normal,
-                    ref_direction: sketch.u_axis,
+                    axis: normal,
+                    ref_direction: u_axis,
                     radius: radius.0,
                 },
                 start: point,
@@ -37582,8 +37671,8 @@ fn generated_sketch_curve(
         } => Ok(GeneratedSketchCurve {
             curve: CurveGeometry::Circle {
                 center: lift(*center),
-                axis: sketch.normal,
-                ref_direction: sketch.u_axis,
+                axis: normal,
+                ref_direction: u_axis,
                 radius: radius.0,
             },
             start: offset_point(*center, polar(radius.0, start_angle.0)),
@@ -37615,7 +37704,7 @@ fn generated_sketch_curve(
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Ellipse {
                     center: lift(*center),
-                    axis: sketch.normal,
+                    axis: normal,
                     major_direction: vector(major_angle.0.cos(), major_angle.0.sin()),
                     major_radius: major_radius.0,
                     minor_radius: minor_radius.0,
@@ -37656,10 +37745,10 @@ fn generated_sketch_curve(
             })
         }
         SketchGeometry::Point { .. }
+        | SketchGeometry::Text { .. }
         | SketchGeometry::ReferenceLine { .. }
         | SketchGeometry::Hyperbola { .. }
         | SketchGeometry::Parabola { .. }
-        | SketchGeometry::Text { .. }
         | SketchGeometry::Native { .. } => Err(
             cadmpeg_ir::codec::CodecError::NotImplemented(
                 "source-less SLDPRT sketch writing does not support point or native-only profile entities".into(),
@@ -37673,7 +37762,8 @@ fn sketch_vertex(
     vertices: &mut HashMap<(u64, u64), VertexId>,
     prefix: &str,
     position: Point2,
-    sketch: &Sketch,
+    origin: Point3,
+    u_axis: Vector3,
     v_axis: Vector3,
 ) -> VertexId {
     if let Some((_, id)) = vertices.iter().find(|((u, v), _)| {
@@ -37690,7 +37780,7 @@ fn sketch_vertex(
     let vertex_id = VertexId(format!("{prefix}:vertex:{ordinal}"));
     ir.model.points.push(Point {
         id: point_id.clone(),
-        position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+        position: lift_point(position, origin, u_axis, v_axis),
         source_object: None,
     });
     ir.model.vertices.push(Vertex {
@@ -37719,7 +37809,13 @@ fn patch_line_profiles(
                 "SLDPRT sketch write-back requires native sketch provenance".into(),
             )
         })?;
-        let v_axis = cross(sketch.normal, sketch.u_axis);
+        let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "SLDPRT sketch write-back requires resolved placement for {}",
+                sketch.id.0
+            ))
+        })?;
+        let v_axis = cross(normal, u_axis);
         for entity in ir
             .model
             .sketch_entities
@@ -37736,7 +37832,7 @@ fn patch_line_profiles(
                 SketchGeometry::Point { position } => {
                     let reference = &entity.endpoint_refs[0];
                     let (stream, attr) = parse_point_ref(reference)?;
-                    let point = lift_point(*position, sketch.origin, sketch.u_axis, v_axis);
+                    let point = lift_point(*position, origin, u_axis, v_axis);
                     let key = (lane_id.clone(), stream, attr);
                     if let Some(previous) = requested.insert(key, point) {
                         if distance(previous, point) > 1.0e-9 {
@@ -37749,7 +37845,7 @@ fn patch_line_profiles(
                 SketchGeometry::Line { start, end } => {
                     for (reference, point) in entity.endpoint_refs.iter().zip([start, end]) {
                         let (stream, attr) = parse_point_ref(reference)?;
-                        let point = lift_point(*point, sketch.origin, sketch.u_axis, v_axis);
+                        let point = lift_point(*point, origin, u_axis, v_axis);
                         let key = (lane_id.clone(), stream, attr);
                         if let Some(previous) = requested.insert(key, point) {
                             if distance(previous, point) > 1.0e-9 {
@@ -37775,7 +37871,7 @@ fn patch_line_profiles(
                     if let Some(endpoints) = bounded_endpoints(geometry) {
                         for (reference, point) in entity.endpoint_refs.iter().zip(endpoints) {
                             let (point_stream, attr) = parse_point_ref(reference)?;
-                            let point = lift_point(point, sketch.origin, sketch.u_axis, v_axis);
+                            let point = lift_point(point, origin, u_axis, v_axis);
                             let key = (lane_id.clone(), point_stream, attr);
                             if let Some(previous) = requested.insert(key, point) {
                                 if distance(previous, point) > 1.0e-9 {
@@ -37793,8 +37889,8 @@ fn patch_line_profiles(
                         start_attr,
                         end_attr,
                         geometry: geometry.clone(),
-                        origin: sketch.origin,
-                        u_axis: sketch.u_axis,
+                        origin,
+                        u_axis,
                         v_axis,
                     });
                 }

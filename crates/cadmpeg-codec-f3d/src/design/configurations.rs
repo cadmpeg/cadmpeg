@@ -212,7 +212,7 @@ pub fn project_configurations(
                 suppressed_features: Vec::new(),
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
-                bodies: Vec::new(),
+                bodies: cadmpeg_ir::features::ConfigurationBodies::Unresolved,
                 native_ref: Some(table.id.clone()),
             });
         }

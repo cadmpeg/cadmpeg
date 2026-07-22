@@ -513,15 +513,6 @@ impl<'a> Builder<'a> {
         });
     }
 
-    fn count_coedges(&self, mut predicate: impl FnMut(&Coedge) -> bool) -> usize {
-        self.ir
-            .model
-            .coedges
-            .iter()
-            .filter(|coedge| predicate(coedge))
-            .count()
-    }
-
     fn build(&mut self) {
         let context = self.emit_context();
 
@@ -782,7 +773,7 @@ impl<'a> Builder<'a> {
         }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
         // a face override whose face was skipped, or a body whose faces were all
-        // skipped (hidden bodies or faces on unknown surfaces).
+        // skipped (hidden bodies or faces without an explicit STEP surface).
         let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
         let mut unstyled_targets = face_colors
             .keys()
@@ -1731,9 +1722,9 @@ impl<'a> Builder<'a> {
     fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
         let face = self.faces.get(face_id).copied()?;
         let surface_id = face.surface.0.clone();
-        // A construction-backed or unknown surface without a direct STEP form
-        // cannot become an ADVANCED_FACE. Skip it and aggregate the loss rather
-        // than fabricate placeholder geometry.
+        // A face resting on an unknown (opaque) surface cannot become an
+        // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
+        // loss rather than fabricate placeholder geometry.
         if let Some(surf) = self.surfaces.get(surface_id.as_str()) {
             if !geometry::surface_is_supported(&surf.geometry) {
                 self.unknown_surface_faces.insert(face_id.to_string());
@@ -2596,9 +2587,9 @@ impl<'a> Builder<'a> {
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
-                    "{} face(s) rest on a construction-backed, unknown, or STEP-unsupported \
-                     surface and were omitted from the STEP shell (an ADVANCED_FACE requires \
-                     a surface); their topology remains in the IR",
+                    "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
+                     from the STEP shell (an ADVANCED_FACE requires a surface); their \
+                     topology remains in the IR",
                     self.unknown_surface_faces.len()
                 ),
             );
@@ -2627,17 +2618,6 @@ impl<'a> Builder<'a> {
                 Severity::Warning,
                 format!(
                     "{missing_pcurve_count} coedge pcurve reference(s) have no geometry and were not written"
-                ),
-            );
-        }
-        let use_curve_count = self.count_coedges(|coedge| coedge.use_curve.is_some());
-        if use_curve_count > 0 {
-            self.loss(
-                LossCategory::Geometry,
-                Severity::Warning,
-                format!(
-                    "{use_curve_count} coedge-local 3D use curve(s) were not written; \
-                     oriented edges use their shared edge carriers"
                 ),
             );
         }
@@ -2817,41 +2797,6 @@ impl<'a> Builder<'a> {
             .procedural_surfaces
             .iter()
             .filter(|procedural| !self.written_procedural_surfaces.contains(&procedural.id.0))
-            .filter(|procedural| match &procedural.definition {
-                ProceduralSurfaceDefinition::Exact { .. }
-                | ProceduralSurfaceDefinition::Compound { .. }
-                | ProceduralSurfaceDefinition::SubSurface { .. }
-                | ProceduralSurfaceDefinition::Taper { .. }
-                | ProceduralSurfaceDefinition::Loft { .. }
-                | ProceduralSurfaceDefinition::CompoundLoft { .. }
-                | ProceduralSurfaceDefinition::RevisionCompoundLoft { .. }
-                | ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
-                | ProceduralSurfaceDefinition::Law { .. }
-                | ProceduralSurfaceDefinition::Skin { .. }
-                | ProceduralSurfaceDefinition::Net { .. }
-                | ProceduralSurfaceDefinition::G2Blend { .. }
-                | ProceduralSurfaceDefinition::RevisionG2Blend { .. }
-                | ProceduralSurfaceDefinition::VariableBlend { .. }
-                | ProceduralSurfaceDefinition::VertexBlend { .. }
-                | ProceduralSurfaceDefinition::Extrusion { .. }
-                | ProceduralSurfaceDefinition::LinearSweep { .. }
-                | ProceduralSurfaceDefinition::Revolution { .. }
-                | ProceduralSurfaceDefinition::AxisRevolution { .. }
-                | ProceduralSurfaceDefinition::Sum { .. }
-                | ProceduralSurfaceDefinition::Sweep { .. }
-                | ProceduralSurfaceDefinition::Helix { .. }
-                | ProceduralSurfaceDefinition::Deformable { .. }
-                | ProceduralSurfaceDefinition::TSpline { .. }
-                | ProceduralSurfaceDefinition::Offset { .. }
-                | ProceduralSurfaceDefinition::Subset { .. }
-                | ProceduralSurfaceDefinition::ParallelOffset { .. }
-                | ProceduralSurfaceDefinition::DegenerateTorus { .. }
-                | ProceduralSurfaceDefinition::CurveBounded { .. }
-                | ProceduralSurfaceDefinition::Ruled { .. }
-                | ProceduralSurfaceDefinition::Blend { .. }
-                | ProceduralSurfaceDefinition::RollingBallJet { .. }
-                | ProceduralSurfaceDefinition::Unknown { .. } => true,
-            })
             .count();
         let procedural_curve_count = self
             .ir

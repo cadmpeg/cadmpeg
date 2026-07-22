@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::be;
-use cadmpeg_ir::math::Point3;
 
 /// One complete status-framed topology record.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,19 +24,6 @@ pub struct Record {
     pub offset: usize,
     /// First byte following the record.
     pub end: usize,
-}
-
-/// One typed POINT addition or replacement from a deltas stream.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Point {
-    /// Stream-local XMT identifier.
-    pub xmt: u32,
-    /// Kernel node identifier.
-    pub node_id: u32,
-    /// Position converted from Parasolid metres to model millimeters.
-    pub position: Point3,
-    /// Record start offset in the inflated stream.
-    pub offset: usize,
 }
 
 /// One compact deletion carrying an explicit Parasolid type and XMT identity.
@@ -71,6 +57,9 @@ enum Token {
     Ref,
     Tolerance,
     Sense,
+    OffsetDiscriminator,
+    BlendSubtype,
+    Boolean,
     Position,
     Vector,
     Scalar,
@@ -240,6 +229,77 @@ const COMPACT_TWO_REFS: &[Token] = &[
     Token::Ref,
     Token::Ref,
 ];
+const OFFSET_SURFACE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::OffsetDiscriminator,
+    Token::Boolean,
+    Token::Ref,
+    Token::Scalar,
+];
+const BLEND_SURFACE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::BlendSubtype,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Scalar,
+    Token::Scalar,
+    Token::Scalar,
+    Token::Scalar,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+];
+const TRIMMED_CURVE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Ref,
+    Token::Position,
+    Token::Position,
+    Token::Scalar,
+    Token::Scalar,
+];
+const SURFACE_CURVE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Tolerance,
+];
+const COMPOSITE_CURVE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+];
 
 /// Walk all accepted full records and compact tombstones in an inflated
 /// deltas stream.
@@ -277,58 +337,32 @@ pub fn walk(stream: &[u8]) -> Census {
     census
 }
 
-/// Decode complete status-framed POINT records in source order.
-pub fn points(stream: &[u8]) -> Vec<Point> {
-    walk(stream)
-        .records
-        .into_iter()
-        .filter_map(|record| {
-            let [x, y, z] = record.position?;
-            Some(Point {
-                xmt: record.xmt,
-                node_id: record.node_id?,
-                position: Point3::new(x * 1000.0, y * 1000.0, z * 1000.0),
-                offset: record.offset,
-            })
-        })
-        .collect()
-}
-
 /// Overlay supported complete deltas records onto one paired partition stream.
 ///
-/// Replaced partition records and status-framed source records are masked with
-/// non-tag bytes. Their status-free canonical forms are appended in last-write
-/// order. Unrecognized deltas bytes remain available to independent procedural
-/// record decoders.
+/// Replaced partition records are masked with non-tag bytes. Status-free
+/// canonical current replacements are appended once. Raw deltas bytes remain
+/// available to independent procedural decoders.
 pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     let census = walk(deltas);
     let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
-    let mut normalized_sources = Vec::new();
     for record in &census.records {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
-        if matches!(kind, 12..=19 | 29..=32 | 50..=54 | 124 | 134)
-            && crate::topology::Graph::parse(&record.canonical_bytes)
-                .get(kind, record.xmt)
-                .is_some()
-        {
+        if mergeable_record(record, kind) {
             replacements.insert((kind, record.xmt), record);
-            normalized_sources.push(record);
         }
     }
 
-    let tombstones = census
-        .tombstones
-        .iter()
-        .filter_map(|tombstone| {
-            u8::try_from(tombstone.kind)
-                .ok()
-                .map(|kind| ((kind, tombstone.xmt), tombstone))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut tombstones = BTreeMap::new();
+    for tombstone in &census.tombstones {
+        if let Ok(kind) = u8::try_from(tombstone.kind) {
+            tombstones.insert((kind, tombstone.xmt), tombstone);
+        }
+    }
 
     let graph = crate::topology::Graph::parse(partition);
+    let topology_carriers = graph.referenced_carrier_xmts();
     replacements.retain(|key, record| {
         tombstones
             .get(key)
@@ -338,30 +372,141 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         .into_iter()
         .filter(|(key, tombstone)| {
             graph.get(key.0, key.1).is_some()
+                && !topology_carriers.contains(&key.1)
                 && replacements
                     .get(key)
                     .is_none_or(|record| tombstone.offset > record.offset)
         })
         .collect::<BTreeMap<_, _>>();
-    let mut merged = partition.to_vec();
-    for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
-        if let Some(node) = graph.get(kind, xmt) {
-            merged[node.pos..node.end()].fill(0xff);
+    let build = |include_topology: bool| {
+        let included = |kind: u8| include_topology || !matches!(kind, 12..=19);
+        let mut merged = partition.to_vec();
+        for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
+            if included(kind) {
+                if let Some(node) = graph.get(kind, xmt) {
+                    merged[node.pos..node.end()].fill(0xff);
+                }
+            }
         }
+        for (&(kind, _), record) in &replacements {
+            if included(kind) {
+                merged.extend_from_slice(&record.canonical_bytes);
+            }
+        }
+        merged
+    };
+    if !graph.body_shape_shells().is_empty() {
+        return build(false);
+    }
+    let merged = build(true);
+    let merged_graph = crate::topology::Graph::parse(&merged);
+    let base_complete = graph.has_complete_body_topology();
+    let merged_complete = merged_graph.has_complete_body_topology();
+    let deletes_owner = deletions.keys().any(|(kind, _)| matches!(kind, 12 | 13));
+    let deleted_faces = deletions.keys().filter(|(kind, _)| *kind == 14).count();
+    let unaccounted_face_loss = !deletes_owner
+        && merged_graph
+            .body_shape_face_count()
+            .saturating_add(deleted_faces)
+            < graph.body_shape_face_count();
+    if base_complete && (!merged_complete || unaccounted_face_loss) {
+        build(false)
+    } else {
+        merged
+    }
+}
+
+/// Count terminal tombstones that have no exact carrier in the current image
+/// and no earlier full-record addition in the same deltas stream.
+///
+/// Events are keyed by Parasolid type and XMT identity. A later full record
+/// supersedes an earlier tombstone, while a full record followed by a
+/// tombstone is a resolved deletion even when the base image lacked the key.
+pub fn unmatched_terminal_tombstones(partition: &[u8], deltas: &[u8]) -> usize {
+    #[derive(Clone, Copy)]
+    enum Event {
+        Full { offset: usize },
+        Tombstone { offset: usize },
     }
 
-    let mut residual_deltas = deltas.to_vec();
-    for record in normalized_sources {
-        residual_deltas[record.offset..record.end].fill(0xff);
+    let census = walk(deltas);
+    let graph = crate::topology::Graph::parse(partition);
+    let mut events = BTreeMap::<(u8, u32), Vec<Event>>::new();
+    for record in census.records {
+        let Ok(kind) = u8::try_from(record.kind) else {
+            continue;
+        };
+        if !mergeable_record(&record, kind) {
+            continue;
+        }
+        events
+            .entry((kind, record.xmt))
+            .or_default()
+            .push(Event::Full {
+                offset: record.offset,
+            });
     }
-    for tombstone in deletions.values() {
-        residual_deltas[tombstone.offset..tombstone.offset + 6].fill(0xff);
+    for tombstone in census.tombstones {
+        let Ok(kind) = u8::try_from(tombstone.kind) else {
+            continue;
+        };
+        events
+            .entry((kind, tombstone.xmt))
+            .or_default()
+            .push(Event::Tombstone {
+                offset: tombstone.offset,
+            });
     }
-    merged.extend(residual_deltas);
-    for record in replacements.values() {
-        merged.extend_from_slice(&record.canonical_bytes);
+
+    events
+        .into_iter()
+        .filter_map(|((kind, xmt), mut events)| {
+            events.sort_by_key(|event| match event {
+                Event::Full { offset } | Event::Tombstone { offset } => *offset,
+            });
+            let Some(Event::Tombstone { offset }) = events.last().copied() else {
+                return None;
+            };
+            (graph.get(kind, xmt).is_none()
+                && !events.iter().any(|event| {
+                    matches!(event, Event::Full { offset: full_offset } if full_offset < &offset)
+                }))
+            .then_some(())
+        })
+        .count()
+}
+
+fn mergeable_record(record: &Record, kind: u8) -> bool {
+    matches!(
+        kind,
+        12..=19 | 29..=32 | 50..=54 | 56 | 60 | 124 | 133 | 134 | 137
+    ) && crate::topology::Graph::parse(&record.canonical_bytes)
+        .get(kind, record.xmt)
+        .is_some()
+}
+
+/// Return raw deltas bytes with every decoded fixed record and compact
+/// tombstone masked. Procedural families outside the fixed-record census keep
+/// their original offsets and bytes.
+pub fn procedural_residual(stream: &[u8]) -> Vec<u8> {
+    let census = walk(stream);
+    let mut residual = stream.to_vec();
+    let canonical_procedural = census
+        .records
+        .iter()
+        .filter(|record| record.kind == 38)
+        .map(|record| record.canonical_bytes.clone())
+        .collect::<Vec<_>>();
+    for record in census.records {
+        residual[record.offset..record.end].fill(0xff);
     }
-    merged
+    for tombstone in census.tombstones {
+        residual[tombstone.offset..tombstone.offset + 6].fill(0xff);
+    }
+    for record in canonical_procedural {
+        residual.extend_from_slice(&record);
+    }
+    residual
 }
 
 fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -> Option<Record> {
@@ -400,6 +545,21 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
             }
             Token::Sense => {
                 matches!(stream.get(at), Some(b'+' | b'-')).then_some(())?;
+                canonical_bytes.push(*stream.get(at)?);
+                at += 1;
+            }
+            Token::OffsetDiscriminator => {
+                matches!(stream.get(at), Some(b'V' | b'I' | b'U')).then_some(())?;
+                canonical_bytes.push(*stream.get(at)?);
+                at += 1;
+            }
+            Token::BlendSubtype => {
+                (stream.get(at) == Some(&b'R')).then_some(())?;
+                canonical_bytes.push(b'R');
+                at += 1;
+            }
+            Token::Boolean => {
+                matches!(stream.get(at), Some(0 | 1)).then_some(())?;
                 canonical_bytes.push(*stream.get(at)?);
                 at += 1;
             }
@@ -471,8 +631,13 @@ fn family_name(kind: u16) -> Option<&'static str> {
         52 => "CONE",
         53 => "SPHERE",
         54 => "TORUS",
+        56 => "BLEND_SURF",
+        60 => "OFFSET_SURF",
+        38 => "INTERSECTION",
         124 => "B_SURFACE",
+        133 => "TRIMMED_CURVE",
         134 => "B_CURVE",
+        137 => "SP_CURVE",
         12 => "BODY",
         13 => "SHELL",
         19 => "REGION",
@@ -497,8 +662,13 @@ fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
         52 => CONE,
         53 => SPHERE,
         54 => TORUS,
+        56 => BLEND_SURFACE,
+        60 => OFFSET_SURFACE,
+        38 => COMPOSITE_CURVE,
         124 => COMPACT_TWO_REFS,
+        133 => TRIMMED_CURVE,
         134 => COMPACT_TWO_REFS,
+        137 => SURFACE_CURVE,
         19 => REGION,
         _ => return None,
     })

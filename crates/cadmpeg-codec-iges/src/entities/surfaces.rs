@@ -267,9 +267,9 @@ fn offset_analytic(
         }
         SurfaceGeometry::Cone { .. }
         | SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => return None,
     };
     if dot(normal, indicator) >= 0.0 {
@@ -1157,9 +1157,9 @@ pub(super) fn project(
             SurfaceGeometry::Cone { radius, .. } => *radius > 0.0,
             SurfaceGeometry::Plane { .. } => true,
             SurfaceGeometry::Nurbs(_)
+            | SurfaceGeometry::Procedural { .. }
             | SurfaceGeometry::Polygonal { .. }
             | SurfaceGeometry::Transformed { .. }
-            | SurfaceGeometry::Procedural { .. }
             | SurfaceGeometry::Unknown { .. } => false,
         };
         if !regular {

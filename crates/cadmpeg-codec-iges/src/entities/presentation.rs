@@ -63,13 +63,13 @@ fn appearance(ir: &mut CadIr, id: AppearanceId, name: Option<String>, color: Col
             id,
             name,
             asset_guid: None,
-            textures: Vec::new(),
             visual_guid: None,
             physical_token: None,
             schema: Some("IGES color".into()),
             category: None,
             base_color: Some(color),
             properties: BTreeMap::new(),
+            textures: Vec::new(),
         });
     }
 }

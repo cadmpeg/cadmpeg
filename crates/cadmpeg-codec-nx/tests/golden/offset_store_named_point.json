@@ -1,0 +1,285 @@
+{
+  "decode": {
+    "ir": {
+      "ir_version": "55",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "assembly_joints": [],
+        "attributes": [],
+        "bodies": [],
+        "coedges": [],
+        "components": [],
+        "configurations": [],
+        "curves": [],
+        "drawings": [],
+        "edges": [],
+        "faces": [],
+        "features": [],
+        "loops": [],
+        "occurrences": [],
+        "parameters": [],
+        "pcurves": [],
+        "pmi": [],
+        "points": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "product_occurrences": [],
+        "products": [],
+        "regions": [],
+        "semantic_annotations": [],
+        "shells": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "subds": [],
+        "surfaces": [],
+        "tessellations": [],
+        "vertices": [],
+        "view_presentations": []
+      },
+      "native": {
+        "nx": {
+          "arenas": {
+            "class_definitions": [
+              {
+                "id": "nx:om-entry-0:class#8",
+                "name": "UGS::ModlFeature",
+                "ordinal": 0,
+                "section_offset": 72,
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 80,
+                "trailing_code": 129
+              }
+            ],
+            "data_blocks": [
+              {
+                "block_ordinal": 0,
+                "byte_len": 16,
+                "id": "nx:om-data-blocks-0:block#0",
+                "role": "control",
+                "section_offset": 72,
+                "section_ordinal": 0,
+                "sha256": "468fb56723f3e5c56e68cbbc0e4fd14009f7a035c0a0c1cee55602e697fcef49",
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 118
+              },
+              {
+                "block_ordinal": 1,
+                "byte_len": 38,
+                "id": "nx:om-data-blocks-0:block#1",
+                "role": "column",
+                "section_offset": 72,
+                "section_ordinal": 0,
+                "sha256": "655fbb302e7c31f8a52d752e7c00791b1040a6ec629b66ca6b1b0a9fea2c9a3c",
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 134
+              },
+              {
+                "block_ordinal": 2,
+                "byte_len": 8,
+                "id": "nx:om-data-blocks-0:block#2",
+                "role": "column",
+                "section_offset": 72,
+                "section_ordinal": 0,
+                "sha256": "8c7d2c6f7def9a50d4ad3023702df661be86637f2854eff94de603676a813341",
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 172
+              }
+            ],
+            "offset_store_named_points": [
+              {
+                "data_blocks": [
+                  "nx:om-data-blocks-0:block#1"
+                ],
+                "id": "nx:offset-store:named-point#0-1",
+                "name": "Point7",
+                "raw_values": [
+                  [
+                    48,
+                    76,
+                    147,
+                    51,
+                    51,
+                    51,
+                    51,
+                    7
+                  ],
+                  [
+                    48,
+                    76,
+                    147,
+                    51,
+                    51,
+                    51,
+                    51,
+                    7
+                  ]
+                ],
+                "source_offset": 134,
+                "value_source_offsets": [
+                  143,
+                  159
+                ],
+                "values": [
+                  57.149999999999686,
+                  57.149999999999686
+                ]
+              }
+            ],
+            "store_headers": [
+              {
+                "id": "nx:om-store-headers:store#0",
+                "object_id": null,
+                "section_ordinal": 0,
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 118,
+                "version": "NX 2027.3102"
+              }
+            ],
+            "unknowns": [
+              {
+                "id": "nx:om-section-0:block#0"
+              },
+              {
+                "id": "nx:om-section-0:block#1"
+              },
+              {
+                "id": "nx:om-section-0:block#2"
+              }
+            ]
+          },
+          "version": 155
+        }
+      },
+      "source": {
+        "attributes": {
+          "deltas_streams": "0",
+          "directory_entries": "1",
+          "file_size": "180",
+          "footer_offset": "0",
+          "jpeg_preview_count": "0",
+          "partition_streams": "0",
+          "plain_streams": "0"
+        },
+        "format": "nx"
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "container_only": false,
+      "format": "nx",
+      "geometry_transferred": false,
+      "losses": [
+        {
+          "category": "geometry",
+          "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
+          "severity": "blocking"
+        }
+      ],
+      "notes": [
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+        "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+        "NX object model: 1 indexed section(s), 0 ID-bounded entity record(s), 3 offset-only data block(s)"
+      ]
+    },
+    "source_fidelity": {
+      "annotations": {
+        "provenance": {
+          "nx:offset-store:named-point#0-1": {
+            "offset": 134,
+            "stream": 0,
+            "tag": "OFFSET_STORE_NAMED_POINT"
+          },
+          "nx:om-section-0:block#0": {
+            "offset": 118,
+            "stream": 0,
+            "tag": "OM_DATA_BLOCK"
+          },
+          "nx:om-section-0:block#1": {
+            "offset": 134,
+            "stream": 0,
+            "tag": "OM_DATA_BLOCK"
+          },
+          "nx:om-section-0:block#2": {
+            "offset": 172,
+            "stream": 0,
+            "tag": "OM_DATA_BLOCK"
+          },
+          "nx:om-store-headers:store#0": {
+            "offset": 118,
+            "stream": 0,
+            "tag": "OM_STORE_VERSION"
+          }
+        },
+        "streams": [
+          "nx:container"
+        ]
+      },
+      "byte_ledger": {
+        "source_length": 0,
+        "spans": []
+      },
+      "retained_records": [
+        {
+          "byte_len": 16,
+          "data": "BAEOTlggMjAyNy4zMTAyAA==",
+          "id": "nx:om-section-0:block#0",
+          "offset": 118,
+          "sha256": "468fb56723f3e5c56e68cbbc0e4fd14009f7a035c0a0c1cee55602e697fcef49",
+          "stream": "nx:container"
+        },
+        {
+          "byte_len": 38,
+          "data": "AwhQb2ludDcAUFlmWAAwTJMzMzMzB0UEAFBZZlgAMEyTMzMzMwc=",
+          "id": "nx:om-section-0:block#1",
+          "offset": 134,
+          "sha256": "655fbb302e7c31f8a52d752e7c00791b1040a6ec629b66ca6b1b0a9fea2c9a3c",
+          "stream": "nx:container"
+        },
+        {
+          "byte_len": 8,
+          "data": "u7u7u7u7u7s=",
+          "id": "nx:om-section-0:block#2",
+          "offset": 172,
+          "sha256": "8c7d2c6f7def9a50d4ad3023702df661be86637f2854eff94de603676a813341",
+          "stream": "nx:container"
+        }
+      ],
+      "schema_version": "1"
+    }
+  },
+  "inspect": {
+    "container_kind": "splmsstr",
+    "entries": [
+      {
+        "attributes": {
+          "file_offset": "72",
+          "region": "HEADER"
+        },
+        "compressed_size": 108,
+        "compression": "none",
+        "name": "/Root/UG_PART/UG_PART",
+        "role": "stream",
+        "uncompressed_size": 108
+      }
+    ],
+    "format": "nx",
+    "notes": [
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+      "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+      "NX object model: 1 indexed section(s), 0 ID-bounded entity record(s), 3 offset-only data block(s)"
+    ]
+  }
+}

@@ -4648,16 +4648,14 @@ mod record_decoders {
             &HashSet::from([501]),
         );
         assert!(!evidence.surface_geometries.contains_key(&501));
-        let Some(crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
-            carrier_object_id: 100,
-            definition,
-        }) = evidence.procedural_surfaces.get(&501)
-        else {
-            panic!("expected rolling-ball procedure with carrier 100");
-        };
         assert!(matches!(
-            definition.as_ref(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. }
+            evidence.procedural_surfaces.get(&501),
+            Some(
+                crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
+                    carrier_object_id: 100,
+                    definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. },
+                }
+            )
         ));
     }
 

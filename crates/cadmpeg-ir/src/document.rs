@@ -45,7 +45,7 @@ macro_rules! arena_registry {
             procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [] => |e| e.id.0.clone();
             procedural_curves: ProceduralCurve, "Procedural curve arena.", [] => |e| e.id.0.clone();
             features: Feature, "Feature arena.", [] => |e| e.id.0.clone();
-            feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default)] => |e| e.id.0.clone();
+            feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")] => |e| e.id.0.clone();
             configurations: DesignConfiguration, "Design configuration arena.", [serde(default)] => |e| e.id.0.clone();
             parameters: DesignParameter, "Design parameter arena.", [serde(default)] => |e| e.id.0.clone();
             sketches: Sketch, "Planar sketch arena.", [serde(default)] => |e| e.id.0.clone();
@@ -53,7 +53,7 @@ macro_rules! arena_registry {
             sketch_constraints: SketchConstraint, "Sketch constraint arena.", [serde(default)] => |e| e.id.0.clone();
             spatial_sketches: SpatialSketch, "Spatial sketch arena.", [serde(default)] => |e| e.id.0.clone();
             spatial_sketch_entities: SpatialSketchEntity, "Solved spatial sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
-            spatial_sketch_constraints: SpatialSketchConstraint, "Spatial sketch constraint arena.", [serde(default)] => |e| e.id.0.clone();
+            spatial_sketch_constraints: SpatialSketchConstraint, "Spatial sketch constraint arena.", [serde(default, skip_serializing_if = "Vec::is_empty")] => |e| e.id.0.clone();
             spreadsheets: Spreadsheet, "Spreadsheet arena.", [serde(default)] => |e| e.id.0.clone();
             components: Component, "Product component arena.", [serde(default)] => |e| e.id.0.clone();
             occurrences: Occurrence, "Product occurrence arena.", [serde(default)] => |e| e.id.0.clone();

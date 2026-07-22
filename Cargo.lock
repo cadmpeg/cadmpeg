@@ -172,6 +172,7 @@ name = "cadmpeg-codec-creo"
 version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
+ "regex",
  "serde",
  "sha2",
 ]
@@ -223,6 +224,7 @@ dependencies = [
  "flate2",
  "roxmltree",
  "serde",
+ "serde_json",
  "sha2",
 ]
 

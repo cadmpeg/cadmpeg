@@ -761,33 +761,23 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
     ));
     assert!(matches!(
         definition("Fillet"),
-        cadmpeg_ir::features::FeatureDefinition::Fillet { groups, .. }
-            if matches!(
-                groups.as_slice(),
-                [cadmpeg_ir::features::FilletGroup {
-                    edges: cadmpeg_ir::features::EdgeSelection::All,
-                    radius: cadmpeg_ir::features::RadiusSpec::Constant {
-                        radius: cadmpeg_ir::features::Length(2.0)
-                    },
-                    ..
-                }]
-            )
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            groups,
+        }
+        if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+            edges: cadmpeg_ir::features::EdgeSelection::All,
+            radius: cadmpeg_ir::features::RadiusSpec::Constant { radius: cadmpeg_ir::features::Length(2.0) },
+            tangency_weight: None,
+        }])
     ));
     assert!(matches!(
         definition("Chamfer"),
         cadmpeg_ir::features::FeatureDefinition::Chamfer {
             groups,
             flip_direction: true,
-        } if matches!(
-            groups.as_slice(),
-            [cadmpeg_ir::features::ChamferGroup {
-                spec: cadmpeg_ir::features::ChamferSpec::DistanceAngle {
-                    distance: cadmpeg_ir::features::Length(1.5),
-                    angle,
-                },
-                ..
-            }] if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12
-        )
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+            spec: cadmpeg_ir::features::ChamferSpec::DistanceAngle { distance: cadmpeg_ir::features::Length(1.5), angle }, ..
+        }] if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12)
     ));
 }
 
@@ -1684,12 +1674,8 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
         } if matches!(sections.as_slice(), [
-            cadmpeg_ir::features::LoftSection::Profile(cadmpeg_ir::features::ProfileRef::Sketch(
-                first
-            )),
-            cadmpeg_ir::features::LoftSection::Profile(cadmpeg_ir::features::ProfileRef::Sketch(
-                second
-            )),
+            cadmpeg_ir::features::LoftSection::Profile(cadmpeg_ir::features::ProfileRef::Sketch(first)),
+            cadmpeg_ir::features::LoftSection::Profile(cadmpeg_ir::features::ProfileRef::Sketch(second)),
         ] if first.0.ends_with("#Section1") && second.0.ends_with("#Section2"))
     ));
     assert!(matches!(
@@ -2825,13 +2811,14 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             faces: cadmpeg_ir::features::FaceSelection::Native(faces),
             neutral_plane: cadmpeg_ir::features::FaceSelection::Native(plane),
             pull_direction,
-            angle: cadmpeg_ir::features::Angle(angle),
-            outward: true,
+            angle: Some(cadmpeg_ir::features::Angle(angle)),
+            outward: Some(true),
         } if faces.ends_with(":Base")
             && plane.ends_with(":NeutralPlane")
-            && (pull_direction.x - 0.0).abs() < 1e-12
-            && (pull_direction.y + 1.0).abs() < 1e-12
-            && pull_direction.z.abs() < 1e-12
+            && pull_direction.is_some_and(|direction|
+                (direction.x - 0.0).abs() < 1e-12
+                    && (direction.y + 1.0).abs() < 1e-12
+                    && direction.z.abs() < 1e-12)
             && (*angle + 5f64.to_radians()).abs() < 1e-12
     ));
     assert_eq!(draft.dependencies.len(), 3);
@@ -4502,8 +4489,11 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     assert_eq!(result.ir.model.sketch_entities.len(), 4);
     assert_eq!(result.ir.model.sketches[0].profiles.len(), 1);
     assert_eq!(result.ir.model.sketches[0].profiles[0].len(), 4);
-    assert_eq!(result.ir.model.sketches[0].origin.x, 1.0);
-    assert!((result.ir.model.sketches[0].normal.y + 1.0).abs() < 1e-12);
+    let (origin, normal, _) = result.ir.model.sketches[0]
+        .resolved_placement()
+        .expect("resolved sketch placement");
+    assert_eq!(origin.x, 1.0);
+    assert!((normal.y + 1.0).abs() < 1e-12);
     assert_eq!(result.ir.model.features.len(), 4);
     assert_eq!(result.ir.model.sketch_constraints.len(), 2);
     assert_eq!(result.ir.model.parameters.len(), 3);
@@ -4546,7 +4536,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         body.source_properties.get("Tip").map(String::as_str),
         Some("fcstd:native:object#Pocket")
     );
-    assert!(pocket.suppressed);
+    assert_eq!(pocket.suppressed, Some(true));
     assert_eq!(
         pocket
             .source_properties
@@ -4640,7 +4630,14 @@ fn retains_support_attachment_and_distinct_offset_frame() {
     assert_eq!(attachments[0].offset.expect("offset")[0][3], 2.0);
     assert_eq!(attachments[0].effective_frame[0][3], 10.0);
     let sketch = result.ir.model.sketches.first().expect("sketch");
-    assert_eq!(sketch.origin.x, 10.0);
+    assert_eq!(
+        sketch
+            .resolved_placement()
+            .expect("resolved sketch placement")
+            .0
+            .x,
+        10.0
+    );
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
 }

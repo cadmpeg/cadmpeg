@@ -129,8 +129,8 @@ pub(super) fn pcurve_geometry(
         | SurfaceGeometry::Torus { .. }
         | SurfaceGeometry::Nurbs(_) => (1.0 / factor, 1.0 / factor),
         SurfaceGeometry::Polygonal { .. }
-        | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => return None,
     };
     match &curve.geometry {
@@ -665,7 +665,7 @@ pub(super) fn project(
                         PcurveUse {
                             pcurve: id,
                             isoparametric: None,
-parameter_range: None,
+                                    parameter_range: None,
                         }
                     })
                     .collect();

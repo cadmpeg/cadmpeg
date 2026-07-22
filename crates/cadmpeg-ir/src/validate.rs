@@ -182,7 +182,7 @@ mod tests {
             id: feature_id.clone(),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -190,16 +190,21 @@ mod tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch { sketch: None },
+            definition: FeatureDefinition::Sketch {
+                space: crate::features::SketchSpace::Planar,
+                sketch: None,
+            },
             native_ref: None,
         });
         ir.model.sketches.push(Sketch {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: crate::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         });
@@ -213,7 +218,7 @@ mod tests {
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             suppressed_features: Vec::new(),
-            bodies: Vec::new(),
+            bodies: crate::features::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id,
@@ -222,6 +227,7 @@ mod tests {
                     dependencies: Vec::new(),
                     outputs: Vec::new(),
                     definition: FeatureDefinition::Sketch {
+                        space: crate::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     },
                 },

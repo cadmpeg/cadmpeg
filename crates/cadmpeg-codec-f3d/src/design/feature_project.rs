@@ -142,7 +142,10 @@ pub fn project_parameter_design_with_edge_identities(
                 .collect::<Vec<_>>();
             let family = design_feature_family(&scope.kind);
             let definition = match family {
-                Some(DesignFeatureFamily::Sketch) => FeatureDefinition::Sketch { sketch: None },
+                Some(DesignFeatureFamily::Sketch) => FeatureDefinition::Sketch {
+                    space: cadmpeg_ir::features::SketchSpace::Unresolved,
+                    sketch: None,
+                },
                 Some(DesignFeatureFamily::Extrude) => project_extrude(
                     scope,
                     &parameters,
@@ -534,15 +537,17 @@ pub fn project_parameter_design_with_edge_identities(
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: scope.byte_offset,
                 name: Some(format!("{} {}", scope.kind, scope.feature_ordinal)),
-                suppressed: matches!(
-                    family,
-                    Some(
-                        DesignFeatureFamily::Extrude
-                            | DesignFeatureFamily::Fillet
-                            | DesignFeatureFamily::Chamfer
-                    )
-                ) && scope.history_state_id.is_none()
-                    && scope.previous_history_state_id.is_none(),
+                suppressed: Some(
+                    matches!(
+                        family,
+                        Some(
+                            DesignFeatureFamily::Extrude
+                                | DesignFeatureFamily::Fillet
+                                | DesignFeatureFamily::Chamfer
+                        )
+                    ) && scope.history_state_id.is_none()
+                        && scope.previous_history_state_id.is_none(),
+                ),
                 parent: None,
                 dependencies: Vec::new(),
                 source_properties: BTreeMap::new(),
@@ -1066,18 +1071,23 @@ pub fn bind_sketch_feature_geometry(
         let has_spatial = spatial_sketches.iter().any(|sketch| sketch.id == spatial);
         feature.definition = match (has_planar, has_spatial) {
             (true, false) => FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(planar),
             },
             (false, true) => FeatureDefinition::SpatialSketch {
                 sketch: Some(spatial),
             },
-            _ => FeatureDefinition::Sketch { sketch: None },
+            _ => FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Unresolved,
+                sketch: None,
+            },
         };
     }
     let sketch_features = features
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
             } => Some((sketch.clone(), feature.id.clone())),
             _ => None,
@@ -1325,8 +1335,8 @@ pub(crate) fn project_surface_stitch(
     }
     Some(FeatureDefinition::KnitSurface {
         faces: FaceSelection::Native(scope.id.clone()),
-        merge_entities: true,
-        create_solid: true,
+        merge_entities: Some(true),
+        create_solid: Some(true),
         gap_tolerance: Some(Length(operation.gap_tolerance * 10.0)),
     })
 }

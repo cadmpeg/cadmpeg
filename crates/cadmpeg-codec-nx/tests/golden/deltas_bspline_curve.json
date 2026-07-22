@@ -1,0 +1,344 @@
+{
+  "decode": {
+    "ir": {
+      "ir_version": "55",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "assembly_joints": [],
+        "attributes": [],
+        "bodies": [],
+        "coedges": [],
+        "components": [],
+        "configurations": [],
+        "curves": [
+          {
+            "geometry": {
+              "control_points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 20.0,
+                  "y": 10.0,
+                  "z": 0.0
+                }
+              ],
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false
+            },
+            "id": "nx:s0:nurbs-crv#0"
+          }
+        ],
+        "drawings": [],
+        "edges": [],
+        "faces": [],
+        "features": [],
+        "loops": [],
+        "occurrences": [],
+        "parameters": [],
+        "pcurves": [],
+        "pmi": [],
+        "points": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "product_occurrences": [],
+        "products": [],
+        "regions": [],
+        "semantic_annotations": [],
+        "shells": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "subds": [],
+        "surfaces": [
+          {
+            "geometry": {
+              "control_points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              ],
+              "kind": "nurbs",
+              "u_count": 2,
+              "u_degree": 1,
+              "u_knots": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "u_periodic": false,
+              "v_count": 2,
+              "v_degree": 1,
+              "v_knots": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "v_periodic": false
+            },
+            "id": "nx:s0:nurbs-surf#0"
+          }
+        ],
+        "tessellations": [],
+        "vertices": [],
+        "view_presentations": []
+      },
+      "native": {
+        "nx": {
+          "arenas": {
+            "unknowns": [
+              {
+                "id": "nx:container:parasolid#0",
+                "links": [
+                  "nx:s0:nurbs-surf#0",
+                  "nx:s0:nurbs-crv#0"
+                ]
+              },
+              {
+                "id": "nx:container:parasolid#1"
+              }
+            ]
+          },
+          "version": 1
+        }
+      },
+      "source": {
+        "attributes": {
+          "deltas.0.bytes_decoded": "30",
+          "deltas.0.full.B_CURVE": "1",
+          "deltas.0.grammar": "status_byte_framed_topology",
+          "deltas_streams": "1",
+          "directory_entries": "1",
+          "file_size": "405",
+          "footer_offset": "0",
+          "jpeg_preview_count": "0",
+          "parasolid_schema": "SCH_TEST_1_9999",
+          "partition_streams": "1",
+          "plain_streams": "0"
+        },
+        "format": "nx"
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "container_only": false,
+      "format": "nx",
+      "geometry_transferred": true,
+      "losses": [
+        {
+          "category": "geometry",
+          "message": "Decoded 0 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 1 analytic surface carrier(s) (0 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 1 analytic curve carrier(s) (0 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
+          "severity": "info"
+        },
+        {
+          "category": "topology",
+          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
+          "severity": "blocking"
+        },
+        {
+          "category": "topology",
+          "message": "1 Parasolid deltas stream(s) were processed in validated UG_PART segment order. Equal-schema deltas were paired with the preceding partition. Exact-key BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact non-topology replacements and tombstones were applied using the last event for each key. Validated partition topology remained authoritative, including any point, curve, or surface carrier still referenced by surviving topology. Every terminal tombstone resolved to an exact current or earlier-added key.",
+          "severity": "info"
+        },
+        {
+          "category": "attribute",
+          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
+          "severity": "warning"
+        }
+      ],
+      "notes": [
+        "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+        "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+        "Parasolid schema: SCH_TEST_1_9999"
+      ]
+    },
+    "source_fidelity": {
+      "annotations": {
+        "exactness": {
+          "nx:container:parasolid#0": {
+            "entity": "derived",
+            "fields": {
+              "links": "derived"
+            }
+          },
+          "nx:container:parasolid#1": {
+            "entity": "derived"
+          },
+          "nx:s0:nurbs-crv#0": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:nurbs-surf#0": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          }
+        },
+        "provenance": {
+          "nx:container:parasolid#0": {
+            "offset": 72,
+            "stream": 1,
+            "tag": "partition"
+          },
+          "nx:container:parasolid#1": {
+            "offset": 311,
+            "stream": 1,
+            "tag": "deltas"
+          },
+          "nx:s0:nurbs-crv#0": {
+            "offset": 625,
+            "stream": 0,
+            "tag": "B_SPLINE_CURVE"
+          },
+          "nx:s0:nurbs-surf#0": {
+            "offset": 50,
+            "stream": 0,
+            "tag": "B_SPLINE_SURFACE"
+          }
+        },
+        "streams": [
+          "nx:parasolid#0:partition",
+          "nx:container",
+          "nx:parasolid#1:deltas"
+        ]
+      },
+      "byte_ledger": {
+        "source_length": 0,
+        "spans": []
+      },
+      "retained_records": [
+        {
+          "byte_len": 625,
+          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pAFNDSF9URVNUXzFfOTk5OQAAfAAKAAAAAAAAAAAAAAAAAAArABQAFQB+ABQAAAABAAEAAAACAAAAAgUFAAAAAgAAAAIAAAAAAAAAAAAeAB8AIAAhAH0AFQB9ABUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACsAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAA/hHrhR64UewAAAAAAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7AAAAAAAAAAAAfwAAAAIAHgACAAIAfwAAAAIAHwACAAIAgAAAAAIAIAAAAAAAAAAAP/AAAAAAAAAAgAAAAAIAIQAAAAAAAAAAP/AAAAAAAAAAhgAyAAAAAAAAAAAAAAAAAAArACgAKQCIACgAAQAAAAIAAwAAAAIFAAAAAAAAACoAKwCHACkAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAAAAAAAAAAAAAB/AAAAAgAqAAIAAgCAAAAAAgArAAAAAAAAAAA/8AAAAAAAAACIAEYAAQAAAAIAAwAAAAIFAAAAAAAAACoAKwCHAEcAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7P4R64UeuFHsAAAAAAAAAAA==",
+          "id": "nx:container:parasolid#0",
+          "offset": 72,
+          "sha256": "d26c66fac58910af6efa3210241236b01f08502a598b87fc8029b2dca3db689c",
+          "stream": "nx:container"
+        },
+        {
+          "byte_len": 97,
+          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AACGADIAAAOTAAEBAAEBAAEBAAEBAAEBKwBGAQBHAQ==",
+          "id": "nx:container:parasolid#1",
+          "offset": 311,
+          "sha256": "7ba1639c1c80dfdf23c54456014a5481ac496f1746ddf007906f24bbb72c8360",
+          "stream": "nx:container"
+        }
+      ],
+      "schema_version": "1"
+    }
+  },
+  "inspect": {
+    "container_kind": "splmsstr",
+    "entries": [
+      {
+        "attributes": {
+          "file_offset": "72",
+          "region": "HEADER"
+        },
+        "compressed_size": 333,
+        "compression": "none",
+        "name": "/Root/UG_PART/UG_PART",
+        "role": "stream",
+        "uncompressed_size": 333
+      },
+      {
+        "attributes": {
+          "file_offset": "72",
+          "kind": "partition",
+          "records.body": "0",
+          "records.edge": "0",
+          "records.face": "0",
+          "records.fin": "0",
+          "records.live.body": "0",
+          "records.live.edge": "0",
+          "records.live.face": "0",
+          "records.live.fin": "0",
+          "records.live.loop": "0",
+          "records.live.region": "0",
+          "records.live.shell": "0",
+          "records.live.vertex": "0",
+          "records.loop": "0",
+          "records.region": "0",
+          "records.shell": "0",
+          "records.vertex": "0",
+          "schema": "SCH_TEST_1_9999"
+        },
+        "compressed_size": 0,
+        "compression": "zlib",
+        "name": "parasolid#0",
+        "role": "parasolid-stream",
+        "uncompressed_size": 625
+      },
+      {
+        "attributes": {
+          "file_offset": "311",
+          "kind": "deltas",
+          "records.body": "0",
+          "records.delta.full.b_curve": "1",
+          "records.edge": "0",
+          "records.face": "0",
+          "records.fin": "0",
+          "records.loop": "0",
+          "records.region": "0",
+          "records.shell": "0",
+          "records.vertex": "0",
+          "schema": "SCH_TEST_1_9999"
+        },
+        "compressed_size": 0,
+        "compression": "zlib",
+        "name": "parasolid#1",
+        "role": "parasolid-stream",
+        "uncompressed_size": 97
+      }
+    ],
+    "format": "nx",
+    "notes": [
+      "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+      "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+      "Parasolid schema: SCH_TEST_1_9999"
+    ]
+  }
+}

@@ -26,6 +26,86 @@ fn cross(a: Vector3, b: Vector3) -> Vector3 {
     )
 }
 
+/// Recover native parameters for an analytic surface point.
+pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) -> Option<Point2> {
+    let components = |origin: Point3, axis: Vector3, reference: Vector3| {
+        let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
+        let transverse = cross(axis, reference);
+        (
+            delta.x * reference.x + delta.y * reference.y + delta.z * reference.z,
+            delta.x * transverse.x + delta.y * transverse.y + delta.z * transverse.z,
+            delta.x * axis.x + delta.y * axis.y + delta.z * axis.z,
+        )
+    };
+    let result = match geometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            let (u, v, _) = components(*origin, *normal, *u_axis);
+            Point2::new(u, v)
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            if *radius == 0.0 {
+                return None;
+            }
+            let (x, y, v) = components(*origin, *axis, *ref_direction);
+            Point2::new((y / radius).atan2(x / radius), v)
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } => {
+            let (x, y, v) = components(*origin, *axis, *ref_direction);
+            let local_radius = radius + v * half_angle.tan();
+            if local_radius == 0.0 || *ratio == 0.0 {
+                return None;
+            }
+            Point2::new((y / (local_radius * ratio)).atan2(x / local_radius), v)
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            if *radius == 0.0 {
+                return None;
+            }
+            let (x, y, z) = components(*center, *axis, *ref_direction);
+            Point2::new(y.atan2(x), z.atan2(x.hypot(y)))
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            if *minor_radius == 0.0 {
+                return None;
+            }
+            let (x, y, z) = components(*center, *axis, *ref_direction);
+            Point2::new(
+                y.atan2(x),
+                (z / minor_radius).atan2((x.hypot(y) - major_radius) / minor_radius),
+            )
+        }
+        _ => return None,
+    };
+    (result.u.is_finite() && result.v.is_finite()).then_some(result)
+}
+
 /// `base + Σ factorᵢ · directionᵢ` in model space.
 fn offset(base: Point3, terms: &[(f64, Vector3)]) -> Point3 {
     let mut out = base;
@@ -330,6 +410,20 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
     if surface.control_points.len() != u_count.checked_mul(v_count)? {
         return None;
     }
+    let u_at = periodic_parameter(
+        &surface.u_knots,
+        u_degree,
+        u_count,
+        surface.u_periodic,
+        u_at,
+    )?;
+    let v_at = periodic_parameter(
+        &surface.v_knots,
+        v_degree,
+        v_count,
+        surface.v_periodic,
+        v_at,
+    )?;
     let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
     let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
     let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at);
@@ -388,6 +482,20 @@ pub fn nurbs_surface_partials(
     {
         return None;
     }
+    let u_at = periodic_parameter(
+        &surface.u_knots,
+        u_degree,
+        u_count,
+        surface.u_periodic,
+        u_at,
+    )?;
+    let v_at = periodic_parameter(
+        &surface.v_knots,
+        v_degree,
+        v_count,
+        surface.v_periodic,
+        v_at,
+    )?;
     let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
     let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
     let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at);
@@ -441,6 +549,23 @@ pub fn nurbs_surface_partials(
         du: derivative(weighted_u, weight_u),
         dv: derivative(weighted_v, weight_v),
     })
+}
+
+fn periodic_parameter(
+    knots: &[f64],
+    degree: usize,
+    count: usize,
+    periodic: bool,
+    parameter: f64,
+) -> Option<f64> {
+    parameter.is_finite().then_some(())?;
+    let start = *knots.get(degree)?;
+    let end = *knots.get(count)?;
+    if !periodic || (start..=end).contains(&parameter) {
+        return Some(parameter);
+    }
+    let period = end - start;
+    (period.is_finite() && period > 0.0).then(|| start + (parameter - start).rem_euclid(period))
 }
 
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
@@ -648,6 +773,62 @@ pub fn model_surface_point(
         }
         _ => None,
     }
+}
+
+/// Evaluate a surface carrier selected by arena id.
+pub fn model_surface_point_by_id(
+    ir: &CadIr,
+    surface: &crate::ids::SurfaceId,
+    u: f64,
+    v: f64,
+) -> Option<Point3> {
+    fn point(
+        ir: &CadIr,
+        surface_id: &crate::ids::SurfaceId,
+        u: f64,
+        v: f64,
+        visiting: &mut Vec<crate::ids::SurfaceId>,
+    ) -> Option<Point3> {
+        if visiting.contains(surface_id) {
+            return None;
+        }
+        visiting.push(surface_id.clone());
+        let surface = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|candidate| candidate.id == *surface_id)?;
+        let result = if let SurfaceGeometry::Procedural { construction } = &surface.geometry {
+            let procedural = ir.model.procedural_surfaces.iter().find(|candidate| {
+                candidate.id == *construction && candidate.surface == *surface_id
+            })?;
+            match &procedural.definition {
+                ProceduralSurfaceDefinition::Offset {
+                    support, distance, ..
+                } => {
+                    let support_point = point(ir, support, u, v, visiting)?;
+                    let step = 1.0e-6;
+                    let u0 = point(ir, support, u - step, v, visiting)?;
+                    let u1 = point(ir, support, u + step, v, visiting)?;
+                    let v0 = point(ir, support, u, v - step, visiting)?;
+                    let v1 = point(ir, support, u, v + step, visiting)?;
+                    let du = Vector3::new(u1.x - u0.x, u1.y - u0.y, u1.z - u0.z);
+                    let dv = Vector3::new(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
+                    let normal = cross(du, dv);
+                    let norm = normal.norm();
+                    (norm.is_finite() && norm > 0.0)
+                        .then(|| offset(support_point, &[(distance / norm, normal)]))
+                }
+                _ => model_surface_point(ir, &surface.geometry, u, v),
+            }
+        } else {
+            surface_point(&surface.geometry, u, v)
+        };
+        visiting.pop();
+        result
+    }
+
+    point(ir, surface, u, v, &mut Vec::new())
 }
 
 fn polyline_point(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Option<Point3> {

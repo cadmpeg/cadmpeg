@@ -7,17 +7,16 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin,
-    BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp, ChamferGroup,
-    ChamferSpec, DesignParameter, EdgeSelection, Extent, ExtrusionDirectionSource,
-    ExtrusionFaceMaker, Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, FilletGroup,
-    FuzzyTolerance, GeometryImportFormat, HelicalSweepConstruction, HelicalSweepLaw,
-    HelixConstructionStyle, HoleBottom, HoleKind, HoleProfileFilter, HoleSpecification,
-    HoleThreadDepth, InnerWireTaper, Length, LoftSection, ParameterId, ParameterValue, PathRef,
-    PatternKind, PatternScaleCenter, PatternSeed, PatternStage, PatternStageCombination,
-    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
-    RevolutionFuseOrder, RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode,
-    SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
-    ThreadHand,
+    BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp, ChamferSpec,
+    DesignParameter, EdgeSelection, Extent, ExtrusionDirectionSource, ExtrusionFaceMaker, Feature,
+    FeatureDefinition, FeatureId, FeatureTreeNodeRole, FuzzyTolerance, GeometryImportFormat,
+    HelicalSweepConstruction, HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleKind,
+    HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper, Length, ParameterId,
+    ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternSeed, PatternStage,
+    PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, RevolutionFuseOrder, RuledCurveOrientation, ScaleCenter, ScaleFactors,
+    ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation,
+    SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -133,6 +132,7 @@ pub(crate) fn transfer(
             ir.model.sketch_constraints.extend(decoded.constraints);
             ir.model.parameters.extend(decoded.parameters);
             FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id),
             }
         } else if is_stored_geometry_feature(&object.type_name) {
@@ -194,13 +194,12 @@ pub(crate) fn transfer(
                 }
             })
         } else if is_helical_sweep(&object.type_name) {
-            helical_sweep_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+            helical_sweep_definition(&object.type_name, &object.id, &owned, &sketch_ids)
+                .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
                     properties: BTreeMap::new(),
-                }
-            })
+                })
         } else if matches!(object.type_name.as_str(), "Part::Helix" | "Part::Spiral") {
             parametric_helix_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
@@ -237,15 +236,20 @@ pub(crate) fn transfer(
                 properties: BTreeMap::new(),
             })
         } else if is_hole(&object.type_name) {
-            hole_definition(&owned, &sketch_ids, objects, &properties_by_owner).unwrap_or_else(
-                || FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
-                    parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
-                },
+            hole_definition(
+                &object.id,
+                &owned,
+                &sketch_ids,
+                objects,
+                &properties_by_owner,
             )
+            .unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            })
         } else if is_extrusion(&object.type_name) {
-            let profile = profile_ref(&owned, &sketch_ids);
+            let profile = profile_ref(&object.id, &owned, &sketch_ids);
             extrusion_definition(&object.type_name, &owned, profile, &ir.model.sketches)
                 .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
@@ -253,13 +257,12 @@ pub(crate) fn transfer(
                     properties: BTreeMap::new(),
                 })
         } else if is_revolution(&object.type_name) {
-            revolution_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+            revolution_definition(&object.type_name, &object.id, &owned, &sketch_ids)
+                .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
                     properties: BTreeMap::new(),
-                }
-            })
+                })
         } else if matches!(
             object.type_name.as_str(),
             "PartDesign::Thickness" | "Part::Thickness"
@@ -392,7 +395,7 @@ pub(crate) fn transfer(
             id,
             ordinal: object.order as u64,
             name: Some(object.name.clone()),
-            suppressed: bool_property(&owned, "Suppressed").unwrap_or(false),
+            suppressed: bool_property(&owned, "Suppressed"),
             parent: parent_by_member.get(object.id.as_str()).cloned(),
             dependencies,
             source_properties: feature_state(&owned),
@@ -907,9 +910,11 @@ fn parse_sketch(
             id,
             name: Some(object.name.clone()),
             configuration: None,
-            origin,
-            normal,
-            u_axis,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin,
+                normal,
+                u_axis,
+            },
             profiles,
             native_ref: Some(object.id.clone()),
         },
@@ -1392,11 +1397,10 @@ fn bind_parameter_dependencies(parameters: &mut [DesignParameter], objects: &[Ob
     let mut local = HashMap::<(FeatureId, String), ParameterId>::new();
     let mut qualified = HashMap::<String, ParameterId>::new();
     for (id, owner, name) in &candidates {
-        if let Some(owner) = owner {
-            local.insert((owner.clone(), name.clone()), id.clone());
-            if let Some(object) = object_names.get(owner) {
-                qualified.insert(format!("{object}.{name}"), id.clone());
-            }
+        let Some(owner) = owner else { continue };
+        local.insert((owner.clone(), name.clone()), id.clone());
+        if let Some(object) = object_names.get(owner) {
+            qualified.insert(format!("{object}.{name}"), id.clone());
         }
     }
     for parameter in parameters {
@@ -1945,7 +1949,11 @@ mod profile_tests {
     }
 }
 
-fn profile_ref(properties: &[&PropertyRecord], sketches: &HashMap<&str, SketchId>) -> ProfileRef {
+fn profile_ref(
+    owner: &str,
+    properties: &[&PropertyRecord],
+    sketches: &HashMap<&str, SketchId>,
+) -> ProfileRef {
     let property_and_target = ["Profile", "Base", "Source"].iter().find_map(|name| {
         let property = property(properties, name)?;
         let target = property
@@ -1955,7 +1963,7 @@ fn profile_ref(properties: &[&PropertyRecord], sketches: &HashMap<&str, SketchId
         (!target.is_empty()).then_some((property, target))
     });
     let Some((property, target)) = property_and_target else {
-        return ProfileRef::Native("unresolved FCStd profile".into());
+        return ProfileRef::Unresolved(owner.to_owned());
     };
     sketches.get(target).cloned().map_or_else(
         || ProfileRef::Native(property.id.clone()),
@@ -1975,11 +1983,12 @@ fn revolution_axis(properties: &[&PropertyRecord]) -> Option<RevolutionAxis> {
 
 fn revolution_definition(
     kind: &str,
+    owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
 ) -> Option<FeatureDefinition> {
-    let profile = profile_ref(properties, sketches);
-    if matches!(&profile, ProfileRef::Native(value) if value == "unresolved FCStd profile") {
+    let profile = profile_ref(owner, properties, sketches);
+    if matches!(&profile, ProfileRef::Unresolved(_)) {
         return None;
     }
     let mut axis = revolution_axis(properties)?;
@@ -2327,7 +2336,7 @@ fn extrusion_definition(
         }
         let forward_draft = scalar_named(properties, "TaperAngle").unwrap_or(0.0);
         let reverse_draft = scalar_named(properties, "TaperAngleRev").unwrap_or(0.0);
-        let (draft, second_draft) = match (symmetric, forward > 0.0, reverse > 0.0) {
+        let (draft, reverse_draft) = match (symmetric, forward > 0.0, reverse > 0.0) {
             (true, _, _) => (forward_draft, forward_draft),
             (false, false, true) => (reverse_draft, 0.0),
             (false, true, true) => (forward_draft, reverse_draft),
@@ -2376,8 +2385,8 @@ fn extrusion_definition(
             extent,
             op: BooleanOp::NewBody,
             draft: (draft != 0.0).then_some(cadmpeg_ir::features::Angle(draft.to_radians())),
-            second_draft: (second_draft != 0.0)
-                .then_some(cadmpeg_ir::features::Angle(second_draft.to_radians())),
+            second_draft: (reverse_draft != 0.0)
+                .then_some(cadmpeg_ir::features::Angle(reverse_draft.to_radians())),
             direction_source: Some(direction_source),
             solid: Some(bool_property(properties, "Solid").unwrap_or(false)),
             face_maker,
@@ -2485,7 +2494,8 @@ fn extrusion_definition(
             sketches
                 .iter()
                 .find(|sketch| sketch.id == *sketch_id)?
-                .normal,
+                .resolved_placement()?
+                .1,
             ExtrusionDirectionSource::ProfileNormal,
         )
     };
@@ -2495,18 +2505,8 @@ fn extrusion_definition(
     let draft = scalar_named(properties, "TaperAngle")
         .filter(|angle| *angle != 0.0)
         .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()));
-    // FreeCAD applies `TaperAngle2` only when the pad extends on a second
-    // side; a retained value alongside a one-sided extent has no effect.
-    let second_draft = scalar_named(properties, "TaperAngle2")
+    let reverse_draft = scalar_named(properties, "TaperAngle2")
         .filter(|angle| *angle != 0.0)
-        .filter(|_| {
-            matches!(
-                extent,
-                Extent::TwoSidedExtents { .. }
-                    | Extent::Symmetric { .. }
-                    | Extent::SymmetricExtent { .. }
-            )
-        })
         .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()));
     let first_offset = if property(properties, "Offset").is_some() {
         Some(Length(scalar_named(properties, "Offset")?))
@@ -2539,7 +2539,7 @@ fn extrusion_definition(
             BooleanOp::Join
         },
         draft,
-        second_draft,
+        second_draft: reverse_draft,
         direction_source: Some(direction_source),
         solid: Some(true),
         face_maker: None,
@@ -2611,7 +2611,7 @@ fn fillet_definition(
         scalar_named(properties, "Radius").filter(|radius| radius.is_finite() && *radius > 0.0)?
     };
     Some(FeatureDefinition::Fillet {
-        groups: vec![FilletGroup {
+        groups: vec![cadmpeg_ir::features::FilletGroup {
             edges,
             radius: RadiusSpec::Constant {
                 radius: Length(radius),
@@ -2655,7 +2655,7 @@ fn chamfer_definition(
         chamfer_spec(properties)?
     };
     Some(FeatureDefinition::Chamfer {
-        groups: vec![ChamferGroup { edges, spec }],
+        groups: vec![cadmpeg_ir::features::ChamferGroup { edges, spec }],
         flip_direction: bool_property(properties, "FlipDirection").unwrap_or(false),
     })
 }
@@ -2895,9 +2895,11 @@ fn draft_definition(
     Some(FeatureDefinition::Draft {
         faces: cadmpeg_ir::features::FaceSelection::Native(faces.id.clone()),
         neutral_plane: cadmpeg_ir::features::FaceSelection::Native(neutral_plane.id.clone()),
-        pull_direction,
-        angle: cadmpeg_ir::features::Angle(if reversed { -angle } else { angle }.to_radians()),
-        outward: reversed,
+        pull_direction: Some(pull_direction),
+        angle: Some(cadmpeg_ir::features::Angle(
+            if reversed { -angle } else { angle }.to_radians(),
+        )),
+        outward: Some(reversed),
     })
 }
 
@@ -3178,7 +3180,6 @@ fn loft_definition(
                 .cloned()
                 .map_or_else(|| ProfileRef::Native(object.to_owned()), ProfileRef::Sketch)
         })
-        .map(LoftSection::Profile)
         .collect::<Vec<_>>();
     if profiles.len() < 2 {
         return None;
@@ -3190,7 +3191,10 @@ fn loft_definition(
         None
     };
     Some(FeatureDefinition::Loft {
-        sections: profiles,
+        sections: profiles
+            .into_iter()
+            .map(cadmpeg_ir::features::LoftSection::Profile)
+            .collect(),
         guides: Vec::new(),
         centerline: None,
         op: operation_boolean(kind),
@@ -3316,13 +3320,14 @@ fn sweep_definition(
 }
 
 fn hole_definition(
+    owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<FeatureDefinition> {
-    let profile = profile_ref(properties, sketches);
-    if matches!(profile, ProfileRef::Native(ref value) if value == "unresolved FCStd profile") {
+    let profile = profile_ref(owner, properties, sketches);
+    if matches!(profile, ProfileRef::Unresolved(_)) {
         return None;
     }
     let filter_bits = integer_property(properties, "BaseProfileType").unwrap_or(6);
@@ -3437,6 +3442,7 @@ fn hole_definition(
         direction,
         placements: Vec::new(),
         kind,
+        exit_kind: None,
         diameter: Some(Length(diameter)),
         extent: Some(extent),
         bottom: Some(bottom),
@@ -3470,6 +3476,7 @@ fn thread_standard(value: u64) -> Option<&'static str> {
 
 fn helical_sweep_definition(
     kind: &str,
+    owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
 ) -> Option<FeatureDefinition> {
@@ -3483,7 +3490,7 @@ fn helical_sweep_definition(
     let origin = vector_property(properties, "Base")?;
     let axis_direction = vector_property(properties, "Axis")?;
     let construction = HelicalSweepConstruction {
-        profile: profile_ref(properties, sketches),
+        profile: profile_ref(owner, properties, sketches),
         axis_origin: Point3::new(origin.x, origin.y, origin.z),
         axis_direction,
         law,

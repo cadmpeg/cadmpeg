@@ -51,18 +51,52 @@ pub struct Sketch {
     /// Source configuration key, when scoped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration: Option<String>,
-    /// Sketch-plane origin in model space.
-    pub origin: Point3,
-    /// Sketch-plane unit normal.
-    pub normal: Vector3,
-    /// Sketch-plane u-axis.
-    pub u_axis: Vector3,
+    /// Placement of sketch coordinates in model space.
+    pub placement: SketchPlacement,
     /// Ordered closed or open profile chains.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub profiles: Vec<Vec<SketchEntityUse>>,
     /// Identifier of the full-fidelity native input lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+/// Placement of a planar sketch's local coordinates in model space.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SketchPlacement {
+    /// Local geometry is decoded but its model-space frame is unresolved.
+    Unresolved,
+    /// Complete model-space sketch frame.
+    Resolved {
+        /// Sketch-plane origin in model space.
+        origin: Point3,
+        /// Sketch-plane unit normal.
+        normal: Vector3,
+        /// Sketch-plane u-axis.
+        u_axis: Vector3,
+    },
+}
+
+impl SketchPlacement {
+    /// Return the complete frame when placement is resolved.
+    pub fn resolved(self) -> Option<(Point3, Vector3, Vector3)> {
+        match self {
+            Self::Unresolved => None,
+            Self::Resolved {
+                origin,
+                normal,
+                u_axis,
+            } => Some((origin, normal, u_axis)),
+        }
+    }
+}
+
+impl Sketch {
+    /// Return the complete model-space frame when placement is resolved.
+    pub fn resolved_placement(&self) -> Option<(Point3, Vector3, Vector3)> {
+        self.placement.resolved()
+    }
 }
 
 /// Oriented use of one sketch entity in a profile chain.
@@ -502,6 +536,16 @@ pub enum SketchLocus {
     Center(SketchEntityId),
 }
 
+/// Coordinate axis selected by a sketch relation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchCoordinateAxis {
+    /// First coordinate in sketch space.
+    U,
+    /// Second coordinate in sketch space.
+    V,
+}
+
 /// One ordered operand retained from a native sketch relation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchNativeOperand {
@@ -695,6 +739,15 @@ pub enum SketchConstraintDefinition {
         /// Coincident endpoints, centers, or complete entities.
         loci: Vec<SketchLocus>,
     },
+    /// Two loci share one sketch-space coordinate.
+    SameCoordinate {
+        /// First aligned locus.
+        first: SketchLocus,
+        /// Second aligned locus.
+        second: SketchLocus,
+        /// Shared sketch coordinate.
+        axis: SketchCoordinateAxis,
+    },
     /// A point locus lies on another sketch entity.
     PointOnObject {
         /// Point constrained to the supporting entity.
@@ -762,6 +815,15 @@ pub enum SketchConstraintDefinition {
         /// Symmetry axis.
         axis: SketchEntityId,
     },
+    /// Two loci are centrally symmetric about a point.
+    PointSymmetric {
+        /// First symmetric locus.
+        first: SketchLocus,
+        /// Second symmetric locus.
+        second: SketchLocus,
+        /// Center of symmetry.
+        center: SketchLocus,
+    },
     /// Line is horizontal in sketch coordinates.
     Horizontal {
         /// Constrained entity.
@@ -820,6 +882,13 @@ pub enum SketchConstraintDefinition {
         first: SketchEntityId,
         /// Second entity.
         second: SketchEntityId,
+    },
+    /// Two bounded entities are tangent at explicit loci.
+    TangentLoci {
+        /// Tangency locus on the first entity.
+        first: SketchLocus,
+        /// Tangency locus on the second entity.
+        second: SketchLocus,
     },
     /// Two entities have equal tangent direction and curvature at contact.
     Curvature {

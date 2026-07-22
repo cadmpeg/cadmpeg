@@ -511,7 +511,7 @@ pub(super) fn emit_surfaces(
                 ir.model.procedural_surfaces.push(ProceduralSurface {
                     id: procedural_id,
                     surface: id,
-                    definition: *definition,
+                    definition,
                     cache_fit_tolerance: None,
                     record_bounds: None,
                 });

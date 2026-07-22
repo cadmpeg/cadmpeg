@@ -330,8 +330,11 @@ pub(crate) fn face_coincident_with_sketch(
     let SurfaceGeometry::Plane { origin, normal, .. } = &surface.geometry else {
         return false;
     };
-    parallel_vectors(*normal, sketch.normal, angular_tolerance)
-        && point_plane_distance(*origin, sketch.origin, sketch.normal) <= linear_tolerance
+    let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
+        return false;
+    };
+    parallel_vectors(*normal, sketch_normal, angular_tolerance)
+        && point_plane_distance(*origin, sketch_origin, sketch_normal) <= linear_tolerance
 }
 
 fn parallel_vectors(left: Vector3, right: Vector3, tolerance: f64) -> bool {

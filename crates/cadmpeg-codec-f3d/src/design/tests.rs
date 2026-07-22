@@ -463,7 +463,7 @@ fn configuration_suppression_binds_only_unique_feature_names() {
         id: FeatureId("f3d:model:feature#fillet-1".into()),
         ordinal: 0,
         name: Some("Fillet 1".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
@@ -684,9 +684,11 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
-        origin: Point3::new(10.0, 20.0, 5.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(10.0, 20.0, 5.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: vec![vec![SketchEntityUse {
             entity: entity_id.clone(),
             reversed: false,
@@ -831,9 +833,11 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
         id: sketch_id,
         name: None,
         configuration: None,
-        origin: Point3::new(10.0, 20.0, 5.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(10.0, 20.0, 5.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles,
         native_ref: None,
     };
@@ -928,9 +932,11 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
         id: sketch_id,
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles,
         native_ref: None,
     };
@@ -1054,9 +1060,11 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
         id: sketch_id,
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: vec![outer, inner],
         native_ref: None,
     };
@@ -1116,9 +1124,11 @@ fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
         id: sketch_id,
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: vec![
             vec![
                 SketchEntityUse {
@@ -1240,9 +1250,11 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
         id: sketch_id,
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: vec![
             outer,
             vec![SketchEntityUse {
@@ -4410,8 +4422,8 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::KnitSurface {
             faces: cadmpeg_ir::features::FaceSelection::Native(stitch_scope.id),
-            merge_entities: true,
-            create_solid: true,
+            merge_entities: Some(true),
+            create_solid: Some(true),
             gap_tolerance: Some(cadmpeg_ir::features::Length(0.1)),
         })
     );
@@ -4957,9 +4969,11 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: vec![vec![SketchEntityUse {
             entity: neutral_sketch_curve_id(&sketch_id, 586, 0),
             reversed: false,
@@ -6154,9 +6168,11 @@ fn selected_face_start_requires_unique_sketch_plane_coincidence() {
         id: SketchId("sketch".into()),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 2.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 2.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: Vec::new(),
         native_ref: None,
     };
@@ -6395,9 +6411,14 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     let (sketches, entities) =
         project_sketch_design(&[placement(341)], &[point.clone()], &[], &[], 1.0e-6);
     assert_eq!(sketches.len(), 1);
-    assert_eq!(sketches[0].origin, Point3::new(260.0, 0.0, 0.0));
-    assert_eq!(sketches[0].normal, Vector3::new(1.0, 0.0, 0.0));
-    assert_eq!(sketches[0].u_axis, Vector3::new(0.0, 1.0, 0.0));
+    assert_eq!(
+        sketches[0].resolved_placement(),
+        Some((
+            Point3::new(260.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        ))
+    );
     assert!(matches!(
         entities[0].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Point { position }
@@ -6406,7 +6427,12 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
 
     // The settled explicit frame keeps its stored origin unscaled.
     let (sketches, _) = project_sketch_design(&[placement(329)], &[point], &[], &[], 1.0e-6);
-    assert_eq!(sketches[0].origin, Point3::new(26.0, 0.0, 0.0));
+    assert_eq!(
+        sketches[0]
+            .resolved_placement()
+            .map(|(origin, _, _)| origin),
+        Some(Point3::new(26.0, 0.0, 0.0))
+    );
 }
 
 #[test]
@@ -6984,9 +7010,14 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let curves = vec![line, nonclamped_nurbs, clockwise_arc];
     let (sketches, entities) = project_sketch_design(&placements, &points, &curves, &[], 1.0e-6);
     assert_eq!(sketches.len(), 1);
-    assert_eq!(sketches[0].origin, Point3::new(10.0, 20.0, 30.0));
-    assert_eq!(sketches[0].u_axis, Vector3::new(0.0, 1.0, 0.0));
-    assert_eq!(sketches[0].normal, Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(
+        sketches[0].resolved_placement(),
+        Some((
+            Point3::new(10.0, 20.0, 30.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        ))
+    );
     assert_eq!(entities.len(), 4);
     assert!(entities.iter().any(|entity| matches!(
         entity.geometry,
@@ -9627,7 +9658,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         project_parameter_design(&[parameter], &[owner], &[scope], &[], &[], &[], &[], &[]);
     assert_eq!(features.len(), 1);
     assert_eq!(features[0].name.as_deref(), Some("Extrude 1"));
-    assert!(features[0].suppressed);
+    assert_eq!(features[0].suppressed, Some(true));
     assert!(matches!(
         &features[0].definition,
         FeatureDefinition::Native { kind, parameters, properties }
@@ -9988,7 +10019,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         id: FeatureId("f3d:model:feature#extrude".into()),
         ordinal: 0,
         name: Some("Extrude".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
@@ -10092,9 +10123,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         id: neutral_sketch_id(&placement),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: Vec::new(),
         native_ref: Some(placement.id.clone()),
     }];

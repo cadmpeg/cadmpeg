@@ -488,6 +488,7 @@ pub(crate) fn build_geometry_report(
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: container::summarize(scan).notes,
     }
@@ -619,6 +620,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
         format: "catia".to_string(),
         container_only,
         geometry_transferred: false,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: summary.notes,
     }

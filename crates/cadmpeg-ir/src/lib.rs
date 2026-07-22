@@ -81,10 +81,11 @@ pub use diff::{
 };
 pub use document::{CadIr, SourceMeta, IR_VERSION, PREVIOUS_IR_VERSION};
 pub use features::{
-    BodyRetentionMode, BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult,
-    CoilSection, CoilSectionPlacement, ConfigurationId, DesignConfiguration, DesignParameter,
+    BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,
+    CoilResult, CoilSection, CoilSectionPlacement, ConfigurationBodies, ConfigurationId,
+    CurveProjectionDirection, CurveProjectionDirectionState, DesignConfiguration, DesignParameter,
     FaceMotion, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterPmi, ParameterValue,
-    PmiDimensionSubtype, ScaleCenter, ScaleFactors,
+    PmiDimensionSubtype, ScaleCenter, ScaleFactors, SketchSpace,
 };
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 pub use pmi::{
@@ -109,9 +110,10 @@ pub use report::{
 };
 pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-    SketchDistanceMeasurement, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-    SketchId, SketchNativeOperand, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId,
-    SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
+    SketchCoordinateAxis, SketchDistanceMeasurement, SketchEntity, SketchEntityId, SketchEntityUse,
+    SketchGeometry, SketchId, SketchNativeOperand, SketchPlacement, SpatialSketch,
+    SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchEntityUse, SpatialSketchGeometry,
+    SpatialSketchId, SpatialSketchProfile,
 };
 pub use source_fidelity::{RetainedSourceRecord, SourceFidelity, SOURCE_FIDELITY_VERSION};
 pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};

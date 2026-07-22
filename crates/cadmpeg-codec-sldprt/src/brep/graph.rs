@@ -772,9 +772,9 @@ fn decode_graph(
                     previous: CoedgeId(id_coedge(prev)),
                     radial_next: partner.unwrap_or_else(|| CoedgeId(id_coedge(ce_attr))),
                     sense: sense_of(ce.marker.unwrap_or(0x2b)),
-                    pcurves: Vec::new(),
                     use_curve: None,
                     use_curve_parameter_range: None,
+                    pcurves: Vec::new(),
                 });
             }
         }
@@ -2749,9 +2749,9 @@ fn synthesize_cylinder_seams(
             previous: circle_a.clone(),
             radial_next: seam_b.clone(),
             sense: Sense::Forward,
-            pcurves: Vec::new(),
             use_curve: None,
             use_curve_parameter_range: None,
+            pcurves: Vec::new(),
         });
         coedge_indices.insert(seam_b.clone(), out.coedges.len());
         out.coedges.push(Coedge {
@@ -2762,9 +2762,9 @@ fn synthesize_cylinder_seams(
             previous: circle_b.clone(),
             radial_next: seam_a.clone(),
             sense: Sense::Reversed,
-            pcurves: Vec::new(),
             use_curve: None,
             use_curve_parameter_range: None,
+            pcurves: Vec::new(),
         });
         let ring = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
         for (index, id) in ring.iter().enumerate() {
@@ -3069,7 +3069,7 @@ fn synthesize_sphere_seams(
             pcurves: vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: pcurve_id,
                 isoparametric: None,
-                parameter_range: None,
+                parameter_range: Some([0.0, std::f64::consts::TAU]),
             }],
         });
         for (index, id) in ring.iter().enumerate() {
@@ -3127,9 +3127,9 @@ mod tests {
             previous: CoedgeId(id.into()),
             radial_next: CoedgeId(radial.into()),
             sense,
-            pcurves: Vec::new(),
             use_curve: None,
             use_curve_parameter_range: None,
+            pcurves: Vec::new(),
         };
         let mut brep = super::Brep {
             faces: vec![face("face-a", "loop-a"), face("face-b", "loop-b")],

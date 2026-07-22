@@ -671,13 +671,7 @@ impl<'a> Builder<'a> {
                 let edge_transform =
                     multiply(wire_transform, self.tables.location(edge_use.location));
                 let edge = self.ensure_edge(ir, edge_use, wire_transform)?;
-                let pcurve = self.face_pcurve(
-                    edge_use,
-                    edge_transform,
-                    surface,
-                    surface_transform,
-                    wire_reversed,
-                );
+                let pcurve = self.face_pcurve(edge_use, edge_transform, surface, surface_transform);
                 let id = coedge_ids[index].clone();
                 ir.model.coedges.push(Coedge {
                     id: id.clone(),
@@ -687,6 +681,8 @@ impl<'a> Builder<'a> {
                     previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone(),
                     radial_next: id,
                     sense: sense(is_reversed(edge_use.orientation) ^ wire_reversed),
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                     pcurves: pcurve
                         .into_iter()
                         .map(
@@ -697,8 +693,6 @@ impl<'a> Builder<'a> {
                             },
                         )
                         .collect(),
-                    use_curve: None,
-                    use_curve_parameter_range: None,
                 });
             }
             ir.model.loops.push(Loop {
@@ -1035,7 +1029,6 @@ impl<'a> Builder<'a> {
         edge_transform: Transform,
         surface: usize,
         surface_transform: Transform,
-        parent_reversed: bool,
     ) -> Option<(PcurveId, Option<[f64; 2]>)> {
         let TextTShapeGeometry::Edge {
             representations, ..
@@ -1058,7 +1051,7 @@ impl<'a> Builder<'a> {
                     )
             })
             .map(|(index, representation)| {
-                let reversed = is_reversed(edge_use.orientation) ^ parent_reversed;
+                let reversed = is_reversed(edge_use.orientation);
                 (
                     self.pcurve_id(
                         edge_use.shape,
@@ -1216,9 +1209,11 @@ fn scale_pcurve_v(geometry: &mut PcurveGeometry, scale: f64) {
         PcurveGeometry::PolarNurbs {
             axial_control_points,
             ..
-        } => axial_control_points
-            .iter_mut()
-            .for_each(|value| *value *= scale),
+        } => {
+            for value in axial_control_points {
+                *value *= scale;
+            }
+        }
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_v(basis, scale);
         }

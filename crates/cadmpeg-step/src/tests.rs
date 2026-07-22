@@ -2662,23 +2662,6 @@ fn reports_entity_counts_and_no_geometry_loss_for_cube() {
     assert_eq!(report.error_count(), 0);
 }
 
-#[test]
-fn coedge_use_curves_are_reported_as_geometry_loss() {
-    let mut ir = unit_cube();
-    let edge = ir.model.edges[0].clone();
-    ir.model.coedges[0].use_curve = edge.curve;
-    ir.model.coedges[0].use_curve_parameter_range = edge.param_range;
-
-    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default()).unwrap();
-    assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
-            && loss.severity == cadmpeg_ir::Severity::Warning
-            && loss
-                .message
-                .contains("1 coedge-local 3D use curve(s) were not written")
-    }));
-}
-
 fn buf_line_count(buf: &[u8]) -> usize {
     // Count DATA-section instance lines: those starting with '#'.
     String::from_utf8_lossy(buf)
@@ -2980,10 +2963,7 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
     let unknown_notes: Vec<_> = report
         .losses
         .iter()
-        .filter(|l| {
-            l.message
-                .contains("construction-backed, unknown, or STEP-unsupported surface")
-        })
+        .filter(|l| l.message.contains("rest on an unknown"))
         .collect();
     assert_eq!(
         unknown_notes.len(),
@@ -3013,9 +2993,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
         .expect("polygonal face is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::LossCategory::Geometry
-            && loss
-                .message
-                .contains("construction-backed, unknown, or STEP-unsupported surface")
+            && loss.message.contains("unknown or STEP-unsupported surface")
     }));
 
     let mut nested_unknown = unit_cube();
@@ -3270,7 +3248,6 @@ fn face_appearance_binding_styles_the_advanced_face() {
         id: AppearanceId("test:appearance#black".to_string()),
         name: None,
         asset_guid: None,
-        textures: Vec::new(),
         visual_guid: None,
         physical_token: None,
         schema: None,
@@ -3282,6 +3259,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
             a: 1.0,
         }),
         properties: Default::default(),
+        textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#face".to_string(),
@@ -3329,7 +3307,6 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         id: AppearanceId("test:appearance#black".to_string()),
         name: None,
         asset_guid: None,
-        textures: Vec::new(),
         visual_guid: None,
         physical_token: None,
         schema: None,
@@ -3341,6 +3318,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
             a: 1.0,
         }),
         properties: Default::default(),
+        textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#face".to_string(),

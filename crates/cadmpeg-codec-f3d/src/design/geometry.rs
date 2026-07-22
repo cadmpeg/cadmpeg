@@ -1157,7 +1157,7 @@ pub(crate) fn region_containing_points(
     let projected = points
         .iter()
         .map(|point| project_to_sketch(sketch, *point))
-        .collect::<Vec<_>>();
+        .collect::<Option<Vec<_>>>()?;
     let incidences = projected
         .iter()
         .map(|point| {
@@ -2360,19 +2360,23 @@ fn historical_vertex_positions(
         })
 }
 
-pub(crate) fn project_to_sketch(sketch: &cadmpeg_ir::sketches::Sketch, point: Point3) -> Point2 {
-    let x = point.x - sketch.origin.x;
-    let y = point.y - sketch.origin.y;
-    let z = point.z - sketch.origin.z;
+pub(crate) fn project_to_sketch(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    point: Point3,
+) -> Option<Point2> {
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
+    let x = point.x - origin.x;
+    let y = point.y - origin.y;
+    let z = point.z - origin.z;
     let v_axis = Vector3::new(
-        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
-        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
-        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+        normal.y * u_axis.z - normal.z * u_axis.y,
+        normal.z * u_axis.x - normal.x * u_axis.z,
+        normal.x * u_axis.y - normal.y * u_axis.x,
     );
-    Point2::new(
-        x * sketch.u_axis.x + y * sketch.u_axis.y + z * sketch.u_axis.z,
+    Some(Point2::new(
+        x * u_axis.x + y * u_axis.y + z * u_axis.z,
         x * v_axis.x + y * v_axis.y + z * v_axis.z,
-    )
+    ))
 }
 
 pub(crate) fn point_on_sketch_entity(

@@ -66,21 +66,23 @@ pub fn project_sketch_design(
             id: neutral_sketch_id(placement),
             name: Some(placement.entity_id.clone()),
             configuration: None,
-            origin: Point3::new(
-                placement.transform[0][3] * placement_origin_scale(placement),
-                placement.transform[1][3] * placement_origin_scale(placement),
-                placement.transform[2][3] * placement_origin_scale(placement),
-            ),
-            normal: Vector3::new(
-                placement.transform[0][2],
-                placement.transform[1][2],
-                placement.transform[2][2],
-            ),
-            u_axis: Vector3::new(
-                placement.transform[0][0],
-                placement.transform[1][0],
-                placement.transform[2][0],
-            ),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(
+                    placement.transform[0][3] * placement_origin_scale(placement),
+                    placement.transform[1][3] * placement_origin_scale(placement),
+                    placement.transform[2][3] * placement_origin_scale(placement),
+                ),
+                normal: Vector3::new(
+                    placement.transform[0][2],
+                    placement.transform[1][2],
+                    placement.transform[2][2],
+                ),
+                u_axis: Vector3::new(
+                    placement.transform[0][0],
+                    placement.transform[1][0],
+                    placement.transform[2][0],
+                ),
+            },
             profiles: Vec::new(),
             native_ref: Some(placement.id.clone()),
         })

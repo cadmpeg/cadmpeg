@@ -6,8 +6,9 @@
 //! supported geometry and topology. Detection uses file content because NX and
 //! Creo share the `.prt` extension.
 //!
-//! Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-//! on the cadmpeg support ladder.
+//! Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! for single-body, `RMFastLoad`-selected, and terminal-lineage-resolved body
+//! images; L2 for unresolved multi-partition history.
 //!
 //! # Decode a part
 //!
@@ -43,16 +44,27 @@
 //! retained as an unknown record.
 //!
 //! Read [`cadmpeg_ir::report::DecodeReport`] before using the model as a complete
-//! representation. Adjacent equal-schema partition and deltas streams apply
-//! supported full records and exact-key tombstones in source order. Unmatched
-//! tombstone relations remain unresolved. Multiple
-//! partitions are not combined through NX feature-history Booleans. Assembly
-//! files may contain only references to external child parts.
+//! representation. Deltas streams pair with the preceding equal-schema partition
+//! in validated `UG_PART` segment order and apply
+//! supported non-topology full records and exact-key tombstones using the last
+//! event for each key. Valid partition topology remains authoritative. Unmatched
+//! tombstone relations remain unresolved. Segment body aliases, primary-body
+//! writers, and Boolean tool operands select terminal partition images when the
+//! complete body lineage is unambiguous. Assembly files may contain only
+//! references to external child parts.
 //!
-//! Design history, assembly occurrence placement, materials, appearances,
-//! attributes, tessellation, and `.prt` writing are not supported. The public
-//! submodules expose the lower-level container, stream, geometry, NURBS,
-//! intersection, and topology decoders; applications that need a complete IR
+//! Ordered feature-operation records, body dependencies, Boolean operations,
+//! sketch record lanes, and numeric expressions transfer from the NX object
+//! model. Operation suppression remains unresolved instead of being asserted
+//! active. Embedded JT coordinates and triangle connectivity transfer as canonical
+//! tessellations. Complete design history, assembly occurrence placement, material
+//! and appearance assignment, class-specific entity attribute fields, and `.prt`
+//! writing are not supported.
+//! Part attributes transfer as document attributes. The public submodules
+//! expose the lower-level container, stream, geometry, NURBS, intersection, and
+//! topology decoders. The object-model extraction and attachment tier (record
+//! families, feature semantics, and IR writing) is crate-internal and reached
+//! only through the decode entry point. Applications that need a complete IR
 //! entry point should use [`NxCodec`].
 
 pub mod container;
@@ -60,7 +72,9 @@ pub mod decode;
 pub mod deltas;
 pub mod geometry;
 pub mod intersection;
-pub mod native;
+mod jt;
+mod jt_topology;
+pub(crate) mod native;
 pub mod nurbs;
 pub mod om;
 pub mod parasolid;
@@ -108,6 +122,7 @@ impl Codec for NxCodec {
 /// one per embedded Parasolid stream, and the shared container notes.
 fn summarize(scan: &decode::Scan) -> ContainerSummary {
     let mut entries = Vec::new();
+    let semantic_streams = native::topology_streams(scan);
 
     for entry in &scan.container.entries {
         let mut attributes = BTreeMap::new();
@@ -139,6 +154,56 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         if let Some(schema) = &stream.schema {
             attributes.insert("schema".to_string(), schema.clone());
         }
+        if stream.kind.is_parasolid() {
+            let graph = topology::Graph::parse(&stream.inflated);
+            for (kind, name) in [
+                (12, "body"),
+                (13, "shell"),
+                (14, "face"),
+                (15, "loop"),
+                (16, "edge"),
+                (17, "fin"),
+                (18, "vertex"),
+                (19, "region"),
+            ] {
+                attributes.insert(
+                    format!("records.{name}"),
+                    graph.of_kind(kind).count().to_string(),
+                );
+            }
+            if stream.kind == parasolid::StreamKind::Partition {
+                let graph = topology::Graph::parse(&semantic_streams[si]);
+                for (kind, name) in [
+                    (12, "body"),
+                    (13, "shell"),
+                    (14, "face"),
+                    (15, "loop"),
+                    (16, "edge"),
+                    (17, "fin"),
+                    (18, "vertex"),
+                    (19, "region"),
+                ] {
+                    attributes.insert(
+                        format!("records.live.{name}"),
+                        graph.of_kind(kind).count().to_string(),
+                    );
+                }
+            } else if stream.kind == parasolid::StreamKind::Deltas {
+                let census = deltas::walk(&stream.inflated);
+                for (family, count) in census.full_counts {
+                    attributes.insert(
+                        format!("records.delta.full.{}", family.to_ascii_lowercase()),
+                        count.to_string(),
+                    );
+                }
+                for (family, count) in census.tombstone_counts {
+                    attributes.insert(
+                        format!("records.delta.tombstone.{}", family.to_ascii_lowercase()),
+                        count.to_string(),
+                    );
+                }
+            }
+        }
         entries.push(ContainerEntry {
             name: format!("parasolid#{si}"),
             role: if stream.kind.is_parasolid() {
@@ -161,5 +226,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;

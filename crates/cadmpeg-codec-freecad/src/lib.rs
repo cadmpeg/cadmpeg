@@ -1403,6 +1403,7 @@ impl Codec for FcstdCodec {
                 format: "fcstd".into(),
                 container_only: options.container_only,
                 geometry_transferred,
+                coverage: std::collections::BTreeMap::new(),
                 losses,
                 notes: container::summarize(&scan).notes,
             },
@@ -1819,8 +1820,8 @@ fn append_text_surface(
                     direction: *direction,
                     native_position: None,
                 },
-                cache_fit_tolerance: None,
                 record_bounds: None,
+                cache_fit_tolerance: None,
             });
             SurfaceGeometry::Unknown { record: None }
         }
@@ -1843,8 +1844,8 @@ fn append_text_surface(
                     transposed: false,
                     revision_form: None,
                 },
-                cache_fit_tolerance: None,
                 record_bounds: None,
+                cache_fit_tolerance: None,
             });
             SurfaceGeometry::Unknown { record: None }
         }
@@ -1867,8 +1868,8 @@ fn append_text_surface(
                     support: basis_id,
                     parameter_ranges: *parameter_ranges,
                 },
-                cache_fit_tolerance: None,
                 record_bounds: None,
+                cache_fit_tolerance: None,
             });
             basis_geometry
         }
@@ -1892,8 +1893,8 @@ fn append_text_surface(
                     extension_flags: Vec::new(),
                     revision_form: None,
                 },
-                cache_fit_tolerance: None,
                 record_bounds: None,
+                cache_fit_tolerance: None,
             });
             SurfaceGeometry::Unknown { record: None }
         }
