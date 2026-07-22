@@ -33,7 +33,8 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
         .map(|parameter| {
             (
                 (
-                    crate::design::native_stream(&parameter.id).unwrap_or("f3d:design"),
+                    crate::design::native_stream(&parameter.id)
+                        .unwrap_or(crate::ids::DEFAULT_STREAM),
                     parameter.record_index,
                 ),
                 parameter.kind,
@@ -44,7 +45,8 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
         .design_parameter_owners
         .iter()
         .filter_map(|owner| {
-            let stream = crate::design::native_stream(&owner.id).unwrap_or("f3d:design");
+            let stream =
+                crate::design::native_stream(&owner.id).unwrap_or(crate::ids::DEFAULT_STREAM);
             (parameters.get(&(stream, owner.parameter_record_index))
                 == Some(&crate::records::DesignParameterKind::Dimension))
             .then_some((stream, owner.record_index))
@@ -53,39 +55,39 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
     let mut typed = HashSet::new();
     for pair in &native.design_dimension_locus_pairs {
         typed.insert((
-            crate::design::native_stream(&pair.id).unwrap_or("f3d:design"),
+            crate::design::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.companion_record_index,
         ));
         typed.insert((
-            crate::design::native_stream(&pair.id).unwrap_or("f3d:design"),
+            crate::design::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.governing_companion_record_index,
         ));
     }
     for frame in &native.design_dimension_annotation_frames {
         typed.insert((
-            crate::design::native_stream(&frame.id).unwrap_or("f3d:design"),
+            crate::design::native_stream(&frame.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             frame.governing_companion_record_index,
         ));
     }
     for group in &native.design_dimension_locus_groups {
         typed.insert((
-            crate::design::native_stream(&group.id).unwrap_or("f3d:design"),
+            crate::design::native_stream(&group.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             group.companion_record_index,
         ));
     }
     for pair in &native.design_dimension_null_locus_pairs {
         typed.insert((
-            crate::design::native_stream(&pair.id).unwrap_or("f3d:design"),
+            crate::design::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.companion_record_index,
         ));
         typed.insert((
-            crate::design::native_stream(&pair.id).unwrap_or("f3d:design"),
+            crate::design::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.governing_companion_record_index,
         ));
     }
     for record in &native.design_dimension_recipe_records {
         typed.insert((
-            crate::design::native_stream(&record.id).unwrap_or("f3d:design"),
+            crate::design::native_stream(&record.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             record.companion_record_index,
         ));
     }
@@ -93,7 +95,8 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
         .design_parameter_companions
         .iter()
         .filter(|companion| {
-            let stream = crate::design::native_stream(&companion.id).unwrap_or("f3d:design");
+            let stream =
+                crate::design::native_stream(&companion.id).unwrap_or(crate::ids::DEFAULT_STREAM);
             companion.payload_byte_length > 0
                 && dimension_owners.contains(&(stream, companion.owner_record_index))
                 && !typed.contains(&(stream, companion.record_index))
@@ -476,7 +479,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .filter(|parameter| {
                 parameter.kind == crate::records::DesignParameterKind::Dimension
                     && !projected_dimension_parameters
-                        .contains(&crate::design::neutral_parameter_id(parameter))
+                        .contains(&crate::ids::neutral_parameter_id(parameter))
             })
             .count(),
         ..DesignProjectionGaps::default()
@@ -1643,7 +1646,7 @@ fn apply_assembly_classification(
 }
 
 fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) -> Result<(), CodecError> {
-    let id = "f3d:file:source-image#0";
+    let id = crate::ids::FILE_SOURCE_IMAGE_ID;
     ir.push_native_unknown(
         "f3d",
         UnknownRecord {
@@ -1677,7 +1680,7 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
         .native_unknowns("f3d")
         .unwrap_or_default()
         .into_iter()
-        .filter(|record| record.id.0 != "f3d:file:source-image#0")
+        .filter(|record| record.id.0 != crate::ids::FILE_SOURCE_IMAGE_ID)
         .collect::<Vec<_>>();
     normalized
         .set_native_unknowns("f3d", &unknowns)
@@ -1699,7 +1702,7 @@ fn populate_annotations(
     let mut annotations = AnnotationBuilder::new();
     if let Some(records) = brep {
         for record in records {
-            let stream = annotations.stream(format!("f3d:{}", record.stream));
+            let stream = annotations.stream(crate::ids::native_scope(&record.stream));
             annotations
                 .note(&record.id, stream, record.offset)
                 .tag(&record.tag);
@@ -1791,11 +1794,11 @@ fn populate_annotations(
         }
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
-            let planar = crate::design::neutral_sketch_id(entity);
+            let planar = crate::ids::neutral_sketch_id(entity);
             if ir.model.sketches.iter().any(|sketch| sketch.id == planar) {
                 note(&planar.0, "sketch");
             }
-            let spatial = crate::design::neutral_spatial_sketch_id(entity);
+            let spatial = crate::ids::neutral_spatial_sketch_id(entity);
             if ir
                 .model
                 .spatial_sketches
@@ -1826,7 +1829,7 @@ fn populate_annotations(
                 .any(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
             {
                 note(
-                    &crate::design::neutral_sketch_constraint_id(&entity.id, entity.record_index).0,
+                    &crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index).0,
                     "sketch_constraint",
                 );
             }
@@ -1895,7 +1898,7 @@ fn populate_annotations(
         .entries
         .iter()
         .find(|entry| entry.role == container::role::PROTEIN)
-        .map(|entry| annotations.stream(format!("f3d:{}", entry.name)));
+        .map(|entry| annotations.stream(crate::ids::native_scope(&entry.name)));
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
             annotations
@@ -1910,7 +1913,7 @@ fn populate_annotations(
     }
     if brep.is_none() {
         if let Some(active) = container::select_active_brep(scan) {
-            let stream = annotations.stream(format!("f3d:{}", active.name));
+            let stream = annotations.stream(crate::ids::native_scope(&active.name));
             for unknown in ir.native_unknowns("f3d").unwrap_or_default() {
                 annotations
                     .note(&unknown.id.0, stream, unknown.offset)
@@ -1946,7 +1949,7 @@ fn extend_related_design_records(
         .iter()
         .flat_map(|relation| {
             let scope = crate::design::native_stream(&relation.id)
-                .unwrap_or("f3d:design")
+                .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             relation
                 .members
@@ -1993,7 +1996,7 @@ fn extend_related_design_records(
         .iter()
         .flat_map(|owner| {
             let scope = crate::design::native_stream(&owner.id)
-                .unwrap_or("f3d:design")
+                .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             [
                 owner.scope_record_index,
@@ -2081,7 +2084,7 @@ fn extend_related_design_records(
         .iter()
         .flat_map(|scope| {
             let stream = crate::design::native_stream(&scope.id)
-                .unwrap_or("f3d:design")
+                .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             scope
                 .reference_members
@@ -2132,7 +2135,7 @@ fn extend_related_design_records(
         .iter()
         .flat_map(|group| {
             let stream = crate::design::native_stream(&group.id)
-                .unwrap_or("f3d:design")
+                .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             group
                 .members
@@ -2146,7 +2149,7 @@ fn extend_related_design_records(
             .iter()
             .flat_map(|group| {
                 let stream = crate::design::native_stream(&group.id)
-                    .unwrap_or("f3d:design")
+                    .unwrap_or(crate::ids::DEFAULT_STREAM)
                     .to_owned();
                 std::iter::once((stream, group.identity_record_index))
             }),
@@ -2245,7 +2248,7 @@ fn extend_related_design_records(
         .iter()
         .flat_map(|identity| {
             let stream = crate::design::native_stream(&identity.id)
-                .unwrap_or("f3d:design")
+                .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             identity
                 .wrapper_record_indices
@@ -2371,7 +2374,7 @@ fn extend_related_design_records(
         .filter(|entry| entry.role == container::role::BULKSTREAM && entry.name.contains("Design"))
         .map(|entry| {
             scan.entry_bytes(&entry.name)
-                .map(|bytes| (format!("f3d:{}", entry.name), bytes.len()))
+                .map(|bytes| (crate::ids::native_scope(&entry.name), bytes.len()))
         })
         .collect::<Result<_, _>>()?;
     crate::design::bind_parameter_companion_payloads(

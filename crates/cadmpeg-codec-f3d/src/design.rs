@@ -38,6 +38,12 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
 
 use crate::container::{role, ContainerScan};
+use crate::ids::{
+    self, neutral_configuration_id, neutral_dimension_constraint_id, neutral_feature_id,
+    neutral_parameter_id, neutral_sketch_constraint_id, neutral_sketch_curve_id, neutral_sketch_id,
+    neutral_sketch_point_id, neutral_sketch_text_id, neutral_spatial_sketch_curve_id,
+    neutral_spatial_sketch_id, neutral_spatial_sketch_point_id, neutral_spatial_sketch_surface_id,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DesignFeatureFamily {
@@ -149,7 +155,7 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
             };
             validate_configuration_payload(&entry.name, kind, &payload)?;
             Ok(DesignConfiguration {
-                id: format!("f3d:configuration:entry#{}", entry.name),
+                id: ids::configuration_entry_id(&entry.name),
                 entry_name: entry.name.clone(),
                 kind,
                 payload,
@@ -502,21 +508,6 @@ pub(crate) fn unresolved_configuration_member_count(native: &[DesignConfiguratio
         .sum()
 }
 
-fn neutral_configuration_id(
-    entry_name: &str,
-    variant_name: &str,
-) -> cadmpeg_ir::features::ConfigurationId {
-    use cadmpeg_ir::features::ConfigurationId;
-
-    ConfigurationId(format!(
-        "f3d:configuration:variant#{}:{}{}:{}",
-        entry_name.len(),
-        entry_name,
-        variant_name.len(),
-        variant_name,
-    ))
-}
-
 /// Project parameter scopes and their document- or scope-owned parameters into
 /// the neutral construction history.
 // Faithful signature over parallel design-parameter slices; bundling them
@@ -608,7 +599,7 @@ pub fn project_parameter_design_with_edge_identities(
     let mut features = scopes
         .iter()
         .map(|scope| {
-            let native_scope = native_stream(&scope.id).unwrap_or("f3d:design");
+            let native_scope = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
             let parameters = owners
                 .iter()
                 .filter(|owner| {
@@ -1223,7 +1214,7 @@ pub fn project_parameter_design_with_edge_identities(
             continue;
         };
         if let Some(Some(predecessor)) = state_features.get(&(
-            native_stream(&scope.id).unwrap_or("f3d:design"),
+            native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM),
             previous_state_id,
         )) {
             if predecessor != &feature.id && !feature.dependencies.contains(predecessor) {
@@ -1263,12 +1254,14 @@ pub fn project_parameter_design_with_edge_identities(
                 owner: parameter
                     .owner_record_index
                     .and_then(|owner| {
-                        owners_by_index
-                            .get(&(native_stream(&parameter.id).unwrap_or("f3d:design"), owner))
+                        owners_by_index.get(&(
+                            native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM),
+                            owner,
+                        ))
                     })
                     .and_then(|owner| {
                         scope_ids.get(&(
-                            native_stream(&owner.id).unwrap_or("f3d:design"),
+                            native_stream(&owner.id).unwrap_or(ids::DEFAULT_STREAM),
                             owner.scope_record_index,
                         ))
                     })
@@ -1276,8 +1269,10 @@ pub fn project_parameter_design_with_edge_identities(
                 ordinal: parameter
                     .owner_record_index
                     .and_then(|owner| {
-                        owners_by_index
-                            .get(&(native_stream(&parameter.id).unwrap_or("f3d:design"), owner))
+                        owners_by_index.get(&(
+                            native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM),
+                            owner,
+                        ))
                     })
                     .map_or(parameter.source_ordinal, |owner| owner.local_ordinal),
                 name: parameter.name.clone(),
@@ -1425,7 +1420,7 @@ where
 {
     use cadmpeg_ir::features::BodySelection;
 
-    let stream = native_stream(&scope.id).unwrap_or("f3d:design");
+    let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
     let bodies = entity_suffixes
         .iter()
         .filter_map(|suffix| {
@@ -1816,7 +1811,6 @@ pub(crate) fn direct_face_selection(
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     use cadmpeg_ir::features::FaceSelection;
-    use cadmpeg_ir::ids::HistoricalFaceId;
 
     let mut matching = operands
         .iter()
@@ -1839,11 +1833,10 @@ pub(crate) fn direct_face_selection(
         .split_once('#')
         .map_or(feature_id.0.as_str(), |(_, key)| key);
     let historical_face = |previous_state_id, slot| {
-        HistoricalFaceId(format!(
-            "f3d:history-input:face#{}:{}:{previous_state_id}:{slot}",
-            feature_key.len(),
-            feature_key,
-        ))
+        ids::history_input_face_id(
+            &ids::history_input_prefix(feature_key, previous_state_id),
+            slot,
+        )
     };
     let faces = match scope.previous_history_state_id {
         Some(previous_state_id) if members.iter().all(|(_, faces)| !faces.is_empty()) => {
@@ -1907,7 +1900,8 @@ pub(crate) fn bind_form_cages(
     let [scope] = form_scopes.as_slice() else {
         return Ok(());
     };
-    let Some(stream) = native_stream(&scope.id).and_then(|stream| stream.strip_prefix("f3d:"))
+    let Some(stream) =
+        native_stream(&scope.id).and_then(|stream| stream.strip_prefix(ids::SCHEME_PREFIX))
     else {
         return Ok(());
     };
@@ -2444,7 +2438,6 @@ fn resolved_edge_group(
     treatment_radius: Option<f64>,
 ) -> cadmpeg_ir::features::EdgeSelection {
     use cadmpeg_ir::features::EdgeSelection;
-    use cadmpeg_ir::ids::HistoricalEdgeId;
 
     let feature_key = feature_id
         .0
@@ -2574,11 +2567,10 @@ fn resolved_edge_group(
                 })
                 .filter(|edge| seen.insert(*edge))
                 .map(|edge_slot| {
-                    HistoricalEdgeId(format!(
-                        "f3d:history-input:edge#{}:{}:{previous_state_id}:{edge_slot}",
-                        feature_key.len(),
-                        feature_key
-                    ))
+                    ids::history_input_edge_id(
+                        &ids::history_input_prefix(feature_key, previous_state_id),
+                        edge_slot,
+                    )
                 })
                 .collect();
             return EdgeSelection::Historical {
@@ -2594,11 +2586,10 @@ fn resolved_edge_group(
                     edges: edges
                         .iter()
                         .map(|edge_slot| {
-                            HistoricalEdgeId(format!(
-                                "f3d:history-input:edge#{}:{}:{previous_state_id}:{edge_slot}",
-                                feature_key.len(),
-                                feature_key
-                            ))
+                            ids::history_input_edge_id(
+                                &ids::history_input_prefix(feature_key, previous_state_id),
+                                edge_slot,
+                            )
                         })
                         .collect(),
                     native: group.id.clone(),
@@ -2614,11 +2605,10 @@ fn resolved_edge_group(
                 .into_iter()
                 .filter_map(|(_, edge)| edge)
                 .map(|edge_slot| {
-                    HistoricalEdgeId(format!(
-                        "f3d:history-input:edge#{}:{}:{previous_state_id}:{edge_slot}",
-                        feature_key.len(),
-                        feature_key
-                    ))
+                    ids::history_input_edge_id(
+                        &ids::history_input_prefix(feature_key, previous_state_id),
+                        edge_slot,
+                    )
                 })
                 .collect();
             return EdgeSelection::Historical {
@@ -2735,11 +2725,10 @@ fn resolved_edge_group(
         if combined_edges.iter().all(Option::is_some) {
             let mut edges = Vec::new();
             for edge_slot in combined_edges.into_iter().flatten() {
-                let edge = HistoricalEdgeId(format!(
-                    "f3d:history-input:edge#{}:{}:{previous_state_id}:{edge_slot}",
-                    feature_key.len(),
-                    feature_key
-                ));
+                let edge = ids::history_input_edge_id(
+                    &ids::history_input_prefix(feature_key, previous_state_id),
+                    edge_slot,
+                );
                 if !edges.contains(&edge) {
                     edges.push(edge);
                 }
@@ -2772,11 +2761,10 @@ fn resolved_edge_group(
     };
     let mut edges = Vec::new();
     for edge_slot in resolved_slots {
-        let edge = HistoricalEdgeId(format!(
-            "f3d:history-input:edge#{}:{}:{previous_state_id}:{edge_slot}",
-            feature_key.len(),
-            feature_key
-        ));
+        let edge = ids::history_input_edge_id(
+            &ids::history_input_prefix(feature_key, previous_state_id),
+            edge_slot,
+        );
         if !edges.contains(&edge) {
             edges.push(edge);
         }
@@ -2800,7 +2788,6 @@ fn partial_historical_edge_selection<'a>(
     native: &str,
 ) -> Option<cadmpeg_ir::features::EdgeSelection> {
     use cadmpeg_ir::features::EdgeSelection;
-    use cadmpeg_ir::ids::HistoricalEdgeId;
 
     let mut edges = Vec::new();
     let mut unresolved = Vec::new();
@@ -2821,11 +2808,10 @@ fn partial_historical_edge_selection<'a>(
         edges: edges
             .into_iter()
             .map(|edge_slot| {
-                HistoricalEdgeId(format!(
-                    "f3d:history-input:edge#{}:{}:{previous_state_id}:{edge_slot}",
-                    feature_key.len(),
-                    feature_key
-                ))
+                ids::history_input_edge_id(
+                    &ids::history_input_prefix(feature_key, previous_state_id),
+                    edge_slot,
+                )
             })
             .collect(),
         unresolved,
@@ -2859,11 +2845,7 @@ pub(crate) fn feature_input_topology_id(
         .0
         .split_once('#')
         .map_or(feature_id.0.as_str(), |(_, key)| key);
-    cadmpeg_ir::ids::FeatureInputTopologyId(format!(
-        "f3d:history-input:state#{}:{}:{previous_state_id}",
-        feature_key.len(),
-        feature_key
-    ))
+    ids::history_input_state_id(&ids::history_input_prefix(feature_key, previous_state_id))
 }
 
 fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i64>> {
@@ -4733,7 +4715,6 @@ fn resolved_profile_face_group(
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
     use cadmpeg_ir::features::ProfileRef;
-    use cadmpeg_ir::ids::HistoricalFaceId;
 
     let previous_state_id = scope.previous_history_state_id?;
     let stream = native_stream(&group.id)?;
@@ -4771,11 +4752,10 @@ fn resolved_profile_face_group(
             faces: faces
                 .into_iter()
                 .map(|face| {
-                    HistoricalFaceId(format!(
-                        "f3d:history-input:face#{}:{}:{previous_state_id}:{face}",
-                        feature_key.len(),
-                        feature_key
-                    ))
+                    ids::history_input_face_id(
+                        &ids::history_input_prefix(feature_key, previous_state_id),
+                        face,
+                    )
                 })
                 .collect(),
             native: vec![group.id.clone()],
@@ -4789,7 +4769,7 @@ fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::
             operand
                 .resolved_face_slots
                 .iter()
-                .map(|slot| cadmpeg_ir::ids::FaceId(format!("f3d:brep:entity#{slot}")))
+                .map(|slot| cadmpeg_ir::ids::FaceId(ids::brep_entity_id(slot)))
                 .collect(),
         );
     }
@@ -5060,194 +5040,6 @@ fn valid_chamfer_spec(spec: &cadmpeg_ir::features::ChamferSpec) -> bool {
         }
         ChamferSpec::Unresolved { .. } => false,
     }
-}
-
-fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::FeatureId {
-    neutral_feature_id_parts(
-        native_stream(&scope.id).unwrap_or("f3d:design"),
-        &scope.kind,
-        scope.feature_ordinal,
-        scope.record_index,
-    )
-}
-
-fn neutral_feature_id_parts(
-    stream: &str,
-    kind: &str,
-    feature_ordinal: u32,
-    scope_record_index: u32,
-) -> cadmpeg_ir::features::FeatureId {
-    let stream = identity_key_component(stream);
-    let kind = identity_key_component(kind);
-    cadmpeg_ir::features::FeatureId(format!(
-        "f3d:model:feature#{}:{}{}:{}{}:{}",
-        stream.len(),
-        stream,
-        kind.len(),
-        kind,
-        feature_ordinal,
-        scope_record_index,
-    ))
-}
-
-pub(crate) fn neutral_parameter_id(
-    parameter: &DesignParameter,
-) -> cadmpeg_ir::features::ParameterId {
-    neutral_parameter_id_parts(
-        native_stream(&parameter.id).unwrap_or("f3d:design"),
-        parameter.source_ordinal,
-    )
-}
-
-fn neutral_parameter_id_parts(
-    stream: &str,
-    source_ordinal: u32,
-) -> cadmpeg_ir::features::ParameterId {
-    let stream = identity_key_component(stream);
-    cadmpeg_ir::features::ParameterId(format!(
-        "f3d:model:parameter#{}:{}{}",
-        stream.len(),
-        stream,
-        source_ordinal,
-    ))
-}
-
-pub(crate) fn neutral_sketch_id(
-    placement: &DesignSketchPlacement,
-) -> cadmpeg_ir::sketches::SketchId {
-    let stream = identity_key_component(native_stream(&placement.id).unwrap_or("f3d:design"));
-    cadmpeg_ir::sketches::SketchId(format!(
-        "f3d:model:sketch#{}@{}",
-        stream, placement.entity_suffix
-    ))
-}
-
-pub(crate) fn neutral_sketch_point_id(
-    sketch: &cadmpeg_ir::sketches::SketchId,
-    persistent_id: u64,
-) -> cadmpeg_ir::sketches::SketchEntityId {
-    let sketch = identity_key_component(&sketch.0);
-    cadmpeg_ir::sketches::SketchEntityId(format!(
-        "f3d:model:sketch-entity#{}:{}p{persistent_id}",
-        sketch.len(),
-        sketch,
-    ))
-}
-
-pub(crate) fn neutral_sketch_curve_id(
-    sketch: &cadmpeg_ir::sketches::SketchId,
-    primary_id: u64,
-    secondary_id: u64,
-) -> cadmpeg_ir::sketches::SketchEntityId {
-    let sketch = identity_key_component(&sketch.0);
-    cadmpeg_ir::sketches::SketchEntityId(format!(
-        "f3d:model:sketch-entity#{}:{}c{primary_id}:{secondary_id}",
-        sketch.len(),
-        sketch,
-    ))
-}
-
-fn neutral_sketch_text_id(
-    sketch: &cadmpeg_ir::sketches::SketchId,
-    persistent_id: u64,
-) -> cadmpeg_ir::sketches::SketchEntityId {
-    let sketch = identity_key_component(&sketch.0);
-    cadmpeg_ir::sketches::SketchEntityId(format!(
-        "f3d:model:sketch-entity#{}:{}t{persistent_id}",
-        sketch.len(),
-        sketch,
-    ))
-}
-
-pub(crate) fn neutral_spatial_sketch_id(
-    placement: &DesignSketchPlacement,
-) -> cadmpeg_ir::sketches::SpatialSketchId {
-    let stream = identity_key_component(native_stream(&placement.id).unwrap_or("f3d:design"));
-    cadmpeg_ir::sketches::SpatialSketchId(format!(
-        "f3d:model:spatial-sketch#{}@{}",
-        stream, placement.entity_suffix
-    ))
-}
-
-fn neutral_spatial_sketch_curve_id(
-    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
-    primary_id: u64,
-    secondary_id: u64,
-) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
-    let sketch = identity_key_component(&sketch.0);
-    cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
-        "f3d:model:spatial-sketch-entity#{}:{}c{primary_id}:{secondary_id}",
-        sketch.len(),
-        sketch,
-    ))
-}
-
-fn neutral_spatial_sketch_point_id(
-    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
-    persistent_id: u64,
-) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
-    let sketch = identity_key_component(&sketch.0);
-    cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
-        "f3d:model:spatial-sketch-entity#{}:{}p{persistent_id}",
-        sketch.len(),
-        sketch,
-    ))
-}
-
-fn neutral_spatial_sketch_surface_id(
-    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
-    persistent_id: u64,
-) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
-    let sketch = identity_key_component(&sketch.0);
-    cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
-        "f3d:model:spatial-sketch-entity#{}:{}s{persistent_id}",
-        sketch.len(),
-        sketch,
-    ))
-}
-
-pub(crate) fn neutral_sketch_constraint_id(
-    native_ref: &str,
-    record_index: u32,
-) -> cadmpeg_ir::sketches::SketchConstraintId {
-    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
-    cadmpeg_ir::sketches::SketchConstraintId(format!(
-        "f3d:model:sketch-constraint#{stream}@{record_index}"
-    ))
-}
-
-fn identity_key_component(value: &str) -> String {
-    use std::fmt::Write as _;
-
-    let mut encoded = String::with_capacity(value.len());
-    for character in value.chars() {
-        if character == '#' || character == '%' || character.is_whitespace() {
-            let mut bytes = [0; 4];
-            for byte in character.encode_utf8(&mut bytes).as_bytes() {
-                write!(encoded, "%{byte:02X}").expect("writing to a String cannot fail");
-            }
-        } else {
-            encoded.push(character);
-        }
-    }
-    encoded
-}
-
-pub(crate) fn neutral_dimension_constraint_id(
-    parameter: &cadmpeg_ir::features::ParameterId,
-    form: &str,
-) -> cadmpeg_ir::sketches::SketchConstraintId {
-    let parameter_key = parameter
-        .0
-        .split_once('#')
-        .map_or(parameter.0.as_str(), |(_, key)| key);
-    cadmpeg_ir::sketches::SketchConstraintId(format!(
-        "f3d:model:sketch-constraint#dimension:{}:{}{}:{}",
-        parameter_key.len(),
-        parameter_key,
-        form.len(),
-        form,
-    ))
 }
 
 /// Length scale from a placement's stored origin to the neutral length unit.
@@ -6171,7 +5963,6 @@ fn historical_face_profile_selection(
     feature_id: &cadmpeg_ir::features::FeatureId,
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
     use cadmpeg_ir::features::ProfileRef;
-    use cadmpeg_ir::ids::HistoricalFaceId;
 
     let previous_state_id = previous_state_id?;
     let mut states = histories
@@ -6252,11 +6043,10 @@ fn historical_face_profile_selection(
         faces: selected_faces
             .into_iter()
             .map(|face| {
-                HistoricalFaceId(format!(
-                    "f3d:history-input:face#{}:{}:{previous_state_id}:{face}",
-                    feature_key.len(),
-                    feature_key
-                ))
+                ids::history_input_face_id(
+                    &ids::history_input_prefix(feature_key, previous_state_id),
+                    face,
+                )
             })
             .collect(),
         native: groups.iter().map(|group| group.id.clone()).collect(),
@@ -13625,7 +13415,7 @@ pub fn decode_parameters(
         while let Some(at) = next_indexed_record_offset(bytes, position) {
             let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
             if let Some(mut parameter) = parse_design_parameter(&bytes[at..end]) {
-                parameter.id = format!("f3d:{}:design-parameter#{at}", entry.name);
+                parameter.id = ids::native_design_parameter_id(&entry.name, at);
                 parameter.byte_offset = at as u64;
                 parameter.prefix_value_offset += at as u64;
                 parameter.expression_offset += at as u64;
@@ -13786,7 +13576,9 @@ pub fn decode_parameter_owners(
         let entry = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && parameter.id.starts_with(&format!("f3d:{}:", entry.name))
+                && parameter
+                    .id
+                    .starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {
             continue;
@@ -13803,10 +13595,7 @@ pub fn decode_parameter_owners(
         let Some(mut owner) = owner else {
             continue;
         };
-        owner.id = format!(
-            "f3d:{}:design-parameter-owner#{}",
-            entry.name, header.byte_offset
-        );
+        owner.id = ids::native_design_parameter_owner_id(&entry.name, header.byte_offset);
         owner.byte_offset = header.byte_offset;
         owner.evaluated_value_offset += header.byte_offset;
         out.push(owner);
@@ -13954,7 +13743,7 @@ pub fn decode_parameter_companions(
         let entry = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && owner.id.starts_with(&format!("f3d:{}:", entry.name))
+                && owner.id.starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {
             continue;
@@ -13970,10 +13759,7 @@ pub fn decode_parameter_companions(
         {
             continue;
         }
-        companion.id = format!(
-            "f3d:{}:design-parameter-companion#{}",
-            entry.name, header.byte_offset
-        );
+        companion.id = ids::native_design_parameter_companion_id(&entry.name, header.byte_offset);
         companion.byte_offset = header.byte_offset;
         companion.timestamp_micros_offset += header.byte_offset;
         companion.payload_byte_offset += header.byte_offset;
@@ -14101,7 +13887,7 @@ pub fn decode_dimension_recipe_records(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -14150,10 +13936,7 @@ pub fn decode_dimension_recipe_records(
                 continue;
             };
             out.push(DesignDimensionRecipeRecord {
-                id: format!(
-                    "f3d:{}:design-dimension-recipe-record#{}",
-                    entry.name, recipe.byte_offset
-                ),
+                id: ids::native_design_dimension_recipe_record_id(&entry.name, recipe.byte_offset),
                 companion_record_index: companion.record_index,
                 recipe_ordinal: u32::try_from(recipe_ordinal).unwrap_or(u32::MAX),
                 recipe_id: recipe.id.clone(),
@@ -14549,7 +14332,9 @@ pub fn decode_dimension_locus_pairs(
         let entry = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && companion.id.starts_with(&format!("f3d:{}:", entry.name))
+                && companion
+                    .id
+                    .starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {
             continue;
@@ -14582,10 +14367,7 @@ pub fn decode_dimension_locus_pairs(
         else {
             continue;
         };
-        pair.id = format!(
-            "f3d:{}:design-dimension-locus-pair#{}",
-            entry.name, pair.byte_offset
-        );
+        pair.id = ids::native_design_dimension_locus_pair_id(&entry.name, pair.byte_offset);
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
             pair.paired_byte_offset,
@@ -14791,7 +14573,9 @@ pub fn decode_dimension_null_locus_pairs(
         let entry = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && companion.id.starts_with(&format!("f3d:{}:", entry.name))
+                && companion
+                    .id
+                    .starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {
             continue;
@@ -14828,10 +14612,7 @@ pub fn decode_dimension_null_locus_pairs(
         ) else {
             continue;
         };
-        pair.id = format!(
-            "f3d:{}:design-dimension-null-locus-pair#{}",
-            entry.name, pair.byte_offset
-        );
+        pair.id = ids::native_design_dimension_null_locus_pair_id(&entry.name, pair.byte_offset);
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
             pair.paired_byte_offset,
@@ -14986,7 +14767,7 @@ pub fn decode_dimension_annotation_frames(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -15074,9 +14855,9 @@ pub fn decode_dimension_annotation_frames(
                 )
                 .filter(|frame| frame.paired_byte_offset < end as u64)
                 {
-                    frame.id = format!(
-                        "f3d:{}:design-dimension-annotation-frame#{}",
-                        entry.name, frame.byte_offset
+                    frame.id = ids::native_design_dimension_annotation_frame_id(
+                        &entry.name,
+                        frame.byte_offset,
                     );
                     position = usize::try_from(frame.paired_byte_offset)
                         .unwrap_or(at)
@@ -15320,7 +15101,9 @@ pub fn decode_dimension_locus_groups(
         let entry = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && companion.id.starts_with(&format!("f3d:{}:", entry.name))
+                && companion
+                    .id
+                    .starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {
             continue;
@@ -15365,10 +15148,7 @@ pub fn decode_dimension_locus_groups(
             &sketch_entities,
         );
         out.extend(candidates.into_iter().map(|mut group| {
-            group.id = format!(
-                "f3d:{}:design-dimension-locus-group#{}",
-                entry.name, group.byte_offset
-            );
+            group.id = ids::native_design_dimension_locus_group_id(&entry.name, group.byte_offset);
             group
         }));
     }
@@ -15605,7 +15385,7 @@ pub fn decode_parameter_scopes(
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let stream = format!("f3d:{}", entry.name);
+        let stream = ids::native_scope(&entry.name);
         for header in parameter_scope_candidate_headers(bytes) {
             let Some(mut scope) = parse_parameter_scope(bytes, &header) else {
                 continue;
@@ -15668,10 +15448,7 @@ pub fn decode_parameter_scopes(
             scope.path_feature_construction = exact_path_feature_construction(bytes, &scope);
             scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
             scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
-            scope.id = format!(
-                "f3d:{}:design-parameter-scope#{}",
-                entry.name, scope.byte_offset
-            );
+            scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset);
             out.push(scope);
         }
     }
@@ -16657,7 +16434,7 @@ pub fn decode_edge_operands(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -16711,7 +16488,7 @@ pub fn decode_edge_identity_operands(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -16730,10 +16507,7 @@ pub fn decode_edge_identity_operands(
                 continue;
             };
             out.push(DesignEdgeIdentityOperand {
-                id: format!(
-                    "f3d:{}:design-edge-identity-operand#{}",
-                    entry.name, header.byte_offset
-                ),
+                id: ids::native_design_edge_identity_operand_id(&entry.name, header.byte_offset),
                 scope_record_index: scope.record_index,
                 group_record_index: group.record_index,
                 group_member_ordinal,
@@ -16819,7 +16593,7 @@ pub fn decode_face_operands(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -16882,7 +16656,7 @@ pub fn decode_face_operands(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -17041,7 +16815,7 @@ pub fn bind_sketch_profiles(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -17100,7 +16874,7 @@ pub(crate) fn bind_loft_sketch_selections(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -17258,7 +17032,7 @@ pub fn decode_extrude_selection_groups(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -17271,10 +17045,8 @@ pub fn decode_extrude_selection_groups(
                 continue;
             };
             if let Some(mut group) = parse_extrude_selection_group(bytes, scope, ordinal, header) {
-                group.id = format!(
-                    "f3d:{}:design-extrude-selection-group#{}",
-                    entry.name, header.byte_offset
-                );
+                group.id =
+                    ids::native_design_extrude_selection_group_id(&entry.name, header.byte_offset);
                 out.push(group);
             }
         }
@@ -17320,7 +17092,7 @@ pub fn decode_construction_operand_groups(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -17333,9 +17105,9 @@ pub fn decode_construction_operand_groups(
             };
             if let Some(mut group) = parse_construction_operand_group(bytes, scope, ordinal, header)
             {
-                group.id = format!(
-                    "f3d:{}:design-construction-operand-group#{}",
-                    entry.name, header.byte_offset
+                group.id = ids::native_design_construction_operand_group_id(
+                    &entry.name,
+                    header.byte_offset,
                 );
                 out.push(group);
             }
@@ -17677,7 +17449,7 @@ pub fn decode_construction_operand_identities(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -17688,9 +17460,9 @@ pub fn decode_construction_operand_identities(
         if let Some(mut identity) =
             parse_construction_operand_identity(bytes, group, wrapper_header)
         {
-            identity.id = format!(
-                "f3d:{}:design-construction-operand-identity#{}",
-                entry.name, wrapper_header.byte_offset
+            identity.id = ids::native_design_construction_operand_identity_id(
+                &entry.name,
+                wrapper_header.byte_offset,
             );
             out.push(identity);
         }
@@ -17935,7 +17707,7 @@ pub fn decode_extrude_selection_members(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -17949,10 +17721,8 @@ pub fn decode_extrude_selection_members(
             };
             if let Some(mut member) = parse_extrude_selection_member(bytes, group, ordinal, header)
             {
-                member.id = format!(
-                    "f3d:{}:design-extrude-selection-member#{}",
-                    entry.name, header.byte_offset
-                );
+                member.id =
+                    ids::native_design_extrude_selection_member_id(&entry.name, header.byte_offset);
                 out.push(member);
             }
         }
@@ -17979,7 +17749,7 @@ pub fn decode_entity_selection_operands(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -17993,10 +17763,8 @@ pub fn decode_entity_selection_operands(
             };
             if let Some(mut operand) = parse_entity_selection_operand(bytes, group, ordinal, header)
             {
-                operand.id = format!(
-                    "f3d:{}:design-entity-selection-operand#{}",
-                    entry.name, header.byte_offset
-                );
+                operand.id =
+                    ids::native_design_entity_selection_operand_id(&entry.name, header.byte_offset);
                 out.push(operand);
             }
         }
@@ -18111,7 +17879,7 @@ pub fn decode_body_recipe_operands(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -18144,10 +17912,8 @@ pub fn decode_body_recipe_operands(
             if let Some(mut operand) =
                 parse_body_recipe_operand(bytes, group, ordinal, header, recipe)
             {
-                operand.id = format!(
-                    "f3d:{}:design-body-recipe-operand#{}",
-                    entry.name, header.byte_offset
-                );
+                operand.id =
+                    ids::native_design_body_recipe_operand_id(&entry.name, header.byte_offset);
                 out.push(operand);
             }
         }
@@ -18644,10 +18410,9 @@ fn parse_edge_operand(
         edge_recipe_local_topology_references(structure, recipe_references.len())
     });
     Some(DesignEdgeOperand {
-        id: format!(
-            "f3d:{}:design-edge-operand#{}",
-            stream.strip_prefix("f3d:").unwrap_or(stream),
-            header.byte_offset
+        id: ids::native_design_edge_operand_id(
+            stream.strip_prefix(ids::SCHEME_PREFIX).unwrap_or(stream),
+            header.byte_offset,
         ),
         scope_record_index: scope.record_index,
         scope_reference_ordinal,
@@ -19079,10 +18844,9 @@ fn parse_face_operand(
         })
         .collect::<Option<Vec<_>>>()?;
     Some(DesignFaceOperand {
-        id: format!(
-            "f3d:{}:design-face-operand#{}",
-            stream.strip_prefix("f3d:").unwrap_or(stream),
-            header.byte_offset
+        id: ids::native_design_face_operand_id(
+            stream.strip_prefix(ids::SCHEME_PREFIX).unwrap_or(stream),
+            header.byte_offset,
         ),
         scope_record_index: scope.record_index,
         scope_reference_ordinal,
@@ -19639,7 +19403,7 @@ pub fn decode_sketch_placements(
         let entry = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && scope.id.starts_with(&format!("f3d:{}:", entry.name))
+                && scope.id.starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {
             continue;
@@ -19676,10 +19440,8 @@ pub fn decode_sketch_placements(
             let Some(mut placement) = candidates.pop() else {
                 continue;
             };
-            placement.id = format!(
-                "f3d:{}:design-sketch-placement#{}",
-                entry.name, placement.byte_offset
-            );
+            placement.id =
+                ids::native_design_sketch_placement_id(&entry.name, placement.byte_offset);
             out.push(placement);
         }
     }
@@ -19707,7 +19469,7 @@ pub fn decode_sketch_placements(
         if placed.contains(&(stream.to_owned(), entity.entity_suffix)) {
             continue;
         }
-        let Some(entry_name) = stream.strip_prefix("f3d:") else {
+        let Some(entry_name) = stream.strip_prefix(ids::SCHEME_PREFIX) else {
             continue;
         };
         let bytes = scan.entry_bytes(entry_name)?;
@@ -19735,10 +19497,7 @@ pub fn decode_sketch_placements(
         if let [scope] = matching_scopes.as_slice() {
             placement.scope_record_index = Some(scope.record_index);
         }
-        placement.id = format!(
-            "f3d:{entry_name}:design-sketch-placement#{}",
-            placement.byte_offset
-        );
+        placement.id = ids::native_design_sketch_placement_id(entry_name, placement.byte_offset);
         out.push(placement);
     }
     out.sort_by_key(|placement| placement.id.clone());
@@ -20057,7 +19816,7 @@ pub fn decode_persistent_references(
                 out.push((
                     entry_ordinal,
                     PersistentReference {
-                        id: format!("f3d:{}:persistent-reference#{offset}", entry.name),
+                        id: ids::native_persistent_reference_id(&entry.name, offset),
                         byte_offset: offset as u64,
                         value_offset: (value_offset - offset) as u32,
                         kind,
@@ -20127,7 +19886,7 @@ pub fn decode_lost_edge_references(
                 continue;
             };
             out.push(LostEdgeReference {
-                id: format!("f3d:{}:lost-edge-reference#{header_offset}", entry.name),
+                id: ids::native_lost_edge_reference_id(&entry.name, header_offset),
                 record_byte_offset: header_offset as u64,
                 class_tag_offset: (header_offset + 4) as u64,
                 class_tag,
@@ -20230,7 +19989,7 @@ pub fn decode_objects(
                 continue;
             }
             out.push(DesignObject {
-                id: format!("f3d:{}:design-object#{offset}", entry.name),
+                id: ids::native_design_object_id(&entry.name, offset),
                 byte_offset: offset as u64,
                 kind,
                 entity_ids,
@@ -20431,7 +20190,7 @@ pub fn decode_entity_headers(
             let Some(stream) = native_stream(&object.id) else {
                 continue;
             };
-            let Some(meta_name) = stream.strip_prefix("f3d:") else {
+            let Some(meta_name) = stream.strip_prefix(ids::SCHEME_PREFIX) else {
                 continue;
             };
             let Some(prefix) = meta_name.strip_suffix("MetaStream.dat") else {
@@ -20513,7 +20272,7 @@ pub fn decode_entity_headers(
                     (Vec::new(), Vec::new())
                 };
             out.push(DesignEntityHeader {
-                id: format!("f3d:{}:design-entity-header#{start}", entry.name),
+                id: ids::native_design_entity_header_id(&entry.name, start),
                 byte_offset: start as u64,
                 entity_suffix,
                 entity_id,
@@ -20540,7 +20299,7 @@ pub fn decode_entity_headers(
             .get(&entry.name)
             .cloned()
             .unwrap_or_default();
-        let scope = format!("f3d:{}", entry.name);
+        let scope = ids::native_scope(&entry.name);
         let mut existing = out
             .iter()
             .filter(|entity| native_stream(&entity.id) == Some(scope.as_str()))
@@ -20573,7 +20332,7 @@ pub fn decode_entity_headers(
             };
             existing.insert(entity_suffix);
             out.push(DesignEntityHeader {
-                id: format!("f3d:{}:design-entity-header#{start}", entry.name),
+                id: ids::native_design_entity_header_id(&entry.name, start),
                 byte_offset: start as u64,
                 entity_suffix: u64::from(entity_suffix),
                 entity_id: format!("Sketch_{entity_suffix}"),
@@ -20670,10 +20429,10 @@ fn decode_headers_for_indices(
                 raw.try_into()
                     .expect("invariant: raw is a 4-byte slice from bytes.get(range) of length 4"),
             );
-            let scope = format!("f3d:{}", entry.name);
+            let scope = ids::native_scope(&entry.name);
             if wanted.contains(&(scope, record_index)) && emitted.insert(record_index) {
                 out.push(DesignRecordHeader {
-                    id: format!("f3d:{}:design-record-header#{position}", entry.name),
+                    id: ids::native_design_record_header_id(&entry.name, position),
                     record_index,
                     class_tag,
                     byte_offset: position as u64,
@@ -20705,7 +20464,7 @@ pub fn decode_sketch_relations(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let scope = format!("f3d:{}", entry.name);
+        let scope = ids::native_scope(&entry.name);
         let owners = entities
             .iter()
             .filter(|entity| {
@@ -20738,7 +20497,7 @@ pub fn decode_sketch_relations(
             let (constraint_kinds, unknown_constraint_bits) = decode_constraint_kinds(parsed.state);
             let pattern = decode_pattern_definition(payload, &parsed);
             out.push(SketchRelation {
-                id: format!("f3d:{}:sketch-relation#{}", entry.name, record.record_index),
+                id: ids::native_sketch_relation_id(&entry.name, record.record_index),
                 record_index: record.record_index,
                 class_tag: record.class_tag.clone(),
                 byte_offset: record.byte_offset,
@@ -20973,7 +20732,7 @@ pub fn decode_sketch_points(
             let owner_reference = trailing_sketch_owner_reference(bytes, at + 112 + shift);
             if emitted.insert(record_index) {
                 out.push(SketchPoint {
-                    id: format!("f3d:{}:sketch-point#{at}", entry.name),
+                    id: ids::native_sketch_point_id(&entry.name, at),
                     record_index,
                     owner_reference,
                     class_tag,
@@ -21110,7 +20869,7 @@ pub(crate) fn decode_sketch_text_record(
         return None;
     }
     Some(SketchText {
-        id: format!("f3d:{stream}:sketch-text#{byte_offset}"),
+        id: ids::native_sketch_text_id(stream, byte_offset),
         record_index,
         owner_reference: u32_at(payload, owner_at + 1)?,
         class_tag,
@@ -21232,7 +20991,7 @@ pub fn decode_sketch_curve_identities(
                         (None, geometry_shift + 133)
                     };
                 out.push(SketchCurveIdentity {
-                    id: format!("f3d:{}:sketch-curve-identity#{at}", entry.name),
+                    id: ids::native_sketch_curve_identity_id(&entry.name, at),
                     record_index,
                     owner_reference: trailing_sketch_owner_reference(bytes, at + owner_scan_from),
                     class_tag,
@@ -21354,7 +21113,7 @@ pub fn decode_sketch_surfaces(scan: &ContainerScan) -> Result<Vec<SketchSurface>
                 continue;
             };
             out.push(SketchSurface {
-                id: format!("f3d:{}:sketch-surface#{record_at}", entry.name),
+                id: ids::native_sketch_surface_id(&entry.name, record_at),
                 record_index,
                 owner_reference: None,
                 class_tag,
@@ -22281,7 +22040,7 @@ pub fn decode_body_members(
                 break;
             };
             decoded.push(DesignBodyMember {
-                id: format!("f3d:{}:design-body-member#{cursor}", entry.name),
+                id: ids::native_design_body_member_id(&entry.name, cursor),
                 byte_offset: cursor as u64,
                 entity_suffix: u64::from_le_bytes(id_raw.try_into().expect(
                     "invariant: id_raw is an 8-byte slice from bytes.get(range) of length 8",
@@ -22316,7 +22075,7 @@ pub fn decode_body_bounds(
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && stream == format!("f3d:{}", entry.name)
+                && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
         };
@@ -22392,10 +22151,7 @@ pub fn decode_body_bounds(
             continue;
         };
         out.push(DesignBodyBounds {
-            id: format!(
-                "f3d:{}:design-body-bounds#{}",
-                entry.name, entity.byte_offset
-            ),
+            id: ids::native_design_body_bounds_id(&entry.name, entity.byte_offset),
             entity_suffix: entity.entity_suffix,
             entity_byte_offset: entity.byte_offset,
             record_indices,
@@ -22512,7 +22268,7 @@ fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) 
                 })
                 .unwrap_or_default();
             out.push(ConstructionRecipe {
-                id: format!("f3d:{stream}:construction-recipe#{offset}"),
+                id: ids::native_construction_recipe_id(stream, offset),
                 byte_offset: offset as u64,
                 record_index_offset: record_index_offset.map(|offset| offset as u64),
                 kind,
@@ -22700,10 +22456,7 @@ pub fn decode_design_body_bindings(
                 _ => None,
             };
             out.push(DesignBodyBinding {
-                id: format!(
-                    "f3d:{}:design-body-binding#{}",
-                    entry.name, binding.asm_key_offset
-                ),
+                id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
                 stream: entry.name.clone(),
                 pair_count: binding.pair_count,
                 pair_ordinal: binding.pair_ordinal,
@@ -22731,7 +22484,7 @@ pub fn bind_body_bounds(bounds: &mut [DesignBodyBounds], bindings: &[DesignBodyB
         let mut matches = bindings
             .iter()
             .filter(|binding| {
-                stream == format!("f3d:{}", binding.stream)
+                stream == ids::native_scope(&binding.stream)
                     && binding.entity_suffix == bounds.entity_suffix
             })
             .collect::<Vec<_>>();
@@ -22864,24 +22617,23 @@ mod relation_tests {
         find_dimension_locus_groups, find_dimension_locus_pair, find_dimension_null_locus_pair,
         has_typed_edge_treatment_group, historical_profile_face_candidates, identity_matrix,
         indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
-        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
-        neutral_sketch_id, neutral_sketch_point_id, neutral_spatial_sketch_id,
-        next_indexed_record_offset, next_indexed_record_offset_with_index,
-        null_locus_dimension_definition, offset_parameter_factor, parse_body_recipe_operand,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_annotation_frame, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_entity_selection_operand, parse_extrude_selection_group,
-        parse_extrude_selection_member, parse_face_operand, parse_genesis_entity_header,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_settled_entity_header, parse_sketch_placement_candidates, parse_sketch_profile,
-        parse_sketch_relation, parse_sketch_surface, partial_historical_edge_selection,
-        point_lies_on_sketch_geometry, point_on_sketch_entity, project_configurations,
-        project_dimension_constraints, project_extrude, project_parameter_design,
-        project_sketch_constraints, project_sketch_design, project_spatial_dimension_constraints,
-        project_spatial_sketch_constraints, project_spatial_sketch_design,
-        radial_dimension_definition, recipe_record_prefix, region_containing_points,
-        remove_dimension_frame_relations, repeated_linear_dimension,
+        neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id,
+        neutral_spatial_sketch_id, next_indexed_record_offset,
+        next_indexed_record_offset_with_index, null_locus_dimension_definition,
+        offset_parameter_factor, parse_body_recipe_operand, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter,
+        parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_entity_selection_operand,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_genesis_entity_header, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_settled_entity_header, parse_sketch_placement_candidates,
+        parse_sketch_profile, parse_sketch_relation, parse_sketch_surface,
+        partial_historical_edge_selection, point_lies_on_sketch_geometry, point_on_sketch_entity,
+        project_configurations, project_dimension_constraints, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        project_spatial_dimension_constraints, project_spatial_sketch_constraints,
+        project_spatial_sketch_design, radial_dimension_definition, recipe_record_prefix,
+        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
         resolved_face_group, sketch_entity_endpoints, spatial_parallel_line_distance_matches,
         two_locus_distance_dimension, unresolved_configuration_member_count,
@@ -22890,6 +22642,7 @@ mod relation_tests {
         unresolved_parameter_expression_dependency_count, untyped_parameter_unit_count,
         validate_configuration_payload, DesignFeatureFamily, FaceRecipeProgramKind,
     };
+    use crate::ids::{neutral_feature_id_parts, neutral_parameter_id_parts};
 
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSection,

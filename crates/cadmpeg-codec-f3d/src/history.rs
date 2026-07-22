@@ -606,7 +606,6 @@ pub(crate) fn bind_feature_body_selections(
     histories: &[AsmHistory],
 ) {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
-    use cadmpeg_ir::ids::HistoricalBodyId;
 
     let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
     for state in histories.iter().flat_map(|history| &history.states) {
@@ -698,9 +697,7 @@ pub(crate) fn bind_feature_body_selections(
         let prefix = feature_input_prefix(&feature.id, previous_state_id);
         *bodies = BodySelection::Historical {
             state: crate::design::feature_input_topology_id(&feature.id, previous_state_id),
-            bodies: vec![HistoricalBodyId(format!(
-                "f3d:history-input:body#{prefix}:{body}"
-            ))],
+            bodies: vec![crate::ids::history_input_body_id(&prefix, body)],
             native: group_id.clone(),
         };
     }
@@ -715,7 +712,6 @@ fn bind_body_recipe_body_selection(
     operands: &[crate::records::DesignBodyRecipeOperand],
 ) {
     use cadmpeg_ir::features::BodySelection;
-    use cadmpeg_ir::ids::HistoricalBodyId;
 
     let BodySelection::Native(group_id) = selection else {
         return;
@@ -762,7 +758,7 @@ fn bind_body_recipe_body_selection(
         state: crate::design::feature_input_topology_id(feature_id, previous_state_id),
         bodies: body_slots
             .into_iter()
-            .map(|slot| HistoricalBodyId(format!("f3d:history-input:body#{prefix}:{slot}")))
+            .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
             .collect(),
         native: group_id.clone(),
     };
@@ -1018,7 +1014,6 @@ fn bind_entity_selection_path(
     operands: &[crate::records::DesignEntitySelectionOperand],
 ) {
     use cadmpeg_ir::features::PathRef;
-    use cadmpeg_ir::ids::HistoricalEdgeId;
 
     let PathRef::Native(group_id) = path else {
         return;
@@ -1062,7 +1057,7 @@ fn bind_entity_selection_path(
         state: crate::design::feature_input_topology_id(feature_id, previous_state_id),
         edges: edge_slots
             .into_iter()
-            .map(|slot| HistoricalEdgeId(format!("f3d:history-input:edge#{prefix}:{slot}")))
+            .map(|slot| crate::ids::history_input_edge_id(&prefix, slot))
             .collect(),
         native: group_id.clone(),
     };
@@ -1075,7 +1070,6 @@ pub(crate) fn project_feature_input_topologies(
     edge_operands: &[crate::records::DesignEdgeOperand],
 ) -> Vec<cadmpeg_ir::features::FeatureInputTopology> {
     use cadmpeg_ir::features::FeatureInputTopology;
-    use cadmpeg_ir::ids::{HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId};
 
     let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
     for state in histories.iter().flat_map(|history| &history.states) {
@@ -1117,17 +1111,17 @@ pub(crate) fn project_feature_input_topologies(
                 bodies: topology
                     .bodies
                     .iter()
-                    .map(|slot| HistoricalBodyId(format!("f3d:history-input:body#{prefix}:{slot}")))
+                    .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
                     .collect(),
                 faces: topology
                     .faces
                     .iter()
-                    .map(|slot| HistoricalFaceId(format!("f3d:history-input:face#{prefix}:{slot}")))
+                    .map(|slot| crate::ids::history_input_face_id(&prefix, slot))
                     .collect(),
                 edges: topology
                     .edges
                     .iter()
-                    .map(|slot| HistoricalEdgeId(format!("f3d:history-input:edge#{prefix}:{slot}")))
+                    .map(|slot| crate::ids::history_input_edge_id(&prefix, slot))
                     .collect(),
                 native_ref: Some(state.id.clone()),
             })
@@ -1143,7 +1137,7 @@ fn feature_input_prefix(
         .0
         .split_once('#')
         .map_or(feature.0.as_str(), |(_, key)| key);
-    format!("{}:{feature_key}:{previous_state_id}", feature_key.len())
+    crate::ids::history_input_prefix(feature_key, previous_state_id)
 }
 
 pub(crate) fn bind_face_operand_history_candidates(
@@ -1700,7 +1694,7 @@ fn bind_profile_face_group_cardinality(
             continue;
         };
         for (index, face) in indices.into_iter().zip(faces) {
-            let face_id = cadmpeg_ir::ids::FaceId(format!("f3d:brep:entity#{face}"));
+            let face_id = cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(face));
             operands[index].preceding_candidate_faces = vec![face_id.clone()];
             operands[index].changed_candidate_faces = vec![face_id];
             operands[index].resolved_face_slots = vec![face];
@@ -2861,7 +2855,6 @@ fn bind_body_recipe_face_selection(
     operands: &[crate::records::DesignBodyRecipeOperand],
 ) {
     use cadmpeg_ir::features::FaceSelection;
-    use cadmpeg_ir::ids::HistoricalFaceId;
 
     let FaceSelection::Native(native) = selection else {
         return;
@@ -2908,7 +2901,7 @@ fn bind_body_recipe_face_selection(
         state: crate::design::feature_input_topology_id(feature_id, previous_state_id),
         faces: slots
             .into_iter()
-            .map(|slot| HistoricalFaceId(format!("f3d:history-input:face#{prefix}:{slot}")))
+            .map(|slot| crate::ids::history_input_face_id(&prefix, slot))
             .collect(),
         native: native.clone(),
     };

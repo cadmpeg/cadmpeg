@@ -13399,7 +13399,7 @@ fn canonical_guid(value: &str) -> bool {
 }
 
 fn native_stream(id: &str, delimiter: &str) -> Result<String, CodecError> {
-    id.strip_prefix("f3d:")
+    id.strip_prefix(crate::ids::SCHEME_PREFIX)
         .and_then(|id| id.rsplit_once(delimiter))
         .map(|(stream, _)| stream.to_owned())
         .ok_or_else(|| CodecError::Malformed(format!("invalid native record id {id}")))
@@ -13507,7 +13507,7 @@ fn validate_design_object_edits(
             continue;
         }
         let stream = id
-            .strip_prefix("f3d:")
+            .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":design-object#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| CodecError::Malformed(format!("invalid design-object id {id}")))?;
@@ -13672,7 +13672,7 @@ fn validate_entity_header_edits(
             .filter_map(|((offset, value), before)| (value != *before).then_some((offset, value)))
             .collect();
         let stream = id
-            .strip_prefix("f3d:")
+            .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":design-entity-header#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
@@ -13750,7 +13750,7 @@ fn validate_body_member_edits(
             continue;
         }
         let stream = id
-            .strip_prefix("f3d:")
+            .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":design-body-member#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| CodecError::Malformed(format!("invalid design-body-member id {id}")))?;
@@ -14265,7 +14265,7 @@ fn validate_construction_recipe_edits(
             Some((offset, encoded))
         };
         let stream = id
-            .strip_prefix("f3d:")
+            .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":construction-recipe#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| CodecError::Malformed(format!("invalid construction-recipe id {id}")))?;
@@ -14354,7 +14354,7 @@ fn validate_persistent_reference_edits(
             continue;
         }
         let stream = id
-            .strip_prefix("f3d:")
+            .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":persistent-reference#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
@@ -14477,7 +14477,7 @@ fn validate_history_state_edits(
         }
         let stream = history
             .id
-            .strip_prefix("f3d:")
+            .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":asm-history#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
@@ -14725,7 +14725,7 @@ fn validate_sketch_point_edits(
         }
         let stream = point
             .id
-            .strip_prefix("f3d:")
+            .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":sketch-point#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
@@ -14813,7 +14813,7 @@ fn validate_sketch_curve_edits(
         }
         let stream = curve
             .id
-            .strip_prefix("f3d:")
+            .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":sketch-curve-identity#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
@@ -15093,7 +15093,7 @@ fn validate_sketch_relation_edits(
         }
         let stream = relation
             .id
-            .strip_prefix("f3d:")
+            .strip_prefix(crate::ids::SCHEME_PREFIX)
             .and_then(|id| id.rsplit_once(":sketch-relation#"))
             .map(|(stream, _)| stream.to_owned())
             .ok_or_else(|| {
@@ -16462,7 +16462,7 @@ fn patch_framed_geometry(
         .filter(|record| record.head == "body")
         .filter_map(|body| {
             body_transforms
-                .get(&format!("f3d:brep:entity#{}", body.index))
+                .get(&crate::ids::brep_entity_id(body.index))
                 .and_then(|transform| {
                     body.ref_at(5)
                         .map(|reference| (reference as usize, *transform))
@@ -16473,7 +16473,7 @@ fn patch_framed_geometry(
         .iter()
         .filter(|record| record.head == "pcurve")
         .filter_map(|record| {
-            let edit = pcurves.get(&format!("f3d:brep:entity#{}", record.index))?;
+            let edit = pcurves.get(&crate::ids::brep_entity_id(record.index))?;
             let target = usize::try_from(record.ref_at(4)?).ok()?;
             let mut geometry = edit.clone();
             geometry.wrapper_reversed = None;
@@ -16488,7 +16488,7 @@ fn patch_framed_geometry(
         .iter()
         .filter(|record| record.head == "body" || record.head == "face")
     {
-        let id = format!("f3d:brep:entity#{}", entity.index);
+        let id = crate::ids::brep_entity_id(entity.index);
         let Some(color) = entity_colors.get(&id) else {
             continue;
         };
@@ -16624,7 +16624,7 @@ fn patch_framed_geometry(
             patch_transform_record(bytes, record, *transform, header_scale)?;
             continue;
         }
-        let id = format!("f3d:brep:entity#{}", record.index);
+        let id = crate::ids::brep_entity_id(record.index);
         if let Some(edit) = ref_pcurve_geometry.get(&record.index) {
             patch_nurbs_pcurve_record(bytes, record, edit)?;
         }

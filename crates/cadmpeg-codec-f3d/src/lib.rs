@@ -78,6 +78,7 @@ pub mod design;
 pub mod f3z;
 pub mod history;
 mod history_records;
+mod ids;
 pub mod materials;
 mod native;
 pub mod nurbs;
@@ -105,11 +106,11 @@ const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 pub struct F3dCodec;
 
 fn design_stream(id: &str) -> &str {
-    design::native_stream(id).unwrap_or("f3d:design")
+    design::native_stream(id).unwrap_or(ids::DEFAULT_STREAM)
 }
 
 fn design_stream_contains_entry(stream: &str, entry: &str) -> bool {
-    stream == format!("f3d:{entry}")
+    stream == ids::native_scope(entry)
         || stream
             .strip_prefix("f3d:xref/")
             .is_some_and(|qualified| qualified.ends_with(&format!("/{entry}")))
@@ -3455,7 +3456,7 @@ impl F3dCodec {
         let unknowns = ir.native_unknowns("f3d")?;
         let record = unknowns
             .iter()
-            .find(|record| record.id.0 == "f3d:file:source-image#0")
+            .find(|record| record.id.0 == ids::FILE_SOURCE_IMAGE_ID)
             .ok_or_else(|| {
                 CodecError::NotImplemented("IR has no retained F3D source image".into())
             })?;
@@ -3522,7 +3523,7 @@ impl Encoder for F3dCodec {
         let replay = ir
             .native_unknowns("f3d")?
             .into_iter()
-            .any(|record| record.id.0 == "f3d:file:source-image#0");
+            .any(|record| record.id.0 == ids::FILE_SOURCE_IMAGE_ID);
         if replay {
             self.write_preserved(ir, writer)?;
         } else {
