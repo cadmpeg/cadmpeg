@@ -8204,7 +8204,7 @@ fn hole_position_sketch_source(
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
 ) -> Option<u32> {
-    if native_object_class(feature.input_class.as_deref()?).kind != NativeClassKind::HoleWizard {
+    if classify(feature) != Some(FeatureClass::Hole) {
         return None;
     }
     let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
@@ -8270,8 +8270,7 @@ pub(crate) fn enrich_history_hole_constructions(
             .iter()
             .enumerate()
             .filter(|(_, feature)| {
-                native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
-                    == NativeClassKind::HoleWizard
+                classify(feature) == Some(FeatureClass::Hole)
                     && !feature.properties.contains_key("DissectableChildren")
             })
             .filter_map(|(feature_index, feature)| {
@@ -8855,6 +8854,12 @@ mod hole_axis_tests {
 
         assert_eq!(
             hole_position_sketch_source(&history.features[0], &lane),
+            Some(6)
+        );
+        let mut classless_history = history.clone();
+        classless_history.features[0].input_class = None;
+        assert_eq!(
+            hole_position_sketch_source(&classless_history.features[0], &lane),
             Some(6)
         );
         lane.native_payload[hole_trailer + 16..hole_trailer + 18].copy_from_slice(&[0, 0xc0]);
