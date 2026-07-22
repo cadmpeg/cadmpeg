@@ -3935,6 +3935,71 @@ mod marker_tests {
     }
 
     #[test]
+    fn extended_coordinate_ellipse_uses_its_complete_corner_grid() {
+        let mut payload = vec![0; 134 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[134..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        let entity = |id: &str, ordinal, offset, kind, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal,
+            offset,
+            object_index: None,
+            local_id: None,
+            kind,
+            state_value: None,
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let ellipse = entity("ellipse", 0, 0, SketchInputKind::Arc, Some([2.0, 3.0]));
+        let points = [
+            [-2.0, 2.0],
+            [-2.0, 4.0],
+            [6.0, 2.0],
+            [6.0 + f64::EPSILON * 4.0, 4.0],
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, point)| {
+            entity(
+                &format!("point-{index}"),
+                index as u32 + 1,
+                index as u64 + 134,
+                SketchInputKind::Point,
+                Some(point),
+            )
+        })
+        .collect::<Vec<_>>();
+        let mut entities = vec![ellipse.clone()];
+        entities.extend(points);
+        let markers = entities.iter().collect::<Vec<_>>();
+        assert!(
+            super::coordinate_ellipse_axes(&payload, &ellipse, &markers).is_some_and(
+                |(axis, major, minor)| {
+                    axis == [1.0, 0.0]
+                        && super::same_dimension_length(major, 4.0)
+                        && super::same_dimension_length(minor, 1.0)
+                }
+            )
+        );
+
+        entities[4].coordinates_m = Some([6.0, 5.0]);
+        let markers = entities.iter().collect::<Vec<_>>();
+        assert_eq!(
+            super::coordinate_ellipse_axes(&payload, &ellipse, &markers),
+            None
+        );
+    }
+
+    #[test]
     fn current_coordinate_line_uses_its_centered_endpoint_pair() {
         let mut payload = vec![0; 147];
         payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -16448,6 +16513,26 @@ pub(crate) fn project_marker_backed_sketches(
                                     center: point,
                                     radius: Length(radius * NATIVE_TO_IR),
                                 }
+                            } else if let (Some(center), Some((major_axis, major, minor))) = (
+                                marker.coordinates_m.and_then(|_| project(marker)),
+                                coordinate_ellipse_axes(
+                                    &lane.native_payload,
+                                    marker,
+                                    &object_markers,
+                                ),
+                            ) {
+                                let axis = transform.apply_axes(quantize(
+                                    Point2::new(major_axis[0], major_axis[1]),
+                                    QUANTUM,
+                                ))?;
+                                SketchGeometry::Ellipse {
+                                    center,
+                                    major_angle: Angle((axis.1 as f64).atan2(axis.0 as f64)),
+                                    major_radius: Length(major * NATIVE_TO_IR),
+                                    minor_radius: Length(minor * NATIVE_TO_IR),
+                                    start_angle: None,
+                                    end_angle: None,
+                                }
                             } else if let ([start, end], Some(point)) = (
                                 endpoints.as_slice(),
                                 marker.coordinates_m.and_then(|_| project(marker)),
@@ -22879,6 +22964,88 @@ fn coordinate_circle_radius(
         return None;
     };
     Some(*radius)
+}
+
+fn coordinate_ellipse_axes(
+    payload: &[u8],
+    ellipse: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+) -> Option<([f64; 2], f64, f64)> {
+    let offset = usize::try_from(ellipse.offset).ok()?;
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(2)
+        || !marker_is_geometry_locus(payload, offset)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || !sketch_marker_prefix_at(payload, offset.checked_add(134)?)
+    {
+        return None;
+    }
+    let [center_u, center_v] = ellipse.coordinates_m?;
+    let mut following = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref == ellipse.feature_ref
+                && marker.offset > ellipse.offset
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        })
+        .collect::<Vec<_>>();
+    following.sort_unstable_by_key(|marker| marker.offset);
+    let corners = following.get(..4)?;
+    if corners[0].offset != ellipse.offset.checked_add(134)? {
+        return None;
+    }
+    let mut u = corners
+        .iter()
+        .filter_map(|marker| marker.coordinates_m.map(|point| point[0]))
+        .collect::<Vec<_>>();
+    let mut v = corners
+        .iter()
+        .filter_map(|marker| marker.coordinates_m.map(|point| point[1]))
+        .collect::<Vec<_>>();
+    u.sort_by(f64::total_cmp);
+    u.dedup_by(|left, right| same_dimension_length(*left, *right));
+    v.sort_by(f64::total_cmp);
+    v.dedup_by(|left, right| same_dimension_length(*left, *right));
+    let ([u_min, u_max], [v_min, v_max]) = (u.as_slice(), v.as_slice()) else {
+        return None;
+    };
+    let products = [
+        [*u_min, *v_min],
+        [*u_min, *v_max],
+        [*u_max, *v_min],
+        [*u_max, *v_max],
+    ];
+    if !products.iter().all(|product| {
+        corners.iter().any(|corner| {
+            corner.coordinates_m.is_some_and(|point| {
+                same_dimension_length(point[0], product[0])
+                    && same_dimension_length(point[1], product[1])
+            })
+        })
+    }) {
+        return None;
+    }
+    if !same_dimension_length((*u_min + *u_max) * 0.5, center_u)
+        || !same_dimension_length((*v_min + *v_max) * 0.5, center_v)
+    {
+        return None;
+    }
+    let u_radius = (*u_max - *u_min) * 0.5;
+    let v_radius = (*v_max - *v_min) * 0.5;
+    if u_radius <= 0.0 || v_radius <= 0.0 || same_dimension_length(u_radius, v_radius) {
+        return None;
+    }
+    if u_radius > v_radius {
+        Some(([1.0, 0.0], u_radius, v_radius))
+    } else {
+        Some(([0.0, 1.0], v_radius, u_radius))
+    }
 }
 
 fn coordinate_roster_curve_layout(payload: &[u8], offset: usize) -> bool {
