@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "56",
+      "ir_version": "4",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -3152,9 +3152,9 @@
                   0,
                   0
                 ],
-                "registry_source_offset": 3175,
+                "registry_source_offset": 3626,
                 "source_entry": "/Root/FastLoad/RMFastLoad",
-                "source_offset": 3192
+                "source_offset": 3643
               }
             ],
             "rmfastload_object_ids": [
@@ -3167,7 +3167,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3196,
+                "source_offset": 3647,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1000
               },
@@ -3180,7 +3180,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3200,
+                "source_offset": 3651,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1001
               },
@@ -3193,7 +3193,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3204,
+                "source_offset": 3655,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1002
               },
@@ -3206,7 +3206,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3208,
+                "source_offset": 3659,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1003
               },
@@ -3219,7 +3219,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3212,
+                "source_offset": 3663,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1004
               },
@@ -3232,7 +3232,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3216,
+                "source_offset": 3667,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10005
               },
@@ -3245,7 +3245,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3220,
+                "source_offset": 3671,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10006
               },
@@ -3258,7 +3258,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3224,
+                "source_offset": 3675,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10007
               },
@@ -3271,7 +3271,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3228,
+                "source_offset": 3679,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10008
               },
@@ -3284,7 +3284,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3232,
+                "source_offset": 3683,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10009
               },
@@ -3297,7 +3297,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3236,
+                "source_offset": 3687,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10010
               },
@@ -3310,7 +3310,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3240,
+                "source_offset": 3691,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10011
               },
@@ -3323,7 +3323,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3244,
+                "source_offset": 3695,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10012
               },
@@ -3336,7 +3336,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3248,
+                "source_offset": 3699,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10013
               },
@@ -3349,7 +3349,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3252,
+                "source_offset": 3703,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10014
               },
@@ -3362,7 +3362,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3256,
+                "source_offset": 3707,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10015
               },
@@ -3375,7 +3375,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3260,
+                "source_offset": 3711,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10016
               },
@@ -3388,7 +3388,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3264,
+                "source_offset": 3715,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10017
               },
@@ -3401,7 +3401,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3268,
+                "source_offset": 3719,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10018
               },
@@ -3414,7 +3414,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3272,
+                "source_offset": 3723,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10019
               },
@@ -3427,7 +3427,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3276,
+                "source_offset": 3727,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10020
               },
@@ -3440,7 +3440,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3280,
+                "source_offset": 3731,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10021
               },
@@ -3453,7 +3453,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3284,
+                "source_offset": 3735,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10022
               },
@@ -3466,7 +3466,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3288,
+                "source_offset": 3739,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10023
               },
@@ -3479,7 +3479,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3292,
+                "source_offset": 3743,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10024
               },
@@ -3492,7 +3492,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3296,
+                "source_offset": 3747,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10025
               },
@@ -3505,7 +3505,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3300,
+                "source_offset": 3751,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10026
               },
@@ -3518,7 +3518,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3304,
+                "source_offset": 3755,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10027
               },
@@ -3531,7 +3531,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3308,
+                "source_offset": 3759,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10028
               },
@@ -3544,7 +3544,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3312,
+                "source_offset": 3763,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10029
               },
@@ -3557,7 +3557,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3316,
+                "source_offset": 3767,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10030
               },
@@ -3570,7 +3570,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3320,
+                "source_offset": 3771,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10031
               },
@@ -3583,7 +3583,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3324,
+                "source_offset": 3775,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10032
               },
@@ -3596,7 +3596,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3328,
+                "source_offset": 3779,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10033
               },
@@ -3609,7 +3609,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3332,
+                "source_offset": 3783,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10034
               },
@@ -3622,7 +3622,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3336,
+                "source_offset": 3787,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10035
               },
@@ -3635,7 +3635,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3340,
+                "source_offset": 3791,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10036
               },
@@ -3648,7 +3648,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3344,
+                "source_offset": 3795,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10037
               },
@@ -3661,7 +3661,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3348,
+                "source_offset": 3799,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10038
               },
@@ -3674,7 +3674,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3352,
+                "source_offset": 3803,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10039
               },
@@ -3687,7 +3687,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3356,
+                "source_offset": 3807,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10040
               },
@@ -3700,7 +3700,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3360,
+                "source_offset": 3811,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10041
               },
@@ -3713,7 +3713,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3364,
+                "source_offset": 3815,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10042
               },
@@ -3726,7 +3726,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3368,
+                "source_offset": 3819,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10043
               },
@@ -3739,7 +3739,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3372,
+                "source_offset": 3823,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10044
               },
@@ -3752,7 +3752,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3376,
+                "source_offset": 3827,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10045
               },
@@ -3765,7 +3765,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3380,
+                "source_offset": 3831,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10046
               },
@@ -3778,7 +3778,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3384,
+                "source_offset": 3835,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10047
               },
@@ -3791,7 +3791,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3388,
+                "source_offset": 3839,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10048
               },
@@ -3804,7 +3804,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3392,
+                "source_offset": 3843,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10049
               }
@@ -3929,7 +3929,7 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "3396",
+          "file_size": "3847",
           "footer_offset": "0",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -5212,7 +5212,7 @@
             "tag": "partition"
           },
           "nx:container:parasolid#1": {
-            "offset": 1654,
+            "offset": 1869,
             "stream": 1,
             "tag": "partition"
           },
@@ -6266,7 +6266,7 @@
           "byte_len": 6634,
           "data": "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",
           "id": "nx:container:parasolid#1",
-          "offset": 1654,
+          "offset": 1869,
           "sha256": "706f04bfdcd0672dbe0d7ca5aef03aa07c430722e809c6e980703444cc490155",
           "stream": "nx:container"
         }
@@ -6282,15 +6282,15 @@
           "file_offset": "117",
           "region": "HEADER"
         },
-        "compressed_size": 3058,
+        "compressed_size": 3509,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "stream",
-        "uncompressed_size": 3058
+        "uncompressed_size": 3509
       },
       {
         "attributes": {
-          "file_offset": "3175",
+          "file_offset": "3626",
           "region": "HEADER"
         },
         "compressed_size": 221,
@@ -6329,7 +6329,7 @@
       },
       {
         "attributes": {
-          "file_offset": "1654",
+          "file_offset": "1869",
           "kind": "partition",
           "records.body": "1",
           "records.edge": "0",

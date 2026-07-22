@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "56",
+      "ir_version": "4",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -172,7 +172,7 @@
                   1
                 ],
                 "physical_byte_len": 236,
-                "source_offset": 354,
+                "source_offset": 334,
                 "toc_entries": [
                   {
                     "attributes": [
@@ -203,7 +203,7 @@
                       2
                     ],
                     "segment_offset": 137,
-                    "source_offset": 463
+                    "source_offset": 443
                   }
                 ],
                 "toc_offset": 105,
@@ -219,11 +219,11 @@
                     "header_offset": 28,
                     "id": "nx:display-jt:index#0-row-0",
                     "ordinal": 0,
-                    "source_offset": 334,
+                    "source_offset": 314,
                     "value": 100
                   }
                 ],
-                "source_offset": 326,
+                "source_offset": 306,
                 "version": 9
               }
             ],
@@ -253,7 +253,7 @@
                   2
                 ],
                 "segment_type": 7,
-                "source_offset": 491,
+                "source_offset": 471,
                 "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
               }
             ],
@@ -284,7 +284,7 @@
                 ],
                 "ordinal": 0,
                 "segment": "nx:display-jt:segment#0-row-0-0",
-                "source_offset": 515
+                "source_offset": 495
               }
             ],
             "display_jt_tri_strip_lod_headers": [
@@ -295,7 +295,7 @@
                 "compressed_representation_sha256": "8d70d691c822d55638b6e7fd54cd94170c87d19eb1f628b757506ede5688d297",
                 "element": "nx:display-jt:segment#0-row-0-0-element-0",
                 "id": "nx:display-jt:segment#0-row-0-0-element-0-tri-strip-header",
-                "source_offset": 540,
+                "source_offset": 520,
                 "topological_mesh_version": 1,
                 "vertex_bindings": 0,
                 "vertex_records_object_id": 0,
@@ -320,7 +320,7 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "590",
+          "file_size": "570",
           "footer_offset": "0",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -486,15 +486,15 @@
           "file_offset": "115",
           "region": "HEADER"
         },
-        "compressed_size": 211,
+        "compressed_size": 191,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "stream",
-        "uncompressed_size": 211
+        "uncompressed_size": 191
       },
       {
         "attributes": {
-          "file_offset": "326",
+          "file_offset": "306",
           "region": "HEADER"
         },
         "compressed_size": 264,

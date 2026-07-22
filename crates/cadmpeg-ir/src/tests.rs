@@ -1790,18 +1790,6 @@ fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
 }
 
 #[test]
-fn explicit_migration_upgrades_previous_version_without_semantic_changes() {
-    let current = unit_cube();
-    let mut legacy = serde_json::to_value(&current).unwrap();
-    legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
-    let legacy = serde_json::to_string(&legacy).unwrap();
-
-    assert!(CadIr::from_json(&legacy).is_err());
-    let migrated = CadIr::migrate_json(&legacy).expect("previous-version migration");
-    assert_eq!(migrated, current);
-}
-
-#[test]
 fn schema_constrains_version_and_requires_subd_arena() {
     let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
     assert_eq!(
@@ -3176,120 +3164,6 @@ fn extrusion_side_drafts_are_validated() {
             .any(|finding| finding.message == "extrusion draft is invalid");
         assert_eq!(has_draft_finding, expected_invalid);
     }
-}
-
-#[test]
-fn migration_folds_previous_extents_into_sides() {
-    use crate::features::{
-        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        Length, ProfileRef, RevolutionConstruction, RevolveExtent, Termination,
-    };
-
-    let feature = |ordinal: u64, definition: FeatureDefinition| Feature {
-        id: FeatureId(format!("synthetic:test:feature#migrated-{ordinal}")),
-        ordinal,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: std::collections::BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
-        native_ref: None,
-    };
-    let extrude = |extent: ExtrudeExtent| FeatureDefinition::Extrude {
-        profile: ProfileRef::Native("profile".into()),
-        direction: ExtrudeDirection::ProfileNormal,
-        start: crate::features::ExtrudeStart::ProfilePlane,
-        extent,
-        op: BooleanOp::NewBody,
-        direction_source: None,
-        solid: None,
-        face_maker: None,
-        inner_wire_taper: None,
-        length_along_profile_normal: None,
-        allow_multi_profile_faces: None,
-    };
-
-    let mut current = unit_cube();
-    current.model.features.extend([
-        feature(
-            0,
-            extrude(ExtrudeExtent::TwoSided {
-                first: ExtrudeSide {
-                    termination: Termination::Blind {
-                        length: Length(1.0),
-                    },
-                    draft: Some(Angle(0.1)),
-                    offset: Some(Length(1.5)),
-                },
-                second: ExtrudeSide {
-                    termination: Termination::Blind {
-                        length: Length(2.0),
-                    },
-                    draft: Some(Angle(0.2)),
-                    offset: Some(Length(-2.5)),
-                },
-            }),
-        ),
-        feature(
-            1,
-            extrude(ExtrudeExtent::Symmetric {
-                side: ExtrudeSide {
-                    termination: Termination::Blind {
-                        length: Length(4.0),
-                    },
-                    draft: Some(Angle(0.3)),
-                    offset: None,
-                },
-            }),
-        ),
-        feature(
-            2,
-            FeatureDefinition::Revolve {
-                construction: RevolutionConstruction {
-                    profile: None,
-                    axis: None,
-                    extent: Some(RevolveExtent::Symmetric {
-                        termination: Termination::Angle {
-                            angle: Angle(std::f64::consts::PI),
-                        },
-                    }),
-                    axis_reference: None,
-                    solid: None,
-                    face_maker_class: None,
-                    fuse_order: None,
-                    allow_multi_profile_faces: None,
-                },
-                op: BooleanOp::NewBody,
-            },
-        ),
-    ]);
-
-    let mut legacy = serde_json::to_value(&current).unwrap();
-    legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
-    let features = legacy["model"]["features"].as_array_mut().unwrap();
-    let index = features.len() - 3;
-    features[index]["definition"]["extent"] =
-        serde_json::json!({"kind": "two_sided", "first": 1.0, "second": 2.0});
-    features[index]["definition"]["draft"] = serde_json::json!(0.1);
-    features[index]["definition"]["second_draft"] = serde_json::json!(0.2);
-    features[index]["definition"]["first_offset"] = serde_json::json!(1.5);
-    features[index]["definition"]["second_offset"] = serde_json::json!(-2.5);
-    features[index + 1]["definition"]["extent"] =
-        serde_json::json!({"kind": "symmetric", "length": 4.0});
-    features[index + 1]["definition"]["draft"] = serde_json::json!(0.3);
-    features[index + 1]["definition"]["second_draft"] = serde_json::json!(0.3);
-    features[index + 2]["definition"]["construction"]["extent"] =
-        serde_json::json!({"kind": "symmetric_angle", "angle": std::f64::consts::PI});
-
-    let legacy = serde_json::to_string(&legacy).unwrap();
-    assert!(CadIr::from_json(&legacy).is_err());
-    let migrated = CadIr::migrate_json(&legacy).expect("previous-version migration");
-    assert_eq!(migrated, current);
 }
 
 #[test]

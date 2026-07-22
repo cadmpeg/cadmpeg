@@ -15,7 +15,7 @@ cargo add cadmpeg-ir
 
 A `CadIr` document contains:
 
-- required IR version 53 schema, including loop boundary roles, vertex loops, ordered pcurve uses, and the `subds` arena;
+- required IR version 4 schema, including loop boundary roles, vertex loops, ordered pcurve uses, and the `subds` arena;
 - canonical units and document tolerances;
 - flat, ID-referenced arenas for topology, geometry, subdivision control cages, construction features,
   tessellation, appearance, and source attributes;
@@ -57,11 +57,8 @@ assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);
 ```
 
 `CadIr::to_canonical_json` emits pretty JSON after the caller establishes
-canonical arena order. `CadIr::from_json` parses only `ir_version: "54"`, while
-`CadIr::migrate_json` explicitly migrates version 53. The version-54 schema
-canonical arena order. `CadIr::from_json` parses only `ir_version: "55"`, while
-`CadIr::migrate_json` explicitly migrates version 54. The version-55 schema
-requires `model.subds`. `diff` compares units,
+canonical arena order. `CadIr::from_json` parses only `ir_version: "4"`. The
+version-4 schema requires `model.subds`. `diff` compares units,
 tolerances, annotations, and entity arenas by stable identity.
 
 Format crates implement the object-safe `Codec` trait. A consumer can select a
@@ -90,7 +87,7 @@ offsets.
 
 ## Scope
 
-IR version 54 covers B-rep topology, analytic and NURBS geometry, Catmull–Clark
+IR version 4 covers B-rep topology, analytic and NURBS geometry, Catmull–Clark
 control cages, procedural construction links including Sum and bounded
 Revolution definitions, planar and spatial sketches, tessellation, appearance,
 attributes, and neutral feature records. Native namespaces retain
@@ -101,7 +98,7 @@ annotations, spreadsheets, and presentations, extend the neutral model.
 ## Documentation
 
 - [API documentation][docs]
-- [CAD IR version 54][ir-spec]
+- [CAD IR version 4][ir-spec]
 - [Architecture and crate map][architecture]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]
