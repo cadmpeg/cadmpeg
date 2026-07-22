@@ -28,7 +28,7 @@ Canonical order is ascending `(start, end, class, owner, meaning)`. Validation r
 
 ## Serialization and versioning
 
-`SourceFidelity.schema_version` versions the complete sidecar, including its ledger, retained records, provenance, and exactness. Cadmpeg IR version 54 excludes the ledger from `CadIr`. Version 53 documents migrate their semantic product content without source accounting; complete ownership requires decoding the source container. Accounting changes increment the sidecar schema version and never `ir_version`.
+`SourceFidelity.schema_version` versions the complete sidecar, including its ledger, retained records, provenance, and exactness. Cadmpeg IR version 55 excludes the ledger from `CadIr`. Version 54 documents migrate their semantic product content without source accounting; complete ownership requires decoding the source container. Accounting changes increment the sidecar schema version and never `ir_version`.
 
 The reserved product `native.*.unknowns` arenas contain only stable identities and product links. Decoders transfer source offsets, lengths, digests, and retained bytes into `SourceFidelity.retained_records` before returning `DecodeResult`. Encoders that replay or patch a source consume the sidecar explicitly. A source-only retained record has no required product counterpart.
 

@@ -3896,6 +3896,12 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::SpatialSketch { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported spatial-sketch semantics",
+                    feature.id
+                )));
+            }
             FeatureDefinition::DatumPlane {
                 origin,
                 normal,
@@ -7299,8 +7305,9 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
     let tag = match &feature.definition {
         FeatureDefinition::TreeNode { .. } => "Feature",
         FeatureDefinition::DatumPrincipalPlane { .. } => "Feature",
-        FeatureDefinition::DatumPlaneUnresolved => "ReferencePlane",
         FeatureDefinition::DatumPlane { .. } => "ReferencePlane",
+        FeatureDefinition::DatumPlaneUnresolved => "ReferencePlane",
+        FeatureDefinition::SpatialSketch { .. } => "3DSketch",
         FeatureDefinition::DatumOffsetPlane { .. } => "Feature",
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",
         FeatureDefinition::DatumPoint { .. } => "ReferencePoint",

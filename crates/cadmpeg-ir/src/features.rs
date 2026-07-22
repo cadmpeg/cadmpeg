@@ -257,8 +257,6 @@ pub enum FeatureDefinition {
         /// Canonical principal-plane role.
         plane: PrincipalPlane,
     },
-    /// Constructed reference plane whose placement is unresolved.
-    DatumPlaneUnresolved,
     /// Constructed reference plane.
     DatumPlane {
         /// Plane origin in model space.
@@ -268,6 +266,8 @@ pub enum FeatureDefinition {
         /// In-plane u-axis.
         u_axis: Vector3,
     },
+    /// Constructed reference-plane family whose model-space frame is unresolved.
+    DatumPlaneUnresolved,
     /// Reference plane offset from another datum plane.
     DatumOffsetPlane {
         /// Source plane, when its feature reference is available.
@@ -482,6 +482,12 @@ pub enum FeatureDefinition {
         /// Neutral sketch geometry owned by this history node, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sketch: Option<crate::sketches::SketchId>,
+    },
+    /// Solved spatial-sketch node in the construction history.
+    SpatialSketch {
+        /// Neutral model-space sketch geometry owned by this history node, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sketch: Option<crate::sketches::SpatialSketchId>,
     },
     /// Directly stored geometry with no replayable parametric construction.
     ///
