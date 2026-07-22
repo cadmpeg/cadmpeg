@@ -780,19 +780,18 @@ fn try_decode_geometry(
     ir.source = Some(source_meta(scan));
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
-    let semantic_streams = semantic_streams(scan);
-    let topology_streams = topology_streams(scan);
-    let delta_pairs = paired_delta_streams(scan);
+    let parsed = crate::native::ParsedStreams::parse(scan);
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
             continue;
         }
-        let semantic = &semantic_streams[si];
+        let view = parsed.stream(si).view_for_geometry();
+        let semantic = parsed.semantic_bytes(si);
         let stream_name = format!("parasolid#{si}:{}", stream.kind.label());
         let source_stream = annotations.stream(format!("nx:{stream_name}"));
-        let graph = Graph::parse(&topology_streams[si]);
-        body_node_ids.extend(topology_body_node_ids(si, &graph));
+        let graph = &view.graph;
+        body_node_ids.extend(topology_body_node_ids(si, graph));
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
         let mut curves_by_xmt = BTreeMap::new();
@@ -804,7 +803,7 @@ fn try_decode_geometry(
         let mut pending_ext11_support_uv = Vec::new();
         let first_surface = ir.model.surfaces.len();
         let first_curve = ir.model.curves.len();
-        for (pi, (position_offset, position, node)) in ordered_point_candidates(semantic, &graph)
+        for (pi, (position_offset, position, node)) in ordered_point_candidates(semantic, graph)
             .into_iter()
             .enumerate()
         {
@@ -834,7 +833,7 @@ fn try_decode_geometry(
             counts.points += 1;
         }
 
-        for (fi, (offset, geometry, node)) in ordered_surface_candidates(semantic, &graph)
+        for (fi, (offset, geometry, node)) in ordered_surface_candidates(semantic, graph)
             .into_iter()
             .enumerate()
         {
@@ -892,10 +891,7 @@ fn try_decode_geometry(
             }
         }
 
-        for (oi, offset) in crate::topology::offset_surfaces(semantic)
-            .into_iter()
-            .enumerate()
-        {
+        for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {
             let Some(support) = surfaces_by_xmt.get(&offset.support).cloned() else {
                 continue;
             };
@@ -940,10 +936,7 @@ fn try_decode_geometry(
             counts.offset_surfaces += 1;
         }
 
-        for (bi, blend) in crate::topology::blend_surfaces(semantic)
-            .into_iter()
-            .enumerate()
-        {
+        for (bi, blend) in view.blend_surfaces.iter().copied().enumerate() {
             let surface_id = SurfaceId(format!("nx:s{si}:blend-surf#{bi}"));
             let procedural_id = ProceduralSurfaceId(format!("nx:s{si}:blend#{bi}"));
             annotations
@@ -1015,7 +1008,7 @@ fn try_decode_geometry(
             *slots = supports;
         }
 
-        for (ci, (offset, geometry, node)) in ordered_curve_candidates(semantic, &graph)
+        for (ci, (offset, geometry, node)) in ordered_curve_candidates(semantic, graph)
             .into_iter()
             .enumerate()
         {
@@ -1094,19 +1087,7 @@ fn try_decode_geometry(
             }
         }
 
-        let intersection_scan = if let Some(delta_indices) = delta_pairs.get(&si) {
-            let replacement_streams = delta_indices
-                .iter()
-                .map(|delta| scan.streams[*delta].inflated.as_slice())
-                .collect::<Vec<_>>();
-            crate::intersection::scan_with_auxiliary_replacements(
-                semantic,
-                &topology_streams[si],
-                &replacement_streams,
-            )
-        } else {
-            crate::intersection::scan(semantic)
-        };
+        let intersection_scan = view.intersections.clone();
         counts
             .intersection_rejections
             .extend(intersection_scan.rejected);
@@ -1249,12 +1230,12 @@ fn try_decode_geometry(
             *slot = Some(spine);
         }
 
-        let trimmed_curves = crate::topology::trimmed_curves(semantic);
+        let trimmed_curves = &view.trimmed_curves;
         let mut normalized_pcurves = BTreeSet::new();
-        let surface_curves = crate::topology::surface_curves(semantic);
+        let surface_curves = &view.surface_curves;
         loop {
             let mapped = curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len();
-            for trim in &trimmed_curves {
+            for trim in trimmed_curves {
                 if let Some(basis) = curves_by_xmt.get(&trim.basis).cloned() {
                     let parameters = canonical_trim_range(&ir, &basis, trim.parameters);
                     curves_by_xmt.insert(trim.xmt, basis);
@@ -1273,7 +1254,7 @@ fn try_decode_geometry(
                     trim_ranges.insert(trim.xmt, trim.parameters);
                 }
             }
-            for surface_curve in &surface_curves {
+            for surface_curve in surface_curves {
                 if let Some(pcurve) = pcurves_by_xmt.get(&surface_curve.pcurve).cloned() {
                     if !normalized_pcurves.contains(&pcurve) {
                         let support = surfaces_by_xmt
@@ -1320,7 +1301,7 @@ fn try_decode_geometry(
         retain_unresolved_topology_carriers(
             &mut ir,
             si,
-            &graph,
+            graph,
             &mut surfaces_by_xmt,
             &mut curves_by_xmt,
             &pcurves_by_xmt,
@@ -1331,7 +1312,7 @@ fn try_decode_geometry(
         emit_topology(
             &mut ir,
             si,
-            &graph,
+            graph,
             &points_by_xmt,
             &surfaces_by_xmt,
             &curves_by_xmt,
@@ -1346,7 +1327,7 @@ fn try_decode_geometry(
         complete_support_uv(&mut ir, &pending_ext11_support_uv);
         attach_completed_intersection_pcurves(
             &mut ir,
-            &graph,
+            graph,
             &format!("nx:s{si}"),
             source_stream,
             &mut annotations,
@@ -1395,7 +1376,8 @@ fn try_decode_geometry(
         active_body_selection = select_terminal_feature_bodies(&mut ir, scan);
     }
     classify_body_kinds(&mut ir);
-    crate::native::attach_annotations(&mut ir, scan, &mut annotations, &mut unknowns).ok()?;
+    crate::native::attach_annotations(&mut ir, scan, &parsed, &mut annotations, &mut unknowns)
+        .ok()?;
     prune_unreferenced_unknown_carriers(&mut ir);
     finalize_point_topology(&mut ir, &mut annotations);
     let referenced_pcurves: BTreeSet<_> = ir
@@ -1557,7 +1539,7 @@ fn unmatched_delta_tombstone_count(scan: &Scan) -> usize {
     unmatched
 }
 
-fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
+pub(crate) fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
     let links = crate::native::segment_stream_links(&scan.container, &scan.streams);
     let linked_deltas = links
         .iter()
@@ -10140,7 +10122,8 @@ fn build_metadata_ir(
             unknowns.push(unknown);
         }
     }
-    crate::native::attach_annotations(&mut ir, scan, &mut annotations, &mut unknowns)
+    let parsed = crate::native::ParsedStreams::parse(scan);
+    crate::native::attach_annotations(&mut ir, scan, &parsed, &mut annotations, &mut unknowns)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     Ok((ir, annotations.build(), unknowns))
 }

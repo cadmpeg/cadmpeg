@@ -23,6 +23,7 @@ mod model;
 mod om;
 mod parasolid;
 mod segments;
+mod substrate;
 
 pub use display_jt::*;
 pub use features::*;
@@ -30,6 +31,7 @@ pub(crate) use model::*;
 pub use om::*;
 pub use parasolid::*;
 pub use segments::*;
+pub(crate) use substrate::ParsedStreams;
 
 /// Attach the native object model to `ir`: extract every record family from the
 /// scanned container, then emit annotations, namespace arenas, and the semantic
@@ -38,9 +40,10 @@ pub use segments::*;
 pub(crate) fn attach_annotations(
     ir: &mut CadIr,
     scan: &Scan,
+    parsed: &ParsedStreams,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let model = NativeModel::extract(&scan.container, &scan.streams);
+    let model = NativeModel::extract(&scan.container, &scan.streams, parsed);
     attach::attach(ir, &model, scan, annotations, unknowns)
 }

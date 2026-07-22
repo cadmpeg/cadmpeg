@@ -26,13 +26,12 @@ pub struct ParasolidOffsetSurfaceRecord {
 }
 
 /// Decode complete typed source records for Parasolid offset surfaces.
-pub fn parasolid_offset_surface_records(streams: &[Stream]) -> Vec<ParasolidOffsetSurfaceRecord> {
+pub(crate) fn parasolid_offset_surface_records(
+    parsed: &ParsedStreams,
+) -> Vec<ParasolidOffsetSurfaceRecord> {
     let mut records = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
-            continue;
-        }
-        for offset in crate::topology::offset_surfaces(&stream.inflated) {
+    for (stream_ordinal, stream) in parsed.iter() {
+        for offset in stream.view_for_records().offset_surfaces.iter().copied() {
             records.push(ParasolidOffsetSurfaceRecord {
                 id: format!("nx:s{stream_ordinal}:offset-surface-record#{}", offset.xmt),
                 stream_ordinal: stream_ordinal as u32,
@@ -69,13 +68,12 @@ pub struct ParasolidTrimmedCurveRecord {
 }
 
 /// Decode complete typed source records for Parasolid trimmed curves.
-pub fn parasolid_trimmed_curve_records(streams: &[Stream]) -> Vec<ParasolidTrimmedCurveRecord> {
+pub(crate) fn parasolid_trimmed_curve_records(
+    parsed: &ParsedStreams,
+) -> Vec<ParasolidTrimmedCurveRecord> {
     let mut records = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
-            continue;
-        }
-        for trim in crate::topology::trimmed_curves(&stream.inflated) {
+    for (stream_ordinal, stream) in parsed.iter() {
+        for trim in stream.view_for_records().trimmed_curves.iter().copied() {
             records.push(ParasolidTrimmedCurveRecord {
                 id: format!("nx:s{stream_ordinal}:trimmed-curve-record#{}", trim.xmt),
                 stream_ordinal: stream_ordinal as u32,
@@ -113,13 +111,12 @@ pub struct ParasolidSurfaceCurveRecord {
 }
 
 /// Decode complete typed source records for Parasolid surface curves.
-pub fn parasolid_surface_curve_records(streams: &[Stream]) -> Vec<ParasolidSurfaceCurveRecord> {
+pub(crate) fn parasolid_surface_curve_records(
+    parsed: &ParsedStreams,
+) -> Vec<ParasolidSurfaceCurveRecord> {
     let mut records = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
-            continue;
-        }
-        for curve in crate::topology::surface_curves(&stream.inflated) {
+    for (stream_ordinal, stream) in parsed.iter() {
+        for curve in stream.view_for_records().surface_curves.iter().copied() {
             records.push(ParasolidSurfaceCurveRecord {
                 id: format!("nx:s{stream_ordinal}:surface-curve-record#{}", curve.xmt),
                 stream_ordinal: stream_ordinal as u32,
@@ -440,13 +437,18 @@ pub struct ParasolidIntersectionRecord {
 }
 
 /// Decode complete typed source records for retained intersection constructions.
-pub fn parasolid_intersection_records(streams: &[Stream]) -> Vec<ParasolidIntersectionRecord> {
+pub(crate) fn parasolid_intersection_records(
+    parsed: &ParsedStreams,
+) -> Vec<ParasolidIntersectionRecord> {
     let mut records = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
-            continue;
-        }
-        for construction in crate::intersection::scan(&stream.inflated).constructions {
+    for (stream_ordinal, stream) in parsed.iter() {
+        for construction in stream
+            .view_for_records()
+            .intersections
+            .constructions
+            .iter()
+            .copied()
+        {
             records.push(ParasolidIntersectionRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:intersection-record#{}",
@@ -752,14 +754,17 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
 }
 
 /// Retain complete typed rolling-ball blend records from all Parasolid streams.
-pub fn parasolid_blend_surface_records(streams: &[Stream]) -> Vec<ParasolidBlendSurfaceRecord> {
-    let mut records = streams
+pub(crate) fn parasolid_blend_surface_records(
+    parsed: &ParsedStreams,
+) -> Vec<ParasolidBlendSurfaceRecord> {
+    let mut records = parsed
         .iter()
-        .enumerate()
-        .filter(|(_, stream)| stream.kind.is_parasolid())
         .flat_map(|(stream_ordinal, stream)| {
-            crate::topology::blend_surfaces(&stream.inflated)
-                .into_iter()
+            stream
+                .view_for_records()
+                .blend_surfaces
+                .iter()
+                .copied()
                 .map(move |blend| ParasolidBlendSurfaceRecord {
                     id: format!("nx:s{stream_ordinal}:blend-surface-record#{}", blend.xmt),
                     stream_ordinal: stream_ordinal as u32,
@@ -777,8 +782,8 @@ pub fn parasolid_blend_surface_records(streams: &[Stream]) -> Vec<ParasolidBlend
 }
 
 /// Retain every non-null topology-to-attribute-list reference.
-pub fn parasolid_topology_attribute_list_references(
-    streams: &[Stream],
+pub(crate) fn parasolid_topology_attribute_list_references(
+    parsed: &ParsedStreams,
     entity_records: &[ParasolidEntity51Record],
 ) -> Vec<ParasolidTopologyAttributeListReference> {
     let mut records_by_identity = BTreeMap::<(u32, u32), Vec<&str>>::new();
@@ -789,11 +794,8 @@ pub fn parasolid_topology_attribute_list_references(
             .push(record.id.as_str());
     }
     let mut references = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
-            continue;
-        }
-        let graph = crate::topology::Graph::parse(&stream.inflated);
+    for (stream_ordinal, stream) in parsed.iter() {
+        let graph = &stream.view_for_records().graph;
         for topology_type in [13, 14, 15, 16, 17, 18] {
             for node in graph.of_kind(topology_type) {
                 let attribute_list_xmt = match topology_type {

@@ -235,21 +235,25 @@ impl NativeModel {
     /// sequence. The ordering is load-bearing: several families feed later ones
     /// and some record ids embed positional information, so the `let` order here
     /// is fixed to match the legacy wiring block byte-for-byte.
-    pub(crate) fn extract(container: &Container, streams: &[Stream]) -> Self {
+    pub(crate) fn extract(
+        container: &Container,
+        streams: &[Stream],
+        parsed: &ParsedStreams,
+    ) -> Self {
         let segment_index_rows = crate::native::segment_index_rows(container);
         let segment_om_links = crate::native::segment_om_links(container);
         let segment_stream_links = crate::native::segment_stream_links(container, streams);
         let segment_body_bindings = crate::native::segment_body_bindings(container, streams);
         let parasolid_blend_surface_records =
-            crate::native::parasolid_blend_surface_records(streams);
+            crate::native::parasolid_blend_surface_records(parsed);
         let parasolid_blend_bound_records = crate::native::parasolid_blend_bound_records(streams);
         let parasolid_offset_surface_records =
-            crate::native::parasolid_offset_surface_records(streams);
+            crate::native::parasolid_offset_surface_records(parsed);
         let parasolid_trimmed_curve_records =
-            crate::native::parasolid_trimmed_curve_records(streams);
+            crate::native::parasolid_trimmed_curve_records(parsed);
         let parasolid_surface_curve_records =
-            crate::native::parasolid_surface_curve_records(streams);
-        let parasolid_intersection_records = crate::native::parasolid_intersection_records(streams);
+            crate::native::parasolid_surface_curve_records(parsed);
+        let parasolid_intersection_records = crate::native::parasolid_intersection_records(parsed);
         let parasolid_term_use_records = crate::native::parasolid_term_use_records(streams);
         let parasolid_support_uv_records = crate::native::parasolid_support_uv_records(streams);
         let parasolid_chart_records = crate::native::parasolid_chart_records(streams);
@@ -277,7 +281,7 @@ impl NativeModel {
         );
         let parasolid_topology_attribute_list_references =
             crate::native::parasolid_topology_attribute_list_references(
-                streams,
+                parsed,
                 &parasolid_entity_51_records,
             );
         let parasolid_topology_attribute_class_uses =
