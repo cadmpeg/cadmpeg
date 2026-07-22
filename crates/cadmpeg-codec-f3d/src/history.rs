@@ -1233,6 +1233,29 @@ pub(crate) fn bind_face_operand_history_candidates(
                 .into_iter()
                 .collect();
         }
+        if scope.kind == "Loft"
+            && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
+            && state
+                .transition
+                .as_ref()
+                .is_some_and(|transition| transition.previous_state_id == Some(previous_state_id))
+        {
+            if let Some(face) = state
+                .topology
+                .as_ref()
+                .zip(state.transition.as_ref())
+                .and_then(|(result, transition)| {
+                    resolve_bounded_face_recipe_target(
+                        operand,
+                        topology,
+                        result,
+                        &transition.topology.bodies.inserted,
+                    )
+                })
+            {
+                operand.resolved_face_slots = vec![face];
+            }
+        }
     }
     bind_profile_face_group_cardinality(operands, scopes, operand_groups, histories);
 }
@@ -1257,6 +1280,164 @@ fn resolve_split_tool_face(
         return None;
     };
     stable_ref(&face.0)
+}
+
+fn effective_faces(
+    reference: &crate::records::DesignRecipeReference,
+) -> &[cadmpeg_ir::ids::FaceId] {
+    if reference.candidate_faces.is_empty() {
+        &reference.alternate_selector_faces
+    } else {
+        &reference.candidate_faces
+    }
+}
+
+fn relation_members(
+    relations: &[crate::history_records::AsmHistoricalRelation],
+    owner: i64,
+) -> Option<&[i64]> {
+    let mut matches = relations
+        .iter()
+        .filter(|relation| relation.owner_ref == owner);
+    let members = matches.next()?.member_refs.as_slice();
+    matches.next().is_none().then_some(members)
+}
+
+fn resolve_bounded_face_recipe_target(
+    operand: &crate::records::DesignFaceOperand,
+    preceding: &crate::history_records::AsmHistoricalTopology,
+    result: &crate::history_records::AsmHistoricalTopology,
+    inserted_bodies: &[i64],
+) -> Option<i64> {
+    let crate::design::FaceRecipeProgramKind::Counted { header_value } =
+        crate::design::face_recipe_program_kind(&operand.recipe_program)?
+    else {
+        return None;
+    };
+    if operand.recipe_nodes.len() != header_value
+        || operand
+            .recipe_nodes
+            .iter()
+            .any(|node| node.recipe_structure.is_none())
+    {
+        return None;
+    }
+    let first = operand.recipe_references.first()?;
+    let first_clause = operand
+        .recipe_references
+        .iter()
+        .take_while(|reference| {
+            reference.selector_offset == first.selector_offset
+                && reference.token_offset == first.token_offset
+        })
+        .collect::<Vec<_>>();
+    let topology_faces = preceding.faces.iter().copied().collect::<HashSet<_>>();
+    let mut target_candidates = first_clause
+        .first()
+        .into_iter()
+        .flat_map(|reference| effective_faces(reference))
+        .filter_map(|face| stable_ref(&face.0))
+        .filter(|face| topology_faces.contains(face))
+        .collect::<BTreeSet<_>>();
+    for reference in first_clause.iter().skip(1) {
+        let candidates = effective_faces(reference)
+            .iter()
+            .filter_map(|face| stable_ref(&face.0))
+            .filter(|face| topology_faces.contains(face))
+            .collect::<HashSet<_>>();
+        target_candidates.retain(|face| candidates.contains(face));
+    }
+    let construction_faces = inserted_bodies
+        .iter()
+        .filter_map(|body| {
+            let mut faces = Vec::new();
+            for region in relation_members(&result.body_regions, *body)? {
+                for shell in relation_members(&result.region_shells, *region)? {
+                    faces.extend_from_slice(relation_members(&result.shell_faces, *shell)?);
+                }
+            }
+            faces.sort_unstable();
+            faces.dedup();
+            let [face] = faces.as_slice() else {
+                return None;
+            };
+            Some(*face)
+        })
+        .collect::<Vec<_>>();
+    if construction_faces.is_empty() {
+        return None;
+    }
+    let face_loop_positions = |face, topology| {
+        let contexts = face_boundary_contexts_for_slots(&[face], topology);
+        let [context] = contexts.as_slice() else {
+            return None;
+        };
+        let [loop_] = context.loops.as_slice() else {
+            return None;
+        };
+        (!loop_.positions.is_empty() && loop_.positions.len() == loop_.edge_slots.len())
+            .then(|| (loop_.edge_slots.len(), loop_.positions.clone()))
+    };
+    let mut matches = target_candidates
+        .into_iter()
+        .filter(|candidate| {
+            let Some((edge_count, candidate_points)) = face_loop_positions(*candidate, preceding)
+            else {
+                return false;
+            };
+            if edge_count != header_value {
+                return false;
+            }
+            construction_faces
+                .iter()
+                .filter_map(|face| face_loop_positions(*face, result))
+                .any(|(construction_edge_count, construction_points)| {
+                    construction_edge_count >= edge_count
+                        && cyclic_point_subsequence(&candidate_points, &construction_points)
+                })
+        })
+        .collect::<Vec<_>>();
+    matches.sort_unstable();
+    matches.dedup();
+    let [face] = matches.as_slice() else {
+        return None;
+    };
+    Some(*face)
+}
+
+fn cyclic_point_subsequence(
+    candidate: &[cadmpeg_ir::math::Point3],
+    construction: &[cadmpeg_ir::math::Point3],
+) -> bool {
+    let coincident = |left: &cadmpeg_ir::math::Point3, right: &cadmpeg_ir::math::Point3| {
+        let dx = left.x - right.x;
+        let dy = left.y - right.y;
+        let dz = left.z - right.z;
+        dx.mul_add(dx, dy.mul_add(dy, dz * dz)) <= 1.0e-12
+    };
+    let matches_orientation = |candidate: &[cadmpeg_ir::math::Point3]| {
+        construction.iter().enumerate().any(|(start, point)| {
+            if !coincident(&candidate[0], point) {
+                return false;
+            }
+            let mut cursor = start;
+            candidate.iter().skip(1).all(|target| {
+                let limit = start + construction.len();
+                while cursor < limit {
+                    cursor += 1;
+                    if coincident(target, &construction[cursor % construction.len()]) {
+                        return true;
+                    }
+                }
+                false
+            })
+        })
+    };
+    if candidate.is_empty() || candidate.len() > construction.len() {
+        return false;
+    }
+    let reversed = candidate.iter().copied().rev().collect::<Vec<_>>();
+    matches_orientation(candidate) || matches_orientation(&reversed)
 }
 
 pub(crate) fn bind_body_recipe_operand_history_candidates(
@@ -5315,6 +5496,39 @@ mod tests {
             &[2].into_iter().collect()
         )
         .is_empty());
+    }
+
+    #[test]
+    fn bounded_face_copy_matches_cyclic_boundary_with_split_vertices() {
+        use cadmpeg_ir::math::Point3;
+
+        let point = |x, y| Point3 { x, y, z: 0.0 };
+        let source = [
+            point(0.0, 0.0),
+            point(2.0, 0.0),
+            point(2.0, 2.0),
+            point(0.0, 2.0),
+        ];
+        let split_copy = [
+            point(2.0, 2.0),
+            point(1.0, 2.0),
+            point(0.0, 2.0),
+            point(0.0, 0.0),
+            point(2.0, 0.0),
+        ];
+        assert!(cyclic_point_subsequence(&source, &split_copy));
+
+        let reversed = split_copy.iter().copied().rev().collect::<Vec<_>>();
+        assert!(cyclic_point_subsequence(&source, &reversed));
+
+        let wrong_order = [
+            point(0.0, 0.0),
+            point(2.0, 2.0),
+            point(2.0, 0.0),
+            point(0.0, 2.0),
+        ];
+        assert!(!cyclic_point_subsequence(&source, &wrong_order));
+        assert!(!cyclic_point_subsequence(&source, &split_copy[..3]));
     }
 
     #[test]

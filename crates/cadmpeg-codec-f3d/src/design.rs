@@ -18804,35 +18804,20 @@ fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyReci
 pub(crate) fn face_recipe_structure(
     program: &[i32],
 ) -> Option<crate::records::DesignFaceRecipeStructure> {
-    let runs = program
-        .split(|word| *word == -1)
-        .filter(|run| !run.is_empty())
-        .collect::<Vec<_>>();
-    if runs
-        .get(0..3)
-        .is_none_or(|prefix| prefix.iter().any(|run| run.len() != 1))
-    {
-        return None;
-    }
-    let sides = [4usize, 5]
+    let (&root, remaining) = program.split_first()?;
+    let (&first_prelude, remaining) = recipe_delimiter(remaining)?.split_first()?;
+    let (&second_prelude, remaining) = recipe_delimiter(remaining)?.split_first()?;
+    let remaining = recipe_delimiter(remaining)?;
+    let structures = edge_recipe_side_sequences(remaining, 2)
         .into_iter()
-        .filter_map(|first_len| {
-            let second_len = runs.len().checked_sub(3 + first_len)?;
-            if !matches!(second_len, 4 | 5) {
-                return None;
-            }
-            Some([
-                edge_recipe_side(&runs[3..3 + first_len])?,
-                edge_recipe_side(&runs[3 + first_len..])?,
-            ])
-        })
-        .collect::<Vec<_>>();
-    let [sides] = sides.as_slice() else {
+        .filter_map(|(sides, tail)| matches!(tail, [] | [-1 | 0]).then(|| sides.try_into().ok())?)
+        .collect::<Vec<[_; 2]>>();
+    let [sides] = structures.as_slice() else {
         return None;
     };
     Some(crate::records::DesignFaceRecipeStructure {
-        root: runs[0][0],
-        prelude: [runs[1][0], runs[2][0]],
+        root,
+        prelude: [first_prelude, second_prelude],
         sides: sides.clone(),
     })
 }
@@ -18867,35 +18852,6 @@ fn topology_recipe_references(
             (usize::try_from(ordinal.get()).ok()? <= reference_count).then_some(ordinal)
         })
         .collect()
-}
-
-fn edge_recipe_side(runs: &[&[i32]]) -> Option<DesignTopologyRecipeSide> {
-    if runs.len() < 3
-        || runs[0].len() != 2
-        || runs[1..runs.len() - 1].iter().any(|run| run.len() != 1)
-    {
-        return None;
-    }
-    let payload = runs.last()?;
-    if payload.len() < 2 || (payload.len() - 2) % 8 != 0 || payload[0] != 0 {
-        return None;
-    }
-    let field_count = std::num::NonZeroU32::new(u32::try_from(runs.len() - 1).ok()?)?;
-    if i32::try_from(field_count.get()).ok()? != runs[0][0] {
-        return None;
-    }
-    let payload_entry_count = u32::try_from((payload.len() - 2) / 8).ok()?;
-    if i32::try_from(payload_entry_count).ok()? != payload[1] {
-        return None;
-    }
-    Some(DesignTopologyRecipeSide {
-        field_count,
-        header_value: runs[0][1],
-        scalars: runs[1..runs.len() - 1].iter().map(|run| run[0]).collect(),
-        payload_prefix: vec![0],
-        payload_entry_count,
-        entries: edge_recipe_entries(&payload[2..])?,
-    })
 }
 
 fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> {
@@ -28511,6 +28467,11 @@ mod relation_tests {
         assert_eq!(face.sides[1].field_count.get(), 3);
         assert_eq!(face.sides[1].header_value, 0);
         assert_eq!(face.sides[1].scalars, [1, 3]);
+        let zero_delimited_face = super::face_recipe_structure(&[
+            0, 0, 1, 0, 2, -1, 3, 0, 0, 2, 0, 1, 0, 0, 0, -1, 3, 0, 0, 1, 0, 3, 0, 0, 0, -1,
+        ])
+        .expect("zero-delimited face node topology recipe structure");
+        assert_eq!(zero_delimited_face, face);
         assert_eq!(edge_operand.next_record_index, 104);
         assert_eq!(edge_operand.next_byte_offset, next_at);
         bind_edge_operand_candidates(
