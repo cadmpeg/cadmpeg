@@ -7180,21 +7180,23 @@ fn signed_unit_chart(local: [f64; 2], frame: [f64; 2], offset: f64) -> Option<(f
         (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
     };
     let mut matches = Vec::new();
-    for sign in [-1.0, 1.0] {
-        let frame = [sign * frame[0], sign * frame[1]];
-        for reversed in [false, true] {
-            let target = if reversed {
-                [frame[1], frame[0]]
-            } else {
-                frame
-            };
-            let slope = if reversed { -1.0 } else { 1.0 };
-            let intercept = target[0] - slope * local[0];
-            if close(target[1], slope * local[1] + intercept)
-                && close(intercept.abs(), offset)
-                && !matches.contains(&(slope, intercept))
-            {
-                matches.push((slope, intercept));
+    for first_sign in [-1.0, 1.0] {
+        for second_sign in [-1.0, 1.0] {
+            let frame = [first_sign * frame[0], second_sign * frame[1]];
+            for reversed in [false, true] {
+                let target = if reversed {
+                    [frame[1], frame[0]]
+                } else {
+                    frame
+                };
+                let slope = if reversed { -1.0 } else { 1.0 };
+                let intercept = target[0] - slope * local[0];
+                if close(target[1], slope * local[1] + intercept)
+                    && close(intercept.abs(), offset)
+                    && !matches.contains(&(slope, intercept))
+                {
+                    matches.push((slope, intercept));
+                }
             }
         }
     }
@@ -7202,10 +7204,6 @@ fn signed_unit_chart(local: [f64; 2], frame: [f64; 2], offset: f64) -> Option<(f
         return None;
     };
     Some(*mapping)
-}
-
-fn is_zero_offset_signed_planar_frame(heads: &[u8]) -> bool {
-    matches!(heads, [_, 0x42, _, _, 0x18, _])
 }
 
 fn placed_tabulated_cylinder_directrix(
@@ -7268,9 +7266,9 @@ fn placed_tabulated_cylinder_directrix(
         })?;
         let values = frame.values.to_vec();
         let heads = frame.prefixes;
-        let resistor_layout = matches!(heads.as_slice(), [_, 0x46, 0x2f, _, 0x46, 0x2e]);
-        let zero_offset_layout = is_zero_offset_signed_planar_frame(&heads);
-        if resistor_layout {
+        let offset_planar_layout = matches!(heads.as_slice(), [_, 0x46, _, _, 0x46, _]);
+        let zero_offset_layout = matches!(heads.as_slice(), [_, 0x42, _, _, 0x18, _]);
+        if offset_planar_layout {
             Some((
                 values,
                 FrameLayout::SignedPlanar {
@@ -7335,17 +7333,42 @@ fn placed_tabulated_cylinder_directrix(
     {
         return None;
     }
-    let frame_span = std::array::from_fn::<_, 3, _>(|axis| (second[axis] - first[axis]).abs());
     let close = |left: f64, right: f64| {
         (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
+    };
+    let axis_matches = |axis: usize, coordinate: usize| match layout {
+        FrameLayout::LegacyReflected => {
+            close((second[axis] - first[axis]).abs(), local_span[coordinate])
+        }
+        FrameLayout::SignedPlanar { first_offset, .. } => signed_unit_chart(
+            [local_min[coordinate], local_max[coordinate]],
+            [first[axis], second[axis]],
+            if coordinate == 0 { first_offset } else { 0.0 },
+        )
+        .is_some(),
+        FrameLayout::OffsetSelectedPlanar => {
+            let offsets: &[f64] = if coordinate == 0 {
+                &[0.0, 30.0]
+            } else {
+                &[0.0]
+            };
+            offsets.iter().any(|offset| {
+                signed_unit_chart(
+                    [local_min[coordinate], local_max[coordinate]],
+                    [first[axis], second[axis]],
+                    *offset,
+                )
+                .is_some()
+            })
+        }
     };
     let assignments = (0..3)
         .flat_map(|first_axis| {
             (0..3)
                 .filter(move |&second_axis| {
                     first_axis != second_axis
-                        && close(frame_span[first_axis], local_span[0])
-                        && close(frame_span[second_axis], local_span[1])
+                        && axis_matches(first_axis, 0)
+                        && axis_matches(second_axis, 1)
                 })
                 .map(move |second_axis| (first_axis, second_axis, 3 - first_axis - second_axis))
         })
@@ -16542,6 +16565,17 @@ mod resolved_sketch_tests {
         assert_eq!(curve.control_points[0], Point3::new(1.0, 2.0, 5.0));
         assert_eq!(curve.control_points[3], Point3::new(4.0, 4.0, 5.0));
         assert_eq!(sweep, [0.0, 0.0, 5.0]);
+
+        broad_signed_frame.tabulated_cylinder_frame =
+            Some(crate::surface::TabulatedCylinderFrame {
+                values: [29.0, 5.0, 2.0, -26.0, 10.0, 4.0],
+                prefixes: [0x4a, 0x46, 0x2f, 0x46, 0x46, 0x2e],
+            });
+        let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame)
+            .expect("independently signed offset placement");
+        assert_eq!(curve.control_points[0], Point3::new(-29.0, 5.0, 2.0));
+        assert_eq!(curve.control_points[3], Point3::new(-26.0, 5.0, 4.0));
+        assert_eq!(sweep, [0.0, 5.0, 0.0]);
     }
 
     #[test]
@@ -16562,16 +16596,15 @@ mod resolved_sketch_tests {
             ),
             Some((-1.0, 0.0))
         );
+        assert_eq!(
+            signed_unit_chart(
+                [21.592_186_587_7, 21.604_574_667_3],
+                [8.407_813_412_3, -8.395_425_332_7],
+                30.0,
+            ),
+            Some((1.0, -30.0))
+        );
         assert_eq!(signed_unit_chart([1.0, 2.0], [4.0, 5.0], 30.0), None);
-        assert!(is_zero_offset_signed_planar_frame(&[
-            0x68, 0x42, 0x84, 0x71, 0x18, 0x86,
-        ]));
-        assert!(is_zero_offset_signed_planar_frame(&[
-            0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a,
-        ]));
-        assert!(!is_zero_offset_signed_planar_frame(&[
-            0x68, 0x42, 0x84, 0x71, 0x19, 0x86,
-        ]));
     }
 
     #[test]

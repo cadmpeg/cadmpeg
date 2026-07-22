@@ -581,8 +581,9 @@ opaque. The remaining axis defines the extrusion vector. The four placed
 points form a non-rational clamped cubic B-spline with knot vector
 `[0,0,0,0,1,1,1,1]`.
 
-The `_ 46 2f _ 46 2e` layout requires a first-axis intercept magnitude of 30,
-a zero second-axis intercept, and retains the stored sweep-axis sign. The
+Layouts whose second and fifth scalar prefixes are `46` require a first-axis
+intercept magnitude of 30, a zero second-axis intercept, and retain the stored
+sweep-axis sign. The
 `_ 42 _ _ 18 _` layout requires zero intercepts and retains the stored
 sweep-axis sign. Its first and fourth slots accept the complete first-coordinate
 scalar lane; its third and sixth slots accept the complete second-coordinate
@@ -591,6 +592,9 @@ four also use the first-coordinate lane. Its directrix charts select exactly
 one of two forms: a zero-offset form retaining the sweep-axis sign, or a
 first-axis intercept magnitude of 30 with a zero second-axis intercept and a
 reflected sweep-axis sign. A missing or non-unique form leaves the frame opaque.
+Each endpoint bound carries its own stored sign; resolving a chart may negate
+the two bounds independently. The resulting unit-slope affine map remains
+unique.
 Other six-scalar sequences after the marker are not directrix envelopes.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
