@@ -16,8 +16,8 @@ use cadmpeg_ir::features::{
     FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length,
     ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, PatternSeed, ProfileRef,
     RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft,
-    RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity,
-    SurfaceExtension, SweepMode, TrimRegion, VariableRadius, VertexSelection, WrapMode,
+    RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace, SweepMode, VariableRadius,
+    VertexSelection, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::AttributeId;
@@ -6044,17 +6044,8 @@ fn project_knit_surface(feature: &Feature) -> Option<FeatureDefinition> {
 }
 
 fn project_filled_surface(feature: &Feature) -> Option<FeatureDefinition> {
-    let continuity = match feature
-        .properties
-        .get("Continuity")?
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "contact" => SurfaceContinuity::Contact,
-        "tangent" => SurfaceContinuity::Tangent,
-        "curvature" => SurfaceContinuity::Curvature,
-        _ => return None,
-    };
+    let continuity =
+        crate::feature_schema::parse_surface_continuity(feature.properties.get("Continuity")?)?;
     Some(FeatureDefinition::FilledSurface {
         boundary: EdgeSelection::Native(feature.properties.get("Boundary")?.clone()),
         support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
@@ -6075,16 +6066,7 @@ fn project_trim_surface(
     let tool = native_by_source
         .get(tool.as_str())
         .map_or_else(|| tool.clone(), |id| (*id).to_string());
-    let keep = match feature
-        .properties
-        .get("Keep")?
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "inside" => TrimRegion::Inside,
-        "outside" => TrimRegion::Outside,
-        _ => return None,
-    };
+    let keep = crate::feature_schema::parse_trim_region(feature.properties.get("Keep")?)?;
     Some(FeatureDefinition::TrimSurface {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
         tool: PathRef::Native(tool),
@@ -6093,16 +6075,7 @@ fn project_trim_surface(
 }
 
 fn project_extend_surface(feature: &Feature) -> Option<FeatureDefinition> {
-    let method = match feature
-        .properties
-        .get("Method")?
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "natural" => SurfaceExtension::Natural,
-        "linear" => SurfaceExtension::Linear,
-        _ => return None,
-    };
+    let method = crate::feature_schema::parse_surface_extension(feature.properties.get("Method")?)?;
     Some(FeatureDefinition::ExtendSurface {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
         distance: Length(parse_positive_length_mm(
@@ -9736,11 +9709,7 @@ pub fn sync_neutral_features(
                 properties.insert("Tool".into(), tool);
                 properties.insert(
                     "Keep".into(),
-                    match keep {
-                        TrimRegion::Inside => "Inside",
-                        TrimRegion::Outside => "Outside",
-                    }
-                    .into(),
+                    crate::feature_schema::trim_region_token(*keep).into(),
                 );
                 (
                     existing
@@ -9788,11 +9757,7 @@ pub fn sync_neutral_features(
                 properties.insert("Faces".into(), faces);
                 properties.insert(
                     "Method".into(),
-                    match method {
-                        SurfaceExtension::Natural => "Natural",
-                        SurfaceExtension::Linear => "Linear",
-                    }
-                    .into(),
+                    crate::feature_schema::surface_extension_token(*method).into(),
                 );
                 (
                     existing
@@ -11091,12 +11056,7 @@ pub fn sync_neutral_features(
                 properties.insert("SupportFaces".into(), support_faces);
                 properties.insert(
                     "Continuity".into(),
-                    match continuity {
-                        SurfaceContinuity::Contact => "Contact",
-                        SurfaceContinuity::Tangent => "Tangent",
-                        SurfaceContinuity::Curvature => "Curvature",
-                    }
-                    .into(),
+                    crate::feature_schema::surface_continuity_token(*continuity).into(),
                 );
                 properties.insert("MergeResult".into(), merge_result.to_string());
                 (

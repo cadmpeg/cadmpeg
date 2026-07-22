@@ -72,6 +72,7 @@ mod classification;
 mod compound;
 pub mod container;
 pub mod decode;
+mod feature_schema;
 mod history;
 pub mod loss;
 mod metadata;
