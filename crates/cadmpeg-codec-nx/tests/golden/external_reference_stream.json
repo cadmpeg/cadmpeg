@@ -1,0 +1,551 @@
+{
+  "decode": {
+    "ir": {
+      "ir_version": "54",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "assembly_joints": [],
+        "attributes": [],
+        "bodies": [
+          {
+            "id": "nx:derived:point-body#0",
+            "kind": "general",
+            "regions": [
+              "nx:derived:point-region#0"
+            ]
+          }
+        ],
+        "coedges": [],
+        "components": [],
+        "configurations": [],
+        "curves": [
+          {
+            "geometry": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 20.0,
+                "z": 30.0
+              }
+            },
+            "id": "nx:s0:crv#0"
+          }
+        ],
+        "drawings": [],
+        "edges": [],
+        "faces": [],
+        "features": [],
+        "loops": [],
+        "occurrences": [],
+        "parameters": [],
+        "pcurves": [],
+        "pmi": [],
+        "points": [
+          {
+            "id": "nx:s0:pt#0",
+            "position": {
+              "x": 62.5,
+              "y": 0.0,
+              "z": 12.7
+            }
+          }
+        ],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "product_occurrences": [],
+        "products": [],
+        "regions": [
+          {
+            "body": "nx:derived:point-body#0",
+            "id": "nx:derived:point-region#0",
+            "shells": [
+              "nx:derived:point-shell#0"
+            ]
+          }
+        ],
+        "semantic_annotations": [],
+        "shells": [
+          {
+            "faces": [],
+            "free_vertices": [
+              "nx:derived:point-vertex#0"
+            ],
+            "id": "nx:derived:point-shell#0",
+            "region": "nx:derived:point-region#0"
+          }
+        ],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spreadsheets": [],
+        "subds": [],
+        "surfaces": [
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 76.2,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#0"
+          },
+          {
+            "geometry": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "radius": 4.05,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#1"
+          }
+        ],
+        "tessellations": [],
+        "vertices": [
+          {
+            "id": "nx:derived:point-vertex#0",
+            "point": "nx:s0:pt#0"
+          }
+        ],
+        "view_presentations": []
+      },
+      "native": {
+        "nx": {
+          "arenas": {
+            "external_reference_empty_records": [
+              {
+                "closing_marker": false,
+                "id": "nx:external-reference-empty-record:/Root/ExternalReferences#7",
+                "indexed_record": "nx:external-reference-indexed-record:/Root/ExternalReferences#7"
+              }
+            ],
+            "external_reference_indexed_records": [
+              {
+                "byte_len": 45,
+                "handle_set_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+                "id": "nx:external-reference-indexed-record:/Root/ExternalReferences#6",
+                "record_id": 6,
+                "sha256": "19c498cde8ddcfdc9f593e4f532ff5653aa0b5c77187203390a33de4ec092292",
+                "source_entry": "/Root/ExternalReferences",
+                "source_offset": 358
+              },
+              {
+                "byte_len": 6,
+                "id": "nx:external-reference-indexed-record:/Root/ExternalReferences#7",
+                "record_id": 7,
+                "sha256": "11635df4532364e5fa01ac9540563d9a833f881994f4d2f3ae2a2e9c87680163",
+                "source_entry": "/Root/ExternalReferences",
+                "source_offset": 352
+              }
+            ],
+            "external_reference_record_children": [
+              {
+                "directory_reference": "nx:external-reference:/Root/ExternalReferences#2",
+                "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+                "id": "nx:external-reference-record:/Root/ExternalReferences#6:child",
+                "name_reference": "nx:external-reference:/Root/ExternalReferences#0"
+              }
+            ],
+            "external_reference_record_string_uses": [
+              {
+                "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+                "external_reference": "nx:external-reference:/Root/ExternalReferences#0",
+                "id": "nx:external-reference:record-string-use#6-0",
+                "slot": 0,
+                "source_offset": 365,
+                "string_index": 0
+              },
+              {
+                "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+                "external_reference": "nx:external-reference:/Root/ExternalReferences#1",
+                "id": "nx:external-reference:record-string-use#6-1",
+                "slot": 1,
+                "source_offset": 369,
+                "string_index": 1
+              },
+              {
+                "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+                "external_reference": "nx:external-reference:/Root/ExternalReferences#2",
+                "id": "nx:external-reference:record-string-use#6-2",
+                "slot": 2,
+                "source_offset": 373,
+                "string_index": 2
+              },
+              {
+                "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+                "external_reference": "nx:external-reference:/Root/ExternalReferences#3",
+                "id": "nx:external-reference:record-string-use#6-3",
+                "slot": 3,
+                "source_offset": 377,
+                "string_index": 3
+              }
+            ],
+            "external_reference_records": [
+              {
+                "closing_duplicate": false,
+                "declared_count": 2,
+                "handles": [
+                  16,
+                  32
+                ],
+                "id": "nx:external-reference-record:/Root/ExternalReferences#6",
+                "id_slots": [
+                  0,
+                  1,
+                  2,
+                  3
+                ],
+                "prefix_byte_len": 36,
+                "record_id": 6,
+                "source_entry": "/Root/ExternalReferences",
+                "source_offset": 358,
+                "tail_byte_len": 9
+              }
+            ],
+            "external_reference_tail_reference_pairs": [
+              {
+                "handle_set_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+                "id": "nx:external-reference:tail-reference-pair#6-0",
+                "ordinal": 0,
+                "persistent_handle": 5,
+                "source_offset": 394,
+                "tagged_reference": 1
+              }
+            ],
+            "external_references": [
+              {
+                "id": "nx:external-reference:/Root/ExternalReferences#0",
+                "ordinal": 0,
+                "path": "child.prt",
+                "source_entry": "/Root/ExternalReferences",
+                "source_offset": 410
+              },
+              {
+                "id": "nx:external-reference:/Root/ExternalReferences#1",
+                "ordinal": 1,
+                "path": "dirA",
+                "source_entry": "/Root/ExternalReferences",
+                "source_offset": 421
+              },
+              {
+                "id": "nx:external-reference:/Root/ExternalReferences#2",
+                "ordinal": 2,
+                "path": "dirB",
+                "source_entry": "/Root/ExternalReferences",
+                "source_offset": 427
+              },
+              {
+                "id": "nx:external-reference:/Root/ExternalReferences#3",
+                "ordinal": 3,
+                "path": "extra",
+                "source_entry": "/Root/ExternalReferences",
+                "source_offset": 433
+              }
+            ],
+            "persistent_handles": [
+              {
+                "external_occurrence_count": 1,
+                "external_records": [
+                  "nx:external-reference-record:/Root/ExternalReferences#6"
+                ],
+                "id": "nx:om-persistent-handles:handle#00000005",
+                "occurrence_count": 0,
+                "records": [],
+                "value": 5
+              },
+              {
+                "external_occurrence_count": 1,
+                "external_records": [
+                  "nx:external-reference-record:/Root/ExternalReferences#6"
+                ],
+                "id": "nx:om-persistent-handles:handle#00000010",
+                "occurrence_count": 0,
+                "records": [],
+                "value": 16
+              },
+              {
+                "external_occurrence_count": 1,
+                "external_records": [
+                  "nx:external-reference-record:/Root/ExternalReferences#6"
+                ],
+                "id": "nx:om-persistent-handles:handle#00000020",
+                "occurrence_count": 0,
+                "records": [],
+                "value": 32
+              }
+            ],
+            "unknowns": [
+              {
+                "id": "nx:container:parasolid#0",
+                "links": [
+                  "nx:s0:surf#0",
+                  "nx:s0:surf#1",
+                  "nx:s0:crv#0"
+                ]
+              }
+            ]
+          },
+          "version": 155
+        }
+      },
+      "source": {
+        "attributes": {
+          "deltas_streams": "0",
+          "directory_entries": "2",
+          "external_reference.0": "child.prt",
+          "external_reference.1": "dirA",
+          "external_reference.2": "dirB",
+          "external_reference.3": "extra",
+          "file_size": "438",
+          "footer_offset": "0",
+          "jpeg_preview_count": "0",
+          "parasolid_schema": "SCH_TEST_1_9999",
+          "partition_streams": "1",
+          "plain_streams": "0"
+        },
+        "format": "nx"
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "container_only": false,
+      "format": "nx",
+      "geometry_transferred": true,
+      "losses": [
+        {
+          "category": "geometry",
+          "message": "Decoded 1 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 2 analytic surface carrier(s) (1 plane, 1 cylinder, 0 cone, 0 sphere, 0 torus), and 1 analytic curve carrier(s) (1 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
+          "severity": "info"
+        },
+        {
+          "category": "topology",
+          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
+          "severity": "blocking"
+        },
+        {
+          "category": "attribute",
+          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
+          "severity": "warning"
+        }
+      ],
+      "notes": [
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 2 directory entry/ies",
+        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+        "Parasolid schema: SCH_TEST_1_9999"
+      ]
+    },
+    "source_fidelity": {
+      "annotations": {
+        "exactness": {
+          "nx:container:parasolid#0": {
+            "entity": "derived",
+            "fields": {
+              "links": "derived"
+            }
+          },
+          "nx:derived:point-body#0": {
+            "entity": "inferred"
+          },
+          "nx:derived:point-region#0": {
+            "entity": "inferred"
+          },
+          "nx:derived:point-shell#0": {
+            "entity": "inferred"
+          },
+          "nx:derived:point-vertex#0": {
+            "entity": "inferred"
+          },
+          "nx:s0:crv#0": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:pt#0": {
+            "entity": "byte_exact",
+            "fields": {
+              "position": "derived"
+            }
+          },
+          "nx:s0:surf#0": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#1": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          }
+        },
+        "provenance": {
+          "nx:container:parasolid#0": {
+            "offset": 116,
+            "stream": 1,
+            "tag": "partition"
+          },
+          "nx:derived:point-body#0": {
+            "offset": 0,
+            "stream": 1,
+            "tag": "derived_point_topology"
+          },
+          "nx:derived:point-region#0": {
+            "offset": 0,
+            "stream": 1,
+            "tag": "derived_point_topology"
+          },
+          "nx:derived:point-shell#0": {
+            "offset": 0,
+            "stream": 1,
+            "tag": "derived_point_topology"
+          },
+          "nx:derived:point-vertex#0": {
+            "offset": 0,
+            "stream": 1,
+            "tag": "derived_point_topology"
+          },
+          "nx:s0:crv#0": {
+            "offset": 316,
+            "stream": 0,
+            "tag": "LINE"
+          },
+          "nx:s0:pt#0": {
+            "offset": 86,
+            "stream": 0,
+            "tag": "POINT"
+          },
+          "nx:s0:surf#0": {
+            "offset": 126,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#1": {
+            "offset": 217,
+            "stream": 0,
+            "tag": "CYLINDER"
+          }
+        },
+        "streams": [
+          "nx:parasolid#0:partition",
+          "nx:container"
+        ]
+      },
+      "byte_ledger": {
+        "source_length": 0,
+        "spans": []
+      },
+      "retained_records": [
+        {
+          "byte_len": 383,
+          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQAAAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAAAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAAAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAAAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "id": "nx:container:parasolid#0",
+          "offset": 116,
+          "sha256": "b5a338b2331eb7af411e1fbb4fcae722dffc02eb7b7ecba5ad477c50b8c3dad8",
+          "stream": "nx:container"
+        }
+      ],
+      "schema_version": "1"
+    }
+  },
+  "inspect": {
+    "container_kind": "splmsstr",
+    "entries": [
+      {
+        "attributes": {
+          "file_offset": "116",
+          "region": "HEADER"
+        },
+        "compressed_size": 191,
+        "compression": "none",
+        "name": "/Root/UG_PART/UG_PART",
+        "role": "stream",
+        "uncompressed_size": 191
+      },
+      {
+        "attributes": {
+          "file_offset": "307",
+          "region": "HEADER"
+        },
+        "compressed_size": 131,
+        "compression": "none",
+        "name": "/Root/ExternalReferences",
+        "role": "stream",
+        "uncompressed_size": 131
+      },
+      {
+        "attributes": {
+          "file_offset": "116",
+          "kind": "partition",
+          "records.body": "0",
+          "records.edge": "0",
+          "records.face": "0",
+          "records.fin": "0",
+          "records.live.body": "0",
+          "records.live.edge": "0",
+          "records.live.face": "0",
+          "records.live.fin": "0",
+          "records.live.loop": "0",
+          "records.live.region": "0",
+          "records.live.shell": "0",
+          "records.live.vertex": "0",
+          "records.loop": "0",
+          "records.region": "0",
+          "records.shell": "0",
+          "records.vertex": "0",
+          "schema": "SCH_TEST_1_9999"
+        },
+        "compressed_size": 0,
+        "compression": "zlib",
+        "name": "parasolid#0",
+        "role": "parasolid-stream",
+        "uncompressed_size": 383
+      }
+    ],
+    "format": "nx",
+    "notes": [
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 2 directory entry/ies",
+      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+      "Parasolid schema: SCH_TEST_1_9999"
+    ]
+  }
+}

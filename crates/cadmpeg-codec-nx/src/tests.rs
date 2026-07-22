@@ -10828,6 +10828,51 @@ fn partition_stream() -> Vec<u8> {
     s
 }
 
+/// Raw bytes for an `ExternalReferences` container entry: an `EXTREFSTREAM`
+/// index over one empty record and one four-slot handle-set record, followed by
+/// an end-anchored four-string table. Decoding walks the record index, string
+/// table, empty-record form, handle-set slots, and the handle/tagged tail,
+/// populating every `external_reference*` arena. The record and table byte
+/// shapes mirror the `external_reference_*` white-box tests.
+fn external_reference_stream() -> Vec<u8> {
+    let mut p = b"EXTREFSTREAM".to_vec();
+    p.extend_from_slice(&[0u8; 13]); // header; byte 24 must be zero
+    debug_assert_eq!(p.len(), 25);
+    // Record directory (ascending offsets): empty record 7 at 45, handle-set 6 at 51.
+    p.extend_from_slice(&7u32.to_le_bytes());
+    p.extend_from_slice(&45u32.to_le_bytes());
+    p.extend_from_slice(&6u32.to_le_bytes());
+    p.extend_from_slice(&51u32.to_le_bytes());
+    p.extend_from_slice(&0u32.to_le_bytes()); // terminator
+    debug_assert_eq!(p.len(), 45);
+    // Empty record 7: the exact six-byte form.
+    p.extend_from_slice(&[1, 0, 0, 0, 0, 1]);
+    debug_assert_eq!(p.len(), 51);
+    // Handle-set record 6.
+    p.extend_from_slice(&[1, 0, 0, 0]); // record marker
+    p.extend_from_slice(&2u16.to_be_bytes()); // declared count
+    p.push(1);
+    for slot in [0u32, 1, 2, 3] {
+        p.extend_from_slice(&slot.to_le_bytes()); // id slots
+    }
+    p.push(1); // record[23]
+    p.push(3); // record[24] = token count
+    p.extend_from_slice(&[0xe0, 0, 0, 0, 0x10]); // ascending handles
+    p.extend_from_slice(&[0xe0, 0, 0, 0, 0x20]);
+    p.push(3); // prefix closing count
+               // Tail: one adjacent persistent-handle / tagged-reference pair.
+    p.extend_from_slice(&[0xe0, 0, 0, 0, 0x05, 0xc0, 0, 0, 0x01]);
+    debug_assert_eq!(p.len(), 96);
+    // End-anchored string table: four strings, ordinals 0..3.
+    p.push(1);
+    p.extend_from_slice(&4u32.to_le_bytes());
+    for value in ["child.prt", "dirA", "dirB", "extra"] {
+        p.extend_from_slice(&(value.len() as u16).to_le_bytes());
+        p.extend_from_slice(value.as_bytes());
+    }
+    p
+}
+
 /// Raw bytes for a `/Root/UG_PART/DisplayJT` container entry: a one-row outer
 /// index pointing at a single embedded JT 9.4 document whose table of contents
 /// declares one compressed segment. Decoding walks
@@ -19721,7 +19766,7 @@ mod golden {
     /// Frozen from the generated snapshots; if a refactor drops an arena from
     /// every fixture, `arena_coverage_meets_floor` fails. Raise it (never lower
     /// it) when new covering fixtures are added.
-    const ARENA_COVERAGE_FLOOR: usize = 59;
+    const ARENA_COVERAGE_FLOOR: usize = 65;
 
     /// Build the covering fixture set: `(golden name, full `.prt` bytes)`. Each
     /// stream builder is wrapped exactly as its originating white-box test wraps
@@ -19795,6 +19840,15 @@ mod golden {
                 offset_only_indexed_om_section_with_index_values(),
             )]),
         ));
+        // EXTREFSTREAM index, string table, and handle-set records.
+        f.push((
+            "external_reference_stream",
+            prt_with_named_payloads(&[
+                ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+                ("/Root/ExternalReferences", external_reference_stream()),
+            ]),
+        ));
+
         f.push(("data_block_control_handles", {
             let mut control = Vec::new();
             control.extend_from_slice(&[0xe0, 0, 0, 0, 1]);
