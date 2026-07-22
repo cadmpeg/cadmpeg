@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![deny(clippy::disallowed_methods)]
 //! Autodesk Fusion native design and construction-history records.
 
 use schemars::JsonSchema;

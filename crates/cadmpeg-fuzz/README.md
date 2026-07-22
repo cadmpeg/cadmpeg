@@ -77,8 +77,8 @@ Use a parser target for focused binary-format coverage:
 - FCStd: `fcstd_xml`, `fcstd_gui`, `fcstd_brep`, `fcstd_element_map`,
   `fcstd_auxiliary`
 - IGES uses `iges_container` for bounded representation detection, physical-card parsing,
-  Global and Directory fields, Parameter tokens, reference graphs, semantic geometry and
-  topology projection, and byte-ledger accounting. Generate its valid 5.3 point and trimmed-sheet
+  Global and Directory fields, Parameter tokens, reference graphs, semantic geometry, and
+  topology projection. Generate its valid 5.3 point and trimmed-sheet
   seeds with `cargo run --bin generate_iges_seeds` from `crates/cadmpeg-fuzz`.
 
 Use an IR or STEP target when the input is JSON or the behavior under test is

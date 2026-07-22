@@ -6,7 +6,7 @@ use std::io::Read;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
-use cadmpeg_ir::codec::{Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{CodecEntry, Confidence, DecodeOptions};
 use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
 
 use crate::registry::Registry;

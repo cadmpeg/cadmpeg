@@ -12,7 +12,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, DecodeResult};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, model_surface_point_by_id, nurbs_surface_partials,
@@ -36,7 +37,7 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -74,28 +75,26 @@ impl Scan {
 }
 
 /// Parse the SPLMSSTR container and inflate streams in its canonical part entry.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
-    let container = container::scan(reader)?;
-    let streams = parasolid::extract_streams(&container.data);
+pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan, CodecError> {
+    let container = container::scan_bytes(root.window().to_vec())?;
+    let streams = parasolid::extract_streams(ctx, root, &container)?;
     Ok(Scan { container, streams })
 }
 
 /// Decode an NX `.prt` into IR and a loss report.
 ///
-/// When [`DecodeOptions::container_only`] is set, the returned IR contains source
+/// When [`DecodeContext::container_only`] is set, the returned IR contains source
 /// metadata and preserved streams but no typed entities. Otherwise the decoder
 /// emits supported geometry and resolvable topology. A valid container can
 /// decode successfully with no geometry, including an assembly whose geometry
 /// resides in external child parts.
-pub fn decode(
-    reader: &mut dyn ReadSeek,
-    options: &DecodeOptions,
-) -> Result<DecodeResult, CodecError> {
-    let scan = scan(reader)?;
+pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
+    let scan = scan(ctx, root)?;
 
-    if options.container_only {
+    if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
-        let report = build_container_report(&scan, true);
+        let mut report = build_container_report(&scan, true);
+        report_untransferred_streams(&scan, &mut report);
         return decode_result(ir, report, annotations, &unknowns);
     }
 
@@ -104,7 +103,8 @@ pub fn decode(
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
-    let report = build_container_report(&scan, false);
+    let mut report = build_container_report(&scan, false);
+    report_untransferred_streams(&scan, &mut report);
     decode_result(ir, report, annotations, &unknowns)
 }
 
@@ -124,6 +124,23 @@ fn decode_result(
         report,
         source_fidelity,
     ))
+}
+
+fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
+    for (index, stream) in scan.streams.iter().enumerate() {
+        if !stream.kind.is_parasolid() {
+            report.losses.push(LossNote {
+                code: LossCode::PassthroughRecordOmitted,
+                category: LossCategory::Other,
+                severity: Severity::Info,
+                message: format!(
+                    "Non-Parasolid {} stream #{index} was classified but not transferred.",
+                    stream.kind.label()
+                ),
+                provenance: None,
+            });
+        }
+    }
 }
 
 /// Aggregate carrier counts across the decoded streams, for reporting.
@@ -867,7 +884,7 @@ fn try_decode_geometry(
     retain_live_unknown_links(&ir, &mut unknowns, &mut annotations);
     let mut annotations = annotations.build();
     retain_live_annotations(&ir, &unknowns, &mut annotations);
-    let report = build_geometry_report(
+    let mut report = build_geometry_report(
         scan,
         &ir,
         &counts,
@@ -875,6 +892,7 @@ fn try_decode_geometry(
         ir.model.bodies.len() > 1 && !active_body_selection,
         ir.model.tessellations.len(),
     );
+    report_untransferred_streams(scan, &mut report);
     Some((ir, report, annotations, unknowns))
 }
 
@@ -6364,6 +6382,7 @@ fn build_geometry_report(
     let mut losses = Vec::new();
 
     losses.push(LossNote {
+        code: LossCode::CarrierSummary,
         category: LossCategory::Geometry,
         severity: Severity::Info,
         message: format!(
@@ -6388,6 +6407,7 @@ fn build_geometry_report(
 
     if tessellation_count != 0 {
         losses.push(LossNote {
+            code: LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -6399,6 +6419,7 @@ fn build_geometry_report(
 
     if !has_topology {
         losses.push(LossNote {
+            code: LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message: "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not \
@@ -6414,6 +6435,7 @@ fn build_geometry_report(
 
     if counts.intersection_rejections.total() > 0 {
         losses.push(LossNote {
+            code: LossCode::ObjectRecordsUntransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -6436,6 +6458,7 @@ fn build_geometry_report(
     if scan.count(StreamKind::Deltas) > 0 {
         let unmatched_tombstones = unmatched_delta_tombstone_count(scan);
         losses.push(LossNote {
+            code: LossCode::DecodeDiagnostic,
             category: LossCategory::Topology,
             severity: if unmatched_tombstones == 0 {
                 Severity::Info
@@ -6468,6 +6491,7 @@ fn build_geometry_report(
 
     if has_unresolved_sub_bodies {
         losses.push(LossNote {
+            code: LossCode::FeatureHistoryRetained,
             category: LossCategory::Topology,
             severity: Severity::Warning,
             message: format!(
@@ -6484,6 +6508,7 @@ fn build_geometry_report(
     append_design_intent_losses(ir, &mut losses);
 
     losses.push(LossNote {
+        code: LossCode::AttributesNotTransferred,
         category: LossCategory::Attribute,
         severity: Severity::Warning,
         message: "Material and appearance assignment, class-specific entity attribute fields, and \
@@ -6512,6 +6537,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .count();
     if unresolved_suppression_count != 0 {
         losses.push(LossNote {
+            code: LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
@@ -6550,6 +6576,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .count();
     if incomplete_configuration_count != 0 {
         losses.push(LossNote {
+            code: LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
@@ -6563,6 +6590,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
     let incomplete_expression_count = incomplete_expression_parameters(ir).len();
     if incomplete_expression_count != 0 {
         losses.push(LossNote {
+            code: LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
@@ -6586,6 +6614,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .collect::<Vec<_>>()
             .join(", ");
         losses.push(LossNote {
+            code: LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
@@ -6616,6 +6645,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .collect::<Vec<_>>()
             .join(", ");
         losses.push(LossNote {
+            code: LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
@@ -6854,6 +6884,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .collect::<Vec<_>>()
             .join(", ");
         losses.push(LossNote {
+            code: LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
@@ -6884,6 +6915,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .count();
     if unresolved_sketch_feature_count != 0 {
         losses.push(LossNote {
+            code: LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
@@ -6895,6 +6927,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         });
     } else if sketch_feature_count != 0 && ir.model.sketch_constraints.is_empty() {
         losses.push(LossNote {
+            code: LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
@@ -6930,6 +6963,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .count();
     if native_sketch_entity_count != 0 || native_sketch_constraint_count != 0 {
         losses.push(LossNote {
+            code: LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
@@ -7285,6 +7319,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
 
     if assembly {
         losses.push(LossNote {
+            code: LossCode::AssemblyComponentsExternal,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
             message: "No inline Parasolid geometry: this is an assembly .prt. Component geometry \
@@ -7296,6 +7331,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         });
     } else {
         losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
             message: "No B-rep geometry was transferred: no gate-passing analytic carrier was found \
@@ -7309,6 +7345,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
 
     if container_only {
         losses.push(LossNote {
+            code: LossCode::ContainerOnly,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: "Container-only decode requested; entity decode was not attempted."

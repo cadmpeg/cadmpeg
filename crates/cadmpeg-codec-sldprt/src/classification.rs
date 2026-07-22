@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural classification of native feature-history objects.
+#![deny(clippy::disallowed_methods)]
 
 use crate::records::Feature;
 use crate::records::{FeatureInputClassRole, FeatureInputRelationFamily};

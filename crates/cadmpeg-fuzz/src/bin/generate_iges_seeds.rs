@@ -19,7 +19,7 @@ fn card(data: &[u8], section: u8, sequence: u32) -> Vec<u8> {
 
 fn directory_card(fields: [&str; 9], sequence: u32) -> Vec<u8> {
     let data = fields.into_iter().fold(String::new(), |mut data, field| {
-        write!(data, "{field:>8}").unwrap();
+        write!(data, "{field:>8}").expect("required invariant");
         data
     });
     card(data.as_bytes(), b'D', sequence)
@@ -36,7 +36,7 @@ fn parameter_card(data: &[u8], directory_sequence: u32, sequence: u32) -> Vec<u8
 fn prefix() -> Vec<u8> {
     let mut bytes = card(b"cadmpeg generated fuzz seed", b'S', 1);
     for (index, chunk) in GLOBAL.chunks(72).enumerate() {
-        bytes.extend(card(chunk, b'G', u32::try_from(index + 1).unwrap()));
+        bytes.extend(card(chunk, b'G', u32::try_from(index + 1).expect("required invariant")));
     }
     bytes
 }
@@ -111,12 +111,12 @@ fn trimmed_plane() -> Vec<u8> {
 
 fn main() {
     let directory = Path::new("seeds/iges_container");
-    fs::create_dir_all(directory).unwrap();
+    fs::create_dir_all(directory).expect("required invariant");
     for (name, bytes) in [
         ("point_5_3", point()),
         ("trimmed_plane_5_3", trimmed_plane()),
     ] {
-        fs::write(directory.join(name), &bytes).unwrap();
+        fs::write(directory.join(name), &bytes).expect("required invariant");
         println!("iges/{name} ({} bytes)", bytes.len());
     }
 }

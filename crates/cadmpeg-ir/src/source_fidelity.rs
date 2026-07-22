@@ -1,29 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode-time source fidelity and byte-accounting sidecar.
+//! Source annotations and retained native records produced during decode.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::annotations::Annotations;
-use crate::byte_ledger::ByteLedger;
 use crate::document::CadIr;
 use crate::native::NativeConvertError;
 use crate::unknown::UnknownRecord;
 
-/// Source bytes retained to support exact recovery of opaque ledger spans.
+/// Current serialized sidecar version.
+pub const SOURCE_FIDELITY_VERSION: &str = "3";
+
+/// Source bytes retained for native recovery or replay.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct RetainedSourceRecord {
-    /// Stable identifier named by opaque byte-ledger spans.
+    /// Stable record identifier.
     pub id: String,
-    /// Source stream containing the retained range.
+    /// Source stream containing the record.
     pub stream: String,
     /// First byte offset in the source stream.
     pub offset: u64,
-    /// Number of retained bytes.
+    /// Number of source bytes.
     pub byte_len: u64,
-    /// Lowercase hexadecimal SHA-256 of `data`.
+    /// Lowercase hexadecimal SHA-256 of the source bytes.
     pub sha256: String,
-    /// Retained bytes, when available. Opaque ledger recovery requires data.
+    /// Retained bytes, when available.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -33,23 +35,48 @@ pub struct RetainedSourceRecord {
     pub data: Option<Vec<u8>>,
 }
 
-/// Source-fidelity schema version produced by this build.
-pub const SOURCE_FIDELITY_VERSION: &str = "1";
+/// Validation failure in source metadata.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum FidelityError {
+    /// The sidecar declares an unsupported schema version.
+    #[error("unsupported source-fidelity version: {found}")]
+    Version {
+        /// The version found in the sidecar.
+        found: String,
+    },
+    /// Two retained records share an identifier.
+    #[error("duplicate retained source record: {id}")]
+    DuplicateRecord {
+        /// The repeated identifier.
+        id: String,
+    },
+    /// Retained data has the wrong length.
+    #[error("retained source record {id} declares {declared} bytes but contains {actual}")]
+    Length {
+        /// The record identifier.
+        id: String,
+        /// Declared byte length.
+        declared: u64,
+        /// Actual retained byte length.
+        actual: u64,
+    },
+    /// Retained data has the wrong digest.
+    #[error("retained source record {id} does not match its SHA-256 digest")]
+    Digest {
+        /// The record identifier.
+        id: String,
+    },
+}
 
-/// Source-byte accounting and conversion facts accompanying one decoded IR.
-///
-/// This value is not part of the neutral product schema. Its version evolves
-/// independently from [`crate::IR_VERSION`].
+/// Decode-time source annotations and retained native records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SourceFidelity {
-    /// Independently versioned sidecar schema.
-    pub schema_version: String,
-    /// Complete ownership of the decoded source byte stream.
-    pub byte_ledger: ByteLedger,
+    /// Serialized representation version.
+    pub version: String,
     /// Sparse source locations and conversion exactness.
     #[serde(default)]
     pub annotations: Annotations,
-    /// Opaque source ranges retained for exact recovery.
+    /// Native records retained for recovery or replay.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub retained_records: Vec<RetainedSourceRecord>,
 }
@@ -57,8 +84,7 @@ pub struct SourceFidelity {
 impl Default for SourceFidelity {
     fn default() -> Self {
         Self {
-            schema_version: SOURCE_FIDELITY_VERSION.into(),
-            byte_ledger: ByteLedger::default(),
+            version: SOURCE_FIDELITY_VERSION.into(),
             annotations: Annotations::default(),
             retained_records: Vec::new(),
         }
@@ -66,12 +92,19 @@ impl Default for SourceFidelity {
 }
 
 impl SourceFidelity {
-    /// Find one retained source record by stable identifier.
+    /// Sorts retained records into canonical source order.
+    pub fn finalize(&mut self) {
+        self.retained_records.sort_by(|left, right| {
+            (&left.stream, left.offset, &left.id).cmp(&(&right.stream, right.offset, &right.id))
+        });
+    }
+
+    /// Finds a retained source record by identifier.
     pub fn retained_record(&self, id: &str) -> Option<&RetainedSourceRecord> {
         self.retained_records.iter().find(|record| record.id == id)
     }
 
-    /// Transfer source accounting from decoder records into this sidecar.
+    /// Retains source records without adding them to the product model.
     pub fn retain_unknown_records(&mut self, stream: &str, records: &[UnknownRecord]) {
         self.retained_records
             .extend(records.iter().map(|record| RetainedSourceRecord {
@@ -84,7 +117,7 @@ impl SourceFidelity {
             }));
     }
 
-    /// Store source records in this sidecar and source-independent refs in the product model.
+    /// Stores source bytes in the sidecar and references in the product model.
     pub fn attach_native_unknown_records(
         &mut self,
         ir: &mut CadIr,
@@ -115,7 +148,7 @@ impl SourceFidelity {
         ir.set_native_unknowns(format, &product_records)
     }
 
-    /// Join product links with retained records into a codec-local source view.
+    /// Joins product references with retained source records.
     pub fn native_unknown_records(
         &self,
         ir: &CadIr,
@@ -139,312 +172,101 @@ impl SourceFidelity {
             .collect()
     }
 
-    /// Canonicalize sidecar collections independently from the product model.
-    pub fn finalize(&mut self) {
-        self.byte_ledger.finalize();
-        self.retained_records.sort_by(|left, right| {
-            (&left.stream, left.offset, &left.id).cmp(&(&right.stream, right.offset, &right.id))
-        });
+    /// Validates retained record identity and payload integrity.
+    pub fn validate(&self) -> Result<(), FidelityError> {
+        if self.version != SOURCE_FIDELITY_VERSION {
+            return Err(FidelityError::Version {
+                found: self.version.clone(),
+            });
+        }
+        let mut ids = std::collections::BTreeSet::new();
+        for record in &self.retained_records {
+            if !ids.insert(&record.id) {
+                return Err(FidelityError::DuplicateRecord {
+                    id: record.id.clone(),
+                });
+            }
+            if let Some(data) = &record.data {
+                let actual = data.len() as u64;
+                if actual != record.byte_len {
+                    return Err(FidelityError::Length {
+                        id: record.id.clone(),
+                        declared: record.byte_len,
+                        actual,
+                    });
+                }
+                if crate::hash::sha256_hex(data) != record.sha256 {
+                    return Err(FidelityError::Digest {
+                        id: record.id.clone(),
+                    });
+                }
+            }
+        }
+        Ok(())
     }
+
+    /// Serializes the canonical sidecar as compact JSON.
+    pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
+        let mut canonical = self.clone();
+        canonical.finalize();
+        serde_json::to_string(&canonical)
+    }
+
+    /// Parses and validates a sidecar.
+    pub fn from_json(text: &str) -> Result<Self, SourceFidelityParseError> {
+        let sidecar: Self = serde_json::from_str(text).map_err(SourceFidelityParseError::Json)?;
+        sidecar
+            .validate()
+            .map_err(SourceFidelityParseError::Fidelity)?;
+        Ok(sidecar)
+    }
+}
+
+/// Failure parsing source metadata.
+#[derive(Debug, thiserror::Error)]
+pub enum SourceFidelityParseError {
+    /// Invalid JSON.
+    #[error("invalid source-fidelity JSON: {0}")]
+    Json(serde_json::Error),
+    /// Invalid source metadata.
+    #[error(transparent)]
+    Fidelity(FidelityError),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::UnknownId;
-    use crate::{
-        validate_with_source_fidelity, ByteSpan, ByteSpanClass, CadIr, Check, UnknownRecord,
-    };
 
-    #[test]
-    fn sidecar_version_is_independent_and_explicit() {
-        let value = serde_json::to_value(SourceFidelity::default()).expect("serialize sidecar");
-
-        assert_eq!(value["schema_version"], SOURCE_FIDELITY_VERSION);
-        assert!(value.get("ir_version").is_none());
-    }
-
-    #[test]
-    fn transfers_unknown_source_accounting_without_product_fields() {
-        let record = UnknownRecord {
-            id: UnknownId("native:x#1".into()),
-            offset: 7,
-            byte_len: 3,
-            sha256: crate::hash::sha256_hex(b"abc"),
-            data: Some(b"abc".to_vec()),
-            links: vec!["body:1".into()],
-        };
-        let mut sidecar = SourceFidelity::default();
-        sidecar.retain_unknown_records("objects", std::slice::from_ref(&record));
-
-        assert_eq!(sidecar.retained_records[0].stream, "objects");
-        assert_eq!(sidecar.retained_records[0].offset, 7);
-        let product = crate::NativeUnknownRecord::from(&record);
-        let value = serde_json::to_value(product).expect("serialize product record");
-        assert_eq!(value["links"][0], "body:1");
-        assert!(value.get("offset").is_none());
-        assert!(value.get("byte_len").is_none());
-        assert!(value.get("sha256").is_none());
-        assert!(value.get("data").is_none());
-
-        let mut ir = CadIr::empty(crate::units::Units::default());
-        ir.set_native_unknowns("native", &[crate::NativeUnknownRecord::from(&record)])
-            .expect("store product record");
-        assert_eq!(
-            sidecar
-                .native_unknown_records(&ir, "native")
-                .expect("hydrate codec source view"),
-            vec![record]
-        );
-    }
-
-    #[test]
-    fn source_view_joins_only_authoritative_product_refs() {
-        let referenced = UnknownRecord {
-            id: UnknownId("native:object#1".into()),
-            offset: 7,
-            byte_len: 3,
-            sha256: crate::hash::sha256_hex(b"abc"),
-            data: Some(b"abc".to_vec()),
-            links: Vec::new(),
-        };
-        let source_only = UnknownRecord {
-            id: UnknownId("native:file:source-image#0".into()),
+    fn record(id: &str, data: &[u8]) -> RetainedSourceRecord {
+        RetainedSourceRecord {
+            id: id.into(),
+            stream: "source".into(),
             offset: 0,
-            byte_len: 6,
-            sha256: crate::hash::sha256_hex(b"source"),
-            data: Some(b"source".to_vec()),
-            links: Vec::new(),
-        };
-        let mut ir = CadIr::empty(crate::units::Units::default());
-        ir.set_native_unknowns("native", &[crate::NativeUnknownRecord::from(&referenced)])
-            .expect("store product ref");
-        let mut sidecar = SourceFidelity::default();
-        sidecar.retain_unknown_records("native", &[referenced.clone(), source_only]);
-
-        assert_eq!(
-            sidecar.native_unknown_records(&ir, "native").unwrap(),
-            vec![referenced]
-        );
-    }
-
-    #[test]
-    fn source_view_rejects_a_product_ref_without_retained_bytes() {
-        let mut ir = CadIr::empty(crate::units::Units::default());
-        ir.set_native_unknowns(
-            "native",
-            &[crate::NativeUnknownRecord {
-                id: UnknownId("native:missing#1".into()),
-                links: Vec::new(),
-            }],
-        )
-        .expect("store product ref");
-
-        assert!(matches!(
-            SourceFidelity::default().native_unknown_records(&ir, "native"),
-            Err(NativeConvertError::MissingRetainedSourceRecord(id))
-                if id == "native:missing#1"
-        ));
-    }
-
-    fn recovery_sidecar(data: &[u8]) -> SourceFidelity {
-        SourceFidelity {
-            byte_ledger: ByteLedger {
-                source_length: data.len() as u64,
-                spans: vec![ByteSpan {
-                    start: 0,
-                    end: data.len() as u64,
-                    class: ByteSpanClass::Opaque,
-                    owner: "decoder".into(),
-                    meaning: "untyped source bytes".into(),
-                    retained_record: Some("source:opaque#1".into()),
-                }],
-            },
-            retained_records: vec![RetainedSourceRecord {
-                id: "source:opaque#1".into(),
-                stream: "source".into(),
-                offset: 0,
-                byte_len: data.len() as u64,
-                sha256: crate::hash::sha256_hex(data),
-                data: Some(data.to_vec()),
-            }],
-            ..SourceFidelity::default()
+            byte_len: data.len() as u64,
+            sha256: crate::hash::sha256_hex(data),
+            data: Some(data.to_vec()),
         }
     }
 
     #[test]
-    fn validates_complete_opaque_recovery() {
-        let report = validate_with_source_fidelity(
-            &CadIr::empty(crate::units::Units::default()),
-            &recovery_sidecar(b"opaque"),
-            Vec::new(),
-        );
-
-        assert!(!report
-            .findings
-            .iter()
-            .any(|finding| finding.check == Check::ByteAccounting));
-    }
-
-    #[test]
-    fn rejects_recovery_record_range_and_digest_disagreement() {
-        let mut sidecar = recovery_sidecar(b"opaque");
-        sidecar.retained_records[0].offset = 1;
-        sidecar.retained_records[0].sha256 = "0".repeat(64);
-        let report = validate_with_source_fidelity(
-            &CadIr::empty(crate::units::Units::default()),
-            &sidecar,
-            Vec::new(),
-        );
-        let messages = report
-            .findings
-            .iter()
-            .filter(|finding| finding.check == Check::ByteAccounting)
-            .map(|finding| finding.message.as_str())
-            .collect::<Vec<_>>();
-
-        assert!(messages
-            .iter()
-            .any(|message| message.contains("ranges disagree")));
-        assert!(messages
-            .iter()
-            .any(|message| message.contains("digest disagrees")));
-    }
-
-    #[test]
-    fn rejects_opaque_recovery_without_retained_bytes() {
-        let mut sidecar = recovery_sidecar(b"opaque");
-        sidecar.retained_records[0].data = None;
-        let report = validate_with_source_fidelity(
-            &CadIr::empty(crate::units::Units::default()),
-            &sidecar,
-            Vec::new(),
-        );
-
-        assert!(report.findings.iter().any(|finding| {
-            finding.check == Check::ByteAccounting
-                && finding.message.contains("has no recovery bytes")
-        }));
-    }
-
-    #[test]
-    fn byte_ledger_validation_rejects_a_gap() {
+    fn canonical_json_orders_retained_records() {
         let sidecar = SourceFidelity {
-            byte_ledger: ByteLedger {
-                source_length: 4,
-                spans: vec![ByteSpan {
-                    start: 1,
-                    end: 4,
-                    class: ByteSpanClass::Structural,
-                    owner: "stream".into(),
-                    meaning: "payload".into(),
-                    retained_record: None,
-                }],
-            },
+            retained_records: vec![record("b", &[2]), record("a", &[1])],
             ..SourceFidelity::default()
         };
-
-        let findings = validate_with_source_fidelity(
-            &CadIr::empty(crate::units::Units::default()),
-            &sidecar,
-            Vec::new(),
-        )
-        .findings;
-        assert!(findings.iter().any(|finding| {
-            finding.check == Check::ByteAccounting
-                && finding.message == "byte ledger has a gap before offset 1"
-        }));
+        let json = sidecar.to_canonical_json().expect("serialize sidecar");
+        let parsed = SourceFidelity::from_json(&json).expect("parse sidecar");
+        assert_eq!(parsed.retained_records[0].id, "a");
     }
 
     #[test]
-    fn finalize_coalesces_equivalent_adjacent_byte_spans() {
-        let mut sidecar = SourceFidelity {
-            byte_ledger: ByteLedger {
-                source_length: 4,
-                spans: vec![
-                    ByteSpan {
-                        start: 0,
-                        end: 2,
-                        class: ByteSpanClass::Typed,
-                        owner: "card:1".into(),
-                        meaning: "data".into(),
-                        retained_record: None,
-                    },
-                    ByteSpan {
-                        start: 2,
-                        end: 4,
-                        class: ByteSpanClass::Typed,
-                        owner: "card:1".into(),
-                        meaning: "data".into(),
-                        retained_record: None,
-                    },
-                ],
-            },
-            ..SourceFidelity::default()
-        };
-
-        sidecar.finalize();
-
-        assert_eq!(sidecar.byte_ledger.spans.len(), 1);
-        assert_eq!(sidecar.byte_ledger.spans[0].start, 0);
-        assert_eq!(sidecar.byte_ledger.spans[0].end, 4);
-    }
-
-    #[test]
-    fn validates_sidecar_annotations_against_product_entities() {
+    fn validation_rejects_false_payload_metadata() {
         let mut sidecar = SourceFidelity::default();
-        sidecar.annotations.provenance.insert(
-            "missing:entity#0".into(),
-            crate::Provenance {
-                stream: 0,
-                offset: 0,
-                tag: None,
-            },
-        );
-        let report = validate_with_source_fidelity(
-            &CadIr::empty(crate::units::Units::default()),
-            &sidecar,
-            Vec::new(),
-        );
-
-        assert!(report.findings.iter().any(|finding| {
-            finding.check == Check::Annotations
-                && finding.message == "provenance key does not resolve to an entity"
-        }));
-    }
-
-    #[test]
-    fn sidecar_annotations_may_name_source_only_retained_records() {
-        let mut sidecar = SourceFidelity {
-            retained_records: vec![RetainedSourceRecord {
-                id: "source:record#1".into(),
-                stream: "source".into(),
-                offset: 0,
-                byte_len: 1,
-                sha256: crate::hash::sha256_hex(b"x"),
-                data: Some(b"x".to_vec()),
-            }],
-            ..SourceFidelity::default()
-        };
-        sidecar.annotations.streams.push("source".into());
-        sidecar.annotations.provenance.insert(
-            "source:record#1".into(),
-            crate::Provenance {
-                stream: 0,
-                offset: 0,
-                tag: None,
-            },
-        );
-
-        let report = validate_with_source_fidelity(
-            &CadIr::empty(crate::units::Units::default()),
-            &sidecar,
-            Vec::new(),
-        );
-
-        assert!(!report.findings.iter().any(|finding| {
-            finding.check == Check::Annotations
-                && finding.entity.as_deref() == Some("source:record#1")
-        }));
+        sidecar.retained_records.push(record("a", &[1, 2]));
+        sidecar.retained_records[0].sha256 = crate::hash::sha256_hex(&[2, 1]);
+        assert!(matches!(
+            sidecar.validate(),
+            Err(FidelityError::Digest { .. })
+        ));
     }
 }

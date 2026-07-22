@@ -10,7 +10,7 @@ use crate::records::{
     BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, DesignBodyBinding, DesignBodyBounds,
     DesignBodyMember, DesignEntityHeader, DesignObjectKind,
 };
-use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
 use cadmpeg_ir::math::Point3;
 use std::collections::HashMap;
@@ -20,10 +20,7 @@ use std::collections::HashMap;
 /// suffix and flags. The decode is rejected (no members returned for that
 /// stream) unless the declared count is fully consumed and immediately
 /// followed by a zero byte.
-pub fn decode_body_members(
-    _reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-) -> Result<Vec<DesignBodyMember>, CodecError> {
+pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>, CodecError> {
     let mut out = Vec::new();
     let mut prefix = Vec::new();
     prefix.extend_from_slice(&10u32.to_le_bytes());

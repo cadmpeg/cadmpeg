@@ -1093,10 +1093,10 @@ mod tests {
             periodic: false,
         };
 
-        let circle = pcurve_uv(&circle, std::f64::consts::FRAC_PI_2).unwrap();
-        let ellipse = pcurve_uv(&ellipse, std::f64::consts::FRAC_PI_2).unwrap();
-        let polar = pcurve_uv(&polar, std::f64::consts::FRAC_PI_2).unwrap();
-        let polar_nurbs = pcurve_uv(&polar_nurbs, 0.5).unwrap();
+        let circle = pcurve_uv(&circle, std::f64::consts::FRAC_PI_2).expect("circle evaluates");
+        let ellipse = pcurve_uv(&ellipse, std::f64::consts::FRAC_PI_2).expect("ellipse evaluates");
+        let polar = pcurve_uv(&polar, std::f64::consts::FRAC_PI_2).expect("polar curve evaluates");
+        let polar_nurbs = pcurve_uv(&polar_nurbs, 0.5).expect("polar NURBS evaluates");
         assert!((circle.u - 2.0).abs() < 1e-12 && (circle.v + 1.0).abs() < 1e-12);
         assert!(ellipse.u.abs() < 1e-12 && (ellipse.v - 3.0).abs() < 1e-12);
         assert!((polar.u - std::f64::consts::FRAC_PI_2).abs() < 1e-12);

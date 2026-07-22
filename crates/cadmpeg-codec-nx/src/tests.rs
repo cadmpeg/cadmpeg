@@ -8,7 +8,8 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -21,6 +22,25 @@ use crate::container;
 use crate::parasolid::{self, StreamKind};
 use crate::test_support::*;
 use crate::NxCodec;
+
+fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
+    let arena = cadmpeg_ir::decode::DecodeArena::new();
+    let policy = cadmpeg_ir::decode::DecodePolicy::default();
+    let (ctx, root) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("bounded test input");
+    let container = container::scan_bytes(bytes.to_vec()).expect("test SPLMSSTR container");
+    parasolid::extract_streams(&ctx, root, &container).expect("test Parasolid streams")
+}
+
+fn options_in(mode: DecodeMode, container_only: bool) -> DecodeOptions {
+    DecodeOptions {
+        container_only,
+        policy: cadmpeg_ir::decode::DecodePolicy {
+            mode,
+            ..Default::default()
+        },
+    }
+}
 
 #[test]
 fn jt_int32_cdp2_decodes_empty_and_bitlength_packets() {
@@ -5185,7 +5205,9 @@ fn container_parses_header_and_directory() {
 #[test]
 fn inspect_reports_bounded_nx_object_model_entities() {
     let mut cur = Cursor::new(prt_with_indexed_om_section());
-    let summary = NxCodec.inspect(&mut cur).unwrap();
+    let summary = NxCodec
+        .inspect(&mut cur, &InspectOptions::default())
+        .unwrap();
     assert!(summary.notes.iter().any(|note| {
         note == "NX object model: 1 indexed section(s), 2 bounded entity record(s)"
     }));
@@ -5268,7 +5290,7 @@ fn decode_rejects_repeated_nx_arrangement_terminators_atomically() {
 #[test]
 fn parasolid_extraction_classifies_partition_and_schema() {
     let f = single_part_prt();
-    let streams = parasolid::extract_streams(&f);
+    let streams = extract_streams(&f);
     let part = streams
         .iter()
         .find(|s| s.kind == StreamKind::Partition)
@@ -8826,9 +8848,7 @@ fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
 #[test]
 fn container_only_preserves_streams_without_geometry() {
     let mut cur = Cursor::new(single_part_prt());
-    let opts = DecodeOptions {
-        container_only: true,
-    };
+    let opts = options_in(DecodeMode::Salvage, true);
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
     assert!(!result.report.geometry_transferred);
     assert!(result.report.container_only);
@@ -8839,7 +8859,9 @@ fn container_only_preserves_streams_without_geometry() {
 #[test]
 fn inspect_enumerates_streams_and_names_schema() {
     let mut cur = Cursor::new(single_part_prt());
-    let summary = NxCodec.inspect(&mut cur).unwrap();
+    let summary = NxCodec
+        .inspect(&mut cur, &InspectOptions::default())
+        .unwrap();
     assert_eq!(summary.format, "nx");
     assert_eq!(summary.container_kind, "splmsstr");
     assert!(summary.entries.iter().any(|e| e.role == "parasolid-stream"));
@@ -9073,7 +9095,7 @@ fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     file.extend_from_slice(&part);
     file.extend_from_slice(&decoy);
 
-    let streams = parasolid::extract_streams(&file);
+    let streams = extract_streams(&file);
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].schema.as_deref(), Some("SCH_TEST_1_9999"));
 }
@@ -9111,7 +9133,7 @@ mod golden {
     use std::io::Cursor;
     use std::path::{Path, PathBuf};
 
-    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 
     use super::*;
 
@@ -9813,10 +9835,11 @@ mod golden {
                 }),
                 Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
             };
-        let inspect = match NxCodec.inspect(&mut Cursor::new(bytes.to_vec())) {
-            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
-            Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
-        };
+        let inspect =
+            match NxCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
+                Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
+                Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
+            };
         let combined = serde_json::json!({ "decode": decode, "inspect": inspect });
         let mut text = serde_json::to_string_pretty(&combined).expect("serialize snapshot");
         text.push('\n');

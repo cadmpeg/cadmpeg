@@ -8,6 +8,7 @@ use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use crate::cage::Cage;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::curves::GeometryError;
+use crate::mesh::MeshExpand;
 use crate::settings::{interval, point, vector, xform};
 use crate::wire::{scaled_coordinate, Uuid};
 
@@ -272,23 +273,24 @@ fn control_child<'a>(
 }
 
 fn cage_at(
-    data: &[u8],
+    expand: MeshExpand<'_>,
     reader: &mut BoundedReader<'_>,
     scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Cage, GeometryError> {
     let (cage, next) =
-        crate::cage::decode_at(data, reader.position(), reader.end(), scale, archive)?;
+        crate::cage::decode_at(expand, reader.position(), reader.end(), scale, archive)?;
     reader.skip(next - reader.position())?;
     Ok(cage)
 }
 
 pub(crate) fn decode(
-    data: &[u8],
+    expand: MeshExpand<'_>,
     range: Range<usize>,
     scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Morph, GeometryError> {
+    let data = expand.data();
     let (mut outer, next, major, minor) =
         anonymous(data, range.start, range.end, archive, "morph control")?;
     if next != range.end {
@@ -304,7 +306,7 @@ pub(crate) fn decode(
         });
     }
     if major == 1 {
-        let end = cage_at(data, &mut outer, scale, archive)?;
+        let end = cage_at(expand, &mut outer, scale, archive)?;
         let captive_ids = captive_ids(data, &mut outer, archive)?;
         let mut start_transform = xform(&mut outer)?.0;
         for index in [3, 7, 11] {
@@ -379,7 +381,7 @@ pub(crate) fn decode(
         },
         3 => Control::Cage {
             start_transform: start_transform.expect("cage variant has transform"),
-            end: cage_at(data, &mut end, scale, archive)?,
+            end: cage_at(expand, &mut end, scale, archive)?,
         },
         _ => unreachable!("validated morph variant"),
     };
@@ -710,7 +712,10 @@ mod tests {
         content.extend([1, 0]);
         let bytes = anonymous(2, 1, &content);
 
-        let morph = decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8).unwrap();
+        let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
+            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+        })
+        .expect("required invariant");
         assert_eq!(morph.captive_ids.len(), 1);
         assert_eq!(morph.tolerance, 0.1);
         assert!(morph.quick_preview);
@@ -754,7 +759,10 @@ mod tests {
         content.extend([0, 1]);
         let bytes = anonymous(2, 1, &content);
 
-        let morph = decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8).unwrap();
+        let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
+            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+        })
+        .expect("required invariant");
         let Control::Curve { start, end } = &morph.control else {
             panic!("expected curve morph");
         };

@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for CATIA zero-entity topology parsing.
-//!
-//! Feeds arbitrary bytes through `cadmpeg_codec_catia::fuzz::zero_entity_parse`.
-//! Contract: no input may panic.
+//! No input may panic.
 
 #![no_main]
 
+use cadmpeg_codec_catia::zero_entity::parse;
+use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    cadmpeg_codec_catia::fuzz::zero_entity_parse(data);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    if let Ok((ctx, root)) = DecodeContext::from_root_bytes(data, &arena, &policy) {
+        let _ = parse(root);
+    }
 });

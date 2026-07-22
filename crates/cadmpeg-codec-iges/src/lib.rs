@@ -4,7 +4,6 @@
 //! Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
 //! for the declared Fixed ASCII mechanical/document envelope.
 
-mod byte_ledger;
 mod card;
 mod directory;
 mod entities;
@@ -17,8 +16,10 @@ mod profile;
 mod reader;
 
 use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
+    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult,
 };
+use cadmpeg_ir::decode::{DecodeContext, View};
+use std::io::Cursor;
 
 /// Codec for IGES files.
 #[derive(Debug, Default, Clone, Copy)]
@@ -33,8 +34,13 @@ impl Codec for IgesCodec {
         layout::confidence(prefix)
     }
 
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        match layout::classify(reader)? {
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        let mut reader = Cursor::new(root.window());
+        match layout::classify(&mut reader)? {
             representation @ (layout::Representation::CompressedAscii
             | layout::Representation::Binary) => {
                 return Ok(layout::unsupported_summary(representation));
@@ -46,7 +52,7 @@ impl Codec for IgesCodec {
             }
             layout::Representation::FixedAscii => {}
         }
-        let scan = card::scan(reader)?;
+        let scan = card::scan(&mut reader)?;
         let global = global::parse(&scan)?;
         let directory = directory::parse(&scan)?;
         let parameters = parameter::assemble(&scan, &directory, &global)?;
@@ -59,13 +65,20 @@ impl Codec for IgesCodec {
         Ok(summary)
     }
 
-    fn decode(
+    fn decode_impl(
         &self,
-        reader: &mut dyn ReadSeek,
-        options: &DecodeOptions,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        match layout::classify(reader)? {
-            layout::Representation::FixedAscii => reader::decode(reader, *options),
+        let mut source = Cursor::new(root.window());
+        match layout::classify(&mut source)? {
+            layout::Representation::FixedAscii => reader::decode(
+                &mut source,
+                DecodeOptions {
+                    container_only: ctx.container_only(),
+                    policy: *ctx.policy(),
+                },
+            ),
             representation @ (layout::Representation::CompressedAscii
             | layout::Representation::Binary) => Err(layout::unsupported_error(representation)),
             layout::Representation::Unknown => Err(CodecError::WrongFormat(

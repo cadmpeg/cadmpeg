@@ -32,7 +32,7 @@ fn uuid(mut canonical: [u8; 16]) -> Uuid {
 
 /// Exercises header, table, record, and EOF framing.
 pub fn container(data: &[u8]) {
-    let _ = crate::container::scan(data.to_vec());
+    let _ = crate::container::scan(data);
 }
 
 /// Exercises chunk framing at sequential and arbitrary bounded offsets.
@@ -134,4 +134,47 @@ pub fn subd(data: &[u8]) {
     }
     let id = "rhino:fuzz:subd#0".into();
     let _ = crate::subd::decode(data, 1..data.len(), selected_archive(data[0]), 1.0, id);
+}
+
+fn with_expand(data: &[u8], f: impl FnOnce(crate::mesh::MeshExpand<'_>)) {
+    let arena = cadmpeg_ir::decode::DecodeArena::new();
+    let policy = cadmpeg_ir::decode::DecodePolicy::default();
+    let Ok((ctx, root)) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    f(crate::mesh::MeshExpand::new(&ctx, root));
+}
+
+/// Exercises NURBS cage knot and control-net expansion.
+pub fn cage(data: &[u8]) {
+    if data.len() < 2 {
+        return;
+    }
+    let archive = selected_archive(data[0]);
+    with_expand(data, |expand| {
+        let _ = crate::cage::decode(expand, 1..data.len(), 1.0, archive);
+    });
+}
+
+/// Exercises hatch boundary-loop decoding.
+pub fn hatch(data: &[u8]) {
+    if data.len() < 2 {
+        return;
+    }
+    let archive = selected_archive(data[0]);
+    with_expand(data, |expand| {
+        let _ = crate::hatch::decode(expand, 1..data.len(), 1.0, archive);
+    });
+}
+
+/// Exercises polyedge parameter and segment decoding.
+pub fn polyedge(data: &[u8]) {
+    if data.len() < 2 {
+        return;
+    }
+    let archive = selected_archive(data[0]);
+    with_expand(data, |expand| {
+        let _ = crate::polyedge::decode(expand, 1..data.len(), archive);
+    });
 }

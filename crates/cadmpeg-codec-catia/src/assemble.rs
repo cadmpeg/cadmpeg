@@ -168,6 +168,7 @@ pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNo
     losses.insert(
         0,
         LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
             message: format!(
@@ -401,6 +402,7 @@ pub(crate) fn build_geometry_report(
     let mut losses = Vec::new();
 
     losses.push(LossNote {
+        code: cadmpeg_ir::report::LossCode::CarrierSummary,
         category: LossCategory::Geometry,
         severity: Severity::Info,
         message: format!(
@@ -421,6 +423,7 @@ pub(crate) fn build_geometry_report(
 
     if !topology_attached {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message: format!(
@@ -435,6 +438,7 @@ pub(crate) fn build_geometry_report(
 
     if plane_faces > 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -448,6 +452,7 @@ pub(crate) fn build_geometry_report(
     let invalid_analytic = analytic_record_count.saturating_sub(typed.total() + plane_faces);
     if invalid_analytic > 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -459,6 +464,7 @@ pub(crate) fn build_geometry_report(
     }
     if freeform_record_count > 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -473,6 +479,7 @@ pub(crate) fn build_geometry_report(
     insert_unresolved_carrier_loss(ir, &mut losses);
 
     losses.push(LossNote {
+        code: cadmpeg_ir::report::LossCode::AttributesNotTransferred,
         category: LossCategory::Attribute,
         severity: Severity::Warning,
         message: "Standard circles with an exact adjacent-carrier section normal and plane-plane \
@@ -585,6 +592,7 @@ pub(crate) fn link_payload_carriers(
 pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let mut losses = vec![LossNote {
+        code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
         category: LossCategory::Geometry,
         severity: Severity::Blocking,
         message: format!(
@@ -598,6 +606,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
 
     if container_only {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::ContainerOnly,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: "Container-only decode requested; entity decode was not attempted."
@@ -607,6 +616,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
     }
 
     losses.push(LossNote {
+        code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
         category: LossCategory::Topology,
         severity: Severity::Blocking,
         message:

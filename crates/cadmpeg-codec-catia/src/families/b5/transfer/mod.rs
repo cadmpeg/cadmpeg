@@ -1177,7 +1177,12 @@ mod tests {
             profiles: BTreeMap::new(),
         };
 
-        assert_eq!(ownership_plan(&graph).unwrap().body_kind, BodyKind::Sheet);
+        assert_eq!(
+            ownership_plan(&graph)
+                .expect("required invariant")
+                .body_kind,
+            BodyKind::Sheet
+        );
         graph.faces[0].loops.push(2);
         assert!(ownership_plan(&graph).is_none());
         graph.faces[0].loops.pop();
@@ -1204,17 +1209,32 @@ mod tests {
             },
         );
         graph.edge_vertices.insert(7, [0, 1]);
-        let ownership = ownership_plan(&graph).unwrap();
+        let ownership = ownership_plan(&graph).expect("required invariant");
         assert_eq!(ownership.face_components, vec![0, 1]);
         assert_eq!(ownership.components.len(), 2);
         assert_eq!(ownership.body_kind, BodyKind::Sheet);
 
-        graph.loops.get_mut(&2).unwrap().edges.push(3);
-        assert_eq!(ownership_plan(&graph).unwrap().body_kind, BodyKind::General);
-        graph.loops.get_mut(&2).unwrap().edges.pop();
+        graph
+            .loops
+            .get_mut(&2)
+            .expect("required invariant")
+            .edges
+            .push(3);
+        assert_eq!(
+            ownership_plan(&graph)
+                .expect("required invariant")
+                .body_kind,
+            BodyKind::General
+        );
+        graph
+            .loops
+            .get_mut(&2)
+            .expect("required invariant")
+            .edges
+            .pop();
 
-        graph.loops.get_mut(&6).unwrap().edges[0] = 3;
-        let ownership = ownership_plan(&graph).unwrap();
+        graph.loops.get_mut(&6).expect("required invariant").edges[0] = 3;
+        let ownership = ownership_plan(&graph).expect("required invariant");
         assert_eq!(ownership.face_components, vec![0, 0]);
         assert_eq!(ownership.components.len(), 1);
         assert_eq!(ownership.body_kind, BodyKind::Solid);
@@ -1258,7 +1278,7 @@ mod tests {
             &graph,
             BTreeMap::from([(1, vec![false]), (2, vec![false; 3])]),
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(orientation[&1].member_order, vec![0]);
         assert_eq!(orientation[&2].member_order, vec![2, 1, 0]);
         assert_eq!(orientation[&1].reversed, vec![false]);

@@ -8542,7 +8542,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         None,
     )
     .is_none());
-    let upper_parameter = (1.0 + 7.0_f64.sqrt()) / 2.0;
+    let upper_parameter = f64::midpoint(1.0, 7.0_f64.sqrt());
     let upper_radius = 2.0 + upper_parameter;
     assert!(matches!(
         select_unique_curve_candidate(
@@ -9063,9 +9063,9 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     .is_none());
     let upper_circle_tangent = CarrierEquation::Plane(PlaneEquation {
         origin: [
-            (1.0 + sphere_offset) / 2.0,
+            f64::midpoint(1.0, sphere_offset),
             0.0,
-            (1.0 + sphere_offset) / 2.0,
+            f64::midpoint(1.0, sphere_offset),
         ],
         normal: [1.0, 0.0, 1.0],
     });

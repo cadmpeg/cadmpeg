@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded hatch payload decoding.
+#![deny(clippy::disallowed_methods)]
 
 use std::ops::Range;
 
-use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::View;
+
+use crate::mesh::MeshExpand;
+
+use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::parse_class_wrapper;
-use crate::settings::{plane, Plane};
-use crate::wire::Uuid;
+use crate::settings::{Plane, Point3, Vector3};
+use crate::wire::{ExactVec, Uuid};
 
 pub(crate) const CLASS: Uuid = Uuid::from_canonical([
     0x05, 0x59, 0x73, 0x3b, 0x53, 0x32, 0x49, 0xd1, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76, 0xad, 0xe5,
@@ -45,23 +51,82 @@ fn structural(offset: usize, message: impl Into<String>) -> GeometryError {
     })
 }
 
-fn finite(value: f64, offset: usize, label: &str) -> Result<f64, GeometryError> {
-    if value.is_finite() {
-        Ok(value)
+fn refused(offset: usize, error: &CodecError) -> GeometryError {
+    structural(offset, format!("hatch allocation refused: {error}"))
+}
+
+fn req_u8(view: &mut View<'_>) -> Result<u8, GeometryError> {
+    let offset = view.position();
+    view.req_u8()
+        .map_err(|_| structural(offset, "hatch record truncated"))
+}
+
+fn req_i32(view: &mut View<'_>) -> Result<i32, GeometryError> {
+    let offset = view.position();
+    view.req_i32_le()
+        .map_err(|_| structural(offset, "hatch record truncated"))
+}
+
+fn req_f64(view: &mut View<'_>) -> Result<f64, GeometryError> {
+    let offset = view.position();
+    view.req_f64_le()
+        .map_err(|_| structural(offset, "hatch record truncated"))
+}
+
+fn coordinate3(view: &mut View<'_>, label: &str) -> Result<[f64; 3], GeometryError> {
+    let offset = view.position();
+    let values = [req_f64(view)?, req_f64(view)?, req_f64(view)?];
+    if values.iter().all(|value| value.is_finite()) {
+        Ok(values)
     } else {
-        Err(structural(offset, format!("hatch {label} is not finite")))
+        Err(structural(
+            offset,
+            format!("{label} contains a nonfinite value"),
+        ))
     }
 }
 
+fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
+    let origin = Point3(coordinate3(view, "point")?);
+    let xaxis = Vector3(coordinate3(view, "vector")?);
+    let yaxis = Vector3(coordinate3(view, "vector")?);
+    let zaxis = Vector3(coordinate3(view, "vector")?);
+    let equation_offset = view.position();
+    let equation = [
+        req_f64(view)?,
+        req_f64(view)?,
+        req_f64(view)?,
+        req_f64(view)?,
+    ];
+    if !equation.iter().all(|value| value.is_finite()) {
+        return Err(structural(
+            equation_offset,
+            "plane equation contains a nonfinite value",
+        ));
+    }
+    Ok(Plane {
+        origin,
+        xaxis,
+        yaxis,
+        zaxis,
+        equation,
+    })
+}
+
 pub(crate) fn decode(
-    data: &[u8],
+    expand: MeshExpand<'_>,
     range: Range<usize>,
     _scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Hatch, GeometryError> {
-    let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    let version_offset = reader.position();
-    let version = reader.u8()?;
+    let data = expand.data();
+    let mut body = expand
+        .root()
+        .child(range.start, range.end)
+        .ok_or_else(|| structural(range.start, "hatch body out of range"))?;
+
+    let version_offset = body.position();
+    let version = req_u8(&mut body)?;
     let (major, minor) = (version >> 4, version & 0x0f);
     if major != 1 || minor > 2 {
         return Err(GeometryError::UnsupportedVersion {
@@ -69,27 +134,51 @@ pub(crate) fn decode(
             message: format!("unsupported hatch version {major}.{minor}"),
         });
     }
-    let plane = plane(&mut reader)?;
-    let pattern_scale = finite(reader.f64()?, reader.position() - 8, "pattern scale")?;
+    let plane = read_plane(&mut body)?;
+    let scale_offset = body.position();
+    let pattern_scale = req_f64(&mut body)?;
+    if !pattern_scale.is_finite() {
+        return Err(structural(
+            scale_offset,
+            "hatch pattern scale is not finite",
+        ));
+    }
     if pattern_scale <= 0.0 {
         return Err(structural(
-            reader.position() - 8,
+            scale_offset,
             "hatch pattern scale is not positive",
         ));
     }
-    let pattern_rotation = finite(reader.f64()?, reader.position() - 8, "pattern rotation")?;
-    let pattern_index = reader.i32()?;
-    let count_offset = reader.position();
-    let signed_count = reader.i32()?;
-    checked_count_bytes(signed_count, 5, reader.remaining(), MAX_LOOPS, count_offset)?;
+    let rotation_offset = body.position();
+    let pattern_rotation = req_f64(&mut body)?;
+    if !pattern_rotation.is_finite() {
+        return Err(structural(
+            rotation_offset,
+            "hatch pattern rotation is not finite",
+        ));
+    }
+    let pattern_index = req_i32(&mut body)?;
+
+    let count_offset = body.position();
+    let signed_count = req_i32(&mut body)?;
     let count = usize::try_from(signed_count).map_err(|_| FramingError::Overflow {
         offset: count_offset,
     })?;
-    let mut loops = Vec::with_capacity(count);
+    if count > MAX_LOOPS {
+        return Err(structural(count_offset, "hatch loop count exceeds cap"));
+    }
+    // A loop contributes at least a five-byte header (`u8` version + `i32`
+    // type) before its curve wrapper, so the count is proven against the
+    // remaining window at that minimum element size.
+    let loop_bound = body
+        .counted(count as u64, 5)
+        .ok_or_else(|| structural(count_offset, "hatch loop count exceeds remaining window"))?;
+    let mut loops =
+        ExactVec::<HatchLoop>::new(loop_bound).map_err(|error| refused(body.position(), &error))?;
     let mut warnings = Vec::new();
     for loop_index in 0..count {
-        let loop_offset = reader.position();
-        let loop_version = reader.u8()?;
+        let loop_offset = body.position();
+        let loop_version = req_u8(&mut body)?;
         if loop_version >> 4 != 1 || loop_version & 0x0f > 1 {
             return Err(GeometryError::UnsupportedVersion {
                 offset: loop_offset,
@@ -100,20 +189,22 @@ pub(crate) fn decode(
                 ),
             });
         }
-        let kind = match reader.i32()? {
+        let kind = match req_i32(&mut body)? {
             0 => LoopKind::Outer,
             1 => LoopKind::Inner,
             _ => return Err(structural(loop_offset + 1, "invalid hatch loop type")),
         };
-        let wrapper_offset = reader.position();
-        let wrapper = chunk_at(data, wrapper_offset, reader.end(), archive, false)?;
+        let wrapper_offset = body.position();
+        let wrapper = chunk_at(data, wrapper_offset, range.end, archive, false)?;
+        let mut loop_warnings = Vec::new();
         let class = parse_class_wrapper(
             data,
             wrapper_offset..wrapper.next_offset,
             archive,
-            &mut warnings,
+            &mut loop_warnings,
         )?;
-        reader.skip(wrapper.next_offset - wrapper_offset)?;
+        body.skip(wrapper.next_offset - wrapper_offset)
+            .ok_or_else(|| structural(body.position(), "hatch loop overruns body"))?;
         let decoded =
             crate::curves::decode_2d(data, class.class_uuid, class.class_data_range, archive)?;
         let DecodedGeometry::Curve { curve } = decoded else {
@@ -122,11 +213,16 @@ pub(crate) fn decode(
                 "hatch loop object is not a curve",
             ));
         };
-        loops.push(HatchLoop { kind, curve });
+        loops
+            .push(HatchLoop { kind, curve })
+            .map_err(|error| refused(body.position(), &error))?;
+        for warning in loop_warnings {
+            warnings.push(warning);
+        }
     }
     let basepoint = if minor >= 2 {
-        let offset = reader.position();
-        let basepoint = [reader.f64()?, reader.f64()?];
+        let offset = body.position();
+        let basepoint = [req_f64(&mut body)?, req_f64(&mut body)?];
         if !basepoint.into_iter().all(f64::is_finite) {
             return Err(structural(offset, "hatch basepoint is invalid"));
         }
@@ -134,9 +230,12 @@ pub(crate) fn decode(
     } else {
         [0.0, 0.0]
     };
-    if reader.remaining() != 0 {
-        return Err(structural(reader.position(), "hatch has trailing bytes"));
+    if body.remaining() != 0 {
+        return Err(structural(body.position(), "hatch has trailing bytes"));
     }
+    let loops = loops
+        .finish()
+        .map_err(|error| refused(body.position(), &error))?;
     Ok(Hatch {
         source_range: range,
         plane,
@@ -167,8 +266,7 @@ mod tests {
         .collect()
     }
 
-    #[test]
-    fn decodes_version_two_loop_geometry_and_pattern_state() {
+    fn version_two_hatch_payload() -> Vec<u8> {
         let mut loop_payload = polyline_payload(
             &[
                 [0.0, 0.0, 0.0],
@@ -192,8 +290,16 @@ mod tests {
         payload.extend(class_wrapper(POLYLINE_CLASS, &loop_payload));
         payload.extend(3.0_f64.to_le_bytes());
         payload.extend(4.0_f64.to_le_bytes());
+        payload
+    }
 
-        let hatch = decode(&payload, 0..payload.len(), 10.0, ArchiveVersion::V8).unwrap();
+    #[test]
+    fn decodes_version_two_loop_geometry_and_pattern_state() {
+        let payload = version_two_hatch_payload();
+        let hatch = crate::decode::with_expand_bytes(&payload, |expand| {
+            decode(expand, 0..payload.len(), 10.0, ArchiveVersion::V8)
+        })
+        .expect("required invariant");
         assert_eq!(hatch.pattern_index, 7);
         assert_eq!(hatch.pattern_scale, 2.5);
         assert_eq!(hatch.pattern_rotation, 0.25);
@@ -204,5 +310,20 @@ mod tests {
             hatch.loops[0].curve.geometry,
             cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
         ));
+    }
+
+    #[test]
+    fn truncating_the_loop_record_is_rejected_at_the_record_boundary() {
+        // Drop the trailing basepoint and the tail of the loop's curve wrapper so
+        // the count-framed loop's child record runs past the body's proven window.
+        let mut payload = version_two_hatch_payload();
+        payload.truncate(payload.len() - 24);
+        assert!(crate::decode::with_expand_bytes(&payload, |expand| decode(
+            expand,
+            0..payload.len(),
+            10.0,
+            ArchiveVersion::V8
+        ))
+        .is_err());
     }
 }

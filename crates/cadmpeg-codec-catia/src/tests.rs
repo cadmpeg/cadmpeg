@@ -8,7 +8,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 
 use cadmpeg_ir::document::CadIr;
 
@@ -2230,7 +2230,9 @@ fn scan_parses_outer_directory_with_absolute_extents() {
 fn inspect_enumerates_streams_and_names_variant() {
     let f = standard_catpart();
     let mut cur = Cursor::new(f);
-    let summary = CatiaCodec.inspect(&mut cur).unwrap();
+    let summary = CatiaCodec
+        .inspect(&mut cur, &cadmpeg_ir::decode::InspectOptions::default())
+        .unwrap();
     assert_eq!(summary.format, "catia");
     assert_eq!(summary.container_kind, "v5-cfv2");
     assert!(summary.entries.iter().any(|e| e.name == "MainDataStream"));
@@ -4757,8 +4759,10 @@ fn native_load_rejects_invalid_source_identities_and_extents() {
 
 #[test]
 fn native_store_paths_write_the_current_schema_version() {
-    let mut borrowed = crate::native::CatiaNative::default();
-    borrowed.version = 1;
+    let borrowed = crate::native::CatiaNative {
+        version: 1,
+        ..crate::native::CatiaNative::default()
+    };
     let mut borrowed_namespace = cadmpeg_ir::NativeNamespace::default();
     borrowed
         .store(&mut borrowed_namespace)
@@ -4768,8 +4772,10 @@ fn native_store_paths_write_the_current_schema_version() {
         crate::native::CATIA_NATIVE_VERSION
     );
 
-    let mut owned = crate::native::CatiaNative::default();
-    owned.version = 1;
+    let owned = crate::native::CatiaNative {
+        version: 1,
+        ..crate::native::CatiaNative::default()
+    };
     let mut owned_namespace = cadmpeg_ir::NativeNamespace::default();
     owned
         .store_owned(&mut owned_namespace)
@@ -5476,6 +5482,7 @@ fn container_only_stops_before_geometry() {
     let mut cur = Cursor::new(f);
     let opts = DecodeOptions {
         container_only: true,
+        ..DecodeOptions::default()
     };
     let result = CatiaCodec.decode(&mut cur, &opts).unwrap();
     assert!(!result.report.geometry_transferred);
@@ -5511,6 +5518,7 @@ fn every_decode_path_populates_v1_annotations() {
             &mut Cursor::new(standard_catpart()),
             &DecodeOptions {
                 container_only: true,
+                ..DecodeOptions::default()
             },
         )
         .unwrap();

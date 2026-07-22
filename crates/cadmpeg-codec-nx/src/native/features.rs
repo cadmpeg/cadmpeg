@@ -7304,7 +7304,7 @@ mod tests {
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -7689,7 +7689,7 @@ mod tests {
                 (&[0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72][..], 900_u64),
             ),
         ]);
-        let joined = super::join_data_block_bytes(&ids, &blocks).unwrap();
+        let joined = super::join_data_block_bytes(&ids, &blocks).expect("required invariant");
         assert_eq!(joined.0, [0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72]);
         assert_eq!(joined.1, [0, 2]);
         assert_eq!(joined.2, [2, 6]);
@@ -7788,15 +7788,19 @@ mod tests {
         )]);
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
-        let namespace = result.ir.native.namespace("nx").unwrap();
+            .expect("required invariant");
+        let namespace = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("required invariant");
         let links = namespace
             .arena_as::<crate::native::segments::SegmentOmLink>("segment_om_links")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(links.len(), 4);
         let labels = namespace
             .arena_as::<super::FeatureOperationLabel>("feature_operation_labels")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(
             labels
                 .iter()
@@ -7817,7 +7821,7 @@ mod tests {
         assert_eq!(labels[1].raw_object_indices, labels[0].raw_object_indices);
         let records = namespace
             .arena_as::<super::FeatureOperationRecord>("feature_operation_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].operation_label, labels[0].id);
         assert_eq!(records[1].operation_label, labels[1].id);
@@ -7844,14 +7848,14 @@ mod tests {
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         let labels = result
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::FeatureOperationLabel>("feature_operation_labels")
-            .unwrap();
+            .expect("required invariant");
 
         assert_eq!(
             labels.iter().map(|label| label.ordinal).collect::<Vec<_>>(),
@@ -7868,14 +7872,14 @@ mod tests {
             prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_om_record_area_payload())]);
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         let areas = result
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<crate::native::om::OmRecordArea>("om_record_areas")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(areas.len(), 1);
         assert_eq!(
             areas[0].schema_role,
@@ -7889,9 +7893,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::FeatureOperationLabel>("feature_operation_labels")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].ordinal, 0);
         assert_eq!(labels[0].value, "UNITE");
@@ -7904,9 +7908,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::FeatureOperationRecord>("feature_operation_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].operation_label, labels[0].id);
         assert!(records[0].byte_len > 40);
@@ -7915,9 +7919,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::FeatureBooleanOperation>("feature_boolean_operations")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(booleans.len(), 1);
         assert_eq!(booleans[0].kind, super::FeatureBooleanKind::Unite);
         assert_eq!(booleans[0].target_object_index, 6466);
@@ -7926,9 +7930,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::FeatureBodyReference>("feature_body_references")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(body_references.len(), 1);
         assert_eq!(body_references[0].operation_label, labels[0].id);
         assert_eq!(body_references[0].body_object_index, 6466);
@@ -7936,9 +7940,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::FeatureBodyReferenceOccurrence>("feature_body_reference_occurrences")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(body_reference_occurrences.len(), 1);
         assert_eq!(body_reference_occurrences[0].operation_label, labels[0].id);
         assert_eq!(body_reference_occurrences[0].ordinal, 0);
@@ -7970,14 +7974,14 @@ mod tests {
         )]);
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         let inputs = result
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::FeatureInputBlock>("feature_input_blocks")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(inputs.len(), 1);
         assert_eq!(inputs[0].input_slot, 0);
         assert_eq!(inputs[0].object_index, 1);
@@ -7990,9 +7994,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<crate::native::om::DataBlockReference>("data_block_references")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(references.len(), 1);
         assert!(references[0].data_block.ends_with(":block#2"));
         assert_ne!(references[0].data_block, inputs[0].data_block);
@@ -8581,8 +8585,13 @@ mod tests {
             source_entry: "entry".into(),
             source_offset: 100,
         };
-        let uses =
-            feature_input_column_row_uses(&[input.clone()], &[], &[row.clone()], &[], &[table]);
+        let uses = feature_input_column_row_uses(
+            std::slice::from_ref(&input),
+            &[],
+            std::slice::from_ref(&row),
+            &[],
+            &[table],
+        );
         assert_eq!(uses.len(), 2);
         assert_eq!(uses[0].input_block, "input#0000000001");
         assert_eq!(uses[0].operation_label, "operation#1");
@@ -8655,15 +8664,20 @@ mod tests {
             source_offset: 50,
         };
         let ambiguous = feature_input_column_row_uses(
-            &[input.clone()],
+            std::slice::from_ref(&input),
             &[],
             &[],
-            &[row.clone()],
+            std::slice::from_ref(&row),
             &[table.clone(), table.clone()],
         );
         assert!(ambiguous.iter().all(|use_| use_.column_table.is_none()));
-        let uses =
-            feature_input_column_row_uses(&[input.clone()], &[], &[], &[row.clone()], &[table]);
+        let uses = feature_input_column_row_uses(
+            std::slice::from_ref(&input),
+            &[],
+            &[],
+            std::slice::from_ref(&row),
+            &[table],
+        );
         assert_eq!(uses.len(), 2);
         assert_eq!(uses[0].input_block, "input#0000000001");
         assert_eq!(uses[0].operation_label, "operation#1");
@@ -8675,7 +8689,12 @@ mod tests {
         assert_eq!(uses[0].source_offset, 105);
         assert_eq!(uses[1].row_slot, 3);
         assert_eq!(uses[1].source_offset, 112);
-        let targets = feature_input_column_targets(&[input.clone()], &uses, &[], &[row.clone()]);
+        let targets = feature_input_column_targets(
+            std::slice::from_ref(&input),
+            &uses,
+            &[],
+            std::slice::from_ref(&row),
+        );
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0].input_block, input.id);
         assert_eq!(targets[0].column_row, "target-row#3");
@@ -9028,7 +9047,7 @@ mod tests {
                 binding("binding#1", 1, "plain", 20, 21),
             ],
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(statuses.len(), 2);
         assert!(statuses[0].terminal);
         assert!(!statuses[1].terminal);
@@ -9055,7 +9074,10 @@ mod tests {
             stream_role: 19,
             source_offset: 40,
         };
-        let uses = feature_body_segment_uses(&[reference.clone()], &[binding.clone()]);
+        let uses = feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&binding),
+        );
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].feature_body_reference, reference.id);
         assert_eq!(uses[0].segment_body_binding, binding.id);
@@ -9116,7 +9138,8 @@ mod tests {
         ];
 
         let statuses =
-            segment_body_lineage_statuses(&labels, &references, &booleans, &[], &bindings).unwrap();
+            segment_body_lineage_statuses(&labels, &references, &booleans, &[], &bindings)
+                .expect("required invariant");
         assert_eq!(statuses.len(), 3);
         assert!(statuses.iter().all(|status| !status.terminal));
     }

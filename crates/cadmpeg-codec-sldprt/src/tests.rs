@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Tests over synthetic byte fixtures. No real CAD file exists in this repo and
-//! none may be added, so every fixture is a hand-built `.sldprt` byte image that
-//! exercises a real decode path and fails if the code regresses.
+//! Synthetic `.sldprt` byte-fixture tests.
 #![allow(clippy::unwrap_used)]
 
 use std::io::{Cursor, Write};
 
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::decode::InspectOptions;
+use cadmpeg_ir::LossCode;
 
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
@@ -292,12 +292,6 @@ fn parasolid_with_body(description: &str, schema: &str, body: &[u8]) -> Vec<u8> 
     b.extend_from_slice(body);
     b
 }
-
-// ---- Parasolid record builders ----------------------------------------------
-//
-// Each helper emits one fixed-width record in the exact byte layout the decoder
-// parses ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records), [§8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records)), so the geometry test exercises the real record scanner
-// and chain walk rather than a mock.
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
@@ -1718,7 +1712,6 @@ fn synthetic_sldprt() -> Vec<u8> {
 fn detect_high_on_marker_after_header() {
     let f = synthetic_sldprt();
     assert_eq!(SldprtCodec.detect(&f), Confidence::High);
-    // A marker inside the leading 8-byte header region does not count.
     assert_eq!(
         SldprtCodec.detect(b"\x00\x01\x02\x03 no marker here"),
         Confidence::No
@@ -1750,7 +1743,6 @@ fn scan_classifies_blocks_cells_and_directory() {
     assert_eq!(scan.cache_cells.len(), 1);
     assert_eq!(scan.directory.len(), 1);
 
-    // Section names decode via nibble-swap; payload families are byte-derived.
     let png = &scan.blocks[0];
     assert_eq!(png.section.as_deref(), Some("PreviewPNG"));
     assert_eq!(png.family, "png-preview");
@@ -1919,7 +1911,9 @@ fn spatial_vertex_record_decodes_model_coordinates() {
 fn inspect_enumerates_every_structure() {
     let f = synthetic_sldprt();
     let mut cur = Cursor::new(f);
-    let summary = SldprtCodec.inspect(&mut cur).unwrap();
+    let summary = SldprtCodec
+        .inspect(&mut cur, &InspectOptions::default())
+        .unwrap();
     assert_eq!(summary.format, "sldprt");
     assert_eq!(summary.container_kind, "sldprt-blocks");
     assert_eq!(
@@ -1943,8 +1937,6 @@ fn inspect_enumerates_every_structure() {
 
 #[test]
 fn decode_without_geometry_falls_back_to_metadata() {
-    // The Parasolid block frames but carries no topology records, so decode must
-    // preserve it as an unknown passthrough and report geometry as not transferred.
     let f = synthetic_sldprt();
     let mut cur = Cursor::new(f);
     let result = SldprtCodec
@@ -2470,15 +2462,15 @@ fn encoder_writes_source_less_line_sketches() {
                 SketchConstraintDefinition::Fixed { .. }
             )
         }));
-    assert!(
+    assert_eq!(
         decoded
             .ir
             .model
             .sketch_entities
             .iter()
             .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
-            .count()
-            == 3
+            .count(),
+        3
     );
     assert!(decoded
         .ir
@@ -3270,14 +3262,20 @@ fn encoder_writes_source_less_curved_sketches() {
                 .model
                 .sketch_constraints
                 .iter()
-                .any(|constraint| match (expected, &constraint.definition) {
+                .any(|constraint| matches!(
+                    (expected, &constraint.definition),
                     ("line-line", SketchConstraintDefinition::Distance { .. })
-                    | ("horizontal", SketchConstraintDefinition::HorizontalDistance { .. })
-                    | ("vertical", SketchConstraintDefinition::VerticalDistance { .. })
-                    | ("angle", SketchConstraintDefinition::Angle { .. })
-                    | ("diameter", SketchConstraintDefinition::Diameter { .. }) => true,
-                    _ => false,
-                }),
+                        | (
+                            "horizontal",
+                            SketchConstraintDefinition::HorizontalDistance { .. }
+                        )
+                        | (
+                            "vertical",
+                            SketchConstraintDefinition::VerticalDistance { .. }
+                        )
+                        | ("angle", SketchConstraintDefinition::Angle { .. })
+                        | ("diameter", SketchConstraintDefinition::Diameter { .. })
+                )),
             "missing regenerated {expected} dimension"
         );
     }
@@ -5088,9 +5086,11 @@ fn semantic_writer_allocates_one_index_for_unassigned_configuration_sections() {
     assert!(!scan.blocks.iter().any(|block| {
         matches!(
             block.section.as_deref(),
-            Some("Contents/ResolvedFeatures")
-                | Some("Contents/Config-3-Partition")
-                | Some("Contents/Config-3-ResolvedFeatures")
+            Some(
+                "Contents/ResolvedFeatures"
+                    | "Contents/Config-3-Partition"
+                    | "Contents/Config-3-ResolvedFeatures"
+            )
         )
     }));
     let round_trip = SldprtCodec
@@ -5299,6 +5299,133 @@ fn encoder_bakes_rigid_body_transform() {
 }
 
 #[test]
+fn decode_encode_is_equivariant_under_rigid_motion() {
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::transform::Transform;
+
+    let motions = [
+        (
+            [
+                [0.0, -1.0, 0.0, 10.0],
+                [1.0, 0.0, 0.0, 20.0],
+                [0.0, 0.0, 1.0, 30.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            (|p: Point3| Point3::new(-p.y + 10.0, p.x + 20.0, p.z + 30.0)) as fn(Point3) -> Point3,
+        ),
+        (
+            [
+                [1.0, 0.0, 0.0, -5.0],
+                [0.0, 0.0, -1.0, 7.0],
+                [0.0, 1.0, 0.0, 3.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            |p: Point3| Point3::new(p.x - 5.0, -p.z + 7.0, p.y + 3.0),
+        ),
+    ];
+
+    // The `.sldprt` semantic writer refuses a body or face name without a
+    // material, so strip the labels the round trip does not exercise here.
+    let prepare = |ir: &mut cadmpeg_ir::document::CadIr| {
+        ir.model.bodies[0].name = None;
+        ir.model.faces.iter_mut().for_each(|face| face.name = None);
+        ir.model
+            .edges
+            .iter_mut()
+            .for_each(|edge| edge.param_range = None);
+    };
+
+    let mut base = cadmpeg_ir::examples::unit_cube();
+    prepare(&mut base);
+    base.model.bodies[0].transform = None;
+    let mut base_bytes = Vec::new();
+    SldprtCodec.encode(&base, &mut base_bytes).unwrap();
+    let reference = SldprtCodec
+        .decode(&mut Cursor::new(base_bytes), &DecodeOptions::default())
+        .unwrap();
+    let reference_points: Vec<Point3> = reference
+        .ir
+        .model
+        .points
+        .iter()
+        .map(|point| point.position)
+        .collect();
+
+    for (rows, apply) in motions {
+        let mut moved = cadmpeg_ir::examples::unit_cube();
+        prepare(&mut moved);
+        moved.model.bodies[0].transform = Some(Transform { rows });
+        let mut bytes = Vec::new();
+        SldprtCodec.encode(&moved, &mut bytes).unwrap();
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+
+        for reference_point in &reference_points {
+            let expected = apply(*reference_point);
+            assert!(
+                decoded.ir.model.points.iter().any(|point| {
+                    (point.position.x - expected.x).abs() < 1e-9
+                        && (point.position.y - expected.y).abs() < 1e-9
+                        && (point.position.z - expected.z).abs() < 1e-9
+                }),
+                "rigid motion not preserved for point {reference_point:?}"
+            );
+        }
+        assert!(decoded
+            .ir
+            .model
+            .bodies
+            .iter()
+            .all(|body| body.transform.is_none()));
+    }
+}
+
+#[test]
+fn decode_encode_decode_reaches_fixpoint() {
+    let fixture = sldprt_with_body_and_history(&triangle_body());
+
+    let first = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
+        .expect("first decode");
+    assert!(first.report.geometry_transferred);
+
+    let mut reencoded = Vec::new();
+    SldprtCodec
+        .encode_with_source_fidelity(&first.ir, Some(&first.source_fidelity), &mut reencoded)
+        .expect("re-encode");
+
+    let second = SldprtCodec
+        .decode(&mut Cursor::new(reencoded), &DecodeOptions::default())
+        .expect("second decode");
+
+    assert_eq!(
+        first.ir.model.points, second.ir.model.points,
+        "points diverged at the fixpoint"
+    );
+    assert_eq!(
+        first.ir.model.surfaces, second.ir.model.surfaces,
+        "surfaces diverged at the fixpoint"
+    );
+    assert_eq!(
+        first.ir.model.faces, second.ir.model.faces,
+        "faces diverged at the fixpoint"
+    );
+    assert_eq!(
+        first.ir.model.edges, second.ir.model.edges,
+        "edges diverged at the fixpoint"
+    );
+    assert_eq!(
+        first.ir.model.coedges, second.ir.model.coedges,
+        "coedges diverged at the fixpoint"
+    );
+    assert_eq!(
+        first.report.geometry_transferred, second.report.geometry_transferred,
+        "geometry-transferred flag diverged at the fixpoint"
+    );
+}
+
+#[test]
 fn semantic_writer_regenerates_modified_planar_brep() {
     let source = sldprt_with_body(&triangle_body());
     let mut cur = Cursor::new(source);
@@ -5335,7 +5462,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
     SldprtCodec
         .write_preserved_with_source_fidelity(&solid.ir, &solid.source_fidelity, &mut solid_bytes)
         .unwrap();
-    let solid_scan = container::scan(&mut Cursor::new(solid_bytes)).unwrap();
+    let solid_scan = container::scan_bytes(&solid_bytes);
     let solid_payload = &solid_scan.blocks[0].payload;
     assert!(count_entity51_family(solid_payload, 2, 0x0013) >= 1);
     assert!(count_entity51_family(solid_payload, 1, 0x0015) >= 1);
@@ -5355,7 +5482,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
     SldprtCodec
         .write_preserved_with_source_fidelity(&sheet.ir, &sheet.source_fidelity, &mut sheet_bytes)
         .unwrap();
-    let sheet_scan = container::scan(&mut Cursor::new(sheet_bytes)).unwrap();
+    let sheet_scan = container::scan_bytes(&sheet_bytes);
     let sheet_payload = &sheet_scan.blocks[0].payload;
     assert!(count_entity51_family(sheet_payload, 2, 0x0015) >= 1);
     assert!(count_entity51_family(sheet_payload, 1, 0x001f) >= 1);
@@ -5501,7 +5628,6 @@ fn decode_builds_valid_topology_and_plane() {
     assert_eq!(result.ir.model.points.len(), 3);
     assert_eq!(result.ir.model.surfaces.len(), 1);
 
-    // The plane decoded with its stored origin and unit normal.
     match &result.ir.model.surfaces[0].geometry {
         SurfaceGeometry::Plane {
             origin,
@@ -5515,7 +5641,6 @@ fn decode_builds_valid_topology_and_plane() {
         other => panic!("expected plane, got {other:?}"),
     }
 
-    // Coordinates converted metre → millimetre (×1000).
     let xs: Vec<f64> = result
         .ir
         .model
@@ -5525,12 +5650,91 @@ fn decode_builds_valid_topology_and_plane() {
         .collect();
     assert!(xs.contains(&1000.0));
 
-    // The loop ring closes and every reference resolves.
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
     assert_eq!(result.ir.model.loops[0].coedges.len(), 3);
     // Edges carry no analytic curve (their carriers were null), which is legal.
     assert!(result.ir.model.edges.iter().all(|e| e.curve.is_none()));
+}
+
+fn strict_options() -> DecodeOptions {
+    use cadmpeg_ir::decode::{DecodeMode, DecodePolicy};
+    DecodeOptions {
+        container_only: false,
+        policy: DecodePolicy {
+            mode: DecodeMode::Strict,
+            ..DecodePolicy::desktop()
+        },
+    }
+}
+
+#[test]
+fn strict_accepts_operator_requested_container_only() {
+    let fixture = synthetic_sldprt();
+    let mut options = strict_options();
+    options.container_only = true;
+    SldprtCodec
+        .decode(&mut Cursor::new(fixture), &options)
+        .expect("strict container-only decode is accepted");
+}
+
+#[test]
+fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
+    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+
+    let fixture = synthetic_sldprt();
+
+    let salvaged = SldprtCodec
+        .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
+        .expect("salvage decode keeps the partial result");
+    assert!(!salvaged.report.geometry_transferred);
+    assert!(salvaged
+        .report
+        .losses
+        .iter()
+        .any(|note| note.code == LossCode::GeometryNotTransferred));
+    assert!(salvaged
+        .report
+        .losses
+        .iter()
+        .any(|note| note.code == LossCode::TopologyNotTransferred));
+    assert!(salvaged
+        .report
+        .losses
+        .iter()
+        .any(|note| note.code.strict_consequence() == StrictConsequence::Reject));
+
+    let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
+    match strict {
+        Err(cadmpeg_ir::CodecError::Malformed(message)) => {
+            assert!(
+                message.contains("strict mode rejects geometry_not_transferred"),
+                "unexpected message: {message}"
+            );
+        }
+        other => panic!("strict decode must reject unrepresentable geometry, got {other:?}"),
+    }
+}
+
+#[test]
+fn strict_accepts_tolerable_gauge_substitution_geometry() {
+    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+
+    let fixture = sldprt_with_body_and_history(&triangle_body());
+    let strict = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &strict_options())
+        .expect("strict decode accepts a tolerable-loss geometry result");
+    assert!(strict.report.geometry_transferred);
+    assert!(strict
+        .report
+        .losses
+        .iter()
+        .all(|note| note.code.strict_consequence() == StrictConsequence::Tolerate));
+    assert!(strict
+        .report
+        .losses
+        .iter()
+        .any(|note| note.code == LossCode::TopologyGaugeSubstituted));
 }
 
 #[test]
@@ -6756,7 +6960,6 @@ fn semantic_writer_preserves_multiple_body_ownership() {
 fn edge_uses_decoded_line_curve() {
     use cadmpeg_ir::geometry::CurveGeometry;
 
-    // Point the first edge-use at a line carrier; the edge must gain a Line curve.
     let mut body = Vec::new();
     body.extend(plane_carrier(
         100,
@@ -7640,14 +7843,13 @@ fn decode_rejects_inconsistent_display_list_table() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(result.ir.model.tessellations.is_empty());
-    assert!(result
+    assert!(!result
         .ir
         .source
         .as_ref()
         .unwrap()
         .attributes
-        .get("displaylist_vertices")
-        .is_none());
+        .contains_key("displaylist_vertices"));
 }
 
 #[test]
@@ -9565,14 +9767,10 @@ fn semantic_writer_applies_history_root_ordinals() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     for feature in &mut decoded.ir.model.features {
-        feature.ordinal = if feature.name.as_deref() == Some("First") {
-            1
-        } else {
-            0
-        };
+        feature.ordinal = u64::from(feature.name.as_deref() == Some("First"));
     }
     for configuration in &mut decoded.ir.model.configurations {
-        configuration.ordinal = if configuration.name == "A" { 1 } else { 0 };
+        configuration.ordinal = u32::from(configuration.name == "A");
     }
 
     let mut encoded = Vec::new();
@@ -10374,7 +10572,7 @@ fn decode_resolves_feature_topology_selections() {
             profile: Some(ProfileRef::Faces(faces)),
             path: Some(PathRef::Edges(edges)),
             ..
-        } if faces == &[face_id.clone()] && edges == &[edge_id.clone()]
+        } if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id)
     ));
 
     if let FeatureDefinition::Fillet { groups } = &mut decoded.ir.model.features[0].definition {
@@ -13365,7 +13563,7 @@ fn semantic_writer_round_trips_wrap() {
             face: FaceSelection::Resolved { faces: targets, native },
             mode: WrapMode::Emboss,
             depth: Some(Length(2.0)),
-        } if faces == &[face_id.clone()] && targets == &[face_id.clone()] && native == &face
+        } if faces == std::slice::from_ref(&face_id) && targets == std::slice::from_ref(&face_id) && native == &face
     ));
 
     let FeatureDefinition::Wrap {
@@ -13464,7 +13662,7 @@ fn semantic_writer_round_trips_move_copy_body() {
                 angle: Angle(angle),
             }),
             copies: 2,
-        } if bodies == &[body_id.clone()] && native == &body
+        } if bodies == std::slice::from_ref(&body_id) && native == &body
             && (*angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
 
@@ -13563,7 +13761,7 @@ fn semantic_writer_round_trips_offset_surface() {
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Resolved { faces, native },
             distance: Some(Length(2.0)),
-        } if faces == &[face_id.clone()] && native == &face
+        } if faces == std::slice::from_ref(&face_id) && native == &face
     ));
 
     let FeatureDefinition::OffsetSurface { faces, distance } =
@@ -13622,7 +13820,7 @@ fn semantic_writer_round_trips_knit_surface() {
             merge_entities: Some(false),
             create_solid: Some(false),
             gap_tolerance: Some(Length(0.01)),
-        } if faces == &[face_id.clone()] && native == &face
+        } if faces == std::slice::from_ref(&face_id) && native == &face
     ));
 
     let FeatureDefinition::KnitSurface {
@@ -13692,8 +13890,8 @@ fn semantic_writer_round_trips_cut_with_surface() {
             targets: BodySelection::Resolved { bodies, native: body_native },
             tools: FaceSelection::Resolved { faces, native: face_native },
             reverse: false,
-        } if bodies == &[body_id.clone()] && body_native == &body
-            && faces == &[face_id.clone()] && face_native == &face
+        } if bodies == std::slice::from_ref(&body_id) && body_native == &body
+            && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
     let FeatureDefinition::CutWithSurface {
@@ -13758,8 +13956,8 @@ fn semantic_writer_round_trips_filled_surface() {
             support_faces: FaceSelection::Resolved { faces, native: face_native },
             continuity: Some(SurfaceContinuity::Tangent),
             merge_result: Some(false),
-        } if edges == &[edge_id.clone()] && edge_native == &edge
-            && faces == &[face_id.clone()] && face_native == &face
+        } if edges == std::slice::from_ref(&edge_id) && edge_native == &edge
+            && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
     let FeatureDefinition::FilledSurface {
@@ -13829,7 +14027,7 @@ fn semantic_writer_round_trips_trim_surface() {
             faces: FaceSelection::Resolved { faces, native },
             tool: PathRef::Edges(edges),
             keep: TrimRegion::Inside,
-        } if faces == &[face_id.clone()] && native == &face && edges == &[edge_id.clone()]
+        } if faces == std::slice::from_ref(&face_id) && native == &face && edges == std::slice::from_ref(&edge_id)
     ));
 
     let FeatureDefinition::TrimSurface { faces, tool, keep } =
@@ -13889,7 +14087,7 @@ fn semantic_writer_round_trips_extend_surface() {
             faces: FaceSelection::Resolved { faces, native },
             distance: Some(Length(2.0)),
             method: SurfaceExtension::Natural,
-        } if faces == &[face_id.clone()] && native == &face
+        } if faces == std::slice::from_ref(&face_id) && native == &face
     ));
 
     let FeatureDefinition::ExtendSurface {
@@ -13961,8 +14159,8 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
                 direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
                 distance: Length(2.0),
             },
-        } if edges == &[edge_id.clone()] && edge_native == &edge
-            && faces == &[face_id.clone()] && face_native == &face
+        } if edges == std::slice::from_ref(&edge_id) && edge_native == &edge
+            && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
     let FeatureDefinition::RuledSurface {
@@ -14053,7 +14251,7 @@ fn semantic_writer_round_trips_projected_curve() {
             target_faces: FaceSelection::Resolved { faces, native },
             direction: cadmpeg_ir::features::CurveProjectionDirection::Vector(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
             bidirectional: Some(false),
-        } if edges == &[edge_id.clone()] && faces == &[face_id.clone()] && native == &face
+        } if edges == std::slice::from_ref(&edge_id) && faces == std::slice::from_ref(&face_id) && native == &face
     ));
 
     let FeatureDefinition::ProjectedCurve {
@@ -16210,7 +16408,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     SldprtCodec
         .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
         .unwrap();
-    let scan = container::scan(&mut Cursor::new(encoded.clone())).unwrap();
+    let scan = container::scan_bytes(&encoded);
     assert_eq!(
         scan.blocks
             .iter()
@@ -19859,10 +20057,8 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
 fn face_on_untyped_surface_keeps_topology() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
-    // Bridge points refs[4] at an attr with no carrier; the face survives with an
-    // unknown-geometry surface and the loss is counted.
     let mut body = Vec::new();
-    body.extend(bridge(10, 20, 999)); // 999 = no carrier
+    body.extend(bridge(10, 20, 999));
     body.extend(loop_head(20, 30, 10));
     body.extend(coedge(30, 20, 31, 50, 0, 40, false));
     body.extend(coedge(31, 20, 32, 51, 0, 41, false));
@@ -19900,9 +20096,50 @@ fn face_on_untyped_surface_keeps_topology() {
         .report
         .losses
         .iter()
-        .any(|l| l.message.contains("does not type")));
+        .any(|l| l.code == LossCode::GeometryNotTransferred));
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
+}
+
+#[test]
+fn strict_rejects_topology_decode_resting_on_untyped_surface() {
+    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+
+    let mut body = Vec::new();
+    body.extend(bridge(10, 20, 999));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    body.extend(edge_use(40, 0));
+    body.extend(edge_use(41, 0));
+    body.extend(edge_use(42, 0));
+    body.extend(vertex_use(50, 60));
+    body.extend(vertex_use(51, 61));
+    body.extend(vertex_use(52, 62));
+    body.extend(world_point(60, [0.0, 0.0, 0.0]));
+    body.extend(world_point(61, [1.0, 0.0, 0.0]));
+    body.extend(world_point(62, [0.0, 1.0, 0.0]));
+    let fixture = sldprt_with_body(&body);
+
+    let salvaged = SldprtCodec
+        .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
+        .expect("salvage keeps the topology decode");
+    assert_eq!(salvaged.ir.model.faces.len(), 1);
+    let census = salvaged
+        .report
+        .losses
+        .iter()
+        .find(|l| l.code == LossCode::GeometryNotTransferred)
+        .expect("untyped support surface raises a census note");
+    assert_eq!(census.code.strict_consequence(), StrictConsequence::Reject);
+
+    let error = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &strict_options())
+        .expect_err("strict refuses the untyped-surface census");
+    assert!(error
+        .to_string()
+        .contains("strict mode rejects geometry_not_transferred"));
 }
 
 #[test]
@@ -20406,7 +20643,7 @@ fn compact_carrier_shapes_decode() {
 
     // A bad marker (not 2b/2d) rejects the candidate.
     let mut bad = cyl.clone();
-    bad[2 + 2 + 4 + 10] = 0x00; // clobber the marker byte
+    bad[2 + 2 + 4 + 10] = 0x00;
     assert!(parse_carrier(&bad, 0).is_none());
 }
 

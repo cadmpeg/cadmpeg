@@ -2802,7 +2802,7 @@ mod nurbs_write_tests {
             0.001,
             "test:surface#high-degree",
         )
-        .unwrap_err();
+        .expect_err("expected error");
 
         assert!(matches!(
             error,
@@ -2835,7 +2835,7 @@ mod nurbs_write_tests {
             0.001,
             "test:surface#ambiguous-shape",
         )
-        .unwrap_err();
+        .expect_err("expected error");
 
         assert!(
             matches!(
@@ -2865,12 +2865,12 @@ mod nurbs_write_tests {
             0.001,
             "test:curve#high-degree",
         )
-        .unwrap_err();
+        .expect_err("expected error");
         let multiplicity_error = unique_knots(
             &vec![0.0; usize::from(u16::MAX) + 1],
             "test:curve#high-multiplicity",
         )
-        .unwrap_err();
+        .expect_err("expected error");
 
         assert!(matches!(
             degree_error,

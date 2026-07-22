@@ -13,7 +13,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, DecodeResult};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
@@ -22660,18 +22661,15 @@ fn transfer_cross_section_planes(
 /// The stream is read from its beginning. When `options.container_only` is set,
 /// the returned IR contains source metadata and preserved geometry sections but
 /// no transferred entities.
-pub fn decode(
-    reader: &mut dyn ReadSeek,
-    options: &DecodeOptions,
-) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan(reader)?;
+pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
+    let scan = container::scan_bytes(root.window().to_vec());
 
-    let (mut ir, annotations, unknowns, coverage) = if options.container_only {
+    let (mut ir, annotations, unknowns, coverage) = if ctx.container_only() {
         build_container_ir(&scan)?
     } else {
         build_ir(&scan)?
     };
-    let report = build_report(&scan, &ir, coverage, options.container_only);
+    let report = build_report(&scan, &ir, coverage, ctx.container_only());
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()
@@ -25182,6 +25180,7 @@ fn build_report(
 
     if container_only {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::ContainerOnly,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: "Container-only decode requested; entity transfer was skipped.".to_string(),
@@ -25201,6 +25200,7 @@ fn build_report(
         .crv_array_count
         .map_or_else(|| "n/a".to_string(), |c| c.to_string());
     losses.push(LossNote {
+        code: cadmpeg_ir::report::LossCode::CarrierSummary,
         category: LossCategory::Geometry,
         severity: Severity::Info,
         message: format!(
@@ -25232,6 +25232,7 @@ fn build_report(
 
     // The core prototype-vs-instance limitation.
     losses.push(LossNote {
+        code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
         category: LossCategory::Geometry,
         severity: Severity::Blocking,
         message: format!(
@@ -25255,6 +25256,7 @@ fn build_report(
 
     if !container_only && placed_plane_count != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25267,6 +25269,7 @@ fn build_report(
 
     if !container_only && first_instance_prototype_surface_count != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25280,6 +25283,7 @@ fn build_report(
 
     if !container_only && paired_envelope_sphere_count != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25293,6 +25297,7 @@ fn build_report(
 
     if !container_only && positional_torus_count != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25305,6 +25310,7 @@ fn build_report(
 
     if !container_only && positional_cylinder_count != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25317,6 +25323,7 @@ fn build_report(
 
     if !container_only && positional_cone_count != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25329,6 +25336,7 @@ fn build_report(
 
     if !container_only && positional_line_extrusion_plane_count != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25342,6 +25350,7 @@ fn build_report(
 
     if !container_only && tabulated_cylinder_spline_extrusion_count != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25354,6 +25363,7 @@ fn build_report(
 
     if !container_only && !scan.planes.datums.is_empty() {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25367,6 +25377,7 @@ fn build_report(
 
     if !container_only && !scan.references.lines.is_empty() {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25380,6 +25391,7 @@ fn build_report(
 
     if !container_only && !scan.references.circles.is_empty() {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25392,6 +25404,7 @@ fn build_report(
 
     if !container_only && !scan.references.ellipses.is_empty() {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25405,6 +25418,7 @@ fn build_report(
     let topological_point_count = count("transferred_topological_point_count");
     if !container_only && topological_point_count != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25417,6 +25431,7 @@ fn build_report(
     let native_topological_edge_count = count("transferred_native_topological_edge_count");
     if !container_only && native_topological_edge_count != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Topology,
             severity: Severity::Info,
             message: format!(
@@ -25429,6 +25444,7 @@ fn build_report(
     let straight_pcurve_line_count = count("transferred_straight_pcurve_line_count");
     if !container_only && straight_pcurve_line_count != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25445,6 +25461,7 @@ fn build_report(
         || torus_coverage.split_coordinate_envelopes != 0
     {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25463,6 +25480,7 @@ fn build_report(
 
     // The specific undecoded PSB layers that gate per-instance geometry.
     losses.push(LossNote {
+        code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
         category: LossCategory::Geometry,
         severity: Severity::Blocking,
         message: "Additional model-space carriers are gated by unresolved lane-specific scalar \
@@ -25476,6 +25494,7 @@ fn build_report(
 
     // Topology.
     losses.push(LossNote {
+        code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
         category: LossCategory::Topology,
         severity: Severity::Blocking,
         message: "Native curve half-edges and closed loops were decoded. Components with complete \
@@ -25516,6 +25535,7 @@ fn build_report(
 
     // Features, history, materials.
     losses.push(LossNote {
+        code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
         category: LossCategory::Attribute,
         severity: Severity::Warning,
         message: format!(
@@ -25534,6 +25554,7 @@ fn build_report(
     let untransferred_surface_rows = count("untransferred_visible_surface_row_count");
     if untransferred_surface_rows != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -25546,6 +25567,7 @@ fn build_report(
     let untransferred_curve_rows = count("untransferred_visible_curve_row_count");
     if untransferred_curve_rows != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -25558,6 +25580,7 @@ fn build_report(
     let ambiguous_surface_rows = count("ambiguous_visible_surface_row_count");
     if ambiguous_surface_rows != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25570,6 +25593,7 @@ fn build_report(
     let ambiguous_curve_rows = count("ambiguous_visible_curve_row_count");
     if ambiguous_curve_rows != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -25582,6 +25606,7 @@ fn build_report(
     let prohibited_records = count("prohibited_active_curve_expression_record_count");
     if prohibited_records != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
             category: LossCategory::Attribute,
             severity: Severity::Warning,
             message: format!(
@@ -25595,6 +25620,7 @@ fn build_report(
     let prohibited_kinds = count("prohibited_active_curve_expression_kind_count");
     if prohibited_kinds != 0 {
         losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
             category: LossCategory::Attribute,
             severity: Severity::Warning,
             message: format!(

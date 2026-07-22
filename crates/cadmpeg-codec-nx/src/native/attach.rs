@@ -4247,7 +4247,7 @@ mod tests {
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -4330,7 +4330,7 @@ mod tests {
                 None,
                 None,
                 super::HoleProjection::default(),
-                Default::default(),
+                std::collections::BTreeMap::default(),
             ),
             cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "DELETE"
         ));
@@ -4806,7 +4806,7 @@ mod tests {
             7,
             &["plate label", "Arial"],
         )
-        .unwrap();
+        .expect("valid text annotation");
         assert_eq!(annotation.object, feature.0);
         assert_eq!(
             annotation.kind,
@@ -4819,7 +4819,7 @@ mod tests {
 
         let empty =
             super::text_semantic_annotation("TEXT", &feature, "nx:text#empty", 8, &["", ""])
-                .unwrap();
+                .expect("empty text fields remain a valid annotation");
         assert_eq!(empty.text, [""]);
         assert_eq!(empty.parameters["font_family"], "");
 
@@ -5099,13 +5099,12 @@ mod tests {
             .model
             .surfaces
             .iter_mut()
-            .filter_map(|surface| {
+            .find_map(|surface| {
                 let SurfaceGeometry::Plane { origin, normal, .. } = &mut surface.geometry else {
                     return None;
                 };
                 (normal.y.abs() > 0.5 && origin.y > 0.0).then_some(origin)
             })
-            .next()
             .expect("positive y plane");
         high_y.y = 10.0;
         assert_eq!(
@@ -5812,8 +5811,12 @@ mod tests {
             super::simple_hole_chamfers(&chamfered, &templates, &outputs)
         );
         let mut unequal_chamfers = chamfered;
-        let CurveGeometry::Circle { radius, .. } =
-            &mut unequal_chamfers.model.curves.last_mut().unwrap().geometry
+        let CurveGeometry::Circle { radius, .. } = &mut unequal_chamfers
+            .model
+            .curves
+            .last_mut()
+            .expect("required invariant")
+            .geometry
         else {
             unreachable!()
         };
@@ -6092,7 +6095,7 @@ mod tests {
         let (definition, supports) =
             super::thicken_feature_definition(&ir, std::slice::from_ref(&output))
                 .expect("matched symmetric offsets");
-        assert_eq!(supports, [support.clone()]);
+        assert_eq!(supports, std::slice::from_ref(&support));
         assert!(matches!(
             definition,
             FeatureDefinition::Thicken {
@@ -6273,7 +6276,7 @@ mod tests {
             std::slice::from_ref(&output),
             super::NxBlendFamily::Edge,
         )
-        .unwrap();
+        .expect("required invariant");
         assert!(matches!(
             definition,
             FeatureDefinition::Fillet {
@@ -6289,7 +6292,8 @@ mod tests {
         attach_test_body_surface(&mut ir, &output, conflicting.surface.clone());
         ir.model.procedural_surfaces.push(conflicting);
         let (definition, _) =
-            super::blend_feature_definition(&ir, &[output], super::NxBlendFamily::Edge).unwrap();
+            super::blend_feature_definition(&ir, &[output], super::NxBlendFamily::Edge)
+                .expect("required invariant");
         assert!(matches!(
             definition,
             FeatureDefinition::Fillet {

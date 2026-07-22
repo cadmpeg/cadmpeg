@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::Cursor;
@@ -43,7 +43,10 @@ fn malformed_sequence_padding_is_rejected_without_panicking() {
     assert_eq!(IgesCodec.detect(&bytes), Confidence::No);
     assert_eq!(
         IgesCodec
-            .inspect(&mut Cursor::new(bytes))
+            .inspect(
+                &mut Cursor::new(bytes),
+                &cadmpeg_ir::decode::InspectOptions::default()
+            )
             .unwrap_err()
             .to_string(),
         "not the expected format: unrecognized IGES representation"
@@ -204,7 +207,7 @@ fn every_admitted_entity_form_routes_to_a_typed_decoder() {
 }
 
 #[test]
-fn repeated_decode_is_canonical_for_ir_report_and_byte_ledger() {
+fn repeated_decode_is_canonical() {
     let bytes = explicit_tetrahedron_solid_with_boolean_file();
     let first = IgesCodec
         .decode(
@@ -324,7 +327,12 @@ fn inspect_reports_sections_and_physical_line_endings() {
         b"\r",
     ));
 
-    let summary = IgesCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_ir::decode::InspectOptions::default(),
+        )
+        .unwrap();
 
     assert_eq!(summary.format, "iges");
     assert_eq!(summary.container_kind, "fixed-ascii");
@@ -344,7 +352,10 @@ fn decode_retains_short_and_extended_physical_records_before_terminate() {
     bytes.splice(162..162, inserted);
 
     let summary = IgesCodec
-        .inspect(&mut Cursor::new(bytes.as_slice()))
+        .inspect(
+            &mut Cursor::new(bytes.as_slice()),
+            &cadmpeg_ir::decode::InspectOptions::default(),
+        )
         .unwrap();
     let noncanonical = summary
         .entries
@@ -353,34 +364,6 @@ fn decode_retains_short_and_extended_physical_records_before_terminate() {
         .unwrap();
     assert_eq!(noncanonical.role, "retained-opaque-records");
     assert_eq!(noncanonical.attributes["records"], "2");
-
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(bytes.as_slice()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let spans = result
-        .source_fidelity
-        .byte_ledger
-        .spans
-        .iter()
-        .filter(|span| span.meaning == "noncanonical_physical_record")
-        .collect::<Vec<_>>();
-    assert_eq!(spans.len(), 2);
-    assert_eq!(spans[0].end - spans[0].start, 12);
-    assert_eq!(spans[1].end - spans[1].start, 81);
-    assert!(spans.iter().all(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Opaque
-            && result
-                .source_fidelity
-                .retained_records
-                .iter()
-                .any(|record| Some(record.id.as_str()) == span.retained_record.as_deref())
-    }));
-    let validation =
-        cadmpeg_ir::validate_with_source_fidelity(&result.ir, &result.source_fidelity, Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 fn fixed_ascii_with_global(global: &[u8]) -> Vec<u8> {
@@ -434,7 +417,12 @@ fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
     );
     let bytes = fixed_ascii_with_global(global.as_bytes());
 
-    let summary = IgesCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_ir::decode::InspectOptions::default(),
+        )
+        .unwrap();
 
     assert!(summary.notes.contains(&"parameter_delimiter=^".into()));
     assert!(summary.notes.contains(&"record_delimiter=!".into()));
@@ -444,52 +432,15 @@ fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
 }
 
 #[test]
-fn decode_classifies_cross_card_hollerith_bytes_as_one_global_value() {
-    let product = "p".repeat(70);
-    let global = format!(
-        "1H^^1H!^70H{product}^8Hpart.igs^7Hcadmpeg^3H0.1^32^38^6^308^15^0H^1.0^2^2HMM^1^1.0^15H20260714.000000^0.001^1000.0^6Hauthor^3Horg^11^0^0H^0H!"
-    );
-    let bytes = fixed_ascii_with_global(global.as_bytes());
-
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(bytes.as_slice()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let value_spans = result
-        .source_fidelity
-        .byte_ledger
-        .spans
-        .iter()
-        .filter(|span| span.meaning == "global_value_2")
-        .collect::<Vec<_>>();
-
-    assert_eq!(value_spans.len(), 2);
-    assert!(value_spans
-        .iter()
-        .all(|span| span.class == cadmpeg_ir::ByteSpanClass::Typed));
-    assert_eq!(
-        value_spans
-            .iter()
-            .map(|span| span.end - span.start)
-            .sum::<u64>(),
-        73
-    );
-    assert_eq!(
-        result.source_fidelity.byte_ledger.source_length,
-        bytes.len() as u64
-    );
-    let validation =
-        cadmpeg_ir::validate_with_source_fidelity(&result.ir, &result.source_fidelity, Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-#[test]
 fn inspect_reports_directory_entity_and_form_census() {
     let bytes = point_file();
 
-    let summary = IgesCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_ir::decode::InspectOptions::default(),
+        )
+        .unwrap();
 
     assert!(summary.notes.contains(&"entities=1".into()));
     assert!(summary.notes.contains(&"entity.116.form.0=1".into()));
@@ -5089,7 +5040,12 @@ fn decode_preserves_rectangular_and_circular_pattern_order() {
 #[test]
 fn decode_distinguishes_all_external_reference_forms_without_resolution() {
     let bytes = external_reference_forms_file();
-    let summary = IgesCodec.inspect(&mut Cursor::new(&bytes)).unwrap();
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(&bytes),
+            &cadmpeg_ir::decode::InspectOptions::default(),
+        )
+        .unwrap();
     assert!(summary
         .notes
         .iter()
@@ -7626,7 +7582,12 @@ fn inspect_rejects_terminate_count_mismatch() {
     bytes.extend(card(b"1H,,1H;,,;", b'G', 1));
     bytes.extend(card(b"S0000001G0000002D0000000P0000000", b'T', 1));
 
-    let error = IgesCodec.inspect(&mut Cursor::new(bytes)).unwrap_err();
+    let error = IgesCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_ir::decode::InspectOptions::default(),
+        )
+        .unwrap_err();
     assert_eq!(
         error.to_string(),
         "malformed container: IGES Terminate count for global is 2, actual 1"
@@ -7639,13 +7600,17 @@ fn inspect_accepts_space_padded_terminate_counts() {
     bytes.extend(card(b"1H,,1H;,,;", b'G', 1));
     bytes.extend(card(b"S      1G      1D      0P      0", b'T', 1));
 
-    IgesCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    IgesCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_ir::decode::InspectOptions::default(),
+        )
+        .unwrap();
 }
 
 #[test]
-fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
+fn decode_preserves_native_entities_and_graph() {
     let bytes = point_file();
-    let source_length = u64::try_from(bytes.len()).unwrap();
 
     let result = IgesCodec
         .decode(
@@ -7655,36 +7620,6 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
         .unwrap();
 
     assert_eq!(result.ir.source.as_ref().unwrap().format, "iges");
-    let ledger = &result.source_fidelity.byte_ledger;
-    assert_eq!(ledger.source_length, source_length);
-    assert_eq!(ledger.spans.first().unwrap().start, 0);
-    assert_eq!(ledger.spans.last().unwrap().end, source_length);
-    assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Typed
-            && span.meaning == "parameter_token_0"
-            && span.owner == "iges:parameter-record#D1"
-    }));
-    assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Structural
-            && span.meaning == "parameter_delimiter_or_padding"
-    }));
-    assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Typed && span.meaning == "global_value_0"
-    }));
-    assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Structural && span.meaning == "global_delimiter"
-    }));
-    assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Structural && span.meaning == "reserved_1"
-    }));
-    assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Opaque
-            && span.meaning == "parameter_comment"
-            && span
-                .retained_record
-                .as_deref()
-                .is_some_and(|id| id.starts_with("iges:opaque:bytes#"))
-    }));
     let native = result.ir.native.namespace("iges").unwrap();
     assert_eq!(native.version, 2);
     assert_eq!(native.arenas["cards"].len(), 7);
@@ -7692,28 +7627,6 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
     assert!(native.arenas["colors"].is_empty());
     assert_eq!(native.arenas["display_attributes"].len(), 1);
     assert!(!native.arenas.contains_key("opaque_bytes"));
-    for span in result
-        .source_fidelity
-        .byte_ledger
-        .spans
-        .iter()
-        .filter(|span| span.class == cadmpeg_ir::ByteSpanClass::Opaque)
-    {
-        let retained = result
-            .source_fidelity
-            .retained_records
-            .iter()
-            .find(|record| Some(record.id.as_str()) == span.retained_record.as_deref())
-            .unwrap();
-        assert_eq!(retained.offset, span.start);
-        assert_eq!(retained.byte_len, span.end - span.start);
-        assert_eq!(
-            retained.sha256,
-            cadmpeg_ir::hash::sha256_hex(
-                &bytes[usize::try_from(span.start).unwrap()..usize::try_from(span.end).unwrap()]
-            )
-        );
-    }
     assert_eq!(native.arenas["entities"][0].id, "iges:entity:directory#1");
     assert_eq!(result.ir.model.points.len(), 1);
     assert_eq!(result.ir.model.points[0].position.x, 1.0);
@@ -7759,7 +7672,12 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
         1,
     ));
 
-    let summary = IgesCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_ir::decode::InspectOptions::default(),
+        )
+        .unwrap();
 
     assert!(summary.notes.contains(&"references.cyclic=2".into()));
 }
@@ -7772,7 +7690,10 @@ fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
     compressed.extend(card(b"compressed fixture", b'S', 1));
     assert_eq!(IgesCodec.detect(&compressed), Confidence::High);
     let summary = IgesCodec
-        .inspect(&mut Cursor::new(compressed.clone()))
+        .inspect(
+            &mut Cursor::new(compressed.clone()),
+            &cadmpeg_ir::decode::InspectOptions::default(),
+        )
         .unwrap();
     assert_eq!(summary.container_kind, "compressed-ascii");
     assert_eq!(
@@ -7789,7 +7710,12 @@ fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
     binary[72] = b'B';
     binary[79] = b'1';
     assert_eq!(IgesCodec.detect(&binary), Confidence::High);
-    let summary = IgesCodec.inspect(&mut Cursor::new(binary.clone())).unwrap();
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(binary.clone()),
+            &cadmpeg_ir::decode::InspectOptions::default(),
+        )
+        .unwrap();
     assert_eq!(summary.container_kind, "binary");
     assert_eq!(
         IgesCodec
@@ -7809,7 +7735,12 @@ fn legacy_fixed_ascii_is_reported_but_not_decoded_as_iges_5_3() {
         .unwrap();
     bytes[version + 1..version + 3].copy_from_slice(b"10");
 
-    let summary = IgesCodec.inspect(&mut Cursor::new(bytes.clone())).unwrap();
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(bytes.clone()),
+            &cadmpeg_ir::decode::InspectOptions::default(),
+        )
+        .unwrap();
     assert!(summary.notes.contains(&"iges_version=5.2".into()));
     assert_eq!(
         IgesCodec
@@ -7821,10 +7752,9 @@ fn legacy_fixed_ascii_is_reported_but_not_decoded_as_iges_5_3() {
 }
 
 #[test]
-fn decode_retains_and_accounts_for_post_terminate_records() {
+fn decode_retains_post_terminate_physical_record() {
     let mut bytes = point_file();
     bytes.extend_from_slice(b"transport padding\r\n");
-    let source_length = u64::try_from(bytes.len()).unwrap();
 
     let result = IgesCodec
         .decode(
@@ -7833,38 +7763,8 @@ fn decode_retains_and_accounts_for_post_terminate_records() {
         )
         .unwrap();
 
-    let ledger = &result.source_fidelity.byte_ledger;
-    assert_eq!(ledger.source_length, source_length);
-    assert_eq!(ledger.spans.last().unwrap().end, source_length);
     assert_eq!(
         result.ir.native.namespace("iges").unwrap().arenas["cards"].len(),
         8
     );
-    let span = result
-        .source_fidelity
-        .byte_ledger
-        .spans
-        .iter()
-        .find(|span| span.meaning == "post_terminate_bytes")
-        .unwrap();
-    assert_eq!(span.class, cadmpeg_ir::ByteSpanClass::Opaque);
-    assert_eq!(span.end - span.start, 17);
-    let retained = result
-        .source_fidelity
-        .retained_records
-        .iter()
-        .find(|record| Some(record.id.as_str()) == span.retained_record.as_deref())
-        .unwrap();
-    assert_eq!(
-        retained.data.as_deref(),
-        Some(b"transport padding".as_slice())
-    );
-    assert_eq!(retained.byte_len, 17);
-    assert_eq!(
-        retained.sha256,
-        cadmpeg_ir::hash::sha256_hex(b"transport padding")
-    );
-    let validation =
-        cadmpeg_ir::validate_with_source_fidelity(&result.ir, &result.source_fidelity, Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

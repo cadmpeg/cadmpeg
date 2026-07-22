@@ -8,23 +8,24 @@
 //! # Quick start
 //!
 //! [`CreoCodec`] implements [`cadmpeg_ir::codec::Codec`]. Use
-//! [`CreoCodec::inspect`] to enumerate sections and read container diagnostics:
+//! [`cadmpeg_ir::CodecEntry::inspect`] to enumerate sections and read container diagnostics:
 //!
 //! ```no_run
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_creo::CreoCodec;
-//! use cadmpeg_ir::codec::Codec;
+//! use cadmpeg_ir::codec::CodecEntry;
+//! use cadmpeg_ir::decode::InspectOptions;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.prt")?;
-//! let summary = CreoCodec.inspect(&mut input)?;
+//! let summary = CreoCodec.inspect(&mut input, &InspectOptions::default())?;
 //! println!("{} sections", summary.entries.len());
 //! # Ok(())
 //! # }
 //! ```
 //!
-//! Use [`CreoCodec::decode`] for a [`cadmpeg_ir::document::CadIr`] document and
+//! Use [`cadmpeg_ir::CodecEntry::decode`] for a [`cadmpeg_ir::document::CadIr`] document and
 //! its [`cadmpeg_ir::report::DecodeReport`].
 //!
 //! # Format model
@@ -64,9 +65,8 @@ pub mod scalar;
 pub mod surface;
 pub mod topology;
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
-};
+use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult};
+use cadmpeg_ir::decode::{DecodeContext, View};
 
 /// Codec for Creo Parametric and Pro/ENGINEER PSB `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
@@ -87,17 +87,21 @@ impl Codec for CreoCodec {
         }
     }
 
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan(reader)?;
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        let scan = container::scan_bytes(root.window().to_vec());
         Ok(container::summarize(&scan))
     }
 
-    fn decode(
+    fn decode_impl(
         &self,
-        reader: &mut dyn ReadSeek,
-        options: &DecodeOptions,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        decode::decode(reader, options)
+        decode::decode(ctx, root)
     }
 }
 

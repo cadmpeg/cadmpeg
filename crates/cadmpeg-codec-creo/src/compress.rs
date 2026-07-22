@@ -190,8 +190,9 @@ mod tests {
             let mut bytes = vec![0; values.len().saturating_mul(9).div_ceil(8)];
             for (index, value) in values.iter().copied().enumerate() {
                 for bit in 0..9 {
-                    bytes[(index * 9 + bit) / 8] |=
-                        u8::try_from((value >> bit) & 1).unwrap() << ((index * 9 + bit) % 8);
+                    bytes[(index * 9 + bit) / 8] |= u8::try_from((value >> bit) & 1)
+                        .expect("required invariant")
+                        << ((index * 9 + bit) % 8);
                 }
             }
             bytes

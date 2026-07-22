@@ -12,12 +12,7 @@
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
-//! The code is not yet persisted onto [`LossNote`]: the shared IR type has no
-//! `code` field in this branch (doc §6.2 assigns it one). Until that field
-//! lands, the code is enforced at construction and greppable at every site;
-//! the mapping here is the source of truth a follow-up wires into the report.
-
-use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 
 /// A stable, machine-readable identifier for one `.sldprt` transfer loss.
 ///
@@ -193,6 +188,19 @@ impl SldprtLossCode {
         }
     }
 
+    const fn shared_code(self) -> LossCode {
+        match self {
+            Self::ContainerNoParasolidStream => LossCode::MissingGeometryStream,
+            Self::TopologyBodyHierarchyDerived => LossCode::TopologyGaugeSubstituted,
+            Self::TopologyGraphNotTransferred => LossCode::TopologyNotTransferred,
+            Self::GeometryFaceSupportSurfaceUntyped
+            | Self::GeometryEdgeSupportCurveUntyped
+            | Self::GeometryParasolidNotTransferred => LossCode::GeometryNotTransferred,
+            Self::MaterialMetadataNotTransferred => LossCode::MaterialNotTransferred,
+            _ => LossCode::FeatureHistoryRetained,
+        }
+    }
+
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// Category and severity come from the code, so a site cannot mislabel a
@@ -201,6 +209,7 @@ impl SldprtLossCode {
     #[must_use]
     pub fn note(self, message: impl Into<String>) -> LossNote {
         LossNote {
+            code: self.shared_code(),
             category: self.category(),
             severity: self.severity(),
             message: message.into(),

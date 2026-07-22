@@ -16,7 +16,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_nx::NxCodec;
-//! use cadmpeg_ir::{Codec, DecodeOptions};
+//! use cadmpeg_ir::{Codec, CodecEntry, DecodeOptions};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.prt")?;
@@ -30,7 +30,7 @@
 //! # }
 //! ```
 //!
-//! [`NxCodec::inspect`] returns the SPLMSSTR directory and embedded-stream
+//! [`CodecEntry::inspect`](cadmpeg_ir::CodecEntry::inspect) returns the SPLMSSTR directory and embedded-stream
 //! classifications without decoding entities. `DecodeOptions::container_only`
 //! produces metadata IR and skips entity decode.
 //!
@@ -77,15 +77,16 @@ mod jt_topology;
 pub(crate) mod native;
 pub mod nurbs;
 pub mod om;
+pub mod om_tokens;
 pub mod parasolid;
 pub mod topology;
 
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions, DecodeResult,
-    ReadSeek,
+    Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeResult,
 };
+use cadmpeg_ir::decode::{DecodeContext, View};
 
 /// Decoder and inspector for Siemens NX `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
@@ -104,17 +105,21 @@ impl Codec for NxCodec {
         }
     }
 
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        let scan = decode::scan(reader)?;
+    fn inspect_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        let scan = decode::scan(ctx, root)?;
         Ok(summarize(&scan))
     }
 
-    fn decode(
+    fn decode_impl(
         &self,
-        reader: &mut dyn ReadSeek,
-        options: &DecodeOptions,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        decode::decode(reader, options)
+        decode::decode(ctx, root)
     }
 }
 

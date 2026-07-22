@@ -96,6 +96,7 @@
       "losses": [
         {
           "category": "geometry",
+          "code": "assembly_components_external",
           "message": "No inline Parasolid geometry: this is an assembly .prt. Component geometry lives in external child .prt files named in EXTREFSTREAM, and the assembled solid's inputs (child partitions + constraint solve) are absent from this file. This is an external-dependency boundary, not a decode gap.",
           "severity": "blocking"
         }
@@ -124,11 +125,7 @@
           "nx:container"
         ]
       },
-      "byte_ledger": {
-        "source_length": 0,
-        "spans": []
-      },
-      "schema_version": "1"
+      "version": "3"
     }
   },
   "inspect": {

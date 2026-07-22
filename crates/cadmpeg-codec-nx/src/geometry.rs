@@ -11,6 +11,7 @@
 //! The scanners test supported field shifts caused by extended references and
 //! omit candidates that fail validation. Use [`crate::topology`] to resolve
 //! returned record offsets into topology.
+#![deny(clippy::disallowed_methods)]
 
 use cadmpeg_ir::be::{f64_at as read_f64, vec3_at as read_vec3};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};

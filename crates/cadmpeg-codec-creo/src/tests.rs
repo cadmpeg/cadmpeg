@@ -9,12 +9,12 @@
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self, role, Layout};
 use crate::surface::TorusRadius2Encoding;
-use crate::{decode, CreoCodec};
+use crate::CreoCodec;
 
 /// Assemble a minimal PSB file: the `#UGC:2` header, a TOC, then the given
 /// `(header_name, payload)` sections joined by the `#\n` terminator rule.
@@ -187,7 +187,9 @@ fn scan_decodes_length_prefixed_native_model_name() {
         .position(|window| window == b"widget.prt ")
         .expect("model name offset");
     assert_eq!(scan.framing.model_name_offset, Some(model_name_offset));
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     assert_eq!(
         result
             .ir
@@ -356,13 +358,15 @@ fn scan_expands_toc_sized_unix_compress_payload() {
 #[test]
 fn decode_extracts_jpeg_thumbnail_as_native_asset() {
     let data = build_prt("c", &[("THMB_IMG_MAIN", jpeg_payload())]);
-    let result = decode::decode(
-        &mut Cursor::new(data),
-        &DecodeOptions {
-            container_only: true,
-        },
-    )
-    .expect("decode thumbnail");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(data),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("decode thumbnail");
 
     assert!(!result.report.geometry_transferred);
     let unknowns = result.ir.native_unknowns("creo").unwrap();
@@ -456,7 +460,9 @@ fn scan_preserves_linear_extrusion_type_variants() {
         crate::surface::SurfaceKind::Extrusion
     );
     assert_eq!(scan.surfaces.rows[1].type_byte, 0x2c);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let rows = &result.ir.native.namespace("creo").unwrap().arenas["surface_rows"];
     assert_eq!(rows[0].fields["surface_variant"], "ruled_surface");
     assert_eq!(rows[1].fields["surface_variant"], "tabulated_cylinder");
@@ -497,7 +503,9 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
     assert_eq!(replay.control_points, [Some([-3.0, 3.0]); 4]);
     assert_eq!(replay.terminal_reference, 37);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let native =
         &result.ir.native.namespace("creo").unwrap().arenas["tabulated_cylinder_curve_replays"][0];
     assert_eq!(native.fields["surface_id"], 7);
@@ -563,11 +571,12 @@ fn decode_transfers_positional_line_extrusion_plane() {
         push_generated_scalar(&mut payload, value);
     }
     payload.push(0xe3);
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
 
     let surface = result
         .ir
@@ -649,14 +658,15 @@ fn decode_withholds_positional_line_extrusion_for_duplicate_surface_id() {
 
     let mut plane = visibgeom_payload(1, 0);
     plane.extend_from_slice(&[7, 0x26, 5, 0x01, 0, 0, 0xe4, 0xe3]);
-    let result = decode::decode(
-        &mut Cursor::new(build_prt(
-            "c",
-            &[("ND:0:VisibGeom:0", extrusion), ("ND:1:VisibGeom:0", plane)],
-        )),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt(
+                "c",
+                &[("ND:0:VisibGeom:0", extrusion), ("ND:1:VisibGeom:0", plane)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
 
     assert!(result
         .ir
@@ -684,11 +694,12 @@ fn decode_preserves_type_2c_direction_before_named_record() {
     payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 0, 0x0f, 0xe4, 0x0f]);
     payload.extend_from_slice(&[0x00, 0x0c, 0x9a]);
     payload.extend_from_slice(b"\xe0\x01next_record\0");
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
 
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
     assert_eq!(record.fields["boundary"], "named_record");
@@ -741,7 +752,9 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
         .torus_outline_frame(0x24)
         .is_none());
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
     assert_eq!(native.fields["torus_outline_frame"]["selector"], 80);
     assert_eq!(native.fields["torus_outline_frame"]["values"][5], 52.5);
@@ -790,8 +803,9 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
             .torus_radius_overrides(0x24)
             .is_none());
 
-        let result =
-            decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+        let result = CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode");
         let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
         assert_eq!(
             native.fields["torus_radius_overrides"]["radius1"],
@@ -866,7 +880,9 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
         .cone_half_angle_override(0x26)
         .is_none());
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
     assert_eq!(
         native.fields["cone_half_angle_override"]["radians"],
@@ -882,7 +898,8 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
     payload.extend_from_slice(&[0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode surface parameters");
 
     let records = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"];
@@ -943,7 +960,8 @@ fn decode_retains_type26_coordinate_envelope_in_native_ir() {
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode type-26 envelope");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
     let envelope = &record.fields["type26_five_coordinate_envelope"];
@@ -977,11 +995,12 @@ fn decode_places_complete_positional_torus() {
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
     payload.extend(body);
     payload.push(0xe3);
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode complete positional torus");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode complete positional torus");
 
     let surface = result
         .ir
@@ -1040,11 +1059,12 @@ fn decode_reports_transferred_positional_cylinders() {
     payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
     payload.extend(body);
     payload.push(0xe3);
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode positional cylinder");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode positional cylinder");
 
     assert_eq!(
         result.report.coverage["transferred_positional_cylinder_count"],
@@ -1081,11 +1101,12 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
     );
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode paired sphere envelopes");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode paired sphere envelopes");
     for id in [7, 8] {
         let surface = result
             .ir
@@ -1137,7 +1158,8 @@ fn decode_retains_split_type26_coordinate_envelope_in_native_ir() {
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode split type-26 envelope");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
     let envelope = &record.fields["type26_split_coordinate_envelope"];
@@ -1164,7 +1186,8 @@ fn decode_preserves_unframed_surface_parameter_spans() {
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&[0x11, 0xe4, 0x12, 0x13, 0x0d, 0xe3]);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode surface parameter spans");
 
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
@@ -1319,7 +1342,9 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let expected_offset = container::scan_bytes(data.clone()).planes.local_systems[0].offset as u64;
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let namespace = result.ir.native.namespace("creo").unwrap();
     assert_eq!(
         namespace.arenas["plane_local_systems"][0].fields["surface_id"],
@@ -1370,11 +1395,12 @@ fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
         0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe1, 0xe3,
     ]);
 
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
 
     assert_eq!(result.ir.model.surfaces.len(), 1);
     assert_eq!(
@@ -1401,11 +1427,12 @@ fn decode_withholds_axis_aligned_surface_without_parameter_chart() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
 
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
 
     assert!(result.ir.model.surfaces.is_empty());
 }
@@ -1419,11 +1446,12 @@ fn decode_transfers_held_coordinate_plane_with_canonical_chart() {
     }
     payload.push(0xe3);
 
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
 
     assert_eq!(result.ir.model.surfaces.len(), 1);
     assert_eq!(
@@ -1602,7 +1630,9 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
             0xf8, 0x03, 0x01, 0x02, 0x03, 0x04
         ]))
     );
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_prototypes"][0];
     assert_eq!(native.fields["declared_family"], "cylinder");
     assert_eq!(native.fields["family"], "cylinder");
@@ -1727,7 +1757,9 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     assert_eq!(table.surface_ids, vec![7]);
     assert_eq!(table.non_surface_entity_ids, vec![9]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -1793,19 +1825,20 @@ fn decode_binds_ordered_visible_surfaces_to_matching_replay_runs() {
     ] {
         allfeatur.extend_from_slice(&[id, 0x80, class_id, 0, 0, 0xe3]);
     }
-    let result = decode::decode(
-        &mut Cursor::new(build_prt(
-            "c",
-            &[
-                ("VisibGeom", visible),
-                ("NovisGeom", nonvisible),
-                ("AllFeatur", allfeatur),
-                ("MdlStatus", b"Round id 4\0".to_vec()),
-            ],
-        )),
-        &DecodeOptions::default(),
-    )
-    .expect("decode ordered surface replay");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt(
+                "c",
+                &[
+                    ("VisibGeom", visible),
+                    ("NovisGeom", nonvisible),
+                    ("AllFeatur", allfeatur),
+                    ("MdlStatus", b"Round id 4\0".to_vec()),
+                ],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode ordered surface replay");
 
     let associations =
         &result.ir.native.namespace("creo").unwrap().arenas["feature_surface_replays"];
@@ -1938,7 +1971,9 @@ fn scan_decodes_allfeatur_root_featdefs_schema_class() {
     assert_eq!(scan.features.rows[0].root_schema_class, Some(917));
     assert_eq!(scan.features.rows[1].root_schema_class, Some(913));
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     assert_eq!(
         result.ir.model.features[0]
             .source_properties
@@ -1978,7 +2013,9 @@ fn decode_types_class_911_as_unresolved_hole() {
         ],
     );
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -2016,7 +2053,9 @@ fn decode_types_class_914_as_unresolved_chamfer() {
         ],
     );
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -2045,7 +2084,9 @@ fn decode_types_class_946_as_unresolved_surface_merge() {
     ];
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -2074,7 +2115,9 @@ fn decode_types_row_only_class_927_as_unresolved_draft() {
     ];
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -2100,8 +2143,9 @@ fn decode_types_named_draft_with_unresolved_operands() {
     for name in ["Draft", "Schräge"] {
         let stored_name = format!("{name} id 40\0");
         let data = build_prt("c", &[("MdlStatus", stored_name.into_bytes())]);
-        let result =
-            decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+        let result = CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode");
         let feature = result
             .ir
             .model
@@ -2126,7 +2170,9 @@ fn decode_types_named_draft_with_unresolved_operands() {
 #[test]
 fn decode_types_named_mirror_with_unresolved_operands() {
     let data = build_prt("c", &[("MdlStatus", b"oMirror id 4\0".to_vec())]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -2156,7 +2202,9 @@ fn decode_types_named_mirror_with_unresolved_operands() {
 #[test]
 fn decode_types_z_prefixed_round_with_unresolved_operands() {
     let data = build_prt("c", &[("MdlStatus", b"zRound id 4\0".to_vec())]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -2193,7 +2241,9 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
         0x04, 0, 0x10, 1, 0, 0xe5, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
     ];
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
 
     assert_eq!(result.ir.model.features.len(), 1);
     let feature = &result.ir.model.features[0];
@@ -2232,7 +2282,9 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
     ];
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -2257,7 +2309,9 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
 #[test]
 fn decode_types_named_base_protrusion_as_new_body() {
     let data = build_prt("c", &[("MdlStatus", b"Protrusion id 4\0".to_vec())]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -2287,7 +2341,9 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
             b"Extrude id 4\0Revolve id 5\0Cut id 6\0".to_vec(),
         )],
     );
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = |id| {
         result
             .ir
@@ -2347,7 +2403,9 @@ fn decode_types_schema_datum_from_its_unique_plane_carrier() {
         4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x9b, 0xe1,
     ];
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
 
     assert_eq!(result.ir.model.features.len(), 1);
     assert!(matches!(
@@ -2378,7 +2436,9 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     assert_eq!(scan.features.entity_references[1].source_entity_id, Some(2));
     assert_eq!(scan.features.entity_references[1].target_entity_id, 1);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
     let entities = &namespace.arenas["feature_entities"];
     assert_eq!(entities.len(), 3);
@@ -2451,7 +2511,9 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
         scan.features.choice_fields[1].value,
         crate::feature::FeatureFieldValue::CompactIntArray(vec![3, 4])
     );
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = &result.ir.model.features[0];
     assert!(matches!(
         feature.definition,
@@ -2488,7 +2550,9 @@ fn decode_types_class_913_without_an_edge_array() {
             ("MdlStatus", b"Round id 4\0".to_vec()),
         ],
     );
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
 
     assert!(matches!(
         result.ir.model.features[0].definition,
@@ -2526,7 +2590,9 @@ fn torus_only_round_uses_agreeing_tagged_minor_radii() {
         )
     };
     let data = round(&direct_quarter);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
 
     assert!(matches!(
         result.ir.model.features[0].definition,
@@ -2542,8 +2608,9 @@ fn torus_only_round_uses_agreeing_tagged_minor_radii() {
     let conflicting = round(&[
         0x18, 0x0d, 0x29, 0xdf, 0xff, 0x7b, 0x0e, 0x29, 0xdf, 0xff, 0xe3,
     ]);
-    let result =
-        decode::decode(&mut Cursor::new(conflicting), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(conflicting), &DecodeOptions::default())
+        .expect("decode");
     assert!(matches!(
         result.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
@@ -2557,7 +2624,9 @@ fn torus_only_round_uses_agreeing_tagged_minor_radii() {
 #[test]
 fn decode_types_named_german_round_without_a_schema_row() {
     let data = build_prt("c", &[("MdlStatus", b"Rundung id 4\0".to_vec())]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
 
     assert_eq!(
         result.ir.model.features[0].name.as_deref(),
@@ -2577,7 +2646,9 @@ fn decode_types_named_german_round_without_a_schema_row() {
 #[test]
 fn decode_types_named_annotation_feature_as_a_tree_node() {
     let data = build_prt("c", &[("MdlStatus", b"Annotation Feature id 4\0".to_vec())]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
 
     assert!(matches!(
         result.ir.model.features[0].definition,
@@ -2597,7 +2668,9 @@ fn decode_types_localized_cross_section_nodes() {
             b"Cross Section id 4\0Querschnitt id 5\0".to_vec(),
         )],
     );
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
 
     assert_eq!(result.ir.model.features.len(), 2);
     assert!(result.ir.model.features.iter().all(|feature| matches!(
@@ -2628,7 +2701,9 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
             decoded_values: Some(vec![0.0, 1.0, 3.0]),
         }
     );
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let namespace = result.ir.native.namespace("creo").unwrap();
     let rows = &namespace.arenas["feature_rows"];
     assert_eq!(rows[0].fields["owner_feature_id"], 4);
@@ -2675,7 +2750,9 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
         Some(vec![42, 43])
     );
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let tables = &result.ir.native.namespace("creo").unwrap().arenas["feature_geometry_tables"];
     assert_eq!(tables.len(), 3);
     assert_eq!(tables[0].fields["owner_feature_id"], 4);
@@ -2721,7 +2798,9 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
     );
     assert_eq!(scan.features.affected_ids[2].ids, vec![1, 3]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_affected_ids"];
     assert_eq!(records.len(), 3);
     assert_eq!(records[0].fields["owner_feature_id"], 4);
@@ -2744,7 +2823,9 @@ fn decode_types_round_with_labeled_edge_selection() {
             ("MdlStatus", b"Round id 4\0".to_vec()),
         ],
     );
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -2808,7 +2889,9 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         ],
     );
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -2835,7 +2918,9 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
             ("MdlStatus", b"Round id 4\0".to_vec()),
         ],
     );
-    let mixed = decode::decode(&mut Cursor::new(mixed), &DecodeOptions::default()).expect("decode");
+    let mixed = CreoCodec
+        .decode(&mut Cursor::new(mixed), &DecodeOptions::default())
+        .expect("decode");
     assert!(matches!(
         mixed.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
@@ -2865,7 +2950,9 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
             ("MdlStatus", b"Datum Plane id 2\0Protrusion id 4\0".to_vec()),
         ],
     );
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -2905,7 +2992,9 @@ fn decode_resolves_feature_dependencies_independently_of_storage_order() {
             ("MdlStatus", b"Protrusion id 4\0Datum Plane id 2\0".to_vec()),
         ],
     );
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -2956,7 +3045,9 @@ fn scan_partitions_allfeatur_positional_round_operands() {
         scan.features.replay_affected_ids[0].edge_extent,
         crate::feature::ReplayExtentSource::Explicit
     );
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     assert!(matches!(
         &result.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
@@ -2986,7 +3077,9 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
     assert_eq!(scan.features.loop_restore_directions[0].value, 0);
     assert_eq!(scan.features.loop_restore_directions[1].value, 167);
     assert_eq!(scan.features.loop_restore_directions[2].value, 1);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let records =
         &result.ir.native.namespace("creo").unwrap().arenas["feature_loop_restore_directions"];
     assert_eq!(records[0].fields["value"], 0);
@@ -3029,7 +3122,9 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
 
     assert_eq!(scan.features.revolution_extents.len(), 1);
     assert_eq!(scan.features.revolution_extents[0].feature_id, 40);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -3059,7 +3154,9 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
 fn decode_retains_recipe_proven_revolution_with_unresolved_operands() {
     let mdlstatus = b"\xe3icon\0cutrevolve\0K\xc3\xb6rper id 40\0".to_vec();
     let data = build_prt("c", &[("MdlStatus", mdlstatus)]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -3086,7 +3183,9 @@ fn decode_retains_recipe_proven_revolution_with_unresolved_operands() {
 fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
     let mdlstatus = b"\xe3icon\0cutextrude\0K\xc3\xb6rper id 40\0".to_vec();
     let data = build_prt("c", &[("MdlStatus", mdlstatus)]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -3111,7 +3210,9 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
 fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
     let mdlstatus = b"\xe3icon\0cutextrude\0Extrude 1 id 40\0".to_vec();
     let data = build_prt("c", &[("MdlStatus", mdlstatus)]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -3167,7 +3268,9 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
         Some(vec![1.0; 12])
     );
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let definitions = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
     let frames = definitions[0].fields["parameter_frames"]
         .as_array()
@@ -3218,7 +3321,9 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     );
     assert_eq!(outlines[1].local_values, vec![Some(1.0); 6]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let definitions = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
     let outlines = definitions[0].fields["outlines"]
         .as_array()
@@ -3301,7 +3406,9 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
         .unwrap()
         .rows[0]
         .offset;
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
 
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
     assert_eq!(namespace.version, 1);
@@ -3402,7 +3509,9 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     assert_eq!(segments.rows[4].point_ids, [13, 13]);
     assert_eq!(segments.rows[4].external_id, 4);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let sketch = result
         .ir
         .model
@@ -3442,7 +3551,9 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
     payload.extend_from_slice(&definition);
     let data = build_prt("c", &[("FeatDefs", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     assert_eq!(result.ir.model.sketches.len(), 2);
     assert_eq!(result.ir.model.features.len(), 2);
     assert!(result
@@ -3838,7 +3949,9 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     assert_eq!(entities.rows[2].external_id, 227);
     assert_eq!(entities.solved_external_ids, vec![42, 43, 227]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let trim_entities =
         &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["trim_entities"];
     assert_eq!(
@@ -3869,7 +3982,9 @@ fn scan_decodes_featdefs_vert_tab_entity_pairs() {
     assert_eq!(vertices.rows[0].vertex_id, 100);
     assert_eq!(vertices.rows[0].entities, [42, 43]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let trim_vertices =
         &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["trim_vertices"];
     assert_eq!(
@@ -3943,7 +4058,9 @@ fn scan_decodes_featdefs_generated_entity_order_table() {
     assert_eq!(order.external_id(12), Some(310));
     assert_eq!(order.internal_id(283), Some(8));
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let order_rows =
         &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["order_rows"];
     assert_eq!(order_rows.as_array().expect("order row array").len(), 2);
@@ -3987,7 +4104,9 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
     );
     assert_eq!(section.dimension_ids, vec![7, 257]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let sketches = &result.ir.native.namespace("creo").unwrap().arenas["sketches"];
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].fields["source_section"], "FeatDefs");
@@ -4094,7 +4213,9 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     let scan = container::scan_bytes(data.clone());
     assert_eq!(scan.features.definitions[0].id, 917);
     assert_eq!(scan.features.definitions[0].owner_feature_id, Some(40));
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
 
     assert_eq!(result.ir.model.parameters.len(), 3);
     let parameter = result
@@ -4201,7 +4322,8 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
         .expect("dimension table");
     assert_eq!(dimensions.declared_count, 3);
     assert_eq!(dimensions.rows.len(), 2);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode incomplete dimension table");
 
     assert_eq!(result.ir.model.parameters.len(), 2);
@@ -4234,7 +4356,8 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
             ("MdlStatus", b"Extrude id 40\0".to_vec()),
         ],
     );
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode dimensions");
 
     let parameters = &result.ir.model.parameters;
@@ -4290,7 +4413,9 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
         .iter()
         .all(|definition| definition.id == 917));
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
     let definition_ids = namespace.arenas["feature_definitions"]
         .iter()
@@ -4394,7 +4519,9 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     assert_eq!(triples_header.declared_count, 2);
     assert_eq!(triples_header.entity_ref, 109);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let headers = result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields
         ["table_headers"]
         .as_array()
@@ -4534,7 +4661,9 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
     };
     assert_eq!(dummy.entity_id, Some(46));
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let saved =
         &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["saved_entities"];
     assert_eq!(saved.as_array().expect("saved entity array").len(), 3);
@@ -4554,7 +4683,9 @@ fn decode_transfers_equation_verified_model_reference_circles() {
     assert_eq!(scan.references.circles[0].center, [0.0; 3]);
     assert_eq!(scan.references.circles[0].radius, 1.0);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     assert!(result.ir.model.curves.iter().any(|curve| matches!(
         curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Circle { radius: 1.0, .. }
@@ -4601,7 +4732,9 @@ fn decode_retains_line3d_original_length() {
         }
     );
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_lines"][0];
     assert_eq!(record.fields["family"], "line3d");
     assert_eq!(record.fields["entity_id"], 35);
@@ -4627,7 +4760,9 @@ fn decode_disambiguates_repeated_line3d_entity_ids() {
         \x0f\x0f\x0f\x43\xf0\x00\x0f\x0f\xe4"
         .to_vec();
     let data = build_prt("c", &[("MdlRefInfo", payload)]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let ids = result
         .ir
         .model
@@ -4658,7 +4793,9 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
     assert_eq!(scan.references.conics.len(), 1);
     assert_eq!(scan.references.ellipses.len(), 1);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     assert!(result.ir.model.curves.iter().any(|curve| matches!(
         curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Ellipse {
@@ -4731,7 +4868,9 @@ fn scan_discovers_labeled_curve_prototypes() {
     assert_eq!(scan.curves.prototypes[0].id, 7);
     assert_eq!(scan.curves.prototypes[0].type_byte, 8);
     assert_eq!(scan.curves.prototypes[0].feature_id, Some(4));
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["curve_prototypes"];
     assert_eq!(records[0].fields["curve_id"], 7);
     assert_eq!(records[0].fields["type_byte"], 8);
@@ -4759,7 +4898,9 @@ fn decode_preserves_counted_curve_expression_programs() {
         [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6]
     );
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"];
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].fields["entity_id"], 0x094c);
@@ -4829,7 +4970,9 @@ fn decode_binds_unique_forward_curve_expression_dependencies() {
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let [r, a, theta, _] = result.ir.model.parameters.as_slice() else {
         panic!("four curve-expression parameters");
     };
@@ -4866,7 +5009,9 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let [parameter] = result.ir.model.parameters.as_slice() else {
         panic!("one curve-expression parameter");
     };
@@ -4908,7 +5053,9 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
         ],
     );
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let dimension = result
         .ir
         .model
@@ -4924,7 +5071,7 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
         .find(|parameter| parameter.name == "result")
         .expect("relation parameter");
 
-    assert_eq!(relation.dependencies, [dimension.id.clone()]);
+    assert_eq!(relation.dependencies, std::slice::from_ref(&dimension.id));
     assert!(!relation.properties.contains_key("external_dependencies"));
     assert_eq!(
         relation.value,
@@ -4945,7 +5092,9 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let parameters = &result.ir.model.parameters;
 
     assert!(parameters.iter().all(|parameter| parameter.value.is_none()));
@@ -5012,7 +5161,9 @@ fn decode_evaluates_relation_model_name_from_unique_counted_header() {
         b"#- CMNM 00bwidget.prt \n".iter().copied(),
     );
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let [parameter] = result.ir.model.parameters.as_slice() else {
         panic!("one curve-expression parameter")
     };
@@ -5032,7 +5183,9 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let parameters = &result.ir.model.parameters;
     assert_eq!(parameters.len(), 5);
     assert_eq!(parameters[0].name, "span");
@@ -5085,7 +5238,9 @@ fn decode_transfers_curve_expression_conditional_activation() {
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let parameters = &result.ir.model.parameters;
     assert_eq!(parameters.len(), 4);
     assert_eq!(parameters[0].properties["activation"], "active");
@@ -5134,7 +5289,9 @@ fn decode_resolves_positive_local_exists_before_declaration() {
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let parameters = &result.ir.model.parameters;
     assert_eq!(parameters.len(), 3);
     assert_eq!(parameters[0].properties["activation"], "active");
@@ -5151,7 +5308,9 @@ fn decode_retains_cyclic_curve_expression_dependencies_without_invalid_edges() {
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let [r, a, _, _] = result.ir.model.parameters.as_slice() else {
         panic!("four curve-expression parameters");
     };
@@ -5171,7 +5330,9 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
 
     assert_eq!(
         result
@@ -5226,7 +5387,9 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     assert_eq!(result.ir.model.procedural_curves.len(), 1);
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
         angle_range,
@@ -5257,7 +5420,9 @@ fn decode_places_helix_from_rank_two_curve_expression_frame() {
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
         center,
         major,
@@ -5288,7 +5453,9 @@ fn scan_discovers_curve_halfedge_topology() {
     assert_eq!(scan.curves.topology_rows[0].faces, [10, 11]);
     assert_eq!(scan.curves.topology_rows[0].next_edges, [7, 7]);
     assert_eq!(scan.topology.half_edges.len(), 2);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let row = &result.ir.native.namespace("creo").unwrap().arenas["curve_topology_rows"][0];
     assert_eq!(row.fields["curve_id"], 7);
     assert_eq!(row.fields["type_byte"], 8);
@@ -5351,7 +5518,9 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(parameters.opaque_spans[0].raw, [0xff]);
     assert_eq!(parameters.suffix, crate::curve::CurveSuffixStatus::Unique);
     assert_eq!(parameters.body.last(), Some(&0xff));
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["curve_parameters"][0];
     assert_eq!(record.fields["curve_id"], 7);
     assert_eq!(record.fields["type_byte"], 8);
@@ -5410,7 +5579,9 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     assert_eq!(pcurve.face_0_endpoints, [[0.0, 1.0], [1.0, 0.0]]);
     assert_eq!(pcurve.face_1_endpoints, [[3.0, 0.0], [3.0, 1.0]]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["pcurve_endpoints"];
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].id, "creo:visibgeom:pcurve_endpoints#7");
@@ -5510,7 +5681,9 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     assert_eq!(coordinates.opaque_spans[0].offset, 0);
     assert_eq!(coordinates.opaque_spans[0].raw, [0xfc, 0x08]);
     assert_eq!(coordinates.opaque_spans[1].raw, [0xff]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["fc_curve_coordinates"];
     assert_eq!(records[0].fields["curve_id"], 7);
     assert_eq!(records[0].fields["values_mm"][1], -3.0);
@@ -5527,11 +5700,12 @@ fn decode_withholds_unplaced_cylinder_prototype_frame() {
     push_generated_scalar(&mut payload, 1.0);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
     assert!(result
         .ir
         .model
@@ -5547,11 +5721,12 @@ fn decode_places_first_cylinder_instance_from_complete_named_prototype() {
     push_named_analytic_prototype(&mut payload, "cylinder", &[("radius", 1.0)]);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
     let cylinder = result
         .ir
         .model
@@ -5584,11 +5759,12 @@ fn decode_withholds_complete_cylinder_prototype_without_positive_radius() {
         push_named_analytic_prototype(&mut payload, "cylinder", &fields);
         payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
-        let result = decode::decode(
-            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-            &DecodeOptions::default(),
-        )
-        .expect("decode");
+        let result = CreoCodec
+            .decode(
+                &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+                &DecodeOptions::default(),
+            )
+            .expect("decode");
         assert!(result
             .ir
             .model
@@ -5609,11 +5785,12 @@ fn decode_places_direct_two_direction_named_prototype_frame() {
     payload.extend_from_slice(b"\xe0\x01radius1\0\xe4\xe0\x01radius2\0\xe4");
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
     let torus = result
         .ir
         .model
@@ -5648,11 +5825,12 @@ fn decode_does_not_promote_untyped_terminal_torus_scalars() {
     payload.extend_from_slice(b"\xe0\x01radius1\0\xe4\xe0\x01radius2\0\xe4");
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
     let torus = result
         .ir
         .model
@@ -5680,11 +5858,12 @@ fn decode_places_first_plane_instance_from_named_prototype() {
     push_named_analytic_prototype(&mut payload, "plane", &[]);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
     let plane = result
         .ir
         .model
@@ -5715,11 +5894,12 @@ fn decode_places_named_prototype_before_its_surface_row() {
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
 
     let plane = result
         .ir
@@ -5743,11 +5923,12 @@ fn decode_binds_prototype_between_same_family_rows_to_the_preceding_instance() {
     payload.extend_from_slice(&[8, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
 
     assert!(result
         .ir
@@ -5775,11 +5956,12 @@ fn decode_withholds_competing_named_prototypes_for_one_surface_row() {
     push_named_analytic_prototype(&mut payload, "plane", &[]);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
 
     assert!(result
         .ir
@@ -5833,7 +6015,9 @@ fn decode_places_first_interpolation_spline_instance_from_named_prototype() {
     let scan = container::scan_bytes(data.clone());
     assert_eq!(scan.surfaces.rows.len(), 1);
     assert_eq!(scan.surfaces.prototype_records.len(), 1);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let surface = result
         .ir
         .model
@@ -5890,11 +6074,12 @@ fn decode_places_first_sphere_and_torus_instances_from_named_prototypes() {
         payload.extend_from_slice(&[7, kind, 4, 0x01, 0, 0]);
         push_named_analytic_prototype(&mut payload, family, &fields);
         payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
-        let result = decode::decode(
-            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
-            &DecodeOptions::default(),
-        )
-        .expect("decode");
+        let result = CreoCodec
+            .decode(
+                &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+                &DecodeOptions::default(),
+            )
+            .expect("decode");
         let surface = result
             .ir
             .model
@@ -5966,7 +6151,9 @@ fn scan_validates_fc05_circle_from_record_points() {
     let mut trailing = scan.curves.parameters[0].clone();
     trailing.body.push(0xfe);
     assert!(crate::curve::fc05_circles(&[trailing]).is_empty());
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["fc05_circles"];
     assert_eq!(records[0].fields["curve_id"], 7);
     assert_eq!(records[0].fields["radius_mm"], 1.0);
@@ -6023,11 +6210,12 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\x02topol_ref_data\0");
     let mut one_cap_payload = payload.clone();
     circle_row(&mut one_cap_payload, 20, 11, -5.0, true);
-    let one_cap = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", one_cap_payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("one-cap decode");
+    let one_cap = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("VisibGeom", one_cap_payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("one-cap decode");
     let one_cap_cylinder = one_cap
         .ir
         .model
@@ -6073,11 +6261,12 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
     ));
     let mut neutral_chart_payload = payload.clone();
     circle_row(&mut neutral_chart_payload, 22, 11, -5.0, false);
-    let neutral_chart = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", neutral_chart_payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("neutral-chart decode");
+    let neutral_chart = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("VisibGeom", neutral_chart_payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("neutral-chart decode");
     let neutral_circle = neutral_chart
         .ir
         .model
@@ -6099,11 +6288,12 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
 
     circle_row(&mut payload, 20, 11, 2.0, true);
     circle_row(&mut payload, 21, 12, -2.0, true);
-    let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
     let cap_pairs = &result.ir.native.namespace("creo").unwrap().arenas["fc05_cylinder_cap_pairs"];
     assert_eq!(cap_pairs.len(), 1);
     assert_eq!(cap_pairs[0].fields["surface_id"], 10);
@@ -6235,7 +6425,9 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
         scan.curves.bound_prototype_pcurves[0].face_0_endpoints,
         [[0.0, 1.0], [1.0, 0.0]]
     );
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let namespace = result.ir.native.namespace("creo").unwrap();
     assert_eq!(
         namespace.arenas["prototype_pcurves"][0].fields["curve_id"],
@@ -6413,7 +6605,9 @@ fn decode_transfers_closed_plane_intersection_brep() {
     );
     assert_eq!(scan.topology.loops.len(), 4);
     assert_eq!(scan.topology.vertices.len(), 4);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let model = &result.ir.model;
     let namespace = result.ir.native.namespace("creo").unwrap();
     assert_eq!(namespace.arenas["half_edges"].len(), 12);
@@ -6574,7 +6768,9 @@ fn decode_transfers_exact_datum_plane_carrier() {
         }
     }
     let mut reader = Cursor::new(build_prt("c", &[("ActDatums", datum)]));
-    let result = decode::decode(&mut reader, &DecodeOptions::default()).unwrap();
+    let result = CreoCodec
+        .decode(&mut reader, &DecodeOptions::default())
+        .unwrap();
     assert!(result.report.geometry_transferred);
     let records = &result.ir.native.namespace("creo").unwrap().arenas["datum_planes"];
     assert_eq!(records[0].fields["datum_id"], 4);
@@ -6612,7 +6808,9 @@ fn decode_merges_datum_geometry_and_operation_history_by_feature_id() {
         ],
     );
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     assert_eq!(result.ir.model.features.len(), 2);
     let feature = result
         .ir
@@ -6660,7 +6858,9 @@ fn decode_withholds_competing_standalone_datum_planes() {
     datum.extend(row);
     let data = build_prt("c", &[("ActDatums", datum)]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     assert_eq!(result.ir.model.features.len(), 1);
     assert!(matches!(
         result.ir.model.features[0].definition,
@@ -6689,8 +6889,9 @@ fn decode_types_schema_less_datum_plane_names() {
             ],
         );
 
-        let result =
-            decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+        let result = CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode");
         let feature = result
             .ir
             .model
@@ -6712,7 +6913,9 @@ fn decode_types_schema_less_datum_plane_names() {
 #[test]
 fn decode_retains_named_datum_plane_with_unresolved_placement() {
     let data = build_prt("c", &[("MdlStatus", b"Datum Plane id 4\0".to_vec())]);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -6751,7 +6954,9 @@ fn decode_annotations_cover_every_emitted_entity() {
     let datum_offset =
         container::scan_bytes(data.clone()).planes.datums[0].offset_in_payload as u64;
     let mut reader = Cursor::new(data);
-    let result = decode::decode(&mut reader, &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut reader, &DecodeOptions::default())
+        .expect("decode");
 
     let unknowns = result.ir.native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 3);
@@ -6853,7 +7058,9 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     assert_eq!(scan.features.operations[5].kind, "Surface");
     assert_eq!(scan.features.operations[5].stored_name_prefix, Some(b'y'));
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let states = &result.ir.native.namespace("creo").unwrap().arenas["feature_operation_states"];
     assert_eq!(states.len(), 7);
     let feature_40 = states
@@ -6934,7 +7141,9 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
 fn decode_preserves_stored_feature_identifier_keyword() {
     let data = build_prt("c", &[("MdlStatus", b"ySurface ID 45\0".to_vec())]);
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -7030,11 +7239,12 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
     assert_eq!(scan.curves.nonvisible_topology_rows[0].faces, [12, 13]);
     assert_eq!(scan.topology.half_edges.len(), 2);
 
-    let result = decode::decode(
-        &mut Cursor::new(scan.framing.data.clone()),
-        &DecodeOptions::default(),
-    )
-    .expect("decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(scan.framing.data.clone()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
     let rows = &result.ir.native.namespace("creo").unwrap().arenas["nonvisible_surface_rows"];
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, "creo:novisgeom:surface_row#8");
@@ -7102,7 +7312,9 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .find(|operation| operation.feature_id == 8053)
         .expect("recipe operation");
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -7203,7 +7415,9 @@ fn decode_retains_recipe_history_and_projects_the_final_state() {
         [917, 917]
     );
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let feature = result
         .ir
         .model
@@ -7261,7 +7475,9 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
     assert_eq!(variables.points[0].u, Some(1.0));
     assert_eq!(variables.points[0].v, Some(3.0));
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
     assert_eq!(records[0].fields["source_section"], "DEPDB_DATA");
     assert_annotation(
@@ -7300,7 +7516,9 @@ fn decode_preserves_unowned_depdb_section_instances_with_unique_native_ids() {
         })
         .collect::<BTreeSet<_>>();
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
     let positional_ids = records
         .iter()
@@ -7357,7 +7575,8 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         null.framing.family_table.unwrap().pointer,
         crate::container::FamilyTablePointer::Null
     );
-    let decoded = decode::decode(&mut Cursor::new(null_data), &DecodeOptions::default())
+    let decoded = CreoCodec
+        .decode(&mut Cursor::new(null_data), &DecodeOptions::default())
         .expect("decode null family table");
     let configuration = &decoded.ir.native.namespace("creo").unwrap().arenas["configuration"];
     assert_eq!(configuration.len(), 1);
@@ -7385,7 +7604,8 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         referenced.framing.family_table.unwrap().pointer,
         crate::container::FamilyTablePointer::Entity(0x0123)
     );
-    let decoded = decode::decode(&mut Cursor::new(referenced_data), &DecodeOptions::default())
+    let decoded = CreoCodec
+        .decode(&mut Cursor::new(referenced_data), &DecodeOptions::default())
         .expect("decode referenced family table");
     let configuration = &decoded.ir.native.namespace("creo").unwrap().arenas["configuration"];
     assert_eq!(configuration[0].fields["pointer_kind"], "entity_reference");
@@ -7399,7 +7619,8 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
 #[test]
 fn decode_reports_only_unimplemented_relation_function_namespaces() {
     let data = build_prt("c", &[]);
-    let decoded = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+    let decoded = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode empty part");
 
     let relation_gap = decoded
@@ -7434,7 +7655,9 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
         ],
     );
     let mut reader = Cursor::new(data);
-    let result = decode::decode(&mut reader, &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut reader, &DecodeOptions::default())
+        .expect("decode");
 
     assert!(!result.report.geometry_transferred);
     // The two PSB geometry sections are preserved as unknown records.
@@ -7479,13 +7702,15 @@ fn container_only_preserves_sections_without_transferring_entities() {
             ("MdlStatus", b"Datum Plane id 4\0".to_vec()),
         ],
     );
-    let result = decode::decode(
-        &mut Cursor::new(data),
-        &DecodeOptions {
-            container_only: true,
-        },
-    )
-    .expect("container decode");
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(data),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("container decode");
 
     assert!(result.report.container_only);
     assert!(!result.report.geometry_transferred);
@@ -7503,7 +7728,9 @@ fn container_only_preserves_sections_without_transferring_entities() {
 fn inspect_summary_has_layout_and_census_notes() {
     let data = build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(7, 9))]);
     let mut reader = Cursor::new(data);
-    let summary = CreoCodec.inspect(&mut reader).expect("inspect");
+    let summary = CreoCodec
+        .inspect(&mut reader, &cadmpeg_ir::decode::InspectOptions::default())
+        .expect("inspect");
     assert_eq!(summary.format, "creo");
     assert_eq!(summary.container_kind, "psb");
     assert!(summary.notes.iter().any(|n| n.contains("layout: ND")));

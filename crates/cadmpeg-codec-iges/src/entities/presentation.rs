@@ -24,6 +24,7 @@ struct TextFontDefinition {
 
 fn loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
     LossNote {
+        code: cadmpeg_ir::LossCode::MaterialNotTransferred,
         category: LossCategory::Material,
         severity: Severity::Warning,
         message: format!(

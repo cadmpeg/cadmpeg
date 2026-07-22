@@ -275,7 +275,7 @@ pub(crate) fn composed_offset_store(records: &[&[u8]]) -> Vec<u8> {
     bytes
 }
 
-/// Compose a UG_PART payload: segment-index header, one feature-history section
+/// Compose a `UG_PART` payload: segment-index header, one feature-history section
 /// with `operations`, and one appended offset store carrying `store_records`.
 pub(crate) fn composed_feature_history_payload(
     operations: &[(&[u8], &str, Vec<u8>)],
@@ -2266,7 +2266,7 @@ pub(crate) fn deltas_surface_curve_partition_stream() -> Vec<u8> {
 }
 
 /// Point the single partition face record at geometry reference `reference`.
-pub(crate) fn link_partition_face(stream: &mut Vec<u8>, reference: u16) {
+pub(crate) fn link_partition_face(stream: &mut [u8], reference: u16) {
     let face = stream
         .windows(4)
         .position(|window| window == [0, 14, 0, 4])
@@ -2276,7 +2276,7 @@ pub(crate) fn link_partition_face(stream: &mut Vec<u8>, reference: u16) {
 
 /// Point both the edge and fin topology records at geometry reference
 /// `reference`.
-pub(crate) fn link_partition_edge_and_fin(stream: &mut Vec<u8>, reference: u16) {
+pub(crate) fn link_partition_edge_and_fin(stream: &mut [u8], reference: u16) {
     for (kind, xmt, field) in [(16u8, 8u8, 24usize), (17, 7, 18)] {
         let record = stream
             .windows(4)

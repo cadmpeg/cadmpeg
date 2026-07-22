@@ -73,6 +73,7 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
         insert_unresolved_carrier_loss(&ir, &mut losses);
         if unresolved_pcurves != 0 {
             losses.push(LossNote {
+                code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
                 category: LossCategory::Topology,
                 severity: Severity::Warning,
                 message: format!(
@@ -159,6 +160,7 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
         losses: vec![LossNote {
+            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message: "Zero-entity analytic surface carriers were decoded, but the face/loop/coedge/edge/vertex graph is not yet transferred."

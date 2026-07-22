@@ -6,7 +6,8 @@
 
 use std::io::{Cursor, Read, Write};
 
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
@@ -14,6 +15,14 @@ use crate::asm_header;
 use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
 use crate::F3dCodec;
+
+fn with_scan<T>(bytes: &[u8], f: impl FnOnce(&container::ContainerScan<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let scan = container::scan(&ctx, root).unwrap();
+    f(&scan)
+}
 
 /// Build a synthetic ASM `BinaryFile8` BREP stream: a spec-shaped header
 /// followed by a couple of filler records and a `delta_state` history marker.
@@ -1889,7 +1898,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
     assert_eq!(form.solved_range, [Some(-1.0), Some(2.0)]);
     assert_eq!(form.extension, 7);
     assert_eq!(*direction, 4);
-    assert!(!*discontinuity_flag);
+    assert!(!discontinuity_flag);
     assert_eq!(*surface_parameter_ranges, [None, None]);
     assert_eq!(*first_pcurve_parameter_range, None);
     assert_eq!(context.parameter_range, [-1.0, 2.0]);
@@ -11177,7 +11186,7 @@ fn inspect_enumerates_and_reads_headers() {
     let codec = F3dCodec;
     let f3d = synthetic_f3d(true);
     let mut cur = Cursor::new(f3d);
-    let summary = codec.inspect(&mut cur).unwrap();
+    let summary = codec.inspect(&mut cur, &InspectOptions::default()).unwrap();
 
     assert_eq!(summary.format, "f3d");
     assert_eq!(summary.container_kind, "zip");
@@ -11255,15 +11264,15 @@ fn smb_only_is_reported_as_construction_snapshot() {
     // With no .smbh present, only the .smb construction snapshot remains; it must
     // be selected as a fallback but flagged as non-authoritative ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)).
     let f3d = synthetic_f3d(false);
-    let mut cur = Cursor::new(f3d);
-    let scan = container::scan(&mut cur).unwrap();
-    let active = container::select_active_brep(&scan).unwrap();
-    assert!(!active.is_smbh);
-    let summary = container::summarize(&scan);
-    assert!(summary
-        .notes
-        .iter()
-        .any(|n| n.contains("construction snapshot")));
+    with_scan(&f3d, |scan| {
+        let active = container::select_active_brep(scan).unwrap();
+        assert!(!active.is_smbh);
+        let summary = container::summarize(scan);
+        assert!(summary
+            .notes
+            .iter()
+            .any(|n| n.contains("construction snapshot")));
+    });
 }
 
 #[test]
@@ -20716,25 +20725,25 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     zip.write_all(&bulk).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
 
-    let mut cursor = Cursor::new(bytes);
-    let scan = container::scan(&mut cursor).unwrap();
-    let visibility = crate::design::decode::body::decode_all_body_visibility(&scan).unwrap();
-    assert_eq!(
-        visibility
-            .get(&("BREP.synthetic.smbh".into(), 3))
-            .map(|item| item.visible),
-        Some(true),
-        "flag 0 decodes visible"
-    );
-    assert_eq!(
-        visibility
-            .get(&("BREP.synthetic.smbh".into(), 6))
-            .map(|item| item.visible),
-        Some(false),
-        "flag 1 decodes hidden"
-    );
+    with_scan(&bytes, |scan| {
+        let visibility = crate::design::decode::body::decode_all_body_visibility(scan).unwrap();
+        assert_eq!(
+            visibility
+                .get(&("BREP.synthetic.smbh".into(), 3))
+                .map(|item| item.visible),
+            Some(true),
+            "flag 0 decodes visible"
+        );
+        assert_eq!(
+            visibility
+                .get(&("BREP.synthetic.smbh".into(), 6))
+                .map(|item| item.visible),
+            Some(false),
+            "flag 1 decodes hidden"
+        );
 
-    assert!(!visibility.contains_key(&("BREP.other.smbh".into(), 3)));
+        assert!(!visibility.contains_key(&("BREP.other.smbh".into(), 3)));
+    });
 }
 
 fn browser_body_record(entity: u64, name: Option<&str>, visual: &str) -> Vec<u8> {

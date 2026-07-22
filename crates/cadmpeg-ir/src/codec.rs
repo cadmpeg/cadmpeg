@@ -4,11 +4,22 @@
 //! [`Codec`] is object-safe for runtime codec registries. Detection consumes a
 //! byte prefix, inspection summarizes a seekable container, and decoding
 //! produces a finalized [`CadIr`] plus a [`DecodeReport`].
+//!
+//! A codec implements only the required [`Codec`] methods. The public
+//! [`CodecEntry::inspect`] and [`CodecEntry::decode`] entry points are the
+//! single enforcement point for root-input limits and session finalize checks;
+//! they live on the sealed [`CodecEntry`] trait, blanket-implemented for every
+//! `Codec`, so a codec cannot override an entry point and drop the
+//! enforcement.
 
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io::{Read, Seek, Write};
 
+use crate::decode::{
+    DecodeArena, DecodeContext, DecodeMode, DecodePolicy, ErrorContext, InspectOptions,
+    ResourceLimit, SourceLocation, View,
+};
 use crate::document::CadIr;
 use crate::report::DecodeReport;
 use crate::report::ExportReport;
@@ -86,6 +97,12 @@ pub struct ContainerSummary {
 pub struct DecodeOptions {
     /// Stop after the container layer; do not attempt entity decode.
     pub container_only: bool,
+    /// Resource limits and failure-handling mode governing the decode.
+    ///
+    /// Defaulted on deserialization so options serialized before this field
+    /// existed still parse, taking the desktop profile in salvage mode.
+    #[serde(default)]
+    pub policy: DecodePolicy,
 }
 
 /// A decoded document plus its loss report.
@@ -95,7 +112,7 @@ pub struct DecodeResult {
     pub ir: CadIr,
     /// What was transferred and what was lost.
     pub report: DecodeReport,
-    /// Decode-time byte accounting and conversion facts.
+    /// Decode-time annotations and retained native records.
     pub source_fidelity: SourceFidelity,
 }
 
@@ -127,7 +144,11 @@ impl DecodeResult {
 }
 
 /// Errors a codec can raise.
+///
+/// Marked `#[non_exhaustive]`: external exhaustive matches must carry a
+/// wildcard arm. Same-crate matches keep exhaustiveness checking.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CodecError {
     /// The bytes are not this codec's format.
     #[error("not the expected format: {0}")]
@@ -135,6 +156,29 @@ pub enum CodecError {
     /// The container was structurally malformed.
     #[error("malformed container: {0}")]
     Malformed(String),
+    /// A required read extended past the end of its window after commitment.
+    ///
+    /// Distinct from [`CodecError::Malformed`]: a truncation is missing input,
+    /// not an inconsistency inside the bytes that are present.
+    #[error(
+        "truncated input during {} at space {} offset {}",
+        .context.operation, .location.space.index(), .location.offset
+    )]
+    Truncated {
+        /// Where the truncated read began.
+        location: SourceLocation,
+        /// Static context for the failure.
+        context: ErrorContext,
+    },
+    /// A resource limit refused the decode: policy or the allocator.
+    ///
+    /// Never reported as [`CodecError::Malformed`]: a budget refusal is a
+    /// statement about policy, not about the input.
+    #[error(
+        "resource limit on {:?}: {:?} (limit {}, used {}, requested {})",
+        .0.dimension, .0.reason, .0.limit, .0.used, .0.additional
+    )]
+    ResourceLimit(ResourceLimit),
     /// The codec does not implement a required capability.
     #[error("not implemented yet: {0}")]
     NotImplemented(String),
@@ -157,15 +201,106 @@ pub trait Codec {
     /// Judge, from a leading byte prefix, whether this codec applies.
     fn detect(&self, prefix: &[u8]) -> Confidence;
 
-    /// Enumerate the container's streams/segments without decoding geometry.
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>;
+    /// Enumerate the acquired root view's streams/segments without decoding
+    /// geometry.
+    ///
+    /// Implemented by each codec; never called by the CLI or registry. The
+    /// [`CodecEntry::inspect`] wrapper acquires the root under the inspection's
+    /// input limit and runs this under an internal context.
+    fn inspect_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError>;
 
-    /// Decode the source and report any incomplete or approximate transfer.
+    /// Decode the acquired root view, reporting incomplete or approximate
+    /// transfer.
+    ///
+    /// Implemented by each codec; never called by the CLI or registry. The
+    /// [`CodecEntry::decode`] wrapper acquires the root and finalizes the
+    /// context around this call.
+    fn decode_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<DecodeResult, CodecError>;
+}
+
+mod sealed {
+    /// Private bound for the blanket [`CodecEntry`](super::CodecEntry) implementation.
+    pub trait Sealed {}
+    impl<C: super::Codec + ?Sized> Sealed for C {}
+}
+
+/// Public inspection and decoding entry points.
+///
+/// ```compile_fail
+/// use cadmpeg_ir::codec::{
+///     Codec, CodecEntry, CodecError, Confidence, ContainerSummary, DecodeOptions,
+///     DecodeResult, ReadSeek,
+/// };
+/// use cadmpeg_ir::decode::{DecodeContext, View};
+/// use cadmpeg_ir::decode::InspectOptions;
+///
+/// struct Rogue;
+/// impl Codec for Rogue {
+///     fn id(&self) -> &'static str { "rogue" }
+///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
+///     fn inspect_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
+///         -> Result<ContainerSummary, CodecError> { unimplemented!() }
+///     fn decode_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
+///         -> Result<DecodeResult, CodecError> { unimplemented!() }
+/// }
+/// impl CodecEntry for Rogue {
+///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)
+///         -> Result<ContainerSummary, CodecError> { unimplemented!() }
+///     fn decode(&self, _: &mut dyn ReadSeek, _: &DecodeOptions)
+///         -> Result<DecodeResult, CodecError> { unimplemented!() }
+/// }
+/// ```
+pub trait CodecEntry: Codec + sealed::Sealed {
+    /// Inspects the source under its input and resource limits.
+    fn inspect(
+        &self,
+        reader: &mut dyn ReadSeek,
+        options: &InspectOptions,
+    ) -> Result<ContainerSummary, CodecError>;
+
+    /// Decodes the source under its input and resource limits.
     fn decode(
         &self,
         reader: &mut dyn ReadSeek,
         options: &DecodeOptions,
     ) -> Result<DecodeResult, CodecError>;
+}
+
+impl<C: Codec + ?Sized> CodecEntry for C {
+    fn inspect(
+        &self,
+        reader: &mut dyn ReadSeek,
+        options: &InspectOptions,
+    ) -> Result<ContainerSummary, CodecError> {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy {
+            mode: DecodeMode::Salvage,
+            limits: options.limits,
+        };
+        let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy)?;
+        let result = self.inspect_impl(&ctx, root);
+        ctx.finish_inspection(result)
+    }
+
+    fn decode(
+        &self,
+        reader: &mut dyn ReadSeek,
+        options: &DecodeOptions,
+    ) -> Result<DecodeResult, CodecError> {
+        let arena = DecodeArena::new();
+        let (mut ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy)?;
+        ctx.set_container_only(options.container_only);
+        let result = self.decode_impl(&ctx, root);
+        ctx.finish(result)
+    }
 }
 
 /// A native-format writer.

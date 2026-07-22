@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SolidWorks` parametric construction-history records.
+#![deny(clippy::disallowed_methods)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1074,7 +1075,7 @@ mod tests {
             SketchInputKind::Native(86)
         );
         for code in 1..=85 {
-            let relation = SketchRelationKind::from_native_code(code).unwrap();
+            let relation = SketchRelationKind::from_native_code(code).expect("required invariant");
             assert_eq!(relation.native_code(), code);
         }
     }

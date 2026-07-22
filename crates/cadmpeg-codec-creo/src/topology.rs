@@ -4,6 +4,7 @@
 //! [`build`] resolves successors only when a curve and face identify one
 //! candidate. It emits a [`Loop`] only when traversal closes on its starting
 //! half-edge.
+#![deny(clippy::disallowed_methods)]
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -312,7 +313,7 @@ pub fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
                 });
         }
     }
-    let mut edges = Vec::with_capacity(rows.len() * 2);
+    let mut edges = Vec::new();
     for row in rows {
         for side in 0..2 {
             let face_id = row.faces[side];

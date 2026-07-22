@@ -48,15 +48,15 @@ fn main() {
 
 fn empty_zip() -> Vec<u8> {
     let zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    zip.finish().unwrap().into_inner()
+    zip.finish().expect("required invariant").into_inner()
 }
 
 fn bare_zip_with_txt() -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    zip.start_file("readme.txt", stored).unwrap();
-    zip.write_all(b"hello").unwrap();
-    zip.finish().unwrap().into_inner()
+    zip.start_file("readme.txt", stored).expect("required invariant");
+    zip.write_all(b"hello").expect("required invariant");
+    zip.finish().expect("required invariant").into_inner()
 }
 
 fn corrupt_zip_magic() -> Vec<u8> {
@@ -322,18 +322,18 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let start = find_record_stream_start(&bytes).unwrap();
-    let limit = find_delta_state_offset(&bytes).unwrap();
+    let start = find_record_stream_start(&bytes).expect("required invariant");
+    let limit = find_delta_state_offset(&bytes).expect("required invariant");
     let records = frame_records(&bytes, start, limit);
     let coedge = &records[7];
     let record = &mut bytes[coedge.0..coedge.0 + coedge.1];
-    let pcurve_ref_tag = record.iter().rposition(|b| *b == 0x0c).unwrap();
+    let pcurve_ref_tag = record.iter().rposition(|b| *b == 0x0c).expect("required invariant");
     record[pcurve_ref_tag + 1..pcurve_ref_tag + 9].copy_from_slice(&19i64.to_le_bytes());
 
     let delta = bytes[..]
         .windows(b"delta_state".len())
         .position(|w| w == b"delta_state")
-        .unwrap()
+        .expect("required invariant")
         - 2;
     let mut pcurve = Vec::new();
     t_ident(&mut pcurve, "pcurve");
@@ -533,12 +533,12 @@ fn synthetic_mixed_smbh() -> Vec<u8> {
 fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    zip.start_file("Manifest.dat", stored).expect("required invariant");
+    zip.write_all(b"synthetic-manifest").expect("required invariant");
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
-        .unwrap();
-    zip.write_all(smbh).unwrap();
-    zip.finish().unwrap().into_inner()
+        .expect("required invariant");
+    zip.write_all(smbh).expect("required invariant");
+    zip.finish().expect("required invariant").into_inner()
 }
 
 fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
@@ -547,33 +547,33 @@ fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
     let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
     let folder = "FusionAssetName[Active]";
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    zip.start_file("Manifest.dat", stored).expect("required invariant");
+    zip.write_all(b"synthetic-manifest").expect("required invariant");
 
     if include_smbh {
         zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smbh"), deflated)
-            .unwrap();
-        zip.write_all(&synthetic_smbh()).unwrap();
+            .expect("required invariant");
+        zip.write_all(&synthetic_smbh()).expect("required invariant");
     }
 
     let mut smb = synthetic_smbh();
     smb.truncate(60);
     zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smb"), stored)
-        .unwrap();
-    zip.write_all(&smb).unwrap();
+        .expect("required invariant");
+    zip.write_all(&smb).expect("required invariant");
 
     zip.start_file(
         format!("{folder}/FusionDesignSegmentType1/BulkStream.dat"),
         stored,
     )
-    .unwrap();
-    zip.write_all(b"design-bulk").unwrap();
+    .expect("required invariant");
+    zip.write_all(b"design-bulk").expect("required invariant");
 
     zip.start_file(format!("{folder}/Previews/thumbnail.png"), stored)
-        .unwrap();
-    zip.write_all(b"\x89PNG").unwrap();
+        .expect("required invariant");
+    zip.write_all(b"\x89PNG").expect("required invariant");
 
-    let cursor = zip.finish().unwrap();
+    let cursor = zip.finish().expect("required invariant");
     cursor.into_inner()
 }
 

@@ -32,11 +32,11 @@ pub mod annotations;
 pub mod appearance;
 pub mod attributes;
 pub mod be;
-pub mod byte_ledger;
 pub mod bytes;
 pub mod codec;
 pub mod compression;
 pub mod cursor;
+pub mod decode;
 
 pub mod diff;
 pub mod document;
@@ -70,15 +70,11 @@ pub mod units;
 pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
-pub use byte_ledger::{ByteLedger, ByteSpan, ByteSpanClass};
 pub use codec::{
-    CadirEncoder, Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions,
-    DecodeResult, Encoder, ReadSeek,
+    CadirEncoder, Codec, CodecEntry, CodecError, Confidence, ContainerEntry, ContainerSummary,
+    DecodeOptions, DecodeResult, Encoder, ReadSeek,
 };
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
-pub use diff::{
-    diff_byte_ledger, diff_source_fidelity, AnnotationDiff, ByteLedgerDiff, SourceFidelityDiff,
-};
 pub use document::{CadIr, SourceMeta, IR_VERSION, PREVIOUS_IR_VERSION};
 pub use features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,
@@ -106,7 +102,8 @@ pub use products::{
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
-    Check, DecodeReport, ExportReport, Finding, LossCategory, LossNote, Severity, ValidationReport,
+    Check, DecodeReport, ExportReport, Finding, LossCategory, LossCode, LossNote, Severity,
+    StrictConsequence, ValidationReport,
 };
 pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,

@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::le::u32_at as u32_le;
 
@@ -290,20 +290,6 @@ fn contains_utf16le_ascii(haystack: &[u8], text: &[u8]) -> bool {
         encoded.extend_from_slice(&[*byte, 0]);
     }
     contains(haystack, &encoded)
-}
-
-/// Read and scan a complete `.sldprt` stream.
-///
-/// Block candidates must inflate to their declared size and match their stored
-/// CRC-32. Cache cells and directory entries must satisfy their framing
-/// invariants. Unclassified marker occurrences are ignored.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
-    reader
-        .seek(std::io::SeekFrom::Start(0))
-        .map_err(CodecError::Io)?;
-    let mut bytes = Vec::new();
-    reader.read_to_end(&mut bytes).map_err(CodecError::Io)?;
-    Ok(scan_bytes(&bytes))
 }
 
 /// Scan an in-memory `.sldprt` image.

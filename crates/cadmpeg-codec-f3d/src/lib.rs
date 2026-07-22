@@ -15,7 +15,7 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::{Codec, DecodeOptions};
+//! use cadmpeg_ir::{Codec, CodecEntry, DecodeOptions};
 //! use std::fs::File;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,7 +28,7 @@
 //! # }
 //! ```
 //!
-//! [`Codec::inspect`] classifies the ZIP entries and reads ASM B-rep headers
+//! [`CodecEntry::inspect`](cadmpeg_ir::CodecEntry::inspect) classifies the ZIP entries and reads ASM B-rep headers
 //! without building geometry. `DecodeOptions::container_only` provides the
 //! corresponding metadata-only `CadIr`.
 //!
@@ -36,7 +36,7 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+//! use cadmpeg_ir::{Codec, CodecEntry, DecodeOptions, Encoder};
 //! use std::fs::File;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -68,6 +68,8 @@
 //! carrier bytes needed for passthrough remain available as
 //! [`cadmpeg_ir::unknown::UnknownRecord`] values.
 
+#![allow(clippy::disallowed_methods)]
+
 mod act;
 pub mod asm_header;
 pub mod brep;
@@ -90,9 +92,8 @@ pub mod validate;
 mod writer;
 pub mod xref;
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder, ReadSeek,
-};
+use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
@@ -173,17 +174,21 @@ impl Codec for F3dCodec {
         }
     }
 
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan(reader)?;
+    fn inspect_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        let scan = container::scan(ctx, root)?;
         Ok(container::summarize(&scan))
     }
 
-    fn decode(
+    fn decode_impl(
         &self,
-        reader: &mut dyn ReadSeek,
-        options: &DecodeOptions,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        decode::decode(reader, options)
+        decode::decode(ctx, root)
     }
 }
 

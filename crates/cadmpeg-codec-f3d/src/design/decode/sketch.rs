@@ -12,7 +12,7 @@ use crate::records::{
     SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
     SketchRelationOperand, SketchSurface, SketchText,
 };
-use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64, utf16le_at};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::HashMap;
@@ -392,7 +392,6 @@ pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
 /// `IntrinsicMetaTypeuint64`) from every design `BulkStream` entry in `scan`,
 /// sorted by stream offset.
 pub fn decode_persistent_references(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<PersistentReference>, CodecError> {
     let mut out = Vec::new();
@@ -472,7 +471,6 @@ pub fn decode_persistent_references(
 /// Decode every indexed `EDGE_REFERENCE_LOST` record from each design
 /// `BulkStream` entry in `scan`.
 pub fn decode_lost_edge_references(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<LostEdgeReference>, CodecError> {
     let mut out = Vec::new();
@@ -543,10 +541,7 @@ pub fn decode_lost_edge_references(
 /// `MetaStream` entry in `scan` ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): an ASCII type name, the design
 /// entity IDs it owns, its self GUID, an optional parent GUID, and a
 /// revision. Unrecognized type names remain exact native object kinds.
-pub fn decode_objects(
-    _reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-) -> Result<Vec<DesignObject>, CodecError> {
+pub fn decode_objects(scan: &ContainerScan) -> Result<Vec<DesignObject>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -819,13 +814,10 @@ pub(crate) fn parse_legacy_sketch_member_run(
 /// whose numeric suffix must match the header's entity suffix, and, for
 /// sketch-typed entities, the trailing reference-list header. Headers occur in
 /// the fixed layout or in the `EntityGenesis` layout.
-pub fn decode_entity_headers(
-    reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-) -> Result<Vec<DesignEntityHeader>, CodecError> {
+pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHeader>, CodecError> {
     let mut out = Vec::new();
     let mut object_kinds = HashMap::new();
-    let objects = decode_objects(reader, scan)?;
+    let objects = decode_objects(scan)?;
     let mut legacy_sketch_candidates = HashMap::<String, std::collections::HashSet<u32>>::new();
     for object in objects {
         for &entity_id in &object.entity_ids {
@@ -1005,7 +997,6 @@ pub fn decode_entity_headers(
 /// class tag, for each record index named by any [`DesignEntityHeader`] in
 /// `entities`.
 pub fn decode_record_headers(
-    reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
@@ -1022,7 +1013,7 @@ pub fn decode_record_headers(
         })
         .flatten()
         .collect::<std::collections::HashSet<_>>();
-    decode_headers_for_indices(reader, scan, &wanted)
+    decode_headers_for_indices(scan, &wanted)
 }
 
 /// Decode the indexed dynamic-class record headers ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)) named by
@@ -1030,7 +1021,6 @@ pub fn decode_record_headers(
 /// headers referenced by records other than [`DesignEntityHeader`] (for
 /// example, sketch relation records).
 pub fn decode_related_record_headers(
-    reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     indices: &[(String, u32)],
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
@@ -1038,11 +1028,10 @@ pub fn decode_related_record_headers(
         .iter()
         .cloned()
         .collect::<std::collections::HashSet<_>>();
-    decode_headers_for_indices(reader, scan, &wanted)
+    decode_headers_for_indices(scan, &wanted)
 }
 
 fn decode_headers_for_indices(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     wanted: &std::collections::HashSet<(String, u32)>,
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
@@ -1100,7 +1089,6 @@ fn decode_headers_for_indices(
 /// and return-member list. `records` supplies the byte offsets and class tags
 /// (typically from [`decode_related_record_headers`]).
 pub fn decode_sketch_relations(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
@@ -1336,10 +1324,7 @@ pub(crate) fn trailing_sketch_owner_reference(bytes: &[u8], from: usize) -> Opti
 /// `BulkStream` entry in `scan`: the persistent point id, a paired record
 /// reference, and the sketch `(u, v)` coordinates, converted centimetre→
 /// millimetre. Records whose scaled coordinates are non-finite are skipped.
-pub fn decode_sketch_points(
-    _reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-) -> Result<Vec<SketchPoint>, CodecError> {
+pub fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -1582,7 +1567,6 @@ fn decode_sketch_point_variant(
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
 pub fn decode_sketch_curve_identities(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();

@@ -3763,7 +3763,7 @@ mod tests {
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -3793,8 +3793,8 @@ mod tests {
         inflated.extend_from_slice(&[0xff; 16]);
         inflated.extend_from_slice(&[6, 5]);
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-        encoder.write_all(&inflated).unwrap();
-        let compressed = encoder.finish().unwrap();
+        encoder.write_all(&inflated).expect("required invariant");
+        let compressed = encoder.finish().expect("required invariant");
         let segment_byte_len = 24 + 9 + compressed.len() as u32;
         let mut data = Vec::new();
         data.extend_from_slice(&9_u32.to_le_bytes());
@@ -3862,7 +3862,10 @@ mod tests {
         assert!(!segments[0].id.contains(&documents[0].id));
         assert_eq!(segments[0].segment_type, 1);
         assert_eq!(segments[0].segment_byte_len, segment_byte_len);
-        let compression = segments[0].compression.as_ref().unwrap();
+        let compression = segments[0]
+            .compression
+            .as_ref()
+            .expect("required invariant");
         assert_eq!(
             compression.compressed_data_byte_len,
             compressed.len() as u32 + 1
@@ -3940,7 +3943,7 @@ mod tests {
         assert_eq!(elements[0].body_byte_len, 3);
 
         let mut malformed = container;
-        *malformed.data.last_mut().unwrap() = 1;
+        *malformed.data.last_mut().expect("required invariant") = 1;
         assert!(super::display_jt_shape_lod_elements(&malformed, &[segment]).is_empty());
     }
 
@@ -3993,8 +3996,8 @@ mod tests {
         inflated.extend_from_slice(&0_u32.to_le_bytes());
 
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-        encoder.write_all(&inflated).unwrap();
-        let compressed = encoder.finish().unwrap();
+        encoder.write_all(&inflated).expect("required invariant");
+        let compressed = encoder.finish().expect("required invariant");
         let mut data = vec![0; 33];
         data.extend_from_slice(&compressed);
         let container = Container {
@@ -4039,7 +4042,8 @@ mod tests {
         let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
         body.extend_from_slice(&3_u32.to_le_bytes());
         body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
-        let (units, value) = super::parse_jt_string_property_atom_body(&body).unwrap();
+        let (units, value) =
+            super::parse_jt_string_property_atom_body(&body).expect("required invariant");
         assert_eq!(units, [0x4e, 0x58, 0x3a9]);
         assert_eq!(value, "NXΩ");
 
@@ -4058,7 +4062,7 @@ mod tests {
         body.extend_from_slice(&2_u16.to_le_bytes());
         body.extend_from_slice(&[9, 8, 7]);
         let (bindings, mesh_version, records_id, compressed_version, compressed) =
-            super::parse_jt9_tri_strip_lod_header(&body).unwrap();
+            super::parse_jt9_tri_strip_lod_header(&body).expect("required invariant");
         assert_eq!(bindings, 0x4a);
         assert_eq!(mesh_version, 2);
         assert_eq!(records_id, 0x1234);
@@ -4395,7 +4399,12 @@ mod tests {
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
         );
         assert_eq!(
-            tessellations[0].0.source_object.as_ref().unwrap().object_id,
+            tessellations[0]
+                .0
+                .source_object
+                .as_ref()
+                .expect("required invariant")
+                .object_id,
             "shape-node"
         );
         assert_eq!(
@@ -4403,7 +4412,7 @@ mod tests {
                 .0
                 .source_object
                 .as_ref()
-                .unwrap()
+                .expect("required invariant")
                 .instance_path,
             ["instance-node"]
         );
@@ -4412,7 +4421,7 @@ mod tests {
                 .0
                 .source_object
                 .as_ref()
-                .unwrap()
+                .expect("required invariant")
                 .instance_path,
             ["second-instance-node"]
         );
@@ -4494,7 +4503,7 @@ mod tests {
         body.extend_from_slice(&9_u32.to_le_bytes());
         body.extend_from_slice(&[4, 3, 2, 1]);
         let (version, flags, attributes, family) =
-            super::parse_jt_base_node_body(&body, 9).unwrap();
+            super::parse_jt_base_node_body(&body, 9).expect("required invariant");
         assert_eq!(version, 1);
         assert_eq!(flags, 0x20);
         assert_eq!(attributes, [7, 9]);
@@ -4509,7 +4518,7 @@ mod tests {
         modern.extend_from_slice(&11_u32.to_le_bytes());
         modern.push(0xaa);
         let (version, flags, attributes, family) =
-            super::parse_jt_base_node_body(&modern, 10).unwrap();
+            super::parse_jt_base_node_body(&modern, 10).expect("required invariant");
         assert_eq!((version, flags), (2, 0x40));
         assert_eq!(attributes, [11]);
         assert_eq!(family, [0xaa]);
@@ -4545,7 +4554,8 @@ mod tests {
         body.extend_from_slice(&9_u32.to_le_bytes());
         body.extend_from_slice(&[4, 3, 2, 1]);
 
-        let (version, children, family) = super::parse_jt9_group_node_body(&body).unwrap();
+        let (version, children, family) =
+            super::parse_jt9_group_node_body(&body).expect("required invariant");
         assert_eq!(version, 1);
         assert_eq!(children, [7, 9]);
         assert_eq!(family, [4, 3, 2, 1]);
@@ -4577,7 +4587,7 @@ mod tests {
         body.extend_from_slice(&[24, 13, 16, 8]);
         body.extend_from_slice(&0x304_u64.to_le_bytes());
 
-        let node = super::parse_jt9_tri_strip_shape_node_body(&body).unwrap();
+        let node = super::parse_jt9_tri_strip_shape_node_body(&body).expect("required invariant");
         assert_eq!(node.reserved_bounds, [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]]);
         assert_eq!(
             node.untransformed_bounds,
@@ -4618,7 +4628,7 @@ mod tests {
             body.extend_from_slice(&value.to_le_bytes());
         }
         let (state, inhibit, mask, matrix) =
-            super::parse_jt9_geometric_transform_body(&body).unwrap();
+            super::parse_jt9_geometric_transform_body(&body).expect("required invariant");
         assert_eq!(state, 0x08);
         assert_eq!(inhibit, 0);
         assert_eq!(mask, 0x000e);
@@ -4660,7 +4670,7 @@ mod tests {
         for value in [-3.0_f32, -2.0, -1.0, 0.0, 1.0, 2.0] {
             body.extend_from_slice(&value.to_le_bytes());
         }
-        let node = super::parse_jt9_partition_node_body(&body).unwrap();
+        let node = super::parse_jt9_partition_node_body(&body).expect("required invariant");
         assert_eq!(node.group_version, 1);
         assert_eq!(node.child_object_ids, [2]);
         assert_eq!(node.file_name, "x");
@@ -4700,7 +4710,7 @@ mod tests {
         for value in [1.0_f32, 2.0, 3.0] {
             body.extend_from_slice(&value.to_le_bytes());
         }
-        let node = super::parse_jt9_range_lod_node_body(&body).unwrap();
+        let node = super::parse_jt9_range_lod_node_body(&body).expect("required invariant");
         assert_eq!(node.group_version, 1);
         assert_eq!(node.child_object_ids, [7, 9]);
         assert_eq!(node.lod_version, 1);

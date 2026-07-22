@@ -1238,7 +1238,7 @@ mod marker_tests {
         append_spatial_vertex(&mut payload, second);
 
         let replacement = Point3::new(-7.5, 8.25, 9.0);
-        patch_spatial_vertex(&mut payload, 0, replacement).unwrap();
+        patch_spatial_vertex(&mut payload, 0, replacement).expect("required invariant");
 
         assert_eq!(
             spatial_vertex_coordinates(&payload),
@@ -1572,9 +1572,9 @@ mod marker_tests {
             kind: String::new(),
             input_class: Some(class.into()),
             suppressed: false,
-            parameters: Default::default(),
-            dimension_properties: Default::default(),
-            properties: Default::default(),
+            parameters: BTreeMap::default(),
+            dimension_properties: BTreeMap::default(),
+            properties: BTreeMap::default(),
             text: None,
             content: Vec::new(),
         };
@@ -1945,11 +1945,11 @@ mod marker_tests {
     fn matrix_reference_plane_uses_basis_columns() {
         let root = 9;
         let mut payload = vec![0; root + 121];
-        let sine = 0.39073112848927327_f64;
-        let cosine = 0.9205048534524405_f64;
+        let sine = 0.390_731_128_489_273_27_f64;
+        let cosine = 0.920_504_853_452_440_5_f64;
         for (relative, value) in [
-            (0, 0.00840071926251938),
-            (8, 0.019790854349227484),
+            (0, 0.008_400_719_262_519_38),
+            (8, 0.019_790_854_349_227_484),
             (16, 0.0),
             (24, sine),
             (32, cosine),
@@ -1971,8 +1971,8 @@ mod marker_tests {
             matrix_reference_plane_frame(&payload),
             Some((
                 Point3::new(
-                    0.00840071926251938 * 1000.0,
-                    0.019790854349227484 * 1000.0,
+                    0.008_400_719_262_519_38 * 1000.0,
+                    0.019_790_854_349_227_484 * 1000.0,
                     0.0,
                 ),
                 Vector3::new(sine, cosine, 0.0),
@@ -2371,7 +2371,7 @@ mod marker_tests {
         payload.extend([0; 12]);
         let start = payload.len();
         payload.extend(2u32.to_le_bytes());
-        payload.extend(0x6554f1b8u32.to_le_bytes());
+        payload.extend(0x6554_f1b8_u32.to_le_bytes());
         payload.extend([0, 0, 3, 0]);
         payload.extend([0; 27]);
         payload.extend(1.0f64.to_le_bytes());
@@ -3018,7 +3018,8 @@ mod marker_tests {
         payload[122..134].fill(1);
         payload[134..138].copy_from_slice(&7u32.to_le_bytes());
         assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
-        let path = compact_single_face_reference_path_at(&payload, 100).unwrap();
+        let path =
+            compact_single_face_reference_path_at(&payload, 100).expect("required invariant");
         assert_eq!(path.len(), 1);
         assert_eq!(path[0].instance, Some(0x8032));
         assert_eq!(path[0].type_signature, [1; 12]);
@@ -3034,7 +3035,7 @@ mod marker_tests {
         payload[138..158].fill(0);
         payload[158..162].copy_from_slice(&101u32.to_le_bytes());
         let (path, terminal_source) =
-            compact_single_face_reference_record_at(&payload, 100).unwrap();
+            compact_single_face_reference_record_at(&payload, 100).expect("required invariant");
         assert_eq!(path.len(), 1);
         assert_eq!(terminal_source, Some(101));
 
@@ -3047,7 +3048,7 @@ mod marker_tests {
         payload[162..186].fill(0);
         payload[186..190].copy_from_slice(&101u32.to_le_bytes());
         let (path, terminal_source) =
-            compact_single_face_reference_record_at(&payload, 100).unwrap();
+            compact_single_face_reference_record_at(&payload, 100).expect("required invariant");
         assert_eq!(path.len(), 2);
         assert_eq!(path[1].local_id, Some(9));
         assert_eq!(terminal_source, Some(101));
@@ -3115,7 +3116,8 @@ mod marker_tests {
         payload[terminal + 24..terminal + 28].copy_from_slice(&101u32.to_le_bytes());
 
         assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(body));
-        let path = legacy_single_face_reference_path_at(&payload, body).unwrap();
+        let path =
+            legacy_single_face_reference_path_at(&payload, body).expect("required invariant");
         assert_eq!(
             path.iter().map(|entry| entry.local_id).collect::<Vec<_>>(),
             [Some(3), Some(2), Some(4)]
@@ -3434,7 +3436,7 @@ mod marker_tests {
         assert!(!compact_extrusion_through_all_at(&payload, 0));
 
         let mut payload = vec![0; 15];
-        payload.extend_from_slice(&vec![0; 104]);
+        payload.extend_from_slice(&[0; 104]);
         payload[15 + 4] = 1;
         payload[15 + 18] = 1;
         payload[15 + 30..15 + 34].copy_from_slice(&[1, 0, 0, 1]);
@@ -3466,7 +3468,7 @@ mod marker_tests {
         payload[entry + 16..entry + 20].copy_from_slice(&7u32.to_le_bytes());
         payload[entry + 20..entry + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
 
-        let path = legacy_single_face_reference_path_at(&payload, 0).unwrap();
+        let path = legacy_single_face_reference_path_at(&payload, 0).expect("required invariant");
         assert_eq!(path.len(), 1);
         assert_eq!(path[0].instance, Some(0x8032));
         assert_eq!(path[0].type_signature, [1; 12]);
@@ -3504,11 +3506,13 @@ mod marker_tests {
         payload.extend_from_slice(&[0x82, 0x92, 0x2b, 0x80, 2, 0, 0, 0, 0, 0, 0]);
         payload.extend_from_slice(&[0; 12]);
         let marker = selection_vector_tail(&mut payload, &[4, 7]);
-        let (found, kind) = compact_extrusion_to_vertex_at(&payload, 0).unwrap();
+        let (found, kind) =
+            compact_extrusion_to_vertex_at(&payload, 0).expect("required invariant");
         assert_eq!(found, marker);
         assert_eq!(kind, CompactPointReferenceKind::Point);
-        let path = compact_single_face_reference_path_at(&payload, marker).unwrap();
-        assert_eq!(path.last().unwrap().local_id, Some(7));
+        let path =
+            compact_single_face_reference_path_at(&payload, marker).expect("required invariant");
+        assert_eq!(path.last().expect("required invariant").local_id, Some(7));
 
         // A to-face selector byte is not a point reference.
         payload[38] = 0x40;
@@ -3528,7 +3532,8 @@ mod marker_tests {
         payload.extend_from_slice(&[0xcb, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
         payload.extend_from_slice(&[0; 12]);
         let marker = selection_vector_tail(&mut payload, &[2]);
-        let (found, kind) = compact_extrusion_to_vertex_at(&payload, 0).unwrap();
+        let (found, kind) =
+            compact_extrusion_to_vertex_at(&payload, 0).expect("required invariant");
         assert_eq!(found, marker);
         assert_eq!(kind, CompactPointReferenceKind::EdgeEndpoint);
     }
@@ -3568,7 +3573,7 @@ mod marker_tests {
         let anchor = payload
             .windows(3)
             .position(|window| window == [1, 1, 0])
-            .unwrap();
+            .expect("required invariant");
         payload[anchor] = 0;
         assert_eq!(
             compact_extrusion_offset_from_face_at(&payload, 0, end),
@@ -3659,7 +3664,8 @@ mod marker_tests {
         }
         payload[cursor + 8..cursor + 12].copy_from_slice(&[0xf8, 0x2a, 0, 0]);
 
-        let components = component_reference_curve_path_at(&payload, marker).unwrap();
+        let components =
+            component_reference_curve_path_at(&payload, marker).expect("required invariant");
         assert_eq!(components.len(), 4);
         assert_eq!(components[0].instance, Some(0x8c20));
         assert!(components
@@ -3911,15 +3917,13 @@ mod marker_tests {
             payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
             payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
             payload[offset + 27..offset + 29].copy_from_slice(&role.to_le_bytes());
-            payload[offset + 29..offset + 31]
-                .copy_from_slice(&(role == 1).then_some(1u16).unwrap_or(0).to_le_bytes());
+            payload[offset + 29..offset + 31].copy_from_slice(&u16::from(role == 1).to_le_bytes());
             payload[offset + 31..offset + 35].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
             payload[offset + 35..offset + 39].copy_from_slice(&[0x00, 0x00, state, 0x00]);
             payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
             payload[offset + 56..offset + 58].copy_from_slice(&56u16.to_le_bytes());
             payload[offset + 58..offset + 60].copy_from_slice(&57u16.to_le_bytes());
-            payload[offset + 60..offset + 64]
-                .copy_from_slice(&(role == 1).then_some(1u32).unwrap_or(0).to_le_bytes());
+            payload[offset + 60..offset + 64].copy_from_slice(&u32::from(role == 1).to_le_bytes());
             payload[offset + 64..offset + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
         };
 
@@ -5251,7 +5255,7 @@ mod marker_tests {
             payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
             payload[56..58].copy_from_slice(&9u16.to_le_bytes());
             payload[58..60].copy_from_slice(&9u16.to_le_bytes());
-            payload[60..64].copy_from_slice(&(if construction { 0u32 } else { 1 }).to_le_bytes());
+            payload[60..64].copy_from_slice(&u32::from(!construction).to_le_bytes());
             payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
             payload[72..76].copy_from_slice(&1i32.to_le_bytes());
             payload[76..78].copy_from_slice(&(if construction { 8u16 } else { 4 }).to_le_bytes());
@@ -6003,7 +6007,7 @@ mod marker_tests {
     fn point_operand_requires_one_profile_locus() {
         let entity = SketchEntityId("entity".into());
         let locus = SketchLocus::Start(entity.clone());
-        assert_eq!(unique_locus(&[locus.clone()]), Some(locus));
+        assert_eq!(unique_locus(std::slice::from_ref(&locus)), Some(locus));
         assert_eq!(unique_locus(&[]), None);
         assert_eq!(
             unique_locus(&[SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]),
@@ -6276,7 +6280,7 @@ mod marker_tests {
             tree_parent: None,
             source_id: Some(source.into()),
             parent_source_id: None,
-            ordinal: source.parse().unwrap(),
+            ordinal: source.parse().expect("required invariant"),
             name: id.into(),
             kind: String::new(),
             input_class: None,
@@ -6485,9 +6489,9 @@ mod marker_tests {
             kind: "Pattern".into(),
             input_class: Some("moLPattern_c".into()),
             suppressed: false,
-            parameters: Default::default(),
-            dimension_properties: Default::default(),
-            properties: Default::default(),
+            parameters: BTreeMap::default(),
+            dimension_properties: BTreeMap::default(),
+            properties: BTreeMap::default(),
             text: None,
             content: Vec::new(),
         };
@@ -6498,7 +6502,7 @@ mod marker_tests {
             &feature,
             "D1",
             "15",
-            8.371160993642741e298
+            8.371_160_993_642_741e298
         ));
     }
 
@@ -6520,7 +6524,7 @@ mod marker_tests {
             }
         }
         payload.extend([0; 24]);
-        let components = compact_surface_selection_at(&payload, 12).unwrap();
+        let components = compact_surface_selection_at(&payload, 12).expect("required invariant");
         assert_eq!(
             components
                 .iter()
@@ -6539,7 +6543,7 @@ mod marker_tests {
         payload[12 + 18 + 24 + 4] ^= 1;
         assert_eq!(
             compact_surface_selection_at(&payload, 12)
-                .unwrap()
+                .expect("required invariant")
                 .iter()
                 .map(|component| component.local_id)
                 .collect::<Vec<_>>(),
@@ -6557,9 +6561,13 @@ mod marker_tests {
         let actual_marker = selection_vector_tail(&mut payload, &[3]);
         assert_eq!(actual_marker, marker);
         let (actual_marker, components) =
-            cosmetic_thread_cylinder_reference_at(&payload, body_offset).unwrap();
+            cosmetic_thread_cylinder_reference_at(&payload, body_offset)
+                .expect("required invariant");
         assert_eq!(actual_marker, marker);
-        assert_eq!(components.last().unwrap().local_id, Some(3));
+        assert_eq!(
+            components.last().expect("required invariant").local_id,
+            Some(3)
+        );
 
         let compact_marker = body_offset + 66;
         let mut compact = vec![0; compact_marker - 12];
@@ -6567,9 +6575,13 @@ mod marker_tests {
         compact[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(selection_vector_tail(&mut compact, &[5]), compact_marker);
         let (actual_marker, components) =
-            cosmetic_thread_cylinder_reference_at(&compact, body_offset).unwrap();
+            cosmetic_thread_cylinder_reference_at(&compact, body_offset)
+                .expect("required invariant");
         assert_eq!(actual_marker, compact_marker);
-        assert_eq!(components.last().unwrap().local_id, Some(5));
+        assert_eq!(
+            components.last().expect("required invariant").local_id,
+            Some(5)
+        );
 
         let selected_marker = body_offset + 70;
         let mut selected = vec![0; selected_marker - 12];
@@ -6578,9 +6590,13 @@ mod marker_tests {
         selected[body_offset + 8] = 0x40;
         assert_eq!(selection_vector_tail(&mut selected, &[7]), selected_marker);
         let (actual_marker, components) =
-            cosmetic_thread_cylinder_reference_at(&selected, body_offset).unwrap();
+            cosmetic_thread_cylinder_reference_at(&selected, body_offset)
+                .expect("required invariant");
         assert_eq!(actual_marker, selected_marker);
-        assert_eq!(components.last().unwrap().local_id, Some(7));
+        assert_eq!(
+            components.last().expect("required invariant").local_id,
+            Some(7)
+        );
 
         let extended_marker = body_offset + 106;
         let mut extended = vec![0; extended_marker - 12];
@@ -6588,9 +6604,13 @@ mod marker_tests {
         extended[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(selection_vector_tail(&mut extended, &[9]), extended_marker);
         let (actual_marker, components) =
-            cosmetic_thread_cylinder_reference_at(&extended, body_offset).unwrap();
+            cosmetic_thread_cylinder_reference_at(&extended, body_offset)
+                .expect("required invariant");
         assert_eq!(actual_marker, extended_marker);
-        assert_eq!(components.last().unwrap().local_id, Some(9));
+        assert_eq!(
+            components.last().expect("required invariant").local_id,
+            Some(9)
+        );
 
         assert_eq!(
             cosmetic_thread_cylinder_reference_at(&payload, body_offset + 1),
@@ -6617,7 +6637,8 @@ mod marker_tests {
                 payload.extend(gap.to_le_bytes());
             }
         }
-        let (_, components) = cosmetic_thread_cylinder_reference_at(&payload, body_offset).unwrap();
+        let (_, components) = cosmetic_thread_cylinder_reference_at(&payload, body_offset)
+            .expect("required invariant");
         assert_eq!(
             components
                 .iter()
@@ -6637,9 +6658,13 @@ mod marker_tests {
         assert_eq!(selection_vector_tail(&mut payload, &[6]), marker);
 
         let (actual_marker, components) =
-            cosmetic_thread_component_face_reference_at(&payload, body_offset).unwrap();
+            cosmetic_thread_component_face_reference_at(&payload, body_offset)
+                .expect("required invariant");
         assert_eq!(actual_marker, marker);
-        assert_eq!(components.last().unwrap().local_id, Some(6));
+        assert_eq!(
+            components.last().expect("required invariant").local_id,
+            Some(6)
+        );
 
         payload[body_offset + 6] = 1;
         assert_eq!(
@@ -6669,7 +6694,7 @@ mod marker_tests {
 
         assert_eq!(
             compact_sketch_surface_component_path_at(&payload, marker)
-                .unwrap()
+                .expect("required invariant")
                 .iter()
                 .map(|component| component.local_id)
                 .collect::<Vec<_>>(),
@@ -6711,11 +6736,11 @@ mod marker_tests {
         }
         payload.extend([0; 32]);
 
-        let path = mirror_pattern_component_path_at(&payload, marker).unwrap();
+        let path = mirror_pattern_component_path_at(&payload, marker).expect("required invariant");
         assert_eq!(path.len(), 3);
-        assert_eq!(path.last().unwrap().local_id, Some(3));
+        assert_eq!(path.last().expect("required invariant").local_id, Some(3));
         assert_eq!(
-            &path.last().unwrap().type_signature[4..8],
+            &path.last().expect("required invariant").type_signature[4..8],
             &37u32.to_le_bytes()
         );
 
@@ -6739,7 +6764,7 @@ mod marker_tests {
         payload.extend([0x34, 0x80, 1, 0, 56, 0, 0, 0, 2, 0, 0, 0]);
         payload.extend(4u32.to_le_bytes());
 
-        let path = mirror_surface_component_path_at(&payload, marker).unwrap();
+        let path = mirror_surface_component_path_at(&payload, marker).expect("required invariant");
         assert_eq!(path.len(), 2);
         assert_eq!(path[0].instance, Some(0x803e));
         assert_eq!(path[0].local_id, Some(9));
@@ -6766,7 +6791,7 @@ mod marker_tests {
         payload.extend(signature(10, 2));
         payload.extend(7u32.to_le_bytes());
 
-        let path = inline_surface_reference_at(&payload, 4).unwrap();
+        let path = inline_surface_reference_at(&payload, 4).expect("required invariant");
         assert_eq!(path.len(), 2);
         assert_eq!(path[0].instance, Some(0x8157));
         assert_eq!(path[0].local_id, None);
@@ -6842,9 +6867,9 @@ mod marker_tests {
             kind: String::new(),
             input_class: None,
             suppressed: false,
-            parameters: Default::default(),
-            dimension_properties: Default::default(),
-            properties: Default::default(),
+            parameters: BTreeMap::default(),
+            dimension_properties: BTreeMap::default(),
+            properties: BTreeMap::default(),
             text: None,
             content: Vec::new(),
         };
@@ -6916,8 +6941,8 @@ mod marker_tests {
         let producer = feature("producer", "42");
         let other = feature("other", "43");
         let history = [&producer, &other, &owner];
-        let (component, feature) =
-            component_path_preceding_feature(&mixed, &history, "mirror").unwrap();
+        let (component, feature) = component_path_preceding_feature(&mixed, &history, "mirror")
+            .expect("required invariant");
         assert_eq!(feature.id, "other");
         assert_eq!(component.local_id, Some(1));
     }
@@ -7704,7 +7729,10 @@ mod marker_tests {
         let first = cylinder("first", Point3::new(0.0, 0.0, 0.0));
         let second = cylinder("second", Point3::new(10.0, 0.0, 0.0));
 
-        assert_eq!(common_generated_surface_axis(&[first.clone()]), None);
+        assert_eq!(
+            common_generated_surface_axis(std::slice::from_ref(&first)),
+            None
+        );
         assert_eq!(
             common_generated_surface_axis(&[first.clone(), second]),
             Some(cadmpeg_ir::features::RevolutionAxis {
@@ -7825,16 +7853,16 @@ mod marker_tests {
             kind: String::new(),
             input_class: Some(class.into()),
             suppressed: false,
-            parameters: Default::default(),
-            dimension_properties: Default::default(),
-            properties: Default::default(),
+            parameters: BTreeMap::default(),
+            dimension_properties: BTreeMap::default(),
+            properties: BTreeMap::default(),
             text: None,
             content: Vec::new(),
         };
         let mut histories = [FeatureHistory {
             id: "history".into(),
             part_name: None,
-            properties: Default::default(),
+            properties: BTreeMap::default(),
             content: Vec::new(),
             configurations: Vec::new(),
             features: vec![
@@ -7894,7 +7922,7 @@ mod marker_tests {
             sketch_entities: Vec::new(),
         };
 
-        enrich_history_revolution_inputs(&mut histories, &[lane.clone()]);
+        enrich_history_revolution_inputs(&mut histories, std::slice::from_ref(&lane));
 
         assert_eq!(
             histories[0].features[1].properties.get("Profile"),
@@ -11613,6 +11641,8 @@ fn compact_position_assignments(
 
 #[cfg(test)]
 mod hole_axis_tests {
+    use std::collections::BTreeMap;
+
     use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind, Length};
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
@@ -11641,7 +11671,7 @@ mod hole_axis_tests {
             suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
-            source_properties: Default::default(),
+            source_properties: BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
@@ -11670,7 +11700,7 @@ mod hole_axis_tests {
         FeatureHistory {
             id: "history".into(),
             part_name: None,
-            properties: Default::default(),
+            properties: BTreeMap::default(),
             content: Vec::new(),
             configurations: Vec::new(),
             features: vec![crate::records::Feature {
@@ -11685,9 +11715,9 @@ mod hole_axis_tests {
                 kind: "HoleWizard".into(),
                 input_class: Some("moHoleWzd_c".into()),
                 suppressed: false,
-                parameters: Default::default(),
-                dimension_properties: Default::default(),
-                properties: Default::default(),
+                parameters: BTreeMap::default(),
+                dimension_properties: BTreeMap::default(),
+                properties: BTreeMap::default(),
                 text: None,
                 content: Vec::new(),
             }],
@@ -11821,7 +11851,8 @@ mod hole_axis_tests {
         };
         let mut surfaces = vec![surface(0, -9.0), surface(1, 13.0), surface(2, 100.0)];
 
-        let placements = marker_pattern_bore_axes(&lane, "position", 2.1, &surfaces, None).unwrap();
+        let placements = marker_pattern_bore_axes(&lane, "position", 2.1, &surfaces, None)
+            .expect("required invariant");
         assert_eq!(placements.len(), 2);
         assert!(placements.iter().any(|placement| matches!(
             placement,
@@ -11854,7 +11885,7 @@ mod hole_axis_tests {
                 &surfaces,
                 Some(Vector3::new(0.0, 0.0, 1.0)),
             )
-            .unwrap()
+            .expect("required invariant")
             .len(),
             2
         );
@@ -11873,7 +11904,7 @@ mod hole_axis_tests {
                 &surfaces,
                 Some(Vector3::new(0.0, 0.0, 1.0)),
             )
-            .unwrap()
+            .expect("required invariant")
             .len(),
             2
         );
@@ -11976,7 +12007,7 @@ mod hole_axis_tests {
             suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
-            source_properties: Default::default(),
+            source_properties: BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
@@ -12000,9 +12031,9 @@ mod hole_axis_tests {
             kind: "Sketch".into(),
             input_class: Some("moProfileFeature_c".into()),
             suppressed: false,
-            parameters: Default::default(),
-            dimension_properties: Default::default(),
-            properties: Default::default(),
+            parameters: BTreeMap::default(),
+            dimension_properties: BTreeMap::default(),
+            properties: BTreeMap::default(),
             text: None,
             content: Vec::new(),
         });
@@ -12115,7 +12146,7 @@ mod hole_axis_tests {
             suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
-            source_properties: Default::default(),
+            source_properties: BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
@@ -12138,9 +12169,9 @@ mod hole_axis_tests {
             kind: "3DSketch".into(),
             input_class: Some("mo3DProfileFeature_c".into()),
             suppressed: false,
-            parameters: Default::default(),
-            dimension_properties: Default::default(),
-            properties: Default::default(),
+            parameters: BTreeMap::default(),
+            dimension_properties: BTreeMap::default(),
+            properties: BTreeMap::default(),
             text: None,
             content: Vec::new(),
         });
@@ -12280,8 +12311,8 @@ mod hole_axis_tests {
                 ("tip".into(), "118°".into()),
             ]
             .into(),
-            dimension_properties: Default::default(),
-            properties: Default::default(),
+            dimension_properties: BTreeMap::default(),
+            properties: BTreeMap::default(),
             text: None,
             content: vec![
                 crate::records::FeatureContent::Dimension("bore".into()),
@@ -17479,7 +17510,7 @@ mod idless_history_binding_tests {
             .collect::<Vec<_>>();
         let mut payload = vec![0; 500];
         for name in &names {
-            let offset = usize::try_from(name.offset).unwrap();
+            let offset = usize::try_from(name.offset).expect("required invariant");
             payload[offset - 2..offset].copy_from_slice(&0x82a4_u16.to_le_bytes());
         }
         let lane = FeatureInputLane {
@@ -29254,7 +29285,7 @@ mod profile_join_tests {
             tree_parent: None,
             source_id: Some(source_id.into()),
             parent_source_id: None,
-            ordinal: source_id.parse().unwrap(),
+            ordinal: source_id.parse().expect("required invariant"),
             name: name.into(),
             kind: String::new(),
             input_class: None,
@@ -29643,7 +29674,10 @@ mod profile_join_tests {
             },
         });
         assert_eq!(closed_marker_profiles(&entities)[0].len(), 3);
-        entities.last_mut().unwrap().construction = true;
+        entities
+            .last_mut()
+            .expect("required invariant")
+            .construction = true;
         assert!(closed_marker_profiles(&entities).is_empty());
         entities.push(SketchEntity {
             id: SketchEntityId("entity-circle".into()),
@@ -32319,8 +32353,10 @@ mod profile_join_tests {
                 &loci,
             );
             let second = match definition {
-                Some(SketchConstraintDefinition::DistanceLoci { second, .. })
-                | Some(SketchConstraintDefinition::HorizontalDistance { second, .. }) => second,
+                Some(
+                    SketchConstraintDefinition::DistanceLoci { second, .. }
+                    | SketchConstraintDefinition::HorizontalDistance { second, .. },
+                ) => second,
                 other => panic!("unexpected relation definition: {other:?}"),
             };
             assert_eq!(second, SketchLocus::Entity(solved[index].id.clone()));
@@ -33853,7 +33889,7 @@ mod profile_join_tests {
         assert_eq!(transform.v_sign, 1);
         assert!(markers
             .into_iter()
-            .all(|point| loci.contains(&transform.apply(point).unwrap())));
+            .all(|point| loci.contains(&transform.apply(point).expect("required invariant"))));
     }
 
     #[test]
@@ -34145,7 +34181,8 @@ mod profile_join_tests {
             ((0, 2), HashSet::from([(12, 20)])),
             ((3, 1), HashSet::from([(11, 23)])),
         ]);
-        let transform = unique_compatible_marker_transform(&compatible).unwrap();
+        let transform =
+            unique_compatible_marker_transform(&compatible).expect("required invariant");
         assert!(transform.swap);
         assert_eq!(transform.u_sign, 1);
         assert_eq!(transform.v_sign, 1);
@@ -34205,10 +34242,11 @@ mod profile_join_tests {
             })
             .collect::<Vec<_>>();
         let candidates = dimensioned_circle_surface_transforms(&sketch, &surfaces, &circles, 1.0);
-        let transform = dimensioned_circle_transform(&candidates, &circles).unwrap();
+        let transform =
+            dimensioned_circle_transform(&candidates, &circles).expect("required invariant");
         let transformed = circles
             .iter()
-            .map(|(center, _)| transform.apply(*center).unwrap())
+            .map(|(center, _)| transform.apply(*center).expect("required invariant"))
             .collect::<HashSet<_>>();
         assert_eq!(
             transformed,
@@ -36163,11 +36201,14 @@ fn append_spatial_vertex(payload: &mut Vec<u8>, point: Point3) {
 
 #[cfg(test)]
 mod source_less_lane_tests {
+    use std::collections::BTreeMap;
+
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
         SketchEntityId, SketchGeometry, SketchId, SketchLocus,
     };
+    use cadmpeg_ir::units::Units;
 
     use super::{
         append_coordinate_marker, append_coordinate_marker_link, append_generated_sketch_markers,
@@ -36211,7 +36252,7 @@ mod source_less_lane_tests {
             suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
-            source_properties: Default::default(),
+            source_properties: BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
@@ -36316,15 +36357,15 @@ mod source_less_lane_tests {
             1,
         );
 
-        append_coordinate_marker_link(&mut payload, 1, 2).unwrap();
-        append_coordinate_marker_link(&mut payload, 1, 3).unwrap();
+        append_coordinate_marker_link(&mut payload, 1, 2).expect("required invariant");
+        append_coordinate_marker_link(&mut payload, 1, 3).expect("required invariant");
 
         assert_eq!(
             coordinate_marker_local_links(&payload, 0),
             Some((vec![2, 3], 0x8386))
         );
         assert!(append_coordinate_marker_link(&mut payload, 1, 4)
-            .unwrap_err()
+            .expect_err("expected error")
             .to_string()
             .contains("exceeds two reverse relations"));
     }
@@ -36364,7 +36405,7 @@ mod source_less_lane_tests {
     #[test]
     fn generated_at_intersection_carries_point_reverse_incidence() {
         let sketch = generated_sketch();
-        let mut ir = cadmpeg_ir::CadIr::empty(Default::default());
+        let mut ir = cadmpeg_ir::CadIr::empty(Units::default());
         add_sketch_owner(&mut ir, &sketch);
         ir.model.sketch_entities = vec![
             generated_entity(
@@ -36409,8 +36450,8 @@ mod source_less_lane_tests {
         });
         let mut payload = Vec::new();
 
-        validate_source_less_constraints(&ir).unwrap();
-        append_generated_sketch_markers(&ir, &sketch, &mut payload).unwrap();
+        validate_source_less_constraints(&ir).expect("required invariant");
+        append_generated_sketch_markers(&ir, &sketch, &mut payload).expect("required invariant");
 
         assert_eq!(
             coordinate_marker_local_links(&payload, 0),
@@ -36422,7 +36463,7 @@ mod source_less_lane_tests {
     #[test]
     fn generated_symmetry_carries_axis_reverse_incidence() {
         let sketch = generated_sketch();
-        let mut ir = cadmpeg_ir::CadIr::empty(Default::default());
+        let mut ir = cadmpeg_ir::CadIr::empty(Units::default());
         add_sketch_owner(&mut ir, &sketch);
         ir.model.sketch_entities = vec![
             generated_entity(
@@ -36466,8 +36507,8 @@ mod source_less_lane_tests {
         });
         let mut payload = Vec::new();
 
-        validate_source_less_constraints(&ir).unwrap();
-        append_generated_sketch_markers(&ir, &sketch, &mut payload).unwrap();
+        validate_source_less_constraints(&ir).expect("required invariant");
+        append_generated_sketch_markers(&ir, &sketch, &mut payload).expect("required invariant");
 
         assert_eq!(
             coordinate_marker_local_links(&payload, 284),
@@ -36481,7 +36522,7 @@ mod source_less_lane_tests {
             axis: SketchEntityId("axis".into()),
         };
         assert!(validate_source_less_constraints(&ir)
-            .unwrap_err()
+            .expect_err("expected error")
             .to_string()
             .contains("repeats one locus"));
     }

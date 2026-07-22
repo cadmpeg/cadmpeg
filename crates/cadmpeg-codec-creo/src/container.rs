@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveExpressionValue, CurveParameterRecord,
@@ -1604,16 +1604,6 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
     let value_offset = find(payload, label, 0)? + label.len();
     let (count, after) = psb::compact_int(payload, value_offset);
     (after > value_offset).then_some(count)
-}
-
-/// Read the whole file and parse its container framing.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
-    reader
-        .seek(std::io::SeekFrom::Start(0))
-        .map_err(CodecError::Io)?;
-    let mut data = Vec::new();
-    reader.read_to_end(&mut data).map_err(CodecError::Io)?;
-    Ok(scan_bytes(data))
 }
 
 /// Parse a whole `.prt` byte image. Split out so tests drive it from a synthetic

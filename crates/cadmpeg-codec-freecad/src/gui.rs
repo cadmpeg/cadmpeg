@@ -836,27 +836,27 @@ fn decode_color(value: u32, transparency: Option<f32>) -> Color {
     }
 }
 
+fn parse_bool(value: &str) -> Option<bool> {
+    match value.to_ascii_lowercase().as_str() {
+        "true" | "1" => Some(true),
+        "false" | "0" => Some(false),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod color_tests {
     use super::decode_color;
 
     #[test]
     fn packed_alpha_is_used_without_a_transparency_property() {
-        let color = decode_color(0x11223340, None);
+        let color = decode_color(0x1122_3340, None);
         assert!((color.a - 64.0 / 255.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn transparency_property_overrides_packed_alpha() {
-        let color = decode_color(0x11223300, Some(0.25));
+        let color = decode_color(0x1122_3300, Some(0.25));
         assert!((color.a - 0.75).abs() < f32::EPSILON);
-    }
-}
-
-fn parse_bool(value: &str) -> Option<bool> {
-    match value.to_ascii_lowercase().as_str() {
-        "true" | "1" => Some(true),
-        "false" | "0" => Some(false),
-        _ => None,
     }
 }

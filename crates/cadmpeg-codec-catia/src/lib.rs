@@ -16,7 +16,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_catia::CatiaCodec;
-//! use cadmpeg_ir::{Codec, DecodeOptions};
+//! use cadmpeg_ir::{CodecEntry, DecodeOptions};
 //!
 //! # fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.CATPart")?;
@@ -61,9 +61,8 @@ pub mod fuzz;
 /// angular curve or surface direction from untrusted native parameters.
 pub(crate) const MAX_EXACT_ARC_SPANS: usize = 4_096;
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
-};
+use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult};
+use cadmpeg_ir::decode::{DecodeContext, View};
 
 /// The CATIA V5 `.CATPart` codec.
 #[derive(Debug, Default, Clone, Copy)]
@@ -82,17 +81,21 @@ impl Codec for CatiaCodec {
         }
     }
 
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan(reader)?;
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        let scan = container::scan_bytes(root.window().to_vec());
         Ok(container::summarize(&scan))
     }
 
-    fn decode(
+    fn decode_impl(
         &self,
-        reader: &mut dyn ReadSeek,
-        options: &DecodeOptions,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        decode::decode(reader, *options)
+        decode::decode(ctx, root)
     }
 }
 

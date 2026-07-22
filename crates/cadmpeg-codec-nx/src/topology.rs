@@ -6,6 +6,7 @@
 //! [`crate::nurbs`]. The parser covers the fixed-record families used by the
 //! crate's B-rep reconstruction; unsupported framing and record types are absent
 //! from the graph.
+#![deny(clippy::disallowed_methods)]
 
 use cadmpeg_ir::be;
 use cadmpeg_ir::math::Point3;
@@ -154,23 +155,6 @@ impl Node {
         read_sequence_at(&self.bytes, &mut at, count)
     }
 
-    /// Read an XMT reference at a logical record offset.
-    pub fn xmt_at(&self, offset: usize) -> Option<u32> {
-        read_xmt(&self.bytes, offset + self.shift).map(|(xmt, _)| xmt)
-    }
-
-    /// Read adjacent XMT references, accounting for extended encodings.
-    pub fn xmt_sequence(&self, offset: usize, count: usize) -> Option<Vec<u32>> {
-        let mut at = offset + self.shift;
-        let mut values = Vec::with_capacity(count);
-        for _ in 0..count {
-            let (value, extra) = read_xmt(&self.bytes, at)?;
-            values.push(value);
-            at += 2 + extra;
-        }
-        Some(values)
-    }
-
     /// Read a byte at its logical record offset.
     pub fn byte_at(&self, offset: usize) -> Option<u8> {
         self.bytes.get(offset + self.shift).copied()
@@ -184,22 +168,6 @@ impl Node {
     /// Read a big-endian unsigned 32-bit field at a logical record offset.
     pub fn u32_at(&self, offset: usize) -> Option<u32> {
         be::u32_at(&self.bytes, offset + self.shift)
-    }
-
-    /// Read a floating-point field immediately after an XMT reference.
-    pub fn f64_after_xmt(&self, offset: usize) -> Option<f64> {
-        let (_, extra) = read_xmt(&self.bytes, offset + self.shift)?;
-        be::f64_at(&self.bytes, offset + self.shift + 2 + extra)
-    }
-
-    /// Read a floating-point field immediately after adjacent XMT references.
-    pub fn f64_after_xmt_sequence(&self, offset: usize, count: usize) -> Option<f64> {
-        let mut at = offset + self.shift;
-        for _ in 0..count {
-            let (_, extra) = read_xmt(&self.bytes, at)?;
-            at += 2 + extra;
-        }
-        be::f64_at(&self.bytes, at)
     }
 
     /// Decode FACE fields while accumulating every preceding large-index shift.
@@ -665,7 +633,7 @@ impl Graph {
             let Some(len) = fixed_len(kind) else {
                 continue;
             };
-            let mut candidates = Vec::with_capacity(2);
+            let mut candidates = Vec::new();
             if let Some((xmt, shift)) = read_xmt(stream, pos + 2) {
                 candidates.push((xmt, shift));
             }

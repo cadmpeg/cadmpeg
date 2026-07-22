@@ -13,7 +13,8 @@ use cadmpeg_codec_f3d::F3dCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecEntry, DecodeOptions};
+use cadmpeg_ir::decode::InspectOptions;
 use libfuzzer_sys::fuzz_target;
 
 fn mutate_bytes(data: &[u8], seed: u8) -> Vec<u8> {
@@ -65,7 +66,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = codec.detect(&mutated);
 
         let mut inspect_cur = Cursor::new(&mutated);
-        let _ = codec.inspect(&mut inspect_cur);
+        let _ = codec.inspect(&mut inspect_cur, &InspectOptions::default());
 
         let mut decode_cur = Cursor::new(&mutated);
         let _ = codec.decode(&mut decode_cur, &DecodeOptions::default());

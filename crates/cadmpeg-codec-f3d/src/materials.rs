@@ -14,7 +14,7 @@ use crate::records::DesignMaterialAssignment;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
 };
-use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
 use cadmpeg_ir::le::{u32_at, u64_at};
 use cadmpeg_ir::topology::Color;
@@ -356,11 +356,8 @@ pub struct DecodedMaterials {
 /// The [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)
 /// `asm_body_key` join is skipped. Use [`decode_with_bodies`] when ASM body keys
 /// are available.
-pub fn decode(
-    reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-) -> Result<DecodedMaterials, CodecError> {
-    decode_with_bodies(reader, scan, &std::collections::HashMap::new())
+pub fn decode(scan: &ContainerScan) -> Result<DecodedMaterials, CodecError> {
+    decode_with_bodies(scan, &std::collections::HashMap::new())
 }
 
 /// Decode appearance assets and resolve body bindings through
@@ -368,7 +365,6 @@ pub fn decode(
 /// design-entity join backbone in
 /// [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
 pub fn decode_with_bodies<S: std::hash::BuildHasher>(
-    reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     body_keys: &std::collections::HashMap<BodyId, u64, S>,
 ) -> Result<DecodedMaterials, CodecError> {
@@ -414,9 +410,9 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
     }
     out.sort_by(|a, b| a.id.0.cmp(&b.id.0));
     out.dedup_by(|a, b| a.id == b.id);
-    let assignments = decode_design_assignments(reader, scan)?;
-    let act_channels = decode_act_channels(reader, scan)?;
-    let object_types = decode_design_object_types(reader, scan)?;
+    let assignments = decode_design_assignments(scan)?;
+    let act_channels = decode_act_channels(scan)?;
+    let object_types = decode_design_object_types(scan)?;
     for assignment in &assignments {
         if !out.iter().any(|appearance| {
             appearance
@@ -450,7 +446,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
         }
     }
     let mut bindings = bind_bodies(&out, &assignments, &act_channels, &object_types, body_keys);
-    let body_overrides = decode_body_appearance_overrides(reader, scan)?;
+    let body_overrides = decode_body_appearance_overrides(scan)?;
     for over in &body_overrides {
         let Some(body) = body_keys
             .iter()
@@ -487,7 +483,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
                 .unwrap_or_default(),
         });
     }
-    let face_assignments = decode_face_appearance_assignments(reader, scan)?;
+    let face_assignments = decode_face_appearance_assignments(scan)?;
     let has_topology_assignments =
         !assignments.is_empty() || !body_overrides.is_empty() || !face_assignments.is_empty();
     Ok(DecodedMaterials {
@@ -696,7 +692,6 @@ fn distance_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Op
 }
 
 pub(crate) fn decode_design_assignments(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignMaterialAssignment>, CodecError> {
     let mut out = Vec::new();
@@ -786,7 +781,6 @@ pub(crate) struct BodyAppearanceOverride {
 /// body-map record
 /// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
 fn decode_body_appearance_overrides(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
     let mut out = Vec::new();
@@ -832,7 +826,6 @@ pub struct FaceAppearanceAssignment {
 /// face GUID and the bound visual GUID
 /// ([spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)).
 fn decode_face_appearance_assignments(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
     let mut out = Vec::new();
@@ -1035,7 +1028,6 @@ fn bind_bodies<S: std::hash::BuildHasher>(
 }
 
 fn decode_design_object_types(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<std::collections::HashMap<u64, String>, CodecError> {
     let mut out = std::collections::HashMap::new();
@@ -1084,7 +1076,6 @@ fn decode_design_object_types(
 }
 
 fn decode_act_channels(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<std::collections::HashMap<u64, BTreeMap<String, String>>, CodecError> {
     let mut out = std::collections::HashMap::new();

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Retained source records without a typed IR interpretation.
+#![deny(clippy::disallowed_methods)]
 
 use crate::ids::UnknownId;
 use crate::native::NativeRecord;
@@ -8,7 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 
-/// A format-specific product record without source-byte accounting.
+/// A format-specific product record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NativeUnknownRecord {
     /// Arena id.

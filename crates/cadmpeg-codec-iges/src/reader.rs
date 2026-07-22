@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical graph to CADIR native preservation and loss reporting.
 
-use crate::{byte_ledger, card, directory, entities, global, graph, native, parameter};
+use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
@@ -55,11 +55,7 @@ pub(crate) fn decode(
     let directory = directory::parse(&scan)?;
     let parameters = parameter::assemble(&scan, &directory, &global)?;
     let references = graph::build(&directory);
-    let byte_ledger = byte_ledger::build(&scan, &global, &parameters);
-    let mut source_fidelity = SourceFidelity {
-        byte_ledger: byte_ledger.clone(),
-        ..SourceFidelity::default()
-    };
+    let mut source_fidelity = SourceFidelity::default();
 
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(source_meta(&global));
@@ -79,7 +75,6 @@ pub(crate) fn decode(
         &parameters,
         &references,
         &global,
-        &mut source_fidelity,
     )?;
     source_fidelity.finalize();
 
@@ -87,6 +82,7 @@ pub(crate) fn decode(
     let mut losses = projection.losses;
     if product_occurrences_truncated {
         losses.push(LossNote {
+            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: "IGES product occurrence expansion reached its configured output limit".into(),
@@ -103,6 +99,7 @@ pub(crate) fn decode(
                             || !projection.handled.contains(&entry.sequence))
                 })
                 .map(|entry| LossNote {
+                    code: cadmpeg_ir::LossCode::RecordNotTyped,
                     category: LossCategory::Other,
                     severity: Severity::Warning,
                     message: if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {

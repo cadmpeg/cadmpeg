@@ -2644,6 +2644,33 @@ fn support_side_mapping_is_finite(side: &crate::geometry::IntcurveSupportSide) -
     })
 }
 
+pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], dir: &str) {
+    let issue = if knots.iter().any(|knot| !knot.is_finite()) {
+        Some("knot vector contains a non-finite value")
+    } else if knots.windows(2).any(|w| w[1] < w[0]) {
+        Some("knot vector is not non-decreasing")
+    } else {
+        None
+    };
+    if let Some(issue) = issue {
+        let label = if dir.is_empty() {
+            issue.to_string()
+        } else {
+            format!("{dir}-{issue}")
+        };
+        bounds_err(findings, id, &label);
+    }
+}
+
+pub(super) fn bounds_err(findings: &mut Vec<Finding>, id: &str, msg: &str) {
+    findings.push(Finding {
+        check: Check::Bounds,
+        severity: Severity::Error,
+        message: msg.to_string(),
+        entity: Some(id.to_string()),
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::support_context_is_finite;
@@ -2690,31 +2717,4 @@ mod tests {
             Some([f64::NAN, 2.0])
         )));
     }
-}
-
-pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], dir: &str) {
-    let issue = if knots.iter().any(|knot| !knot.is_finite()) {
-        Some("knot vector contains a non-finite value")
-    } else if knots.windows(2).any(|w| w[1] < w[0]) {
-        Some("knot vector is not non-decreasing")
-    } else {
-        None
-    };
-    if let Some(issue) = issue {
-        let label = if dir.is_empty() {
-            issue.to_string()
-        } else {
-            format!("{dir}-{issue}")
-        };
-        bounds_err(findings, id, &label);
-    }
-}
-
-pub(super) fn bounds_err(findings: &mut Vec<Finding>, id: &str, msg: &str) {
-    findings.push(Finding {
-        check: Check::Bounds,
-        severity: Severity::Error,
-        message: msg.to_string(),
-        entity: Some(id.to_string()),
-    });
 }

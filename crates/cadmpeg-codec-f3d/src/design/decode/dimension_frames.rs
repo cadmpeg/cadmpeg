@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 /// plus the parameter, owner, companion, scope, record-header, and sketch
 /// geometry tables that locate each dimension's owning companion and geometry.
 pub struct DimensionDecodeInputs<'a> {
-    pub(crate) scan: &'a ContainerScan,
+    pub(crate) scan: &'a ContainerScan<'a>,
     pub(crate) parameters: &'a [DesignParameter],
     pub(crate) owners: &'a [DesignParameterOwner],
     pub(crate) companions: &'a [DesignParameterCompanion],

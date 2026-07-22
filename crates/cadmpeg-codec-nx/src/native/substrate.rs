@@ -300,7 +300,7 @@ mod tests {
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -323,6 +323,7 @@ mod tests {
 
         let stream = |kind, schema: Option<&str>, file_offset| Stream {
             file_offset,
+            consumed: 0,
             inflated: Vec::new(),
             kind,
             schema: schema.map(str::to_string),

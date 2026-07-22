@@ -17,7 +17,7 @@ use crate::ids::{
 use crate::math::{Point3, Vector3};
 use crate::native::NativeRecord;
 use crate::provenance::{Exactness, SourceObjectAssociation};
-use crate::report::{Check, LossCategory, LossNote, Severity};
+use crate::report::{Check, LossCategory, LossCode, LossNote, Severity};
 use crate::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
@@ -2474,6 +2474,7 @@ fn schema_generation_produces_definitions() {
 #[test]
 fn loss_provenance_root_alias_constructs_and_serializes() {
     let note = LossNote {
+        code: LossCode::GeometryNotTransferred,
         category: LossCategory::Geometry,
         severity: Severity::Warning,
         message: "geometry was retained as metadata".into(),

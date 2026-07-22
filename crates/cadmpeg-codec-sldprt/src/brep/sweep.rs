@@ -251,6 +251,8 @@ pub(crate) fn spun_nurbs(profile: &NurbsCurve, base: Point3, axis: Vector3) -> N
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::{FRAC_PI_2, SQRT_2};
+
     use super::*;
 
     fn header(tt: u8, attr: u16, profile: u16) -> Vec<u8> {
@@ -310,7 +312,7 @@ mod tests {
         assert!(scan_sweep_carriers(&bytes).is_empty());
     }
 
-    fn eval_surface(s: &NurbsSurface, u: f64, v: f64) -> Point3 {
+    fn eval_surface(surface: &NurbsSurface, u_parameter: f64, v_parameter: f64) -> Point3 {
         // De Boor via basis functions (dense evaluation, test only).
         fn basis(knots: &[f64], degree: usize, count: usize, t: f64) -> Vec<f64> {
             let mut n = vec![0.0f64; count];
@@ -347,21 +349,30 @@ mod tests {
             }
             out
         }
-        let nu = basis(&s.u_knots, s.u_degree as usize, s.u_count as usize, u);
-        let nv = basis(&s.v_knots, s.v_degree as usize, s.v_count as usize, v);
+        let u_basis = basis(
+            &surface.u_knots,
+            surface.u_degree as usize,
+            surface.u_count as usize,
+            u_parameter,
+        );
+        let v_basis = basis(
+            &surface.v_knots,
+            surface.v_degree as usize,
+            surface.v_count as usize,
+            v_parameter,
+        );
         let mut acc = [0.0f64; 4];
-        for i in 0..s.u_count as usize {
-            for j in 0..s.v_count as usize {
-                let w = s
-                    .weights
-                    .as_ref()
-                    .map_or(1.0, |w| w[i * s.v_count as usize + j]);
-                let b = nu[i] * nv[j] * w;
-                let p = &s.control_points[i * s.v_count as usize + j];
-                acc[0] += b * p.x;
-                acc[1] += b * p.y;
-                acc[2] += b * p.z;
-                acc[3] += b;
+        for u_index in 0..surface.u_count as usize {
+            for v_index in 0..surface.v_count as usize {
+                let weight = surface.weights.as_ref().map_or(1.0, |weights| {
+                    weights[u_index * surface.v_count as usize + v_index]
+                });
+                let basis_weight = u_basis[u_index] * v_basis[v_index] * weight;
+                let point = &surface.control_points[u_index * surface.v_count as usize + v_index];
+                acc[0] += basis_weight * point.x;
+                acc[1] += basis_weight * point.y;
+                acc[2] += basis_weight * point.z;
+                acc[3] += basis_weight;
             }
         }
         Point3::new(acc[0] / acc[3], acc[1] / acc[3], acc[2] / acc[3])
@@ -388,7 +399,6 @@ mod tests {
         // not the geometric angle — a quadratic cannot parameterize a circle by
         // arc length — so the swept angle equals `v` only at the breakpoints.
         // The expected angle is the exact segment map of the rational Bézier.
-        use std::f64::consts::{FRAC_PI_2, SQRT_2};
         let expected_angle = |v: f64| {
             let seg = (v / FRAC_PI_2).floor();
             let t = (v - seg * FRAC_PI_2) / FRAC_PI_2;

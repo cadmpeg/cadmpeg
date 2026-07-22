@@ -137,13 +137,27 @@ fn curve_descriptor<'a>(
         .find_map(|reference| descriptors.get(&reference))
 }
 
-fn expanded_knots(values: &[f64], multiplicities: &[u16]) -> Vec<f64> {
-    values
-        .iter()
-        .zip(multiplicities)
-        .filter(|(_, multiplicity)| **multiplicity > 0)
-        .flat_map(|(value, multiplicity)| std::iter::repeat_n(*value, *multiplicity as usize))
-        .collect()
+/// Expand a compressed knot vector by its per-value multiplicities, refusing
+/// the expansion when the running length exceeds `expected`.
+///
+/// A NURBS knot vector must have exactly `control_count + degree + 1` entries,
+/// so `expected` is a hard upper bound. Charging the multiplicities against it
+/// incrementally stops an untrusted `u16` multiplicity array (each entry up to
+/// `65535`, over a million-entry table) from reserving a multi-hundred-gigabyte
+/// `Vec` before the post-hoc length check would discard it. Returns `None` the
+/// moment the accumulated length would exceed `expected`.
+fn expanded_knots(values: &[f64], multiplicities: &[u16], expected: usize) -> Option<Vec<f64>> {
+    let mut out = Vec::new();
+    for (value, &multiplicity) in values.iter().zip(multiplicities) {
+        if multiplicity == 0 {
+            continue;
+        }
+        if out.len() + multiplicity as usize > expected {
+            return None;
+        }
+        out.extend(std::iter::repeat_n(*value, multiplicity as usize));
+    }
+    Some(out)
 }
 
 fn unique_knots(knots: &[f64]) -> (Vec<f64>, Vec<u16>) {
@@ -345,8 +359,11 @@ pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         if points.len() != descriptor.control_count {
             continue;
         }
-        let knots = expanded_knots(unique_knots, multiplicities);
-        if knots.len() != points.len() + descriptor.degree as usize + 1 {
+        let expected = points.len() + descriptor.degree as usize + 1;
+        let Some(knots) = expanded_knots(unique_knots, multiplicities, expected) else {
+            continue;
+        };
+        if knots.len() != expected {
             continue;
         }
         out.entry(attr).or_insert(Carrier {
@@ -500,11 +517,15 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         if points.len() != u_count * v_count {
             continue;
         }
-        let u_knots = expanded_knots(u_unique, u_mult);
-        let v_knots = expanded_knots(v_unique, v_mult);
-        if u_knots.len() != u_count + u_degree as usize + 1
-            || v_knots.len() != v_count + v_degree as usize + 1
-        {
+        let u_expected = u_count + u_degree as usize + 1;
+        let v_expected = v_count + v_degree as usize + 1;
+        let (Some(u_knots), Some(v_knots)) = (
+            expanded_knots(u_unique, u_mult, u_expected),
+            expanded_knots(v_unique, v_mult, v_expected),
+        ) else {
+            continue;
+        };
+        if u_knots.len() != u_expected || v_knots.len() != v_expected {
             continue;
         }
         out.entry(attr).or_insert(Carrier {

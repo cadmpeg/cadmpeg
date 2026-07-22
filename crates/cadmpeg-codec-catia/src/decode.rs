@@ -11,7 +11,8 @@
 //! Partial paths preserve the reconstructed B-rep stream or complete file as an
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
 
-use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, DecodeResult};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -31,13 +32,10 @@ use crate::native::CatiaNative;
 /// predicate accepts the scanned variant is tried in table order; the first to
 /// return a model wins, a `None` falls through to the next applicable route, and
 /// exhausting the table yields the metadata-only fallback.
-pub fn decode(
-    reader: &mut dyn ReadSeek,
-    options: DecodeOptions,
-) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan(reader)?;
+pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
+    let scan = container::scan_bytes(root.window().to_vec());
 
-    if options.container_only {
+    if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan);
         let report = build_container_report(&scan, true);
         return decode_result(ir, report, annotations, &unknowns);
@@ -76,6 +74,7 @@ fn finish_decode(
         .sum::<usize>();
     if object_record_count != 0 || !native.value_blocks.is_empty() {
         report.losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(

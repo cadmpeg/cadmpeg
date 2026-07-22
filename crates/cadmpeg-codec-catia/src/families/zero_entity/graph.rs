@@ -2551,8 +2551,9 @@ mod occurrence_tests {
             weights: None,
             periodic: false,
         };
-        let range = canonical_nurbs_interval(&curve, [0.020000000000000018, 1.7899999999999998])
-            .expect("roundoff-equivalent native interval");
+        let range =
+            canonical_nurbs_interval(&curve, [0.020_000_000_000_000_018, 1.789_999_999_999_999_8])
+                .expect("roundoff-equivalent native interval");
         assert_eq!(range, [0.02, 1.79]);
 
         let range =

@@ -412,11 +412,13 @@
       "losses": [
         {
           "category": "geometry",
+          "code": "carrier_summary",
           "message": "Decoded 1 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 1 analytic surface carrier(s) (1 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 2 analytic curve carrier(s) (1 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
         },
         {
           "category": "attribute",
+          "code": "attributes_not_transferred",
           "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
           "severity": "warning"
         }
@@ -569,10 +571,6 @@
           "nx:s0"
         ]
       },
-      "byte_ledger": {
-        "source_length": 0,
-        "spans": []
-      },
       "retained_records": [
         {
           "byte_len": 846,
@@ -583,7 +581,7 @@
           "stream": "nx:container"
         }
       ],
-      "schema_version": "1"
+      "version": "3"
     }
   },
   "inspect": {

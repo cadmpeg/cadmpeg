@@ -178,9 +178,7 @@ mod tests {
             nested.push(u8::try_from(entry.len() + 1).expect("fixture entry length"));
             nested.extend_from_slice(entry.as_bytes());
         }
-        for _ in 0..123 {
-            nested.push(1);
-        }
+        nested.extend(std::iter::repeat_n(1, 123));
         nested.push(79);
         nested.extend(std::iter::repeat_n(b'x', 78));
         assert_eq!(nested.len(), 257);

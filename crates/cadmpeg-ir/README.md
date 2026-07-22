@@ -76,7 +76,7 @@ fn accepts(codec: &dyn Codec, prefix: &[u8]) -> bool {
 }
 ```
 
-`DecodeResult` contains the finalized document, a `DecodeReport`, and an independently versioned `SourceFidelity` sidecar for source-byte accounting, provenance, and conversion exactness.
+`DecodeResult` contains the finalized document, a `DecodeReport`, and a `SourceFidelity` sidecar for provenance, conversion exactness, and retained native records.
 `CodecError` represents operation failure such as wrong format, malformed
 container, unsupported capability, or I/O failure. Successful decoding can
 still be incomplete: `LossNote` records transferred information that was

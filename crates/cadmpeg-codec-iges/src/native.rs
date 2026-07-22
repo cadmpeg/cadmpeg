@@ -8,7 +8,7 @@ use crate::global::Global;
 use crate::graph::ReferenceEdge;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::{ByteSpanClass, CadIr, RetainedSourceRecord, SourceFidelity};
+use cadmpeg_ir::CadIr;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -1233,7 +1233,6 @@ pub(crate) fn store(
     parameters: &[ParameterRecord],
     references: &BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &Global,
-    source_fidelity: &mut SourceFidelity,
 ) -> Result<bool, CodecError> {
     let cards = scan
         .lines
@@ -1248,25 +1247,6 @@ pub(crate) fn store(
                 .section
                 .map(|section| format!("{section:?}").to_lowercase()),
             sequence: line.sequence,
-        })
-        .collect::<Vec<_>>();
-    source_fidelity.retained_records = source_fidelity
-        .byte_ledger
-        .spans
-        .iter()
-        .filter(|span| span.class == ByteSpanClass::Opaque)
-        .map(|span| {
-            let start = usize::try_from(span.start).unwrap_or(scan.source.len());
-            let end = usize::try_from(span.end).unwrap_or(scan.source.len());
-            let bytes = scan.source.get(start..end).unwrap_or_default().to_vec();
-            RetainedSourceRecord {
-                id: span.retained_record.clone().unwrap_or_default(),
-                stream: "source".into(),
-                offset: span.start,
-                byte_len: span.end.saturating_sub(span.start),
-                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                data: Some(bytes),
-            }
         })
         .collect::<Vec<_>>();
     let by_directory = parameters

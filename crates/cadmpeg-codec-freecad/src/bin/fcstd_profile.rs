@@ -11,7 +11,7 @@ use cadmpeg_codec_freecad::{
     validate_native, FcstdCodec, FcstdDocumentBuilder, FcstdPropertyOwner, FcstdPropertyValue,
     FcstdWriteOptions,
 };
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{CadIr, Severity};
 use serde::Serialize;

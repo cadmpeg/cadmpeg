@@ -15,7 +15,7 @@
 //! use std::io::Cursor;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::{Codec, DecodeOptions};
+//! use cadmpeg_ir::{CodecEntry, DecodeOptions};
 //!
 //! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_ir::CodecError> {
 //! let decoded = SldprtCodec.decode(
@@ -86,9 +86,8 @@ mod writer;
 mod writer_patch;
 mod writer_transform;
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder, ReadSeek,
-};
+use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
@@ -163,17 +162,21 @@ impl Codec for SldprtCodec {
         }
     }
 
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan(reader)?;
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        let scan = container::scan_bytes(root.window());
         Ok(container::summarize(&scan))
     }
 
-    fn decode(
+    fn decode_impl(
         &self,
-        reader: &mut dyn ReadSeek,
-        options: &DecodeOptions,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        decode::decode(reader, options)
+        decode::decode(ctx, root)
     }
 }
 

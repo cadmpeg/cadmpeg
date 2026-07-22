@@ -226,12 +226,38 @@ struct DecodeArgs {
     /// Stop after the native container layer without transferring geometry.
     #[arg(long)]
     container_only: bool,
+    /// Reject a decode that reports a mandatory transfer loss.
+    #[arg(long)]
+    strict: bool,
+    /// Resource-limit profile: `desktop` (generous, the default) or `service`
+    /// (tight ceilings for unattended use).
+    #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
+    limits: LimitProfile,
+}
+
+/// Which caller-owned resource-limit profile a decode runs under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum LimitProfile {
+    /// Generous ceilings for interactive desktop use.
+    Desktop,
+    /// Tight ceilings for unattended service use.
+    Service,
 }
 
 impl DecodeArgs {
     fn options(&self) -> cadmpeg_ir::DecodeOptions {
+        let limits = match self.limits {
+            LimitProfile::Desktop => cadmpeg_ir::decode::ResourceLimits::desktop(),
+            LimitProfile::Service => cadmpeg_ir::decode::ResourceLimits::service(),
+        };
+        let mode = if self.strict {
+            cadmpeg_ir::decode::DecodeMode::Strict
+        } else {
+            cadmpeg_ir::decode::DecodeMode::Salvage
+        };
         cadmpeg_ir::DecodeOptions {
             container_only: self.container_only,
+            policy: cadmpeg_ir::decode::DecodePolicy { mode, limits },
         }
     }
 }
@@ -297,6 +323,9 @@ enum Command {
         /// Write geometry output even when decoding transferred no geometry.
         #[arg(long)]
         allow_empty: bool,
+        /// Refuse to write output when decoding reported any loss (exit 1).
+        #[arg(long)]
+        reject_lossy: bool,
         /// Target Rhino archive version; valid only for Rhino output.
         #[arg(long, value_enum)]
         rhino_version: Option<RhinoVersion>,
@@ -341,6 +370,9 @@ enum Command {
         /// Write geometry output even when decoding transferred no geometry.
         #[arg(long)]
         allow_empty: bool,
+        /// Refuse to write output when decoding reported any loss (exit 1).
+        #[arg(long)]
+        reject_lossy: bool,
         /// Target Rhino archive version; valid only for Rhino output.
         #[arg(long, value_enum)]
         rhino_version: Option<RhinoVersion>,
@@ -400,6 +432,7 @@ fn main() -> ExitCode {
             force,
             report,
             allow_empty,
+            reject_lossy,
             rhino_version,
             input_args,
             decode,
@@ -413,6 +446,7 @@ fn main() -> ExitCode {
                 force,
                 report,
                 allow_empty,
+                reject_lossy,
                 rhino_version: rhino_version.map(RhinoVersion::codec),
                 forced_input: input_args.forced(),
             },
@@ -428,6 +462,7 @@ fn main() -> ExitCode {
             report,
             allow_invalid,
             allow_empty,
+            reject_lossy,
             rhino_version,
             input_args,
             decode,
@@ -442,6 +477,7 @@ fn main() -> ExitCode {
                 report,
                 allow_invalid,
                 allow_empty,
+                reject_lossy,
                 rhino_version: rhino_version.map(RhinoVersion::codec),
                 forced_input: input_args.forced(),
             },

@@ -142,7 +142,9 @@ mod tests {
     #[test]
     fn ambiguous_zip_uses_last_registered_codec_precedence() {
         let registry = Registry::with_builtins();
-        let (codec, confidence) = registry.detect(b"PK\x03\x04 markerless").unwrap();
+        let (codec, confidence) = registry
+            .detect(b"PK\x03\x04 markerless")
+            .expect("required invariant");
         assert_eq!(codec.id(), "f3d");
         assert_eq!(confidence, cadmpeg_ir::codec::Confidence::Low);
     }

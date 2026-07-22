@@ -6609,18 +6609,38 @@ mod tests {
         ];
 
         let panel = record(&panel);
-        assert!((panel.type24_round_radius(0x24).unwrap() - 0.2).abs() < 1.0e-12);
+        assert!(
+            (panel.type24_round_radius(0x24).expect("required invariant") - 0.2).abs() < 1.0e-12
+        );
         let frame = panel
             .positional_cylinder_frame
             .expect("complete repeated-diameter carrier");
         assert_eq!(frame.origin, [2.2, -22.35, -1.45]);
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert!((frame.radius - 0.2).abs() < 1.0e-12);
-        assert!((frame.length.unwrap() - 46.241_026_156_433_854).abs() < 1.0e-12);
-        assert!((frame.axis[1] - 46.15 / frame.length.unwrap()).abs() < 1.0e-12);
-        assert!((frame.axis[2] - 2.9 / frame.length.unwrap()).abs() < 1.0e-12);
-        assert!((record(&prefixed_panel).type24_round_radius(0x24).unwrap() - 0.2).abs() < 1.0e-12);
-        assert!((record(&separated).type24_round_radius(0x24).unwrap() - 2.0).abs() < 1.0e-12);
+        assert!(
+            (frame.length.expect("required invariant") - 46.241_026_156_433_854).abs() < 1.0e-12
+        );
+        assert!(
+            (frame.axis[1] - 46.15 / frame.length.expect("required invariant")).abs() < 1.0e-12
+        );
+        assert!((frame.axis[2] - 2.9 / frame.length.expect("required invariant")).abs() < 1.0e-12);
+        assert!(
+            (record(&prefixed_panel)
+                .type24_round_radius(0x24)
+                .expect("required invariant")
+                - 0.2)
+                .abs()
+                < 1.0e-12
+        );
+        assert!(
+            (record(&separated)
+                .type24_round_radius(0x24)
+                .expect("required invariant")
+                - 2.0)
+                .abs()
+                < 1.0e-12
+        );
         let replay_separated = [
             24, 45, 82, 36, 168, 193, 84, 201, 135, 18, 45, 89, 164, 168, 193, 84, 201, 135, 47,
             34, 0, 47, 32, 0, 47, 20, 0, 47, 36, 0, 47, 67, 0, 47, 24, 0, 247, 24,
@@ -6797,7 +6817,7 @@ mod tests {
             .expect("opposite first-coordinate round carrier");
         assert_eq!(opposite.origin, [-18.308_504_271_834_785, 38.0, -2.0]);
         assert_eq!(opposite.radius, 2.0);
-        assert!((opposite.length.unwrap() - expected_length).abs() < 1.0e-12);
+        assert!((opposite.length.expect("required invariant") - expected_length).abs() < 1.0e-12);
 
         let segmented = [
             0x18, 0x2d, 0x35, 0xa8, 0xa9, 0xfd, 0x2c, 0xc7, 0xe2, 0x70, 0xbf, 0xe3, 0x4f, 0x05,
@@ -6814,7 +6834,7 @@ mod tests {
         assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
         assert_eq!(frame.radius, 0.5 * diameter);
         let expected_length = 1.111_111_111_111_110_7_f64.hypot(3.142_696_805_273_545);
-        assert!((frame.length.unwrap() - expected_length).abs() < 1.0e-12);
+        assert!((frame.length.expect("required invariant") - expected_length).abs() < 1.0e-12);
         assert_eq!(segmented.type24_round_radius(0x24), Some(0.5 * diameter));
 
         let mut wrong_separator = segmented.body.clone();
@@ -6883,7 +6903,9 @@ mod tests {
         assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert_eq!(frame.radius, 4.5);
-        assert!((frame.length.unwrap() - 6.872_998_848_194_527).abs() < 1.0e-12);
+        assert!(
+            (frame.length.expect("required invariant") - 6.872_998_848_194_527).abs() < 1.0e-12
+        );
 
         let control_terminated_body = [
             24, 45, 53, 164, 168, 193, 84, 201, 135, 18, 45, 59, 164, 168, 193, 84, 201, 135, 72,
@@ -6904,7 +6926,7 @@ mod tests {
         assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
         assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
         assert!((frame.radius - 5.0).abs() < 1.0e-12);
-        assert!((frame.length.unwrap() - 21.643_2).abs() < 1.0e-12);
+        assert!((frame.length.expect("required invariant") - 21.643_2).abs() < 1.0e-12);
 
         let mut ambiguous = record.clone();
         ambiguous.scalar_frames[1].slots[6].value = Some(-102.837_702_082_688_25);
@@ -6934,7 +6956,7 @@ mod tests {
         assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert!((frame.radius - 0.1).abs() < 1.0e-12);
-        assert!((frame.length.unwrap() - 6.4).abs() < 1.0e-12);
+        assert!((frame.length.expect("required invariant") - 6.4).abs() < 1.0e-12);
 
         let unbounded_body = [
             0x18, 0x2d, 0x5f, 0x25, 0xa4, 0x69, 0xd7, 0x34, 0x2d, 0x00, 0x12, 0x00, 0x2d, 0x67,
@@ -6981,7 +7003,7 @@ mod tests {
         assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
         assert!((frame.radius - 0.3).abs() < 1.0e-12);
         let length = 85.1_f64.hypot(0.5);
-        assert!((frame.length.unwrap() - length).abs() < 1.0e-12);
+        assert!((frame.length.expect("required invariant") - length).abs() < 1.0e-12);
         assert!((frame.axis[0] - 85.1 / length).abs() < 1.0e-12);
         assert!((frame.axis[1] - 0.5 / length).abs() < 1.0e-12);
         assert_eq!(frame.axis[2], 0.0);
@@ -7011,7 +7033,7 @@ mod tests {
         assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
         assert!((frame.radius - 0.3).abs() < 1.0e-12);
         let length = 85.1_f64.hypot(0.5);
-        assert!((frame.length.unwrap() - length).abs() < 1.0e-12);
+        assert!((frame.length.expect("required invariant") - length).abs() < 1.0e-12);
         assert!((frame.axis[0] - 85.1 / length).abs() < 1.0e-12);
         assert!((frame.axis[1] - 0.5 / length).abs() < 1.0e-12);
         assert_eq!(frame.axis[2], 0.0);
@@ -7097,14 +7119,21 @@ mod tests {
             0x00, 0xa7, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80, 0x2e, 0x45, 0x66, 0x2a, 0xfc, 0x00,
             0x5e, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80,
         ];
-        assert!((record(&terminal).type24_round_radius(0x24).unwrap() - 0.3).abs() < 1.0e-12);
+        assert!(
+            (record(&terminal)
+                .type24_round_radius(0x24)
+                .expect("required invariant")
+                - 0.3)
+                .abs()
+                < 1.0e-12
+        );
 
         let mut replay_terminated = terminal.to_vec();
         replay_terminated.extend_from_slice(&[0xf7, 0x17]);
         assert!(
             (record(&replay_terminated)
                 .type24_round_radius(0x24)
-                .unwrap()
+                .expect("required invariant")
                 - 0.3)
                 .abs()
                 < 1.0e-12
@@ -7228,7 +7257,7 @@ mod tests {
         };
 
         assert_eq!(
-            positional_frame_planes(&[record.clone()], &[row.clone()]),
+            positional_frame_planes(std::slice::from_ref(&record), std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [8.0, 0.0, 0.0],
@@ -7240,7 +7269,7 @@ mod tests {
 
         let mut unmarked = record.clone();
         unmarked.body[2] = 0x99;
-        assert!(positional_frame_planes(&[unmarked], &[row.clone()]).is_empty());
+        assert!(positional_frame_planes(&[unmarked], std::slice::from_ref(&row)).is_empty());
 
         let mut ambiguous = record;
         ambiguous.scalar_frames[0].slots[4].value = Some(2.0);
@@ -7312,7 +7341,7 @@ mod tests {
         };
 
         assert_eq!(
-            positional_frame_planes(&[record.clone()], &[row.clone()]),
+            positional_frame_planes(std::slice::from_ref(&record), std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [0.0, 1.75, 0.0],
@@ -7370,7 +7399,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            positional_frame_planes(&[trailed], &[row.clone()]),
+            positional_frame_planes(&[trailed], std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [0.0, 0.0, 7.5],
@@ -7394,7 +7423,7 @@ mod tests {
         );
         compact_prefix.scalar_frames = scalar_frames(&compact_prefix.scalar_tokens);
         assert_eq!(
-            positional_frame_planes(&[compact_prefix], &[row.clone()]),
+            positional_frame_planes(&[compact_prefix], std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [2.479_564_003_064_99, 0.0, 0.0],
@@ -7406,7 +7435,9 @@ mod tests {
 
         let mut incomplete = record;
         incomplete.opaque_spans[1].length = 7;
-        assert!(positional_frame_planes(&[incomplete.clone()], &[row.clone()]).is_empty());
+        assert!(
+            positional_frame_planes(&[incomplete.clone()], std::slice::from_ref(&row)).is_empty()
+        );
 
         let mut short = incomplete;
         short.scalar_frames.push(SurfaceParameterScalarFrame {
@@ -7441,7 +7472,7 @@ mod tests {
         };
 
         assert_eq!(
-            positional_frame_planes(&[record.clone()], &[row.clone()]),
+            positional_frame_planes(std::slice::from_ref(&record), std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: record.surface_id,
                 origin: [-92.0, 0.0, 0.0],
@@ -7462,7 +7493,10 @@ mod tests {
         unprefixed_payload.push(0xe3);
         let unprefixed = parameter_records(&unprefixed_payload).remove(0);
         assert_eq!(
-            positional_frame_planes(&[unprefixed.clone()], &[row.clone()]),
+            positional_frame_planes(
+                std::slice::from_ref(&unprefixed),
+                std::slice::from_ref(&row)
+            ),
             vec![OutlinePlane {
                 surface_id: unprefixed.surface_id,
                 origin: [0.0, -5.0, 0.0],
@@ -7477,7 +7511,7 @@ mod tests {
             .body
             .last_mut()
             .expect("terminal reference id") = 0x1e;
-        assert!(positional_frame_planes(&[wrong_trailer], &[row.clone()]).is_empty());
+        assert!(positional_frame_planes(&[wrong_trailer], std::slice::from_ref(&row)).is_empty());
 
         let mut multiple_frames = record.clone();
         multiple_frames.scalar_frames.insert(
@@ -7487,7 +7521,7 @@ mod tests {
                 slots: vec![multiple_frames.scalar_frames[0].slots[0].clone()],
             },
         );
-        assert!(positional_frame_planes(&[multiple_frames], &[row.clone()]).is_empty());
+        assert!(positional_frame_planes(&[multiple_frames], std::slice::from_ref(&row)).is_empty());
 
         let mut ambiguous = record;
         ambiguous.scalar_frames[0].slots[7].value = Some(-95.250_230_249_874_05);
@@ -7519,7 +7553,7 @@ mod tests {
         };
 
         assert_eq!(
-            positional_frame_planes(&[record.clone()], &[row.clone()]),
+            positional_frame_planes(std::slice::from_ref(&record), std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: record.surface_id,
                 origin: [0.0, 0.0, 7.0],
@@ -7531,7 +7565,9 @@ mod tests {
 
         let mut incomplete_controls = record.clone();
         incomplete_controls.opaque_spans[1].length -= 1;
-        assert!(positional_frame_planes(&[incomplete_controls], &[row.clone()]).is_empty());
+        assert!(
+            positional_frame_planes(&[incomplete_controls], std::slice::from_ref(&row)).is_empty()
+        );
 
         let mut ambiguous = record;
         ambiguous.scalar_frames[1].slots[5].value = ambiguous.scalar_frames[1].slots[2].value;
@@ -7610,7 +7646,7 @@ mod tests {
         );
         prefixed_eight_byte.scalar_frames = scalar_frames(&prefixed_eight_byte.scalar_tokens);
         assert_eq!(
-            positional_frame_planes(&[prefixed_eight_byte], &[row.clone()]),
+            positional_frame_planes(&[prefixed_eight_byte], std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [7.560_920_554_712_176, 0.0, 0.0],
@@ -7634,7 +7670,7 @@ mod tests {
         );
         prefixed_seven_byte.scalar_frames = scalar_frames(&prefixed_seven_byte.scalar_tokens);
         assert_eq!(
-            positional_frame_planes(&[prefixed_seven_byte], &[row.clone()]),
+            positional_frame_planes(&[prefixed_seven_byte], std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [6.290_581_268_384_813, 0.0, 0.0],
@@ -7653,7 +7689,7 @@ mod tests {
         );
         unterminated.scalar_frames = scalar_frames(&unterminated.scalar_tokens);
         assert_eq!(
-            positional_frame_planes(&[unterminated], &[row.clone()]),
+            positional_frame_planes(&[unterminated], std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [3.326_456_464_841_722_7, 0.0, 0.0],
@@ -7677,7 +7713,7 @@ mod tests {
         );
         y_held.scalar_frames = scalar_frames(&y_held.scalar_tokens);
         assert_eq!(
-            positional_frame_planes(&[y_held], &[row.clone()]),
+            positional_frame_planes(&[y_held], std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [0.0, 6.777_498_012_261_868, 0.0],
@@ -7701,7 +7737,7 @@ mod tests {
         );
         mixed_width.scalar_frames = scalar_frames(&mixed_width.scalar_tokens);
         assert_eq!(
-            positional_frame_planes(&[mixed_width], &[row.clone()]),
+            positional_frame_planes(&[mixed_width], std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [0.0, 6.540_998_686_777_831, 0.0],

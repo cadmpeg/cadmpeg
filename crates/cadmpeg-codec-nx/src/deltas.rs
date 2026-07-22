@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Walk status-byte-framed Parasolid deltas topology records.
+#![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
 

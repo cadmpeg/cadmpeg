@@ -8,14 +8,15 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
+use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, SourceFidelity};
+use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, CodecEntry, SourceFidelity};
 
 use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
 use crate::registry::Registry;
 use crate::{DecodeArgs, ForcedInput, Format};
 
-const CLI_SCHEMA_VERSION: u32 = 3;
+const CLI_SCHEMA_VERSION: u32 = 4;
 
 fn validate_ir(
     ir: &CadIr,
@@ -51,6 +52,10 @@ fn validate_ir(
 pub struct SemanticFailure(String);
 
 /// Safety and reporting options for `convert`.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is an independent, orthogonal CLI safety toggle the user opts into by name; an enum would obscure that they compose freely"
+)]
 pub struct ConvertSettings {
     /// Replace an existing output or report file.
     pub force: bool,
@@ -60,6 +65,8 @@ pub struct ConvertSettings {
     pub allow_invalid: bool,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
+    /// Refuse to export when the decode reported any loss.
+    pub reject_lossy: bool,
     /// Explicit Rhino output archive version.
     pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     /// Explicit input format selected by the user.
@@ -103,7 +110,7 @@ pub fn inspect(
     };
     let mut file = File::open(path)?;
     let summary = codec
-        .inspect(&mut file)
+        .inspect(&mut file, &InspectOptions::default())
         .with_context(|| format!("inspecting {}", path.display()))?;
     if json {
         println!(
@@ -231,6 +238,8 @@ pub struct ExportSettings {
     pub report: Option<PathBuf>,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
+    /// Refuse to export when the decode reported any loss.
+    pub reject_lossy: bool,
     /// Explicit Rhino output archive version.
     pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     /// Explicit input format selected by the user.
@@ -250,6 +259,7 @@ pub fn export(
         force,
         report: report_path,
         allow_empty,
+        reject_lossy,
         rhino_version,
         forced_input,
     } = settings;
@@ -258,6 +268,18 @@ pub fn export(
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
         eprintln!("note: export skips IR validation; use `convert` to validate");
+    }
+    if let Some(refusal) = lossy_refusal(reject_lossy, loaded.decode_report.as_ref(), format) {
+        write_command_report(
+            path,
+            report_path.as_deref(),
+            force,
+            "export",
+            loaded.decode_report.as_ref(),
+            None,
+            None,
+        )?;
+        return Err(refusal);
     }
     if format.is_geometry_export()
         && loaded
@@ -316,6 +338,20 @@ pub fn convert(
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut stderr, report)?;
         writeln!(stderr)?;
+    }
+    if let Some(refusal) =
+        lossy_refusal(settings.reject_lossy, loaded.decode_report.as_ref(), format)
+    {
+        write_command_report(
+            path,
+            settings.report.as_deref(),
+            settings.force,
+            "convert",
+            loaded.decode_report.as_ref(),
+            None,
+            None,
+        )?;
+        return Err(refusal);
     }
     let validation = validate_ir(
         &loaded.ir,
@@ -388,23 +424,29 @@ pub fn diff(
     args: &DecodeArgs,
     json: bool,
 ) -> Result<ExitCode> {
-    let left = loader::load_ir(registry, a, args.options(), None)?.ir;
-    let right = loader::load_ir(registry, b, args.options(), None)?.ir;
-    let result = cadmpeg_ir::diff(&left, &right);
+    let left = loader::load_ir(registry, a, args.options(), None)?;
+    let right = loader::load_ir(registry, b, args.options(), None)?;
+    let result = cadmpeg_ir::diff(&left.ir, &right.ir);
+    let fidelity = fidelity_diff(
+        left.source_fidelity.as_ref(),
+        right.source_fidelity.as_ref(),
+    );
+    let different = !result.is_empty() || fidelity_differs(&fidelity);
     if json {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
                 "schema_version": CLI_SCHEMA_VERSION,
                 "command": "diff",
-                "different": !result.is_empty(),
+                "different": different,
                 "diff": result,
+                "source_fidelity": fidelity_json(&fidelity),
             }))?
         );
-        return Ok(if result.is_empty() {
-            ExitCode::SUCCESS
-        } else {
+        return Ok(if different {
             ExitCode::from(1)
+        } else {
+            ExitCode::SUCCESS
         });
     }
     println!("diff {} vs {}", a.display(), b.display());
@@ -434,11 +476,114 @@ pub fn diff(
             .collect();
         print_id_delta("modified", &modified);
     }
-    if result.is_empty() {
+    print_fidelity_summary(&fidelity);
+    if different {
+        Ok(ExitCode::from(1))
+    } else {
         println!("  identical");
         Ok(ExitCode::SUCCESS)
-    } else {
-        Ok(ExitCode::from(1))
+    }
+}
+
+enum FidelitySummary {
+    /// Neither decode reported a sidecar, for example when both inputs are CADIR JSON.
+    None,
+    /// Only the left input reported a sidecar.
+    OnlyLeft,
+    /// Only the right input reported a sidecar.
+    OnlyRight,
+    /// Both inputs reported a sidecar; the interpreted delta between them.
+    Both(FidelityDiff),
+}
+
+struct FidelityDiff {
+    version: Option<(String, String)>,
+    annotations_changed: bool,
+    retained_records_changed: bool,
+}
+
+impl FidelityDiff {
+    fn between(left: &SourceFidelity, right: &SourceFidelity) -> Self {
+        Self {
+            version: (left.version != right.version)
+                .then(|| (left.version.clone(), right.version.clone())),
+            annotations_changed: left.annotations != right.annotations,
+            retained_records_changed: left.retained_records != right.retained_records,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.version.is_none() && !self.annotations_changed && !self.retained_records_changed
+    }
+}
+
+fn fidelity_diff(left: Option<&SourceFidelity>, right: Option<&SourceFidelity>) -> FidelitySummary {
+    match (left, right) {
+        (Some(left), Some(right)) => FidelitySummary::Both(FidelityDiff::between(left, right)),
+        (Some(_), None) => FidelitySummary::OnlyLeft,
+        (None, Some(_)) => FidelitySummary::OnlyRight,
+        (None, None) => FidelitySummary::None,
+    }
+}
+
+fn fidelity_differs(summary: &FidelitySummary) -> bool {
+    match summary {
+        FidelitySummary::None => false,
+        FidelitySummary::OnlyLeft | FidelitySummary::OnlyRight => true,
+        FidelitySummary::Both(diff) => !diff.is_empty(),
+    }
+}
+
+fn fidelity_json(summary: &FidelitySummary) -> serde_json::Value {
+    match summary {
+        FidelitySummary::None => serde_json::Value::Null,
+        FidelitySummary::OnlyLeft => serde_json::json!({ "present": "left_only" }),
+        FidelitySummary::OnlyRight => serde_json::json!({ "present": "right_only" }),
+        FidelitySummary::Both(diff) => serde_json::json!({
+            "present": "both",
+            "different": !diff.is_empty(),
+            "diff": fidelity_delta_json(diff),
+        }),
+    }
+}
+
+fn fidelity_delta_json(diff: &FidelityDiff) -> serde_json::Value {
+    let mut value = serde_json::json!({
+        "annotations_changed": diff.annotations_changed,
+        "retained_records_changed": diff.retained_records_changed,
+    });
+    if let Some(version) = &diff.version {
+        value["version"] = serde_json::json!(version);
+    }
+    value
+}
+
+fn print_fidelity_summary(summary: &FidelitySummary) {
+    let diff = match summary {
+        FidelitySummary::None => return,
+        FidelitySummary::OnlyLeft => {
+            println!("  source fidelity: present on left only (not comparable)");
+            return;
+        }
+        FidelitySummary::OnlyRight => {
+            println!("  source fidelity: present on right only (not comparable)");
+            return;
+        }
+        FidelitySummary::Both(diff) => diff,
+    };
+    if diff.is_empty() {
+        println!("  source fidelity: identical");
+        return;
+    }
+    println!("  source fidelity:");
+    if let Some((before, after)) = &diff.version {
+        println!("    version: {before} → {after}");
+    }
+    if diff.annotations_changed {
+        println!("    annotations changed");
+    }
+    if diff.retained_records_changed {
+        println!("    retained records changed");
     }
 }
 
@@ -446,6 +591,27 @@ fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
     report
         .map(|report| report.losses.clone())
         .unwrap_or_default()
+}
+
+/// When `--reject-lossy` is set and the decode reported any loss, the export is
+/// refused as a model refusal — [`SemanticFailure`], exit 1 — distinct from a
+/// decode error, which is an operational failure at exit 2. This is the
+/// `refused-lossy` category of the exit-code contract.
+fn lossy_refusal(
+    reject_lossy: bool,
+    report: Option<&DecodeReport>,
+    format: Format,
+) -> Option<anyhow::Error> {
+    if !reject_lossy {
+        return None;
+    }
+    let count = report.map_or(0, |report| report.losses.len());
+    (count > 0).then(|| {
+        semantic(format!(
+            "decode reported {count} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
+            format.name()
+        ))
+    })
 }
 
 fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format> {

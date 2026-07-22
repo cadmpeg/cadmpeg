@@ -618,8 +618,8 @@ mod tests {
     #[test]
     fn entity_index_is_not_part_of_exchange_equality() {
         let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=POINT();ENDSEC;END-ISO-10303-21;";
-        let indexed = parse(source).unwrap();
-        let untouched = parse(source).unwrap();
+        let indexed = parse(source).expect("required invariant");
+        let untouched = parse(source).expect("required invariant");
         assert_eq!(indexed.entities("POINT").count(), 1);
         assert_eq!(indexed, untouched);
     }

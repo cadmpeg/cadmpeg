@@ -3,7 +3,7 @@
 #![no_main]
 
 use cadmpeg_codec_freecad::FcstdCodec;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use libfuzzer_sys::fuzz_target;
 use std::io::Cursor;
 

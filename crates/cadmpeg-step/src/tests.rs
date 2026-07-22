@@ -4,7 +4,8 @@
 //! depends on an external STEP consumer.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
@@ -144,7 +145,7 @@ fn codec_detects_and_inspects_ap242_exchange_structure() {
     assert_eq!(codec.detect(b"PK\x03\x04"), Confidence::No);
 
     let summary = codec
-        .inspect(&mut Cursor::new(bytes))
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("inspect minimal AP242");
     assert_eq!(summary.format, "step");
     assert_eq!(summary.container_kind, "iso-10303-21-clear-text");
@@ -198,7 +199,7 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
 fn codec_inspects_edition3_sections_and_external_references() {
     let bytes = include_bytes!("../tests/fixtures/ap242_ed3_sections.p21");
     let summary = StepCodec::default()
-        .inspect(&mut Cursor::new(bytes))
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("inspect edition 3 sections");
 
     assert_eq!(
@@ -256,7 +257,7 @@ fn decode_reports_data_section_external_dependencies() {
         .contains(&"external source https://example.invalid/library item fastener-table".into()));
 
     let summary = StepCodec::default()
-        .inspect(&mut Cursor::new(bytes))
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("inspect external document dependencies");
     let dependencies = summary
         .entries

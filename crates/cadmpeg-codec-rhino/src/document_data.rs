@@ -438,7 +438,7 @@ fn render_settings(
 }
 
 /// Installs complete typed document-level metadata and named setting records.
-pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let properties = &scan.metadata.properties;
     let revisions = properties
         .revision_history
@@ -531,14 +531,14 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
         }
         for record in &table.records {
             let result = if record.typecode == ANNOTATION_SETTINGS {
-                annotation_settings(&scan.data, record.body.clone(), record.range.start, scale)
+                annotation_settings(scan.data, record.body.clone(), record.range.start, scale)
                     .map(|value| annotations.push(value))
             } else if record.typecode == GRID_DEFAULTS {
-                grid_defaults(&scan.data, record.body.clone(), record.range.start, scale)
+                grid_defaults(scan.data, record.body.clone(), record.range.start, scale)
                     .map(|value| grids.push(value))
             } else if record.typecode == RENDER_SETTINGS {
                 render_settings(
-                    &scan.data,
+                    scan.data,
                     record.body.clone(),
                     record.range.start,
                     scan.archive,

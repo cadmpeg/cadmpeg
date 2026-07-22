@@ -5,9 +5,12 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::CodecEntry;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let _ = cadmpeg_step::StepCodec::default().inspect(&mut Cursor::new(data));
+    let _ = cadmpeg_step::StepCodec::default().inspect(
+        &mut Cursor::new(data),
+        &cadmpeg_ir::decode::InspectOptions::default(),
+    );
 });

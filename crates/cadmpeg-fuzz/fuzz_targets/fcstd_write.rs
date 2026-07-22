@@ -5,7 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_freecad::{FcstdCodec, FcstdPropertyOwner};
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

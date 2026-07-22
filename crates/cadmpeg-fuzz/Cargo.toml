@@ -17,8 +17,8 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d" }
 cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad" }
-cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt" }
-cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia", features = ["fuzz"] }
+cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt", features = ["fuzzing"] }
+cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia" }
 cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo" }
 cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx" }
 cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino", features = ["fuzzing"] }
@@ -221,6 +221,34 @@ bench = false
 [[bin]]
 name = "sldprt_container_scan"
 path = "fuzz_targets/sldprt_container_scan.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sldprt_spline_curves"
+path = "fuzz_targets/sldprt_spline_curves.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sldprt_spline_surfaces"
+path = "fuzz_targets/sldprt_spline_surfaces.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sldprt_topology"
+path = "fuzz_targets/sldprt_topology.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sldprt_entity"
+path = "fuzz_targets/sldprt_entity.rs"
 test = false
 doc = false
 bench = false
@@ -513,6 +541,97 @@ bench = false
 [[bin]]
 name = "rhino_subd"
 path = "fuzz_targets/rhino_subd.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rhino_cage"
+path = "fuzz_targets/rhino_cage.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rhino_hatch"
+path = "fuzz_targets/rhino_hatch.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rhino_polyedge"
+path = "fuzz_targets/rhino_polyedge.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_value_block"
+path = "fuzz_targets/catia_value_block.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_catalog"
+path = "fuzz_targets/catia_catalog.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_object_graph"
+path = "fuzz_targets/catia_object_graph.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_topology"
+path = "fuzz_targets/catia_topology.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "creo_datum"
+path = "fuzz_targets/creo_datum.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "creo_scalar"
+path = "fuzz_targets/creo_scalar.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_om"
+path = "fuzz_targets/nx_om.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_topology"
+path = "fuzz_targets/nx_topology.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_deltas"
+path = "fuzz_targets/nx_deltas.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_intersection"
+path = "fuzz_targets/nx_intersection.rs"
 test = false
 doc = false
 bench = false

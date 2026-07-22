@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-
-//! End-to-end command behavior and output-contract tests.
+//! CLI integration tests.
 
 #![allow(clippy::unwrap_used)]
 
@@ -8,7 +7,7 @@ use std::fs;
 use std::io::{Cursor, Write};
 
 use assert_cmd::Command;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::*;
 use tempfile::tempdir;
@@ -187,9 +186,18 @@ fn minimal_rhino_archive(
     name: &str,
     version_text: &str,
 ) -> std::path::PathBuf {
+    minimal_rhino_archive_with_comment(dir, name, version_text, b"cadmpeg test")
+}
+
+fn minimal_rhino_archive_with_comment(
+    dir: &std::path::Path,
+    name: &str,
+    version_text: &str,
+    comment: &[u8],
+) -> std::path::PathBuf {
     let version = version_text.parse::<u64>().unwrap();
     let mut bytes = rhino_header(version_text);
-    bytes.extend(rhino_long_chunk(version, 0x0000_0001, b"cadmpeg test"));
+    bytes.extend(rhino_long_chunk(version, 0x0000_0001, comment));
     bytes.extend(rhino_table(version, 0x1000_0014));
     bytes.extend(rhino_table(version, 0x1000_0015));
     bytes.extend(rhino_table(version, 0x1000_0013));
@@ -488,6 +496,30 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
 }
 
 #[test]
+fn diff_summarizes_the_source_fidelity_sidecar_for_native_inputs() {
+    let dir = tempdir().unwrap();
+    let a = minimal_rhino_archive(dir.path(), "a.3dm", "50");
+    let b = minimal_rhino_archive(dir.path(), "b.3dm", "50");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["diff", a.to_str().unwrap(), b.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("source fidelity: identical"));
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["diff", "--json", a.to_str().unwrap(), b.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("\"source_fidelity\"")
+                .and(predicate::str::contains("\"present\": \"both\"")),
+        );
+}
+
+#[test]
 fn garbage_reports_supported_formats() {
     let dir = tempdir().unwrap();
     let input = dir.path().join("garbage.bin");
@@ -529,7 +561,7 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");
@@ -852,6 +884,60 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
 }
 
 #[test]
+fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
+    let dir = tempdir().unwrap();
+    let lossy = geometryless_creo(dir.path(), "lossy.prt");
+
+    // `--reject-lossy` turns a lossy decode into a model refusal (exit 1),
+    // distinct from a decode error (exit 2). It is checked before the
+    // empty-geometry gate, so `--allow-empty` does not suppress it.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "export",
+            lossy.to_str().unwrap(),
+            "-f",
+            "step",
+            "--allow-empty",
+            "--reject-lossy",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("refusing to write a lossy"));
+
+    let report = dir.path().join("lossy-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            lossy.to_str().unwrap(),
+            "-f",
+            "step",
+            "--allow-empty",
+            "--reject-lossy",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1);
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert!(value["decode_report"].is_object());
+    assert!(value["export"].is_null());
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "export",
+            lossy.to_str().unwrap(),
+            "-f",
+            "step",
+            "--allow-empty",
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
 fn convert_rejects_empty_native_geometry_unless_allowed() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
@@ -926,7 +1012,7 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
         .success();
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(success_report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["command"], "convert");
     assert!(value["decode_report"].is_null());
     assert!(value["validation_report"].is_object());
@@ -979,7 +1065,7 @@ fn f3d_export_report_identifies_regenerated_output() {
         .assert()
         .success();
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["export"]["format"], "f3d");
     assert!(value["export"]["notes"]
         .as_array()
@@ -1048,7 +1134,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["command"], "validate");
 
     let diff = Command::cargo_bin("cadmpeg")
@@ -1062,7 +1148,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&diff.stdout).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["command"], "diff");
 
     let native = geometryless_creo(dir.path(), "ambiguous.bin");
@@ -1079,7 +1165,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .unwrap();
     assert!(inspect.status.success());
     let value: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["command"], "inspect");
 }
 

@@ -5,14 +5,12 @@
 //! support ladder. The codec provides bounded 3DM container inspection, typed
 //! decoding, and explicitly versioned semantic native writing.
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder, ReadSeek,
-};
+use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{ExportReport, LossCategory, LossCode, LossNote, Severity};
 use std::io::Write;
 
-pub(crate) mod accounting;
 pub(crate) mod annotations;
 pub(crate) mod brep;
 pub(crate) mod cage;
@@ -100,16 +98,20 @@ impl Codec for RhinoCodec {
         }
     }
 
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        container::inspect(reader)
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        container::inspect(root)
     }
 
-    fn decode(
+    fn decode_impl(
         &self,
-        reader: &mut dyn ReadSeek,
-        options: &DecodeOptions,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        container::decode(reader, options.container_only)
+        container::decode(ctx, root, ctx.container_only())
     }
 }
 
@@ -146,6 +148,7 @@ impl Encoder for RhinoEncoder {
         let mut losses = Vec::new();
         if vertex_quantization {
             losses.push(LossNote {
+                code: LossCode::MeshVertexPrecision,
                 category: LossCategory::Geometry,
                 severity: Severity::Warning,
                 message: "archive version 50 stores standalone mesh vertices as f32".into(),
@@ -154,6 +157,7 @@ impl Encoder for RhinoEncoder {
         }
         if normal_quantization {
             losses.push(LossNote {
+                code: LossCode::MeshVertexPrecision,
                 category: LossCategory::Geometry,
                 severity: Severity::Warning,
                 message: "3DM mesh normals are stored as f32".into(),

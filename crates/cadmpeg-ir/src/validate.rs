@@ -20,13 +20,12 @@ use crate::geometry::{
 };
 use crate::math::Vector3;
 use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
-use crate::source_fidelity::{SourceFidelity, SOURCE_FIDELITY_VERSION};
+use crate::source_fidelity::SourceFidelity;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::LengthUnit;
 
 mod annotations_native;
-mod byte_ledger;
 mod carriers_parameterization;
 mod drawings;
 mod geometry_consistency;
@@ -43,7 +42,6 @@ mod subd;
 mod topology;
 
 use annotations_native::{check_annotations, check_native_links};
-use byte_ledger::check_byte_ledger;
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
 use geometry_consistency::{
@@ -129,22 +127,14 @@ pub fn validate_with_source_fidelity(
     losses: Vec<LossNote>,
 ) -> ValidationReport {
     let (mut report, mut all_ids) = validate_with_ids(ir, losses);
-    if source_fidelity.schema_version != SOURCE_FIDELITY_VERSION {
+    if let Err(error) = source_fidelity.validate() {
         report.findings.push(Finding {
-            check: Check::Version,
+            check: Check::PayloadIntegrity,
             severity: Severity::Error,
-            message: format!(
-                "unsupported source fidelity version {:?}; expected {:?}",
-                source_fidelity.schema_version, SOURCE_FIDELITY_VERSION
-            ),
+            message: format!("invalid source fidelity: {error}"),
             entity: None,
         });
     }
-    check_byte_ledger(
-        &source_fidelity.byte_ledger,
-        &source_fidelity.retained_records,
-        &mut report.findings,
-    );
     all_ids.extend(
         source_fidelity
             .retained_records

@@ -1082,7 +1082,9 @@ mod tests {
             },
         ];
         assert!(solve_absolute_orientation(&mut faces));
-        let second = faces[1].loops[0].resolved_members().unwrap();
+        let second = faces[1].loops[0]
+            .resolved_members()
+            .expect("required invariant");
         assert_eq!(second[0].serialized_index, 1);
         assert_eq!(second[1].serialized_index, 0);
         assert!(second.iter().all(|member| member.reversed));

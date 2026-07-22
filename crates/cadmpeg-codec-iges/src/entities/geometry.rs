@@ -205,6 +205,7 @@ pub(crate) struct Projection {
 
 pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
     LossNote {
+        code: cadmpeg_ir::LossCode::RecordNotTyped,
         category: LossCategory::Geometry,
         severity: Severity::Warning,
         message: format!(

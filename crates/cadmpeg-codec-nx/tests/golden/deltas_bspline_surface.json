@@ -167,21 +167,25 @@
       "losses": [
         {
           "category": "geometry",
+          "code": "carrier_summary",
           "message": "Decoded 0 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 1 analytic surface carrier(s) (0 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 1 analytic curve carrier(s) (0 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
         },
         {
           "category": "topology",
+          "code": "topology_not_transferred",
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
         },
         {
           "category": "topology",
+          "code": "decode_diagnostic",
           "message": "1 Parasolid deltas stream(s) were processed in validated UG_PART segment order. Equal-schema deltas were paired with the preceding partition. Exact-key BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact non-topology replacements and tombstones were applied using the last event for each key. Validated partition topology remained authoritative, including any point, curve, or surface carrier still referenced by surviving topology. Every terminal tombstone resolved to an exact current or earlier-added key.",
           "severity": "info"
         },
         {
           "category": "attribute",
+          "code": "attributes_not_transferred",
           "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
           "severity": "warning"
         }
@@ -245,10 +249,6 @@
           "nx:parasolid#1:deltas"
         ]
       },
-      "byte_ledger": {
-        "source_length": 0,
-        "spans": []
-      },
       "retained_records": [
         {
           "byte_len": 776,
@@ -267,7 +267,7 @@
           "stream": "nx:container"
         }
       ],
-      "schema_version": "1"
+      "version": "3"
     }
   },
   "inspect": {

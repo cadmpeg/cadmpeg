@@ -1476,7 +1476,7 @@ mod tests {
                     datum(4, [0.0, 0.0, 1.0], 0.0),
                     datum(799, [0.0, 1.0, 0.0], 1.0),
                 ],
-                surface_rows: &[generated_plane.clone()],
+                surface_rows: std::slice::from_ref(&generated_plane),
                 model_planes: &[],
                 outline_planes: &[],
                 plane_envelopes: &[],

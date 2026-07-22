@@ -2020,23 +2020,23 @@ impl CatiaNative {
             .collect::<Vec<_>>();
 
         namespace.version = CATIA_NATIVE_VERSION;
-        namespace.set_arena_owned("catalogs", catalogs)?;
-        namespace.set_arena_owned("consolidated_edge_nodes", consolidated_edge_nodes)?;
-        namespace.set_arena_owned("consolidated_edge_runs", consolidated_edge_runs)?;
-        namespace.set_arena_owned("consolidated_pcurves", consolidated_pcurves)?;
-        namespace.set_arena_owned(
+        namespace.set_arena("catalogs", &catalogs)?;
+        namespace.set_arena("consolidated_edge_nodes", &consolidated_edge_nodes)?;
+        namespace.set_arena("consolidated_edge_runs", &consolidated_edge_runs)?;
+        namespace.set_arena("consolidated_pcurves", &consolidated_pcurves)?;
+        namespace.set_arena(
             "consolidated_vertex_identities",
-            consolidated_vertex_identities,
+            &consolidated_vertex_identities,
         )?;
-        namespace.set_arena_owned("design_objects", design_objects)?;
-        namespace.set_arena_owned("external_references", external_references)?;
-        namespace.set_arena_owned("catalog_entries", entries)?;
-        namespace.set_arena_owned("object_graphs", object_graphs)?;
-        namespace.set_arena_owned("object_graph_records", records)?;
-        namespace.set_arena_owned("finjpl_segments", finjpl_segments)?;
-        namespace.set_arena_owned("alias_rows", alias_rows)?;
-        namespace.set_arena_owned("preview_images", preview_images)?;
-        namespace.set_arena_owned("value_blocks", value_blocks)?;
+        namespace.set_arena("design_objects", &design_objects)?;
+        namespace.set_arena("external_references", &external_references)?;
+        namespace.set_arena("catalog_entries", &entries)?;
+        namespace.set_arena("object_graphs", &object_graphs)?;
+        namespace.set_arena("object_graph_records", &records)?;
+        namespace.set_arena("finjpl_segments", &finjpl_segments)?;
+        namespace.set_arena("alias_rows", &alias_rows)?;
+        namespace.set_arena("preview_images", &preview_images)?;
+        namespace.set_arena("value_blocks", &value_blocks)?;
         debug_assert!(CATIA_ARENA_NAMES
             .iter()
             .all(|name| namespace.arenas.contains_key(*name)));

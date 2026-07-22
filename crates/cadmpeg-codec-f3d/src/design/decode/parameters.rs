@@ -11,7 +11,7 @@ use crate::records::{
     ConstructionRecipe, DesignParameter, DesignParameterCompanion, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
 };
-use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, u32_at, u64_at as read_u64};
 use std::collections::HashMap;
 
@@ -19,10 +19,7 @@ use std::collections::HashMap;
 /// `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`,
 /// `vertex_recipe_data`) from each design `BulkStream` entry in `scan`.
 /// `recipe_index` is assigned per `(kind, design_id)` group in stream order.
-pub fn decode_recipes(
-    _reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-) -> Result<Vec<ConstructionRecipe>, CodecError> {
+pub fn decode_recipes(scan: &ContainerScan) -> Result<Vec<ConstructionRecipe>, CodecError> {
     let mut out = Vec::new();
     for entry in scan.entries.iter().filter(|entry| {
         entry.role == role::BULKSTREAM
@@ -39,10 +36,7 @@ pub fn decode_recipes(
 }
 
 /// Decode every indexed parameter record in each Design `BulkStream`.
-pub fn decode_parameters(
-    _reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-) -> Result<Vec<DesignParameter>, CodecError> {
+pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries

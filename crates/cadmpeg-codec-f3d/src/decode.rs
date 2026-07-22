@@ -12,11 +12,12 @@
 
 use crate::native::F3dNative;
 use cadmpeg_ir::annotations::AnnotationBuilder;
-use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, DecodeResult};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::unknown::UnknownRecord;
 
@@ -106,6 +107,7 @@ fn report_unresolved_dimension_companions(report: &mut DecodeReport, native: &F3
     let count = unresolved_dimension_companion_count(native);
     if count != 0 {
         report.losses.push(LossNote {
+            code: LossCode::RecordNotTyped,
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
@@ -126,6 +128,7 @@ fn report_unresolved_configuration_rules(
     );
     if count != 0 {
         report.losses.push(LossNote {
+            code: LossCode::MetadataNotTransferred,
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
@@ -140,6 +143,7 @@ fn report_unresolved_configuration_rules(
     );
     if count != 0 {
         report.losses.push(LossNote {
+            code: LossCode::MetadataNotTransferred,
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
@@ -153,6 +157,7 @@ fn report_unresolved_configuration_rules(
     );
     if count != 0 {
         report.losses.push(LossNote {
+            code: LossCode::MetadataNotTransferred,
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
@@ -166,6 +171,7 @@ fn report_unresolved_configuration_rules(
     );
     if count != 0 {
         report.losses.push(LossNote {
+            code: LossCode::MetadataNotTransferred,
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
@@ -575,6 +581,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
     let gaps = design_projection_gaps(ir, native);
     if gaps.unresolved_body_bindings != 0 {
         report.losses.push(LossNote {
+            code: LossCode::ReferenceGraphNotClosed,
             category: LossCategory::Topology,
             severity: Severity::Warning,
             message: format!(
@@ -587,6 +594,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
     let mut push = |count: usize, message: String| {
         if count != 0 {
             report.losses.push(LossNote {
+                code: LossCode::FeatureHistoryRetained,
                 category: LossCategory::Other,
                 severity: Severity::Warning,
                 message,
@@ -787,17 +795,14 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
 }
 
 /// Decode a `.f3d` reader into a document and its loss report.
-pub fn decode(
-    reader: &mut dyn ReadSeek,
-    options: &DecodeOptions,
-) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan(reader)?;
+pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
+    let scan = container::scan(ctx, root)?;
 
     if crate::f3z::is_f3z(&scan) {
-        return crate::f3z::decode(&scan, options);
+        return crate::f3z::decode(ctx, &scan);
     }
 
-    if options.container_only {
+    if ctx.container_only() {
         let (mut ir, unknowns) = build_metadata_ir(&scan);
         annotate_docstruct(&mut ir, &scan);
         let annotations = populate_annotations(&ir, &scan, &F3dNative::default(), None, &unknowns);
@@ -834,7 +839,7 @@ pub fn decode(
                 .insert(binding.asm_body_key);
         }
         for candidate in &model_breps {
-            let Some(mut part) = try_decode_brep(reader, &scan, candidate)? else {
+            let Some(mut part) = try_decode_brep(&scan, candidate)? else {
                 continue;
             };
             let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
@@ -886,6 +891,7 @@ pub fn decode(
             let mut report = build_geometry_report(&scan, &brep);
             if decoded_brep_count != model_breps.len() {
                 report.losses.push(LossNote {
+                    code: LossCode::GeometryNotTransferred,
                     category: LossCategory::Geometry,
                     severity: Severity::Warning,
                     message: format!(
@@ -895,7 +901,7 @@ pub fn decode(
                     provenance: None,
                 });
             }
-            let decoded_materials = materials::decode_with_bodies(reader, &scan, &brep.body_keys)?;
+            let decoded_materials = materials::decode_with_bodies(&scan, &brep.body_keys)?;
             let annotation_records = std::mem::take(&mut brep.annotation_records);
             let (mut ir, mut native, unknowns) = build_geometry_ir(&scan, &active, brep);
             ir.model.subds = crate::tsm::decode(&scan)?;
@@ -903,39 +909,34 @@ pub fn decode(
             if let Some(history) = decode_asm_history(&scan, &active)? {
                 native.asm_histories.push(history);
             }
-            native.construction_recipes =
-                crate::design::decode::parameters::decode_recipes(reader, &scan)?;
+            native.construction_recipes = crate::design::decode::parameters::decode_recipes(&scan)?;
             native.persistent_references =
-                crate::design::decode::sketch::decode_persistent_references(reader, &scan)?;
+                crate::design::decode::sketch::decode_persistent_references(&scan)?;
             native.lost_edge_references =
-                crate::design::decode::sketch::decode_lost_edge_references(reader, &scan)?;
+                crate::design::decode::sketch::decode_lost_edge_references(&scan)?;
             native.design_material_assignments =
-                crate::materials::decode_design_assignments(reader, &scan)?;
-            native.design_objects = crate::design::decode::sketch::decode_objects(reader, &scan)?;
-            native.design_parameters =
-                crate::design::decode::parameters::decode_parameters(reader, &scan)?;
+                crate::materials::decode_design_assignments(&scan)?;
+            native.design_objects = crate::design::decode::sketch::decode_objects(&scan)?;
+            native.design_parameters = crate::design::decode::parameters::decode_parameters(&scan)?;
             native.design_entity_headers =
-                crate::design::decode::sketch::decode_entity_headers(reader, &scan)?;
+                crate::design::decode::sketch::decode_entity_headers(&scan)?;
             native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
-                reader,
                 &scan,
                 &native.design_entity_headers,
             )?;
             let sketch_relations = {
                 crate::design::decode::sketch::decode_sketch_relations(
-                    reader,
                     &scan,
                     &native.design_record_headers,
                     &native.design_entity_headers,
                 )?
             };
             native.sketch_relations = sketch_relations;
-            extend_related_design_records(reader, &scan, &mut native)?;
-            native.sketch_points =
-                crate::design::decode::sketch::decode_sketch_points(reader, &scan)?;
+            extend_related_design_records(&scan, &mut native)?;
+            native.sketch_points = crate::design::decode::sketch::decode_sketch_points(&scan)?;
             native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(&scan)?;
             native.sketch_curve_identities =
-                crate::design::decode::sketch::decode_sketch_curve_identities(reader, &scan)?;
+                crate::design::decode::sketch::decode_sketch_curve_identities(&scan)?;
             native.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(&scan)?;
             crate::design::decode::sketch::bind_sketch_graph(
                 &native.design_entity_headers,
@@ -997,8 +998,7 @@ pub fn decode(
                 &mut native.sketch_points,
                 &mut native.sketch_curve_identities,
             )?;
-            native.design_body_members =
-                crate::design::decode::body::decode_body_members(reader, &scan)?;
+            native.design_body_members = crate::design::decode::body::decode_body_members(&scan)?;
             native.design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
                 &scan,
                 Some(&active.name),
@@ -1198,7 +1198,7 @@ pub fn decode(
             ir.model
                 .spatial_sketch_constraints
                 .sort_by_key(|constraint| constraint.id.clone());
-            let act = crate::act::decode(reader, &scan)?;
+            let act = crate::act::decode(&scan)?;
             native.act_entities = act.entities;
             native.act_guids = act.guids;
             native.act_root_components = act.root_components;
@@ -1207,6 +1207,7 @@ pub fn decode(
             report_design_projection_gaps(&mut report, &ir, &native);
             if !native.lost_edge_references.is_empty() {
                 report.losses.push(LossNote {
+                code: LossCode::AttributesNotTransferred,
                     category: LossCategory::Attribute,
                     severity: Severity::Warning,
                     message: format!(
@@ -1271,36 +1272,30 @@ pub fn decode(
             native.asm_histories.push(history);
         }
     }
-    native.construction_recipes = crate::design::decode::parameters::decode_recipes(reader, &scan)?;
+    native.construction_recipes = crate::design::decode::parameters::decode_recipes(&scan)?;
     native.persistent_references =
-        crate::design::decode::sketch::decode_persistent_references(reader, &scan)?;
+        crate::design::decode::sketch::decode_persistent_references(&scan)?;
     native.lost_edge_references =
-        crate::design::decode::sketch::decode_lost_edge_references(reader, &scan)?;
-    native.design_material_assignments =
-        crate::materials::decode_design_assignments(reader, &scan)?;
-    native.design_objects = crate::design::decode::sketch::decode_objects(reader, &scan)?;
-    native.design_parameters = crate::design::decode::parameters::decode_parameters(reader, &scan)?;
-    native.design_entity_headers =
-        crate::design::decode::sketch::decode_entity_headers(reader, &scan)?;
-    native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
-        reader,
-        &scan,
-        &native.design_entity_headers,
-    )?;
+        crate::design::decode::sketch::decode_lost_edge_references(&scan)?;
+    native.design_material_assignments = crate::materials::decode_design_assignments(&scan)?;
+    native.design_objects = crate::design::decode::sketch::decode_objects(&scan)?;
+    native.design_parameters = crate::design::decode::parameters::decode_parameters(&scan)?;
+    native.design_entity_headers = crate::design::decode::sketch::decode_entity_headers(&scan)?;
+    native.design_record_headers =
+        crate::design::decode::sketch::decode_record_headers(&scan, &native.design_entity_headers)?;
     let sketch_relations = {
         crate::design::decode::sketch::decode_sketch_relations(
-            reader,
             &scan,
             &native.design_record_headers,
             &native.design_entity_headers,
         )?
     };
     native.sketch_relations = sketch_relations;
-    extend_related_design_records(reader, &scan, &mut native)?;
-    native.sketch_points = crate::design::decode::sketch::decode_sketch_points(reader, &scan)?;
+    extend_related_design_records(&scan, &mut native)?;
+    native.sketch_points = crate::design::decode::sketch::decode_sketch_points(&scan)?;
     native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(&scan)?;
     native.sketch_curve_identities =
-        crate::design::decode::sketch::decode_sketch_curve_identities(reader, &scan)?;
+        crate::design::decode::sketch::decode_sketch_curve_identities(&scan)?;
     native.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(&scan)?;
     crate::design::decode::sketch::bind_sketch_graph(
         &native.design_entity_headers,
@@ -1360,7 +1355,7 @@ pub fn decode(
         &mut native.sketch_points,
         &mut native.sketch_curve_identities,
     )?;
-    native.design_body_members = crate::design::decode::body::decode_body_members(reader, &scan)?;
+    native.design_body_members = crate::design::decode::body::decode_body_members(&scan)?;
     native.design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
         &scan,
         container::select_active_brep(&scan).map(|entry| entry.name.as_str()),
@@ -1556,11 +1551,11 @@ pub fn decode(
     ir.model
         .spatial_sketch_constraints
         .sort_by_key(|constraint| constraint.id.clone());
-    let act = crate::act::decode(reader, &scan)?;
+    let act = crate::act::decode(&scan)?;
     native.act_entities = act.entities;
     native.act_guids = act.guids;
     native.act_root_components = act.root_components;
-    let decoded_materials = materials::decode(reader, &scan)?;
+    let decoded_materials = materials::decode(&scan)?;
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
     annotate_docstruct(&mut ir, &scan);
@@ -1600,6 +1595,7 @@ fn annotate_docstruct(ir: &mut CadIr, scan: &ContainerScan) {
 /// A warning for a present but unparseable `RedirectionsStream.dat`.
 fn xref_parse_loss(error: &CodecError) -> LossNote {
     LossNote {
+        code: LossCode::MetadataNotTransferred,
         category: LossCategory::Metadata,
         severity: Severity::Warning,
         message: format!("external-reference table was not decoded: {error}"),
@@ -1626,6 +1622,7 @@ fn apply_assembly_classification(
             ))
     });
     report.losses.push(LossNote {
+        code: LossCode::AssemblyComponentsExternal,
         category: LossCategory::Geometry,
         severity: Severity::Info,
         message: format!(
@@ -1691,8 +1688,8 @@ fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) -> UnknownRecord 
         id: UnknownId(id.into()),
         offset: 0,
         byte_len: scan.source_image.len() as u64,
-        sha256: sha256_hex(&scan.source_image),
-        data: Some(scan.source_image.clone()),
+        sha256: sha256_hex(scan.source_image),
+        data: Some(scan.source_image.to_vec()),
         links: Vec::new(),
     }
 }
@@ -1972,7 +1969,6 @@ fn decode_asm_history(
 }
 
 fn extend_related_design_records(
-    reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     native: &mut F3dNative,
 ) -> Result<(), CodecError> {
@@ -2007,7 +2003,7 @@ fn extend_related_design_records(
         })
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(reader, scan, &indices)?
+        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
             .into_iter()
             .filter(|record| {
                 crate::ids::native_stream(&record.id).is_none_or(|scope| {
@@ -2049,7 +2045,7 @@ fn extend_related_design_records(
         })
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(reader, scan, &indices)?
+        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
             .into_iter()
             .filter(|record| {
                 crate::ids::native_stream(&record.id).is_none_or(|scope| {
@@ -2138,7 +2134,7 @@ fn extend_related_design_records(
         })
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(reader, scan, &indices)?
+        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
             .into_iter()
             .filter(|record| {
                 crate::ids::native_stream(&record.id).is_none_or(|stream| {
@@ -2202,7 +2198,7 @@ fn extend_related_design_records(
         })
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(reader, scan, &indices)?
+        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
             .into_iter()
             .filter(|record| {
                 crate::ids::native_stream(&record.id).is_none_or(|stream| {
@@ -2308,7 +2304,7 @@ fn extend_related_design_records(
         })
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(reader, scan, &indices)?
+        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
             .into_iter()
             .filter(|record| {
                 crate::ids::native_stream(&record.id).is_none_or(|stream| {
@@ -2450,11 +2446,7 @@ fn extend_related_design_records(
 /// Frame and decode the active BREP's SAB stream. Returns `None` when the stream
 /// is not a decodable `BinaryFile4`/`BinaryFile8` SAB, or frames but yields no
 /// geometry (leaving the caller to fall back to the container-metadata IR).
-fn try_decode_brep(
-    _reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-    active: &BrepFacts,
-) -> Result<Option<Brep>, CodecError> {
+fn try_decode_brep(scan: &ContainerScan, active: &BrepFacts) -> Result<Option<Brep>, CodecError> {
     let width = active.header.as_ref().map_or(0, |h| h.width);
     if width != 4 && width != 8 {
         return Ok(None);
@@ -2589,6 +2581,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
 
     if s.nurbs_surfaces > 0 {
         losses.push(LossNote {
+            code: LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -2601,6 +2594,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.nurbs_curves > 0 {
         losses.push(LossNote {
+            code: LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -2613,6 +2607,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.missing_face_surfaces > 0 {
         losses.push(LossNote {
+            code: LossCode::ReferenceGraphNotClosed,
             category: LossCategory::Topology,
             severity: Severity::Warning,
             message: format!(
@@ -2625,6 +2620,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.unknown_surface_faces > 0 {
         losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -2642,6 +2638,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.mesh_surface_faces > 0 {
         losses.push(LossNote {
+            code: LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -2653,6 +2650,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.procedural_curve_edges > 0 {
         losses.push(LossNote {
+            code: LossCode::ProceduralReduced,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -2667,6 +2665,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.undecoded_pcurve_refs > 0 {
         losses.push(LossNote {
+            code: LossCode::ReferenceGraphNotClosed,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -2681,6 +2680,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.partial_procedural_supports > 0 {
         losses.push(LossNote {
+            code: LossCode::ProceduralReduced,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -2692,6 +2692,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.other_records > 0 {
         losses.push(LossNote {
+            code: LossCode::RecordNotTyped,
             category: LossCategory::Attribute,
             severity: Severity::Warning,
             message: format!(
@@ -2707,6 +2708,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         });
     }
     losses.push(LossNote {
+        code: LossCode::MaterialNotTransferred,
         category: LossCategory::Material,
         severity: Severity::Warning,
         message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
@@ -2789,6 +2791,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 
     let mut losses = vec![
         LossNote {
+            code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
             message: format!(
@@ -2799,6 +2802,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             provenance: None,
         },
         LossNote {
+            code: LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message:
@@ -2808,6 +2812,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             provenance: None,
         },
         LossNote {
+            code: LossCode::MaterialNotTransferred,
             category: LossCategory::Material,
             severity: Severity::Warning,
             message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
@@ -2819,6 +2824,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 
     if container::select_active_brep(scan).is_none() {
         losses.push(LossNote {
+            code: LossCode::MissingGeometryStream,
             category: LossCategory::Geometry,
             severity: Severity::Error,
             message: "no ASM BREP stream (.smb/.smbh) was found in the container".to_string(),

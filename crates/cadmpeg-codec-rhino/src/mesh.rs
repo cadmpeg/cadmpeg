@@ -7,8 +7,11 @@
 //! [`CHANNEL_CURVATURE`] is two `f64`, and [`CHANNEL_NGON_GROUP`] is the
 //! retained native grouping record. Channel data is never unit-scaled.
 
+use std::borrow::Cow;
 use std::ops::Range;
 
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use flate2::{Decompress, FlushDecompress, Status};
@@ -18,6 +21,32 @@ use crate::chunks::{
 };
 use crate::curves::{error, unsupported, GeometryError};
 use crate::wire::Uuid;
+
+/// Decode context and root view used for mesh expansion.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct MeshExpand<'a> {
+    ctx: &'a DecodeContext<'a>,
+    root: View<'a>,
+}
+
+impl<'a> MeshExpand<'a> {
+    pub(crate) fn new(ctx: &'a DecodeContext<'a>, root: View<'a>) -> Self {
+        Self { ctx, root }
+    }
+
+    pub(crate) fn data(self) -> &'a [u8] {
+        self.root.window()
+    }
+
+    pub(crate) fn root(self) -> View<'a> {
+        self.root
+    }
+}
+
+/// Maps an expansion refusal to the mesh decoder error type.
+fn expansion_refused(offset: usize, refusal: &CodecError) -> GeometryError {
+    error(offset, &format!("mesh buffer expansion refused: {refusal}"))
+}
 
 /// `ON_Mesh` class UUID.
 pub(crate) const ON_MESH: Uuid = Uuid::from_canonical([
@@ -31,13 +60,17 @@ pub(crate) const CHANNEL_COLOR: u32 = 0x5248_0002;
 pub(crate) const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
 /// Codec-owned curvature channel kind.
 pub(crate) const CHANNEL_CURVATURE: u32 = 0x5248_0004;
+/// Maximum vertex count declared by one mesh.
 const MAX_MESH_VERTICES: usize = 1 << 24;
+/// Maximum face count declared by one mesh.
 const MAX_MESH_FACES: usize = 1 << 24;
+/// Maximum decompressed size of one mesh buffer.
 const MAX_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
+/// Maximum retained mesh-buffer bytes per document.
 const MAX_DOCUMENT_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
 
-/// Document-wide budget for retained decompressed mesh buffers.
-#[derive(Debug, Clone, Copy)]
+/// Monotonic document-wide count of retained mesh-buffer bytes.
+#[derive(Debug, Clone)]
 pub(crate) struct MeshBudget {
     used: usize,
     limit: usize,
@@ -57,15 +90,22 @@ impl MeshBudget {
         Self { used: 0, limit }
     }
 
-    fn charge(&mut self, bytes: usize) -> bool {
-        let Some(used) = self.used.checked_add(bytes) else {
-            return false;
-        };
-        if used > self.limit {
-            return false;
-        }
-        self.used = used;
-        true
+    /// Returns the retained-byte count, for cross-module tests.
+    #[cfg(test)]
+    pub(crate) fn used(&self) -> usize {
+        self.used
+    }
+
+    /// Returns whether `bytes` more fit within the cap.
+    fn has_room(&self, bytes: usize) -> bool {
+        self.used
+            .checked_add(bytes)
+            .is_some_and(|total| total <= self.limit)
+    }
+
+    /// Records retained bytes after admission.
+    fn commit(&mut self, bytes: usize) {
+        self.used = self.used.saturating_add(bytes);
     }
 }
 
@@ -107,21 +147,7 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
 
 /// Decodes one bounded `ON_Mesh` class-data payload.
 pub(crate) fn decode(
-    data: &[u8],
-    range: Range<usize>,
-    archive: ArchiveVersion,
-    options: MeshDecodeOptions,
-    document_budget: &mut MeshBudget,
-) -> Result<DecodedMesh, GeometryError> {
-    let checkpoint = *document_budget;
-    let result = decode_inner(data, range, archive, options, document_budget);
-    if result.is_err() {
-        *document_budget = checkpoint;
-    }
-    result
-}
-
-fn decode_inner(
+    expand: MeshExpand<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -213,6 +239,7 @@ fn decode_inner(
         )?;
     } else {
         read_compressed_channels(
+            expand,
             &mut reader,
             vertex_count,
             &mut decoded,
@@ -227,6 +254,7 @@ fn decode_inner(
     if major == 3 && minor >= 3 {
         let _mapping_id = uuid(&mut reader)?;
         let surface = read_buffer(
+            expand,
             &mut reader,
             vertex_count * 16,
             &mut decoded.warnings,
@@ -236,9 +264,12 @@ fn decode_inner(
             archive,
         )?;
         if let Some(bytes) = surface {
-            decoded
-                .channels
-                .push(channel(CHANNEL_SURFACE_PARAMETERS, 16, vertex_count, bytes));
+            decoded.channels.push(channel(
+                CHANNEL_SURFACE_PARAMETERS,
+                16,
+                vertex_count,
+                bytes.into_owned(),
+            ));
         }
     }
     if major == 3 && minor >= 4 && writer_version.is_some_and(|version| version >= 200_606_010) {
@@ -266,6 +297,7 @@ fn decode_inner(
     let mut double_vertices = None;
     if major == 3 && minor >= 7 && reader.bool()? {
         let (count, bytes) = read_double_chunk(
+            expand,
             &mut reader,
             archive,
             &mut decoded.warnings,
@@ -382,7 +414,10 @@ fn read_faces(
         .checked_add(quad_count)
         .filter(|count| *count <= MAX_MESH_FACES)
         .ok_or_else(|| error(reader.position(), "mesh triangle output budget exceeded"))?;
-    let mut result = Vec::with_capacity(triangle_count);
+    let mut result = Vec::new();
+    result
+        .try_reserve_exact(triangle_count)
+        .map_err(|_| error(reader.position(), "mesh triangle allocation failed"))?;
     for face in 0..faces {
         let mut indices = [0_u32; 4];
         for (slot, index) in indices.iter_mut().enumerate() {
@@ -399,6 +434,7 @@ fn read_faces(
             result.push([indices[0], indices[2], indices[3]]);
         }
     }
+    debug_assert_eq!(result.len(), triangle_count);
     Ok(result)
 }
 
@@ -449,6 +485,7 @@ fn read_raw_channels(
 }
 
 fn read_compressed_channels(
+    expand: MeshExpand<'_>,
     reader: &mut BoundedReader<'_>,
     vertices: usize,
     decoded: &mut MeshChannels,
@@ -466,6 +503,7 @@ fn read_compressed_channels(
     let names = ["vertices", "normals", "UV", "curvature", "colors"];
     for (index, expected_size) in expected.into_iter().enumerate() {
         let bytes = read_buffer(
+            expand,
             reader,
             expected_size,
             &mut decoded.warnings,
@@ -483,16 +521,17 @@ fn read_compressed_channels(
                     .warnings
                     .push("normals channel contains nonfinite values".to_string()),
             },
-            2 => decoded
-                .channels
-                .push(channel(CHANNEL_UV, 8, vertices, bytes)),
-            3 => decoded
-                .channels
-                .push(channel(CHANNEL_CURVATURE, 16, vertices, bytes)),
-            4 => decoded
-                .channels
-                .push(channel(CHANNEL_COLOR, 4, vertices, bytes)),
-            _ => unreachable!(),
+            _ => {
+                let (kind, item_size) = match index {
+                    2 => (CHANNEL_UV, 8),
+                    3 => (CHANNEL_CURVATURE, 16),
+                    4 => (CHANNEL_COLOR, 4),
+                    _ => unreachable!(),
+                };
+                decoded
+                    .channels
+                    .push(channel(kind, item_size, vertices, bytes.into_owned()));
+            }
         }
     }
     if decoded.vertices.len() != vertices {
@@ -527,7 +566,9 @@ fn read_counted_raw(
     Ok(Some(data))
 }
 
-fn read_buffer(
+#[allow(clippy::too_many_arguments)]
+fn read_buffer<'a>(
+    expand: MeshExpand<'a>,
     reader: &mut BoundedReader<'_>,
     expected: usize,
     warnings: &mut Vec<String>,
@@ -535,8 +576,7 @@ fn read_buffer(
     decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
     archive: ArchiveVersion,
-) -> Result<Option<Vec<u8>>, GeometryError> {
-    let budget_checkpoint = *document_budget;
+) -> Result<Option<Cow<'a, [u8]>>, GeometryError> {
     let declared = reader.u32()? as usize;
     if declared == 0 {
         return Ok(None);
@@ -556,7 +596,8 @@ fn read_buffer(
                 "mesh cumulative buffer budget exceeded",
             )
         })?;
-    if !document_budget.charge(declared) {
+    // Admit before allocation; commit only after the bytes become resident.
+    if !document_budget.has_room(declared) {
         return Err(error(
             reader.position() - 4,
             "document mesh buffer budget exceeded",
@@ -564,10 +605,12 @@ fn read_buffer(
     }
     let crc = reader.u32()?;
     let method = reader.u8()?;
-    let (bytes, consumed) = match method {
+    let (bytes, consumed): (Cow<'a, [u8]>, usize) = match method {
         0 => {
             let mut input = reader.unread()?;
-            (input.take(declared)?.to_vec(), declared)
+            let stored = input.take(declared)?.to_vec();
+            document_budget.commit(declared);
+            (Cow::Owned(stored), declared)
         }
         1 => {
             let chunk = chunk_at(
@@ -583,9 +626,22 @@ fn read_buffer(
                     "compressed buffer is not anonymous",
                 ));
             }
-            let input =
-                BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
-            let (bytes, compressed) = inflate(input, declared)?;
+            let source = expand
+                .root
+                .child(chunk.body.start, chunk.body.end)
+                .ok_or_else(|| {
+                    error(
+                        chunk.body.start,
+                        "compressed buffer body escapes the root view",
+                    )
+                })?;
+            debug_assert_eq!(
+                source.window(),
+                &reader.backing_bytes()[chunk.body.start..chunk.body.end],
+                "expansion source must alias the compressed chunk body"
+            );
+            let (view, compressed) = inflate(expand, source, declared)?;
+            document_budget.commit(declared);
             if compressed != chunk.body.len() {
                 return Err(error(
                     chunk.body.start + compressed,
@@ -598,7 +654,10 @@ fn read_buffer(
             ) {
                 warnings.push(format!("{name} compressed chunk CRC mismatch"));
             }
-            (bytes, chunk.next_offset - reader.position())
+            (
+                Cow::Borrowed(view.window()),
+                chunk.next_offset - reader.position(),
+            )
         }
         _ => {
             return Err(error(
@@ -610,12 +669,10 @@ fn read_buffer(
     reader.skip(consumed)?;
     if bytes.len() != expected {
         warnings.push(format!("{name} compressed-buffer size mismatch"));
-        *document_budget = budget_checkpoint;
         return Ok(None);
     }
     if crc32fast::hash(&bytes) != crc {
         warnings.push(format!("{name} compressed-buffer CRC mismatch"));
-        *document_budget = budget_checkpoint;
         return Ok(None);
     }
     Ok(Some(bytes))
@@ -626,14 +683,23 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
     if data.len() < 2 {
         return;
     }
+    use cadmpeg_ir::decode::{DecodeArena, DecodePolicy};
+
     let expected = usize::from(u16::from_le_bytes([data[0], data[1]]));
     let Ok(mut reader) = BoundedReader::new(data, 2, data.len()) else {
         return;
     };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let Ok((ctx, root)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
+        return;
+    };
+    let expand = MeshExpand::new(&ctx, root);
     let mut warnings = Vec::new();
     let mut decompressed_bytes = 0;
     let mut document_budget = MeshBudget::new();
     let _ = read_buffer(
+        expand,
         &mut reader,
         expected,
         &mut warnings,
@@ -644,13 +710,19 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
     );
 }
 
-fn inflate(
-    mut reader: BoundedReader<'_>,
+/// Inflates one anonymous zlib mesh buffer to exactly `expected` bytes.
+fn inflate<'a>(
+    expand: MeshExpand<'a>,
+    source: View<'_>,
     expected: usize,
-) -> Result<(Vec<u8>, usize), GeometryError> {
-    let input = reader.take(reader.remaining())?;
+) -> Result<(View<'a>, usize), GeometryError> {
+    let input = source.window();
+    let base = source.start();
+    let mut writer = expand
+        .ctx
+        .begin_expand(source, ExpandSpec::Exact(expected as u64))
+        .map_err(|refusal| expansion_refused(base, &refusal))?;
     let mut decoder = Decompress::new(true);
-    let mut output = Vec::with_capacity(expected);
     let mut source_offset = 0;
     let mut buffer = [0_u8; 8192];
     loop {
@@ -658,31 +730,25 @@ fn inflate(
         let before_out = decoder.total_out();
         let status = decoder
             .decompress(&input[source_offset..], &mut buffer, FlushDecompress::None)
-            .map_err(|_| error(reader.position(), "malformed zlib buffer"))?;
+            .map_err(|_| error(base + source_offset, "malformed zlib buffer"))?;
         let consumed = (decoder.total_in() - before_in) as usize;
         source_offset = source_offset
             .checked_add(consumed)
-            .ok_or_else(|| error(reader.position(), "zlib input overflow"))?;
+            .ok_or_else(|| error(base, "zlib input overflow"))?;
         let produced = (decoder.total_out() - before_out) as usize;
-        if output
-            .len()
-            .checked_add(produced)
-            .is_none_or(|n| n > expected)
-        {
-            return Err(error(
-                reader.position(),
-                "zlib output exceeds declared size",
-            ));
-        }
-        output.extend_from_slice(&buffer[..produced]);
+        // The writer charges before retaining and rejects output past the
+        // declared size; a refusal fuses the context.
+        writer
+            .write(&buffer[..produced])
+            .map_err(|refusal| expansion_refused(base, &refusal))?;
         if status == Status::StreamEnd {
-            if output.len() != expected {
-                return Err(error(reader.position(), "zlib output size mismatch"));
-            }
-            return Ok((output, source_offset));
+            let view = writer
+                .finalize()
+                .map_err(|refusal| expansion_refused(base, &refusal))?;
+            return Ok((view, source_offset));
         }
         if consumed == 0 && produced == 0 {
-            return Err(error(reader.position(), "truncated zlib buffer"));
+            return Err(error(base, "truncated zlib buffer"));
         }
     }
 }
@@ -775,14 +841,22 @@ fn read_mapping_tag(
     Ok(())
 }
 
-fn read_double_chunk(
+/// A decoded double-vertex chunk: the declared vertex count, and the buffer
+/// bytes when it survived its size and CRC checks (an arena view for a
+/// compressed buffer, owned for a stored one). The count is returned even when
+/// the bytes are absent so the caller can distinguish a count mismatch from a
+/// dropped buffer.
+type DoubleVertexChunk<'a> = (usize, Option<Cow<'a, [u8]>>);
+
+fn read_double_chunk<'a>(
+    expand: MeshExpand<'a>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
     vertex_count: usize,
     decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
-) -> Result<(usize, Option<Vec<u8>>), GeometryError> {
+) -> Result<DoubleVertexChunk<'a>, GeometryError> {
     let chunk = chunk_at(
         reader.backing_bytes(),
         reader.position(),
@@ -810,6 +884,7 @@ fn read_double_chunk(
         .checked_mul(24)
         .ok_or_else(|| error(child.position(), "double-vertex size overflow"))?;
     let bytes = read_buffer(
+        expand,
         &mut child,
         expected,
         warnings,
@@ -945,6 +1020,16 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     ))
 }
 
+/// Reads a mesh element count bounded by the codec-local `cap`.
+///
+/// Unlike the identically named `count` helpers in `brep`, `curves`,
+/// `history`, and `morph`, this intentionally omits the
+/// `checked_count_bytes` remaining-bytes floor. Mesh element counts do not
+/// gate an immediate contiguous run of input: `vertex_count` addresses vertex
+/// data that may arrive zlib-compressed downstream (so `count * element_size`
+/// legitimately exceeds `reader.remaining()`), and `face_count` is floored at
+/// consumption by `reader.take(bytes)` in `read_faces`. Count-driven
+/// reservations are bounded by codec-local caps or the consumed byte count.
 fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
     let value = reader.i32()?;
     if value < 0 || value as usize > cap {
@@ -953,6 +1038,10 @@ fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryEr
     Ok(value as usize)
 }
 
+/// Reads an unsigned mesh count bounded by `cap`, sharing the deliberately
+/// unfloored contract documented on [`count`]: the `cap` bound does not floor
+/// the value against remaining input, so callers must consume it through
+/// a budget-charged allocator.
 fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
     let value = reader.u32()? as usize;
     if value > cap {
@@ -965,10 +1054,29 @@ fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, Geom
 mod tests {
     use std::io::Write;
 
+    use cadmpeg_ir::decode::{DecodeArena, DecodePolicy};
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
     use super::*;
+
+    fn with_expand<R>(data: &[u8], f: impl FnOnce(MeshExpand<'_>) -> R) -> R {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &policy).expect("root view");
+        f(MeshExpand::new(&ctx, root))
+    }
+
+    /// Like [`with_expand`], but under a caller-supplied policy.
+    fn with_expand_policy<R>(
+        data: &[u8],
+        policy: DecodePolicy,
+        f: impl FnOnce(MeshExpand<'_>) -> R,
+    ) -> R {
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &policy).expect("root view");
+        f(MeshExpand::new(&ctx, root))
+    }
 
     fn chunk(body: &[u8]) -> Vec<u8> {
         let mut result = 0x4000_8000_u32.to_le_bytes().to_vec();
@@ -1021,87 +1129,151 @@ mod tests {
     fn stored_buffer_consumes_adjacent_bytes() {
         let mut bytes = buffer(&[1, 2, 3], 0);
         bytes.push(0xaa);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Vec::new();
-        let mut budget = 0;
-        let mut document_budget = MeshBudget::new();
-        assert_eq!(
-            read_buffer(
-                &mut reader,
-                3,
-                &mut warnings,
-                "test",
-                &mut budget,
-                &mut document_budget,
-                ArchiveVersion::V8,
-            )
-            .expect("buffer"),
-            Some(vec![1, 2, 3])
-        );
-        assert_eq!(reader.u8().expect("adjacent"), 0xaa);
-        assert!(warnings.is_empty());
+        with_expand(&bytes, |expand| {
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            let mut warnings = Vec::new();
+            let mut budget = 0;
+            let mut document_budget = MeshBudget::new();
+            assert_eq!(
+                read_buffer(
+                    expand,
+                    &mut reader,
+                    3,
+                    &mut warnings,
+                    "test",
+                    &mut budget,
+                    &mut document_budget,
+                    ArchiveVersion::V8,
+                )
+                .expect("buffer")
+                .as_deref(),
+                Some(&[1, 2, 3][..])
+            );
+            assert_eq!(reader.u8().expect("adjacent"), 0xaa);
+            assert!(warnings.is_empty());
+        });
     }
 
     #[test]
     fn zlib_buffer_consumes_one_stream_only() {
         let mut bytes = buffer(&[4, 5, 6, 7], 1);
         bytes.extend(buffer(&[8], 0));
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Vec::new();
-        let mut budget = 0;
-        let mut document_budget = MeshBudget::new();
-        assert_eq!(
-            read_buffer(
-                &mut reader,
-                4,
-                &mut warnings,
-                "test",
-                &mut budget,
-                &mut document_budget,
-                ArchiveVersion::V8,
-            )
-            .expect("buffer"),
-            Some(vec![4, 5, 6, 7])
-        );
-        assert_eq!(
-            read_buffer(
-                &mut reader,
-                1,
-                &mut warnings,
-                "test",
-                &mut budget,
-                &mut document_budget,
-                ArchiveVersion::V8,
-            )
-            .expect("next"),
-            Some(vec![8])
-        );
+        with_expand(&bytes, |expand| {
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            let mut warnings = Vec::new();
+            let mut budget = 0;
+            let mut document_budget = MeshBudget::new();
+            assert_eq!(
+                read_buffer(
+                    expand,
+                    &mut reader,
+                    4,
+                    &mut warnings,
+                    "test",
+                    &mut budget,
+                    &mut document_budget,
+                    ArchiveVersion::V8,
+                )
+                .expect("buffer")
+                .as_deref(),
+                Some(&[4, 5, 6, 7][..])
+            );
+            assert_eq!(
+                read_buffer(
+                    expand,
+                    &mut reader,
+                    1,
+                    &mut warnings,
+                    "test",
+                    &mut budget,
+                    &mut document_budget,
+                    ArchiveVersion::V8,
+                )
+                .expect("next")
+                .as_deref(),
+                Some(&[8][..])
+            );
+        });
     }
 
     #[test]
-    fn crc_mismatch_consumes_boundary_drops_channel_and_rolls_back_budget() {
+    fn crc_mismatch_consumes_boundary_drops_channel_and_retains_budget_charge() {
         let mut bytes = buffer(&[1, 2], 0);
         bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Vec::new();
-        let mut budget = 0;
-        let mut document_budget = MeshBudget::new();
-        assert_eq!(
-            read_buffer(
-                &mut reader,
-                2,
+        with_expand(&bytes, |expand| {
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            let mut warnings = Vec::new();
+            let mut budget = 0;
+            let mut document_budget = MeshBudget::new();
+            assert_eq!(
+                read_buffer(
+                    expand,
+                    &mut reader,
+                    2,
+                    &mut warnings,
+                    "test",
+                    &mut budget,
+                    &mut document_budget,
+                    ArchiveVersion::V8,
+                )
+                .expect("buffer"),
+                None
+            );
+            assert_eq!(reader.remaining(), 0);
+            assert_eq!(warnings.len(), 1);
+            // The buffer was committed at retention and the drop does not refund
+            // it: a rollback here is what would let arena memory outrun the cap.
+            assert_eq!(document_budget.used, 2);
+        });
+    }
+
+    #[test]
+    fn dropped_compressed_buffer_keeps_its_document_budget_charge() {
+        // A well-formed zlib buffer with a wrong stored CRC: it inflates into
+        // the append-only arena (retention is permanent), passes its size check,
+        // then fails its CRC check and is dropped. The document budget must keep
+        // counting the retained bytes — refunding is exactly what let a hostile
+        // document ratchet arena memory past the cap while `used` fell to zero.
+        // With the cap set to one buffer, a second such buffer is refused before
+        // it can inflate.
+        let mut bytes = buffer(&[1, 2, 3, 4], 1);
+        bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
+        let mut document_budget = MeshBudget::with_limit(4);
+        with_expand(&bytes, |expand| {
+            let mut warnings = Vec::new();
+            let mut first = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            assert_eq!(
+                read_buffer(
+                    expand,
+                    &mut first,
+                    4,
+                    &mut warnings,
+                    "first",
+                    &mut 0,
+                    &mut document_budget,
+                    ArchiveVersion::V8,
+                )
+                .expect("first buffer inflates then drops"),
+                None
+            );
+            assert_eq!(document_budget.used, 4);
+            assert_eq!(warnings.len(), 1);
+            let mut second = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            let refused = read_buffer(
+                expand,
+                &mut second,
+                4,
                 &mut warnings,
-                "test",
-                &mut budget,
+                "second",
+                &mut 0,
                 &mut document_budget,
                 ArchiveVersion::V8,
-            )
-            .expect("buffer"),
-            None
-        );
-        assert_eq!(reader.remaining(), 0);
-        assert_eq!(warnings.len(), 1);
-        assert_eq!(document_budget.used, 0);
+            );
+            assert!(
+                refused.is_err(),
+                "a dropped-but-retained buffer must still occupy the document cap"
+            );
+        });
     }
 
     #[test]
@@ -1109,30 +1281,36 @@ mod tests {
         let mut bad = vec![1, 0, 0, 0];
         bad.extend(0_u32.to_le_bytes());
         bad.push(9);
-        let mut reader = BoundedReader::new(&bad, 0, bad.len()).expect("reader");
-        assert!(read_buffer(
-            &mut reader,
-            1,
-            &mut Vec::new(),
-            "bad",
-            &mut 0,
-            &mut MeshBudget::new(),
-            ArchiveVersion::V8,
-        )
-        .is_err());
+        with_expand(&bad, |expand| {
+            let mut reader = BoundedReader::new(&bad, 0, bad.len()).expect("reader");
+            assert!(read_buffer(
+                expand,
+                &mut reader,
+                1,
+                &mut Vec::new(),
+                "bad",
+                &mut 0,
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            )
+            .is_err());
+        });
         let mut truncated = buffer(&[1, 2, 3], 1);
         truncated.truncate(truncated.len() - 2);
-        let mut reader = BoundedReader::new(&truncated, 0, truncated.len()).expect("reader");
-        assert!(read_buffer(
-            &mut reader,
-            3,
-            &mut Vec::new(),
-            "short",
-            &mut 0,
-            &mut MeshBudget::new(),
-            ArchiveVersion::V8,
-        )
-        .is_err());
+        with_expand(&truncated, |expand| {
+            let mut reader = BoundedReader::new(&truncated, 0, truncated.len()).expect("reader");
+            assert!(read_buffer(
+                expand,
+                &mut reader,
+                3,
+                &mut Vec::new(),
+                "short",
+                &mut 0,
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            )
+            .is_err());
+        });
     }
 
     #[test]
@@ -1141,88 +1319,101 @@ mod tests {
             .to_le_bytes()
             .to_vec();
         bytes.extend([0; 5]);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        assert!(read_buffer(
-            &mut reader,
-            1,
-            &mut Vec::new(),
-            "bomb",
-            &mut 0,
-            &mut MeshBudget::new(),
-            ArchiveVersion::V8,
-        )
-        .is_err());
+        with_expand(&bytes, |expand| {
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            assert!(read_buffer(
+                expand,
+                &mut reader,
+                1,
+                &mut Vec::new(),
+                "bomb",
+                &mut 0,
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            )
+            .is_err());
+        });
     }
 
     #[test]
     fn cumulative_buffer_budget_rejects_another_channel() {
         let bytes = buffer(&[1], 0);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut budget = MAX_BUFFER_OUTPUT;
-        assert!(read_buffer(
-            &mut reader,
-            1,
-            &mut Vec::new(),
-            "budget",
-            &mut budget,
-            &mut MeshBudget::new(),
-            ArchiveVersion::V8,
-        )
-        .is_err());
+        with_expand(&bytes, |expand| {
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            let mut budget = MAX_BUFFER_OUTPUT;
+            assert!(read_buffer(
+                expand,
+                &mut reader,
+                1,
+                &mut Vec::new(),
+                "budget",
+                &mut budget,
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            )
+            .is_err());
+        });
     }
 
     #[test]
     fn document_buffer_budget_is_shared_across_meshes() {
         let bytes = buffer(&[1], 0);
         let mut document_budget = MeshBudget::with_limit(1);
-        for expected_success in [true, false] {
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let result = read_buffer(
-                &mut reader,
-                1,
-                &mut Vec::new(),
-                "aggregate",
-                &mut 0,
-                &mut document_budget,
-                ArchiveVersion::V8,
-            );
-            assert_eq!(result.is_ok(), expected_success);
-        }
+        with_expand(&bytes, |expand| {
+            for expected_success in [true, false] {
+                let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+                let result = read_buffer(
+                    expand,
+                    &mut reader,
+                    1,
+                    &mut Vec::new(),
+                    "aggregate",
+                    &mut 0,
+                    &mut document_budget,
+                    ArchiveVersion::V8,
+                );
+                assert_eq!(result.is_ok(), expected_success);
+            }
+        });
     }
 
     #[test]
     fn document_budget_rejects_second_complete_mesh() {
         let bytes = compressed_mesh();
         let mut budget = MeshBudget::with_limit(36);
-        decode(
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V5,
-            MeshDecodeOptions {
-                writer_version: None,
-                association: None,
-                id: "first".to_string(),
-                scale: 1.0,
-            },
-            &mut budget,
-        )
-        .expect("first mesh");
-        let error = decode(
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V5,
-            MeshDecodeOptions {
-                writer_version: None,
-                association: None,
-                id: "second".to_string(),
-                scale: 1.0,
-            },
-            &mut budget,
-        )
-        .expect_err("second mesh exceeds aggregate budget");
-        assert!(error
-            .to_string()
-            .contains("document mesh buffer budget exceeded"));
+        with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "first".to_string(),
+                    scale: 1.0,
+                },
+                &mut budget,
+            )
+            .expect("first mesh");
+            let error = decode(
+                expand,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "second".to_string(),
+                    scale: 1.0,
+                },
+                &mut budget,
+            )
+            .expect_err("second mesh exceeds aggregate budget");
+            assert!(error
+                .to_string()
+                .contains("document mesh buffer budget exceeded"));
+        });
     }
 
     #[test]
@@ -1248,11 +1439,13 @@ mod tests {
                     _ => unreachable!(),
                 }
             }
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            assert_eq!(
-                read_faces(&mut reader, vertices, 1).expect("face"),
-                vec![[0, 1, 2]]
-            );
+            with_expand(&bytes, |_expand| {
+                let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+                assert_eq!(
+                    read_faces(&mut reader, vertices, 1).expect("face"),
+                    vec![[0, 1, 2]]
+                );
+            });
         }
     }
 
@@ -1321,18 +1514,21 @@ mod tests {
     #[test]
     fn future_v5_mesh_minor_is_retained_unsupported() {
         let bytes = [0x38_u8];
-        let result = decode(
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V5,
-            MeshDecodeOptions {
-                writer_version: None,
-                association: None,
-                id: "test".to_string(),
-                scale: 1.0,
-            },
-            &mut MeshBudget::new(),
-        );
+        let result = with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "test".to_string(),
+                    scale: 1.0,
+                },
+                &mut MeshBudget::new(),
+            )
+        });
         assert!(matches!(
             result,
             Err(GeometryError::UnsupportedVersion { .. })
@@ -1344,5 +1540,97 @@ mod tests {
         let bytes = [2_u8];
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         assert!(reader.bool().is_err());
+    }
+
+    #[test]
+    fn nested_compressed_buffer_inflates_from_a_child_window() {
+        // A compressed mesh buffer wrapped inside an outer anonymous chunk, read
+        // through a child reader positioned at the nested body — the same shape
+        // as the double-vertex sub-chunk. The expander must take its source from
+        // `root.child(nested_body)`, several levels below the root, and inflate
+        // it correctly.
+        let inner = buffer(&[9, 8, 7, 6], 1);
+        let bytes = chunk(&inner);
+        with_expand(&bytes, |expand| {
+            let outer =
+                chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false).expect("outer chunk");
+            let mut child =
+                BoundedReader::new(&bytes, outer.body.start, outer.body.end).expect("child reader");
+            let decoded = read_buffer(
+                expand,
+                &mut child,
+                4,
+                &mut Vec::new(),
+                "nested",
+                &mut 0,
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            )
+            .expect("nested buffer");
+            assert_eq!(decoded.as_deref(), Some(&[9, 8, 7, 6][..]));
+        });
+    }
+
+    #[test]
+    fn cumulative_compressed_expansion_trips_the_platform_decompression_ceiling() {
+        // Two compressed buffers, each three bytes, decompressed under a shared
+        // platform context whose cumulative decompression ceiling is four bytes.
+        // The first expansion fits; the second pushes the cumulative total to six
+        // and is refused. The refusal fuses the context, so a swallowed
+        // `ResourceLimit` still aborts the decode at `finish`.
+        let first = buffer(&[1, 2, 3], 1);
+        let second = buffer(&[4, 5, 6], 1);
+        let mut data = first.clone();
+        data.extend_from_slice(&second);
+        let mut policy = DecodePolicy::desktop();
+        policy.limits.max_decompressed_bytes_total = 4;
+        with_expand_policy(&data, policy, |expand| {
+            let mut reader = BoundedReader::new(&data, 0, data.len()).expect("reader");
+            let decoded = read_buffer(
+                expand,
+                &mut reader,
+                3,
+                &mut Vec::new(),
+                "first",
+                &mut 0,
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            )
+            .expect("first expansion");
+            assert_eq!(decoded.as_deref(), Some(&[1, 2, 3][..]));
+            let refused = read_buffer(
+                expand,
+                &mut reader,
+                3,
+                &mut Vec::new(),
+                "second",
+                &mut 0,
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            );
+            assert!(refused.is_err(), "cumulative expansion must be refused");
+        });
+    }
+
+    #[test]
+    fn read_faces_charges_triangle_accumulator() {
+        let mut raw = 1_i32.to_le_bytes().to_vec();
+        raw.extend([0, 1, 2, 2]); // triangle (indices[2] == indices[3])
+        raw.extend([0, 1, 2, 0]); // quad -> two triangles
+        with_expand(&raw, |_expand| {
+            let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
+            let triangles = read_faces(&mut reader, 3, 2).expect("faces");
+            assert_eq!(triangles, vec![[0, 1, 2], [0, 1, 2], [0, 2, 0]]);
+        });
+    }
+
+    #[test]
+    fn read_faces_truncated_at_record_boundary() {
+        let mut raw = 1_i32.to_le_bytes().to_vec();
+        raw.extend([0, 1, 2, 2]); // only one of the two declared faces
+        with_expand(&raw, |_expand| {
+            let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
+            assert!(read_faces(&mut reader, 3, 2).is_err());
+        });
     }
 }

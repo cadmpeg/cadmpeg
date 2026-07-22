@@ -159,6 +159,7 @@ pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
             "The E5 reference graph is closed; face and loop orientation transfer, but body/shell orientation uses an incidence-derived gauge because the root's two trailing orientation signs remain unresolved."
         };
         vec![LossNote {
+            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Warning,
             message: message.to_string(),
@@ -166,6 +167,7 @@ pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
         }]
     } else {
         vec![LossNote {
+            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message: "E5 analytic carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding."
@@ -2113,8 +2115,8 @@ mod route_tests {
             vertex_refs: Vec::new(),
         };
 
-        let plan =
-            e5_ownership_plan(&topology(vec![face(1, 10)], vec![10]), &[(None, vec![1])]).unwrap();
+        let plan = e5_ownership_plan(&topology(vec![face(1, 10)], vec![10]), &[(None, vec![1])])
+            .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::Sheet);
         assert_eq!(plan[0].components, vec![vec![1]]);
 
@@ -2122,7 +2124,7 @@ mod route_tests {
             &topology(vec![face(1, 10), face(2, 10)], vec![10]),
             &[(None, vec![1, 2])],
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::Solid);
         assert_eq!(plan[0].components, vec![vec![1, 2]]);
 
@@ -2130,7 +2132,7 @@ mod route_tests {
             &topology(vec![face(1, 10), face(2, 11)], vec![10, 11]),
             &[(None, vec![1, 2])],
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::Sheet);
         assert_eq!(plan[0].components, vec![vec![1], vec![2]]);
 
@@ -2138,7 +2140,7 @@ mod route_tests {
             &topology(vec![face(1, 10), face(2, 10), face(3, 11)], vec![10, 11]),
             &[(None, vec![1, 2, 3])],
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::General);
         assert_eq!(plan[0].components, vec![vec![1, 2], vec![3]]);
 

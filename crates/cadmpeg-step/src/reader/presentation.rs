@@ -585,36 +585,6 @@ fn predefined(name: &str) -> Option<Color> {
     };
     Some(Color { r, g, b, a: 1.0 })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn surface_color_search_ignores_curve_style_colors() {
-        let exchange = crate::parse::parse(
-            b"ISO-10303-21;HEADER;ENDSEC;DATA;\
-#1=COLOUR_RGB('curve',0.,0.,1.);\
-#2=CURVE_STYLE('',#1);\
-#3=COLOUR_RGB('surface',1.,0.,0.);\
-#4=SURFACE_STYLE_FILL_AREA(#3);\
-#5=PRESENTATION_STYLE_ASSIGNMENT((#2,#4));\
-ENDSEC;END-ISO-10303-21;",
-        )
-        .expect("parse style graph");
-        let color = find_color(
-            5,
-            &exchange,
-            StyleDomain::Surface,
-            &mut BTreeSet::new(),
-            &mut BTreeMap::new(),
-            0,
-        )
-        .expect("surface color");
-        assert_eq!(color.1.r, 1.0);
-        assert_eq!(color.1.b, 0.0);
-    }
-}
 fn references(value: &Value) -> Vec<u64> {
     match value {
         Value::Reference(id) => vec![*id],
@@ -676,5 +646,35 @@ impl ValueExt for Value {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn surface_color_search_ignores_curve_style_colors() {
+        let exchange = crate::parse::parse(
+            b"ISO-10303-21;HEADER;ENDSEC;DATA;\
+#1=COLOUR_RGB('curve',0.,0.,1.);\
+#2=CURVE_STYLE('',#1);\
+#3=COLOUR_RGB('surface',1.,0.,0.);\
+#4=SURFACE_STYLE_FILL_AREA(#3);\
+#5=PRESENTATION_STYLE_ASSIGNMENT((#2,#4));\
+ENDSEC;END-ISO-10303-21;",
+        )
+        .expect("parse style graph");
+        let color = find_color(
+            5,
+            &exchange,
+            StyleDomain::Surface,
+            &mut BTreeSet::new(),
+            &mut BTreeMap::new(),
+            0,
+        )
+        .expect("surface color");
+        assert_eq!(color.1.r, 1.0);
+        assert_eq!(color.1.b, 0.0);
     }
 }

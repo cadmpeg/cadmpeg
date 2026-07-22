@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! SLDPRT helpers for appending sparse IR annotations.
+#![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
 

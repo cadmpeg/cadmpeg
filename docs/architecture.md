@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD containers through format codecs into neutral `CadIr` version 55 plus an independently versioned source-fidelity sidecar, then optionally validates and encodes them. [cad-ir.md](cad-ir.md) defines canonical units and parameterization, identity, topology, free carriers, sidecar annotations, and native-namespace contracts. [byte-accounting.md](byte-accounting.md) defines sidecar accounting. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
+cadmpeg routes native CAD containers through format codecs into neutral `CadIr` version 53 plus source annotations and retained native records, then optionally validates and encodes them. [cad-ir.md](cad-ir.md) defines canonical units and parameterization, identity, topology, free carriers, source annotations, retained records, and native-namespace contracts. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
 
 ## Pipeline
 
@@ -17,9 +17,13 @@ native CAD ── detect + inspect ──> container summary
 - `validate` reads or decodes an input and checks IR invariants.
 - `export` reads or decodes an input and writes CADIR, STEP, or SLDPRT without validation.
 - `convert` performs load/decode, validation, and export. Validation errors stop export unless `--allow-invalid` is set.
-- `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, and native namespaces. Source-fidelity annotations and byte ownership use the independent sidecar diff. ID-bearing records are matched by globally unique IDs. Vector position is not entity identity.
+- `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, native namespaces, source annotations, and retained records. ID-bearing records are matched by globally unique IDs. Vector position is not entity identity.
 
-CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 55, including its required `subds` arena and excluding source-byte accounting. Library callers can explicitly migrate version 54 with `CadIr::migrate_json`. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
+CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 53, including its required `subds` arena; source annotations and retained records remain outside the document. Library callers can explicitly migrate version 52 with `CadIr::migrate_json`. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
+
+## Decode session
+
+The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`. `DecodeContext` owns budget counters, the depth gauge, and the address-space registry; a `DecodeArena` owns byte buffers with stable addresses; and a `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field; the ownership model lives in `cadmpeg_ir::decode`.
 
 ## CLI stream and exit contract
 

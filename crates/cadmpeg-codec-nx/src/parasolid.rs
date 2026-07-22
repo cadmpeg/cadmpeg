@@ -5,10 +5,15 @@
 //! valid zlib headers. An inflated `PS 00 00` prologue identifies Parasolid
 //! neutral-binary data and supplies its subtype and optional `SCH_` schema token.
 //! Other inflated payloads are classified as [`StreamKind::Preview`].
+#![deny(clippy::disallowed_methods)]
 
-use cadmpeg_ir::compression::inflate_zlib_prefix;
+use std::io::Read;
 
-use crate::container;
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use flate2::read::ZlibDecoder;
+
+use crate::container::Container;
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +50,10 @@ impl StreamKind {
 pub struct Stream {
     /// Byte offset of the `78 01` zlib header in the source file.
     pub file_offset: usize,
+    /// Compressed input bytes the decoder consumed at `file_offset`.
+    ///
+    /// The physical extent `[file_offset, file_offset + consumed)` in the source.
+    pub consumed: u64,
     /// Inflated bytes.
     pub inflated: Vec<u8>,
     /// Payload classification.
@@ -337,7 +346,7 @@ fn entity_51_references(bytes: &[u8], at: &mut usize, count: usize) -> Option<Ve
     let start = *at;
     if bytes.get(*at) == Some(&1) {
         let mut prefixed_at = *at;
-        let mut references = Vec::with_capacity(count);
+        let mut references = Vec::new();
         for _ in 0..count {
             if bytes.get(prefixed_at) != Some(&1) {
                 references.clear();
@@ -457,56 +466,96 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
 /// this a `78 01` match is almost certainly a coincidence in packed data.
 const MIN_INFLATED: usize = 64;
 
-/// Locate, inflate, and classify zlib streams in `/Root/UG_PART/UG_PART`.
-///
-/// Returns an empty vector if `data` is not a valid SPLMSSTR image or the
-/// canonical part entry is absent or invalid. The scan remains inside that
-/// entry, excluding compressed payloads stored elsewhere in the container.
-pub fn extract_streams(data: &[u8]) -> Vec<Stream> {
-    let Ok(container) = container::scan_bytes(data.to_vec()) else {
-        return Vec::new();
-    };
+/// Chunk size for streaming inflated output through the expander.
+const INFLATE_CHUNK: usize = 8192;
+
+/// Locates, inflates, and classifies zlib streams in `/Root/UG_PART/UG_PART`.
+pub fn extract_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+    container: &Container,
+) -> Result<Vec<Stream>, CodecError> {
     let Some((part_offset, part_size)) = container
         .entries
         .iter()
         .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
         .and_then(|entry| entry.file_span)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let Ok(start) = usize::try_from(part_offset) else {
-        return Vec::new();
+    let (Ok(start), Ok(size)) = (usize::try_from(part_offset), usize::try_from(part_size)) else {
+        return Ok(Vec::new());
     };
-    let Ok(size) = usize::try_from(part_size) else {
-        return Vec::new();
+    let Some(end) = start.checked_add(size) else {
+        return Ok(Vec::new());
     };
-    let Some(part) = data.get(start..start.saturating_add(size)) else {
-        return Vec::new();
-    };
+    let part_view = ctx.register_slice(
+        root,
+        ByteRange {
+            start: start as u64,
+            end: end as u64,
+        },
+    )?;
+    let part = part_view.window();
 
     let mut streams = Vec::new();
     let mut i = 0usize;
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
-            if let Some(inflated) = inflate_zlib_prefix(&part[i..]) {
-                if inflated.len() >= MIN_INFLATED {
-                    let (kind, schema) = classify(&inflated);
-                    streams.push(Stream {
-                        file_offset: start + i,
-                        inflated,
-                        kind,
-                        schema,
-                    });
-                    // Resume after this header; a valid stream will not start
-                    // again inside its own compressed body at the very next byte.
-                    i += 2;
-                    continue;
-                }
+            if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i)? {
+                let (kind, schema) = classify(&inflated);
+                streams.push(Stream {
+                    file_offset: start + i,
+                    consumed,
+                    inflated,
+                    kind,
+                    schema,
+                });
+                // Resume past the bytes this member consumed, not at the next
+                // byte: a spurious `78 xx` zlib header inside the compressed
+                // body would otherwise inflate into a second stream whose source
+                // extent [file_offset, file_offset+consumed) overlaps this
+                // member's, double-attributing the same compressed bytes to two
+                // decompression origins. Skipping the consumed run keeps packed
+                // members' input extents disjoint.
+                i = i.saturating_add((consumed as usize).max(2));
+                continue;
             }
         }
         i += 1;
     }
-    streams
+    Ok(streams)
+}
+
+/// Inflates one zlib member that meets [`MIN_INFLATED`].
+fn inflate_stream<'a>(
+    ctx: &DecodeContext<'a>,
+    part_view: View<'a>,
+    offset: usize,
+) -> Result<Option<(Vec<u8>, u64)>, CodecError> {
+    let Some(source) = part_view.child(offset, part_view.end()) else {
+        return Ok(None);
+    };
+    let mut decoder = ZlibDecoder::new(source.window());
+    let mut writer = ctx.begin_expand(source, ExpandSpec::Unknown)?;
+    let mut inflated = Vec::new();
+    let mut chunk = [0u8; INFLATE_CHUNK];
+    loop {
+        match decoder.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => {
+                writer.write(&chunk[..read])?;
+                inflated.extend_from_slice(&chunk[..read]);
+            }
+            Err(_) => break,
+        }
+    }
+    if inflated.len() < MIN_INFLATED {
+        return Ok(None);
+    }
+    let consumed = decoder.total_in();
+    writer.finalize()?;
+    Ok(Some((inflated, consumed)))
 }
 
 /// A zlib header has compression method 8 and a 16-bit header divisible by
@@ -520,12 +569,9 @@ fn is_zlib_header(cmf: u8, flg: u8) -> bool {
 
 /// Classify an inflated payload from its prologue text and read the schema token.
 fn classify(inflated: &[u8]) -> (StreamKind, Option<String>) {
-    // A Parasolid neutral-binary stream begins `PS 00 00`.
     if !inflated.starts_with(b"PS\x00\x00") {
         return (StreamKind::Preview, None);
     }
-    // The prologue is ASCII up to `END_OF_HEADER`/the first record; scan a bounded
-    // window for the transmit subtype and the schema token.
     let window = &inflated[..inflated.len().min(512)];
     let kind = if contains(window, b"(partition)") {
         StreamKind::Partition

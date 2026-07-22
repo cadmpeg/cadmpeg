@@ -4,7 +4,7 @@
 use std::{collections::BTreeMap, io::Cursor};
 
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{

@@ -434,10 +434,14 @@ mod tests {
             byte_start: 0,
             byte_end: 0,
         };
-        let output = String::from_utf8(serialize_property(&property).unwrap()).unwrap();
+        let output = String::from_utf8(serialize_property(&property).expect("required invariant"))
+            .expect("required invariant");
         assert_eq!(output.matches(r#"value="same""#).count(), 1);
         assert_eq!(output.matches(r#"value="changed""#).count(), 1);
-        assert!(output.find("same").unwrap() < output.find("changed").unwrap());
+        assert!(
+            output.find("same").expect("required invariant")
+                < output.find("changed").expect("required invariant")
+        );
     }
 
     #[test]
@@ -449,7 +453,7 @@ mod tests {
             text: Some("a\tb\nc\rd".into()),
             raw_xml: r#"<String value="old">old</String>"#.into(),
         };
-        let serialized = serialize_value(&value).unwrap();
+        let serialized = serialize_value(&value).expect("required invariant");
         assert!(serialized.contains("a&#9;b&#10;c&#13;d"));
         assert_eq!(serialized.matches("&#9;").count(), 2);
         assert_eq!(serialized.matches("&#10;").count(), 2);

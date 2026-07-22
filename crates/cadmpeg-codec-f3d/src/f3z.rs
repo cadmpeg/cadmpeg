@@ -8,14 +8,13 @@
 //! and merges the component models into the root document with every
 //! occurrence-local Design placement applied from child to ancestor.
 
-use std::io::Cursor;
-
 use serde::Deserialize;
 use serde_value::Value;
 
-use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult};
+use cadmpeg_ir::codec::{CodecError, DecodeResult};
+use cadmpeg_ir::decode::DecodeContext;
 use cadmpeg_ir::document::Model;
-use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 
 use crate::container::ContainerScan;
 use crate::native::F3dNative;
@@ -52,18 +51,21 @@ pub fn is_f3z(scan: &ContainerScan) -> bool {
 }
 
 /// Decode a scanned `.f3z` archive into one merged document.
-pub fn decode(scan: &ContainerScan, options: &DecodeOptions) -> Result<DecodeResult, CodecError> {
+pub fn decode(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<DecodeResult, CodecError> {
     let manifest: ManifestJson = serde_json::from_slice(scan.entry_bytes(MANIFEST_ENTRY)?)
         .map_err(|error| {
             CodecError::Malformed(format!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
         })?;
-    let root_bytes = scan.entry_bytes(&manifest.root).map_err(|_| {
+    let root_view = scan.entry_view(&manifest.root).ok_or_else(|| {
         CodecError::Malformed(format!(
             "f3z root member {} is not present in the archive",
             manifest.root
         ))
     })?;
-    let mut root = crate::decode::decode(&mut Cursor::new(root_bytes.to_vec()), options)?;
+    let mut root = crate::decode::decode(ctx, root_view)?;
     let member_count = scan
         .entries
         .iter()
@@ -73,23 +75,18 @@ pub fn decode(scan: &ContainerScan, options: &DecodeOptions) -> Result<DecodeRes
         "f3z archive: {member_count} document member(s); root {}",
         manifest.root
     ));
-    if options.container_only {
+    if ctx.container_only() {
         return Ok(root);
     }
 
     let table = xref_table_from_ir(&root.ir)?;
     let mut stack = vec![manifest.root.clone()];
-    let merged = merge_references(&mut root, scan, *options, &table, &mut stack)?;
+    let merged = merge_references(ctx, &mut root, scan, &table, &mut stack)?;
     if merged > 0 {
-        root.report.losses.push(LossNote {
-            category: LossCategory::Metadata,
-            severity: Severity::Info,
-            message: format!(
-                "{merged} merged component(s) retain occurrence-scoped model entities and \
-                 native records; member source streams remain archive-local"
-            ),
-            provenance: None,
-        });
+        root.report.notes.push(format!(
+            "{merged} merged component(s) retain occurrence-scoped model entities and native \
+             records; member source streams remain archive-local"
+        ));
     }
     root.report.notes.push(format!(
         "merged {merged} external occurrence(s) from the f3z archive"
@@ -118,9 +115,9 @@ fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
 }
 
 fn merge_references(
+    ctx: &DecodeContext<'_>,
     parent: &mut DecodeResult,
-    scan: &ContainerScan,
-    options: DecodeOptions,
+    scan: &ContainerScan<'_>,
     table: &XrefTable,
     stack: &mut Vec<String>,
 ) -> Result<usize, CodecError> {
@@ -135,6 +132,7 @@ fn merge_references(
         );
         if stack.contains(&reference.relative_path) {
             parent.report.losses.push(LossNote {
+                code: LossCode::AssemblyComponentsExternal,
                 category: LossCategory::Geometry,
                 severity: Severity::Error,
                 message: format!(
@@ -145,8 +143,9 @@ fn merge_references(
             });
             continue;
         }
-        let Ok(member_bytes) = scan.entry_bytes(&reference.relative_path) else {
+        let Some(member_view) = scan.entry_view(&reference.relative_path) else {
             parent.report.losses.push(LossNote {
+                code: LossCode::AssemblyComponentsExternal,
                 category: LossCategory::Geometry,
                 severity: Severity::Error,
                 message: format!(
@@ -158,17 +157,15 @@ fn merge_references(
             });
             continue;
         };
-        let mut component =
-            crate::decode::decode(&mut Cursor::new(member_bytes.to_vec()), &options).map_err(
-                |error| {
-                    CodecError::Malformed(format!(
-                        "xref member {} failed to decode: {error}",
-                        reference.relative_path
-                    ))
-                },
-            )?;
+        let mut component = crate::decode::decode(ctx, member_view).map_err(|error| {
+            CodecError::Malformed(format!(
+                "xref member {} failed to decode: {error}",
+                reference.relative_path
+            ))
+        })?;
         if component.ir.units != parent.ir.units {
             parent.report.losses.push(LossNote {
+                code: LossCode::AssemblyComponentsExternal,
                 category: LossCategory::Geometry,
                 severity: Severity::Error,
                 message: format!(
@@ -181,7 +178,7 @@ fn merge_references(
         }
         let child_table = xref_table_from_ir(&component.ir)?;
         stack.push(reference.relative_path.clone());
-        let descendants = merge_references(&mut component, scan, options, &child_table, stack)?;
+        let descendants = merge_references(ctx, &mut component, scan, &child_table, stack)?;
         stack.pop();
         if let Some(transform) = reference.transform {
             apply_occurrence_transform(&mut component.ir.model, transform);

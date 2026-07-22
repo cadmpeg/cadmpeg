@@ -31,10 +31,12 @@ mod writer;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
+use std::io::Cursor;
 
 use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder, ReadSeek,
+    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder,
 };
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -1115,16 +1117,24 @@ impl Codec for FcstdCodec {
         }
     }
 
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        container::scan(reader).map(|scan| container::summarize(&scan))
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        container::scan(&mut Cursor::new(root.window())).map(|scan| container::summarize(&scan))
     }
 
-    fn decode(
+    fn decode_impl(
         &self,
-        reader: &mut dyn ReadSeek,
-        options: &DecodeOptions,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        let scan = container::scan(reader)?;
+        let options = DecodeOptions {
+            container_only: ctx.container_only(),
+            policy: *ctx.policy(),
+        };
+        let scan = container::scan(&mut Cursor::new(root.window()))?;
         if !options.container_only
             && (scan.document.schema_version != "4" || scan.document.file_version != "1")
         {
@@ -1197,7 +1207,7 @@ impl Codec for FcstdCodec {
         namespace.version = native::VERSION;
         namespace.set_arena("document", std::slice::from_ref(&scan.document))?;
         namespace.set_arena("physical_ledger", &scan.ledger)?;
-        #[allow(clippy::if_not_else)] // The full-decode path remains the primary linear flow.
+        #[allow(clippy::if_not_else)]
         if !options.container_only {
             let document_bytes = scan.data.get("Document.xml").ok_or_else(|| {
                 CodecError::Malformed("Document.xml disappeared after scan".into())
@@ -1443,6 +1453,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
                 return None;
             };
             Some(LossNote {
+                code: cadmpeg_ir::LossCode::FeatureHistoryRetained,
                 category: LossCategory::Other,
                 severity: Severity::Blocking,
                 message: format!(
@@ -1475,6 +1486,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             return None;
         };
         Some(LossNote {
+            code: cadmpeg_ir::LossCode::ParametricRecordOmitted,
             category: LossCategory::Other,
             severity: Severity::Blocking,
             message: "FCStd linear-pattern direction is retained as a native reference but is not geometrically resolved".into(),
@@ -1491,6 +1503,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             return None;
         };
         Some(LossNote {
+            code: cadmpeg_ir::LossCode::RecordNotTyped,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
             message: format!(
@@ -1511,6 +1524,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             return None;
         };
         Some(LossNote {
+            code: cadmpeg_ir::LossCode::RecordNotTyped,
             category: LossCategory::Other,
             severity: Severity::Blocking,
             message: format!(

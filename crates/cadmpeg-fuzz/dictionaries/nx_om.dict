@@ -1,0 +1,7 @@
+# NX object-model serialization tokens, for structure-aware fuzzing.
+"\x04\x01\x0eNX "
+"hostglobalvariables"
+"UGS::"
+"(Number ["
+"mm"
+"degrees"

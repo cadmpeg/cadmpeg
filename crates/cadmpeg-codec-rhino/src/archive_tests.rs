@@ -3,7 +3,7 @@
 use std::fmt::Write;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::report::Severity;
 use sha2::{Digest, Sha256};
@@ -75,11 +75,24 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
             cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
         ]
     );
-    assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 2);
-    assert!(result.ir.native_unknowns("rhino").unwrap()[0]
+    assert_eq!(
+        result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")
+            .len(),
+        2
+    );
+    assert!(result
+        .ir
+        .native_unknowns("rhino")
+        .expect("required invariant")[0]
         .links
         .contains(&result.ir.model.bodies[0].id.to_string()));
-    assert!(result.ir.native_unknowns("rhino").unwrap()[1]
+    assert!(result
+        .ir
+        .native_unknowns("rhino")
+        .expect("required invariant")[1]
         .links
         .contains(&result.ir.model.curves[0].id.to_string()));
     assert!(result.report.geometry_transferred);
@@ -100,10 +113,16 @@ fn future_and_semantically_invalid_objects_are_atomic_and_later_point_recovers()
             result.ir.model.points[0].position,
             cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
         );
-        assert!(result.ir.native_unknowns("rhino").unwrap()[0]
+        assert!(result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")[0]
             .links
             .is_empty());
-        assert!(!result.ir.native_unknowns("rhino").unwrap()[1]
+        assert!(!result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")[1]
             .links
             .is_empty());
         assert!(result
@@ -120,10 +139,12 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let large = object_record(1, [0; 16], &[0x55; 64]);
     let point = object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
     let bytes = archive(&[large.clone(), point.clone()]);
-    let scan = super::container::scan(bytes).expect("complete archive scan");
-    let mut context = super::decode::DecodeContext::new(&scan);
-    context.set_retention_limits(point.len(), point.len());
-    let result = context.commit();
+    let scan = super::container::scan_owned(bytes).expect("complete archive scan");
+    let result = super::decode::with_expand(&scan, |expand| {
+        let mut context = super::decode::DecodeContext::new(&scan, expand);
+        context.set_retention_limits(point.len(), point.len());
+        context.commit()
+    });
 
     let retained = &result.source_fidelity.retained_records;
     assert_eq!(retained[0].byte_len, large.len() as u64);
@@ -134,10 +155,12 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     assert_eq!(retained[1].data.as_deref(), Some(point.as_slice()));
 
     let two_points = archive(&[point.clone(), point.clone()]);
-    let scan = super::container::scan(two_points).expect("complete archive scan");
-    let mut context = super::decode::DecodeContext::new(&scan);
-    context.set_retention_limits(point.len(), point.len());
-    let result = context.commit();
+    let scan = super::container::scan_owned(two_points).expect("complete archive scan");
+    let result = super::decode::with_expand(&scan, |expand| {
+        let mut context = super::decode::DecodeContext::new(&scan, expand);
+        context.set_retention_limits(point.len(), point.len());
+        context.commit()
+    });
     assert_eq!(
         result.source_fidelity.retained_records[0].data.as_deref(),
         Some(point.as_slice())
@@ -159,12 +182,20 @@ fn repeat_decode_is_byte_deterministic_for_ir_and_report() {
     let second = decode(&bytes);
 
     assert_eq!(
-        first.ir.to_canonical_json().unwrap().as_bytes(),
-        second.ir.to_canonical_json().unwrap().as_bytes()
+        first
+            .ir
+            .to_canonical_json()
+            .expect("required invariant")
+            .as_bytes(),
+        second
+            .ir
+            .to_canonical_json()
+            .expect("required invariant")
+            .as_bytes()
     );
     assert_eq!(
-        serde_json::to_vec(&first.report).unwrap(),
-        serde_json::to_vec(&second.report).unwrap()
+        serde_json::to_vec(&first.report).expect("required invariant"),
+        serde_json::to_vec(&second.report).expect("required invariant")
     );
 }
 
@@ -184,7 +215,10 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
         let result = decode(&archive_version(version, &[object]));
         assert_eq!(result.ir.model.subds.len(), 1, "archive {version}");
         assert_eq!(result.ir.model.subds[0].faces[0].edges.len(), 4);
-        assert!(!result.ir.native_unknowns("rhino").unwrap()[0]
+        assert!(!result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")[0]
             .links
             .is_empty());
         assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
@@ -302,11 +336,18 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
     assert_eq!(components.len(), 2);
     assert!(components[0].as_str().contains("component-0"));
     assert!(components[1].as_str().contains("component-1"));
-    assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 6);
+    assert_eq!(
+        result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")
+            .len(),
+        6
+    );
     assert!(result
         .ir
         .native_unknowns("rhino")
-        .unwrap()
+        .expect("required invariant")
         .iter()
         .all(|record| !record.links.is_empty()));
     assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
@@ -369,10 +410,16 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
     let result = decode(&archive(&[bad_mesh, point]));
     assert!(result.ir.model.tessellations.is_empty());
     assert_eq!(result.ir.model.points.len(), 1);
-    assert!(result.ir.native_unknowns("rhino").unwrap()[0]
+    assert!(result
+        .ir
+        .native_unknowns("rhino")
+        .expect("required invariant")[0]
         .links
         .is_empty());
-    assert!(!result.ir.native_unknowns("rhino").unwrap()[1]
+    assert!(!result
+        .ir
+        .native_unknowns("rhino")
+        .expect("required invariant")[1]
         .links
         .is_empty());
     let failure = result
@@ -430,7 +477,10 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
         let expected_caps = if minor < 2 { 2 } else { 1 };
         assert_eq!(result.ir.model.faces.len(), expected_caps);
         assert_eq!(result.ir.model.tessellations.len(), usize::from(minor == 3));
-        assert!(!result.ir.native_unknowns("rhino").unwrap()[0]
+        assert!(!result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")[0]
             .links
             .is_empty());
         assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
@@ -532,8 +582,18 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         .pcurves
         .iter()
         .all(|pcurve| pcurve.fit_tolerance == Some(0.04)));
-    assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 1);
-    assert!(result.ir.native_unknowns("rhino").unwrap()[0]
+    assert_eq!(
+        result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")
+            .len(),
+        1
+    );
+    assert!(result
+        .ir
+        .native_unknowns("rhino")
+        .expect("required invariant")[0]
         .links
         .contains(&body.id.to_string()));
     assert!(result.report.geometry_transferred);
@@ -598,10 +658,16 @@ fn semantic_invalid_brep_keeps_only_free_c3_surface_and_later_point() {
     assert_eq!(model.curves.len(), 3);
     assert_eq!(model.surfaces.len(), 1);
     assert_eq!(model.points.len(), 1);
-    assert!(!result.ir.native_unknowns("rhino").unwrap()[0]
+    assert!(!result
+        .ir
+        .native_unknowns("rhino")
+        .expect("required invariant")[0]
         .links
         .is_empty());
-    assert!(!result.ir.native_unknowns("rhino").unwrap()[1]
+    assert!(!result
+        .ir
+        .native_unknowns("rhino")
+        .expect("required invariant")[1]
         .links
         .is_empty());
     assert!(
@@ -639,14 +705,27 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
         let point = object_record(1, POINT_CLASS, &point_payload([6.0, 7.0, 8.0]));
         let result = decode(&archive(&[failure.clone(), point]));
         assert_eq!(result.ir.model.points.len(), 1, "{:?}", result.report);
-        assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 2);
-        let unknown = &result.ir.native_unknowns("rhino").unwrap()[0];
+        assert_eq!(
+            result
+                .ir
+                .native_unknowns("rhino")
+                .expect("required invariant")
+                .len(),
+            2
+        );
+        let unknown = &result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")[0];
         let retained = &result.source_fidelity.retained_records[0];
         assert_eq!(retained.byte_len, failure.len() as u64);
         assert_eq!(retained.sha256, sha256_hex(&failure));
         assert_eq!(retained.data.as_deref(), Some(failure.as_slice()));
         assert!(unknown.links.is_empty());
-        assert!(!result.ir.native_unknowns("rhino").unwrap()[1]
+        assert!(!result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")[1]
             .links
             .is_empty());
         assert!(result
@@ -661,7 +740,8 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
 #[test]
 fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
     let mut payload = brep_payload(false);
-    let nested_length = i64::from_le_bytes(payload[5..13].try_into().unwrap()) as usize;
+    let nested_length =
+        i64::from_le_bytes(payload[5..13].try_into().expect("required invariant")) as usize;
     let nested_end = 1 + 12 + nested_length;
     payload[nested_end - 1] ^= 1;
     let brep = object_record(0x10, BREP_CLASS, &payload);

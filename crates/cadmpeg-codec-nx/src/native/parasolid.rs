@@ -1193,7 +1193,7 @@ mod tests {
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -1234,27 +1234,47 @@ mod tests {
 
         let graph = crate::topology::Graph::parse(&stream);
         assert_eq!(
-            graph.get(14, 4).unwrap().face_fields().unwrap().attributes,
+            graph
+                .get(14, 4)
+                .expect("required invariant")
+                .face_fields()
+                .expect("required invariant")
+                .attributes,
             41
         );
         assert_eq!(
-            graph.get(15, 5).unwrap().loop_fields().unwrap().attributes,
+            graph
+                .get(15, 5)
+                .expect("required invariant")
+                .loop_fields()
+                .expect("required invariant")
+                .attributes,
             42
         );
         assert_eq!(
-            graph.get(17, 7).unwrap().fin_fields().unwrap().attributes,
+            graph
+                .get(17, 7)
+                .expect("required invariant")
+                .fin_fields()
+                .expect("required invariant")
+                .attributes,
             43
         );
         assert_eq!(
-            graph.get(16, 8).unwrap().edge_fields().unwrap().attributes,
+            graph
+                .get(16, 8)
+                .expect("required invariant")
+                .edge_fields()
+                .expect("required invariant")
+                .attributes,
             44
         );
         assert_eq!(
             graph
                 .get(18, 10)
-                .unwrap()
+                .expect("required invariant")
                 .vertex_fields()
-                .unwrap()
+                .expect("required invariant")
                 .attributes,
             45
         );
@@ -1264,16 +1284,16 @@ mod tests {
                 &mut Cursor::new(prt_with_partition(&stream)),
                 &DecodeOptions::default(),
             )
-            .unwrap();
+            .expect("required invariant");
         let references = result
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::ParasolidTopologyAttributeListReference>(
                 "parasolid_topology_attribute_list_references",
             )
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(references.len(), 5);
         assert_eq!(references[0].topology_type, 14);
         assert_eq!(references[0].topology_xmt, 4);
@@ -1417,7 +1437,9 @@ mod tests {
     fn decode_emits_offset_surface_construction() {
         let stream = offset_surface_topology_partition_stream();
         let mut cur = Cursor::new(prt_with_partition(&stream));
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
 
         let procedural = result
             .ir
@@ -1446,9 +1468,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::ParasolidOffsetSurfaceRecord>("parasolid_offset_surface_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].discriminator, 'V');
         assert!(records[0].true_offset);
@@ -1479,16 +1501,18 @@ mod tests {
     fn decode_resolves_surface_curve_to_its_basis_curve() {
         let stream = surface_curve_topology_partition_stream();
         let mut cur = Cursor::new(prt_with_partition(&stream));
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
 
         assert_eq!(result.ir.model.edges.len(), 1);
         let records = result
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::ParasolidSurfaceCurveRecord>("parasolid_surface_curve_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].surface_xmt, 6);
         assert_eq!(records[0].pcurve_xmt, 9);
@@ -1505,7 +1529,9 @@ mod tests {
     fn decode_emits_rolling_ball_blend_surface() {
         let stream = blend_surface_topology_partition_stream();
         let mut cur = Cursor::new(prt_with_partition(&stream));
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
 
         let procedural = result
             .ir
@@ -1539,9 +1565,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::ParasolidBlendSurfaceRecord>("parasolid_blend_surface_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].support_xmts, [6, 6]);
         assert_eq!(records[0].spine_xmt, 1);
@@ -1553,7 +1579,7 @@ mod tests {
             .surfaces
             .iter()
             .find(|surface| surface.id == procedural.surface)
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(
             carrier
                 .source_object
@@ -1568,7 +1594,9 @@ mod tests {
     fn decode_preserves_intersection_curve_as_connected_carrier() {
         let stream = intersection_curve_topology_partition_stream();
         let mut cur = Cursor::new(prt_with_partition(&stream));
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
 
         let edge_curve = result.ir.model.edges[0].curve.as_ref().expect("edge curve");
         let curve = result
@@ -1583,9 +1611,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::ParasolidIntersectionRecord>("parasolid_intersection_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(records.len(), 1);
         assert!(!records[0].delta_twin);
         assert_eq!(records[0].header_references[0], 1);
@@ -1607,16 +1635,18 @@ mod tests {
     fn decode_preserves_deltas_intersection_data_curve() {
         let stream = deltas_intersection_curve_stream();
         let mut cur = Cursor::new(prt_with_partition(&stream));
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
 
         assert_eq!(result.ir.model.procedural_curves.len(), 1);
         let records = result
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::ParasolidIntersectionRecord>("parasolid_intersection_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(records.len(), 1);
         assert!(records[0].delta_twin);
         assert_eq!(records[0].header_references[0], 1);
@@ -1632,15 +1662,17 @@ mod tests {
     fn decode_emits_charted_surface_intersection_construction() {
         let stream = charted_intersection_curve_topology_partition_stream();
         let mut cur = Cursor::new(prt_with_partition(&stream));
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
 
         let terms = result
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::ParasolidTermUseRecord>("parasolid_term_use_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(terms.len(), 2);
         assert_eq!(terms[0].count, 1);
         assert_eq!(terms[0].form, "L?");
@@ -1653,9 +1685,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::ParasolidSupportUvRecord>("parasolid_support_uv_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(support_uv.len(), 1);
         assert_eq!(support_uv[0].count, 4);
         assert_eq!(support_uv[0].marker, 2);
@@ -1668,9 +1700,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::ParasolidChartRecord>("parasolid_chart_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(charts.len(), 1);
         assert_eq!(charts[0].count, 2);
         assert_eq!(charts[0].base_parameter, 0.0);
@@ -1726,15 +1758,17 @@ mod tests {
     fn decode_resolves_intersection_second_support_through_blend_bound() {
         let stream = blend_bound_charted_intersection_curve_stream();
         let mut cur = Cursor::new(prt_with_partition(&stream));
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
 
         let records = result
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::ParasolidBlendBoundRecord>("parasolid_blend_bound_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].header_references, [1; 5]);
         assert!(records[0].sense);
@@ -1755,7 +1789,9 @@ mod tests {
     #[test]
     fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
         let mut cur = Cursor::new(prt_with_partition(&trimmed_topology_partition_stream()));
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
         let edge = result.ir.model.edges.first().expect("edge");
         assert_eq!(edge.curve.as_ref(), Some(&result.ir.model.curves[0].id));
         assert_eq!(edge.param_range, Some([0.25, 0.75]));
@@ -1763,9 +1799,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::ParasolidTrimmedCurveRecord>("parasolid_trimmed_curve_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].basis_xmt, 9);
         assert_eq!(records[0].points, [[0.0; 3]; 2]);

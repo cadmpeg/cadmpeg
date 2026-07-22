@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 
 use cadmpeg_ir::be::u32_at as u32_be;
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
 
 use crate::variant::Variant;
 
@@ -801,17 +801,6 @@ fn identify_variant(
             }
         }
     }
-}
-
-/// Read the whole file and identify its variant, reconstructing the BREP stream
-/// when the file is a cataloguable nested container.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
-    reader
-        .seek(std::io::SeekFrom::Start(0))
-        .map_err(CodecError::Io)?;
-    let mut data = Vec::new();
-    reader.read_to_end(&mut data).map_err(CodecError::Io)?;
-    Ok(scan_bytes(data))
 }
 
 /// Identify a whole `.CATPart` byte image. Split out so tests drive it from a
