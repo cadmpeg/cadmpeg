@@ -1303,6 +1303,9 @@ stores a symmetry axis as a sense-zero line followed by two point loci selected
 with senses `2`, `3`, or `4`. A type-3 incidence between a sense-zero line,
 arc, circle, or spline and a selected point locus makes the locus coincident
 with the curve and maps to a neutral point-on-object constraint. A type-3
+disabled incidence retains that mapping when the carrier and selected circular
+center have defined native geometry families. The disabled equation does not
+require an evaluated carrier or center coordinate. A type-3
 incidence between a sense-zero `segtab` point and a selected point locus
 equates the point's `pointid` coordinate with the selected endpoint or
 arc-center `pointid` coordinate and

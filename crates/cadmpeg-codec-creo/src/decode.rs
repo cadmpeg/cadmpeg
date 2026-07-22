@@ -11160,6 +11160,44 @@ fn section_skamp_constraints_for_geometry(
                     None
                 }
             };
+            let item_geometry = |item: &crate::feature::FeatureSkampItem| {
+                let entity = sketch_entity_id(sketch, item.entity_id);
+                geometry?.get(&entity)
+            };
+            let inactive_curve_entity = |item: &crate::feature::FeatureSkampItem| {
+                (!active && item.sense == 0 && item_geometry(item).is_some_and(|geometry| {
+                    matches!(
+                        geometry,
+                        SketchGeometry::Line { .. }
+                            | SketchGeometry::ReferenceLine { .. }
+                            | SketchGeometry::Circle { .. }
+                            | SketchGeometry::Arc { .. }
+                            | SketchGeometry::Nurbs { .. }
+                    ) || matches!(
+                        geometry,
+                        SketchGeometry::Native { native_kind }
+                            if matches!(native_kind.as_str(), "line" | "arc" | "circle" | "spline")
+                    )
+                }))
+                .then(|| sketch_entity_id(sketch, item.entity_id))
+            };
+            let inactive_incidence_locus = |item: &crate::feature::FeatureSkampItem| {
+                section_skamp_incidence_locus(definition, sketch, item, geometry).or_else(|| {
+                    (!active
+                        && item.sense == 4
+                        && item_geometry(item).is_some_and(|geometry| {
+                            matches!(
+                                geometry,
+                                SketchGeometry::Circle { .. } | SketchGeometry::Arc { .. }
+                            ) || matches!(
+                                geometry,
+                                SketchGeometry::Native { native_kind }
+                                    if matches!(native_kind.as_str(), "arc" | "circle")
+                            )
+                        }))
+                    .then(|| SketchLocus::Center(sketch_entity_id(sketch, item.entity_id)))
+                })
+            };
             let mut constraint_definition = if unique_skamp_id {
                 match (skamp.kind, skamp.items.as_slice()) {
                     (0, [first, second])
@@ -11195,10 +11233,9 @@ fn section_skamp_constraints_for_geometry(
                             .into_iter()
                             .filter_map(|(curve, point)| {
                                 Some((
-                                    section_skamp_curve_entity(definition, sketch, curve)?,
-                                    section_skamp_incidence_locus(
-                                        definition, sketch, point, geometry,
-                                    )?,
+                                    section_skamp_curve_entity(definition, sketch, curve)
+                                        .or_else(|| inactive_curve_entity(curve))?,
+                                    inactive_incidence_locus(point)?,
                                 ))
                             })
                             .collect::<Vec<_>>();
@@ -11215,9 +11252,7 @@ fn section_skamp_constraints_for_geometry(
                                         .then(|| {
                                             Some([
                                                 section_skamp_locus(definition, sketch, point)?,
-                                                section_skamp_incidence_locus(
-                                                    definition, sketch, locus, geometry,
-                                                )?,
+                                                inactive_incidence_locus(locus)?,
                                             ])
                                         })
                                         .flatten()
@@ -21514,6 +21549,68 @@ mod resolved_sketch_tests {
                 &inactive_tangent_definition,
                 &SketchId("creo:model:sketch#917".into()),
                 Some(&unresolved_arc_geometry),
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
+        let mut inactive_point_on_curve_definition = point_coincidence_definition.clone();
+        let inactive_point_on_curve = &mut inactive_point_on_curve_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0];
+        inactive_point_on_curve.kind = 3;
+        inactive_point_on_curve.items = vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 13,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 99,
+                sense: 4,
+            },
+        ];
+        let unresolved_curve_geometry = BTreeMap::from([
+            (
+                SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                SketchGeometry::Native {
+                    native_kind: "line".to_string(),
+                },
+            ),
+            (
+                SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
+                SketchGeometry::Native {
+                    native_kind: "circle".to_string(),
+                },
+            ),
+        ]);
+        assert_eq!(
+            section_skamp_constraints_for_geometry(
+                &inactive_point_on_curve_definition,
+                &SketchId("creo:model:sketch#917".into()),
+                Some(&unresolved_curve_geometry),
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::PointOnObject {
+                point: SketchLocus::Center(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:99".to_string()
+                )),
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            }
+        );
+        inactive_point_on_curve_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0]
+            .status = 1;
+        assert!(matches!(
+            section_skamp_constraints_for_geometry(
+                &inactive_point_on_curve_definition,
+                &SketchId("creo:model:sketch#917".into()),
+                Some(&unresolved_curve_geometry),
             )[0]
             .0
             .definition,
