@@ -4820,6 +4820,71 @@ mod marker_tests {
     }
 
     #[test]
+    fn unresolved_fillet_requires_matching_endpoint_tangent_circles() {
+        let sketch = SketchId("sketch".into());
+        let entity =
+            |id: &str, geometry, endpoint_refs: &[&str]| cadmpeg_ir::sketches::SketchEntity {
+                id: SketchEntityId(id.into()),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: Some(id.into()),
+                geometry_ref: None,
+                endpoint_refs: endpoint_refs.iter().map(|id| (*id).into()).collect(),
+                geometry,
+            };
+        let mut entities = vec![
+            entity(
+                "start",
+                SketchGeometry::Point {
+                    position: Point2::new(1.0, 0.0),
+                },
+                &[],
+            ),
+            entity(
+                "end",
+                SketchGeometry::Point {
+                    position: Point2::new(0.0, 1.0),
+                },
+                &[],
+            ),
+            entity(
+                "start-line",
+                SketchGeometry::Line {
+                    start: Point2::new(1.0, -1.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+                &["start-line-other", "start"],
+            ),
+            entity(
+                "end-line",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, 1.0),
+                    end: Point2::new(-1.0, 1.0),
+                },
+                &["end", "end-line-other"],
+            ),
+            entity(
+                "fillet",
+                SketchGeometry::Native {
+                    native_kind: "sldprt:marker-geometry:2".into(),
+                },
+                &["start", "end"],
+            ),
+        ];
+
+        super::resolve_tangent_bridge_marker_arcs(&mut entities, 1.0e-9);
+
+        assert!(matches!(
+            entities[4].geometry,
+            SketchGeometry::Arc {
+                center,
+                radius: Length(radius),
+                ..
+            } if center == Point2::new(0.0, 0.0) && radius == 1.0
+        ));
+    }
+
+    #[test]
     fn every_principal_plane_has_a_sketch_frame() {
         use cadmpeg_ir::features::PrincipalPlane;
 
@@ -16768,7 +16833,7 @@ fn resolve_tangent_bridge_marker_arcs(entities: &mut [SketchEntity], tolerance: 
             };
             let start = points.get(start_ref.as_str()).copied()?;
             let end = points.get(end_ref.as_str()).copied()?;
-            let adjacent_arc = |endpoint: &str| {
+            let adjacent_curve = |endpoint: &str| {
                 let [first, second] = incidence.get(endpoint)?.as_slice() else {
                     return None;
                 };
@@ -16779,16 +16844,57 @@ fn resolve_tangent_bridge_marker_arcs(entities: &mut [SketchEntity], tolerance: 
                 } else {
                     return None;
                 };
-                match entities[adjacent].geometry {
-                    SketchGeometry::Arc { center, .. } => Some((adjacent, center)),
-                    _ => None,
-                }
+                Some(adjacent)
             };
-            let (start_adjacent, start_center) = adjacent_arc(start_ref)?;
-            let (end_adjacent, end_center) = adjacent_arc(end_ref)?;
+            let start_adjacent = adjacent_curve(start_ref)?;
+            let end_adjacent = adjacent_curve(end_ref)?;
             if start_adjacent == end_adjacent {
                 return None;
             }
+            let line_tangent = |adjacent: usize| match entities[adjacent].geometry {
+                SketchGeometry::Line { start, end } => Some([end.u - start.u, end.v - start.v]),
+                _ => None,
+            };
+            if let (Some(start_tangent), Some(end_tangent)) =
+                (line_tangent(start_adjacent), line_tangent(end_adjacent))
+            {
+                let from_start = tangent_bounded_curve(start, end, start_tangent, tolerance)?;
+                let from_end = tangent_bounded_curve(end, start, end_tangent, tolerance)?;
+                let (
+                    SketchGeometry::Arc {
+                        center: start_center,
+                        radius: start_radius,
+                        ..
+                    },
+                    SketchGeometry::Arc {
+                        center: end_center,
+                        radius: end_radius,
+                        ..
+                    },
+                ) = (&from_start, &from_end)
+                else {
+                    return None;
+                };
+                if quantize(*start_center, tolerance) == quantize(*end_center, tolerance)
+                    && same_dimension_length(start_radius.0, end_radius.0)
+                {
+                    return Some((index, from_start));
+                }
+                return None;
+            }
+            let SketchGeometry::Arc {
+                center: start_center,
+                ..
+            } = entities[start_adjacent].geometry
+            else {
+                return None;
+            };
+            let SketchGeometry::Arc {
+                center: end_center, ..
+            } = entities[end_adjacent].geometry
+            else {
+                return None;
+            };
             tangent_bridge_arc_geometry(start, end, start_center, end_center, tolerance)
                 .map(|geometry| (index, geometry))
         })
