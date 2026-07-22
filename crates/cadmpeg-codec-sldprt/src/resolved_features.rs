@@ -716,24 +716,57 @@ fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> 
         || payload.get(offset + 31..offset + 39)
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || payload.get(offset + 56..offset + 58) != Some(&[0x1a, 0x00])
-        || payload.get(offset + 74..offset + 76) != Some(&[0; 2])
-        || payload.get(offset + 76..offset + 78) != Some(&2u16.to_le_bytes())
     {
         return None;
     }
-    let cells = if payload.get(offset + 102..offset + 108)
+    let (coordinate_offset, cells) = if payload.get(offset + 56..offset + 64) == Some(&[0; 8])
+        && payload.get(offset + 64..offset + 66) == Some(&[0x1a, 0x00])
+        && payload.get(offset + 82..offset + 84) == Some(&[0; 2])
+        && payload.get(offset + 84..offset + 86) == Some(&2u16.to_le_bytes())
+        && payload.get(offset + 110..offset + 116)
+            == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 116..offset + 158) == Some(&[0; 42])
+        && payload
+            .get(offset + 158..offset + 162)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|local_id| !matches!(local_id, 0 | u32::MAX))
+        && sketch_marker_prefix_at(payload, offset.checked_add(162)?)
+    {
+        (
+            offset + 66,
+            [
+                &payload[offset + 86..offset + 98],
+                &payload[offset + 98..offset + 110],
+            ],
+        )
+    } else if payload.get(offset + 56..offset + 58) == Some(&[0x1a, 0x00])
+        && payload.get(offset + 74..offset + 76) == Some(&[0; 2])
+        && payload.get(offset + 76..offset + 78) == Some(&2u16.to_le_bytes())
+        && payload.get(offset + 102..offset + 108)
         == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         && payload.get(offset + 108..offset + 150) == Some(&[0; 42])
         && sketch_marker_prefix_at(payload, offset.checked_add(154)?)
     {
-        [&payload[offset + 78..offset + 90], &payload[offset + 90..offset + 102]]
-    } else if payload.get(offset + 94..offset + 100)
+        (
+            offset + 58,
+            [
+                &payload[offset + 78..offset + 90],
+                &payload[offset + 90..offset + 102],
+            ],
+        )
+    } else if payload.get(offset + 56..offset + 58) == Some(&[0x1a, 0x00])
+        && payload.get(offset + 74..offset + 76) == Some(&[0; 2])
+        && payload.get(offset + 76..offset + 78) == Some(&2u16.to_le_bytes())
+        && payload.get(offset + 94..offset + 100)
         == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         && payload.get(offset + 100..offset + 138) == Some(&[0; 38])
         && sketch_marker_prefix_at(payload, offset.checked_add(146)?)
     {
-        [&payload[offset + 78..offset + 86], &payload[offset + 86..offset + 94]]
+        (
+            offset + 58,
+            [&payload[offset + 78..offset + 86], &payload[offset + 86..offset + 94]],
+        )
     } else {
         return None;
     };
@@ -749,7 +782,7 @@ fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> 
     {
         return None;
     }
-    finite_coordinate_pair(payload, offset + 58)
+    finite_coordinate_pair(payload, coordinate_offset)
 }
 
 fn indexed_profile_coordinate_candidate(payload: &[u8], offset: usize) -> bool {
@@ -4040,6 +4073,25 @@ mod marker_tests {
         compact[146..].copy_from_slice(LEGACY_SKETCH_MARKER);
         assert_eq!(legacy_linked_coordinates(&compact, 0), Some([0.0025, 0.01]));
         assert_eq!(marker_coordinates(&compact, 0), Some([0.0025, 0.01]));
+
+        let mut shifted = vec![0; 162 + LEGACY_SKETCH_MARKER.len()];
+        shifted[..56].copy_from_slice(&payload[..56]);
+        shifted[64..66].copy_from_slice(&[0x1a, 0x00]);
+        shifted[66..74].copy_from_slice(&0.0025f64.to_le_bytes());
+        shifted[74..82].copy_from_slice(&0.01f64.to_le_bytes());
+        shifted[84..86].copy_from_slice(&2u16.to_le_bytes());
+        for (start, local_id) in [(86, 2u16), (98, 5u16)] {
+            shifted[start..start + 2].copy_from_slice(&[0x2b, 0x82]);
+            shifted[start + 2..start + 4].copy_from_slice(&local_id.to_le_bytes());
+            shifted[start + 4..start + 8].fill(0xff);
+        }
+        shifted[110..116].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        shifted[158..162].copy_from_slice(&29u32.to_le_bytes());
+        shifted[162..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert_eq!(legacy_linked_coordinates(&shifted, 0), Some([0.0025, 0.01]));
+        assert_eq!(marker_coordinates(&shifted, 0), Some([0.0025, 0.01]));
+        shifted[158..162].fill(0xff);
+        assert_eq!(legacy_linked_coordinates(&shifted, 0), None);
     }
 
     #[test]
