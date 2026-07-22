@@ -185,7 +185,7 @@ fn report_unresolved_configuration_rules(
 #[derive(Debug, Default, PartialEq, Eq)]
 struct DesignProjectionGaps {
     unresolved_body_bindings: usize,
-    native_features: usize,
+    incomplete_features: usize,
     unprojected_feature_scopes: usize,
     unprojected_parameters: usize,
     untyped_parameter_units: usize,
@@ -207,6 +207,31 @@ struct DesignProjectionGaps {
     native_edge_selections: usize,
     partially_resolved_edge_members: usize,
     unresolved_edge_selections: usize,
+}
+
+fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
+    use cadmpeg_ir::features::{FeatureDefinition, PatternKind, SketchSpace};
+
+    match definition {
+        FeatureDefinition::Native { .. }
+        | FeatureDefinition::DatumPlaneUnresolved
+        | FeatureDefinition::DatumPointUnresolved
+        | FeatureDefinition::DatumCoordinateSystemUnresolved
+        | FeatureDefinition::LoftUnresolved
+        | FeatureDefinition::FreeformSurfaceUnresolved
+        | FeatureDefinition::BoundarySurfaceUnresolved
+        | FeatureDefinition::DraftUnresolved => true,
+        FeatureDefinition::Sketch { space, sketch } => {
+            *space == SketchSpace::Unresolved || sketch.is_none()
+        }
+        FeatureDefinition::SpatialSketch { sketch } => sketch.is_none(),
+        FeatureDefinition::SketchBlockDefinition { sketch } => sketch.is_none(),
+        FeatureDefinition::SketchBlockInstance { block, .. } => block.is_none(),
+        FeatureDefinition::Pattern { seeds, pattern } => {
+            seeds.is_empty() || matches!(pattern, PatternKind::Unresolved { .. })
+        }
+        _ => false,
+    }
 }
 
 fn constraint_parameters(
@@ -535,8 +560,9 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         | FaceSelection::Historical { .. } => {}
     };
     for feature in &ir.model.features {
+        gaps.incomplete_features +=
+            usize::from(feature_definition_is_incomplete(&feature.definition));
         match &feature.definition {
-            FeatureDefinition::Native { .. } => gaps.native_features += 1,
             FeatureDefinition::BaseFeature { bodies }
             | FeatureDefinition::InsertBodies { bodies } => {
                 if matches!(bodies, BodySelection::Native(_) | BodySelection::Unresolved) {
@@ -613,10 +639,10 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         }
     };
     push(
-        gaps.native_features,
+        gaps.incomplete_features,
         format!(
-            "{} feature scope(s) retain native operation semantics because no complete neutral feature definition was resolved.",
-            gaps.native_features
+            "{} feature scope(s) have no complete neutral feature definition.",
+            gaps.incomplete_features
         ),
     );
     push(
@@ -3117,6 +3143,21 @@ mod tests {
             }))
             .expect("native feature"),
         );
+        ir.model.features.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "unresolved-pattern",
+                "ordinal": 4,
+                "definition": {
+                    "definition": "pattern",
+                    "seeds": [],
+                    "pattern": {
+                        "kind": "unresolved",
+                        "form": "circular"
+                    }
+                }
+            }))
+            .expect("unresolved pattern feature"),
+        );
 
         let mut native = F3dNative::default();
         native.design_sketch_placements.push(DesignSketchPlacement {
@@ -3284,7 +3325,7 @@ mod tests {
             design_projection_gaps(&ir, &native),
             DesignProjectionGaps {
                 unresolved_body_bindings: 0,
-                native_features: 1,
+                incomplete_features: 2,
                 unprojected_feature_scopes: 1,
                 unprojected_parameters: 1,
                 untyped_parameter_units: 1,
