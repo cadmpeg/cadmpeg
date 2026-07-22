@@ -446,6 +446,8 @@ A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for co
 
 The same lane supplies configuration-local feature operation state. Feature classes, operation discriminators, compact termination records, profile adjacency, path references, and selection records are evaluated within their `Config-N-ResolvedFeatures` lane. They do not define document-global feature semantics unless every applicable lane yields the same state. A resolved configuration carries one evaluated feature state for every document feature.
 
+An unquoted Keywords expression identifier does not begin with an ASCII digit or `.`. A numeric-leading token is a numeric literal, including when a parameter in the same owner has that token as its name. A numeric parameter name is referenced with double quotes.
+
 Keywords length literals use the suffixes `uin`, `mil`, `mm`, `cm`, `in`, `ft`, `nm`, `um`, `µm`, `μm`, `Å`, `A`, and `m`. Their millimetre scale factors are respectively `0.0000254`, `0.0254`, `1`, `10`, `25.4`, `304.8`, `0.000001`, `0.001`, `0.001`, `0.001`, `0.0000001`, `0.0000001`, and `1000`. A unit suffix is part of the numeric literal and determines its length dimension before expression evaluation.
 
 Point-reference object indices address sketch-marker local identifiers within the owning feature object. A reference resolves when that local identifier is unique in the feature object.

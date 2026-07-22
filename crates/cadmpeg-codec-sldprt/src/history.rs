@@ -1231,12 +1231,17 @@ impl<'a> ParameterExpressionParser<'a> {
                 return Some(ParameterValue::Real(std::f64::consts::PI));
             }
         }
-        parse_parameter_literal(&token).or_else(|| {
+        let referenced = || {
             self.aliases
                 .get(&token)
                 .and_then(Clone::clone)
                 .and_then(|id| self.values.get(&id).cloned())
-        })
+        };
+        if quoted {
+            referenced()
+        } else {
+            parse_parameter_literal(&token).or_else(referenced)
+        }
     }
 
     fn token(&mut self) -> Option<(String, bool)> {
@@ -1803,6 +1808,12 @@ fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_
 fn expression_identifier_is_syntax(expression: &str, identifier: &ExpressionIdentifier) -> bool {
     if identifier.quoted {
         return false;
+    }
+    if identifier
+        .value
+        .starts_with(|character: char| character.is_ascii_digit() || character == '.')
+    {
+        return true;
     }
     if identifier.value.eq_ignore_ascii_case("pi")
         || identifier.value.eq_ignore_ascii_case("true")
@@ -3086,6 +3097,44 @@ mod history_reference_tests {
         assert_eq!(
             expression_identifiers("D1@Sketch1-D2@Sketch1").collect::<Vec<_>>(),
             ["D1@Sketch1", "D2@Sketch1"]
+        );
+    }
+
+    #[test]
+    fn numeric_literals_do_not_bind_numeric_parameter_names() {
+        let mut owner = feature("owner", Some("1"), 0);
+        owner.parameters = BTreeMap::from([
+            ("4".into(), "3mm".into()),
+            ("Literal".into(), "4".into()),
+            ("Reference".into(), "\"4\" * 2".into()),
+        ]);
+        let parameters = project_parameters(&[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }]);
+        let by_name = parameters
+            .iter()
+            .map(|parameter| (parameter.name.as_str(), parameter))
+            .collect::<HashMap<_, _>>();
+
+        assert!(by_name["Literal"].dependencies.is_empty());
+        assert_eq!(by_name["Reference"].dependencies, [by_name["4"].id.clone()]);
+        assert_eq!(
+            by_name["Reference"].value,
+            Some(ParameterValue::Length(Length(6.0)))
+        );
+        assert!(!unquoted_expression_identifier("4"));
+        assert_eq!(
+            rewrite_parameter_expression(
+                "Width * 2",
+                &HashMap::from([("Width".into(), "4".into())]),
+            )
+            .as_deref(),
+            Some("\"4\" * 2")
         );
     }
 
@@ -8879,10 +8928,14 @@ fn rewrite_parameter_expression(
 }
 
 fn unquoted_expression_identifier(value: &str) -> bool {
-    !value.is_empty()
-        && value.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.')
-        })
+    let mut characters = value.chars();
+    characters.next().is_some_and(|character| {
+        !character.is_ascii_digit()
+            && character != '.'
+            && (character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$'))
+    }) && characters.all(|character| {
+        character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.')
+    })
 }
 
 fn sync_neutral_configurations(
