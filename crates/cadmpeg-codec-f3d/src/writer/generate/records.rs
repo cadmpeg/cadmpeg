@@ -16,6 +16,7 @@ use cadmpeg_ir::math::Point3;
 use super::attributes::source_less_body_key;
 use super::bytes::{native_f64, native_i64, native_ref};
 use super::native_geometry::native_nurbs_curve;
+use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{f3d_native, native_bool};
 
 pub(crate) fn tolerant_coedge_range(
@@ -523,8 +524,10 @@ fn encode_sketch_point(
     record[62 + shift..70 + shift].copy_from_slice(&point.persistent_id.to_le_bytes());
     record[70 + shift] = 1;
     record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
-    record[89 + shift..97 + shift].copy_from_slice(&(point.coordinates.u / 10.0).to_le_bytes());
-    record[97 + shift..105 + shift].copy_from_slice(&(point.coordinates.v / 10.0).to_le_bytes());
+    record[89 + shift..97 + shift]
+        .copy_from_slice(&(point.coordinates.u / LEN_TO_MM).to_le_bytes());
+    record[97 + shift..105 + shift]
+        .copy_from_slice(&(point.coordinates.v / LEN_TO_MM).to_le_bytes());
     out.extend_from_slice(&record);
     Ok(())
 }
@@ -559,12 +562,12 @@ fn encode_sketch_curve_identity(
             normal,
         }) => {
             let values = [
-                start.x / 10.0,
-                start.y / 10.0,
-                start.z / 10.0,
-                (end.x - start.x) / 10.0,
-                (end.y - start.y) / 10.0,
-                (end.z - start.z) / 10.0,
+                start.x / LEN_TO_MM,
+                start.y / LEN_TO_MM,
+                start.z / LEN_TO_MM,
+                (end.x - start.x) / LEN_TO_MM,
+                (end.y - start.y) / LEN_TO_MM,
+                (end.z - start.z) / LEN_TO_MM,
                 direction.x,
                 direction.y,
                 direction.z,
@@ -583,16 +586,16 @@ fn encode_sketch_curve_identity(
             end_angle,
         }) => {
             let values = [
-                center.x / 10.0,
-                center.y / 10.0,
-                center.z / 10.0,
+                center.x / LEN_TO_MM,
+                center.y / LEN_TO_MM,
+                center.z / LEN_TO_MM,
                 normal.x,
                 normal.y,
                 normal.z,
                 reference_direction.x,
                 reference_direction.y,
                 reference_direction.z,
-                radius / 10.0,
+                radius / LEN_TO_MM,
                 *start_angle,
                 *end_angle,
             ];
@@ -682,7 +685,7 @@ fn encode_sketch_nurbs(
     record.push(1);
     record.push(0);
     record.extend_from_slice(&degree.to_le_bytes());
-    record.extend_from_slice(&(fit_tolerance / 10.0).to_le_bytes());
+    record.extend_from_slice(&(fit_tolerance / LEN_TO_MM).to_le_bytes());
     let knot_count = u32::try_from(knots.len())
         .map_err(|_| CodecError::Malformed("sketch NURBS has too many knots".into()))?;
     record.extend_from_slice(&knot_count.to_le_bytes());
@@ -702,7 +705,13 @@ fn encode_sketch_nurbs(
     record.extend_from_slice(&8u32.to_le_bytes());
     let coordinates = control_points
         .iter()
-        .flat_map(|point| [point.x / 10.0, point.y / 10.0, point.z / 10.0])
+        .flat_map(|point| {
+            [
+                point.x / LEN_TO_MM,
+                point.y / LEN_TO_MM,
+                point.z / LEN_TO_MM,
+            ]
+        })
         .collect::<Vec<_>>();
     encode_f64_sequence(record, &coordinates)
 }

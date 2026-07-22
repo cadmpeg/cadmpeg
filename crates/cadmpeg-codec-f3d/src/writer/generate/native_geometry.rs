@@ -13,6 +13,7 @@ use super::bytes::{
     native_curve_base, native_enum, native_f64, native_i64, native_ident, native_point, native_ref,
     native_string, native_subident, native_surface_base, native_u16_string, native_vector,
 };
+use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{finite_point, finite_vector, native_bool, unique_knot_count};
 
 pub(crate) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
@@ -80,9 +81,9 @@ pub(crate) fn native_nurbs_surface(
         for u in 0..u_count {
             let index = u * v_count + v;
             let point = surface.control_points[index];
-            native_f64(bytes, point.x / 10.0);
-            native_f64(bytes, point.y / 10.0);
-            native_f64(bytes, point.z / 10.0);
+            native_f64(bytes, point.x / LEN_TO_MM);
+            native_f64(bytes, point.y / LEN_TO_MM);
+            native_f64(bytes, point.z / LEN_TO_MM);
             if let Some(weights) = surface.weights.as_ref() {
                 native_f64(bytes, weights[index]);
             }
@@ -178,9 +179,9 @@ fn native_procedural_surface_definition(
                     native_point(
                         bytes,
                         [
-                            frame.point.x / 10.0,
-                            frame.point.y / 10.0,
-                            frame.point.z / 10.0,
+                            frame.point.x / LEN_TO_MM,
+                            frame.point.y / LEN_TO_MM,
+                            frame.point.z / LEN_TO_MM,
                         ],
                     );
                     for flag in frame.trailing_flags {
@@ -335,7 +336,7 @@ fn native_procedural_surface_definition(
                 }
             }
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, cache_fit_tolerance / 10.0);
+            native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
             for values in &construction.discontinuities {
                 native_compound_loft_float_array(bytes, values)?;
             }
@@ -371,14 +372,14 @@ fn native_procedural_surface_definition(
                 native_enum(bytes, construction.type_code);
             } else {
                 native_nurbs_surface(bytes, solved_cache)?;
-                native_f64(bytes, cache_fit_tolerance / 10.0);
+                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
                 for values in &construction.discontinuities {
                     native_compound_loft_float_array(bytes, values)?;
                 }
                 bytes.push(native_bool(construction.discontinuity_flag));
                 for range in &construction.parameter_ranges {
                     for value in range {
-                        native_f64(bytes, *value / 10.0);
+                        native_f64(bytes, *value / LEN_TO_MM);
                     }
                 }
                 native_i64(bytes, construction.type_code);
@@ -507,7 +508,7 @@ fn native_procedural_surface_definition(
                 ));
             }
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, cache_fit_tolerance / 10.0);
+            native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
             for range in ranges {
                 for value in range {
                     native_f64(bytes, *value);
@@ -530,7 +531,7 @@ fn native_procedural_surface_definition(
             native_ident(bytes, "comp_spl_sur")?;
             native_nurbs_surface(bytes, solved_cache)?;
             if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
-                native_f64(bytes, cache_fit_tolerance / 10.0);
+                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
             }
             native_i64(
                 bytes,
@@ -647,7 +648,7 @@ fn native_procedural_surface_definition(
             native_f64(bytes, *parameter);
             native_nurbs_surface(bytes, solved_cache)?;
             if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
-                native_f64(bytes, cache_fit_tolerance / 10.0);
+                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
             }
             let write_draft = |bytes: &mut Vec<u8>, draft: Vector3| {
                 native_vector(bytes, [draft.x, draft.y, draft.z]);
@@ -807,7 +808,7 @@ fn native_procedural_surface_definition(
             }
             native_nurbs_surface(bytes, solved_cache)?;
             if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
-                native_f64(bytes, cache_fit_tolerance / 10.0);
+                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
             }
             bytes.push(0x10);
         }
@@ -843,7 +844,11 @@ fn native_procedural_surface_definition(
                 }
                 native_point(
                     bytes,
-                    [basepoint.x / 10.0, basepoint.y / 10.0, basepoint.z / 10.0],
+                    [
+                        basepoint.x / LEN_TO_MM,
+                        basepoint.y / LEN_TO_MM,
+                        basepoint.z / LEN_TO_MM,
+                    ],
                 );
                 native_revision_surface_tail(
                     bytes,
@@ -896,11 +901,15 @@ fn native_procedural_surface_definition(
             }
             native_point(
                 bytes,
-                [basepoint.x / 10.0, basepoint.y / 10.0, basepoint.z / 10.0],
+                [
+                    basepoint.x / LEN_TO_MM,
+                    basepoint.y / LEN_TO_MM,
+                    basepoint.z / LEN_TO_MM,
+                ],
             );
             native_nurbs_surface(bytes, solved_cache)?;
             if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
-                native_f64(bytes, cache_fit_tolerance / 10.0);
+                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
             }
             bytes.push(0x10);
         }
@@ -935,9 +944,9 @@ fn native_procedural_surface_definition(
                 native_point(
                     bytes,
                     [
-                        axis_origin.x / 10.0,
-                        axis_origin.y / 10.0,
-                        axis_origin.z / 10.0,
+                        axis_origin.x / LEN_TO_MM,
+                        axis_origin.y / LEN_TO_MM,
+                        axis_origin.z / LEN_TO_MM,
                     ],
                 );
                 native_vector(
@@ -988,9 +997,9 @@ fn native_procedural_surface_definition(
             native_point(
                 bytes,
                 [
-                    axis_origin.x / 10.0,
-                    axis_origin.y / 10.0,
-                    axis_origin.z / 10.0,
+                    axis_origin.x / LEN_TO_MM,
+                    axis_origin.y / LEN_TO_MM,
+                    axis_origin.z / LEN_TO_MM,
                 ],
             );
             native_vector(
@@ -999,7 +1008,7 @@ fn native_procedural_surface_definition(
             );
             native_nurbs_surface(bytes, solved_cache)?;
             if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
-                native_f64(bytes, cache_fit_tolerance / 10.0);
+                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
             }
             bytes.push(0x10);
         }
@@ -1038,7 +1047,7 @@ fn native_procedural_surface_definition(
                     &support.geometry,
                     &form.support_bounds,
                 )?;
-                native_f64(bytes, *distance / 10.0);
+                native_f64(bytes, *distance / LEN_TO_MM);
                 for flag in &form.flags {
                     bytes.push(native_bool(*flag));
                 }
@@ -1071,7 +1080,7 @@ fn native_procedural_surface_definition(
                 },
             )?;
             native_embedded_surface(bytes, &support.geometry)?;
-            native_f64(bytes, *distance / 10.0);
+            native_f64(bytes, *distance / LEN_TO_MM);
             native_enum(bytes, *u_sense);
             native_enum(bytes, *v_sense);
             for flag in extension_flags {
@@ -1079,7 +1088,7 @@ fn native_procedural_surface_definition(
             }
             native_nurbs_surface(bytes, solved_cache)?;
             if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
-                native_f64(bytes, cache_fit_tolerance / 10.0);
+                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
             }
             bytes.push(0x10);
         }
@@ -1239,7 +1248,7 @@ fn encode_native_g2_blend(
                         ));
                     };
                     native_nurbs_surface(bytes, surface)?;
-                    native_f64(bytes, *tolerance / 10.0);
+                    native_f64(bytes, *tolerance / LEN_TO_MM);
                 }
                 _ => {
                     return Err(CodecError::Malformed(
@@ -1257,7 +1266,7 @@ fn encode_native_g2_blend(
             for coefficient in coefficients {
                 native_f64(bytes, *coefficient);
             }
-            native_f64(bytes, *tolerance / 10.0);
+            native_f64(bytes, *tolerance / LEN_TO_MM);
             if let Some(extension) = extension {
                 native_bridge_token(bytes, extension)?;
             }
@@ -1296,7 +1305,7 @@ fn encode_native_g2_blend(
     }
     native_nurbs_surface(bytes, solved_cache)?;
     if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
-        native_f64(bytes, cache_fit_tolerance / 10.0);
+        native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
     }
     for discontinuities in &construction.discontinuities {
         native_i64(
@@ -1578,7 +1587,7 @@ fn encode_native_compound_loft(
     bytes.push(0x0f);
     native_ident(bytes, "cl_loft_spl_sur")?;
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance / 10.0);
+    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
     for scale in construction.scales.iter().flatten() {
         native_compound_loft_scale(bytes, target, scale)?;
     }
@@ -1714,7 +1723,7 @@ fn encode_native_scaled_compound_loft(
                 )
             })?;
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, cache_fit_tolerance / 10.0);
+            native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
         }
         ScaledCompoundLoftShape::None {
             parameter_ranges,
@@ -1884,10 +1893,10 @@ fn native_cacheless_procedural_surface_definition(
             native_f64(bytes, value);
         }
         for value in construction.dimension_range {
-            native_f64(bytes, if circular { value / 10.0 } else { value });
+            native_f64(bytes, if circular { value / LEN_TO_MM } else { value });
         }
         if let HelixSurfaceProfile::Circle { length, .. } = construction.profile {
-            native_f64(bytes, length / 10.0);
+            native_f64(bytes, length / LEN_TO_MM);
         }
         for value in construction.path.angle_range {
             native_f64(bytes, value);
@@ -1895,9 +1904,9 @@ fn native_cacheless_procedural_surface_definition(
         native_point(
             bytes,
             [
-                construction.path.center.x / 10.0,
-                construction.path.center.y / 10.0,
-                construction.path.center.z / 10.0,
+                construction.path.center.x / LEN_TO_MM,
+                construction.path.center.y / LEN_TO_MM,
+                construction.path.center.z / LEN_TO_MM,
             ],
         );
         for vector in [
@@ -1905,7 +1914,14 @@ fn native_cacheless_procedural_surface_definition(
             construction.path.minor,
             construction.path.pitch,
         ] {
-            native_point(bytes, [vector.x / 10.0, vector.y / 10.0, vector.z / 10.0]);
+            native_point(
+                bytes,
+                [
+                    vector.x / LEN_TO_MM,
+                    vector.y / LEN_TO_MM,
+                    vector.z / LEN_TO_MM,
+                ],
+            );
         }
         native_f64(bytes, construction.path.apex_factor);
         native_vector(
@@ -1920,11 +1936,15 @@ fn native_cacheless_procedural_surface_definition(
             native_ident(bytes, sentinel)?;
         }
         match construction.profile {
-            HelixSurfaceProfile::Circle { radius, .. } => native_f64(bytes, radius / 10.0),
+            HelixSurfaceProfile::Circle { radius, .. } => native_f64(bytes, radius / LEN_TO_MM),
             HelixSurfaceProfile::Line { direction } => {
                 native_point(
                     bytes,
-                    [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
+                    [
+                        direction.x / LEN_TO_MM,
+                        direction.y / LEN_TO_MM,
+                        direction.z / LEN_TO_MM,
+                    ],
                 );
             }
         }
@@ -1964,7 +1984,11 @@ fn native_cacheless_procedural_surface_definition(
         native_nurbs_curve(bytes, &native_loft_curve(target, second)?)?;
         native_point(
             bytes,
-            [basepoint.x / 10.0, basepoint.y / 10.0, basepoint.z / 10.0],
+            [
+                basepoint.x / LEN_TO_MM,
+                basepoint.y / LEN_TO_MM,
+                basepoint.z / LEN_TO_MM,
+            ],
         );
         bytes.push(0x10);
         return Ok(true);
@@ -2033,7 +2057,14 @@ fn native_law_expression(
         LawExpression::Integer { value } => native_i64(bytes, *value),
         LawExpression::Double { value } => native_f64(bytes, *value),
         LawExpression::Point { value } => {
-            native_point(bytes, [value.x / 10.0, value.y / 10.0, value.z / 10.0]);
+            native_point(
+                bytes,
+                [
+                    value.x / LEN_TO_MM,
+                    value.y / LEN_TO_MM,
+                    value.z / LEN_TO_MM,
+                ],
+            );
         }
         LawExpression::Vector { value } => {
             native_vector(bytes, [value.x, value.y, value.z]);
@@ -2082,7 +2113,14 @@ fn native_law_expression(
             native_i64(bytes, *native_id);
             native_compound_loft_float_array(bytes, knots)?;
             native_compound_loft_float_array(bytes, controls)?;
-            native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+            native_point(
+                bytes,
+                [
+                    point.x / LEN_TO_MM,
+                    point.y / LEN_TO_MM,
+                    point.z / LEN_TO_MM,
+                ],
+            );
         }
         LawExpression::Algebraic { operator, operands } => {
             let arity = match operator.as_str() {
@@ -2185,7 +2223,7 @@ fn encode_native_law_surface(
                     CodecError::Malformed("full law surface requires a solved cache".into())
                 })?,
             )?;
-            native_f64(bytes, cache_fit_tolerance / 10.0);
+            native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
         }
         cadmpeg_ir::geometry::LawSurfaceTail::Summary {
             parameters,
@@ -2197,7 +2235,7 @@ fn encode_native_law_surface(
             for values in parameters {
                 native_compound_loft_float_array(bytes, values)?;
             }
-            native_f64(bytes, fit_tolerance / 10.0);
+            native_f64(bytes, fit_tolerance / LEN_TO_MM);
             for value in closures.iter().chain(singularities) {
                 native_enum(bytes, *value);
             }
@@ -2339,7 +2377,7 @@ fn encode_native_skin_surface(
         &native_loft_curve(target, &construction.parameter_curve)?,
     )?;
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance / 10.0);
+    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
     for values in &construction.discontinuities {
         native_compound_loft_float_array(bytes, values)?;
     }
@@ -2375,7 +2413,7 @@ fn encode_native_net_surface(
         native_law_formula(bytes, target, formula)?;
     }
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance / 10.0);
+    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
     for values in &construction.discontinuities {
         native_compound_loft_float_array(bytes, values)?;
     }
@@ -2438,23 +2476,37 @@ fn encode_native_sweep_surface(
         }
         bytes.push(native_bool(profile_frame.is_some()));
         if let Some((point, direction)) = profile_frame {
-            native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+            native_point(
+                bytes,
+                [
+                    point.x / LEN_TO_MM,
+                    point.y / LEN_TO_MM,
+                    point.z / LEN_TO_MM,
+                ],
+            );
             native_vector(bytes, [direction.x, direction.y, direction.z]);
         }
-        native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+        native_point(
+            bytes,
+            [
+                origin.x / LEN_TO_MM,
+                origin.y / LEN_TO_MM,
+                origin.z / LEN_TO_MM,
+            ],
+        );
         for direction in directions {
             native_vector(bytes, [direction.x, direction.y, direction.z]);
         }
         native_i64(bytes, 1);
         bytes.push(native_bool(*trajectory_flag));
-        let native_path_range = [path_range[0] / 10.0, path_range[1] / 10.0];
+        let native_path_range = [path_range[0] / LEN_TO_MM, path_range[1] / LEN_TO_MM];
         let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
         native_nurbs_curve(bytes, &spine)?;
         for value in form.path_endpoints {
             native_optional_f64(bytes, value);
         }
         for value in path_range {
-            native_optional_f64(bytes, Some(*value / 10.0));
+            native_optional_f64(bytes, Some(*value / LEN_TO_MM));
         }
         native_f64(bytes, *path_parameter);
         bytes.push(native_bool(*formula_flag));
@@ -2462,7 +2514,7 @@ fn encode_native_sweep_surface(
         bytes.push(native_bool(*trailing_flag));
         native_enum(bytes, form.tail_enum);
         native_nurbs_surface(bytes, solved_cache)?;
-        native_f64(bytes, cache_fit_tolerance / 10.0);
+        native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
         for values in &construction.discontinuities {
             native_compound_loft_float_array(bytes, values)?;
         }
@@ -2488,7 +2540,14 @@ fn encode_native_sweep_surface(
             for direction in directions {
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
-            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            native_point(
+                bytes,
+                [
+                    origin.x / LEN_TO_MM,
+                    origin.y / LEN_TO_MM,
+                    origin.z / LEN_TO_MM,
+                ],
+            );
             for parameter in parameters {
                 native_f64(bytes, *parameter);
             }
@@ -2517,20 +2576,34 @@ fn encode_native_sweep_surface(
             }
             bytes.push(native_bool(profile_frame.is_some()));
             if let Some((point, direction)) = profile_frame {
-                native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+                native_point(
+                    bytes,
+                    [
+                        point.x / LEN_TO_MM,
+                        point.y / LEN_TO_MM,
+                        point.z / LEN_TO_MM,
+                    ],
+                );
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
-            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            native_point(
+                bytes,
+                [
+                    origin.x / LEN_TO_MM,
+                    origin.y / LEN_TO_MM,
+                    origin.z / LEN_TO_MM,
+                ],
+            );
             for direction in directions {
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
             native_i64(bytes, 1);
             bytes.push(native_bool(*trajectory_flag));
-            let native_path_range = [path_range[0] / 10.0, path_range[1] / 10.0];
+            let native_path_range = [path_range[0] / LEN_TO_MM, path_range[1] / LEN_TO_MM];
             let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
             native_nurbs_curve(bytes, &spine)?;
             for value in path_range {
-                native_f64(bytes, *value / 10.0);
+                native_f64(bytes, *value / LEN_TO_MM);
             }
             native_f64(bytes, *path_parameter);
             bytes.push(native_bool(*formula_flag));
@@ -2561,20 +2634,34 @@ fn encode_native_sweep_surface(
             }
             bytes.push(native_bool(profile_frame.is_some()));
             if let Some((point, direction)) = profile_frame {
-                native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+                native_point(
+                    bytes,
+                    [
+                        point.x / LEN_TO_MM,
+                        point.y / LEN_TO_MM,
+                        point.z / LEN_TO_MM,
+                    ],
+                );
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
-            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            native_point(
+                bytes,
+                [
+                    origin.x / LEN_TO_MM,
+                    origin.y / LEN_TO_MM,
+                    origin.z / LEN_TO_MM,
+                ],
+            );
             for direction in directions {
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
             native_i64(bytes, 2);
             bytes.push(native_bool(*trajectory_flag));
-            let native_path_range = [path_range[0] / 10.0, path_range[1] / 10.0];
+            let native_path_range = [path_range[0] / LEN_TO_MM, path_range[1] / LEN_TO_MM];
             let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
             native_nurbs_curve(bytes, &spine)?;
             for value in path_range {
-                native_f64(bytes, *value / 10.0);
+                native_f64(bytes, *value / LEN_TO_MM);
             }
             native_f64(bytes, *path_parameter);
             for flag in guide_flags {
@@ -2618,20 +2705,34 @@ fn encode_native_sweep_surface(
             }
             bytes.push(native_bool(profile_frame.is_some()));
             if let Some((point, direction)) = profile_frame {
-                native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+                native_point(
+                    bytes,
+                    [
+                        point.x / LEN_TO_MM,
+                        point.y / LEN_TO_MM,
+                        point.z / LEN_TO_MM,
+                    ],
+                );
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
-            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            native_point(
+                bytes,
+                [
+                    origin.x / LEN_TO_MM,
+                    origin.y / LEN_TO_MM,
+                    origin.z / LEN_TO_MM,
+                ],
+            );
             for direction in directions {
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
             native_i64(bytes, 3);
             bytes.push(native_bool(*trajectory_flag));
-            let native_path_range = [path_range[0] / 10.0, path_range[1] / 10.0];
+            let native_path_range = [path_range[0] / LEN_TO_MM, path_range[1] / LEN_TO_MM];
             let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
             native_nurbs_curve(bytes, &spine)?;
             for value in path_range {
-                native_f64(bytes, *value / 10.0);
+                native_f64(bytes, *value / LEN_TO_MM);
             }
             native_f64(bytes, *path_parameter);
             native_enum(bytes, *singularity);
@@ -2683,10 +2784,24 @@ fn encode_native_sweep_surface(
             }
             bytes.push(native_bool(profile_frame.is_some()));
             if let Some((point, direction)) = profile_frame {
-                native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+                native_point(
+                    bytes,
+                    [
+                        point.x / LEN_TO_MM,
+                        point.y / LEN_TO_MM,
+                        point.z / LEN_TO_MM,
+                    ],
+                );
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
-            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            native_point(
+                bytes,
+                [
+                    origin.x / LEN_TO_MM,
+                    origin.y / LEN_TO_MM,
+                    origin.z / LEN_TO_MM,
+                ],
+            );
             for direction in directions {
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
@@ -2712,7 +2827,7 @@ fn encode_native_sweep_surface(
         }
     }
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance / 10.0);
+    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
     for values in &construction.discontinuities {
         native_compound_loft_float_array(bytes, values)?;
     }
@@ -2765,7 +2880,10 @@ fn encode_native_loft(
         }
         native_enum(bytes, form.tail_enum);
         native_nurbs_surface(bytes, solved_cache)?;
-        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        native_f64(
+            bytes,
+            procedural.cache_fit_tolerance.unwrap_or(0.0) / LEN_TO_MM,
+        );
         for discontinuities in &form.discontinuities {
             native_i64(
                 bytes,
@@ -2816,7 +2934,7 @@ fn encode_native_loft(
     }
     native_nurbs_surface(bytes, solved_cache)?;
     if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
-        native_f64(bytes, cache_fit_tolerance / 10.0);
+        native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
     }
     bytes.push(0x10);
     Ok(())
@@ -2869,21 +2987,25 @@ fn encode_native_extrusion(
     native_f64(bytes, parameter_interval[1]);
     native_vector(
         bytes,
-        [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
+        [
+            direction.x / LEN_TO_MM,
+            direction.y / LEN_TO_MM,
+            direction.z / LEN_TO_MM,
+        ],
     );
     native_point(
         bytes,
         [
-            native_position.x / 10.0,
-            native_position.y / 10.0,
-            native_position.z / 10.0,
+            native_position.x / LEN_TO_MM,
+            native_position.y / LEN_TO_MM,
+            native_position.z / LEN_TO_MM,
         ],
     );
     native_nurbs_curve(bytes, &directrix_cache)?;
     if let Some(solved_cache) = solved_cache {
         native_nurbs_surface(bytes, solved_cache)?;
         if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
-            native_f64(bytes, cache_fit_tolerance / 10.0);
+            native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
         }
     } else if procedural.cache_fit_tolerance.is_some() {
         return Err(CodecError::Malformed(
@@ -2928,7 +3050,7 @@ fn native_variable_blend_value(
                 native_f64(bytes, *parameter);
             }
             for radius in radii {
-                native_f64(bytes, *radius / 10.0);
+                native_f64(bytes, *radius / LEN_TO_MM);
             }
         }
         VariableBlendValuePayload::FixedWidth { parameters, width } => {
@@ -2951,7 +3073,7 @@ fn native_variable_blend_value(
                 native_f64(bytes, *scalar);
             }
             for length in lengths {
-                native_f64(bytes, *length / 10.0);
+                native_f64(bytes, *length / LEN_TO_MM);
             }
         }
         VariableBlendValuePayload::Functional {
@@ -2961,7 +3083,7 @@ fn native_variable_blend_value(
             terminal,
         } => {
             native_f64(bytes, *parameter);
-            native_f64(bytes, *radius / 10.0);
+            native_f64(bytes, *radius / LEN_TO_MM);
             native_nurbs_pcurve_block(bytes, function)?;
             match terminal {
                 LoftBridgeToken::Double(value) => native_f64(bytes, *value),
@@ -2983,7 +3105,7 @@ fn native_variable_blend_value(
             for parameter in parameters {
                 native_f64(bytes, *parameter);
             }
-            native_f64(bytes, *radius / 10.0);
+            native_f64(bytes, *radius / LEN_TO_MM);
             native_enum(bytes, *variable_chamfer);
             native_enum(bytes, *chamfer_type);
             native_variable_blend_value(bytes, nested, depth + 1)?;
@@ -2998,7 +3120,7 @@ fn native_variable_blend_value(
             tail,
         } => {
             native_f64(bytes, *parameter);
-            native_f64(bytes, *radius / 10.0);
+            native_f64(bytes, *radius / LEN_TO_MM);
             native_nurbs_pcurve_block(bytes, function)?;
             if *enum_tagged {
                 native_enum(bytes, *enum_count);
@@ -3013,16 +3135,16 @@ fn native_variable_blend_value(
             );
             for point in points {
                 native_f64(bytes, point.parameter);
-                native_f64(bytes, point.radius / 10.0);
+                native_f64(bytes, point.radius / LEN_TO_MM);
                 for tangent in point.tangents {
                     native_f64(bytes, tangent);
                 }
                 native_point(
                     bytes,
                     [
-                        point.location.x / 10.0,
-                        point.location.y / 10.0,
-                        point.location.z / 10.0,
+                        point.location.x / LEN_TO_MM,
+                        point.location.y / LEN_TO_MM,
+                        point.location.z / LEN_TO_MM,
                     ],
                 );
                 native_vector(bytes, [point.normal.x, point.normal.y, point.normal.z]);
@@ -3077,18 +3199,18 @@ fn native_vertex_blend_boundary(
         native_vector(
             bytes,
             [
-                boundary.magic.x / 10.0,
-                boundary.magic.y / 10.0,
-                boundary.magic.z / 10.0,
+                boundary.magic.x / LEN_TO_MM,
+                boundary.magic.y / LEN_TO_MM,
+                boundary.magic.z / LEN_TO_MM,
             ],
         );
     } else {
         native_point(
             bytes,
             [
-                boundary.magic.x / 10.0,
-                boundary.magic.y / 10.0,
-                boundary.magic.z / 10.0,
+                boundary.magic.x / LEN_TO_MM,
+                boundary.magic.y / LEN_TO_MM,
+                boundary.magic.z / LEN_TO_MM,
             ],
         );
     }
@@ -3130,9 +3252,23 @@ fn native_vertex_blend_boundary(
             native_enum(bytes, *form);
             for twist in twists {
                 if revision {
-                    native_vector(bytes, [twist.x / 10.0, twist.y / 10.0, twist.z / 10.0]);
+                    native_vector(
+                        bytes,
+                        [
+                            twist.x / LEN_TO_MM,
+                            twist.y / LEN_TO_MM,
+                            twist.z / LEN_TO_MM,
+                        ],
+                    );
                 } else {
-                    native_point(bytes, [twist.x / 10.0, twist.y / 10.0, twist.z / 10.0]);
+                    native_point(
+                        bytes,
+                        [
+                            twist.x / LEN_TO_MM,
+                            twist.y / LEN_TO_MM,
+                            twist.z / LEN_TO_MM,
+                        ],
+                    );
                 }
             }
             native_f64(bytes, parameters[0]);
@@ -3142,7 +3278,11 @@ fn native_vertex_blend_boundary(
         VertexBlendBoundaryGeometry::Degenerate { location, normals } => {
             native_point(
                 bytes,
-                [location.x / 10.0, location.y / 10.0, location.z / 10.0],
+                [
+                    location.x / LEN_TO_MM,
+                    location.y / LEN_TO_MM,
+                    location.z / LEN_TO_MM,
+                ],
             );
             for normal in normals {
                 native_vector(bytes, [normal.x, normal.y, normal.z]);
@@ -3220,7 +3360,7 @@ fn encode_native_vertex_blend(
         native_vertex_blend_boundary(bytes, target, boundary, construction.revision.is_some())?;
     }
     native_i64(bytes, construction.grid_size);
-    native_f64(bytes, construction.fit_tolerance / 10.0);
+    native_f64(bytes, construction.fit_tolerance / LEN_TO_MM);
     bytes.push(0x10);
     Ok(())
 }
@@ -3332,7 +3472,10 @@ fn encode_native_revision_compound_loft(
     native_i64(bytes, construction.revision);
     native_enum(bytes, construction.tail_enum);
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    native_f64(
+        bytes,
+        procedural.cache_fit_tolerance.unwrap_or(0.0) / LEN_TO_MM,
+    );
     for discontinuities in &construction.discontinuities {
         native_i64(
             bytes,
@@ -3430,7 +3573,7 @@ fn encode_native_revision_g2_blend(
         native_optional_f64(bytes, endpoint);
     }
     for radius in construction.radii {
-        native_f64(bytes, radius / 10.0);
+        native_f64(bytes, radius / LEN_TO_MM);
     }
     native_enum(bytes, construction.radius_selector);
     for range in [construction.u_range, construction.v_range] {
@@ -3440,11 +3583,14 @@ fn encode_native_revision_g2_blend(
     }
     native_i64(bytes, construction.shape_prefix);
     native_f64(bytes, construction.shape_parameter);
-    native_f64(bytes, construction.shape_length / 10.0);
+    native_f64(bytes, construction.shape_length / LEN_TO_MM);
     native_i64(bytes, construction.shape_tail);
     native_enum(bytes, construction.tail_enum);
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    native_f64(
+        bytes,
+        procedural.cache_fit_tolerance.unwrap_or(0.0) / LEN_TO_MM,
+    );
     for discontinuities in &construction.discontinuities {
         native_i64(
             bytes,
@@ -3498,7 +3644,7 @@ fn encode_native_variable_blend(
         }
     }
     for offset in construction.offsets {
-        native_f64(bytes, offset / 10.0);
+        native_f64(bytes, offset / LEN_TO_MM);
     }
     native_enum(
         bytes,
@@ -3588,11 +3734,11 @@ fn encode_native_variable_blend(
     }
     native_i64(bytes, construction.shape_prefix);
     native_f64(bytes, construction.shape_parameter);
-    native_f64(bytes, construction.shape_length / 10.0);
+    native_f64(bytes, construction.shape_length / LEN_TO_MM);
     native_i64(bytes, construction.shape_tail);
     native_enum(bytes, construction.cache_selector);
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance / 10.0);
+    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
     for values in &construction.discontinuities {
         native_i64(
             bytes,
@@ -3729,9 +3875,9 @@ fn native_rolling_ball_side(
     native_point(
         bytes,
         [
-            side.location.x / 10.0,
-            side.location.y / 10.0,
-            side.location.z / 10.0,
+            side.location.x / LEN_TO_MM,
+            side.location.y / LEN_TO_MM,
+            side.location.z / LEN_TO_MM,
         ],
     );
     native_optional_pcurve(bytes, side.secondary_pcurve.as_ref())?;
@@ -3837,7 +3983,7 @@ fn encode_complete_native_rolling_ball(
         }
     }
     for offset in construction.offsets {
-        native_f64(bytes, offset / 10.0);
+        native_f64(bytes, offset / LEN_TO_MM);
     }
     match construction.radius_selector {
         cadmpeg_ir::geometry::RollingBallRadiusSelector::None => native_enum(bytes, -1),
@@ -3860,7 +4006,7 @@ fn encode_complete_native_rolling_ball(
     native_i64(bytes, construction.tail);
     native_enum(bytes, construction.cache_selector);
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance / 10.0);
+    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
     for values in &construction.discontinuities {
         native_i64(
             bytes,
@@ -3948,12 +4094,12 @@ fn encode_native_rolling_ball(
             ))
         }
     };
-    native_f64(bytes, start / 10.0);
-    native_f64(bytes, end / 10.0);
+    native_f64(bytes, start / LEN_TO_MM);
+    native_f64(bytes, end / LEN_TO_MM);
     native_enum(bytes, -1);
     native_nurbs_surface(bytes, solved_cache)?;
     if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
-        native_f64(bytes, cache_fit_tolerance / 10.0);
+        native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
     }
     bytes.push(0x10);
     Ok(())
@@ -3992,9 +4138,9 @@ pub(crate) fn native_nurbs_curve(
     );
     native_nurbs_knots(bytes, &curve.knots)?;
     for (index, point) in curve.control_points.iter().enumerate() {
-        native_f64(bytes, point.x / 10.0);
-        native_f64(bytes, point.y / 10.0);
-        native_f64(bytes, point.z / 10.0);
+        native_f64(bytes, point.x / LEN_TO_MM);
+        native_f64(bytes, point.y / LEN_TO_MM);
+        native_f64(bytes, point.z / LEN_TO_MM);
         if let Some(weights) = curve.weights.as_ref() {
             native_f64(bytes, weights[index]);
         }
@@ -4315,7 +4461,7 @@ pub(crate) fn native_procedural_curve(
     }
     let write_cache_fit_tolerance = |bytes: &mut Vec<u8>| {
         if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
-            native_f64(bytes, cache_fit_tolerance / 10.0);
+            native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
         }
     };
     if matches!(
@@ -4659,7 +4805,7 @@ pub(crate) fn native_procedural_curve(
             for value in base_range {
                 native_optional_f64(bytes, Some(*value));
             }
-            native_f64(bytes, *distance / 10.0);
+            native_f64(bytes, *distance / LEN_TO_MM);
             native_f64(bytes, *shift);
             native_f64(bytes, *scale);
         } else {
@@ -4674,7 +4820,7 @@ pub(crate) fn native_procedural_curve(
             for value in base_range {
                 native_f64(bytes, *value);
             }
-            native_f64(bytes, *distance / 10.0);
+            native_f64(bytes, *distance / LEN_TO_MM);
             native_f64(bytes, *shift);
             native_f64(bytes, *scale);
             native_nurbs_curve(bytes, solved_cache)?;
@@ -4840,7 +4986,7 @@ pub(crate) fn native_procedural_curve(
         native_intcurve_support_context(bytes, target, context)?;
         bytes.push(native_bool(*discontinuity_flag));
         for offset in offsets {
-            native_f64(bytes, *offset / 10.0);
+            native_f64(bytes, *offset / LEN_TO_MM);
         }
         native_nurbs_curve(bytes, solved_cache)?;
         write_cache_fit_tolerance(bytes);
@@ -4869,7 +5015,14 @@ pub(crate) fn native_procedural_curve(
         native_nurbs_curve(bytes, &source)?;
         native_f64(bytes, parameter_range[0]);
         native_f64(bytes, parameter_range[1]);
-        native_vector(bytes, [offset.x / 10.0, offset.y / 10.0, offset.z / 10.0]);
+        native_vector(
+            bytes,
+            [
+                offset.x / LEN_TO_MM,
+                offset.y / LEN_TO_MM,
+                offset.z / LEN_TO_MM,
+            ],
+        );
         native_string(bytes, labels_0)?;
         native_i64(bytes, codes[0]);
         native_string(bytes, labels_1)?;
@@ -4950,9 +5103,23 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x0a);
         native_f64(bytes, value);
     }
-    native_point(bytes, [center.x / 10.0, center.y / 10.0, center.z / 10.0]);
+    native_point(
+        bytes,
+        [
+            center.x / LEN_TO_MM,
+            center.y / LEN_TO_MM,
+            center.z / LEN_TO_MM,
+        ],
+    );
     for vector in [major, minor, pitch] {
-        native_point(bytes, [vector.x / 10.0, vector.y / 10.0, vector.z / 10.0]);
+        native_point(
+            bytes,
+            [
+                vector.x / LEN_TO_MM,
+                vector.y / LEN_TO_MM,
+                vector.z / LEN_TO_MM,
+            ],
+        );
     }
     native_f64(bytes, *apex_factor);
     native_vector(bytes, [axis.x, axis.y, axis.z]);
@@ -5008,9 +5175,23 @@ pub(crate) fn native_cacheless_procedural_curve(
         bytes.push(0x0a);
         native_f64(bytes, value);
     }
-    native_point(bytes, [center.x / 10.0, center.y / 10.0, center.z / 10.0]);
+    native_point(
+        bytes,
+        [
+            center.x / LEN_TO_MM,
+            center.y / LEN_TO_MM,
+            center.z / LEN_TO_MM,
+        ],
+    );
     for vector in [major, minor, pitch] {
-        native_point(bytes, [vector.x / 10.0, vector.y / 10.0, vector.z / 10.0]);
+        native_point(
+            bytes,
+            [
+                vector.x / LEN_TO_MM,
+                vector.y / LEN_TO_MM,
+                vector.z / LEN_TO_MM,
+            ],
+        );
     }
     native_f64(bytes, *apex_factor);
     native_vector(bytes, [axis.x, axis.y, axis.z]);
@@ -5029,7 +5210,14 @@ fn native_embedded_surface(
             u_axis,
         } => {
             native_ident(bytes, "plane")?;
-            native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            native_point(
+                bytes,
+                [
+                    origin.x / LEN_TO_MM,
+                    origin.y / LEN_TO_MM,
+                    origin.z / LEN_TO_MM,
+                ],
+            );
             native_vector(bytes, [normal.x, normal.y, normal.z]);
             native_vector(bytes, [u_axis.x, u_axis.y, u_axis.z]);
             bytes.push(0x0b);
@@ -5063,8 +5251,15 @@ fn native_embedded_surface(
             radius,
         } => {
             native_ident(bytes, "sphere")?;
-            native_point(bytes, [center.x / 10.0, center.y / 10.0, center.z / 10.0]);
-            native_f64(bytes, *radius / 10.0);
+            native_point(
+                bytes,
+                [
+                    center.x / LEN_TO_MM,
+                    center.y / LEN_TO_MM,
+                    center.z / LEN_TO_MM,
+                ],
+            );
+            native_f64(bytes, *radius / LEN_TO_MM);
             native_vector(bytes, [ref_direction.x, ref_direction.y, ref_direction.z]);
             native_vector(bytes, [axis.x, axis.y, axis.z]);
             bytes.extend_from_slice(&[0x0b; 5]);
@@ -5077,10 +5272,17 @@ fn native_embedded_surface(
             minor_radius,
         } => {
             native_ident(bytes, "torus")?;
-            native_point(bytes, [center.x / 10.0, center.y / 10.0, center.z / 10.0]);
+            native_point(
+                bytes,
+                [
+                    center.x / LEN_TO_MM,
+                    center.y / LEN_TO_MM,
+                    center.z / LEN_TO_MM,
+                ],
+            );
             native_vector(bytes, [axis.x, axis.y, axis.z]);
-            native_f64(bytes, *major_radius / 10.0);
-            native_f64(bytes, *minor_radius / 10.0);
+            native_f64(bytes, *major_radius / LEN_TO_MM);
+            native_f64(bytes, *minor_radius / LEN_TO_MM);
             native_vector(bytes, [ref_direction.x, ref_direction.y, ref_direction.z]);
             bytes.extend_from_slice(&[0x0b; 5]);
         }
@@ -5187,7 +5389,7 @@ fn native_revision_surface_tail(
 ) -> Result<(), CodecError> {
     native_enum(bytes, form.tail_enum);
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    native_f64(bytes, cache_fit_tolerance.unwrap_or(0.0) / LEN_TO_MM);
     for discontinuities in &form.discontinuities {
         native_i64(
             bytes,
@@ -5225,7 +5427,7 @@ fn native_cache_first_curve_context(
     native_i64(bytes, form.revision);
     native_enum(bytes, 0);
     native_nurbs_curve(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    native_f64(bytes, cache_fit_tolerance.unwrap_or(0.0) / LEN_TO_MM);
     for (side, bounds) in context.sides.iter().zip(&form.support_bounds) {
         if let Some(surface_id) = &side.surface {
             let surface = target
@@ -5295,21 +5497,28 @@ fn native_embedded_cone(
     half_angle: f64,
 ) -> Result<(), CodecError> {
     native_ident(bytes, "cone")?;
-    native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+    native_point(
+        bytes,
+        [
+            origin.x / LEN_TO_MM,
+            origin.y / LEN_TO_MM,
+            origin.z / LEN_TO_MM,
+        ],
+    );
     native_vector(bytes, [axis.x, axis.y, axis.z]);
     native_vector(
         bytes,
         [
-            ref_direction.x * radius / 10.0,
-            ref_direction.y * radius / 10.0,
-            ref_direction.z * radius / 10.0,
+            ref_direction.x * radius / LEN_TO_MM,
+            ref_direction.y * radius / LEN_TO_MM,
+            ref_direction.z * radius / LEN_TO_MM,
         ],
     );
     native_f64(bytes, ratio);
     bytes.extend_from_slice(&[0x0b, 0x0b]);
     native_f64(bytes, half_angle.sin());
     native_f64(bytes, half_angle.cos());
-    native_f64(bytes, radius / 10.0);
+    native_f64(bytes, radius / LEN_TO_MM);
     bytes.extend_from_slice(&[0x0b; 5]);
     Ok(())
 }

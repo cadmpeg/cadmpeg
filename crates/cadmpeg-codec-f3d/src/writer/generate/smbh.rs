@@ -27,6 +27,7 @@ use super::native_geometry::{
 };
 use super::records::{native_tolerant_coedge_extension, tolerant_coedge_range};
 use super::validate::validate_source_less_body_kinds;
+use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{f3d_native, native_bool, normalized_face_sense_to_native};
 
 pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
@@ -212,7 +213,11 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
             native_surface_base(&mut records, "plane")?;
             native_point(
                 &mut records,
-                [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                [
+                    origin.x / LEN_TO_MM,
+                    origin.y / LEN_TO_MM,
+                    origin.z / LEN_TO_MM,
+                ],
             );
             native_vector(&mut records, [normal.x, normal.y, normal.z]);
             native_vector(&mut records, [u_axis.x, u_axis.y, u_axis.z]);
@@ -227,22 +232,26 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
             native_surface_base(&mut records, "cone")?;
             native_point(
                 &mut records,
-                [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                [
+                    origin.x / LEN_TO_MM,
+                    origin.y / LEN_TO_MM,
+                    origin.z / LEN_TO_MM,
+                ],
             );
             native_vector(&mut records, [axis.x, axis.y, axis.z]);
             native_vector(
                 &mut records,
                 [
-                    ref_direction.x * radius / 10.0,
-                    ref_direction.y * radius / 10.0,
-                    ref_direction.z * radius / 10.0,
+                    ref_direction.x * radius / LEN_TO_MM,
+                    ref_direction.y * radius / LEN_TO_MM,
+                    ref_direction.z * radius / LEN_TO_MM,
                 ],
             );
             native_f64(&mut records, 1.0);
             records.extend_from_slice(&[0x0b, 0x0b]);
             native_f64(&mut records, 0.0);
             native_f64(&mut records, 1.0);
-            native_f64(&mut records, radius / 10.0);
+            native_f64(&mut records, radius / LEN_TO_MM);
             records.extend_from_slice(&[0x0b; 5]);
         }
         SurfaceGeometry::Cone {
@@ -256,22 +265,26 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
             native_surface_base(&mut records, "cone")?;
             native_point(
                 &mut records,
-                [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                [
+                    origin.x / LEN_TO_MM,
+                    origin.y / LEN_TO_MM,
+                    origin.z / LEN_TO_MM,
+                ],
             );
             native_vector(&mut records, [axis.x, axis.y, axis.z]);
             native_vector(
                 &mut records,
                 [
-                    ref_direction.x * radius / 10.0,
-                    ref_direction.y * radius / 10.0,
-                    ref_direction.z * radius / 10.0,
+                    ref_direction.x * radius / LEN_TO_MM,
+                    ref_direction.y * radius / LEN_TO_MM,
+                    ref_direction.z * radius / LEN_TO_MM,
                 ],
             );
             native_f64(&mut records, ratio);
             records.extend_from_slice(&[0x0b, 0x0b]);
             native_f64(&mut records, half_angle.sin());
             native_f64(&mut records, half_angle.cos());
-            native_f64(&mut records, radius / 10.0);
+            native_f64(&mut records, radius / LEN_TO_MM);
             records.extend_from_slice(&[0x0b; 5]);
         }
         SurfaceGeometry::Sphere {
@@ -283,9 +296,13 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
             native_surface_base(&mut records, "sphere")?;
             native_point(
                 &mut records,
-                [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                [
+                    center.x / LEN_TO_MM,
+                    center.y / LEN_TO_MM,
+                    center.z / LEN_TO_MM,
+                ],
             );
-            native_f64(&mut records, radius / 10.0);
+            native_f64(&mut records, radius / LEN_TO_MM);
             native_vector(
                 &mut records,
                 [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -303,11 +320,15 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
             native_surface_base(&mut records, "torus")?;
             native_point(
                 &mut records,
-                [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                [
+                    center.x / LEN_TO_MM,
+                    center.y / LEN_TO_MM,
+                    center.z / LEN_TO_MM,
+                ],
             );
             native_vector(&mut records, [axis.x, axis.y, axis.z]);
-            native_f64(&mut records, major_radius / 10.0);
-            native_f64(&mut records, minor_radius / 10.0);
+            native_f64(&mut records, major_radius / LEN_TO_MM);
+            native_f64(&mut records, minor_radius / LEN_TO_MM);
             native_vector(
                 &mut records,
                 [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -336,7 +357,11 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
                 native_curve_base(&mut records, "straight")?;
                 native_point(
                     &mut records,
-                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                    [
+                        origin.x / LEN_TO_MM,
+                        origin.y / LEN_TO_MM,
+                        origin.z / LEN_TO_MM,
+                    ],
                 );
                 native_vector(&mut records, [direction.x, direction.y, direction.z]);
             }
@@ -349,15 +374,19 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
                 native_curve_base(&mut records, "ellipse")?;
                 native_point(
                     &mut records,
-                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
                 );
                 native_vector(&mut records, [axis.x, axis.y, axis.z]);
                 native_vector(
                     &mut records,
                     [
-                        ref_direction.x * radius / 10.0,
-                        ref_direction.y * radius / 10.0,
-                        ref_direction.z * radius / 10.0,
+                        ref_direction.x * radius / LEN_TO_MM,
+                        ref_direction.y * radius / LEN_TO_MM,
+                        ref_direction.z * radius / LEN_TO_MM,
                     ],
                 );
                 native_f64(&mut records, 1.0);
@@ -377,15 +406,19 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
                 native_curve_base(&mut records, "ellipse")?;
                 native_point(
                     &mut records,
-                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
                 );
                 native_vector(&mut records, [axis.x, axis.y, axis.z]);
                 native_vector(
                     &mut records,
                     [
-                        major_direction.x * major_radius / 10.0,
-                        major_direction.y * major_radius / 10.0,
-                        major_direction.z * major_radius / 10.0,
+                        major_direction.x * major_radius / LEN_TO_MM,
+                        major_direction.y * major_radius / LEN_TO_MM,
+                        major_direction.z * major_radius / LEN_TO_MM,
                     ],
                 );
                 native_f64(&mut records, minor_radius / major_radius);
@@ -408,7 +441,11 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
                 native_curve_base(&mut records, "degenerate_curve")?;
                 native_point(
                     &mut records,
-                    [point.x / 10.0, point.y / 10.0, point.z / 10.0],
+                    [
+                        point.x / LEN_TO_MM,
+                        point.y / LEN_TO_MM,
+                        point.z / LEN_TO_MM,
+                    ],
                 );
                 records.extend_from_slice(&[0x0b, 0x0b]);
             }
@@ -540,8 +577,8 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
                 curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Line { .. })
             })
         }) {
-            range[0] /= 10.0;
-            range[1] /= 10.0;
+            range[0] /= LEN_TO_MM;
+            range[1] /= LEN_TO_MM;
         }
         native_ident(
             &mut records,
@@ -605,9 +642,9 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
         native_point(
             &mut records,
             [
-                point.position.x / 10.0,
-                point.position.y / 10.0,
-                point.position.z / 10.0,
+                point.position.x / LEN_TO_MM,
+                point.position.y / LEN_TO_MM,
+                point.position.z / LEN_TO_MM,
             ],
         );
         records.push(0x11);
@@ -1140,7 +1177,14 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
         match carrier.geometry {
             CurveGeometry::Line { origin, direction } => {
                 native_curve_base(records, "straight")?;
-                native_point(records, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+                native_point(
+                    records,
+                    [
+                        origin.x / LEN_TO_MM,
+                        origin.y / LEN_TO_MM,
+                        origin.z / LEN_TO_MM,
+                    ],
+                );
                 native_vector(records, [direction.x, direction.y, direction.z]);
             }
             CurveGeometry::Circle {
@@ -1150,14 +1194,21 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 radius,
             } => {
                 native_curve_base(records, "ellipse")?;
-                native_point(records, [center.x / 10.0, center.y / 10.0, center.z / 10.0]);
+                native_point(
+                    records,
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
+                );
                 native_vector(records, [axis.x, axis.y, axis.z]);
                 native_vector(
                     records,
                     [
-                        ref_direction.x * radius / 10.0,
-                        ref_direction.y * radius / 10.0,
-                        ref_direction.z * radius / 10.0,
+                        ref_direction.x * radius / LEN_TO_MM,
+                        ref_direction.y * radius / LEN_TO_MM,
+                        ref_direction.z * radius / LEN_TO_MM,
                     ],
                 );
                 native_f64(records, 1.0);
@@ -1170,14 +1221,21 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 minor_radius,
             } if major_radius != 0.0 => {
                 native_curve_base(records, "ellipse")?;
-                native_point(records, [center.x / 10.0, center.y / 10.0, center.z / 10.0]);
+                native_point(
+                    records,
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
+                );
                 native_vector(records, [axis.x, axis.y, axis.z]);
                 native_vector(
                     records,
                     [
-                        major_direction.x * major_radius / 10.0,
-                        major_direction.y * major_radius / 10.0,
-                        major_direction.z * major_radius / 10.0,
+                        major_direction.x * major_radius / LEN_TO_MM,
+                        major_direction.y * major_radius / LEN_TO_MM,
+                        major_direction.z * major_radius / LEN_TO_MM,
                     ],
                 );
                 native_f64(records, minor_radius / major_radius);
@@ -1198,7 +1256,14 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
             }
             CurveGeometry::Degenerate { point } => {
                 native_curve_base(records, "degenerate_curve")?;
-                native_point(records, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+                native_point(
+                    records,
+                    [
+                        point.x / LEN_TO_MM,
+                        point.y / LEN_TO_MM,
+                        point.z / LEN_TO_MM,
+                    ],
+                );
                 records.extend_from_slice(&[0x0b, 0x0b]);
             }
             _ => {
@@ -1616,7 +1681,11 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 native_surface_base(&mut records, "plane")?;
                 native_point(
                     &mut records,
-                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                    [
+                        origin.x / LEN_TO_MM,
+                        origin.y / LEN_TO_MM,
+                        origin.z / LEN_TO_MM,
+                    ],
                 );
                 native_vector(&mut records, [normal.x, normal.y, normal.z]);
                 native_vector(&mut records, [u_axis.x, u_axis.y, u_axis.z]);
@@ -1631,22 +1700,26 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 native_surface_base(&mut records, "cone")?;
                 native_point(
                     &mut records,
-                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                    [
+                        origin.x / LEN_TO_MM,
+                        origin.y / LEN_TO_MM,
+                        origin.z / LEN_TO_MM,
+                    ],
                 );
                 native_vector(&mut records, [axis.x, axis.y, axis.z]);
                 native_vector(
                     &mut records,
                     [
-                        ref_direction.x * radius / 10.0,
-                        ref_direction.y * radius / 10.0,
-                        ref_direction.z * radius / 10.0,
+                        ref_direction.x * radius / LEN_TO_MM,
+                        ref_direction.y * radius / LEN_TO_MM,
+                        ref_direction.z * radius / LEN_TO_MM,
                     ],
                 );
                 native_f64(&mut records, 1.0);
                 records.extend_from_slice(&[0x0b, 0x0b]);
                 native_f64(&mut records, 0.0);
                 native_f64(&mut records, 1.0);
-                native_f64(&mut records, radius / 10.0);
+                native_f64(&mut records, radius / LEN_TO_MM);
                 records.extend_from_slice(&[0x0b; 5]);
             }
             SurfaceGeometry::Cone {
@@ -1660,22 +1733,26 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 native_surface_base(&mut records, "cone")?;
                 native_point(
                     &mut records,
-                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                    [
+                        origin.x / LEN_TO_MM,
+                        origin.y / LEN_TO_MM,
+                        origin.z / LEN_TO_MM,
+                    ],
                 );
                 native_vector(&mut records, [axis.x, axis.y, axis.z]);
                 native_vector(
                     &mut records,
                     [
-                        ref_direction.x * radius / 10.0,
-                        ref_direction.y * radius / 10.0,
-                        ref_direction.z * radius / 10.0,
+                        ref_direction.x * radius / LEN_TO_MM,
+                        ref_direction.y * radius / LEN_TO_MM,
+                        ref_direction.z * radius / LEN_TO_MM,
                     ],
                 );
                 native_f64(&mut records, ratio);
                 records.extend_from_slice(&[0x0b, 0x0b]);
                 native_f64(&mut records, half_angle.sin());
                 native_f64(&mut records, half_angle.cos());
-                native_f64(&mut records, radius / 10.0);
+                native_f64(&mut records, radius / LEN_TO_MM);
                 records.extend_from_slice(&[0x0b; 5]);
             }
             SurfaceGeometry::Sphere {
@@ -1687,9 +1764,13 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 native_surface_base(&mut records, "sphere")?;
                 native_point(
                     &mut records,
-                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
                 );
-                native_f64(&mut records, radius / 10.0);
+                native_f64(&mut records, radius / LEN_TO_MM);
                 native_vector(
                     &mut records,
                     [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -1713,11 +1794,15 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 native_surface_base(&mut records, "torus")?;
                 native_point(
                     &mut records,
-                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
                 );
                 native_vector(&mut records, [axis.x, axis.y, axis.z]);
-                native_f64(&mut records, major_radius / 10.0);
-                native_f64(&mut records, minor_radius / 10.0);
+                native_f64(&mut records, major_radius / LEN_TO_MM);
+                native_f64(&mut records, minor_radius / LEN_TO_MM);
                 native_vector(
                     &mut records,
                     [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -1742,7 +1827,11 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 native_curve_base(&mut records, "straight")?;
                 native_point(
                     &mut records,
-                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                    [
+                        origin.x / LEN_TO_MM,
+                        origin.y / LEN_TO_MM,
+                        origin.z / LEN_TO_MM,
+                    ],
                 );
                 native_vector(&mut records, [direction.x, direction.y, direction.z]);
             }
@@ -1764,7 +1853,11 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 native_curve_base(&mut records, "degenerate_curve")?;
                 native_point(
                     &mut records,
-                    [point.x / 10.0, point.y / 10.0, point.z / 10.0],
+                    [
+                        point.x / LEN_TO_MM,
+                        point.y / LEN_TO_MM,
+                        point.z / LEN_TO_MM,
+                    ],
                 );
                 records.extend_from_slice(&[0x0b, 0x0b]);
             }
@@ -1777,15 +1870,19 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 native_curve_base(&mut records, "ellipse")?;
                 native_point(
                     &mut records,
-                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
                 );
                 native_vector(&mut records, [axis.x, axis.y, axis.z]);
                 native_vector(
                     &mut records,
                     [
-                        ref_direction.x * radius / 10.0,
-                        ref_direction.y * radius / 10.0,
-                        ref_direction.z * radius / 10.0,
+                        ref_direction.x * radius / LEN_TO_MM,
+                        ref_direction.y * radius / LEN_TO_MM,
+                        ref_direction.z * radius / LEN_TO_MM,
                     ],
                 );
                 native_f64(&mut records, 1.0);
@@ -1805,15 +1902,19 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 native_curve_base(&mut records, "ellipse")?;
                 native_point(
                     &mut records,
-                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
                 );
                 native_vector(&mut records, [axis.x, axis.y, axis.z]);
                 native_vector(
                     &mut records,
                     [
-                        major_direction.x * major_radius / 10.0,
-                        major_direction.y * major_radius / 10.0,
-                        major_direction.z * major_radius / 10.0,
+                        major_direction.x * major_radius / LEN_TO_MM,
+                        major_direction.y * major_radius / LEN_TO_MM,
+                        major_direction.z * major_radius / LEN_TO_MM,
                     ],
                 );
                 native_f64(&mut records, minor_radius / major_radius);
@@ -2043,8 +2144,8 @@ fn encode_source_less_edges_vertices_points(
                 matches!(model.curves[*ordinal].geometry, CurveGeometry::Line { .. })
             })
         }) {
-            range[0] /= 10.0;
-            range[1] /= 10.0;
+            range[0] /= LEN_TO_MM;
+            range[1] /= LEN_TO_MM;
         }
         native_ident(
             records,
@@ -2139,9 +2240,9 @@ fn encode_source_less_edges_vertices_points(
         native_point(
             records,
             [
-                point.position.x / 10.0,
-                point.position.y / 10.0,
-                point.position.z / 10.0,
+                point.position.x / LEN_TO_MM,
+                point.position.y / LEN_TO_MM,
+                point.position.z / LEN_TO_MM,
             ],
         );
         records.push(0x11);
@@ -2312,7 +2413,7 @@ fn native_tolerant_vertex_tail(
         if tolerance < 0.0 {
             tolerance
         } else {
-            tolerance / 10.0
+            tolerance / LEN_TO_MM
         },
     );
     native_i64(records, 0);
@@ -2333,7 +2434,7 @@ fn native_tolerant_edge_tail(
             edge.id
         )));
     }
-    native_f64(records, tolerance / 10.0);
+    native_f64(records, tolerance / LEN_TO_MM);
     let trailing = f3d_native(target)?
         .and_then(|native| {
             native

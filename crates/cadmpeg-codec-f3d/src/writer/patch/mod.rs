@@ -10,6 +10,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use zip::write::SimpleFileOptions;
 
+use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{f3d_native, validate_configuration_projection};
 use crate::{decode, F3dCodec};
 pub(crate) mod edits;
@@ -190,8 +191,8 @@ pub fn write_semantic(
                 })
             });
         if is_line {
-            range[0] /= 10.0;
-            range[1] /= 10.0;
+            range[0] /= LEN_TO_MM;
+            range[1] /= LEN_TO_MM;
         }
     }
     let face_sense_edits = validate_face_sense_edits(&baseline.ir, target)?;

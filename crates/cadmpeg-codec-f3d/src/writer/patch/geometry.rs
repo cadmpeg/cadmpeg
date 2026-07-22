@@ -12,6 +12,7 @@ use cadmpeg_ir::transform::Transform;
 use super::edits::{
     NurbsCurveEdit, NurbsPcurveEdit, NurbsSurfaceEdit, ProceduralCurveEdit, ProceduralSurfaceEdit,
 };
+use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{finite_vector, native_bool, unique_knot_count};
 use crate::{asm_header, sab};
 
@@ -470,9 +471,13 @@ pub(crate) fn patch_framed_geometry(
             if let Some(position) = positions.get(&id) {
                 let offset =
                     required_payload_field(bytes, record, active_ref_width(bytes), 3, 0x13)?;
-                for (component, value) in [position.x / 10.0, position.y / 10.0, position.z / 10.0]
-                    .into_iter()
-                    .enumerate()
+                for (component, value) in [
+                    position.x / LEN_TO_MM,
+                    position.y / LEN_TO_MM,
+                    position.z / LEN_TO_MM,
+                ]
+                .into_iter()
+                .enumerate()
                 {
                     let at = offset + 1 + component * 8;
                     bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -496,7 +501,11 @@ pub(crate) fn patch_framed_geometry(
                     required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
                 ];
                 for (offset, values) in fields.into_iter().zip([
-                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                    [
+                        origin.x / LEN_TO_MM,
+                        origin.y / LEN_TO_MM,
+                        origin.z / LEN_TO_MM,
+                    ],
                     [direction.x, direction.y, direction.z],
                 ]) {
                     for (component, value) in values.into_iter().enumerate() {
@@ -524,9 +533,13 @@ pub(crate) fn patch_framed_geometry(
                     field_index,
                     0x13,
                 )?;
-                for (component, value) in [point.x / 10.0, point.y / 10.0, point.z / 10.0]
-                    .into_iter()
-                    .enumerate()
+                for (component, value) in [
+                    point.x / LEN_TO_MM,
+                    point.y / LEN_TO_MM,
+                    point.z / LEN_TO_MM,
+                ]
+                .into_iter()
+                .enumerate()
                 {
                     let at = offset + 1 + component * 8;
                     bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -551,9 +564,13 @@ pub(crate) fn patch_framed_geometry(
                     required_payload_field(bytes, record, ref_width, field_indices[2], 0x14)?,
                     required_payload_field(bytes, record, ref_width, field_indices[3], 0x06)?,
                 ];
-                let major = major_radius / 10.0;
+                let major = major_radius / LEN_TO_MM;
                 for (offset, values) in fields[..3].iter().zip([
-                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
                     [axis.x, axis.y, axis.z],
                     [
                         direction.x * major,
@@ -598,7 +615,11 @@ pub(crate) fn patch_framed_geometry(
                     required_payload_field(bytes, record, ref_width, field_indices[2], 0x14)?,
                 ];
                 for (offset, values) in fields.into_iter().zip([
-                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                    [
+                        origin.x / LEN_TO_MM,
+                        origin.y / LEN_TO_MM,
+                        origin.z / LEN_TO_MM,
+                    ],
                     [normal.x, normal.y, normal.z],
                     [u_axis.x, u_axis.y, u_axis.z],
                 ]) {
@@ -628,7 +649,11 @@ pub(crate) fn patch_framed_geometry(
                     required_payload_field(bytes, record, ref_width, field_indices[3], 0x14)?,
                 ];
                 for (offset, values) in [fields[0], fields[2], fields[3]].into_iter().zip([
-                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
                     [ref_direction.x, ref_direction.y, ref_direction.z],
                     [axis.x, axis.y, axis.z],
                 ]) {
@@ -637,7 +662,8 @@ pub(crate) fn patch_framed_geometry(
                         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
                     }
                 }
-                bytes[fields[1] + 1..fields[1] + 9].copy_from_slice(&(radius / 10.0).to_le_bytes());
+                bytes[fields[1] + 1..fields[1] + 9]
+                    .copy_from_slice(&(radius / LEN_TO_MM).to_le_bytes());
             }
         } else if record.head == "torus" {
             if let Some((center, axis, ref_direction, major_radius, minor_radius)) = tori.get(&id) {
@@ -660,7 +686,11 @@ pub(crate) fn patch_framed_geometry(
                     required_payload_field(bytes, record, ref_width, field_indices[4], 0x14)?,
                 ];
                 for (offset, values) in [fields[0], fields[1], fields[4]].into_iter().zip([
-                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                    ],
                     [axis.x, axis.y, axis.z],
                     [ref_direction.x, ref_direction.y, ref_direction.z],
                 ]) {
@@ -671,7 +701,7 @@ pub(crate) fn patch_framed_geometry(
                 }
                 for (offset, value) in [fields[2], fields[3]]
                     .into_iter()
-                    .zip([major_radius / 10.0, minor_radius / 10.0])
+                    .zip([major_radius / LEN_TO_MM, minor_radius / LEN_TO_MM])
                 {
                     bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
                 }
@@ -715,9 +745,13 @@ pub(crate) fn patch_framed_geometry(
                 } else {
                     *axis
                 };
-                let scaled_radius = radius / 10.0;
+                let scaled_radius = radius / LEN_TO_MM;
                 for (offset, values) in fields[..3].iter().zip([
-                    [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
+                    [
+                        origin.x / LEN_TO_MM,
+                        origin.y / LEN_TO_MM,
+                        origin.z / LEN_TO_MM,
+                    ],
                     [native_axis.x, native_axis.y, native_axis.z],
                     [
                         ref_direction.x * scaled_radius,
@@ -833,14 +867,18 @@ fn patch_extrusion_definition(
     for (base, values) in [
         (
             layout.direction,
-            [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
+            [
+                direction.x / LEN_TO_MM,
+                direction.y / LEN_TO_MM,
+                direction.z / LEN_TO_MM,
+            ],
         ),
         (
             layout.native_position,
             [
-                native_position.x / 10.0,
-                native_position.y / 10.0,
-                native_position.z / 10.0,
+                native_position.x / LEN_TO_MM,
+                native_position.y / LEN_TO_MM,
+                native_position.z / LEN_TO_MM,
             ],
         ),
     ] {
@@ -919,9 +957,9 @@ fn patch_transform_record(
             transform.rows[2][2],
         ],
         [
-            transform.rows[0][3] / (header_scale * 10.0),
-            transform.rows[1][3] / (header_scale * 10.0),
-            transform.rows[2][3] / (header_scale * 10.0),
+            transform.rows[0][3] / (header_scale * LEN_TO_MM),
+            transform.rows[1][3] / (header_scale * LEN_TO_MM),
+            transform.rows[2][3] / (header_scale * LEN_TO_MM),
         ],
     ];
     for (index, vector) in vectors.into_iter().enumerate() {
@@ -987,7 +1025,7 @@ fn patch_blend_radius_tokens(
             .radii
             .into_iter()
             .zip(radii)
-            .map(|(offset, radius)| (offset, radius / 10.0)),
+            .map(|(offset, radius)| (offset, radius / LEN_TO_MM)),
     );
     Ok(())
 }
@@ -1067,9 +1105,9 @@ fn patch_nurbs_surface_record(
             let ir_index = u * v_count + v;
             let point = surface.control_points[ir_index];
             let values = [
-                point.x / 10.0,
-                point.y / 10.0,
-                point.z / 10.0,
+                point.x / LEN_TO_MM,
+                point.y / LEN_TO_MM,
+                point.z / LEN_TO_MM,
                 weights.map_or(0.0, |weights| weights[ir_index]),
             ];
             for value in values.into_iter().take(components) {
@@ -1101,7 +1139,7 @@ fn patch_procedural_surface_fit(
         )));
     }
     let at = record.offset + layout.end + 1;
-    bytes[at..at + 8].copy_from_slice(&(tolerance / 10.0).to_le_bytes());
+    bytes[at..at + 8].copy_from_slice(&(tolerance / LEN_TO_MM).to_le_bytes());
     Ok(())
 }
 
@@ -1157,9 +1195,9 @@ fn patch_nurbs_curve_record(
     let mut ordinal = 0usize;
     for (index, point) in curve.control_points.iter().enumerate() {
         let values = [
-            point.x / 10.0,
-            point.y / 10.0,
-            point.z / 10.0,
+            point.x / LEN_TO_MM,
+            point.y / LEN_TO_MM,
+            point.z / LEN_TO_MM,
             weights.map_or(0.0, |weights| weights[index]),
         ];
         for value in values.into_iter().take(components) {
@@ -1190,7 +1228,7 @@ fn patch_procedural_curve_fit(
         )));
     }
     let at = record.offset + layout.end + 1;
-    bytes[at..at + 8].copy_from_slice(&(tolerance / 10.0).to_le_bytes());
+    bytes[at..at + 8].copy_from_slice(&(tolerance / LEN_TO_MM).to_le_bytes());
     Ok(())
 }
 
@@ -1228,10 +1266,26 @@ fn patch_helix_definition(
         layout.angle_range.into_iter().zip(*angle_range),
     );
     for (offset, value) in layout.frame_vectors.into_iter().zip([
-        [center.x / 10.0, center.y / 10.0, center.z / 10.0],
-        [major.x / 10.0, major.y / 10.0, major.z / 10.0],
-        [minor.x / 10.0, minor.y / 10.0, minor.z / 10.0],
-        [pitch.x / 10.0, pitch.y / 10.0, pitch.z / 10.0],
+        [
+            center.x / LEN_TO_MM,
+            center.y / LEN_TO_MM,
+            center.z / LEN_TO_MM,
+        ],
+        [
+            major.x / LEN_TO_MM,
+            major.y / LEN_TO_MM,
+            major.z / LEN_TO_MM,
+        ],
+        [
+            minor.x / LEN_TO_MM,
+            minor.y / LEN_TO_MM,
+            minor.z / LEN_TO_MM,
+        ],
+        [
+            pitch.x / LEN_TO_MM,
+            pitch.y / LEN_TO_MM,
+            pitch.z / LEN_TO_MM,
+        ],
     ]) {
         apply_vector_payload(bytes, record.offset + offset, value);
     }
@@ -1273,7 +1327,11 @@ fn patch_vector_offset_definition(
     apply_vector_payload(
         bytes,
         record.offset + layout.offset,
-        [offset.x / 10.0, offset.y / 10.0, offset.z / 10.0],
+        [
+            offset.x / LEN_TO_MM,
+            offset.y / LEN_TO_MM,
+            offset.z / LEN_TO_MM,
+        ],
     );
     Ok(())
 }
@@ -1394,7 +1452,7 @@ fn patch_two_sided_offset_definition(
     }
     bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
     for (at, value) in layout.offsets.into_iter().zip(offsets) {
-        patch_f64_payload(bytes, record.offset + at, *value / 10.0)?;
+        patch_f64_payload(bytes, record.offset + at, *value / LEN_TO_MM)?;
     }
     Ok(())
 }
@@ -1486,12 +1544,11 @@ fn patch_surface_offset_definition(
                     .chain(context.discontinuities.iter().flatten().copied())
                     .chain(base_u_range.iter().copied())
                     .chain(base_v_range.iter().copied())
-                    .chain(
-                        base_range
-                            .iter()
-                            .copied()
-                            .chain([distance / 10.0, *shift, *scale]),
-                    ),
+                    .chain(base_range.iter().copied().chain([
+                        distance / LEN_TO_MM,
+                        *shift,
+                        *scale,
+                    ])),
             ),
     );
     bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);

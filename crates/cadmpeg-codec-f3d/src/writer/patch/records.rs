@@ -14,6 +14,7 @@ use super::edits::{
     HistoryEdits, PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit, SketchRelationEdit,
 };
 use super::geometry::{active_ref_width, patch_integer_field, required_payload_field};
+use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::native_bool;
 use crate::{asm_header, sab};
 
@@ -670,8 +671,8 @@ pub(crate) fn patch_sketch_points(
         let payload = bytes.get_mut(start..start + 16).ok_or_else(|| {
             CodecError::Malformed("sketch-point coordinate payload is outside BulkStream".into())
         })?;
-        payload[..8].copy_from_slice(&(coordinates.u / 10.0).to_le_bytes());
-        payload[8..].copy_from_slice(&(coordinates.v / 10.0).to_le_bytes());
+        payload[..8].copy_from_slice(&(coordinates.u / LEN_TO_MM).to_le_bytes());
+        payload[8..].copy_from_slice(&(coordinates.v / LEN_TO_MM).to_le_bytes());
     }
     Ok(())
 }
@@ -708,12 +709,12 @@ pub(crate) fn patch_sketch_curves(
                 direction,
                 normal,
             } => [
-                start.x / 10.0,
-                start.y / 10.0,
-                start.z / 10.0,
-                (end.x - start.x) / 10.0,
-                (end.y - start.y) / 10.0,
-                (end.z - start.z) / 10.0,
+                start.x / LEN_TO_MM,
+                start.y / LEN_TO_MM,
+                start.z / LEN_TO_MM,
+                (end.x - start.x) / LEN_TO_MM,
+                (end.y - start.y) / LEN_TO_MM,
+                (end.z - start.z) / LEN_TO_MM,
                 direction.x,
                 direction.y,
                 direction.z,
@@ -729,16 +730,16 @@ pub(crate) fn patch_sketch_curves(
                 start_angle,
                 end_angle,
             } => [
-                center.x / 10.0,
-                center.y / 10.0,
-                center.z / 10.0,
+                center.x / LEN_TO_MM,
+                center.y / LEN_TO_MM,
+                center.z / LEN_TO_MM,
                 normal.x,
                 normal.y,
                 normal.z,
                 reference_direction.x,
                 reference_direction.y,
                 reference_direction.z,
-                radius / 10.0,
+                radius / LEN_TO_MM,
                 *start_angle,
                 *end_angle,
             ],
@@ -771,7 +772,7 @@ fn patch_sketch_nurbs(
             "sketch NURBS arrays extend beyond BulkStream".into(),
         ));
     }
-    bytes[fit_at..fit_at + 8].copy_from_slice(&(fit_tolerance / 10.0).to_le_bytes());
+    bytes[fit_at..fit_at + 8].copy_from_slice(&(fit_tolerance / LEN_TO_MM).to_le_bytes());
     for (ordinal, value) in knots.iter().enumerate() {
         let at = knots_at + ordinal * 8;
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -784,7 +785,8 @@ fn patch_sketch_nurbs(
         let at = points_at + ordinal * 24;
         for (component, value) in [point.x, point.y, point.z].into_iter().enumerate() {
             let component_at = at + component * 8;
-            bytes[component_at..component_at + 8].copy_from_slice(&(value / 10.0).to_le_bytes());
+            bytes[component_at..component_at + 8]
+                .copy_from_slice(&(value / LEN_TO_MM).to_le_bytes());
         }
     }
     Ok(())

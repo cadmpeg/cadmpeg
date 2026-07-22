@@ -22,6 +22,7 @@ use super::geometry::{
     orthonormal_pair, valid_edited_curve_structure, valid_edited_nurbs_direction,
 };
 use super::records::{canonical_guid, native_stream};
+use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{
     f3d_native, finite_point, finite_vector, history_change_kind, normalized_face_sense_to_native,
 };
@@ -431,7 +432,7 @@ pub(crate) fn validate_tolerant_vertex_edits(
             let stored = if tolerance < 0.0 {
                 tolerance
             } else {
-                tolerance / 10.0
+                tolerance / LEN_TO_MM
             };
             edits.insert(
                 after.record_index as usize,
@@ -509,7 +510,7 @@ pub(crate) fn validate_tolerant_edge_edits(
             )));
         }
         if baseline_edges[after.edge.as_str()].tolerance != Some(tolerance) {
-            edits.insert(after.record_index as usize, tolerance / 10.0);
+            edits.insert(after.record_index as usize, tolerance / LEN_TO_MM);
         }
     }
     Ok(edits)
