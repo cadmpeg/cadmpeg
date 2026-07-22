@@ -48,11 +48,11 @@ fixtures, claims above L1 remain unproven.
   and decoded `d<external_id>` section-dimension identities. Unambiguous
   decoded dimension values initialize those relation symbols in millimeters or
   degrees; conflicting and unresolved occurrences remain symbolic. Explicit
-  length, mass, time, force, and angle units convert to canonical relation
-  units and compound exponent vectors propagate through dimensionally valid
-  arithmetic. Length and angle results transfer as typed neutral values; other
-  dimensions remain evaluated native values because the neutral parameter
-  model has no corresponding scalar types.
+  length, area, volume, mass, time, force, energy, power, pressure, and angle
+  units convert to canonical relation units and compound exponent vectors
+  propagate through dimensionally valid arithmetic. Length and angle results
+  transfer as typed neutral values; other dimensions remain evaluated native
+  values because the neutral parameter model has no corresponding scalar types.
   Conditional selection, range and deadband functions, sign and remainder,
   rounding, tolerance tests, and trigonometric results preserve dimensional
   validity and typed angular results.

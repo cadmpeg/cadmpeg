@@ -1213,16 +1213,73 @@ fn relation_unit_symbol(symbol: &str) -> Option<RelationUnit> {
         "in" | "inch" => (25.4, RelationDimension::LENGTH),
         "ft" | "foot" => (304.8, RelationDimension::LENGTH),
         "micron" => (0.001, RelationDimension::LENGTH),
+        "sq_mm" => (1.0, RelationDimension::LENGTH.scale(2)?),
+        "sq_cm" => (100.0, RelationDimension::LENGTH.scale(2)?),
+        "sq_m" => (1_000_000.0, RelationDimension::LENGTH.scale(2)?),
+        "sq_in" => (645.16, RelationDimension::LENGTH.scale(2)?),
+        "sq_ft" => (92_903.04, RelationDimension::LENGTH.scale(2)?),
+        "cu_mm" => (1.0, RelationDimension::LENGTH.scale(3)?),
+        "cu_cm" => (1_000.0, RelationDimension::LENGTH.scale(3)?),
+        "cu_m" => (1_000_000_000.0, RelationDimension::LENGTH.scale(3)?),
+        "cu_in" => (16_387.064, RelationDimension::LENGTH.scale(3)?),
+        "cu_ft" => (28_316_846.592, RelationDimension::LENGTH.scale(3)?),
         "kg" => (1.0, RelationDimension::MASS),
         "g" => (0.001, RelationDimension::MASS),
+        "mg" => (0.000_001, RelationDimension::MASS),
         "lb" | "lbm" => (0.453_592_37, RelationDimension::MASS),
+        "slug" => (14.593_902_937_206_4, RelationDimension::MASS),
+        "tonne" => (1_000.0, RelationDimension::MASS),
         "s" | "sec" | "second" => (1.0, RelationDimension::TIME),
+        "msec" => (0.001, RelationDimension::TIME),
         "min" | "minute" => (60.0, RelationDimension::TIME),
         "hr" | "hour" => (3_600.0, RelationDimension::TIME),
+        "day" => (86_400.0, RelationDimension::TIME),
         "deg" | "degree" => (1.0, RelationDimension::ANGLE),
         "rad" | "radian" => (180.0 / std::f64::consts::PI, RelationDimension::ANGLE),
         "n" | "newton" => (1_000.0, RelationDimension::FORCE),
+        "kn" => (1_000_000.0, RelationDimension::FORCE),
+        "dyne" => (0.01, RelationDimension::FORCE),
         "lbf" => (4_448.221_615_260_5, RelationDimension::FORCE),
+        "erg" => (
+            0.1,
+            RelationDimension::FORCE.combine(RelationDimension::LENGTH, false)?,
+        ),
+        "joule" => (
+            1_000_000.0,
+            RelationDimension::FORCE.combine(RelationDimension::LENGTH, false)?,
+        ),
+        "kw" => (
+            1_000_000_000.0,
+            RelationDimension::FORCE
+                .combine(RelationDimension::LENGTH, false)?
+                .combine(RelationDimension::TIME, true)?,
+        ),
+        "mw" => (
+            1_000_000_000_000.0,
+            RelationDimension::FORCE
+                .combine(RelationDimension::LENGTH, false)?
+                .combine(RelationDimension::TIME, true)?,
+        ),
+        "pa" => (
+            0.001,
+            RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
+        ),
+        "mpa" => (
+            1_000.0,
+            RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
+        ),
+        "gpa" => (
+            1_000_000.0,
+            RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
+        ),
+        "psi" => (
+            6.894_757_293_168_361,
+            RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
+        ),
+        "ksi" => (
+            6_894.757_293_168_361,
+            RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
+        ),
         _ => return None,
     };
     Some(RelationUnit { scale, dimension })
@@ -3796,6 +3853,30 @@ mod tests {
                 RelationEvaluationContext::default(),
             ),
             Some(CurveExpressionValue::Number(1.0))
+        );
+        for expression in [
+            "1[sq_in]/1[in]^2",
+            "1[cu_ft]/1[ft]^3",
+            "1[joule]/(1[N]*1[m])",
+            "1[kW]/(1000[joule]/1[s])",
+            "1[MPa]/1[N/mm^2]",
+        ] {
+            let Some(CurveExpressionValue::Number(value)) = evaluate_relation_expression(
+                expression,
+                &values,
+                RelationEvaluationContext::default(),
+            ) else {
+                panic!("unexpected value kind for {expression}");
+            };
+            assert!((value - 1.0).abs() < 1e-12, "{expression}");
+        }
+        assert_eq!(
+            evaluate_relation_expression(
+                "1[psi]/1[Pa]",
+                &values,
+                RelationEvaluationContext::default(),
+            ),
+            Some(CurveExpressionValue::Number(6_894.757_293_168_361))
         );
         assert_eq!(
             evaluate_relation_expression("2[mm]^2", &values, RelationEvaluationContext::default(),),

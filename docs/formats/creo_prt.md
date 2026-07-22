@@ -2513,12 +2513,17 @@ dependency.
 Square brackets following a numeric literal or parameter expression contain a
 unit expression. Identifiers inside the brackets are unit symbols, not relation
 dependencies. Length symbols `mm`, `cm`, `m`, `in`, `inch`, `ft`, `foot`, and
-`micron` convert to millimeters. Mass symbols `kg`, `g`, `lb`, and `lbm`
-convert to kilograms. Time symbols `s`, `sec`, `second`, `min`, `minute`, `hr`,
-and `hour` convert to seconds. Force symbols `N`, `newton`, and `lbf` convert to
-kilogram-millimeters per square second. Angle symbols `deg`, `degree`, `rad`,
-and `radian` convert to relation degrees. Unit multiplication, division,
-parentheses, and signed integer powers form compound dimensions. Addition,
+`micron` convert to millimeters. `sq_mm`, `sq_cm`, `sq_m`, `sq_in`, and `sq_ft`
+are area units; `cu_mm`, `cu_cm`, `cu_m`, `cu_in`, and `cu_ft` are volume units.
+Mass symbols `kg`, `g`, `mg`, `lb`, `lbm`, `slug`, and `tonne` convert to
+kilograms. Time symbols `s`, `sec`, `second`, `Msec`, `min`, `minute`, `hr`,
+`hour`, and `day` convert to seconds. Force symbols `N`, `newton`, `kN`, `dyne`,
+and `lbf` convert to kilogram-millimeters per square second. `erg` and `joule`
+are energy units; `kW` and `MW` are power units; `Pa`, `MPa`, `GPa`, `psi`, and
+`ksi` are pressure units. Angle symbols `deg`, `degree`, `rad`, and `radian`
+convert to relation degrees. Unit symbols are ASCII case-insensitive. Unit
+multiplication, division, parentheses, and signed integer powers form compound
+dimensions. Addition,
 subtraction, and comparison require equal dimensions. Multiplication and
 division add and subtract base-dimension powers. An integer power multiplies
 the powers, and `sqrt` divides even powers by two. `abs`, `min`, `max`, `near`,
