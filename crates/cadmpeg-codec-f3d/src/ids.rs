@@ -23,6 +23,12 @@ pub(crate) const SCHEME_PREFIX: &str = "f3d:";
 /// the fallback for `native_stream(id).unwrap_or(..)`.
 pub(crate) const DEFAULT_STREAM: &str = "f3d:design";
 
+/// Parse the native stream segment out of an identity key: the text before the
+/// final `:` separator. Returns `None` when the key carries no separator.
+pub(crate) fn native_stream(id: &str) -> Option<&str> {
+    id.rsplit_once(':').map(|(stream, _)| stream)
+}
+
 /// The fixed key of the single source-image record a design carries.
 pub(crate) const FILE_SOURCE_IMAGE_ID: &str = "f3d:file:source-image#0";
 
@@ -74,7 +80,7 @@ pub(crate) fn neutral_configuration_id(
 /// The neutral feature key for a parameter `scope`.
 pub(crate) fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::FeatureId {
     neutral_feature_id_parts(
-        crate::design::native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
+        native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
         &scope.kind,
         scope.feature_ordinal,
         scope.record_index,
@@ -107,7 +113,7 @@ pub(crate) fn neutral_parameter_id(
     parameter: &DesignParameter,
 ) -> cadmpeg_ir::features::ParameterId {
     neutral_parameter_id_parts(
-        crate::design::native_stream(&parameter.id).unwrap_or(DEFAULT_STREAM),
+        native_stream(&parameter.id).unwrap_or(DEFAULT_STREAM),
         parameter.source_ordinal,
     )
 }
@@ -146,9 +152,7 @@ pub(crate) fn neutral_spatial_sketch_id(
 /// the `sketch` or `spatial-sketch` URN kind; the byte layout is otherwise
 /// identical between the planar and spatial variants.
 fn sketch_placement_id(segment: &str, placement: &DesignSketchPlacement) -> String {
-    let stream = identity_key_component(
-        crate::design::native_stream(&placement.id).unwrap_or(DEFAULT_STREAM),
-    );
+    let stream = identity_key_component(native_stream(&placement.id).unwrap_or(DEFAULT_STREAM));
     format!("f3d:model:{segment}#{stream}@{}", placement.entity_suffix)
 }
 
@@ -264,8 +268,7 @@ pub(crate) fn neutral_sketch_constraint_id(
     native_ref: &str,
     record_index: u32,
 ) -> cadmpeg_ir::sketches::SketchConstraintId {
-    let stream =
-        identity_key_component(crate::design::native_stream(native_ref).unwrap_or(DEFAULT_STREAM));
+    let stream = identity_key_component(native_stream(native_ref).unwrap_or(DEFAULT_STREAM));
     cadmpeg_ir::sketches::SketchConstraintId(format!(
         "f3d:model:sketch-constraint#{stream}@{record_index}"
     ))

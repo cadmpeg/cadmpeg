@@ -33,8 +33,7 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
         .map(|parameter| {
             (
                 (
-                    crate::design::native_stream(&parameter.id)
-                        .unwrap_or(crate::ids::DEFAULT_STREAM),
+                    crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM),
                     parameter.record_index,
                 ),
                 parameter.kind,
@@ -45,8 +44,7 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
         .design_parameter_owners
         .iter()
         .filter_map(|owner| {
-            let stream =
-                crate::design::native_stream(&owner.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+            let stream = crate::ids::native_stream(&owner.id).unwrap_or(crate::ids::DEFAULT_STREAM);
             (parameters.get(&(stream, owner.parameter_record_index))
                 == Some(&crate::records::DesignParameterKind::Dimension))
             .then_some((stream, owner.record_index))
@@ -55,39 +53,39 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
     let mut typed = HashSet::new();
     for pair in &native.design_dimension_locus_pairs {
         typed.insert((
-            crate::design::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
+            crate::ids::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.companion_record_index,
         ));
         typed.insert((
-            crate::design::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
+            crate::ids::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.governing_companion_record_index,
         ));
     }
     for frame in &native.design_dimension_annotation_frames {
         typed.insert((
-            crate::design::native_stream(&frame.id).unwrap_or(crate::ids::DEFAULT_STREAM),
+            crate::ids::native_stream(&frame.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             frame.governing_companion_record_index,
         ));
     }
     for group in &native.design_dimension_locus_groups {
         typed.insert((
-            crate::design::native_stream(&group.id).unwrap_or(crate::ids::DEFAULT_STREAM),
+            crate::ids::native_stream(&group.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             group.companion_record_index,
         ));
     }
     for pair in &native.design_dimension_null_locus_pairs {
         typed.insert((
-            crate::design::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
+            crate::ids::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.companion_record_index,
         ));
         typed.insert((
-            crate::design::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
+            crate::ids::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.governing_companion_record_index,
         ));
     }
     for record in &native.design_dimension_recipe_records {
         typed.insert((
-            crate::design::native_stream(&record.id).unwrap_or(crate::ids::DEFAULT_STREAM),
+            crate::ids::native_stream(&record.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             record.companion_record_index,
         ));
     }
@@ -96,7 +94,7 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
         .iter()
         .filter(|companion| {
             let stream =
-                crate::design::native_stream(&companion.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+                crate::ids::native_stream(&companion.id).unwrap_or(crate::ids::DEFAULT_STREAM);
             companion.payload_byte_length > 0
                 && dimension_owners.contains(&(stream, companion.owner_record_index))
                 && !typed.contains(&(stream, companion.record_index))
@@ -328,10 +326,9 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .collect::<HashMap<_, _>>();
     let mut state_scopes = HashMap::<(&str, i64), Vec<&str>>::new();
     for scope in &native.design_parameter_scopes {
-        let (Some(stream), Some(state_id)) = (
-            crate::design::native_stream(&scope.id),
-            scope.history_state_id,
-        ) else {
+        let (Some(stream), Some(state_id)) =
+            (crate::ids::native_stream(&scope.id), scope.history_state_id)
+        else {
             continue;
         };
         state_scopes
@@ -343,7 +340,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     let mut ambiguous_history_dependencies = 0;
     for scope in &native.design_parameter_scopes {
         let (Some(stream), Some(previous_state_id), Some(feature)) = (
-            crate::design::native_stream(&scope.id),
+            crate::ids::native_stream(&scope.id),
             scope.previous_history_state_id,
             projected_features.get(scope.id.as_str()),
         ) else {
@@ -1948,7 +1945,7 @@ fn extend_related_design_records(
         .sketch_relations
         .iter()
         .flat_map(|relation| {
-            let scope = crate::design::native_stream(&relation.id)
+            let scope = crate::ids::native_stream(&relation.id)
                 .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             relation
@@ -1959,7 +1956,7 @@ fn extend_related_design_records(
         })
         .chain(native.design_parameters.iter().filter_map(|parameter| {
             Some((
-                crate::design::native_stream(&parameter.id)?.to_owned(),
+                crate::ids::native_stream(&parameter.id)?.to_owned(),
                 parameter.owner_record_index?,
             ))
         }))
@@ -1969,7 +1966,7 @@ fn extend_related_design_records(
         .iter()
         .filter_map(|record| {
             Some((
-                crate::design::native_stream(&record.id)?.to_owned(),
+                crate::ids::native_stream(&record.id)?.to_owned(),
                 record.record_index,
             ))
         })
@@ -1978,7 +1975,7 @@ fn extend_related_design_records(
         crate::design::decode_related_record_headers(reader, scan, &indices)?
             .into_iter()
             .filter(|record| {
-                crate::design::native_stream(&record.id).is_none_or(|scope| {
+                crate::ids::native_stream(&record.id).is_none_or(|scope| {
                     !existing.contains(&(scope.to_owned(), record.record_index))
                 })
             }),
@@ -1995,7 +1992,7 @@ fn extend_related_design_records(
         .design_parameter_owners
         .iter()
         .flat_map(|owner| {
-            let scope = crate::design::native_stream(&owner.id)
+            let scope = crate::ids::native_stream(&owner.id)
                 .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             [
@@ -2011,7 +2008,7 @@ fn extend_related_design_records(
         .iter()
         .filter_map(|record| {
             Some((
-                crate::design::native_stream(&record.id)?.to_owned(),
+                crate::ids::native_stream(&record.id)?.to_owned(),
                 record.record_index,
             ))
         })
@@ -2020,7 +2017,7 @@ fn extend_related_design_records(
         crate::design::decode_related_record_headers(reader, scan, &indices)?
             .into_iter()
             .filter(|record| {
-                crate::design::native_stream(&record.id).is_none_or(|scope| {
+                crate::ids::native_stream(&record.id).is_none_or(|scope| {
                     !existing.contains(&(scope.to_owned(), record.record_index))
                 })
             }),
@@ -2044,13 +2041,13 @@ fn extend_related_design_records(
         .iter()
         .filter_map(|record| {
             Some((
-                crate::design::native_stream(&record.id)?.to_owned(),
+                crate::ids::native_stream(&record.id)?.to_owned(),
                 record.record_index,
             ))
         })
         .collect::<std::collections::HashSet<_>>();
     for scope in &native.design_parameter_scopes {
-        let Some(stream) = crate::design::native_stream(&scope.id) else {
+        let Some(stream) = crate::ids::native_stream(&scope.id) else {
             continue;
         };
         if existing.insert((stream.to_owned(), scope.record_index)) {
@@ -2083,7 +2080,7 @@ fn extend_related_design_records(
         .design_parameter_scopes
         .iter()
         .flat_map(|scope| {
-            let stream = crate::design::native_stream(&scope.id)
+            let stream = crate::ids::native_stream(&scope.id)
                 .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             scope
@@ -2097,7 +2094,7 @@ fn extend_related_design_records(
         .iter()
         .filter_map(|record| {
             Some((
-                crate::design::native_stream(&record.id)?.to_owned(),
+                crate::ids::native_stream(&record.id)?.to_owned(),
                 record.record_index,
             ))
         })
@@ -2106,7 +2103,7 @@ fn extend_related_design_records(
         crate::design::decode_related_record_headers(reader, scan, &indices)?
             .into_iter()
             .filter(|record| {
-                crate::design::native_stream(&record.id).is_none_or(|stream| {
+                crate::ids::native_stream(&record.id).is_none_or(|stream| {
                     !existing.contains(&(stream.to_owned(), record.record_index))
                 })
             }),
@@ -2134,7 +2131,7 @@ fn extend_related_design_records(
         .design_extrude_selection_groups
         .iter()
         .flat_map(|group| {
-            let stream = crate::design::native_stream(&group.id)
+            let stream = crate::ids::native_stream(&group.id)
                 .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             group
@@ -2148,7 +2145,7 @@ fn extend_related_design_records(
             .design_construction_operand_groups
             .iter()
             .flat_map(|group| {
-                let stream = crate::design::native_stream(&group.id)
+                let stream = crate::ids::native_stream(&group.id)
                     .unwrap_or(crate::ids::DEFAULT_STREAM)
                     .to_owned();
                 std::iter::once((stream, group.identity_record_index))
@@ -2159,7 +2156,7 @@ fn extend_related_design_records(
         .iter()
         .filter_map(|record| {
             Some((
-                crate::design::native_stream(&record.id)?.to_owned(),
+                crate::ids::native_stream(&record.id)?.to_owned(),
                 record.record_index,
             ))
         })
@@ -2168,7 +2165,7 @@ fn extend_related_design_records(
         crate::design::decode_related_record_headers(reader, scan, &indices)?
             .into_iter()
             .filter(|record| {
-                crate::design::native_stream(&record.id).is_none_or(|stream| {
+                crate::ids::native_stream(&record.id).is_none_or(|stream| {
                     !existing.contains(&(stream.to_owned(), record.record_index))
                 })
             }),
@@ -2188,7 +2185,7 @@ fn extend_related_design_records(
         .filter_map(|scope| {
             Some((
                 (
-                    crate::design::native_stream(&scope.id)?.to_owned(),
+                    crate::ids::native_stream(&scope.id)?.to_owned(),
                     scope.record_index,
                 ),
                 scope.kind.as_str(),
@@ -2200,7 +2197,7 @@ fn extend_related_design_records(
         .iter()
         .filter_map(|identity| {
             Some((
-                crate::design::native_stream(&identity.id)?.to_owned(),
+                crate::ids::native_stream(&identity.id)?.to_owned(),
                 identity.group_record_index,
             ))
         })
@@ -2216,13 +2213,13 @@ fn extend_related_design_records(
         .iter()
         .filter_map(|operand| {
             Some((
-                crate::design::native_stream(&operand.id)?.to_owned(),
+                crate::ids::native_stream(&operand.id)?.to_owned(),
                 operand.group_record_index,
             ))
         })
         .collect::<std::collections::HashSet<_>>();
     native.design_construction_operand_groups.retain(|group| {
-        let Some(stream) = crate::design::native_stream(&group.id) else {
+        let Some(stream) = crate::ids::native_stream(&group.id) else {
             return true;
         };
         let kind = scopes
@@ -2247,7 +2244,7 @@ fn extend_related_design_records(
         .design_construction_operand_identities
         .iter()
         .flat_map(|identity| {
-            let stream = crate::design::native_stream(&identity.id)
+            let stream = crate::ids::native_stream(&identity.id)
                 .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             identity
@@ -2263,7 +2260,7 @@ fn extend_related_design_records(
         .iter()
         .filter_map(|record| {
             Some((
-                crate::design::native_stream(&record.id)?.to_owned(),
+                crate::ids::native_stream(&record.id)?.to_owned(),
                 record.record_index,
             ))
         })
@@ -2272,7 +2269,7 @@ fn extend_related_design_records(
         crate::design::decode_related_record_headers(reader, scan, &indices)?
             .into_iter()
             .filter(|record| {
-                crate::design::native_stream(&record.id).is_none_or(|stream| {
+                crate::ids::native_stream(&record.id).is_none_or(|stream| {
                     !existing.contains(&(stream.to_owned(), record.record_index))
                 })
             }),

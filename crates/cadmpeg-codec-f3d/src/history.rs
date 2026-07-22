@@ -666,8 +666,7 @@ pub(crate) fn bind_feature_body_selections(
             group.id == *group_id
                 && group.scope_record_index == scope.record_index
                 && group.role == 0x0000_0004_0000_0000
-                && crate::design::native_stream(&group.id)
-                    == crate::design::native_stream(&scope.id)
+                && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
         });
         let Some(group) = matching_groups.next() else {
             continue;
@@ -716,12 +715,12 @@ fn bind_body_recipe_body_selection(
     let BodySelection::Native(group_id) = selection else {
         return;
     };
-    let stream = crate::design::native_stream(&scope.id);
+    let stream = crate::ids::native_stream(&scope.id);
     let mut matching_groups = groups.iter().filter(|group| {
         group.id == *group_id
             && group.scope_record_index == scope.record_index
             && matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
-            && crate::design::native_stream(&group.id) == stream
+            && crate::ids::native_stream(&group.id) == stream
     });
     let Some(group) = matching_groups.next() else {
         return;
@@ -738,7 +737,7 @@ fn bind_body_recipe_body_selection(
             operand.group_record_index == group.record_index
                 && operand.group_member_ordinal == ordinal
                 && operand.record_index == record_index
-                && crate::design::native_stream(&operand.id) == stream
+                && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
             return;
@@ -1018,11 +1017,11 @@ fn bind_entity_selection_path(
     let PathRef::Native(group_id) = path else {
         return;
     };
-    let stream = crate::design::native_stream(&scope.id);
+    let stream = crate::ids::native_stream(&scope.id);
     let mut matching_groups = groups.iter().filter(|group| {
         group.id == *group_id
             && group.scope_record_index == scope.record_index
-            && crate::design::native_stream(&group.id) == stream
+            && crate::ids::native_stream(&group.id) == stream
     });
     let Some(group) = matching_groups.next() else {
         return;
@@ -1039,7 +1038,7 @@ fn bind_entity_selection_path(
             operand.group_record_index == group.record_index
                 && operand.group_member_ordinal == ordinal
                 && operand.record_index == record_index
-                && crate::design::native_stream(&operand.id) == stream
+                && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
             return;
@@ -1088,12 +1087,12 @@ pub(crate) fn project_feature_input_topologies(
                 return None;
             }
             let previous_state_id = scope.previous_history_state_id.or_else(|| {
-                let stream = crate::design::native_stream(&scope.id);
+                let stream = crate::ids::native_stream(&scope.id);
                 let operands = edge_operands
                     .iter()
                     .filter(|operand| {
                         operand.scope_record_index == scope.record_index
-                            && crate::design::native_stream(&operand.id) == stream
+                            && crate::ids::native_stream(&operand.id) == stream
                     })
                     .collect::<Vec<_>>();
                 let state = operands.first()?.recipe_state_id?;
@@ -1158,10 +1157,10 @@ pub(crate) fn bind_face_operand_history_candidates(
         operand.changed_candidate_faces.clear();
         operand.historical_support_contexts.clear();
         operand.resolved_face_slots.clear();
-        let stream = crate::design::native_stream(&operand.id);
+        let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
-                && crate::design::native_stream(&scope.id) == stream
+                && crate::ids::native_stream(&scope.id) == stream
         });
         let Some(scope) = matching_scopes.next() else {
             continue;
@@ -1453,10 +1452,10 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         }
         operand.resolved_face_slot = None;
         operand.resolved_body_slot = None;
-        let stream = crate::design::native_stream(&operand.id);
+        let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
-                && crate::design::native_stream(&scope.id) == stream
+                && crate::ids::native_stream(&scope.id) == stream
         });
         let Some(scope) = matching_scopes.next() else {
             continue;
@@ -1619,7 +1618,7 @@ fn bind_profile_face_group_cardinality(
     let mut groups = HashMap::<(String, u32, u32), Vec<usize>>::new();
     for (index, operand) in operands.iter().enumerate() {
         let (Some(stream), Some(group)) = (
-            crate::design::native_stream(&operand.id),
+            crate::ids::native_stream(&operand.id),
             operand.group_record_index,
         ) else {
             continue;
@@ -1633,7 +1632,7 @@ fn bind_profile_face_group_cardinality(
         let mut matching_groups = operand_groups.iter().filter(|group| {
             group.record_index == group_record_index
                 && group.scope_record_index == scope_record_index
-                && crate::design::native_stream(&group.id) == Some(stream.as_str())
+                && crate::ids::native_stream(&group.id) == Some(stream.as_str())
         });
         let Some(group) = matching_groups.next() else {
             continue;
@@ -1664,7 +1663,7 @@ fn bind_profile_face_group_cardinality(
         }
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == scope_record_index
-                && crate::design::native_stream(&scope.id) == Some(stream.as_str())
+                && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
         });
         let Some(scope) = matching_scopes.next() else {
             continue;
@@ -2108,7 +2107,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
 ) {
     let mut scope_operand_counts = HashMap::<(String, u32), usize>::new();
     for operand in operands.iter() {
-        let Some(stream) = crate::design::native_stream(&operand.id) else {
+        let Some(stream) = crate::ids::native_stream(&operand.id) else {
             continue;
         };
         *scope_operand_counts
@@ -2161,10 +2160,10 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.resolved_edge_slot = None;
         operand.resolved_axis_origin = None;
         operand.resolved_axis_direction = None;
-        let stream = crate::design::native_stream(&operand.id);
+        let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
-                && crate::design::native_stream(&scope.id) == stream
+                && crate::ids::native_stream(&scope.id) == stream
         });
         let Some(scope) = matching_scopes.next() else {
             continue;
@@ -2800,17 +2799,17 @@ fn bind_face_selection(
     };
     if matching_groups.next().is_some()
         || group.scope_record_index != scope.record_index
-        || crate::design::native_stream(&group.id) != crate::design::native_stream(&scope.id)
+        || crate::ids::native_stream(&group.id) != crate::ids::native_stream(&scope.id)
     {
         return;
     }
-    let Some(stream) = crate::design::native_stream(&scope.id) else {
+    let Some(stream) = crate::ids::native_stream(&scope.id) else {
         return;
     };
     let mut faces = Vec::new();
     for record_index in &group.members {
         let mut matches = operands.iter().filter(|operand| {
-            crate::design::native_stream(&operand.id) == Some(stream)
+            crate::ids::native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == scope.record_index
                 && operand.record_index == *record_index
         });
@@ -2863,7 +2862,7 @@ fn bind_body_recipe_face_selection(
         group.id == *native
             && group.scope_record_index == scope.record_index
             && group.role == 0x0000_0005_0000_0000
-            && crate::design::native_stream(&group.id) == crate::design::native_stream(&scope.id)
+            && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
     });
     let Some(group) = matching_groups.next() else {
         return;
@@ -2871,7 +2870,7 @@ fn bind_body_recipe_face_selection(
     if matching_groups.next().is_some() || group.members.is_empty() {
         return;
     }
-    let stream = crate::design::native_stream(&scope.id);
+    let stream = crate::ids::native_stream(&scope.id);
     let mut slots = Vec::new();
     for (ordinal, record_index) in group.members.iter().enumerate() {
         let Ok(ordinal) = u32::try_from(ordinal) else {
@@ -2881,7 +2880,7 @@ fn bind_body_recipe_face_selection(
             operand.group_record_index == group.record_index
                 && operand.group_member_ordinal == ordinal
                 && operand.record_index == *record_index
-                && crate::design::native_stream(&operand.id) == stream
+                && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
             return;
@@ -3070,10 +3069,10 @@ pub(crate) fn bind_entity_selection_history(
     for operand in operands {
         operand.historical_edge_candidates.clear();
         operand.resolved_edge_slot = None;
-        let stream = crate::design::native_stream(&operand.id);
+        let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
-                && crate::design::native_stream(&scope.id) == stream
+                && crate::ids::native_stream(&scope.id) == stream
         });
         let Some(scope) = matching_scopes.next() else {
             continue;
@@ -3167,13 +3166,13 @@ pub(crate) fn bind_edge_identity_history(
         operand.resolved_edge_slots.clear();
         operand.resolved_edge_slot = None;
         operand.resolution_identity_id = None;
-        let Some(stream) = crate::design::native_stream(&operand.id) else {
+        let Some(stream) = crate::ids::native_stream(&operand.id) else {
             continue;
         };
         let Some(previous_state_id) = scopes
             .iter()
             .find(|scope| {
-                crate::design::native_stream(&scope.id) == Some(stream)
+                crate::ids::native_stream(&scope.id) == Some(stream)
                     && scope.record_index == operand.scope_record_index
             })
             .and_then(|scope| scope.previous_history_state_id)
@@ -3183,7 +3182,7 @@ pub(crate) fn bind_edge_identity_history(
         let current_state_id = scopes
             .iter()
             .find(|scope| {
-                crate::design::native_stream(&scope.id) == Some(stream)
+                crate::ids::native_stream(&scope.id) == Some(stream)
                     && scope.record_index == operand.scope_record_index
             })
             .and_then(|scope| scope.history_state_id);
@@ -3249,7 +3248,7 @@ pub(crate) fn bind_edge_identity_history(
             continue;
         }
         let mut resolved = identities.iter().filter_map(|identity| {
-            (crate::design::native_stream(&identity.id) == Some(stream)
+            (crate::ids::native_stream(&identity.id) == Some(stream)
                 && identity.group_record_index == operand.group_record_index)
                 .then_some(identity)?;
             let persistent = identity.persistent_identity.as_ref()?;
@@ -3289,7 +3288,7 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
         let matches = face_operands
             .iter()
             .filter(|face| {
-                crate::design::native_stream(&face.id) == crate::design::native_stream(&operand.id)
+                crate::ids::native_stream(&face.id) == crate::ids::native_stream(&operand.id)
                     && face.scope_record_index == operand.scope_record_index
                     && face.group_record_index == Some(operand.group_record_index)
                     && face.group_member_ordinal == Some(operand.group_member_ordinal)

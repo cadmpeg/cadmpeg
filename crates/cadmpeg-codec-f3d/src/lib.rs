@@ -106,7 +106,7 @@ const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 pub struct F3dCodec;
 
 fn design_stream(id: &str) -> &str {
-    design::native_stream(id).unwrap_or(ids::DEFAULT_STREAM)
+    ids::native_stream(id).unwrap_or(ids::DEFAULT_STREAM)
 }
 
 fn design_stream_contains_entry(stream: &str, entry: &str) -> bool {

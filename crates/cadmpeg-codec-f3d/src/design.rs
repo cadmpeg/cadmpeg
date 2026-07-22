@@ -39,10 +39,11 @@ use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
 
 use crate::container::{role, ContainerScan};
 use crate::ids::{
-    self, neutral_configuration_id, neutral_dimension_constraint_id, neutral_feature_id,
-    neutral_parameter_id, neutral_sketch_constraint_id, neutral_sketch_curve_id, neutral_sketch_id,
-    neutral_sketch_point_id, neutral_sketch_text_id, neutral_spatial_sketch_curve_id,
-    neutral_spatial_sketch_id, neutral_spatial_sketch_point_id, neutral_spatial_sketch_surface_id,
+    self, native_stream, neutral_configuration_id, neutral_dimension_constraint_id,
+    neutral_feature_id, neutral_parameter_id, neutral_sketch_constraint_id,
+    neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id, neutral_sketch_text_id,
+    neutral_spatial_sketch_curve_id, neutral_spatial_sketch_id, neutral_spatial_sketch_point_id,
+    neutral_spatial_sketch_surface_id,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -12051,10 +12052,6 @@ fn insert_dimension_binding(
         )));
     }
     Ok(())
-}
-
-pub(crate) fn native_stream(id: &str) -> Option<&str> {
-    id.rsplit_once(':').map(|(stream, _)| stream)
 }
 
 fn exact_atomic_constraint(
