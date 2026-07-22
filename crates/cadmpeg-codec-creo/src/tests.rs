@@ -4379,6 +4379,15 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
     assert_eq!(coverage["decoded_feature_dimension_count"], 2);
     assert_eq!(coverage["transferred_feature_dimension_parameter_count"], 2);
     assert_eq!(coverage["resolved_feature_dimension_value_count"], 2);
+    assert_eq!(coverage["decoded_feature_solver_variable_count"], 0);
+    assert_eq!(
+        coverage["decoded_feature_dimension_driven_variable_count"],
+        0
+    );
+    assert_eq!(
+        coverage["resolved_feature_dimension_driven_variable_count"],
+        0
+    );
 }
 
 #[test]

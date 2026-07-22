@@ -25018,6 +25018,45 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .sum::<usize>(),
     );
     coverage.insert(
+        "decoded_feature_solver_variable_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.variables.as_ref())
+            .map(|variables| variables.rows.len())
+            .sum::<usize>(),
+    );
+    coverage.insert(
+        "decoded_feature_dimension_driven_variable_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.variables.as_ref())
+            .flat_map(|variables| &variables.rows)
+            .filter(|row| row.dimension_driven)
+            .count(),
+    );
+    coverage.insert(
+        "resolved_feature_dimension_driven_variable_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .map(|definition| {
+                let resolved = resolved_section_points(definition);
+                definition
+                    .variables
+                    .iter()
+                    .flat_map(|variables| &variables.rows)
+                    .filter(|row| {
+                        row.dimension_driven
+                            && matches!(row.variable_type, 1 | 2)
+                            && resolved.contains_key(&row.key)
+                    })
+                    .count()
+            })
+            .sum::<usize>(),
+    );
+    coverage.insert(
         "decoded_feature_segment_count".to_string(),
         scan.features
             .definitions
