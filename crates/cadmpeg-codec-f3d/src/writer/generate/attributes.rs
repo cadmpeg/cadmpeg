@@ -216,24 +216,13 @@ fn body_persistent_links(target: &CadIr, body: &Body) -> Vec<PersistentDesignLin
     )
 }
 
-fn persistent_group_count(
-    target: &CadIr,
-    entities: impl Iterator<Item = cadmpeg_ir::attributes::AttributeTarget>,
-) -> usize {
-    entities
-        .filter(|entity| !persistent_links(target, entity).is_empty())
-        .count()
-}
-
 fn persistent_body_group_count(target: &CadIr) -> usize {
-    persistent_group_count(
-        target,
-        target
-            .model
-            .bodies
-            .iter()
-            .map(|body| cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone())),
-    )
+    target
+        .model
+        .bodies
+        .iter()
+        .filter(|body| !body_persistent_links(target, body).is_empty())
+        .count()
 }
 
 fn face_persistent_tags(target: &CadIr, face: &Face) -> Vec<PersistentSubentityTag> {
