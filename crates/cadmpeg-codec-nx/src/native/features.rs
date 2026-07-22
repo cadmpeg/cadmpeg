@@ -3477,17 +3477,24 @@ pub fn feature_datum_csys_payloads(
         .collect()
 }
 
-/// Decode exact scalar-pair frames from reconstructed datum-CSYS payloads.
-pub fn feature_datum_csys_payload_scalar_pairs(
+/// Shared body for the datum payload-frame extractors. Reconstruct each
+/// payload's concatenated bytes, build the payload-relative-to-source-offset
+/// mapper once, scan the bytes, and let each family build its record, dropping
+/// frames whose offsets fall outside a source block. The four extractors below
+/// differ only in their payload block lane, their scanner, and their record.
+fn datum_payload_frames<P, S, R>(
     container: &Container,
-    payloads: &[FeatureDatumCsysPayload],
-) -> Vec<FeatureDatumCsysPayloadScalarPair> {
+    payloads: &[P],
+    data_blocks: impl Fn(&P) -> &[String],
+    scan: impl Fn(&[u8]) -> Vec<S>,
+    build: impl Fn(&P, usize, S, &dyn Fn(usize) -> Option<u64>) -> Option<R>,
+) -> Vec<R> {
     let blocks = offset_data_block_bytes(container);
     payloads
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
+                join_data_block_bytes(data_blocks(payload), &blocks)
             else {
                 return Vec::new();
             };
@@ -3501,30 +3508,44 @@ pub fn feature_datum_csys_payload_scalar_pairs(
                         },
                     )
                 };
-            crate::om::object_payload_scalar_pairs(&bytes)
+            scan(&bytes)
                 .into_iter()
                 .enumerate()
-                .filter_map(|(ordinal, pair)| {
-                    Some(FeatureDatumCsysPayloadScalarPair {
-                        id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        datum_csys_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        values: pair.values,
-                        raw_values: pair.raw_values,
-                        payload_offset: pair.offset as u64,
-                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
-                        source_offset: source_offset(pair.offset)?,
-                        value_source_offsets: [
-                            source_offset(pair.value_offsets[0])?,
-                            source_offset(pair.value_offsets[1])?,
-                        ],
-                        discriminator: pair.discriminator,
-                    })
-                })
-                .collect()
+                .filter_map(|(ordinal, row)| build(payload, ordinal, row, &source_offset))
+                .collect::<Vec<_>>()
         })
         .collect()
+}
+
+/// Decode exact scalar-pair frames from reconstructed datum-CSYS payloads.
+pub fn feature_datum_csys_payload_scalar_pairs(
+    container: &Container,
+    payloads: &[FeatureDatumCsysPayload],
+) -> Vec<FeatureDatumCsysPayloadScalarPair> {
+    datum_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks[..],
+        crate::om::object_payload_scalar_pairs,
+        |payload, ordinal, pair, source_offset| {
+            Some(FeatureDatumCsysPayloadScalarPair {
+                id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                datum_csys_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                values: pair.values,
+                raw_values: pair.raw_values,
+                payload_offset: pair.offset as u64,
+                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                source_offset: source_offset(pair.offset)?,
+                value_source_offsets: [
+                    source_offset(pair.value_offsets[0])?,
+                    source_offset(pair.value_offsets[1])?,
+                ],
+                discriminator: pair.discriminator,
+            })
+        },
+    )
 }
 
 /// Decode complete signed Q1.55 pair frames from reconstructed datum-CSYS payloads.
@@ -3532,49 +3553,30 @@ pub fn feature_datum_csys_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeatureDatumCsysPayloadFixedPair> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
-            else {
-                return Vec::new();
-            };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
-            crate::om::datum_csys_payload_fixed_pairs(&bytes)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, pair)| {
-                    Some(FeatureDatumCsysPayloadFixedPair {
-                        id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        datum_csys_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        values: pair.values,
-                        raw_values: pair.raw_values,
-                        discriminator: pair.discriminator,
-                        payload_offset: pair.offset as u64,
-                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
-                        source_offset: source_offset(pair.offset)?,
-                        value_source_offsets: [
-                            source_offset(pair.value_offsets[0])?,
-                            source_offset(pair.value_offsets[1])?,
-                        ],
-                    })
-                })
-                .collect()
-        })
-        .collect()
+    datum_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks[..],
+        crate::om::datum_csys_payload_fixed_pairs,
+        |payload, ordinal, pair, source_offset| {
+            Some(FeatureDatumCsysPayloadFixedPair {
+                id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                datum_csys_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                values: pair.values,
+                raw_values: pair.raw_values,
+                discriminator: pair.discriminator,
+                payload_offset: pair.offset as u64,
+                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                source_offset: source_offset(pair.offset)?,
+                value_source_offsets: [
+                    source_offset(pair.value_offsets[0])?,
+                    source_offset(pair.value_offsets[1])?,
+                ],
+            })
+        },
+    )
 }
 
 /// Decode complete shifted-binary64 fields from reconstructed datum-CSYS payloads.
@@ -3582,44 +3584,25 @@ pub fn feature_datum_csys_payload_scalars(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeatureDatumCsysPayloadScalar> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
-            else {
-                return Vec::new();
-            };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
-            crate::om::construction_payload_scalar_fields(&bytes)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, scalar)| {
-                    Some(FeatureDatumCsysPayloadScalar {
-                        id: format!("{}-scalar-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        datum_csys_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        field_code: scalar.field_code,
-                        value: scalar.value,
-                        raw_value: scalar.raw_value,
-                        payload_offset: scalar.offset as u64,
-                        source_offset: source_offset(scalar.offset)?,
-                    })
-                })
-                .collect()
-        })
-        .collect()
+    datum_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks[..],
+        crate::om::construction_payload_scalar_fields,
+        |payload, ordinal, scalar, source_offset| {
+            Some(FeatureDatumCsysPayloadScalar {
+                id: format!("{}-scalar-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                datum_csys_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                field_code: scalar.field_code,
+                value: scalar.value,
+                raw_value: scalar.raw_value,
+                payload_offset: scalar.offset as u64,
+                source_offset: source_offset(scalar.offset)?,
+            })
+        },
+    )
 }
 
 /// Decode the final three descriptor lanes of datum coordinate systems.
@@ -3690,48 +3673,29 @@ pub fn feature_datum_plane_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumPlanePayload],
 ) -> Vec<FeatureDatumPlanePayloadScalarPair> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
-            else {
-                return Vec::new();
-            };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
-            crate::om::datum_plane_object_scalar_pairs(&bytes)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, pair)| {
-                    Some(FeatureDatumPlanePayloadScalarPair {
-                        id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        datum_plane_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        values: pair.values,
-                        raw_values: pair.raw_values,
-                        payload_offset: pair.offset as u64,
-                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
-                        source_offset: source_offset(pair.offset)?,
-                        value_source_offsets: [
-                            source_offset(pair.value_offsets[0])?,
-                            source_offset(pair.value_offsets[1])?,
-                        ],
-                    })
-                })
-                .collect()
-        })
-        .collect()
+    datum_payload_frames(
+        container,
+        payloads,
+        |payload| payload.data_blocks.as_slice(),
+        crate::om::datum_plane_object_scalar_pairs,
+        |payload, ordinal, pair, source_offset| {
+            Some(FeatureDatumPlanePayloadScalarPair {
+                id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                datum_plane_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                values: pair.values,
+                raw_values: pair.raw_values,
+                payload_offset: pair.offset as u64,
+                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                source_offset: source_offset(pair.offset)?,
+                value_source_offsets: [
+                    source_offset(pair.value_offsets[0])?,
+                    source_offset(pair.value_offsets[1])?,
+                ],
+            })
+        },
+    )
 }
 
 /// Decode atomically resolved datum-plane descriptor blocks.
