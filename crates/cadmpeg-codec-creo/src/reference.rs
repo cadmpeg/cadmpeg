@@ -500,7 +500,11 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
         if let Some((label, 6)) = next_conic_field(payload, cursor, block_end) {
             let value_offset = label + CONIC_FIELD_HEADERS[6].len();
             if payload.get(value_offset) == Some(&0x11) {
-                parameter_end = parameter_start.map(|value| value + std::f64::consts::PI);
+                let Some(value) = parameter_start else {
+                    search = block_end.max(fields_start);
+                    continue;
+                };
+                parameter_end = Some(value + std::f64::consts::PI);
                 cursor = value_offset + 1;
             } else if let Some((value, next)) = coordinate(payload, value_offset, &cache) {
                 if !value.is_finite() || next > block_end {
@@ -626,6 +630,8 @@ fn positional_conic_body(
     endpoints
         .iter()
         .flatten()
+        .chain(parameter_start.iter())
+        .chain(parameter_end.iter())
         .chain([&coefficient_1, &coefficient_2])
         .all(|value| value.is_finite())
         .then_some(())?;
@@ -1090,6 +1096,19 @@ mod tests {
     }
 
     #[test]
+    fn named_conic_opposite_parameter_requires_a_start_parameter() {
+        let payload = b"ent_list(conic)\0\
+            \xe0\x01id\0\x2a\xe0\x01type\0\x1e\xe0\x01flip\0\x01\
+            \xe0\x02end1\0\xf8\x03\xe4\x0f\x0f\
+            \xe0\x02end2\0\xf8\x03\x43\xf0\x00\x0f\x0f\
+            \xe0\x02t1\0\x11\xe0\x02c1\0\x43\xf0\x00\xe0\x02c2\0\xe4\
+            \xe0\x02local_sys\0\xf9\x04\x03\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6\
+            \xf2\xf7\x0e\xe3";
+
+        assert!(named_conics(payload).is_empty());
+    }
+
+    #[test]
     fn named_conic_ignores_field_header_bytes_inside_an_ieee_coordinate() {
         let payload = b"ent_list(conic)\0\
             \xe0\x01id\0\x2a\xe0\x01type\0\x1e\xe0\x01flip\0\x01\
@@ -1166,6 +1185,18 @@ mod tests {
         assert_eq!(conic.parameter_end, Some(std::f64::consts::PI));
         assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
         assert_eq!(conic.local_system.expect("complete local system")[9], -1.0);
+    }
+
+    #[test]
+    fn positional_conic_withholds_non_finite_parameters() {
+        let payload = b"ent_list(conic)\0\xf2\xf7\x0e\xe2\x2b\xe3\
+            \x2b\x1e\xe2\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\x01\
+            \xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\
+            \xed\x7f\xf8\x00\x00\x00\x00\x00\x00\x11\x43\xf0\x00\xe4\
+            \xe4\x0f\x0f\x0f\xe4\x0f\x0f\x0f\xe4\x43\xf0\x00\x0f\x0f\
+            \xe2\x2c\xf7\x10\xe3\xe0\x00ent_list(text)\0";
+
+        assert!(positional_conics(payload).is_empty());
     }
 
     #[test]

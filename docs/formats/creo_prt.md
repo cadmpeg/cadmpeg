@@ -2868,17 +2868,19 @@ standalone-zero slot before another complete coordinate; a terminal `18` is
 also a zero local-system slot. The following `f2 f7` sequence bounds the body.
 An `f2 f7` image inside a complete frame coordinate belongs to that coordinate;
 when several images occur, only the unique image following a complete
-twelve-slot frame is the field boundary. The conic record retains its coefficients and
-parameter fields without assigning ellipse semantics until its frame and
-carrier invariants are complete.
+twelve-slot frame is the field boundary. Decoded endpoints, parameters, and
+coefficients are finite. The conic record retains its coefficients and parameter
+fields without assigning ellipse semantics until its frame and carrier
+invariants are complete.
 
 A positional conic row repeats its canonical entity identifier on both sides
 of the preceding `e3`, then stores `<id> <type> e2`. Its body begins
 `02 48 10 00 eb 10 00 00 00 00 <flip>` and replays `end1.xyz`, `end2.xyz`,
 `t0`, `t1`, `c1`, `c2`, and the twelve local-system slots in that order. The
 compact `11` `t1` form stores `t0 + pi` while leaving the following coefficient
-and local-system positions aligned. A complete row consumes all twelve
-local-system slots before its trailing compound record.
+and local-system positions aligned. Decoded endpoints, parameters, and
+coefficients are finite. A complete row consumes all twelve local-system slots
+before its trailing compound record.
 
 A type-30 conic record defines a complete ellipse carrier without interpreting
 its parameter tokens when the first two local-system triples are finite
