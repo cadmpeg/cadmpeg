@@ -9,13 +9,16 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::drawings::Drawing;
-use crate::features::{DesignConfiguration, DesignParameter, Feature};
+use crate::features::{DesignConfiguration, DesignParameter, Feature, FeatureInputTopology};
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Component, Occurrence};
 use crate::semantic_annotations::SemanticAnnotation;
-use crate::sketches::{Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchEntity};
+use crate::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
+    SpatialSketchEntity,
+};
 use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
@@ -42,6 +45,7 @@ macro_rules! arena_registry {
             procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [] => |e| e.id.0.clone();
             procedural_curves: ProceduralCurve, "Procedural curve arena.", [] => |e| e.id.0.clone();
             features: Feature, "Feature arena.", [] => |e| e.id.0.clone();
+            feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")] => |e| e.id.0.clone();
             configurations: DesignConfiguration, "Design configuration arena.", [serde(default)] => |e| e.id.0.clone();
             parameters: DesignParameter, "Design parameter arena.", [serde(default)] => |e| e.id.0.clone();
             sketches: Sketch, "Planar sketch arena.", [serde(default)] => |e| e.id.0.clone();
@@ -49,6 +53,7 @@ macro_rules! arena_registry {
             sketch_constraints: SketchConstraint, "Sketch constraint arena.", [serde(default)] => |e| e.id.0.clone();
             spatial_sketches: SpatialSketch, "Spatial sketch arena.", [serde(default)] => |e| e.id.0.clone();
             spatial_sketch_entities: SpatialSketchEntity, "Solved spatial sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
+            spatial_sketch_constraints: SpatialSketchConstraint, "Spatial sketch constraint arena.", [serde(default, skip_serializing_if = "Vec::is_empty")] => |e| e.id.0.clone();
             spreadsheets: Spreadsheet, "Spreadsheet arena.", [serde(default)] => |e| e.id.0.clone();
             components: Component, "Product component arena.", [serde(default)] => |e| e.id.0.clone();
             occurrences: Occurrence, "Product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
@@ -282,7 +287,6 @@ impl CadIr {
         match version {
             Some(IR_VERSION) => serde_json::from_value(value),
             Some(PREVIOUS_IR_VERSION) => {
-                migrate_previous_sketch_placements(&mut value);
                 migrate_previous_sketch_spaces(&mut value);
                 value
                     .as_object_mut()
@@ -300,37 +304,6 @@ impl CadIr {
     pub fn finalize(&mut self) {
         self.model.finalize();
         self.native.finalize();
-    }
-}
-
-fn migrate_previous_sketch_placements(value: &mut serde_json::Value) {
-    let Some(sketches) = value
-        .get_mut("model")
-        .and_then(|model| model.get_mut("sketches"))
-        .and_then(serde_json::Value::as_array_mut)
-    else {
-        return;
-    };
-    for sketch in sketches {
-        let Some(sketch) = sketch.as_object_mut() else {
-            continue;
-        };
-        let (Some(origin), Some(normal), Some(u_axis)) = (
-            sketch.remove("origin"),
-            sketch.remove("normal"),
-            sketch.remove("u_axis"),
-        ) else {
-            continue;
-        };
-        sketch.insert(
-            "placement".into(),
-            serde_json::json!({
-                "kind": "resolved",
-                "origin": origin,
-                "normal": normal,
-                "u_axis": u_axis
-            }),
-        );
     }
 }
 
@@ -384,6 +357,7 @@ fn migrate_previous_sketch_definition(definition: &mut serde_json::Value) {
     }
     definition.remove("space");
 }
+
 /// Source-container metadata preserved for reporting.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SourceMeta {

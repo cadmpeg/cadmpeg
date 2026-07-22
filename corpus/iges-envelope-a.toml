@@ -178,7 +178,15 @@ domain = "geometry"
 decoder = "entities::surfaces::project"
 destination = "model.surfaces"
 fixture_classes = ["nurbs-surfaces"]
-assertions = ["knots", "multiplicity", "weights", "periodicity", "control-order", "evaluation", "byte-coverage"]
+assertions = [
+  "knots",
+  "multiplicity",
+  "weights",
+  "periodicity",
+  "control-order",
+  "evaluation",
+  "byte-coverage",
+]
 
 [[entity]]
 type = 130
@@ -218,7 +226,13 @@ domain = "topology"
 decoder = "entities::trimming::project"
 destination = "model.loops,model.coedges,model.edges,model.pcurves"
 fixture_classes = ["surface-boundaries"]
-assertions = ["orientation", "ordered-pcurve-collections", "pcurve-links", "model-curve-links", "byte-coverage"]
+assertions = [
+  "orientation",
+  "ordered-pcurve-collections",
+  "pcurve-links",
+  "model-curve-links",
+  "byte-coverage",
+]
 
 [[entity]]
 type = 142
@@ -685,7 +699,43 @@ assertions = ["view-links", "annotation-links", "byte-coverage"]
 [[entity]]
 type = 406
 name = "property"
-forms = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
+forms = [
+  1,
+  2,
+  3,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31,
+  32,
+  33,
+  34,
+  35,
+  36,
+]
 domain = "structure"
 decoder = "entities::structure::project"
 destination = "native.iges.properties"

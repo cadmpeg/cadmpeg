@@ -41,7 +41,8 @@ cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.2.0" }
 cadmpeg-step = { path = "crates/cadmpeg-step", version = "0.2.0" }
 
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
+serde-value = "0.7"
 schemars = "1.2"
 thiserror = "2"
 sha2 = "0.11"

@@ -1762,6 +1762,7 @@ fn append_text_surface(
             origin,
             axis,
             u_axis,
+            ..
         } => SurfaceGeometry::Plane {
             origin: *origin,
             normal: *axis,
@@ -1772,6 +1773,7 @@ fn append_text_surface(
             axis,
             ref_direction,
             radius,
+            ..
         } => SurfaceGeometry::Cylinder {
             origin: *origin,
             axis: *axis,
@@ -1832,6 +1834,7 @@ fn append_text_surface(
                     direction: *direction,
                     native_position: None,
                 },
+                record_bounds: None,
                 cache_fit_tolerance: None,
             });
             SurfaceGeometry::Unknown { record: None }
@@ -1853,7 +1856,9 @@ fn append_text_surface(
                     angular_interval: [0.0, std::f64::consts::TAU],
                     parameter_interval: None,
                     transposed: false,
+                    revision_form: None,
                 },
+                record_bounds: None,
                 cache_fit_tolerance: None,
             });
             SurfaceGeometry::Unknown { record: None }
@@ -1877,6 +1882,7 @@ fn append_text_surface(
                     support: basis_id,
                     parameter_ranges: *parameter_ranges,
                 },
+                record_bounds: None,
                 cache_fit_tolerance: None,
             });
             basis_geometry
@@ -1899,7 +1905,9 @@ fn append_text_surface(
                     u_sense: None,
                     v_sense: None,
                     extension_flags: Vec::new(),
+                    revision_form: None,
                 },
+                record_bounds: None,
                 cache_fit_tolerance: None,
             });
             SurfaceGeometry::Unknown { record: None }

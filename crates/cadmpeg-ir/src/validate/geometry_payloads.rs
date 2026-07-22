@@ -184,6 +184,9 @@ fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bo
         VariableBlendValuePayload::TwoEnds { parameters, radii } => {
             finite(parameters) && finite(radii)
         }
+        VariableBlendValuePayload::FixedWidth { parameters, width } => {
+            finite(parameters) && width.is_finite()
+        }
         VariableBlendValuePayload::EdgeOffset { scalars, lengths } => {
             finite(scalars) && finite(lengths)
         }
@@ -394,6 +397,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check_knots(findings, &s.id.0, &n.u_knots, "u");
                 check_knots(findings, &s.id.0, &n.v_knots, "v");
             }
+            SurfaceGeometry::Procedural { .. } => {}
             SurfaceGeometry::Polygonal {
                 vertices,
                 triangles,
@@ -414,7 +418,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             // An unknown surface carries no numeric geometry to bounds-check; its
             // record link is checked in `check_references`. A face resting on it
             // is legal (topology known, shape opaque).
-            SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {}
+            SurfaceGeometry::Unknown { .. } => {}
         }
     }
     for procedural in &ir.model.procedural_surfaces {
@@ -455,18 +459,22 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 bounds_err(findings, &procedural.id.0, "non-finite parallel offset");
             }
         }
-        if let ProceduralSurfaceDefinition::Exact {
-            parameter_ranges, ..
-        } = &procedural.definition
-        {
-            if parameter_ranges
-                .iter()
-                .any(|range| !range.iter().all(|value| value.is_finite()) || range[0] > range[1])
-            {
+        if let ProceduralSurfaceDefinition::Exact { parameters, .. } = &procedural.definition {
+            let valid = match parameters {
+                crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => {
+                    ranges.iter().all(|range| {
+                        range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+                    })
+                }
+                crate::geometry::SplineSurfaceParameters::RevisionValues { values } => {
+                    values.iter().flatten().all(|value| value.is_finite())
+                }
+            };
+            if !valid {
                 bounds_err(
                     findings,
                     &procedural.id.0,
-                    "exact spline surface parameter ranges are invalid",
+                    "exact spline surface parameter fields are invalid",
                 );
             }
         }
@@ -482,6 +490,22 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     findings,
                     &procedural.id.0,
                     "compound surface parameters and components are inconsistent",
+                );
+            }
+        }
+        if let ProceduralSurfaceDefinition::SubSurface {
+            parameter_ranges, ..
+        } = &procedural.definition
+        {
+            if !parameter_ranges
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite())
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "sub-surface parameter interval is not finite",
                 );
             }
         }
@@ -528,14 +552,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if let ProceduralSurfaceDefinition::Loft {
             sections,
-            parameter_ranges,
+            parameters,
             bridge,
             ..
         } = &procedural.definition
         {
-            let ranges_valid = parameter_ranges
-                .iter()
-                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
+            let parameters_valid = match parameters {
+                crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => {
+                    ranges.iter().all(|range| {
+                        range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]
+                    })
+                }
+                crate::geometry::SplineSurfaceParameters::RevisionValues { values } => {
+                    values.iter().flatten().all(|value| value.is_finite())
+                }
+            };
             let sections_valid =
                 sections
                     .iter()
@@ -564,7 +595,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
                 _ => true,
             });
-            if !ranges_valid || !sections_valid || !bridge_valid {
+            if !parameters_valid || !sections_valid || !bridge_valid {
                 bounds_err(
                     findings,
                     &procedural.id.0,
@@ -720,6 +751,96 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     findings,
                     &procedural.id.0,
                     "scaled compound loft construction payload is invalid",
+                );
+            }
+        }
+        if let ProceduralSurfaceDefinition::Law { construction } = &procedural.definition {
+            fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
+                if depth > 64 {
+                    return false;
+                }
+                match expression {
+                    crate::geometry::LawExpression::Null
+                    | crate::geometry::LawExpression::Integer { .. } => true,
+                    crate::geometry::LawExpression::Double { value } => value.is_finite(),
+                    crate::geometry::LawExpression::Point { value } => {
+                        value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Vector { value } => {
+                        value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Transform { scalars, .. } => {
+                        scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Edge { parameters, .. } => {
+                        parameters.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Spline {
+                        knots,
+                        controls,
+                        point,
+                        ..
+                    } => {
+                        knots.iter().chain(controls).all(|value| value.is_finite())
+                            && point.x.is_finite()
+                            && point.y.is_finite()
+                            && point.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                        operands.iter().all(|operand| law_valid(operand, depth + 1))
+                    }
+                }
+            }
+            let formula_valid = |formula: &crate::geometry::LawFormula| {
+                if formula.name == "null_law" {
+                    formula.variables.is_empty()
+                } else {
+                    formula.variables.iter().all(|value| law_valid(value, 0))
+                }
+            };
+            let tail_valid = match &construction.tail {
+                crate::geometry::LawSurfaceTail::Full => procedural
+                    .cache_fit_tolerance
+                    .is_some_and(|value| value.is_finite() && value >= 0.0),
+                crate::geometry::LawSurfaceTail::Summary {
+                    parameters,
+                    fit_tolerance,
+                    ..
+                } => {
+                    procedural.cache_fit_tolerance.is_none()
+                        && fit_tolerance.is_finite()
+                        && *fit_tolerance >= 0.0
+                        && parameters.iter().flatten().all(|value| value.is_finite())
+                }
+                crate::geometry::LawSurfaceTail::None {
+                    parameter_ranges, ..
+                } => {
+                    procedural.cache_fit_tolerance.is_none()
+                        && parameter_ranges
+                            .iter()
+                            .flatten()
+                            .all(|value| value.is_finite())
+                }
+                crate::geometry::LawSurfaceTail::Historical
+                | crate::geometry::LawSurfaceTail::Optimal => {
+                    procedural.cache_fit_tolerance.is_none()
+                }
+            };
+            let valid = construction
+                .parameter_ranges
+                .iter()
+                .flatten()
+                .flatten()
+                .chain(construction.discontinuities.iter().flatten())
+                .all(|value| value.is_finite())
+                && tail_valid
+                && formula_valid(&construction.primary)
+                && construction.additional.iter().all(formula_valid);
+            if !valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "law surface construction payload is invalid",
                 );
             }
         }
@@ -1163,8 +1284,14 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 crate::geometry::HelixSurfaceProfile::Circle { length, radius } => {
                     length.is_finite() && radius.is_finite() && radius != 0.0
                 }
-                crate::geometry::HelixSurfaceProfile::Line { origin } => {
-                    origin.x.is_finite() && origin.y.is_finite() && origin.z.is_finite()
+                crate::geometry::HelixSurfaceProfile::Line { direction } => {
+                    direction.x.is_finite()
+                        && direction.y.is_finite()
+                        && direction.z.is_finite()
+                        && direction.x * direction.x
+                            + direction.y * direction.y
+                            + direction.z * direction.z
+                            > 0.0
                 }
             };
             if !finite || !circular_path || !profile_valid {
@@ -1304,16 +1431,25 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if let ProceduralSurfaceDefinition::VariableBlend { construction } = &procedural.definition
         {
+            use crate::geometry::VariableBlendRadiusKind;
+
             let ranges_valid = [
                 construction.u_range,
                 construction.v_range,
                 construction.post_range,
+                construction.slice_range,
+                construction.secondary_range,
             ]
             .iter()
-            .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
+            .all(|range| {
+                range.iter().flatten().all(|value| value.is_finite())
+                    && match (range[0], range[1]) {
+                        (Some(lower), Some(upper)) => lower <= upper,
+                        _ => true,
+                    }
+            });
             let sides_valid = construction.sides.iter().all(|side| {
-                side.scalar.is_finite()
-                    && side.location.x.is_finite()
+                side.location.x.is_finite()
                     && side.location.y.is_finite()
                     && side.location.z.is_finite()
             });
@@ -1336,7 +1472,20 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         tail.parameters.iter().all(|value| value.is_finite())
                             && !matches!(tail.selector, crate::geometry::LoftBridgeToken::Double(value) if !value.is_finite())
                     });
-            if !ranges_valid || !sides_valid || !values_valid || !scalar_tail_valid {
+            let radius_branch_valid = match construction.radius_kind {
+                VariableBlendRadiusKind::SingleRadius => {
+                    construction.second_value.is_none() && construction.chamfer.is_none()
+                }
+                VariableBlendRadiusKind::TwoRadii => {
+                    construction.second_value.is_some() && construction.single_radius_tail.is_none()
+                }
+            };
+            if !ranges_valid
+                || !sides_valid
+                || !values_valid
+                || !scalar_tail_valid
+                || !radius_branch_valid
+            {
                 bounds_err(
                     findings,
                     &procedural.id.0,
@@ -1413,7 +1562,13 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             };
             let ranges_valid = [&construction.u_range, &construction.v_range]
                 .iter()
-                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
+                .all(|range| {
+                    range.iter().flatten().all(|value| value.is_finite())
+                        && match range {
+                            [Some(lower), Some(upper)] => lower <= upper,
+                            _ => true,
+                        }
+                });
             let selector_valid = match construction.radius_selector {
                 crate::geometry::RollingBallRadiusSelector::None => true,
                 crate::geometry::RollingBallRadiusSelector::Value { value } => value.is_finite(),
@@ -2421,8 +2576,9 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
         CurveGeometry::Transformed { basis, transform } => {
             valid_affine_transform(*transform) && valid_curve_basis(basis)
         }
-        CurveGeometry::Composite { .. } => true,
-        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => true,
+        CurveGeometry::Procedural { .. }
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Unknown { .. } => true,
     }
 }
 

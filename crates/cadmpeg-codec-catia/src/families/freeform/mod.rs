@@ -236,8 +236,10 @@ pub(crate) fn append_freeform_surface_pools(
                 u_sense: Some(1),
                 v_sense: Some(1),
                 extension_flags: Vec::new(),
+                revision_form: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
     }
 
@@ -347,6 +349,7 @@ pub(crate) fn append_freeform_surface_pools(
                 sites,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
     }
 
@@ -518,8 +521,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                 u_sense: Some(1),
                                 v_sense: Some(1),
                                 extension_flags: Vec::new(),
+                                revision_form: None,
                             },
                             cache_fit_tolerance: None,
+                            record_bounds: None,
                         });
                         surface_ids.insert(key, id.clone());
                         id
@@ -696,6 +701,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             ProceduralCurveDefinition::SurfaceCurve {
                 family: SurfaceCurveFamily::Parametric,
                 context,
+                tail: None,
             }
         };
         ir.model.procedural_curves.push(ProceduralCurve {
@@ -755,6 +761,7 @@ pub(crate) fn append_a8_rolling_ball_pools(
             surface: surface_id,
             definition,
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
     }
 }

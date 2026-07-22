@@ -8,27 +8,39 @@
 //! [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
 
 use std::collections::BTreeMap;
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Write};
 
 use crate::records::DesignMaterialAssignment;
-use cadmpeg_ir::appearance::Appearance;
-use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
+use cadmpeg_ir::appearance::{
+    Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
+};
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
-use cadmpeg_ir::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, u64_at, utf16le_at};
+use cadmpeg_ir::le::{u32_at, u64_at};
 use cadmpeg_ir::topology::Color;
 
-use crate::container::{admit_entry, role, ContainerScan};
+use crate::bytes::{
+    is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, lp_utf16_bytes, take_lp_utf8,
+};
+use crate::container::{role, ContainerScan};
 
-/// Byte length of one `.protein` instance page.
-///
-/// The paged instance container uses fixed 0x88-byte pages. A stream with a
-/// different declared page size or incompatible total length is rejected.
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
 
+/// Compare a serialized Protein visual token with a Design visual GUID.
+///
+/// Protein assets may append one or more `_Post2015` revisions to their
+/// 36-character GUID. Design assignments retain only the GUID prefix.
+pub(crate) fn visual_guid_matches(left: &str, right: &str) -> bool {
+    is_guid_prefix(left) && is_guid_prefix(right) && left[..36].eq_ignore_ascii_case(&right[..36])
+}
+
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
+    if !appearance.textures.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D cannot synthesize connected Protein texture assets".into(),
+        ));
+    }
     let schema = appearance.schema.as_deref().unwrap_or("GenericSchema");
     let guid = appearance
         .visual_guid
@@ -178,6 +190,7 @@ pub(crate) fn patch_protein_appearances(
     })?;
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let mut patched = std::collections::BTreeSet::new();
+    let mut total_inflated = 0_u64;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|error| {
             CodecError::Malformed(format!("cannot read nested Protein entry: {error}"))
@@ -185,8 +198,17 @@ pub(crate) fn patch_protein_appearances(
         let name = entry.name().to_owned();
         let options =
             zip::write::SimpleFileOptions::default().compression_method(entry.compression());
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
-        entry.read_to_end(&mut bytes)?;
+        let declared_size = entry.size();
+        total_inflated = total_inflated.checked_add(declared_size).ok_or_else(|| {
+            CodecError::Malformed("Protein ZIP total inflated size overflows u64".into())
+        })?;
+        if total_inflated > crate::container::MAX_ARCHIVE_BYTES {
+            return Err(CodecError::Malformed(format!(
+                "Protein ZIP entries declare {total_inflated} inflated bytes; total limit is {}",
+                crate::container::MAX_ARCHIVE_BYTES
+            )));
+        }
+        let mut bytes = crate::container::read_entry_bounded(&mut entry, declared_size, &name)?;
         if name.ends_with("AssetData/InstanceProperties.bin") {
             patch_instance_colors(&mut bytes, edits, &mut patched)?;
         }
@@ -218,13 +240,13 @@ fn patch_instance_colors(
     for start in starts {
         let record = &logical[start..];
         let mut position = RECORD_MARKER.len();
-        let schema = take_lp(record, &mut position).ok_or_else(|| {
+        let schema = take_lp_utf8(record, &mut position).ok_or_else(|| {
             CodecError::Malformed("Protein appearance schema is truncated".into())
         })?;
-        let guid = take_lp(record, &mut position)
+        let guid = take_lp_utf8(record, &mut position)
             .ok_or_else(|| CodecError::Malformed("Protein appearance GUID is truncated".into()))?;
-        let _ = take_lp(record, &mut position);
-        let _ = take_lp(record, &mut position);
+        let _ = take_lp_utf8(record, &mut position);
+        let _ = take_lp_utf8(record, &mut position);
         let Some(edit) = edits.get(&guid) else {
             continue;
         };
@@ -320,8 +342,12 @@ pub struct DecodedMaterials {
     pub bindings: Vec<AppearanceBinding>,
     /// Per-face appearance assignments awaiting the BREP face-attribute join.
     pub face_assignments: Vec<FaceAppearanceAssignment>,
-    /// Appearance-id to originating `.protein` entry name, first writer wins.
-    pub appearance_origins: BTreeMap<String, String>,
+    /// Whether the document serializes any body or face appearance assignment.
+    ///
+    /// Protein assets form a document-local appearance catalog and need not be
+    /// assigned to topology. This distinguishes an unassigned catalog from an
+    /// assignment that failed to resolve.
+    pub has_topology_assignments: bool,
 }
 
 /// Decode `.protein` assets and Design and ACT assignments without ASM body
@@ -330,41 +356,48 @@ pub struct DecodedMaterials {
 /// The [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)
 /// `asm_body_key` join is skipped. Use [`decode_with_bodies`] when ASM body keys
 /// are available.
-pub fn decode<'a>(
-    ctx: &DecodeContext<'a>,
-    scan: &ContainerScan<'a>,
-) -> Result<DecodedMaterials, CodecError> {
-    decode_with_bodies(ctx, scan, &std::collections::HashMap::new())
+pub fn decode(scan: &ContainerScan) -> Result<DecodedMaterials, CodecError> {
+    decode_with_bodies(scan, &std::collections::HashMap::new())
 }
 
 /// Decode appearance assets and resolve body bindings through
 /// `body_keys` (`BodyId` to the ASM `Body.chunk[1]` value), closing the
 /// design-entity join backbone in
 /// [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
-pub fn decode_with_bodies<'a, S: std::hash::BuildHasher>(
-    ctx: &DecodeContext<'a>,
-    scan: &ContainerScan<'a>,
+pub fn decode_with_bodies<S: std::hash::BuildHasher>(
+    scan: &ContainerScan,
     body_keys: &std::collections::HashMap<BodyId, u64, S>,
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
-    let mut appearance_origins: BTreeMap<String, String> = BTreeMap::new();
     for entry in scan
         .entries
         .iter()
         .filter(|entry| entry.role == role::PROTEIN)
     {
-        let Some(protein) = scan.entry_view(&entry.name) else {
+        let payload = scan.entry_bytes(&entry.name)?;
+        let Some(instance) = instance_properties(payload) else {
             continue;
         };
-        let Some(instance) = nested_entry_view(ctx, protein, "AssetData/InstanceProperties.bin")?
-        else {
+        let Some(logical) = dechunk(&instance) else {
             continue;
         };
-        let Some(logical) = dechunk_space(ctx, instance)? else {
-            continue;
+        let catalog = definition_catalog(payload);
+        let mut appearances = if crate::protein::has_schemas(payload) {
+            let records = crate::protein::decode(payload, &logical)?;
+            let mut decoded = appearances_from_schema_records(&records);
+            let decoded_ids = decoded
+                .iter()
+                .map(|appearance| appearance.id.clone())
+                .collect::<std::collections::HashSet<_>>();
+            decoded.extend(
+                decode_fixed_logical_records(&logical)
+                    .into_iter()
+                    .filter(|appearance| !decoded_ids.contains(&appearance.id)),
+            );
+            decoded
+        } else {
+            decode_fixed_logical_records(&logical)
         };
-        let catalog = definition_catalog(ctx, protein)?;
-        let mut appearances = decode_logical_records(logical.window(), &entry.name);
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
                 if let Some((schema, category)) = catalog.get(name) {
@@ -372,11 +405,6 @@ pub fn decode_with_bodies<'a, S: std::hash::BuildHasher>(
                     appearance.category = category.clone();
                 }
             }
-        }
-        for appearance in &appearances {
-            appearance_origins
-                .entry(appearance.id.0.clone())
-                .or_insert_with(|| entry.name.clone());
         }
         out.extend(appearances);
     }
@@ -387,7 +415,10 @@ pub fn decode_with_bodies<'a, S: std::hash::BuildHasher>(
     let object_types = decode_design_object_types(scan)?;
     for assignment in &assignments {
         if !out.iter().any(|appearance| {
-            appearance.visual_guid.as_deref() == Some(&assignment.visual_guid)
+            appearance
+                .visual_guid
+                .as_deref()
+                .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
                 || assignment.visual_preset.as_deref() == appearance.name.as_deref()
         }) {
             out.push(Appearance {
@@ -400,19 +431,23 @@ pub fn decode_with_bodies<'a, S: std::hash::BuildHasher>(
                 category: None,
                 base_color: None,
                 properties: BTreeMap::new(),
+                textures: Vec::new(),
             });
         }
     }
     for appearance in &mut out {
-        if let Some(assignment) = assignments
-            .iter()
-            .find(|assignment| appearance.visual_guid.as_deref() == Some(&assignment.visual_guid))
-        {
+        if let Some(assignment) = assignments.iter().find(|assignment| {
+            appearance
+                .visual_guid
+                .as_deref()
+                .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
+        }) {
             appearance.physical_token = assignment.physical_token.clone();
         }
     }
     let mut bindings = bind_bodies(&out, &assignments, &act_channels, &object_types, body_keys);
-    for over in decode_body_appearance_overrides(scan)? {
+    let body_overrides = decode_body_appearance_overrides(scan)?;
+    for over in &body_overrides {
         let Some(body) = body_keys
             .iter()
             .find_map(|(body, key)| (*key == over.asm_body_key).then_some(body.clone()))
@@ -429,7 +464,7 @@ pub fn decode_with_bodies<'a, S: std::hash::BuildHasher>(
             appearance
                 .visual_guid
                 .as_deref()
-                .is_some_and(|guid| guid.starts_with(&over.visual_guid))
+                .is_some_and(|guid| visual_guid_matches(guid, &over.visual_guid))
         }) else {
             continue;
         };
@@ -449,12 +484,211 @@ pub fn decode_with_bodies<'a, S: std::hash::BuildHasher>(
         });
     }
     let face_assignments = decode_face_appearance_assignments(scan)?;
+    let has_topology_assignments =
+        !assignments.is_empty() || !body_overrides.is_empty() || !face_assignments.is_empty();
     Ok(DecodedMaterials {
         appearances: out,
         bindings,
         face_assignments,
-        appearance_origins,
+        has_topology_assignments,
     })
+}
+
+fn appearances_from_schema_records(records: &[crate::protein::DecodedRecord]) -> Vec<Appearance> {
+    let textures = records
+        .iter()
+        .filter_map(texture_asset)
+        .map(|texture| (texture.asset_guid.clone(), texture))
+        .collect::<BTreeMap<_, _>>();
+    records
+        .iter()
+        .filter(|record| {
+            !matches!(
+                record.schema.as_str(),
+                "UnifiedBitmapSchema" | "BumpMapSchema"
+            )
+        })
+        .map(|record| {
+            let mut properties = BTreeMap::new();
+            let mut connected = Vec::new();
+            for (id, property) in &record.properties {
+                if let crate::protein::PropertyValue::Float(value) = property.value {
+                    properties.insert(neutral_property_name(id).to_owned(), value);
+                }
+                for guid in &property.connections {
+                    if let Some(texture) = textures.get(guid) {
+                        let mut texture = texture.clone();
+                        texture.slot.clone_from(id);
+                        connected.push(texture);
+                    }
+                }
+            }
+            connected.sort_by(|left, right| {
+                left.slot
+                    .cmp(&right.slot)
+                    .then_with(|| left.asset_guid.cmp(&right.asset_guid))
+            });
+            let base_color = [
+                "generic_diffuse",
+                "opaque_albedo",
+                "surface_albedo",
+                "common_Tint_color",
+            ]
+            .into_iter()
+            .find_map(|id| color_property(record, id));
+            Appearance {
+                id: AppearanceId(format!("f3d:design:appearance#{}", record.guid)),
+                name: Some(record.base.clone()),
+                asset_guid: Some(record.guid.clone()),
+                visual_guid: (!is_physical_schema(&record.schema)).then(|| record.guid.clone()),
+                physical_token: None,
+                schema: Some(record.schema.clone()),
+                category: None,
+                base_color,
+                properties,
+                textures: connected,
+            }
+        })
+        .collect()
+}
+
+fn color_property(record: &crate::protein::DecodedRecord, id: &str) -> Option<Color> {
+    let crate::protein::PropertyValue::Color([r, g, b, a]) =
+        record.properties.get(id).map(|property| &property.value)?
+    else {
+        return None;
+    };
+    decoded_color([*r, *g, *b, *a])
+}
+
+fn decoded_color(values: [f64; 4]) -> Option<Color> {
+    values
+        .iter()
+        .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
+        .then_some(Color {
+            r: values[0] as f32,
+            g: values[1] as f32,
+            b: values[2] as f32,
+            a: values[3] as f32,
+        })
+}
+
+fn texture_asset(record: &crate::protein::DecodedRecord) -> Option<TextureRef> {
+    if !matches!(
+        record.schema.as_str(),
+        "UnifiedBitmapSchema" | "BumpMapSchema"
+    ) {
+        return None;
+    }
+    let paths = record
+        .properties
+        .iter()
+        .find_map(|(id, property)| {
+            (id.ends_with("_Bitmap"))
+                .then_some(&property.value)
+                .and_then(|value| match value {
+                    crate::protein::PropertyValue::TextureUri(paths) => Some(paths.clone()),
+                    _ => None,
+                })
+        })
+        .unwrap_or_default();
+    let urn = record.properties.iter().find_map(|(id, property)| {
+        (id.ends_with("_Bitmap_urn"))
+            .then_some(&property.value)
+            .and_then(|value| match value {
+                crate::protein::PropertyValue::String(value) if !value.is_empty() => {
+                    Some(value.clone())
+                }
+                _ => None,
+            })
+    });
+    let mapping = TextureMap2d {
+        map_channel: integer_property(record, "MapChannel").unwrap_or(1),
+        uvw_source: integer_property(record, "MapChannel_UVWSource_Advanced").unwrap_or(0),
+        u_offset: float_property(record, "UOffset").unwrap_or(0.0),
+        v_offset: float_property(record, "VOffset").unwrap_or(0.0),
+        u_scale: float_property(record, "UScale").unwrap_or(1.0),
+        v_scale: float_property(record, "VScale").unwrap_or(1.0),
+        rotation: float_property(record, "WAngle").unwrap_or(0.0).to_radians(),
+        repeat_u: boolean_property(record, "URepeat").unwrap_or(true),
+        repeat_v: boolean_property(record, "VRepeat").unwrap_or(true),
+        real_world_offset_x: distance_property(record, "RealWorldOffsetX").unwrap_or(0.0),
+        real_world_offset_y: distance_property(record, "RealWorldOffsetY").unwrap_or(0.0),
+        real_world_scale_x: distance_property(record, "RealWorldScaleX").unwrap_or(0.0),
+        real_world_scale_y: distance_property(record, "RealWorldScaleY").unwrap_or(0.0),
+    };
+    let bump = (record.schema == "BumpMapSchema").then(|| BumpMap {
+        normal_map: integer_property(record, "bumpmap_Type") == Some(1),
+        depth: distance_property(record, "bumpmap_Depth").unwrap_or(0.0),
+        normal_scale: float_property(record, "bumpmap_NormalScale").unwrap_or(1.0),
+    });
+    Some(TextureRef {
+        asset_guid: record.guid.clone(),
+        slot: String::new(),
+        schema: record.schema.clone(),
+        paths,
+        urn,
+        mapping,
+        bump,
+    })
+}
+
+fn property_with_suffix<'a>(
+    record: &'a crate::protein::DecodedRecord,
+    suffix: &str,
+) -> Option<&'a crate::protein::PropertyValue> {
+    let qualified_suffix = format!("_{suffix}");
+    record
+        .properties
+        .iter()
+        .find(|(id, _)| *id == suffix || id.ends_with(&qualified_suffix))
+        .map(|(_, property)| &property.value)
+}
+
+fn neutral_property_name(id: &str) -> &str {
+    match id {
+        "generic_reflectivity_at_0deg" => "reflectivity_at_0deg",
+        "generic_refraction_index" | "transparent_refraction_index" => "refraction_index",
+        _ => id,
+    }
+}
+
+fn is_physical_schema(schema: &str) -> bool {
+    schema == "PhysMatSchema" || schema.starts_with("Structural") || schema.starts_with("Thermal")
+}
+
+fn integer_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Option<u32> {
+    match property_with_suffix(record, suffix)? {
+        crate::protein::PropertyValue::Integer(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn float_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Option<f64> {
+    match property_with_suffix(record, suffix)? {
+        crate::protein::PropertyValue::Float(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn boolean_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Option<bool> {
+    match property_with_suffix(record, suffix)? {
+        crate::protein::PropertyValue::Boolean(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn distance_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Option<f64> {
+    let crate::protein::PropertyValue::Distance { unit, value } =
+        property_with_suffix(record, suffix)?
+    else {
+        return None;
+    };
+    match *unit {
+        0x2016 => Some(*value * 25.4),
+        0x200e => Some(*value * 10.0),
+        _ => None,
+    }
 }
 
 pub(crate) fn decode_design_assignments(
@@ -546,7 +780,7 @@ pub(crate) struct BodyAppearanceOverride {
 /// Design `BulkStream` and join them to ASM body keys through the BREP
 /// body-map record
 /// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
-pub(crate) fn decode_body_appearance_overrides(
+fn decode_body_appearance_overrides(
     scan: &ContainerScan,
 ) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
     let mut out = Vec::new();
@@ -591,7 +825,7 @@ pub struct FaceAppearanceAssignment {
 /// length-prefixed UTF-16 strings before the marker are the 36-character
 /// face GUID and the bound visual GUID
 /// ([spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)).
-pub(crate) fn decode_face_appearance_assignments(
+fn decode_face_appearance_assignments(
     scan: &ContainerScan,
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
     let mut out = Vec::new();
@@ -653,9 +887,9 @@ const BODY_RECORD_MARKER_GUIDS: [&str; 2] = [
 /// The scan requires the head entity and node entity to agree before
 /// accepting a record.
 pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
-    let marker: Vec<u8> = lp_utf16_needle(BODY_RECORD_MARKER_GUIDS[0])
+    let marker: Vec<u8> = lp_utf16_bytes(BODY_RECORD_MARKER_GUIDS[0])
         .into_iter()
-        .chain(lp_utf16_needle(BODY_RECORD_MARKER_GUIDS[1]))
+        .chain(lp_utf16_bytes(BODY_RECORD_MARKER_GUIDS[1]))
         .collect();
     let mut out = Vec::new();
     let mut position = 0usize;
@@ -676,24 +910,29 @@ fn browser_body_appearance_at(
     marker_at: usize,
     fields_at: usize,
 ) -> Option<(u64, String)> {
-    let (token, after) = lp_utf16_at(bytes, skip_zeros(bytes, fields_at))?;
+    // Physical-material token, then its entity reference.
+    let (token, after) = lp_utf16_bounded(bytes, skip_zeros(bytes, fields_at), 1..=256)?;
     if !token.starts_with("PrismMaterial") || bytes.get(after)? != &0x01 {
         return None;
     }
-    let (node_guid, after) = lp_utf16_at(bytes, skip_zeros(bytes, after + 9))?;
+    // Browser-node GUID, then the node's entity.
+    let (node_guid, after) = lp_utf16_bounded(bytes, skip_zeros(bytes, after + 9), 1..=256)?;
     if node_guid.len() != 36 || !is_guid_prefix(&node_guid) || bytes.get(after)? != &0x01 {
         return None;
     }
     let node_entity = u64_at(bytes, after + 1)?;
-    let name_end = match lp_utf16_at(bytes, skip_zeros(bytes, after + 9)) {
+    // Optional display name, opacity, and the `01 01` marker.
+    let name_end = match lp_utf16_bounded(bytes, skip_zeros(bytes, after + 9), 1..=256) {
         Some((_, end)) => end,
         None => after + 9,
     };
     let visual_at = record_tail_visual_offset(bytes, name_end)?;
-    let (visual, _) = lp_utf16_at(bytes, visual_at)?;
+    let (visual, _) = lp_utf16_bounded(bytes, visual_at, 1..=256)?;
     if visual.len() < 36 || !is_guid_prefix(&visual) {
         return None;
     }
+    // The record head's `299` class tag names the body's design entity; it
+    // precedes the marker pair and equals the node entity minus one.
     let head_entity = preceding_class_299_entity(bytes, marker_at)?;
     if head_entity + 1 != node_entity {
         return None;
@@ -735,29 +974,8 @@ fn preceding_class_299_entity(bytes: &[u8], at: usize) -> Option<u64> {
     u64_at(bytes, window_start + tag_at + CLASS_299.len())
 }
 
-fn lp_utf16_needle(value: &str) -> Vec<u8> {
-    let units: Vec<u8> = value.encode_utf16().flat_map(u16::to_le_bytes).collect();
-    let mut out = ((units.len() / 2) as u32).to_le_bytes().to_vec();
-    out.extend(units);
-    out
-}
-
-/// Read one length-prefixed UTF-16 string of up to 256 characters at
-/// `position` and return it with the offset past its code units.
-fn lp_utf16_at(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let length = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
-    if !(1..=256).contains(&length) {
-        return None;
-    }
-    let end = position + 4 + length * 2;
-    let units: Vec<u16> = bytes
-        .get(position + 4..end)?
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-        .collect();
-    Some((String::from_utf16(&units).ok()?, end))
-}
-
+/// Encode a string as its length-prefixed UTF-16 byte form.
+/// Advance past at most `cap` zero bytes starting at `position`.
 fn skip_zeros_capped(bytes: &[u8], position: usize, cap: usize) -> usize {
     let mut at = position;
     while at < bytes.len() && at - position < cap && bytes[at] == 0 {
@@ -766,20 +984,9 @@ fn skip_zeros_capped(bytes: &[u8], position: usize, cap: usize) -> usize {
     at
 }
 
+/// Advance past at most eight zero bytes starting at `position`.
 fn skip_zeros(bytes: &[u8], position: usize) -> usize {
     skip_zeros_capped(bytes, position, 8)
-}
-
-fn is_guid_prefix(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    bytes.len() >= 36
-        && bytes[..36].iter().enumerate().all(|(index, byte)| {
-            if matches!(index, 8 | 13 | 18 | 23) {
-                *byte == b'-'
-            } else {
-                byte.is_ascii_hexdigit()
-            }
-        })
 }
 
 fn bind_bodies<S: std::hash::BuildHasher>(
@@ -796,7 +1003,10 @@ fn bind_bodies<S: std::hash::BuildHasher>(
                 (*key == assignment.asm_body_key).then_some(body.clone())
             })?;
             let appearance = appearances.iter().find(|appearance| {
-                appearance.visual_guid.as_deref() == Some(&assignment.visual_guid)
+                appearance
+                    .visual_guid
+                    .as_deref()
+                    .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
                     || assignment.visual_preset.as_deref() == appearance.name.as_deref()
             })?;
             Some(AppearanceBinding {
@@ -829,7 +1039,9 @@ fn decode_design_object_types(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 8 <= bytes.len() {
-            let Some((object_type, after_type)) = lp_ascii(bytes, position) else {
+            let Some((object_type, after_type)) =
+                lp_ascii_filtered(bytes, position, 1..=64, |byte| (0x20..0x7f).contains(byte))
+            else {
                 position += 1;
                 continue;
             };
@@ -873,7 +1085,9 @@ fn decode_act_channels(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 4 <= bytes.len() {
-            let Some((tag, after_tag)) = lp_ascii(bytes, position) else {
+            let Some((tag, after_tag)) =
+                lp_ascii_filtered(bytes, position, 1..=64, |byte| (0x20..0x7f).contains(byte))
+            else {
                 position += 1;
                 continue;
             };
@@ -901,11 +1115,13 @@ fn decode_act_channels(
             let mut channels = BTreeMap::new();
             let mut valid = true;
             for _ in 0..count {
-                let Some((name, after_name)) = lp_ascii(bytes, cursor) else {
+                let Some((name, after_name)) =
+                    lp_ascii_filtered(bytes, cursor, 1..=64, |byte| (0x20..0x7f).contains(byte))
+                else {
                     valid = false;
                     break;
                 };
-                let Some((guid, after_guid)) = lp_utf16(bytes, after_name) else {
+                let Some((guid, after_guid)) = lp_utf16_bounded(bytes, after_name, 1..=64) else {
                     valid = false;
                     break;
                 };
@@ -917,7 +1133,7 @@ fn decode_act_channels(
                 cursor = after_guid;
             }
             if valid {
-                if let Some((entity, end)) = lp_utf16(bytes, cursor) {
+                if let Some((entity, end)) = lp_utf16_bounded(bytes, cursor, 1..=64) {
                     if let Some(suffix) = entity_suffix(&entity) {
                         out.insert(suffix, channels);
                     }
@@ -929,25 +1145,6 @@ fn decode_act_channels(
         }
     }
     Ok(out)
-}
-
-fn lp_ascii(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32_at(bytes, position)?).ok()?;
-    if !(1..=64).contains(&length) {
-        return None;
-    }
-    let (raw, end) = lp_u32_bytes_at(bytes, position)?;
-    raw.iter()
-        .all(|byte| (0x20..0x7f).contains(byte))
-        .then(|| (String::from_utf8_lossy(raw).into_owned(), end))
-}
-
-fn lp_utf16(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32_at(bytes, position)?).ok()?;
-    if !(1..=64).contains(&length) {
-        return None;
-    }
-    utf16le_at(bytes, position.checked_add(4)?, length)
 }
 
 fn entity_suffix(value: &str) -> Option<u64> {
@@ -994,7 +1191,7 @@ fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
 }
 
 fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize, usize)> {
-    crate::design::body_bindings(bytes)
+    crate::design::decode::body::body_bindings(bytes)
         .into_iter()
         .map(|binding| {
             (
@@ -1009,42 +1206,26 @@ fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize, 
         .collect()
 }
 
-/// Admit the first nested `.protein` archive entry whose name ends with
-/// `suffix`, returning its payload view.
-///
-/// Malformed nested framing yields `Ok(None)`; a budget refusal during expansion
-/// propagates.
-fn nested_entry_view<'a>(
-    ctx: &DecodeContext<'a>,
-    protein: View<'a>,
-    suffix: &str,
-) -> Result<Option<View<'a>>, CodecError> {
-    let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(protein.window())) else {
-        return Ok(None);
-    };
+fn instance_properties(protein: &[u8]) -> Option<Vec<u8>> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(protein)).ok()?;
     for index in 0..archive.len() {
-        let Ok(mut file) = archive.by_index(index) else {
-            return Ok(None);
-        };
-        if !file.name().ends_with(suffix) {
-            continue;
+        let mut file = archive.by_index(index).ok()?;
+        if file.name().ends_with("AssetData/InstanceProperties.bin") {
+            let size = file.size();
+            let name = file.name().to_owned();
+            let bytes = crate::container::read_entry_bounded(&mut file, size, &name).ok()?;
+            return Some(bytes);
         }
-        let name = file.name().to_string();
-        return admit_entry(ctx, protein, &mut file, &name).map(Some);
     }
-    Ok(None)
+    None
 }
 
-fn definition_catalog<'a>(
-    ctx: &DecodeContext<'a>,
-    protein: View<'a>,
-) -> Result<std::collections::HashMap<String, (String, Option<String>)>, CodecError> {
-    let Some(entry) =
-        nested_entry_view(ctx, protein, "AssetData/DefinitionIteratorProperties.bin")?
-    else {
-        return Ok(std::collections::HashMap::new());
+fn definition_catalog(
+    protein: &[u8],
+) -> std::collections::HashMap<String, (String, Option<String>)> {
+    let Some(bytes) = nested_entry(protein, "AssetData/DefinitionIteratorProperties.bin") else {
+        return std::collections::HashMap::new();
     };
-    let bytes = entry.window();
     let marker = b"\x80\x00\x01\x00";
     let starts: Vec<usize> = bytes
         .windows(marker.len())
@@ -1056,8 +1237,6 @@ fn definition_catalog<'a>(
         let end = starts.get(index + 1).copied().unwrap_or(bytes.len());
         let mut strings = Vec::new();
         let mut position = *start + marker.len();
-        // A catalog record carries at most eight length-prefixed strings, each
-        // 1..=200 bytes of printable ASCII.
         while position + 4 <= end && strings.len() < 8 {
             let length = u32::from_le_bytes(
                 bytes[position..position + 4]
@@ -1086,165 +1265,104 @@ fn definition_catalog<'a>(
             }
         }
     }
-    Ok(out)
+    out
 }
 
-/// Walk the paged `.protein` instance framing, returning each page body's
-/// `[start, end)` extent in the input, or `None` when the framing is not the
-/// expected shape. Both the decode-path reconstruction and the encode-path patch
-/// share this walk so the two cannot diverge.
-fn page_body_ranges(bytes: &[u8]) -> Option<Vec<(usize, usize)>> {
-    let declared_page = bytes
-        .get(0..4)
-        .and_then(|head| <[u8; 4]>::try_from(head).ok())
-        .map(|head| u32::from_le_bytes(head) as usize);
+fn nested_entry(protein: &[u8], suffix: &str) -> Option<Vec<u8>> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(protein)).ok()?;
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).ok()?;
+        if file.name().ends_with(suffix) {
+            let size = file.size();
+            let name = file.name().to_owned();
+            let bytes = crate::container::read_entry_bounded(&mut file, size, &name).ok()?;
+            return Some(bytes);
+        }
+    }
+    None
+}
+
+fn dechunk(bytes: &[u8]) -> Option<Vec<u8>> {
     if bytes.len() < 16 + PAGE_SIZE
-        || declared_page != Some(PAGE_SIZE)
+        || u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?) as usize != PAGE_SIZE
         || !(bytes.len() - 16).is_multiple_of(PAGE_SIZE)
     {
         return None;
     }
-    let mut ranges = Vec::new();
-    let mut page_start = 16;
-    while page_start + PAGE_SIZE <= bytes.len() {
-        let page = &bytes[page_start..page_start + PAGE_SIZE];
-        let extent = if page.get(4..8) == Some(RECORD_MARKER) {
-            (page_start + 4, page_start + PAGE_SIZE)
-        } else if page.get(4..8) == Some(b"\x80\x00\x00\x00".as_slice()) {
-            (page_start + 8, page_start + PAGE_SIZE)
-        } else if page.get(0..4) == Some(b"\xff\xff\xff\xff".as_slice()) {
-            let used = page
-                .get(4..6)
-                .and_then(|len| <[u8; 2]>::try_from(len).ok())
-                .map(|len| u16::from_le_bytes(len) as usize)
-                .filter(|used| 8 + used <= PAGE_SIZE)?;
-            (page_start + 8, page_start + 8 + used)
+    let mut out = Vec::new();
+    for page in bytes[16..].chunks_exact(PAGE_SIZE) {
+        if page.get(4..8) == Some(RECORD_MARKER) {
+            out.extend_from_slice(&page[4..]);
+        } else if page.get(4..8) == Some(b"\x80\x00\x00\x00") {
+            out.extend_from_slice(&page[8..]);
+        } else if page.get(0..4) == Some(b"\xff\xff\xff\xff") {
+            let used = u16::from_le_bytes(page.get(4..6)?.try_into().ok()?) as usize;
+            out.extend_from_slice(page.get(8..8 + used)?);
         } else {
             return None;
-        };
-        ranges.push(extent);
-        page_start += PAGE_SIZE;
-    }
-    Some(ranges)
-}
-
-/// Reassemble the paged `.protein` instance stream into its logical bytes, for
-/// the encode-path patch that has no decode context.
-fn dechunk(bytes: &[u8]) -> Option<Vec<u8>> {
-    let mut out = Vec::new();
-    for (start, end) in page_body_ranges(bytes)? {
-        out.extend_from_slice(&bytes[start..end]);
+        }
     }
     Some(out)
 }
 
-/// Reassemble the paged `.protein` instance stream into its logical byte stream.
-fn dechunk_space<'a>(
-    ctx: &DecodeContext<'a>,
-    instance: View<'a>,
-) -> Result<Option<View<'a>>, CodecError> {
-    let Some(ranges) = page_body_ranges(instance.window()) else {
-        return Ok(None);
-    };
-    let mut segments = Vec::with_capacity(ranges.len());
-    for (start, end) in ranges {
-        let Some(child) = instance.child(start, end) else {
-            return Ok(None);
-        };
-        segments.push(child);
-    }
-    Ok(Some(ctx.concat_views(&segments)?))
-}
-
-fn decode_logical_records(bytes: &[u8], stream: &str) -> Vec<Appearance> {
-    let starts: Vec<usize> = bytes
+/// Decode the fixed source-less layouts emitted by [`encode_protein`]. Native
+/// Protein assets package schemas and use the schema-driven path instead.
+fn decode_fixed_logical_records(bytes: &[u8]) -> Vec<Appearance> {
+    let starts = bytes
         .windows(RECORD_MARKER.len())
         .enumerate()
-        .filter_map(|(offset, window)| (window == RECORD_MARKER).then_some(offset))
-        .collect();
+        .filter_map(|(offset, marker)| (marker == RECORD_MARKER).then_some(offset))
+        .collect::<Vec<_>>();
     starts
         .iter()
         .enumerate()
-        .filter_map(|(index, start)| {
-            let end = starts.get(index + 1).copied().unwrap_or(bytes.len());
-            decode_record(&bytes[*start..end], stream, *start)
+        .filter_map(|(ordinal, start)| {
+            let end = starts.get(ordinal + 1).copied().unwrap_or(bytes.len());
+            decode_fixed_record(&bytes[*start..end])
         })
         .collect()
 }
 
-fn decode_record(record: &[u8], _stream: &str, _offset: usize) -> Option<Appearance> {
-    if !record.starts_with(RECORD_MARKER) {
-        return None;
-    }
+fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
     let mut position = RECORD_MARKER.len();
-    let schema = take_lp(record, &mut position)?;
-    let guid = take_lp(record, &mut position)?;
-    let base = take_lp(record, &mut position)?;
-    let _base_guid = take_lp(record, &mut position)?;
+    let schema = take_lp_utf8(record, &mut position)?;
+    let guid = take_lp_utf8(record, &mut position)?;
+    let base = take_lp_utf8(record, &mut position)?;
+    take_lp_utf8(record, &mut position)?;
     let color = match schema.as_str() {
-        "GenericSchema" => rgba(
+        "GenericSchema" => fixed_rgba(
             record,
             position + 112 + generic_connection_delta(record, position),
         ),
-        "PrismOpaqueSchema" | "PrismMetalSchema" => rgba(record, position + 8),
-        "PrismTransparentSchema" => rgba(record, position + 121),
+        "PrismOpaqueSchema" | "PrismMetalSchema" => fixed_rgba(record, position + 8),
+        "PrismTransparentSchema" => fixed_rgba(record, position + 121),
         "PhysMatSchema"
         | "StructuralMetalSchema"
         | "StructuralPlasticSchema"
         | "ThermalSolidSchema" => None,
         _ => return None,
     };
-    if color.is_none()
-        && !matches!(
-            schema.as_str(),
-            "PhysMatSchema"
-                | "StructuralMetalSchema"
-                | "StructuralPlasticSchema"
-                | "ThermalSolidSchema"
-        )
-    {
-        return None;
-    }
     let mut properties = BTreeMap::new();
-    match schema.as_str() {
-        "GenericSchema" => {
-            let delta = generic_connection_delta(record, position);
-            insert_tagged_scalar(
-                &mut properties,
-                "reflectivity_at_0deg",
-                record,
-                position + 171 + delta,
-                0.0..=1.0,
-            );
-            insert_tagged_scalar(
-                &mut properties,
-                "refraction_index",
-                record,
-                position + 197 + delta,
-                1.0..=4.0,
-            );
+    if schema == "GenericSchema" {
+        let delta = generic_connection_delta(record, position);
+        fixed_tagged_scalar(
+            &mut properties,
+            "reflectivity_at_0deg",
+            record,
+            position + 171 + delta,
+        );
+        fixed_tagged_scalar(
+            &mut properties,
+            "refraction_index",
+            record,
+            position + 197 + delta,
+        );
+    } else if schema == "PrismOpaqueSchema" {
+        if let Some(marker) = find(record, b"\x0e\x20\x00\x00", position) {
+            fixed_scalar(&mut properties, "surface_roughness", record, marker + 4);
         }
-        "PrismOpaqueSchema" => {
-            if let Some(marker) = find(record, b"\x0e\x20\x00\x00", position) {
-                insert_scalar(
-                    &mut properties,
-                    "surface_roughness",
-                    record,
-                    marker + 4,
-                    0.0..=1.0,
-                );
-            }
-        }
-        "PrismTransparentSchema" => {
-            insert_scalar(
-                &mut properties,
-                "refraction_index",
-                record,
-                position + 169,
-                1.0..=4.0,
-            );
-        }
-        _ => {}
+    } else if schema == "PrismTransparentSchema" {
+        fixed_scalar(&mut properties, "refraction_index", record, position + 169);
     }
     Some(Appearance {
         id: AppearanceId(format!("f3d:design:appearance#{guid}")),
@@ -1259,11 +1377,40 @@ fn decode_record(record: &[u8], _stream: &str, _offset: usize) -> Option<Appeara
         ))
         .then_some(guid),
         physical_token: None,
-        schema: Some(schema.clone()),
+        schema: Some(schema),
         category: None,
         base_color: color,
         properties,
+        textures: Vec::new(),
     })
+}
+
+fn fixed_scalar(out: &mut BTreeMap<String, f64>, name: &str, bytes: &[u8], offset: usize) {
+    let Some(raw) = bytes
+        .get(offset..offset + 8)
+        .and_then(|raw| raw.try_into().ok())
+    else {
+        return;
+    };
+    let value = f64::from_le_bytes(raw);
+    if value.is_finite() {
+        out.insert(name.to_owned(), value);
+    }
+}
+
+fn fixed_tagged_scalar(out: &mut BTreeMap<String, f64>, name: &str, bytes: &[u8], offset: usize) {
+    if bytes.get(offset..offset + 4) == Some(b"\x0c\x00\x00\x00") {
+        fixed_scalar(out, name, bytes, offset + 4);
+    }
+}
+
+fn fixed_rgba(bytes: &[u8], offset: usize) -> Option<Color> {
+    let mut values = [0.0; 4];
+    for (ordinal, value) in values.iter_mut().enumerate() {
+        let at = offset + ordinal * 8;
+        *value = f64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?);
+    }
+    decoded_color(values)
 }
 
 fn generic_connection_delta(record: &[u8], value_block: usize) -> usize {
@@ -1304,61 +1451,13 @@ fn find(bytes: &[u8], needle: &[u8], start: usize) -> Option<usize> {
         .map(|offset| start + offset)
 }
 
-fn insert_scalar(
-    out: &mut BTreeMap<String, f64>,
-    name: &str,
-    bytes: &[u8],
-    offset: usize,
-    range: std::ops::RangeInclusive<f64>,
-) {
-    let Some(value) = bytes.get(offset..offset + 8).map(|slice| {
-        f64::from_le_bytes(
-            slice
-                .try_into()
-                .expect("invariant: chunks_exact(8) yields 8-byte slices"),
-        )
-    }) else {
-        return;
-    };
-    if value.is_finite() && range.contains(&value) {
-        out.insert(name.into(), value);
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn decoded_color_requires_finite_normalized_channels() {
+        assert!(super::decoded_color([0.0, 0.25, 0.5, 1.0]).is_some());
+        for invalid in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
+            assert!(super::decoded_color([invalid, 0.25, 0.5, 1.0]).is_none());
+        }
     }
-}
-
-fn insert_tagged_scalar(
-    out: &mut BTreeMap<String, f64>,
-    name: &str,
-    bytes: &[u8],
-    offset: usize,
-    range: std::ops::RangeInclusive<f64>,
-) {
-    if bytes.get(offset..offset + 4) == Some(b"\x0c\x00\x00\x00") {
-        insert_scalar(out, name, bytes, offset + 4, range);
-    }
-}
-
-fn take_lp(bytes: &[u8], position: &mut usize) -> Option<String> {
-    String::from_utf8(take_lp_u32_bytes(bytes, position)?.to_vec()).ok()
-}
-
-fn rgba(bytes: &[u8], offset: usize) -> Option<Color> {
-    let read = |at: usize| Some(f64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?));
-    let [r, g, b, a] = [
-        read(offset)?,
-        read(offset + 8)?,
-        read(offset + 16)?,
-        read(offset + 24)?,
-    ];
-    if ![r, g, b, a].iter().all(|value| value.is_finite())
-        || ![r, g, b].iter().all(|value| (0.0..=1.0).contains(value))
-        || (a - 1.0).abs() > 1e-3
-    {
-        return None;
-    }
-    Some(Color {
-        r: r as f32,
-        g: g as f32,
-        b: b as f32,
-        a: a as f32,
-    })
 }

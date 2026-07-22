@@ -2316,12 +2316,14 @@ impl<'a> DecodeContext<'a> {
                 angular_interval,
                 parameter_interval: Some(parameter_interval),
                 transposed,
+                revision_form: None,
             },
             crate::surfaces::DecodedProceduralSurface::Sum { basepoint } => {
                 ProceduralSurfaceDefinition::Sum {
                     first: child_ids.remove(0),
                     second: child_ids.remove(0),
                     basepoint,
+                    revision_form: None,
                 }
             }
         };
@@ -2330,6 +2332,7 @@ impl<'a> DecodeContext<'a> {
             surface: surface_id.clone(),
             definition: ir_definition,
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         for id in [surface_id.to_string(), procedural_id.to_string()] {
             candidate_annotations.exactness.insert(
@@ -2411,6 +2414,7 @@ impl<'a> DecodeContext<'a> {
                     native_position: None,
                 },
                 cache_fit_tolerance: None,
+                record_bounds: None,
             });
             annotate_derived(&mut candidate_annotations, &surface_id.to_string());
             annotate_derived(&mut candidate_annotations, &procedure_id.to_string());
@@ -2974,7 +2978,10 @@ fn stage_extrusion_caps(
                 pcurves: vec![cadmpeg_ir::topology::PcurveUse {
                     pcurve: pcurve_id.clone(),
                     isoparametric: None,
+                    parameter_range: None,
                 }],
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
@@ -3477,8 +3484,11 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                     .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
                         pcurve,
                         isoparametric: None,
+                        parameter_range: None,
                     })
                     .collect(),
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
             coedges.push(coedge_id);
         }
@@ -3789,12 +3799,14 @@ fn stage_brep_procedural_surface(
             angular_interval,
             parameter_interval: Some(parameter_interval),
             transposed,
+            revision_form: None,
         },
         crate::surfaces::DecodedProceduralSurface::Sum { basepoint } => {
             ProceduralSurfaceDefinition::Sum {
                 first: child_ids[0].clone(),
                 second: child_ids[1].clone(),
                 basepoint,
+                revision_form: None,
             }
         }
     };
@@ -3808,6 +3820,7 @@ fn stage_brep_procedural_surface(
         surface: surface_id.clone(),
         definition,
         cache_fit_tolerance: None,
+        record_bounds: None,
     });
     staged
         .exactness

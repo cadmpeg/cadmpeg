@@ -3588,7 +3588,10 @@ mod tests {
         );
 
         assert_eq!(ir.model.features[0].ordinal, 0);
-        assert_eq!(dependencies, [ir.model.parameters[0].owner.clone()]);
+        assert_eq!(
+            dependencies,
+            [ir.model.parameters[0].owner.clone().unwrap()]
+        );
     }
 
     #[test]

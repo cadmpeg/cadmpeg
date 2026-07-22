@@ -6,11 +6,12 @@ use std::path::{Path, PathBuf};
 
 use cadmpeg_ir::CadIr;
 
-const JSON_TARGETS: [&str; 4] = [
+const JSON_TARGETS: [&str; 5] = [
     "ir_from_json",
     "ir_validate",
     "ir_canonical_roundtrip",
     "step_writer",
+    "f3d_writer",
 ];
 
 fn main() {
@@ -28,6 +29,7 @@ fn main() {
         ("unit_cube_v13.json", unit_cube.as_bytes()),
         ("directed_subd_sum_v13.json", directed_subd_sum.as_bytes()),
     ];
+    let valid_v0 = minimal.replacen(r#""ir_version": "54""#, r#""ir_version": "0""#, 1);
     let current_version_field = format!(r#""ir_version": "{}""#, cadmpeg_ir::IR_VERSION);
     let valid_v0 = minimal.replacen(&current_version_field, r#""ir_version": "0""#, 1);
     assert_ne!(valid_v0, minimal, "current ir_version field must match");
@@ -51,6 +53,9 @@ fn main() {
     let migration_directory = seed_directory("ir_migrate_json");
     replace_directory_contents(&migration_directory);
     for (name, contents) in documents {
+        let legacy = std::str::from_utf8(contents)
+            .expect("fixture is UTF-8")
+            .replacen(r#""ir_version": "54""#, r#""ir_version": "53""#, 1);
         let current = std::str::from_utf8(contents).expect("fixture is UTF-8");
         let legacy = current.replacen(
             &current_version_field,

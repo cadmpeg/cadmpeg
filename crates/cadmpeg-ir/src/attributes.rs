@@ -14,10 +14,10 @@ pub enum AttributeTarget {
     Document,
     /// Attribute is owned by a body.
     Body(BodyId),
-    /// Attribute is owned by a shell.
-    Shell(ShellId),
     /// Attribute is owned by a face.
     Face(FaceId),
+    /// Attribute is owned by a shell.
+    Shell(ShellId),
     /// Attribute is owned by a loop.
     Loop(LoopId),
     /// Attribute is owned by a coedge.

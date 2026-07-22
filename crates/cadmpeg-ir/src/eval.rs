@@ -5,19 +5,18 @@
 //! points using the carriers' own parameterizations: conic parameters are
 //! angles from the reference/major direction, line parameters are signed
 //! distances along the unit direction, and B-splines evaluate by Cox–de Boor
-//! over their stored knot vectors. Carriers without a typed parameterization
-//! ([`CurveGeometry::Unknown`], [`CurveGeometry::Composite`], and
-//! [`SurfaceGeometry::Unknown`]) evaluate to `None`.
+//! over their stored knot vectors. [`model_surface_point`] resolves construction-
+//! backed carriers that require other model entities. Carriers without a typed
+//! parameterization ([`CurveGeometry::Unknown`], [`CurveGeometry::Composite`],
+//! [`SurfaceGeometry::Unknown`], parabolas, and hyperbolas) evaluate to `None`.
 
-use std::collections::{BTreeSet, HashMap};
-
-use crate::document::CadIr;
 use crate::geometry::{
-    CurveGeometry, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
+    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition,
+    SurfaceGeometry,
 };
-use crate::ids::SurfaceId;
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
+use crate::CadIr;
 
 fn cross(a: Vector3, b: Vector3) -> Vector3 {
     Vector3::new(
@@ -25,6 +24,86 @@ fn cross(a: Vector3, b: Vector3) -> Vector3 {
         a.z * b.x - a.x * b.z,
         a.x * b.y - a.y * b.x,
     )
+}
+
+/// Recover native parameters for an analytic surface point.
+pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) -> Option<Point2> {
+    let components = |origin: Point3, axis: Vector3, reference: Vector3| {
+        let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
+        let transverse = cross(axis, reference);
+        (
+            delta.x * reference.x + delta.y * reference.y + delta.z * reference.z,
+            delta.x * transverse.x + delta.y * transverse.y + delta.z * transverse.z,
+            delta.x * axis.x + delta.y * axis.y + delta.z * axis.z,
+        )
+    };
+    let result = match geometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            let (u, v, _) = components(*origin, *normal, *u_axis);
+            Point2::new(u, v)
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            if *radius == 0.0 {
+                return None;
+            }
+            let (x, y, v) = components(*origin, *axis, *ref_direction);
+            Point2::new((y / radius).atan2(x / radius), v)
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } => {
+            let (x, y, v) = components(*origin, *axis, *ref_direction);
+            let local_radius = radius + v * half_angle.tan();
+            if local_radius == 0.0 || *ratio == 0.0 {
+                return None;
+            }
+            Point2::new((y / (local_radius * ratio)).atan2(x / local_radius), v)
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            if *radius == 0.0 {
+                return None;
+            }
+            let (x, y, z) = components(*center, *axis, *ref_direction);
+            Point2::new(y.atan2(x), z.atan2(x.hypot(y)))
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            if *minor_radius == 0.0 {
+                return None;
+            }
+            let (x, y, z) = components(*center, *axis, *ref_direction);
+            Point2::new(
+                y.atan2(x),
+                (z / minor_radius).atan2((x.hypot(y) - major_radius) / minor_radius),
+            )
+        }
+        _ => return None,
+    };
+    (result.u.is_finite() && result.v.is_finite()).then_some(result)
 }
 
 /// `base + Σ factorᵢ · directionᵢ` in model space.
@@ -91,8 +170,6 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> 
     values
 }
 
-/// First derivatives of the non-zero basis functions returned by
-/// [`bspline_basis`].
 fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
     if degree == 0 {
         return vec![0.0];
@@ -155,6 +232,35 @@ pub fn nurbs_curve_point(
     (weight_sum != 0.0).then(|| Point3::new(x / weight_sum, y / weight_sum, z / weight_sum))
 }
 
+/// Effective knot domain of a structurally evaluable NURBS curve.
+pub fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
+    let degree = usize::try_from(curve.degree).ok()?;
+    let count = curve.control_points.len();
+    if count <= degree || curve.knots.len() < count.checked_add(degree)?.checked_add(1)? {
+        return None;
+    }
+    let lower = *curve.knots.get(degree)?;
+    let upper = *curve.knots.get(count)?;
+    (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
+}
+
+/// Map a NURBS parameter onto its evaluable knot branch.
+///
+/// Periodic parameters retain their serialized phase outside this operation
+/// and are interpreted modulo the positive knot-domain period.
+pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: f64) -> Option<f64> {
+    let [lower, upper] = nurbs_curve_parameter_domain(curve)?;
+    if !parameter.is_finite() {
+        return None;
+    }
+    if curve.periodic {
+        let period = upper - lower;
+        Some(lower + (parameter - lower).rem_euclid(period))
+    } else {
+        (lower..=upper).contains(&parameter).then_some(parameter)
+    }
+}
+
 /// Evaluate a possibly-rational B-spline curve over 2D `(u, v)` poles.
 pub fn nurbs_pcurve_uv(
     degree: u32,
@@ -180,6 +286,119 @@ pub fn nurbs_pcurve_uv(
         weight_sum += value * weight;
     }
     (weight_sum != 0.0).then(|| Point2::new(u / weight_sum, v / weight_sum))
+}
+
+/// Return whether a point lies within `tolerance` of a nonperiodic NURBS
+/// pcurve, using evaluated witnesses and Lipschitz-bounded interval rejection.
+///
+/// Positive rational weights make both the homogeneous curve and its
+/// derivative convex combinations of their control polygons. Their norms
+/// therefore bound Euclidean curve speed after the quotient rule. The search
+/// accepts only an evaluated curve point within tolerance; intervals whose
+/// midpoint distance minus the maximum possible travel exceeds tolerance are
+/// discarded. `None` denotes invalid input or exhaustion of the bounded search.
+pub fn nurbs_pcurve_contains_point(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: Option<&[f64]>,
+    point: Point2,
+    tolerance: f64,
+) -> Option<bool> {
+    const MAX_INTERVALS: usize = 100_000;
+
+    let degree_usize = usize::try_from(degree).ok()?;
+    let count = control_points.len();
+    if degree_usize == 0
+        || count <= degree_usize
+        || knots.len() < count.checked_add(degree_usize)?.checked_add(1)?
+        || !tolerance.is_finite()
+        || tolerance < 0.0
+        || !point.u.is_finite()
+        || !point.v.is_finite()
+    {
+        return None;
+    }
+    let owned_weights;
+    let weights = match weights {
+        Some(weights) if weights.len() == count => weights,
+        Some(_) => return None,
+        None => {
+            owned_weights = vec![1.0; count];
+            &owned_weights
+        }
+    };
+    if control_points.iter().zip(weights).any(|(control, weight)| {
+        !control.u.is_finite() || !control.v.is_finite() || !weight.is_finite() || *weight <= 0.0
+    }) || knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return None;
+    }
+
+    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
+    let maximum_weighted_radius = control_points
+        .iter()
+        .zip(weights)
+        .map(|(control, weight)| weight * (control.u - point.u).hypot(control.v - point.v))
+        .fold(0.0_f64, f64::max);
+    let mut maximum_numerator_speed = 0.0_f64;
+    let mut maximum_weight_speed = 0.0_f64;
+    for index in 0..count - 1 {
+        let denominator = knots[index + degree_usize + 1] - knots[index + 1];
+        if denominator == 0.0 {
+            continue;
+        }
+        let factor = f64::from(degree) / denominator;
+        let first_u = weights[index] * (control_points[index].u - point.u);
+        let first_v = weights[index] * (control_points[index].v - point.v);
+        let second_u = weights[index + 1] * (control_points[index + 1].u - point.u);
+        let second_v = weights[index + 1] * (control_points[index + 1].v - point.v);
+        maximum_numerator_speed =
+            maximum_numerator_speed.max(factor * (second_u - first_u).hypot(second_v - first_v));
+        maximum_weight_speed =
+            maximum_weight_speed.max(factor * (weights[index + 1] - weights[index]).abs());
+    }
+    let speed_bound = maximum_numerator_speed / minimum_weight
+        + maximum_weighted_radius * maximum_weight_speed / minimum_weight.powi(2);
+    if !speed_bound.is_finite() {
+        return None;
+    }
+
+    let domain = [knots[degree_usize], knots[count]];
+    if domain[0] > domain[1] {
+        return None;
+    }
+    let mut intervals = knots[degree_usize..=count]
+        .windows(2)
+        .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    if intervals.is_empty() {
+        intervals.push(domain);
+    }
+    let mut examined = 0usize;
+    while let Some([start, end]) = intervals.pop() {
+        examined += 1;
+        if examined > MAX_INTERVALS {
+            return None;
+        }
+        let middle = start + (end - start) * 0.5;
+        let curve_point = nurbs_pcurve_uv(degree, knots, control_points, Some(weights), middle)?;
+        let distance = (curve_point.u - point.u).hypot(curve_point.v - point.v);
+        if distance <= tolerance {
+            return Some(true);
+        }
+        let travel_bound = speed_bound * (end - start) * 0.5;
+        if distance - travel_bound > tolerance {
+            continue;
+        }
+        if middle == start || middle == end {
+            continue;
+        }
+        intervals.push([start, middle]);
+        intervals.push([middle, end]);
+    }
+    Some(false)
 }
 
 /// Evaluate a tensor-product NURBS surface at `(u, v)`.
@@ -310,7 +529,7 @@ pub fn nurbs_surface_partials(
             weight_v += basis_v;
         }
     }
-    if !weight.is_finite() || weight == 0.0 {
+    if weight == 0.0 {
         return None;
     }
     let point = Point3::new(
@@ -411,21 +630,24 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
             ],
         )),
         CurveGeometry::Degenerate { point } => Some(*point),
-        CurveGeometry::Nurbs(nurbs) => nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
-            t,
-        ),
+        CurveGeometry::Nurbs(nurbs) => {
+            let parameter = map_nurbs_curve_parameter(nurbs, t)?;
+            nurbs_curve_point(
+                nurbs.degree,
+                &nurbs.knots,
+                &nurbs.control_points,
+                nurbs.weights.as_deref(),
+                parameter,
+            )
+        }
         CurveGeometry::Polyline {
             points, parameters, ..
         } => polyline_point(points, parameters.as_deref(), t),
         CurveGeometry::Transformed { basis, transform } => {
             curve_point_inner(basis, t, depth + 1).map(|point| affine_point(*transform, point))
         }
-        CurveGeometry::Composite { .. }
-        | CurveGeometry::Procedural { .. }
+        CurveGeometry::Procedural { .. }
+        | CurveGeometry::Composite { .. }
         | CurveGeometry::Unknown { .. } => None,
     }
 }
@@ -512,321 +734,101 @@ fn surface_point_inner(geometry: &SurfaceGeometry, u: f64, v: f64, depth: usize)
             ))
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point(nurbs, u, v),
+        SurfaceGeometry::Polygonal { .. } => None,
         SurfaceGeometry::Transformed { basis, transform } => {
             surface_point_inner(basis, u, v, depth + 1).map(|point| affine_point(*transform, point))
         }
-        SurfaceGeometry::Polygonal { .. }
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => None,
     }
 }
 
-/// Recover an analytic surface's native `(u, v)` parameters for a model-space
-/// point. The point is not required to lie on the carrier; callers that need a
-/// membership test must evaluate the returned parameters and apply their own
-/// geometric tolerance.
-pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) -> Option<Point2> {
-    let components = |origin: Point3, axis: Vector3, reference: Vector3| {
-        let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-        let transverse = cross(axis, reference);
-        (
-            delta.x * reference.x + delta.y * reference.y + delta.z * reference.z,
-            delta.x * transverse.x + delta.y * transverse.y + delta.z * transverse.z,
-            delta.x * axis.x + delta.y * axis.y + delta.z * axis.z,
-        )
-    };
-    let parameters = match geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
-            let (u, v, _) = components(*origin, *normal, *u_axis);
-            Point2::new(u, v)
-        }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            if *radius == 0.0 {
-                return None;
-            }
-            let (x, y, v) = components(*origin, *axis, *ref_direction);
-            Point2::new((y / radius).atan2(x / radius), v)
-        }
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } => {
-            let (x, y, v) = components(*origin, *axis, *ref_direction);
-            let local_radius = radius + v * half_angle.tan();
-            if local_radius == 0.0 || *ratio == 0.0 {
-                return None;
-            }
-            Point2::new((y / (local_radius * ratio)).atan2(x / local_radius), v)
-        }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            if *radius == 0.0 {
-                return None;
-            }
-            let (x, y, z) = components(*center, *axis, *ref_direction);
-            let (x, y, z) = (x / radius, y / radius, z / radius);
-            Point2::new(y.atan2(x), z.atan2(x.hypot(y)))
-        }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
-            if *minor_radius == 0.0 {
-                return None;
-            }
-            let (x, y, z) = components(*center, *axis, *ref_direction);
-            let radial = x.hypot(y);
-            Point2::new(
-                y.atan2(x),
-                (z / minor_radius).atan2((radial - major_radius) / minor_radius),
-            )
-        }
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal { .. }
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Unknown { .. } => return None,
-        SurfaceGeometry::Transformed { basis, transform } => {
-            return analytic_surface_parameters(basis, inverse_affine_point(*transform, point)?);
-        }
-    };
-    (parameters.u.is_finite() && parameters.v.is_finite()).then_some(parameters)
-}
-
-fn unit(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0)
-        .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
-}
-
-/// Evaluate the oriented unit normal of an explicit surface carrier.
-pub fn surface_normal(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Vector3> {
-    surface_normal_inner(geometry, u, v, 0)
-}
-
-fn surface_normal_inner(
+/// Evaluate a surface carrier with access to construction and child-carrier
+/// arenas in `ir`.
+pub fn model_surface_point(
+    ir: &CadIr,
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
-    depth: usize,
-) -> Option<Vector3> {
-    if depth > 256 {
-        return None;
-    }
-    match geometry {
-        SurfaceGeometry::Plane { normal, .. } => unit(*normal),
-        SurfaceGeometry::Cylinder {
-            axis,
-            ref_direction,
-            radius,
+) -> Option<Point3> {
+    let SurfaceGeometry::Procedural { construction } = geometry else {
+        return surface_point(geometry, u, v);
+    };
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.id == *construction)?;
+    match &procedural.definition {
+        ProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            direction,
             ..
         } => {
-            let transverse = cross(*axis, *ref_direction);
-            unit(Vector3::new(
-                radius.signum() * (u.cos() * ref_direction.x + u.sin() * transverse.x),
-                radius.signum() * (u.cos() * ref_direction.y + u.sin() * transverse.y),
-                radius.signum() * (u.cos() * ref_direction.z + u.sin() * transverse.z),
-            ))
-        }
-        SurfaceGeometry::Sphere {
-            axis,
-            ref_direction,
-            radius,
-            ..
-        } => {
-            let transverse = cross(*axis, *ref_direction);
-            unit(Vector3::new(
-                radius.signum()
-                    * (v.cos() * u.cos() * ref_direction.x
-                        + v.cos() * u.sin() * transverse.x
-                        + v.sin() * axis.x),
-                radius.signum()
-                    * (v.cos() * u.cos() * ref_direction.y
-                        + v.cos() * u.sin() * transverse.y
-                        + v.sin() * axis.y),
-                radius.signum()
-                    * (v.cos() * u.cos() * ref_direction.z
-                        + v.cos() * u.sin() * transverse.z
-                        + v.sin() * axis.z),
-            ))
-        }
-        SurfaceGeometry::Torus {
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-            ..
-        } => {
-            let transverse = cross(*axis, *ref_direction);
-            let orientation = (minor_radius * (major_radius + minor_radius * v.cos())).signum();
-            unit(Vector3::new(
-                orientation
-                    * (v.cos() * (u.cos() * ref_direction.x + u.sin() * transverse.x)
-                        + v.sin() * axis.x),
-                orientation
-                    * (v.cos() * (u.cos() * ref_direction.y + u.sin() * transverse.y)
-                        + v.sin() * axis.y),
-                orientation
-                    * (v.cos() * (u.cos() * ref_direction.z + u.sin() * transverse.z)
-                        + v.sin() * axis.z),
-            ))
-        }
-        SurfaceGeometry::Cone {
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-            ..
-        } => {
-            let transverse = cross(*axis, *ref_direction);
-            let local_radius = radius + v * half_angle.tan();
-            let tangent_u = Vector3::new(
-                -local_radius * u.sin() * ref_direction.x
-                    + local_radius * ratio * u.cos() * transverse.x,
-                -local_radius * u.sin() * ref_direction.y
-                    + local_radius * ratio * u.cos() * transverse.y,
-                -local_radius * u.sin() * ref_direction.z
-                    + local_radius * ratio * u.cos() * transverse.z,
-            );
-            let slope = half_angle.tan();
-            let tangent_v = Vector3::new(
-                slope * u.cos() * ref_direction.x + slope * ratio * u.sin() * transverse.x + axis.x,
-                slope * u.cos() * ref_direction.y + slope * ratio * u.sin() * transverse.y + axis.y,
-                slope * u.cos() * ref_direction.z + slope * ratio * u.sin() * transverse.z + axis.z,
-            );
-            unit(cross(tangent_u, tangent_v))
-        }
-        SurfaceGeometry::Nurbs(nurbs) => {
-            let partials = nurbs_surface_partials(nurbs, u, v)?;
-            let (tangent_u, tangent_v) = (partials.du, partials.dv);
-            unit(cross(tangent_u, tangent_v))
-        }
-        SurfaceGeometry::Transformed { basis, transform } => {
-            affine_normal(*transform, surface_normal_inner(basis, u, v, depth + 1)?)
-        }
-        SurfaceGeometry::Polygonal { .. }
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Unknown { .. } => None,
-    }
-}
-
-/// Evaluate a model surface by identity, resolving exact procedural carriers.
-pub fn model_surface_point(ir: &CadIr, surface: &SurfaceId, u: f64, v: f64) -> Option<Point3> {
-    ModelSurfaceEvaluator::new(ir).point(surface, u, v)
-}
-
-pub(crate) struct ModelSurfaceEvaluator<'a> {
-    ir: &'a CadIr,
-    surfaces: HashMap<&'a str, usize>,
-    constructions: HashMap<&'a str, usize>,
-}
-
-impl<'a> ModelSurfaceEvaluator<'a> {
-    pub(crate) fn new(ir: &'a CadIr) -> Self {
-        Self {
-            ir,
-            surfaces: ir
+            let curve = ir
                 .model
-                .surfaces
+                .curves
                 .iter()
-                .enumerate()
-                .map(|(index, surface)| (surface.id.0.as_str(), index))
-                .collect(),
-            constructions: ir
-                .model
-                .procedural_surfaces
-                .iter()
-                .enumerate()
-                .map(|(index, construction)| (construction.id.0.as_str(), index))
-                .collect(),
+                .find(|curve| curve.id == *directrix)?;
+            curve_point(&curve.geometry, u).map(|point| offset(point, &[(v, *direction)]))
         }
+        _ => None,
     }
+}
 
-    pub(crate) fn point(&self, surface: &SurfaceId, u: f64, v: f64) -> Option<Point3> {
-        self.point_inner(surface, u, v, &mut BTreeSet::new())
-    }
-
-    fn point_inner(
-        &self,
-        surface: &SurfaceId,
+/// Evaluate a surface carrier selected by arena id.
+pub fn model_surface_point_by_id(
+    ir: &CadIr,
+    surface: &crate::ids::SurfaceId,
+    u: f64,
+    v: f64,
+) -> Option<Point3> {
+    fn point(
+        ir: &CadIr,
+        surface_id: &crate::ids::SurfaceId,
         u: f64,
         v: f64,
-        visiting: &mut BTreeSet<SurfaceId>,
+        visiting: &mut Vec<crate::ids::SurfaceId>,
     ) -> Option<Point3> {
-        visiting.insert(surface.clone()).then_some(())?;
-        let carrier = &self.ir.model.surfaces[*self.surfaces.get(surface.0.as_str())?];
-        let result = match &carrier.geometry {
-            SurfaceGeometry::Procedural { construction } => {
-                let procedural = &self.ir.model.procedural_surfaces
-                    [*self.constructions.get(construction.0.as_str())?];
-                if &procedural.surface != surface {
-                    return None;
+        if visiting.contains(surface_id) {
+            return None;
+        }
+        visiting.push(surface_id.clone());
+        let surface = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|candidate| candidate.id == *surface_id)?;
+        let result = if let SurfaceGeometry::Procedural { construction } = &surface.geometry {
+            let procedural = ir.model.procedural_surfaces.iter().find(|candidate| {
+                candidate.id == *construction && candidate.surface == *surface_id
+            })?;
+            match &procedural.definition {
+                ProceduralSurfaceDefinition::Offset {
+                    support, distance, ..
+                } => {
+                    let support_point = point(ir, support, u, v, visiting)?;
+                    let step = 1.0e-6;
+                    let u0 = point(ir, support, u - step, v, visiting)?;
+                    let u1 = point(ir, support, u + step, v, visiting)?;
+                    let v0 = point(ir, support, u, v - step, visiting)?;
+                    let v1 = point(ir, support, u, v + step, visiting)?;
+                    let du = Vector3::new(u1.x - u0.x, u1.y - u0.y, u1.z - u0.z);
+                    let dv = Vector3::new(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
+                    let normal = cross(du, dv);
+                    let norm = normal.norm();
+                    (norm.is_finite() && norm > 0.0)
+                        .then(|| offset(support_point, &[(distance / norm, normal)]))
                 }
-                match &procedural.definition {
-                    ProceduralSurfaceDefinition::Offset {
-                        support, distance, ..
-                    } => {
-                        let point = self.point_inner(support, u, v, visiting)?;
-                        let normal = self.normal(support, u, v, visiting)?;
-                        Some(offset(point, &[(*distance, normal)]))
-                    }
-                    _ => None,
-                }
+                _ => model_surface_point(ir, &surface.geometry, u, v),
             }
-            geometry => surface_point(geometry, u, v),
+        } else {
+            surface_point(&surface.geometry, u, v)
         };
-        visiting.remove(surface);
+        visiting.pop();
         result
     }
 
-    fn normal(
-        &self,
-        surface: &SurfaceId,
-        u: f64,
-        v: f64,
-        visiting: &mut BTreeSet<SurfaceId>,
-    ) -> Option<Vector3> {
-        visiting.insert(surface.clone()).then_some(())?;
-        let carrier = &self.ir.model.surfaces[*self.surfaces.get(surface.0.as_str())?];
-        let result = match &carrier.geometry {
-            SurfaceGeometry::Procedural { construction } => {
-                let procedural = &self.ir.model.procedural_surfaces
-                    [*self.constructions.get(construction.0.as_str())?];
-                if &procedural.surface != surface {
-                    return None;
-                }
-                match &procedural.definition {
-                    ProceduralSurfaceDefinition::Offset { support, .. } => {
-                        self.normal(support, u, v, visiting)
-                    }
-                    _ => None,
-                }
-            }
-            geometry => surface_normal(geometry, u, v),
-        };
-        visiting.remove(surface);
-        result
-    }
+    point(ir, surface, u, v, &mut Vec::new())
 }
 
 fn polyline_point(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Option<Point3> {
@@ -877,63 +879,6 @@ fn affine_point(transform: Transform, point: Point3) -> Point3 {
             + transform.rows[2][2] * point.z
             + transform.rows[2][3],
     )
-}
-
-fn inverse_affine_point(transform: Transform, point: Point3) -> Option<Point3> {
-    let r = transform.rows;
-    let determinant = r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
-        - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
-        + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
-    if !determinant.is_finite() || determinant == 0.0 {
-        return None;
-    }
-    let delta = [point.x - r[0][3], point.y - r[1][3], point.z - r[2][3]];
-    let inverse = [
-        [
-            r[1][1] * r[2][2] - r[1][2] * r[2][1],
-            r[0][2] * r[2][1] - r[0][1] * r[2][2],
-            r[0][1] * r[1][2] - r[0][2] * r[1][1],
-        ],
-        [
-            r[1][2] * r[2][0] - r[1][0] * r[2][2],
-            r[0][0] * r[2][2] - r[0][2] * r[2][0],
-            r[0][2] * r[1][0] - r[0][0] * r[1][2],
-        ],
-        [
-            r[1][0] * r[2][1] - r[1][1] * r[2][0],
-            r[0][1] * r[2][0] - r[0][0] * r[2][1],
-            r[0][0] * r[1][1] - r[0][1] * r[1][0],
-        ],
-    ];
-    let coordinate = |row: usize| {
-        inverse[row]
-            .iter()
-            .zip(delta)
-            .map(|(coefficient, value)| coefficient * value)
-            .sum::<f64>()
-            / determinant
-    };
-    let result = Point3::new(coordinate(0), coordinate(1), coordinate(2));
-    [result.x, result.y, result.z]
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(result)
-}
-
-fn affine_normal(transform: Transform, normal: Vector3) -> Option<Vector3> {
-    let r = transform.rows;
-    let transformed = Vector3::new(
-        (r[1][1] * r[2][2] - r[1][2] * r[2][1]) * normal.x
-            + (r[1][2] * r[2][0] - r[1][0] * r[2][2]) * normal.y
-            + (r[1][0] * r[2][1] - r[1][1] * r[2][0]) * normal.z,
-        (r[0][2] * r[2][1] - r[0][1] * r[2][2]) * normal.x
-            + (r[0][0] * r[2][2] - r[0][2] * r[2][0]) * normal.y
-            + (r[0][1] * r[2][0] - r[0][0] * r[2][1]) * normal.z,
-        (r[0][1] * r[1][2] - r[0][2] * r[1][1]) * normal.x
-            + (r[0][2] * r[1][0] - r[0][0] * r[1][2]) * normal.y
-            + (r[0][0] * r[1][1] - r[0][1] * r[1][0]) * normal.z,
-    );
-    unit(transformed)
 }
 
 /// Evaluate a pcurve carrier at parameter `t`, yielding a surface `(u, v)`.

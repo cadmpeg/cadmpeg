@@ -769,6 +769,7 @@ mod route_tests {
             id: ProceduralCurveId("catia:test:procedural-curve#0".into()),
             curve: curve_id,
             definition: ProceduralCurveDefinition::Unknown {
+                native_kind: None,
                 record: Some(record_id.clone()),
             },
             cache_fit_tolerance: None,
@@ -812,6 +813,7 @@ mod route_tests {
             id: ProceduralCurveId("procedural-curve-0".to_string()),
             curve: curve_id,
             definition: ProceduralCurveDefinition::Unknown {
+                native_kind: None,
                 record: Some(UnknownId("record-0".to_string())),
             },
             cache_fit_tolerance: None,
@@ -823,6 +825,7 @@ mod route_tests {
                 record: Some(UnknownId("record-1".to_string())),
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         ir.model.procedural_surfaces.push(ProceduralSurface {
             id: ProceduralSurfaceId("procedural-surface-1".to_string()),
@@ -833,15 +836,20 @@ mod route_tests {
                 u_sense: Some(1),
                 v_sense: Some(1),
                 extension_flags: Vec::new(),
+                revision_form: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
         ir.model.procedural_curves[0].definition = ProceduralCurveDefinition::Exact;
         ir.model.procedural_surfaces[0].definition = ProceduralSurfaceDefinition::Exact {
-            parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
+            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges {
+                ranges: [[0.0, 1.0], [0.0, 1.0]],
+            },
             extension: 0,
+            revision_form: None,
         };
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
     }

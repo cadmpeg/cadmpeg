@@ -20,6 +20,8 @@ use crate::asm_header;
 
 /// Maximum `.f3d` archive accepted by the container scanner.
 const INPUT_CAP: u64 = 256 * 1024 * 1024;
+pub(crate) const MAX_ARCHIVE_BYTES: u64 = INPUT_CAP;
+pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
 
 const EXPAND_CHUNK: usize = 16 * 1024;
 
@@ -61,6 +63,28 @@ pub const DETECT_MARKERS: &[&[u8]] = &[
     b"FusionDocType",
     b".smbh",
 ];
+/// Marker names that distinguish a multi-document F3Z archive from a generic ZIP.
+pub const F3Z_DETECT_MARKERS: &[&[u8]] = &[b"Manifest.json", b"DesignDescription.json", b".f3d"];
+
+pub(crate) fn read_entry_bounded(
+    entry: &mut impl Read,
+    declared_size: u64,
+    name: &str,
+) -> Result<Vec<u8>, CodecError> {
+    if declared_size > MAX_INFLATED_ENTRY_BYTES {
+        return Err(CodecError::Malformed(format!(
+            "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
+        )));
+    }
+    let mut bytes = Vec::new();
+    Read::take(entry, MAX_INFLATED_ENTRY_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_INFLATED_ENTRY_BYTES {
+        return Err(CodecError::Malformed(format!(
+            "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
+        )));
+    }
+    Ok(bytes)
+}
 
 /// Classify an entry by its name using the spec's naming families ([§1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#1-container-layer), [§7](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#7-geometry-carriers)).
 pub fn classify(name: &str) -> &'static str {
@@ -110,22 +134,6 @@ fn compression_label(method: CompressionMethod) -> String {
     }
 }
 
-/// One archive entry's physical placement within the root address space.
-///
-/// The compressed extent is the entry's byte range in the root `source` space;
-/// the fidelity ledger ([`crate::fidelity`]) tiles it as an opaque payload
-/// span and derives the entry's own space from it (a slice of the root when
-/// stored, a decompression transform otherwise).
-#[derive(Debug, Clone)]
-pub struct EntryLayout {
-    /// Archive path, matching the entry's [`ContainerEntry::name`].
-    pub name: String,
-    /// Whether the entry is stored uncompressed (its bytes alias the root).
-    pub stored: bool,
-    /// The compressed payload's byte range within the root `source` space.
-    pub compressed: ByteRange,
-}
-
 /// One decoded BREP stream's header facts, kept for the summary and decode
 /// metadata.
 #[derive(Debug, Clone)]
@@ -161,9 +169,6 @@ pub struct ContainerScan<'a> {
     pub asset_folder: Option<String>,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
-    /// Physical placement of every admitted entry within the root space, in
-    /// archive order. Drives the fidelity ledger's coarse tiling.
-    pub layout: Vec<EntryLayout>,
 }
 
 impl<'a> ContainerScan<'a> {
@@ -252,7 +257,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
     let mut breps = Vec::new();
     let mut asset_folder = None;
     let mut inflated_entries = BTreeMap::new();
-    let mut layout = Vec::new();
+    let mut total_declared_inflated = 0_u64;
 
     for i in 0..archive.len() {
         let mut file = archive
@@ -264,7 +269,21 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         let compression = compression_label(method);
         let compressed_size = file.compressed_size();
         let uncompressed_size = file.size();
-        let data_start = file.data_start();
+        if uncompressed_size > MAX_INFLATED_ENTRY_BYTES {
+            return Err(CodecError::Malformed(format!(
+                "ZIP entry {name} declares {uncompressed_size} inflated bytes, exceeding the \
+                 {MAX_INFLATED_ENTRY_BYTES}-byte entry limit"
+            )));
+        }
+        total_declared_inflated = total_declared_inflated
+            .checked_add(uncompressed_size)
+            .ok_or_else(|| CodecError::Malformed("F3D total inflated size overflows u64".into()))?;
+        if total_declared_inflated > MAX_ARCHIVE_BYTES {
+            return Err(CodecError::Malformed(format!(
+                "F3D entries declare {total_declared_inflated} inflated bytes, exceeding the \
+                 {MAX_ARCHIVE_BYTES}-byte archive limit"
+            )));
+        }
         let mut attributes = BTreeMap::new();
 
         let is_brep = role == role::BREP_SMBH || role == role::BREP_SMB;
@@ -336,16 +355,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
             });
         }
 
-        if let Some(start) = data_start {
-            if let Some(end) = start.checked_add(compressed_size) {
-                layout.push(EntryLayout {
-                    name: name.clone(),
-                    stored: method == CompressionMethod::Stored,
-                    compressed: ByteRange { start, end },
-                });
-            }
-        }
-
         entries.push(ContainerEntry {
             name: name.clone(),
             role: role.to_string(),
@@ -363,7 +372,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         breps,
         asset_folder,
         inflated_entries,
-        layout,
     })
 }
 
@@ -379,7 +387,7 @@ pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
             b.name,
             b.uncompressed_len,
             if b.is_smbh {
-                "authoritative .smbh"
+                "authoritative .smbh history stream"
             } else {
                 "no .smbh present; .smb is a construction snapshot"
             }

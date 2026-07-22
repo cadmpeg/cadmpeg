@@ -3,6 +3,7 @@
 
 use crate::features::{Angle, Length, ParameterId};
 use crate::math::{Point2, Point3, Vector3};
+use crate::transform::Transform;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +30,16 @@ string_id!(
     "Identifies a geometric sketch constraint."
 );
 
+/// Canonical reference axis in neutral sketch coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchAxis {
+    /// Positive sketch-u direction.
+    Horizontal,
+    /// Positive sketch-v direction.
+    Vertical,
+}
+
 /// A planar sketch and its ordered profile loops.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Sketch {
@@ -54,9 +65,9 @@ pub struct Sketch {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SketchPlacement {
-    /// The source defines local sketch geometry but its model-space frame is unresolved.
+    /// Local geometry is decoded but its model-space frame is unresolved.
     Unresolved,
-    /// A complete model-space sketch frame.
+    /// Complete model-space sketch frame.
     Resolved {
         /// Sketch-plane origin in model space.
         origin: Point3,
@@ -68,7 +79,7 @@ pub enum SketchPlacement {
 }
 
 impl SketchPlacement {
-    /// Returns the complete frame when model-space placement is resolved.
+    /// Return the complete frame when placement is resolved.
     pub fn resolved(self) -> Option<(Point3, Vector3, Vector3)> {
         match self {
             Self::Unresolved => None,
@@ -82,7 +93,7 @@ impl SketchPlacement {
 }
 
 impl Sketch {
-    /// Returns the complete model-space frame when placement is resolved.
+    /// Return the complete model-space frame when placement is resolved.
     pub fn resolved_placement(&self) -> Option<(Point3, Vector3, Vector3)> {
         self.placement.resolved()
     }
@@ -226,6 +237,17 @@ pub enum SketchGeometry {
         #[serde(default)]
         periodic: bool,
     },
+    /// Text placed in sketch coordinates.
+    Text {
+        /// Unicode text content.
+        text: String,
+        /// Source font-family name.
+        font_family: String,
+        /// Nominal character height.
+        height: Length,
+        /// Horizontal scale relative to the nominal font width.
+        width_factor: f64,
+    },
     /// Source-native geometry not yet reduced to a neutral family.
     Native {
         /// Source geometry family.
@@ -298,6 +320,90 @@ pub struct SpatialSketchEntity {
     pub geometry: SpatialSketchGeometry,
 }
 
+/// One geometric relation owned by a spatial sketch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchConstraint {
+    /// Globally unique constraint id.
+    pub id: SketchConstraintId,
+    /// Owning spatial sketch.
+    pub sketch: SpatialSketchId,
+    /// Neutral relation semantics.
+    pub definition: SpatialSketchConstraintDefinition,
+    /// Source-native relation represented by this constraint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+}
+
+/// Neutral geometric relations between model-space sketch entities.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SpatialSketchConstraintDefinition {
+    /// Source-native spatial relation without complete neutral semantics.
+    Native {
+        /// Source relation family.
+        native_kind: String,
+        /// Source relation state or subtype discriminator, when present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native_state: Option<u64>,
+        /// Neutral parameter driving the relation, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter: Option<crate::features::ParameterId>,
+        /// Full-fidelity source operands in field order.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        operands: Vec<SketchNativeOperand>,
+    },
+    /// Two model-space sketch points occupy the same solved position.
+    Coincident {
+        /// First coincident point.
+        first: SpatialSketchEntityId,
+        /// Second coincident point.
+        second: SpatialSketchEntityId,
+    },
+    /// A model-space point lies on a model-space surface.
+    PointOnSurface {
+        /// Point constrained to the surface.
+        point: SpatialSketchEntityId,
+        /// Surface containing the point.
+        surface: SpatialSketchEntityId,
+    },
+    /// A model-space point lies at the midpoint of a bounded line.
+    Midpoint {
+        /// Point constrained to the midpoint.
+        point: SpatialSketchEntityId,
+        /// Bounded line whose midpoint is used.
+        entity: SpatialSketchEntityId,
+    },
+    /// Two model-space curves are tangent.
+    Tangent {
+        /// First tangent curve.
+        first: SpatialSketchEntityId,
+        /// Second tangent curve.
+        second: SpatialSketchEntityId,
+    },
+    /// Minimum separation between two parallel model-space sketch lines.
+    ParallelLineDistance {
+        /// First measured line.
+        first: SpatialSketchEntityId,
+        /// Second measured line.
+        second: SpatialSketchEntityId,
+        /// Driving distance parameter.
+        parameter: crate::features::ParameterId,
+    },
+    /// A model-space line is parallel to one fixed model-space direction.
+    ParallelToDirection {
+        /// Line constrained to the direction.
+        entity: SpatialSketchEntityId,
+        /// Unit model-space direction; either sign denotes the same axis.
+        direction: Vector3,
+    },
+    /// A spline's defining model-space entities grouped by one native relation.
+    SplineGroup {
+        /// Ordered spline-group members.
+        entities: Vec<SpatialSketchEntityId>,
+    },
+}
+
+/// Solved geometry in model coordinates.
 /// Solved model-space spatial-sketch geometry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -430,18 +536,6 @@ pub enum SketchLocus {
     Center(SketchEntityId),
 }
 
-/// One unresolved operand retained from a native sketch relation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct SketchNativeOperand {
-    /// Source-native operand family.
-    pub native_kind: String,
-    /// Source-native object index.
-    pub object_index: u32,
-    /// Resolved source-native operand record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub native_ref: Option<String>,
-}
-
 /// Coordinate axis selected by a sketch relation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -450,6 +544,104 @@ pub enum SketchCoordinateAxis {
     U,
     /// Second coordinate in sketch space.
     V,
+}
+
+/// One ordered operand retained from a native sketch relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchNativeOperand {
+    /// Source-native operand family.
+    pub native_kind: String,
+    /// Source-native field containing this operand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_field: Option<String>,
+    /// Source-native role code, when the field carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_role: Option<u32>,
+    /// Source-native object index.
+    pub object_index: u32,
+    /// Resolved source-native operand record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+}
+
+/// One progenitor/result pair in a sketch offset relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchOffsetPair {
+    /// Source entity whose stored direction defines the signed offset normal.
+    pub source: SketchEntityId,
+    /// Entity produced at the shared signed offset distance.
+    pub result: SketchEntityId,
+    /// Reverse the source's stored traversal before selecting its left normal.
+    #[serde(default)]
+    pub source_reversed: bool,
+}
+
+/// One axis of a rectangular sketch pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchPatternDirection {
+    /// Unit direction in sketch coordinates.
+    pub direction: [f64; 2],
+    /// Adjacent-instance spacing along `direction`.
+    pub spacing: Length,
+    /// Number of instances along this axis, including the seed instance.
+    pub count: u32,
+    /// Driving total-span parameter, when the source exposes it as a neutral parameter.
+    #[serde(
+        default,
+        alias = "spacing_parameter",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub span_parameter: Option<ParameterId>,
+    /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count_parameter: Option<ParameterId>,
+}
+
+/// One resolved rectangular-pattern instance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchPatternInstance {
+    /// Zero-based indices along the two pattern directions.
+    pub indices: [u32; 2],
+    /// Entities in fixed seed-entity order.
+    pub entities: Vec<SketchEntityId>,
+}
+
+/// One resolved circular-pattern instance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchCircularPatternInstance {
+    /// Zero-based position in pattern order; zero is the seed instance.
+    pub index: u32,
+    /// Signed rotation from the seed instance in radians.
+    pub angle: Angle,
+    /// Entities in fixed seed-entity order.
+    pub entities: Vec<SketchEntityId>,
+}
+
+/// One independently measured pair within a repeated linear dimension.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SketchDistanceMeasurement {
+    /// Euclidean separation between two loci.
+    Distance {
+        /// First measured locus.
+        first: SketchLocus,
+        /// Second measured locus.
+        second: SketchLocus,
+    },
+    /// Horizontal separation between two loci.
+    Horizontal {
+        /// First measured locus.
+        first: SketchLocus,
+        /// Second measured locus.
+        second: SketchLocus,
+    },
+    /// Vertical separation between two loci.
+    Vertical {
+        /// First measured locus.
+        first: SketchLocus,
+        /// Second measured locus.
+        second: SketchLocus,
+    },
 }
 
 /// Meaning of an internal sketch alignment helper relation.
@@ -491,18 +683,69 @@ pub enum SketchConstraintDefinition {
         /// Coincident entity loci.
         entities: Vec<SketchEntityId>,
     },
+    /// Entities participate in one native polygon relation.
+    Polygon {
+        /// Ordered polygon members.
+        entities: Vec<SketchEntityId>,
+    },
+    /// A spline's defining entities grouped by one native spline relation.
+    SplineGroup {
+        /// Ordered spline-group members: the spline's defining entities and
+        /// its curve entity.
+        entities: Vec<SketchEntityId>,
+    },
+    /// A complete two-axis rectangular pattern with resolved instances.
+    RectangularPattern {
+        /// Ordered pattern directions.
+        directions: [SketchPatternDirection; 2],
+        /// Instances in source order; `[0, 0]` is the seed instance.
+        instances: Vec<SketchPatternInstance>,
+    },
+    /// A parameter-driven circular pattern with geometrically resolved instances.
+    CircularPattern {
+        /// Point entity defining the center of rotation.
+        center: SketchEntityId,
+        /// Evaluated angular span stored by the native pattern.
+        angle: Angle,
+        /// Number of instances, including the seed instance.
+        count: u32,
+        /// Driving angular-span parameter, when the source exposes it as a neutral parameter.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angle_parameter: Option<ParameterId>,
+        /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        count_parameter: Option<ParameterId>,
+        /// Instances in source order; index zero is the seed instance.
+        instances: Vec<SketchCircularPatternInstance>,
+    },
+    /// Text entity bounded by ordered frame curves.
+    TextFrame {
+        /// Text entity owning the frame.
+        text: SketchEntityId,
+        /// Ordered frame curves.
+        frame: Vec<SketchEntityId>,
+    },
+    /// Text entity laid out along a path curve.
+    TextPath {
+        /// Text entity placed along the path.
+        text: SketchEntityId,
+        /// Path curve.
+        path: SketchEntityId,
+        /// Character placements in text order, expressed in sketch coordinates.
+        glyph_transforms: Vec<Transform>,
+    },
     /// Two or more explicit entity loci coincide.
     CoincidentLoci {
         /// Coincident endpoints, centers, or complete entities.
         loci: Vec<SketchLocus>,
     },
-    /// Two explicit loci share one sketch-space coordinate.
+    /// Two loci share one sketch-space coordinate.
     SameCoordinate {
         /// First aligned locus.
         first: SketchLocus,
         /// Second aligned locus.
         second: SketchLocus,
-        /// Shared sketch-space coordinate.
+        /// Shared sketch coordinate.
         axis: SketchCoordinateAxis,
     },
     /// A point locus lies on another sketch entity.
@@ -518,6 +761,20 @@ pub enum SketchConstraintDefinition {
         point: SketchLocus,
         /// Bounded entity whose midpoint is used.
         entity: SketchEntityId,
+    },
+    /// One or more entities offset from their progenitors by one signed distance.
+    Offset {
+        /// Ordered progenitor/result pairs.
+        pairs: Vec<SketchOffsetPair>,
+        /// Strictly positive common offset magnitude, measured along each
+        /// oriented source entity's left normal.
+        distance: Length,
+        /// Driving offset-distance parameter, when the source relation is dimensional.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter: Option<ParameterId>,
+        /// Multiplier from the driving parameter value to `distance`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter_factor: Option<f64>,
     },
     /// A point locus lies at the intersection of two entities.
     AtIntersection {
@@ -558,7 +815,7 @@ pub enum SketchConstraintDefinition {
         /// Symmetry axis.
         axis: SketchEntityId,
     },
-    /// Two loci are centrally symmetric about a point locus.
+    /// Two loci are centrally symmetric about a point.
     PointSymmetric {
         /// First symmetric locus.
         first: SketchLocus,
@@ -572,10 +829,24 @@ pub enum SketchConstraintDefinition {
         /// Constrained entity.
         entity: SketchEntityId,
     },
+    /// Two loci have equal vertical sketch coordinate.
+    HorizontalLoci {
+        /// First constrained locus.
+        first: SketchLocus,
+        /// Second constrained locus.
+        second: SketchLocus,
+    },
     /// Line is vertical in sketch coordinates.
     Vertical {
         /// Constrained entity.
         entity: SketchEntityId,
+    },
+    /// Two loci have equal horizontal sketch coordinate.
+    VerticalLoci {
+        /// First constrained locus.
+        first: SketchLocus,
+        /// Second constrained locus.
+        second: SketchLocus,
     },
     /// Two explicit loci have equal horizontal sketch coordinates.
     HorizontalPoints {
@@ -618,6 +889,13 @@ pub enum SketchConstraintDefinition {
         first: SketchLocus,
         /// Tangency locus on the second entity.
         second: SketchLocus,
+    },
+    /// Two entities have equal tangent direction and curvature at contact.
+    Curvature {
+        /// First entity.
+        first: SketchEntityId,
+        /// Second entity.
+        second: SketchEntityId,
     },
     /// Two entities have equal size.
     Equal {
@@ -679,12 +957,28 @@ pub enum SketchConstraintDefinition {
         /// Driving vertical-distance parameter.
         parameter: ParameterId,
     },
+    /// Multiple disjoint locus pairs controlled by one linear parameter.
+    RepeatedDistance {
+        /// Ordered independent measurements.
+        measurements: Vec<SketchDistanceMeasurement>,
+        /// Shared driving distance parameter.
+        parameter: ParameterId,
+    },
     /// Angle controlled by a design parameter.
     Angle {
         /// First angular entity.
         first: SketchEntityId,
         /// Second angular entity.
         second: SketchEntityId,
+        /// Driving angle parameter.
+        parameter: ParameterId,
+    },
+    /// Angle from a canonical sketch axis to one line entity.
+    AngleToAxis {
+        /// Measured line entity.
+        entity: SketchEntityId,
+        /// Canonical sketch reference axis.
+        axis: SketchAxis,
         /// Driving angle parameter.
         parameter: ParameterId,
     },
@@ -753,6 +1047,9 @@ pub enum SketchConstraintDefinition {
     Native {
         /// Source constraint family.
         native_kind: String,
+        /// Source-native constraint-state mask, when the format carries one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native_state: Option<u64>,
         /// Referenced entities.
         entities: Vec<SketchEntityId>,
         /// Driving or driven parameter attached to the relation.

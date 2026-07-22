@@ -488,8 +488,10 @@ pub(super) fn emit_surfaces(
                         angular_interval: revolution.angular_interval,
                         parameter_interval: Some(revolution.parameter_interval),
                         transposed: false,
+                        revision_form: None,
                     },
                     cache_fit_tolerance: None,
+                    record_bounds: None,
                 });
             }
             Some(SurfaceProcedure::RollingBall {
@@ -511,6 +513,7 @@ pub(super) fn emit_surfaces(
                     surface: id,
                     definition,
                     cache_fit_tolerance: None,
+                    record_bounds: None,
                 });
             }
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
@@ -542,8 +545,10 @@ pub(super) fn emit_surfaces(
                 u_sense: Some(0),
                 v_sense: Some(0),
                 extension_flags: Vec::new(),
+                revision_form: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
     }
     surface_ids

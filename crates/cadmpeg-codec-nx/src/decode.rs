@@ -16,7 +16,7 @@ use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, curve_point, model_surface_point, nurbs_surface_partials,
+    analytic_surface_parameters, curve_point, model_surface_point_by_id, nurbs_surface_partials,
     pcurve_uv, surface_point,
 };
 use cadmpeg_ir::features::{
@@ -410,8 +410,10 @@ fn try_decode_geometry(
                     u_sense: Some(0),
                     v_sense: Some(0),
                     extension_flags: Vec::new(),
+                    revision_form: None,
                 },
                 cache_fit_tolerance: None,
+                record_bounds: None,
             });
             surfaces_by_xmt.insert(offset.xmt, surface_id);
             counts.offset_surfaces += 1;
@@ -457,6 +459,7 @@ fn try_decode_geometry(
                     native: None,
                 },
                 cache_fit_tolerance: None,
+                record_bounds: None,
             });
             pending_blend_supports.push((procedural_index, blend.supports, blend.offsets));
             if blend.spine > 1 {
@@ -639,6 +642,7 @@ fn try_decode_geometry(
                 curve: curve_id.clone(),
                 definition: charted.map_or_else(
                     || ProceduralCurveDefinition::Unknown {
+                        native_kind: Some("nx:intersection".into()),
                         record: Some(unknown_id),
                     },
                     |charted| {
@@ -1591,7 +1595,7 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces(
             let Some(uv) = surface_parameters(geometry, *uv) else {
                 return false;
             };
-            model_surface_point(ir, surface, uv.u, uv.v)
+            model_surface_point_by_id(ir, surface, uv.u, uv.v)
                 .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
         })
     };
@@ -2145,6 +2149,7 @@ pub(crate) fn parameterization_equivalent_surfaces(
                 u_sense: first_u_sense,
                 v_sense: first_v_sense,
                 extension_flags: first_extensions,
+                ..
             }),
             Some(ProceduralSurfaceDefinition::Offset {
                 support: second_support,
@@ -2152,6 +2157,7 @@ pub(crate) fn parameterization_equivalent_surfaces(
                 u_sense: second_u_sense,
                 v_sense: second_v_sense,
                 extension_flags: second_extensions,
+                ..
             }),
         ) = (construction(first_geometry), construction(second_geometry))
         else {
@@ -2274,6 +2280,7 @@ pub(crate) fn attach_completed_intersection_pcurves(
             coedge.pcurves.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: pcurve_id,
                 isoparametric: None,
+                parameter_range: None,
             });
         }
     }
@@ -2291,7 +2298,7 @@ fn decoded_surface_point_inner(
     depth: usize,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    model_surface_point(ir, surface, u, v)
+    model_surface_point_by_id(ir, surface, u, v)
         .or_else(|| blend_surface_point_inner(ir, surface, u, v, depth + 1))
 }
 
@@ -3275,8 +3282,15 @@ fn model_curve_point(ir: &CadIr, curve: &CurveId, parameter: f64) -> Option<Poin
 
 fn model_curve_tangent(ir: &CadIr, curve: &CurveId, parameter: f64) -> Option<Vector3> {
     let step = 1.0e-6 * (1.0 + parameter.abs());
-    let before = model_curve_point(ir, curve, parameter - step)?;
-    let after = model_curve_point(ir, curve, parameter + step)?;
+    let center = model_curve_point(ir, curve, parameter)?;
+    let before = model_curve_point(ir, curve, parameter - step);
+    let after = model_curve_point(ir, curve, parameter + step);
+    let (before, after) = match (before, after) {
+        (Some(before), Some(after)) => (before, after),
+        (Some(before), None) => (before, center),
+        (None, Some(after)) => (center, after),
+        (None, None) => return None,
+    };
     unit_vector(Vector3::new(
         after.x - before.x,
         after.y - before.y,
@@ -3564,7 +3578,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
         })?;
     clamp_surface_parameters(&mut parameters, domain);
     for _ in 0..32 {
-        let position = model_surface_point(ir, surface, parameters.u, parameters.v)?;
+        let position = model_surface_point_by_id(ir, surface, parameters.u, parameters.v)?;
         let residual = Vector3::new(
             position.x - point.x,
             position.y - point.y,
@@ -3613,7 +3627,8 @@ fn coarse_model_surface_parameters(
                 u_domain[0] + (u_domain[1] - u_domain[0]) * f64::from(ui) / 8.0,
                 v_domain[0] + (v_domain[1] - v_domain[0]) * f64::from(vi) / 8.0,
             );
-            let Some(candidate) = model_surface_point(ir, surface, parameters.u, parameters.v)
+            let Some(candidate) =
+                model_surface_point_by_id(ir, surface, parameters.u, parameters.v)
             else {
                 continue;
             };
@@ -3729,8 +3744,8 @@ fn model_surface_derivative(
     if !width.is_finite() || width == 0.0 {
         return None;
     }
-    let first = model_surface_point(ir, surface, before.u, before.v)?;
-    let second = model_surface_point(ir, surface, after.u, after.v)?;
+    let first = model_surface_point_by_id(ir, surface, before.u, before.v)?;
+    let second = model_surface_point_by_id(ir, surface, after.u, after.v)?;
     Some(Vector3::new(
         (second.x - first.x) / width,
         (second.y - first.y) / width,
@@ -3815,7 +3830,7 @@ fn continue_surface_intersection_parameters_with_seeds(
         fit_tolerance,
         1.0,
     )?;
-    let first_point = model_surface_point(ir, surfaces[0], current[0], current[1])?;
+    let first_point = model_surface_point_by_id(ir, surfaces[0], current[0], current[1])?;
     if point_distance(first_point, chart[0]) > fit_tolerance {
         return None;
     }
@@ -3874,7 +3889,7 @@ fn continue_surface_intersection_parameters_with_seeds(
             fit_tolerance,
             scale,
         )?;
-        let point = model_surface_point(ir, surfaces[0], corrected[0], corrected[1])?;
+        let point = model_surface_point_by_id(ir, surfaces[0], corrected[0], corrected[1])?;
         if point_distance(point, chart_pair[1]) > fit_tolerance {
             return None;
         }
@@ -3970,8 +3985,8 @@ fn correct_intersection_parameters(
     let mut corrected = predictor;
     clamp_intersection_parameters(&mut corrected, space);
     for _ in 0..32 {
-        let first = model_surface_point(ir, surfaces[0], corrected[0], corrected[1])?;
-        let second = model_surface_point(ir, surfaces[1], corrected[2], corrected[3])?;
+        let first = model_surface_point_by_id(ir, surfaces[0], corrected[0], corrected[1])?;
+        let second = model_surface_point_by_id(ir, surfaces[1], corrected[2], corrected[3])?;
         let residual = [
             first.x - second.x,
             first.y - second.y,
@@ -4658,7 +4673,7 @@ fn emit_topology(
                         pcurve.fit_tolerance,
                     ))
                 });
-            if let Some((surface, pcurve, parameter_range, fit_tolerance)) = lifted {
+            if let Some((surface, pcurve, parameter_range, _fit_tolerance)) = lifted {
                 let carrier = CurveId(format!("{prefix}:edge-parametric-curve#{}", node.xmt));
                 let construction = ProceduralCurveId(format!(
                     "{prefix}:edge-parametric-construction#{}",
@@ -4696,8 +4711,11 @@ fn emit_topology(
                             parameter_range,
                             discontinuities: [Vec::new(), Vec::new(), Vec::new()],
                         },
+                        tail: None,
                     },
-                    cache_fit_tolerance: fit_tolerance,
+                    // The pcurve carries this fit contract; this construction has no
+                    // independent solved 3D cache to qualify.
+                    cache_fit_tolerance: None,
                 });
                 curve = Some(carrier);
                 param_range = None;
@@ -4987,8 +5005,11 @@ fn emit_topology(
                 .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
                     pcurve,
                     isoparametric: None,
+                    parameter_range: None,
                 })
                 .collect(),
+            use_curve: None,
+            use_curve_parameter_range: None,
         });
         if let Some(parent) = ir
             .model
@@ -6680,12 +6701,17 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "sketch"
             }
             FeatureDefinition::Loft {
-                profiles,
+                sections,
                 guides,
                 op,
                 ..
-            } if profiles.len() < 2
-                || profiles.iter().any(profile_ref_is_incomplete)
+            } if sections.len() < 2
+                || sections.iter().any(|section| match section {
+                    cadmpeg_ir::features::LoftSection::Profile(profile) => {
+                        profile_ref_is_incomplete(profile)
+                    }
+                    cadmpeg_ir::features::LoftSection::Point { .. } => false,
+                })
                 || guides.iter().any(path_ref_is_incomplete)
                 || matches!(op, BooleanOp::Unresolved) =>
             {
@@ -6750,18 +6776,21 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "rib"
             }
-            FeatureDefinition::Chamfer {
-                edges,
-                spec,
-                flip_direction,
-            } if edge_selection_is_incomplete(edges)
-                || matches!(spec, ChamferSpec::Unresolved { .. })
-                || (chamfer_requires_direction(spec) && flip_direction.is_none()) =>
+            FeatureDefinition::Chamfer { groups, .. }
+                if groups.is_empty()
+                    || groups.iter().any(|group| {
+                        edge_selection_is_incomplete(&group.edges)
+                            || matches!(group.spec, ChamferSpec::Unresolved { .. })
+                    }) =>
             {
                 "chamfer"
             }
-            FeatureDefinition::Fillet { edges, radius }
-                if edge_selection_is_incomplete(edges) || radius_spec_is_incomplete(radius) =>
+            FeatureDefinition::Fillet { groups }
+                if groups.is_empty()
+                    || groups.iter().any(|group| {
+                        edge_selection_is_incomplete(&group.edges)
+                            || radius_spec_is_incomplete(&group.radius)
+                    }) =>
             {
                 "fillet"
             }
@@ -7079,7 +7108,7 @@ pub(crate) fn extent_is_incomplete(extent: &Extent) -> bool {
             extent_is_incomplete(first) || extent_is_incomplete(second)
         }
         Extent::SymmetricExtent { extent } => extent_is_incomplete(extent),
-        Extent::ToFace { face } => face_selection_is_incomplete(face),
+        Extent::ToFace { face, .. } => face_selection_is_incomplete(face),
         Extent::ToShape { target } => face_selection_is_incomplete(target),
         Extent::Blind { .. }
         | Extent::Symmetric { .. }
@@ -7107,14 +7136,6 @@ pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: Bool
         || construction.side.is_none()
         || matches!(construction.draft, RibDraft::Unresolved)
         || matches!(op, BooleanOp::Unresolved)
-}
-
-pub(crate) fn chamfer_requires_direction(spec: &ChamferSpec) -> bool {
-    match spec {
-        ChamferSpec::Unresolved { .. } | ChamferSpec::DistanceAngle { .. } => true,
-        ChamferSpec::Distance { .. } => false,
-        ChamferSpec::TwoDistances { first, second } => first != second,
-    }
 }
 
 pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
@@ -7155,6 +7176,7 @@ pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
     match radius {
         RadiusSpec::Unresolved { .. } => true,
         RadiusSpec::Constant { .. } => false,
+        RadiusSpec::Chordal { .. } => false,
         RadiusSpec::Variable { points } => points.len() < 2,
     }
 }
@@ -7174,6 +7196,7 @@ fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
     match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => Some(bodies),
         BodySelection::Unresolved
+        | BodySelection::Historical { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. }
         | BodySelection::Native(_) => None,
@@ -7182,9 +7205,11 @@ fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
 
 pub(crate) fn face_selection_is_incomplete(selection: &FaceSelection) -> bool {
     match selection {
-        FaceSelection::Unresolved | FaceSelection::Generated { .. } | FaceSelection::Native(_) => {
-            true
-        }
+        FaceSelection::Unresolved
+        | FaceSelection::Generated { .. }
+        | FaceSelection::Native(_)
+        | FaceSelection::Historical { .. }
+        | FaceSelection::HistoricalPartial { .. } => true,
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
             selection_ids_are_incomplete(faces)
         }
@@ -7194,24 +7219,30 @@ pub(crate) fn face_selection_is_incomplete(selection: &FaceSelection) -> bool {
 pub(crate) fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> bool {
     let first = match first {
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces,
-        FaceSelection::Unresolved | FaceSelection::Generated { .. } | FaceSelection::Native(_) => {
-            return false
-        }
+        FaceSelection::Unresolved
+        | FaceSelection::Generated { .. }
+        | FaceSelection::Native(_)
+        | FaceSelection::Historical { .. }
+        | FaceSelection::HistoricalPartial { .. } => return false,
     };
     let second = match second {
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces,
-        FaceSelection::Unresolved | FaceSelection::Generated { .. } | FaceSelection::Native(_) => {
-            return false
-        }
+        FaceSelection::Unresolved
+        | FaceSelection::Generated { .. }
+        | FaceSelection::Native(_)
+        | FaceSelection::Historical { .. }
+        | FaceSelection::HistoricalPartial { .. } => return false,
     };
     first.iter().any(|face| second.contains(face))
 }
 
 pub(crate) fn edge_selection_is_incomplete(selection: &EdgeSelection) -> bool {
     match selection {
-        EdgeSelection::Unresolved | EdgeSelection::Generated { .. } | EdgeSelection::Native(_) => {
-            true
-        }
+        EdgeSelection::Unresolved
+        | EdgeSelection::Generated { .. }
+        | EdgeSelection::Native(_)
+        | EdgeSelection::Historical { .. }
+        | EdgeSelection::HistoricalPartial { .. } => true,
         EdgeSelection::All => false,
         EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => {
             selection_ids_are_incomplete(edges)
@@ -7225,6 +7256,12 @@ pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
         ProfileRef::Sketch(_) => false,
         ProfileRef::Feature(_) | ProfileRef::Generated { .. } => false,
         ProfileRef::Faces(faces) => selection_ids_are_incomplete(faces),
+        ProfileRef::SketchProfiles { .. }
+        | ProfileRef::SketchRegions { .. }
+        | ProfileRef::SketchSelection { .. }
+        | ProfileRef::SpatialSketchProfiles { .. }
+        | ProfileRef::SpatialSketchSelection { .. }
+        | ProfileRef::HistoricalFaces { .. } => false,
     }
 }
 
@@ -7234,8 +7271,12 @@ fn selection_ids_are_incomplete<T: Ord>(ids: &[T]) -> bool {
 
 pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
     match path {
-        PathRef::Unresolved | PathRef::Native(_) => true,
+        PathRef::Unresolved(_) | PathRef::Native(_) => true,
+        PathRef::HistoricalEdges { edges, .. } => selection_ids_are_incomplete(edges),
         PathRef::Sketch(_) => false,
+        PathRef::SpatialSketchSelection { selections, .. } => {
+            selection_ids_are_incomplete(selections)
+        }
         PathRef::Edges(edges) => selection_ids_are_incomplete(edges),
         PathRef::Curves(curves) => selection_ids_are_incomplete(curves),
     }

@@ -41,7 +41,8 @@
               "sketch_reference.0": "nx:om-data-blocks-0:block#1",
               "sketch_reference.1": "nx:om-data-blocks-0:block#2"
             },
-            "source_tag": "SKETCH"
+            "source_tag": "SKETCH",
+            "suppressed": null
           },
           {
             "definition": {
@@ -80,7 +81,8 @@
               "sketch_reference.0": "nx:om-data-blocks-0:block#3",
               "sketch_reference.1": "nx:om-data-blocks-0:block#4"
             },
-            "source_tag": "SKETCH"
+            "source_tag": "SKETCH",
+            "suppressed": null
           },
           {
             "definition": {
@@ -119,7 +121,8 @@
               "sketch_point_dependency_point_block": "nx:om-data-blocks-0:block#2",
               "sketch_point_dependency_use": "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0"
             },
-            "source_tag": "DATUM_CSYS"
+            "source_tag": "DATUM_CSYS",
+            "suppressed": null
           },
           {
             "definition": {
@@ -154,7 +157,8 @@
               "object_index.2": "null",
               "object_index.3": "null"
             },
-            "source_tag": "DATUM_PLANE"
+            "source_tag": "DATUM_PLANE",
+            "suppressed": null
           },
           {
             "definition": {
@@ -188,7 +192,8 @@
               "point_construction_mode": "02",
               "point_construction_reference": "7311"
             },
-            "source_tag": "POINT"
+            "source_tag": "POINT",
+            "suppressed": null
           },
           {
             "definition": {
@@ -225,7 +230,8 @@
               "object_index.2": "null",
               "object_index.3": "null"
             },
-            "source_tag": "DRAFT"
+            "source_tag": "DRAFT",
+            "suppressed": null
           },
           {
             "definition": {
@@ -270,7 +276,8 @@
               "surface_construction_reference.8": "590",
               "surface_construction_reference.9": "591"
             },
-            "source_tag": "SKIN"
+            "source_tag": "SKIN",
+            "suppressed": null
           },
           {
             "definition": {
@@ -306,7 +313,8 @@
               "object_index.3": "null",
               "pattern_reference.0": "801"
             },
-            "source_tag": "Geometry Instance"
+            "source_tag": "Geometry Instance",
+            "suppressed": null
           },
           {
             "definition": {
@@ -342,7 +350,8 @@
               "object_index.3": "null",
               "pattern_transform_lane": "nx:feature-history:pattern-transform-lane#0000000000-0000000008"
             },
-            "source_tag": "Pattern Feature"
+            "source_tag": "Pattern Feature",
+            "suppressed": null
           },
           {
             "definition": {
@@ -354,6 +363,9 @@
               "profile": {
                 "kind": "unresolved",
                 "value": "EXTRUDE"
+              },
+              "start": {
+                "kind": "profile_plane"
               }
             },
             "dependencies": [
@@ -383,7 +395,8 @@
               "object_index.2": "null",
               "object_index.3": "null"
             },
-            "source_tag": "EXTRUDE"
+            "source_tag": "EXTRUDE",
+            "suppressed": null
           },
           {
             "definition": {
@@ -395,6 +408,9 @@
               "profile": {
                 "kind": "unresolved",
                 "value": "EXTRUDE"
+              },
+              "start": {
+                "kind": "profile_plane"
               }
             },
             "dependencies": [
@@ -423,7 +439,8 @@
               "object_index.2": "null",
               "object_index.3": "null"
             },
-            "source_tag": "EXTRUDE"
+            "source_tag": "EXTRUDE",
+            "suppressed": null
           },
           {
             "definition": {
@@ -435,6 +452,9 @@
               "profile": {
                 "kind": "unresolved",
                 "value": "EXTRUDE"
+              },
+              "start": {
+                "kind": "profile_plane"
               }
             },
             "dependencies": [
@@ -463,11 +483,14 @@
               "object_index.2": "null",
               "object_index.3": "null"
             },
-            "source_tag": "EXTRUDE"
+            "source_tag": "EXTRUDE",
+            "suppressed": null
           },
           {
             "definition": {
-              "definition": "block"
+              "definition": "block",
+              "dimensions": null,
+              "placement": null
             },
             "dependencies": [
               "nx:feature-history:feature#0000000000-0000000003",
@@ -494,15 +517,16 @@
               "object_index.2": "null",
               "object_index.3": "null"
             },
-            "source_tag": "BLOCK"
+            "source_tag": "BLOCK",
+            "suppressed": null
           },
           {
             "definition": {
-              "bidirectional": null,
               "definition": "projected_curve",
               "direction": "unresolved",
               "source": {
-                "kind": "unresolved"
+                "kind": "unresolved",
+                "value": "nx:unresolved"
               },
               "target_faces": {
                 "kind": "unresolved"
@@ -536,7 +560,8 @@
               "projected_curve_reference.1": "713",
               "projected_curve_reference.2": "714"
             },
-            "source_tag": "CPROJ"
+            "source_tag": "CPROJ",
+            "suppressed": null
           },
           {
             "definition": {
@@ -587,7 +612,8 @@
               "simple_hole_repeated_scalar_lane_block_references": "nx:feature-history:simple-hole-repeated-scalar-lane-block-references#0000000000-0000000014",
               "simple_hole_template": "nx:feature-history:simple-hole-template#0000000000-0000000014-0000000000"
             },
-            "source_tag": "SIMPLE HOLE"
+            "source_tag": "SIMPLE HOLE",
+            "suppressed": null
           }
         ],
         "loops": [],

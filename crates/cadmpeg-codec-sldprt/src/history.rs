@@ -465,9 +465,11 @@ fn bind_native_profile_features(
                 ..
             } => bind(profile),
             FeatureDefinition::Sweep { profile: None, .. } => {}
-            FeatureDefinition::Loft { profiles, .. } => {
-                for profile in profiles {
-                    bind(profile);
+            FeatureDefinition::Loft { sections, .. } => {
+                for section in sections {
+                    if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
+                        bind(profile);
+                    }
                 }
             }
             _ => {}
@@ -715,6 +717,8 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
             bodies: ConfigurationBodies::Unresolved,
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
             native_ref: Some(configuration.id.clone()),
         })
         .collect()
@@ -777,7 +781,7 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                         .or_else(|| parse_value(expression));
                     DesignParameter {
                         id: neutral_parameter_id(feature, ordinal),
-                        owner: neutral_feature_id(&feature.id),
+                        owner: Some(neutral_feature_id(&feature.id)),
                         ordinal: ordinal as u32,
                         properties,
                         name,
@@ -840,7 +844,7 @@ pub(crate) fn apply_evaluated_parameters(histories: &mut [FeatureHistory]) {
             })
             .filter_map(|(name, _)| {
                 evaluated
-                    .get(&(owner.clone(), name.clone()))
+                    .get(&(Some(owner.clone()), name.clone()))
                     .map(|value| (name.clone(), format_parameter_value(value)))
             })
             .collect::<Vec<_>>();
@@ -986,7 +990,7 @@ fn parameter_aliases(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
-    expression_owner: &FeatureId,
+    expression_owner: Option<&FeatureId>,
 ) -> HashMap<String, Option<ParameterId>> {
     fn insert(
         aliases: &mut HashMap<String, Option<ParameterId>>,
@@ -1019,7 +1023,11 @@ fn parameter_aliases(
         {
             unqualified.push(equation_id.clone());
         }
-        if let Some(owner_name) = feature_names.get(&parameter.owner) {
+        if let Some(owner_name) = parameter
+            .owner
+            .as_ref()
+            .and_then(|owner| feature_names.get(owner))
+        {
             insert(
                 &mut exact,
                 format!("{}@{owner_name}", parameter.name),
@@ -1034,12 +1042,16 @@ fn parameter_aliases(
                 insert(&mut exact, qualified, &parameter.id);
             }
         }
-        if global_owners.contains(&parameter.owner) {
+        if parameter
+            .owner
+            .as_ref()
+            .is_some_and(|owner| global_owners.contains(owner))
+        {
             for alias in &unqualified {
                 insert(&mut global, alias.clone(), &parameter.id);
             }
         }
-        if parameter.owner == *expression_owner {
+        if parameter.owner.as_ref() == expression_owner {
             for alias in unqualified {
                 insert(&mut local, alias, &parameter.id);
             }
@@ -1054,14 +1066,15 @@ fn parameter_aliases_by_owner(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
-) -> HashMap<FeatureId, HashMap<String, Option<ParameterId>>> {
+) -> HashMap<Option<FeatureId>, HashMap<String, Option<ParameterId>>> {
     parameters
         .iter()
         .map(|parameter| parameter.owner.clone())
         .collect::<HashSet<_>>()
         .into_iter()
         .map(|owner| {
-            let aliases = parameter_aliases(parameters, feature_names, global_owners, &owner);
+            let aliases =
+                parameter_aliases(parameters, feature_names, global_owners, owner.as_ref());
             (owner, aliases)
         })
         .collect()
@@ -2998,11 +3011,12 @@ mod history_reference_tests {
     fn profile_consumers_require_a_regeneration_profile() {
         let mut definition = FeatureDefinition::Extrude {
             profile: ProfileRef::Native("sketch-native".into()),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Unresolved,
             op: BooleanOp::Unresolved,
             draft: None,
-            reverse_draft: None,
+            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
@@ -3094,6 +3108,8 @@ mod history_reference_tests {
             properties: BTreeMap::new(),
             bodies: ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: native_ref.map(str::to_string),
         }
@@ -3149,7 +3165,7 @@ mod history_reference_tests {
             &parameters,
             &HashMap::new(),
             &HashSet::new(),
-            &parameters[0].owner,
+            parameters[0].owner.as_ref(),
         );
 
         assert_eq!(aliases.get("Width"), Some(&Some(parameters[0].id.clone())));
@@ -3244,19 +3260,19 @@ mod history_reference_tests {
             &parameters,
             &HashMap::new(),
             &HashSet::new(),
-            &parameters[0].owner,
+            parameters[0].owner.as_ref(),
         );
         let second_aliases = parameter_aliases(
             &parameters,
             &HashMap::new(),
             &HashSet::new(),
-            &parameters[1].owner,
+            parameters[1].owner.as_ref(),
         );
         let unrelated_aliases = parameter_aliases(
             &parameters,
             &HashMap::new(),
             &HashSet::new(),
-            &FeatureId("unrelated".into()),
+            Some(&FeatureId("unrelated".into())),
         );
 
         assert_eq!(
@@ -3629,11 +3645,13 @@ mod history_reference_tests {
             properties: BTreeMap::new(),
             bodies: ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::from([
                 (
                     feature_id.clone(),
                     ConfigurationFeatureState {
-                        suppressed: Some(false),
+                        suppressed: false,
                         dependencies: Vec::new(),
                         outputs: Vec::new(),
                         definition: unresolved,
@@ -3642,7 +3660,7 @@ mod history_reference_tests {
                 (
                     spatial_feature_id.clone(),
                     ConfigurationFeatureState {
-                        suppressed: Some(false),
+                        suppressed: false,
                         dependencies: Vec::new(),
                         outputs: Vec::new(),
                         definition: FeatureDefinition::SpatialSketch { sketch: None },
@@ -3756,7 +3774,7 @@ mod history_reference_tests {
         let parameter_id = ParameterId("test:model:parameter#depth".into());
         ir.model.parameters.push(DesignParameter {
             id: parameter_id.clone(),
-            owner: FeatureId("test:model:feature#extrude".into()),
+            owner: Some(FeatureId("test:model:feature#extrude".into())),
             ordinal: 0,
             name: "Depth".into(),
             expression: "7mm".into(),
@@ -3777,6 +3795,8 @@ mod history_reference_tests {
             properties: BTreeMap::new(),
             bodies: ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::from([(parameter_id.clone(), ParameterValue::Integer(7))]),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: None,
         });
@@ -4032,7 +4052,7 @@ pub fn bind_topology_selections(
                 profile, extent, ..
             } => {
                 resolve_profile_ref(profile, &face_ids);
-                if let Extent::ToFace { face } | Extent::OffsetFromFace { face, .. } = extent {
+                if let Extent::ToFace { face, .. } | Extent::OffsetFromFace { face, .. } = extent {
                     resolve_face_selection(face, &face_ids);
                 }
             }
@@ -4055,17 +4075,26 @@ pub fn bind_topology_selections(
                 }
             }
             FeatureDefinition::Loft {
-                profiles, guides, ..
+                sections, guides, ..
             } => {
-                for profile in profiles {
-                    resolve_profile_ref(profile, &face_ids);
+                for section in sections {
+                    if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
+                        resolve_profile_ref(profile, &face_ids);
+                    }
                 }
                 for path in guides {
                     resolve_path_ref(path, &edge_ids, &curve_ids);
                 }
             }
-            FeatureDefinition::Fillet { edges, .. } | FeatureDefinition::Chamfer { edges, .. } => {
-                resolve_edge_selection(edges, &edge_ids);
+            FeatureDefinition::Fillet { groups } => {
+                for group in groups {
+                    resolve_edge_selection(&mut group.edges, &edge_ids);
+                }
+            }
+            FeatureDefinition::Chamfer { groups, .. } => {
+                for group in groups {
+                    resolve_edge_selection(&mut group.edges, &edge_ids);
+                }
             }
             FeatureDefinition::Shell { removed_faces, .. } => {
                 resolve_face_selection(removed_faces, &face_ids);
@@ -4084,7 +4113,9 @@ pub fn bind_topology_selections(
                 support_faces,
                 ..
             } => {
-                resolve_edge_selection(boundary, &edge_ids);
+                if let cadmpeg_ir::features::SurfaceBoundary::Edges(edges) = boundary {
+                    resolve_edge_selection(edges, &edge_ids);
+                }
                 resolve_face_selection(support_faces, &face_ids);
             }
             FeatureDefinition::TrimSurface { faces, tool, .. } => {
@@ -4309,11 +4340,13 @@ fn bind_definition_sketch(
         FeatureDefinition::ProjectedCurve { source, .. } => bind_path(source),
         FeatureDefinition::CompositeCurve { segments, .. } => segments.iter_mut().any(bind_path),
         FeatureDefinition::Loft {
-            profiles, guides, ..
+            sections, guides, ..
         } => {
             let mut profile_bound = false;
-            for profile in profiles {
-                profile_bound |= bind_profile(profile);
+            for section in sections {
+                if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
+                    profile_bound |= bind_profile(profile);
+                }
             }
             let mut guide_bound = false;
             for path in guides {
@@ -4982,6 +5015,7 @@ fn project_extrude(
         Some("ThroughNext") => Extent::ThroughNext,
         Some("ToFace") => Extent::ToFace {
             face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
+            offset: None,
         },
         Some("ToVertex") => Extent::ToVertex {
             vertex: VertexSelection::Native(feature.properties.get("Vertex")?.clone()),
@@ -4996,10 +5030,11 @@ fn project_extrude(
         Some(_) => return None,
     };
     let direction = match feature.properties.get("Direction") {
-        Some(value) => Some(parse_vector3(value)?),
-        None => None,
+        Some(value) => cadmpeg_ir::features::ExtrudeDirection::Explicit(parse_vector3(value)?),
+        None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
     };
-    if direction.is_some_and(|value| !valid_direction(value)) {
+    if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit(value) if !valid_direction(value))
+    {
         return None;
     }
     let draft = match feature.parameters.get("Draft") {
@@ -5024,10 +5059,11 @@ fn project_extrude(
     Some(FeatureDefinition::Extrude {
         profile,
         direction,
+        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
         extent,
         op,
         draft,
-        reverse_draft: None,
+        second_draft: None,
         direction_source: None,
         solid: Some(true),
         face_maker: None,
@@ -5385,12 +5421,15 @@ fn project_fillet(feature: &Feature) -> FeatureDefinition {
             )
     };
     FeatureDefinition::Fillet {
-        edges: feature
-            .properties
-            .get("Edges")
-            .cloned()
-            .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
-        radius,
+        groups: vec![cadmpeg_ir::features::FilletGroup {
+            edges: feature
+                .properties
+                .get("Edges")
+                .cloned()
+                .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
+            radius,
+            tangency_weight: None,
+        }],
     }
 }
 
@@ -5446,13 +5485,15 @@ fn project_loft(
     feature: &Feature,
     native_by_source: &HashMap<&str, &str>,
 ) -> Option<FeatureDefinition> {
-    let profiles = feature.properties.get("Profiles").map_or_else(
+    let sections = feature.properties.get("Profiles").map_or_else(
         || Some(Vec::new()),
         |value| {
             Some(
                 resolve_native_refs(value, native_by_source)?
                     .into_iter()
-                    .map(ProfileRef::Native)
+                    .map(|profile| {
+                        cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Native(profile))
+                    })
                     .collect::<Vec<_>>(),
             )
         },
@@ -5462,8 +5503,9 @@ fn project_loft(
         |value| resolve_native_refs(value, native_by_source),
     )?;
     Some(FeatureDefinition::Loft {
-        profiles,
+        sections,
         guides: guides.into_iter().map(PathRef::Native).collect(),
+        centerline: None,
         op: feature
             .properties
             .get("Operation")
@@ -6187,7 +6229,9 @@ fn project_filled_surface(feature: &Feature) -> Option<FeatureDefinition> {
     let continuity =
         crate::feature_schema::parse_surface_continuity(feature.properties.get("Continuity")?)?;
     Some(FeatureDefinition::FilledSurface {
-        boundary: EdgeSelection::Native(feature.properties.get("Boundary")?.clone()),
+        boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Native(
+            feature.properties.get("Boundary")?.clone(),
+        )),
         support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
         continuity: Some(continuity),
         merge_result: Some(
@@ -6596,13 +6640,15 @@ fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         },
     });
     FeatureDefinition::Chamfer {
-        edges: feature
-            .properties
-            .get("Edges")
-            .cloned()
-            .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
-        spec,
-        flip_direction: Some(false),
+        groups: vec![cadmpeg_ir::features::ChamferGroup {
+            edges: feature
+                .properties
+                .get("Edges")
+                .cloned()
+                .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
+            spec,
+        }],
+        flip_direction: false,
     }
 }
 
@@ -7252,7 +7298,7 @@ fn parse_neutral_parameter_literal(
 ) -> Option<ParameterValue> {
     let positional_length = match name {
         "D1" => matches!(
-            feature.definition,
+            &feature.definition,
             FeatureDefinition::Extrude { .. }
                 | FeatureDefinition::Fillet { .. }
                 | FeatureDefinition::Chamfer { .. }
@@ -7261,11 +7307,9 @@ fn parse_neutral_parameter_literal(
                 | FeatureDefinition::DatumOffsetPlane { .. }
         ),
         "D2" => matches!(
-            feature.definition,
-            FeatureDefinition::Chamfer {
-                spec: ChamferSpec::TwoDistances { .. },
-                ..
-            }
+            &feature.definition,
+            FeatureDefinition::Chamfer { groups, .. }
+                if groups.iter().any(|group| matches!(group.spec, ChamferSpec::TwoDistances { .. }))
         ),
         "D3" => matches!(
             feature.definition,
@@ -7473,7 +7517,7 @@ pub(crate) fn project_configuration_design_states(
                 (
                     feature.id,
                     cadmpeg_ir::features::ConfigurationFeatureState {
-                        suppressed: feature.suppressed,
+                        suppressed: feature.suppressed.unwrap_or(false),
                         dependencies: feature.dependencies,
                         outputs: feature.outputs,
                         definition: feature.definition,
@@ -7532,7 +7576,7 @@ pub(crate) fn project_configuration_sketch_states(
             .filter_map(|feature| {
                 let state = states.get(&feature.id)?;
                 let mut feature = feature.clone();
-                feature.suppressed = state.suppressed;
+                feature.suppressed = Some(state.suppressed);
                 feature.dependencies.clone_from(&state.dependencies);
                 feature.outputs.clone_from(&state.outputs);
                 feature.definition.clone_from(&state.definition);
@@ -7644,7 +7688,7 @@ pub(crate) fn project_configuration_sketch_states(
             else {
                 continue;
             };
-            state.suppressed = feature.suppressed;
+            state.suppressed = feature.suppressed.unwrap_or(false);
             state.dependencies = feature.dependencies;
             state.outputs = feature.outputs;
             state.definition = feature.definition;
@@ -7948,7 +7992,11 @@ pub(crate) fn apply_feature_name_changes(
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect::<HashMap<_, _>>();
     for parameter in parameters {
-        if let Some((old_owner, new_owner)) = changes.get(&parameter.owner) {
+        if let Some((old_owner, new_owner)) = parameter
+            .owner
+            .as_ref()
+            .and_then(|owner| changes.get(owner))
+        {
             if let Some(equation_id) = parameter.properties.get_mut("EquationId") {
                 if let Some(base) = equation_id.strip_suffix(&format!("@{old_owner}")) {
                     *equation_id = format!("{base}@{new_owner}");
@@ -7959,7 +8007,7 @@ pub(crate) fn apply_feature_name_changes(
             .dependencies
             .iter()
             .filter_map(|dependency| owners.get(dependency))
-            .filter_map(|owner| changes.get(owner))
+            .filter_map(|owner| owner.as_ref().and_then(|owner| changes.get(owner)))
             .collect::<Vec<_>>();
         let aliases = expression_identifier_tokens(&parameter.expression)
             .identifiers
@@ -8259,10 +8307,20 @@ fn validate_compact_edge_selection_edits(
         else {
             continue;
         };
-        let (FeatureDefinition::Fillet { edges, .. } | FeatureDefinition::Chamfer { edges, .. }) =
-            &feature.definition
-        else {
-            continue;
+        let groups = match &feature.definition {
+            FeatureDefinition::Fillet { groups } => {
+                groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
+            }
+            FeatureDefinition::Chamfer { groups, .. } => {
+                groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
+            }
+            _ => continue,
+        };
+        let [edges] = groups.as_slice() else {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} requires exactly one compact edge group",
+                feature.id
+            )));
         };
         let native = crate::resolved_features::compact_edge_selection_set_value(edge_selections);
         let generated = edge_selections
@@ -8283,7 +8341,7 @@ fn validate_compact_edge_selection_edits(
             Some(edges) => EdgeSelection::Generated { edges, native },
             None => EdgeSelection::Native(native),
         };
-        if edges != &expected {
+        if *edges != &expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a compact edge selection",
                 feature.id
@@ -8331,7 +8389,7 @@ fn validate_compact_surface_selection_edits(
             FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
             FeatureDefinition::Extrude {
                 extent:
-                    cadmpeg_ir::features::Extent::ToFace { face }
+                    cadmpeg_ir::features::Extent::ToFace { face, .. }
                     | cadmpeg_ir::features::Extent::OffsetFromFace { face, .. },
                 ..
             } => SelectionSlot::Face(face),
@@ -8620,7 +8678,11 @@ fn patch_configuration_parameter_scalars(
             let Some(parameter) = parameters.get(parameter_id) else {
                 continue;
             };
-            let Some(feature) = features.get(&parameter.owner) else {
+            let Some(feature) = parameter
+                .owner
+                .as_ref()
+                .and_then(|owner| features.get(owner))
+            else {
                 continue;
             };
             let Some(native_ref) = feature.native_ref.as_deref() else {
@@ -8801,7 +8863,13 @@ fn sync_neutral_parameters(
         .collect::<HashMap<_, _>>();
     let mut desired = HashMap::<FeatureId, Vec<&DesignParameter>>::new();
     for parameter in &parameters {
-        let Some(owner) = features.get(&parameter.owner) else {
+        let Some(owner_id) = parameter.owner.as_ref() else {
+            return Err(CodecError::NotImplemented(format!(
+                "global SLDPRT parameter {} cannot be written to a feature record",
+                parameter.id.0
+            )));
+        };
+        let Some(owner) = features.get(owner_id) else {
             return Err(CodecError::Malformed(format!(
                 "SLDPRT parameter {} references a missing feature",
                 parameter.id.0
@@ -8821,14 +8889,14 @@ fn sync_neutral_parameters(
                 parameter.id.0
             )));
         }
-        let owner_parameters = desired.entry(parameter.owner.clone()).or_default();
+        let owner_parameters = desired.entry(owner_id.clone()).or_default();
         if owner_parameters
             .iter()
             .any(|candidate| candidate.name == parameter.name)
         {
             return Err(CodecError::Malformed(format!(
                 "duplicate SLDPRT parameter {} on feature {}",
-                parameter.name, parameter.owner
+                parameter.name, owner_id
             )));
         }
         if owner_parameters
@@ -8837,7 +8905,7 @@ fn sync_neutral_parameters(
         {
             return Err(CodecError::Malformed(format!(
                 "duplicate SLDPRT parameter ordinal {} on feature {}",
-                parameter.ordinal, parameter.owner
+                parameter.ordinal, owner_id
             )));
         }
         owner_parameters.push(parameter);
@@ -8975,8 +9043,14 @@ fn rewrite_renamed_parameter_references(
             continue;
         };
         let mut aliases = HashMap::new();
-        let previous_owner_name = original_feature_names.get(&parameter.owner);
-        let owner_name = feature_names.get(&parameter.owner);
+        let previous_owner_name = parameter
+            .owner
+            .as_ref()
+            .and_then(|owner| original_feature_names.get(owner));
+        let owner_name = parameter
+            .owner
+            .as_ref()
+            .and_then(|owner| feature_names.get(owner));
         if previous.name != parameter.name {
             aliases.insert(previous.name.clone(), parameter.name.clone());
         }
@@ -10468,10 +10542,11 @@ pub fn sync_neutral_features(
             FeatureDefinition::Extrude {
                 profile,
                 direction,
+                start,
                 extent,
                 op,
                 draft,
-                reverse_draft,
+                second_draft,
                 direction_source,
                 solid,
                 face_maker,
@@ -10481,7 +10556,8 @@ pub fn sync_neutral_features(
                 length_along_profile_normal,
                 allow_multi_profile_faces,
             } => {
-                if reverse_draft.is_some()
+                if !matches!(start, cadmpeg_ir::features::ExtrudeStart::ProfilePlane)
+                    || second_draft.is_some()
                     || direction_source.is_some()
                     || *solid == Some(false)
                     || face_maker.is_some()
@@ -10619,10 +10695,13 @@ pub fn sync_neutral_features(
                             feature.id
                         )));
                     }
-                    Extent::ToFace { face } if face_selection_value(face).is_some() => {
+                    Extent::ToFace { face, offset } if face_selection_value(face).is_some() => {
                         let selection = face_selection_value(face).expect("guarded above");
                         properties.insert("EndCondition".into(), "ToFace".into());
                         properties.insert("Face".into(), selection);
+                        if let Some(offset) = offset {
+                            parameters.insert("Depth".into(), format_length_mm(offset.0));
+                        }
                     }
                     Extent::ToVertex { vertex } if vertex_selection_value(vertex).is_some() => {
                         let selection = vertex_selection_value(vertex).expect("guarded above");
@@ -10656,9 +10735,20 @@ pub fn sync_neutral_features(
                         )));
                     }
                 }
-                if let Some(direction) = direction {
-                    require_direction(*direction, &feature.id, "extrusion direction")?;
-                    properties.insert("Direction".into(), format_vector3(*direction));
+                match direction {
+                    cadmpeg_ir::features::ExtrudeDirection::ProfileNormal => {
+                        properties.remove("Direction");
+                    }
+                    cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses a reversed profile-normal extrusion direction",
+                            feature.id
+                        )));
+                    }
+                    cadmpeg_ir::features::ExtrudeDirection::Explicit(direction) => {
+                        require_direction(*direction, &feature.id, "extrusion direction")?;
+                        properties.insert("Direction".into(), format_vector3(*direction));
+                    }
                 }
                 if let Some(draft) = draft {
                     if !draft.0.is_finite() {
@@ -10695,7 +10785,15 @@ pub fn sync_neutral_features(
                 );
                 (kind, parameters, properties)
             }
-            FeatureDefinition::Fillet { edges, radius } => {
+            FeatureDefinition::Fillet { groups } => {
+                let [group] = groups.as_slice() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires exactly one fillet edge group",
+                        feature.id
+                    )));
+                };
+                let edges = &group.edges;
+                let radius = &group.radius;
                 let selection = edge_selection_value(edges);
                 if selection.is_none()
                     && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
@@ -10744,6 +10842,12 @@ pub fn sync_neutral_features(
                                 .map(String::as_str),
                         );
                         parameters.insert(key.into(), value);
+                    }
+                    RadiusSpec::Chordal { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses a chordal fillet law",
+                            feature.id
+                        )));
                     }
                     RadiusSpec::Variable { points } => {
                         parameters.retain(|name, _| {
@@ -10797,11 +10901,18 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Chamfer {
-                edges,
-                spec,
+                groups,
                 flip_direction,
             } => {
-                if flip_direction == &Some(true) {
+                let [group] = groups.as_slice() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires exactly one chamfer edge group",
+                        feature.id
+                    )));
+                };
+                let edges = &group.edges;
+                let spec = &group.spec;
+                if *flip_direction {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} uses an unsupported reversed chamfer reference side",
                         feature.id
@@ -11265,6 +11376,12 @@ pub fn sync_neutral_features(
                 continuity,
                 merge_result,
             } => {
+                let cadmpeg_ir::features::SurfaceBoundary::Edges(boundary) = boundary else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses a path-based filled-surface boundary",
+                        feature.id
+                    )));
+                };
                 let boundary = edge_selection_value(boundary).ok_or_else(|| {
                     CodecError::Malformed(format!(
                         "SLDPRT feature {} has no filled-surface boundary",
@@ -12470,8 +12587,9 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Loft {
-                profiles,
+                sections,
                 guides,
+                centerline,
                 op,
                 closed,
                 solid,
@@ -12480,7 +12598,8 @@ pub fn sync_neutral_features(
                 check_compatibility,
                 allow_multi_profile_faces,
             } => {
-                if !solid
+                if centerline.is_some()
+                    || !solid
                     || *ruled
                     || max_degree.is_some()
                     || check_compatibility.is_some()
@@ -12497,14 +12616,27 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if existing.is_none() && (profiles.len() < 2 || *op == BooleanOp::Unresolved) {
+                if existing.is_none() && (sections.len() < 2 || *op == BooleanOp::Unresolved) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has unresolved loft construction semantics",
                         feature.id
                     )));
                 }
-                let profile_sources = profiles
+                if sections
                     .iter()
+                    .any(|section| matches!(section, cadmpeg_ir::features::LoftSection::Point(_)))
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses a point loft section",
+                        feature.id
+                    )));
+                }
+                let profile_sources = sections
+                    .iter()
+                    .filter_map(|section| match section {
+                        cadmpeg_ir::features::LoftSection::Profile(profile) => Some(profile),
+                        cadmpeg_ir::features::LoftSection::Point(_) => None,
+                    })
                     .map(|profile| {
                         profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
                     })
@@ -12882,6 +13014,12 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses semantics that cannot be written",
+                    feature.id
+                )));
+            }
         };
         if let Some(record) = existing.as_deref() {
             restore_equivalent_parameter_expressions(
@@ -13073,7 +13211,7 @@ fn synchronize_neutral_feature_content(
                             feature.id, id.0
                         ))
                     })?;
-                    if parameter.owner != feature.id {
+                    if parameter.owner.as_ref() != Some(&feature.id) {
                         return Err(CodecError::Malformed(format!(
                             "SLDPRT feature {} content references parameter {} owned by another feature",
                             feature.id, id.0
@@ -13233,6 +13371,12 @@ fn profile_source(
         ProfileRef::Unresolved(_) => None,
         ProfileRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         ProfileRef::Sketch(id) => sketches.get(id).cloned(),
+        ProfileRef::SketchProfiles { sketch, .. }
+        | ProfileRef::SketchRegions { sketch, .. }
+        | ProfileRef::SketchSelection { sketch, .. } => sketches.get(sketch).cloned(),
+        ProfileRef::SpatialSketchProfiles { .. }
+        | ProfileRef::SpatialSketchSelection { .. }
+        | ProfileRef::HistoricalFaces { .. } => None,
         ProfileRef::Feature(id) => features.get(id).map(|source| (*source).to_string()),
         ProfileRef::Generated { .. } => None,
         ProfileRef::Faces(faces) if !faces.is_empty() => Some(
@@ -13252,9 +13396,10 @@ fn path_source(
     sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
 ) -> Option<String> {
     match path {
-        PathRef::Unresolved => None,
+        PathRef::Unresolved(_) => None,
         PathRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         PathRef::Sketch(id) => sketches.get(id).cloned(),
+        PathRef::SpatialSketchSelection { .. } | PathRef::HistoricalEdges { .. } => None,
         PathRef::Edges(edges) if !edges.is_empty() => Some(
             edges
                 .iter()
@@ -13351,6 +13496,13 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::SketchBlockDefinition { .. } => "Block",
         FeatureDefinition::SketchBlockInstance { .. } => "Feature",
         FeatureDefinition::StoredGeometry => "Feature",
+        FeatureDefinition::BaseFeature { .. }
+        | FeatureDefinition::InsertBodies { .. }
+        | FeatureDefinition::Form { .. }
+        | FeatureDefinition::Coil { .. }
+        | FeatureDefinition::Sphere { .. }
+        | FeatureDefinition::Torus { .. }
+        | FeatureDefinition::SheetMetalBaseFlange { .. } => "Feature",
         FeatureDefinition::DerivedGeometry { .. } => "Feature",
         FeatureDefinition::ImportedGeometry { .. } => "Feature",
         FeatureDefinition::Primitive { .. } => "Primitive",
@@ -13434,6 +13586,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         | FeatureDefinition::FaceBlend { .. }
         | FeatureDefinition::SewBodies { .. }
         | FeatureDefinition::TrimBodies { .. } => "Feature",
+        _ => "Feature",
     };
     tag.into()
 }

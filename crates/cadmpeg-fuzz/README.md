@@ -17,6 +17,8 @@ Bound a local check by placing libFuzzer options after `--`:
 ```sh
 cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_container -- -runs=1000
 cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_container -- -max_total_time=60
+cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_writer -- -runs=1000
+cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_roundtrip -- -runs=1000
 ```
 
 Pass one or more corpus directories between the target and `--`. The checked-in
@@ -52,6 +54,13 @@ harnesses call format detection, inspection, and decoding:
 - `creo_container`
 - `nx_container`
 - `iges_container`
+
+Use the F3D semantic targets for native writing and replay:
+
+- `f3d_writer` parses IR, generates a source-less archive, inspects it, and
+  decodes it.
+- `f3d_roundtrip` decodes an archive, replays it through the native writer, and
+  decodes the result.
 
 Use a parser target for focused binary-format coverage:
 

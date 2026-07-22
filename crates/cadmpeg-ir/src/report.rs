@@ -45,8 +45,6 @@ pub enum LossCategory {
     Geometry,
     /// Topology (graph structure) not transferred.
     Topology,
-    /// Parametric features, sketches, constraints, or expressions not transferred.
-    Feature,
     /// Materials/appearances not transferred.
     Material,
     /// Document metadata not transferred.
@@ -66,7 +64,6 @@ impl fmt::Display for LossCategory {
         f.write_str(match self {
             Self::Geometry => "geometry",
             Self::Topology => "topology",
-            Self::Feature => "feature",
             Self::Material => "material",
             Self::Metadata => "metadata",
             Self::Units => "units",
@@ -273,13 +270,7 @@ pub struct DecodeReport {
     pub container_only: bool,
     /// Whether the decoder transferred B-rep geometry into the IR.
     pub geometry_transferred: bool,
-    /// Decode-coverage counts keyed by measure name (sorted).
-    ///
-    /// Records how much of each decoded population the run resolved,
-    /// transferred, dropped, or found ambiguous. Mirrors the
-    /// [`ExportReport::entity_counts`] idiom: typed `usize` census values
-    /// about what the decode did, kept distinct from container facts about
-    /// the source file (which live in the IR source metadata).
+    /// Decode coverage counts keyed by measure name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub coverage: BTreeMap<String, usize>,
     /// Explicit loss notes.

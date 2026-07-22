@@ -393,6 +393,7 @@ pub enum TextSurface {
         origin: Point3,
         axis: Vector3,
         u_axis: Vector3,
+        v_reversed: bool,
     },
     /// Circular cylinder.
     Cylinder {
@@ -400,6 +401,7 @@ pub enum TextSurface {
         axis: Vector3,
         ref_direction: Vector3,
         radius: f64,
+        u_reversed: bool,
     },
     /// Circular cone.
     Cone {
@@ -1474,23 +1476,25 @@ fn parse_binary_surface(
             let origin = cursor.point3("binary plane origin")?;
             let axis = cursor.vector3("binary plane axis")?;
             let u_axis = cursor.vector3("binary plane u axis")?;
-            cursor.vector3("binary plane v axis")?;
+            let v_axis = cursor.vector3("binary plane v axis")?;
             TextSurface::Plane {
                 origin,
                 axis,
                 u_axis,
+                v_reversed: frame_v_reversed(axis, u_axis, v_axis),
             }
         }
         2 => {
             let origin = cursor.point3("binary cylinder origin")?;
             let axis = cursor.vector3("binary cylinder axis")?;
             let ref_direction = cursor.vector3("binary cylinder reference direction")?;
-            cursor.vector3("binary cylinder v direction")?;
+            let y_direction = cursor.vector3("binary cylinder v direction")?;
             TextSurface::Cylinder {
                 origin,
                 axis,
                 ref_direction,
                 radius: cursor.f64("binary cylinder radius")?,
+                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
             }
         }
         3 => {
@@ -3140,18 +3144,20 @@ fn parse_analytic_surface(
     let origin = cursor.point("surface origin")?;
     let axis = cursor.vector("surface axis")?;
     let ref_direction = cursor.vector("surface reference direction")?;
-    let _y_direction = cursor.vector("surface y direction")?;
+    let y_direction = cursor.vector("surface y direction")?;
     Ok(match kind {
         1 => TextSurface::Plane {
             origin,
             axis,
             u_axis: ref_direction,
+            v_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
         2 => TextSurface::Cylinder {
             origin,
             axis,
             ref_direction,
             radius: cursor.real("cylinder radius")?,
+            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
         3 => TextSurface::Cone {
             origin,
@@ -3175,6 +3181,18 @@ fn parse_analytic_surface(
         },
         _ => unreachable!("analytic surface kind was range checked"),
     })
+}
+
+fn frame_v_reversed(axis: Vector3, x_axis: Vector3, y_axis: Vector3) -> bool {
+    let expected_y = Vector3::new(
+        axis.y.mul_add(x_axis.z, -axis.z * x_axis.y),
+        axis.z.mul_add(x_axis.x, -axis.x * x_axis.z),
+        axis.x.mul_add(x_axis.y, -axis.y * x_axis.x),
+    );
+    expected_y.x.mul_add(
+        y_axis.x,
+        expected_y.y.mul_add(y_axis.y, expected_y.z * y_axis.z),
+    ) < 0.0
 }
 
 fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, CodecError> {

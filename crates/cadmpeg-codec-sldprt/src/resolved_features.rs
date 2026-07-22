@@ -8960,6 +8960,12 @@ pub(crate) fn bind_profile_revolution_axes(
                 (native, sketch_id)
             }
             cadmpeg_ir::features::ProfileRef::Generated { .. }
+            | cadmpeg_ir::features::ProfileRef::SketchProfiles { .. }
+            | cadmpeg_ir::features::ProfileRef::SketchRegions { .. }
+            | cadmpeg_ir::features::ProfileRef::SketchSelection { .. }
+            | cadmpeg_ir::features::ProfileRef::SpatialSketchProfiles { .. }
+            | cadmpeg_ir::features::ProfileRef::SpatialSketchSelection { .. }
+            | cadmpeg_ir::features::ProfileRef::HistoricalFaces { .. }
             | cadmpeg_ir::features::ProfileRef::Unresolved(_)
             | cadmpeg_ir::features::ProfileRef::Native(_)
             | cadmpeg_ir::features::ProfileRef::Faces(_) => continue,
@@ -19854,7 +19860,7 @@ fn bind_circular_profile_by_dimension(
             })
             .filter(|(_, feature)| {
                 parameters.iter().any(|parameter| {
-                    if parameter.owner != feature.id {
+                    if parameter.owner.as_ref() != Some(&feature.id) {
                         return false;
                     }
                     let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
@@ -19961,7 +19967,12 @@ pub(crate) fn bind_parameter_scalars<'a>(
         for (index, &(start, native_feature)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
             let owner_parameters = parameters.iter_mut().filter(|parameter| {
-                neutral_owners.get(&parameter.owner).copied() == Some(native_feature.id.as_str())
+                parameter
+                    .owner
+                    .as_ref()
+                    .and_then(|owner| neutral_owners.get(owner))
+                    .copied()
+                    == Some(native_feature.id.as_str())
             });
             for parameter in owner_parameters {
                 if parameter.native_ref.is_some() {
@@ -20221,42 +20232,50 @@ pub(crate) fn project_compact_edge_selections(
         else {
             continue;
         };
-        let (FeatureDefinition::Fillet { edges, .. } | FeatureDefinition::Chamfer { edges, .. }) =
-            &mut feature.definition
-        else {
-            continue;
+        let groups = match &mut feature.definition {
+            FeatureDefinition::Fillet { groups } => groups
+                .iter_mut()
+                .map(|group| &mut group.edges)
+                .collect::<Vec<_>>(),
+            FeatureDefinition::Chamfer { groups, .. } => groups
+                .iter_mut()
+                .map(|group| &mut group.edges)
+                .collect::<Vec<_>>(),
+            _ => continue,
         };
-        if matches!(edges, cadmpeg_ir::features::EdgeSelection::Unresolved) {
-            let native = compact_edge_selection_set_value(edge_selections);
-            let generated = edge_selections.iter().try_fold(
-                Vec::<cadmpeg_ir::features::GeneratedEdgeRef>::new(),
-                |mut edges, selection| {
-                    let native_feature = selection.terminal_feature_ref.as_ref()?;
-                    let feature = feature_ids_by_native.get(native_feature)?.clone();
-                    let local_id = selection
-                        .local_edge_ids
-                        .iter()
-                        .map(u32::to_string)
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    let edge = cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id };
-                    if !edges.contains(&edge) {
-                        edges.push(edge);
+        for edges in groups {
+            if matches!(edges, cadmpeg_ir::features::EdgeSelection::Unresolved) {
+                let native = compact_edge_selection_set_value(edge_selections);
+                let generated = edge_selections.iter().try_fold(
+                    Vec::<cadmpeg_ir::features::GeneratedEdgeRef>::new(),
+                    |mut edges, selection| {
+                        let native_feature = selection.terminal_feature_ref.as_ref()?;
+                        let feature = feature_ids_by_native.get(native_feature)?.clone();
+                        let local_id = selection
+                            .local_edge_ids
+                            .iter()
+                            .map(u32::to_string)
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        let edge = cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id };
+                        if !edges.contains(&edge) {
+                            edges.push(edge);
+                        }
+                        Some(edges)
+                    },
+                );
+                *edges = match generated.filter(|edges| !edges.is_empty()) {
+                    Some(edges) => cadmpeg_ir::features::EdgeSelection::Generated { edges, native },
+                    None => cadmpeg_ir::features::EdgeSelection::Native(native),
+                };
+                for dependency in edge_selections
+                    .iter()
+                    .flat_map(|selection| &selection.producer_feature_refs)
+                    .filter_map(|native| feature_ids_by_native.get(native))
+                {
+                    if dependency != &feature.id && !feature.dependencies.contains(dependency) {
+                        feature.dependencies.push(dependency.clone());
                     }
-                    Some(edges)
-                },
-            );
-            *edges = match generated.filter(|edges| !edges.is_empty()) {
-                Some(edges) => cadmpeg_ir::features::EdgeSelection::Generated { edges, native },
-                None => cadmpeg_ir::features::EdgeSelection::Native(native),
-            };
-            for dependency in edge_selections
-                .iter()
-                .flat_map(|selection| &selection.producer_feature_refs)
-                .filter_map(|native| feature_ids_by_native.get(native))
-            {
-                if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                    feature.dependencies.push(dependency.clone());
                 }
             }
         }
@@ -20357,7 +20376,7 @@ pub(crate) fn project_compact_surface_selections(
             FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
             FeatureDefinition::Extrude {
                 extent:
-                    cadmpeg_ir::features::Extent::ToFace { face }
+                    cadmpeg_ir::features::Extent::ToFace { face, .. }
                     | cadmpeg_ir::features::Extent::OffsetFromFace { face, .. },
                 ..
             } => SelectionSlot::Face(face),
@@ -22363,9 +22382,13 @@ pub(crate) fn project_dissected_sketches(
             FeatureDefinition::Sweep { profile, .. } => {
                 profile.as_mut().and_then(replace).into_iter().collect()
             }
-            FeatureDefinition::Loft { profiles, .. } => {
-                profiles.iter_mut().filter_map(replace).collect()
-            }
+            FeatureDefinition::Loft { sections, .. } => sections
+                .iter_mut()
+                .filter_map(|section| match section {
+                    cadmpeg_ir::features::LoftSection::Profile(profile) => replace(profile),
+                    cadmpeg_ir::features::LoftSection::Point(_) => None,
+                })
+                .collect(),
             _ => Vec::new(),
         };
         for (child, owner) in replaced {
@@ -22733,7 +22756,7 @@ pub(crate) fn project_marker_dimensioned_circles(
         };
         let diameters = parameters
             .iter()
-            .filter(|parameter| parameter.owner == feature.id)
+            .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
             .filter_map(|parameter| {
                 let cadmpeg_ir::features::ParameterValue::Length(diameter) =
                     parameter.value.as_ref()?
@@ -23563,6 +23586,7 @@ pub(crate) fn project_relation_bindings(
             )
             .unwrap_or_else(|| SketchConstraintDefinition::Native {
                 native_kind: native_kind.into(),
+                native_state: None,
                 entities,
                 parameter: parameter_id,
                 operands: relation
@@ -23570,6 +23594,8 @@ pub(crate) fn project_relation_bindings(
                     .iter()
                     .map(|operand| SketchNativeOperand {
                         native_kind: operand_kind_name(operand.kind),
+                        native_field: None,
+                        native_role: None,
                         object_index: u32::from(operand.entity_index),
                         native_ref: operand.entity_ref.clone(),
                     })
@@ -23707,9 +23733,9 @@ fn relation_parameter_by_display_name<'a>(
         .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
         .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
         .flat_map(|name| {
-            parameters
-                .iter()
-                .filter(move |parameter| &parameter.owner == owner && parameter.name == name)
+            parameters.iter().filter(move |parameter| {
+                parameter.owner.as_ref() == Some(owner) && parameter.name == name
+            })
         });
     let first = matches.next()?;
     matches
@@ -23774,12 +23800,16 @@ fn typed_marker_relation_definition_in_sketch(
             .iter()
             .map(|link| SketchNativeOperand {
                 native_kind: "sldprt:marker-local-id".into(),
+                native_field: None,
+                native_role: None,
                 object_index: u32::from(link.local_id),
                 native_ref: Some(link.entity_ref.clone()),
             })
             .collect::<Vec<_>>();
         operands.extend(owners.into_iter().map(|owner| SketchNativeOperand {
             native_kind: "sldprt:marker-constraint-owner".into(),
+            native_field: None,
+            native_role: None,
             object_index: owner.object_index.or(owner.local_id).unwrap_or(u32::MAX),
             native_ref: Some(owner.id.clone()),
         }));
@@ -23791,6 +23821,7 @@ fn typed_marker_relation_definition_in_sketch(
                 SketchInputKind::Native(code) => format!("sldprt:marker-relation:{code}"),
                 _ => unreachable!("non-relation markers were rejected"),
             },
+            native_state: None,
             entities,
             parameter: None,
             operands,
@@ -24418,6 +24449,7 @@ fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2) -> bool {
                     })
         }
         SketchGeometry::Point { .. }
+        | SketchGeometry::Text { .. }
         | SketchGeometry::Nurbs { .. }
         | SketchGeometry::Native { .. } => false,
     }
@@ -28949,7 +28981,9 @@ fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLocus)> {
                 SketchLocus::End(entity.id.clone()),
             ),
         ],
-        SketchGeometry::Nurbs { .. } | SketchGeometry::Native { .. } => Vec::new(),
+        SketchGeometry::Nurbs { .. }
+        | SketchGeometry::Text { .. }
+        | SketchGeometry::Native { .. } => Vec::new(),
     }
 }
 
@@ -29129,10 +29163,13 @@ mod profile_join_tests {
             "target",
             "target-native",
             FeatureDefinition::Fillet {
-                edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Constant {
-                    radius: Length(1.0),
-                },
+                groups: vec![cadmpeg_ir::features::FilletGroup {
+                    edges: EdgeSelection::Unresolved,
+                    radius: RadiusSpec::Constant {
+                        radius: Length(1.0),
+                    },
+                    tangency_weight: None,
+                }],
             },
         );
         let selection = |ordinal, offset, local_edge_ids| FeatureInputEdgeSelection {
@@ -29171,12 +29208,15 @@ mod profile_join_tests {
 
         project_compact_edge_selections(&mut features, &[lane]);
 
-        let FeatureDefinition::Fillet {
+        let FeatureDefinition::Fillet { groups } = &features[1].definition else {
+            panic!("generated edge selection");
+        };
+        let [cadmpeg_ir::features::FilletGroup {
             edges: EdgeSelection::Generated { edges, native },
             ..
-        } = &features[1].definition
+        }] = groups.as_slice()
         else {
-            panic!("generated edge selection");
+            panic!("generated edge selection group");
         };
         assert_eq!(
             edges
@@ -29695,7 +29735,7 @@ mod profile_join_tests {
         }];
         let parameter = |ordinal: u32, diameter: f64| DesignParameter {
             id: ParameterId(format!("parameter-{ordinal}")),
-            owner: feature.id.clone(),
+            owner: Some(feature.id.clone()),
             name: format!("D{}", ordinal + 1),
             ordinal,
             expression: diameter.to_string(),
@@ -29865,13 +29905,14 @@ mod profile_join_tests {
                 outputs: Vec::new(),
                 definition: FeatureDefinition::Extrude {
                     profile: ProfileRef::Feature(FeatureId("child".into())),
-                    direction: None,
+                    direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                    start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                     extent: Extent::Blind {
                         length: Length(1.0),
                     },
                     op: BooleanOp::Join,
                     draft: None,
-                    reverse_draft: None,
+                    second_draft: None,
                     direction_source: None,
                     solid: None,
                     face_maker: None,
@@ -29984,11 +30025,15 @@ mod profile_join_tests {
             vec![
                 SketchNativeOperand {
                     native_kind: "sldprt:marker-constraint-owner".into(),
+                    native_field: None,
+                    native_role: None,
                     object_index: 7,
                     native_ref: Some(owner.id),
                 },
                 SketchNativeOperand {
                     native_kind: "sldprt:marker-constraint-owner".into(),
+                    native_field: None,
+                    native_role: None,
                     object_index: 8,
                     native_ref: Some(point.id),
                 },
@@ -30345,7 +30390,7 @@ mod profile_join_tests {
         let candidate = point("candidate", 3.0, 4.0);
         let parameter = DesignParameter {
             id: ParameterId("distance".into()),
-            owner: FeatureId("feature".into()),
+            owner: Some(FeatureId("feature".into())),
             ordinal: 0,
             name: "D1".into(),
             expression: "5mm".into(),
@@ -30650,7 +30695,7 @@ mod profile_join_tests {
         };
         let parameter = DesignParameter {
             id: ParameterId("distance".into()),
-            owner: FeatureId("feature".into()),
+            owner: Some(FeatureId("feature".into())),
             ordinal: 0,
             name: "D1".into(),
             expression: "4mm".into(),
@@ -31089,7 +31134,7 @@ mod profile_join_tests {
         };
         let parameter = DesignParameter {
             id: ParameterId("distance".into()),
-            owner: FeatureId("feature".into()),
+            owner: Some(FeatureId("feature".into())),
             ordinal: 0,
             name: "D1".into(),
             expression: "5mm".into(),
@@ -31151,7 +31196,7 @@ mod profile_join_tests {
         let unrelated = point("unrelated", 100.0, 100.0);
         let parameter = DesignParameter {
             id: ParameterId("distance".into()),
-            owner: FeatureId("feature".into()),
+            owner: Some(FeatureId("feature".into())),
             ordinal: 0,
             name: "D1".into(),
             expression: "5mm".into(),
@@ -31207,7 +31252,7 @@ mod profile_join_tests {
         );
         let parameter = DesignParameter {
             id: ParameterId("distance".into()),
-            owner: FeatureId("feature".into()),
+            owner: Some(FeatureId("feature".into())),
             ordinal: 0,
             name: "D1".into(),
             expression: "5mm".into(),
@@ -31315,7 +31360,7 @@ mod profile_join_tests {
         let diagonal = line("diagonal", Point2::new(20.0, 20.0), Point2::new(21.0, 21.0));
         let parameter = DesignParameter {
             id: ParameterId("angle".into()),
-            owner: FeatureId("feature".into()),
+            owner: Some(FeatureId("feature".into())),
             ordinal: 0,
             name: "D1".into(),
             expression: "90deg".into(),
@@ -31440,7 +31485,7 @@ mod profile_join_tests {
         );
         let parameter = DesignParameter {
             id: ParameterId("distance".into()),
-            owner: FeatureId("feature".into()),
+            owner: Some(FeatureId("feature".into())),
             ordinal: 0,
             name: "D1".into(),
             expression: "5mm".into(),
@@ -32236,7 +32281,7 @@ mod profile_join_tests {
         };
         let parameter = |id: &str, scalar: &str, distance: f64| DesignParameter {
             id: ParameterId(id.into()),
-            owner: feature.id.clone(),
+            owner: Some(feature.id.clone()),
             ordinal: 0,
             name: id.into(),
             expression: format!("{distance}mm"),
@@ -32459,7 +32504,7 @@ mod profile_join_tests {
         };
         let parameter = DesignParameter {
             id: ParameterId("distance".into()),
-            owner: FeatureId("feature".into()),
+            owner: Some(FeatureId("feature".into())),
             ordinal: 0,
             name: "D1".into(),
             expression: "5mm".into(),
@@ -32623,7 +32668,7 @@ mod profile_join_tests {
         };
         let parameter = DesignParameter {
             id: ParameterId("parameter".into()),
-            owner: feature.id.clone(),
+            owner: Some(feature.id.clone()),
             name: "D1".into(),
             ordinal: 0,
             expression: "12".into(),
@@ -32948,7 +32993,7 @@ mod profile_join_tests {
         };
         let parameter = DesignParameter {
             id: ParameterId("diameter".into()),
-            owner: FeatureId("feature".into()),
+            owner: Some(FeatureId("feature".into())),
             name: "D1".into(),
             ordinal: 0,
             expression: String::new(),
@@ -33141,16 +33186,21 @@ mod profile_join_tests {
             typed_marker_relation_definition(&nested_native, &markers, &joins),
             Some(SketchConstraintDefinition::Native {
                 native_kind: "sldprt:marker-relation:28".into(),
+                native_state: None,
                 entities: vec![first.clone(), second.clone()],
                 parameter: None,
                 operands: vec![
                     SketchNativeOperand {
                         native_kind: "sldprt:marker-local-id".into(),
+                        native_field: None,
+                        native_role: None,
                         object_index: 1,
                         native_ref: Some("wrapper".into()),
                     },
                     SketchNativeOperand {
                         native_kind: "sldprt:marker-local-id".into(),
+                        native_field: None,
+                        native_role: None,
                         object_index: 2,
                         native_ref: Some("marker-b".into()),
                     },
@@ -33229,16 +33279,21 @@ mod profile_join_tests {
             typed_marker_relation_definition(&symmetric, &markers, &joins),
             Some(SketchConstraintDefinition::Native {
                 native_kind: "sldprt:marker-relation:11".into(),
+                native_state: None,
                 entities: vec![first.clone(), SketchEntityId("second".into())],
                 parameter: None,
                 operands: vec![
                     cadmpeg_ir::sketches::SketchNativeOperand {
                         native_kind: "sldprt:marker-local-id".into(),
+                        native_field: None,
+                        native_role: None,
                         object_index: 1,
                         native_ref: Some("marker-a".into()),
                     },
                     cadmpeg_ir::sketches::SketchNativeOperand {
                         native_kind: "sldprt:marker-local-id".into(),
+                        native_field: None,
+                        native_role: None,
                         object_index: 3,
                         native_ref: Some("marker-c".into()),
                     },
@@ -33352,6 +33407,7 @@ mod profile_join_tests {
                     entities,
                     parameter: None,
                     operands,
+                ..
                 }) if native_kind == format!("sldprt:marker-relation:{}", kind.native_code())
                     && entities == vec![SketchEntityId("second".into())]
                     && operands.len() == 1
@@ -33384,7 +33440,7 @@ mod profile_join_tests {
         };
         let parameter = |id: &str, display| DesignParameter {
             id: ParameterId(id.into()),
-            owner: FeatureId("feature".into()),
+            owner: Some(FeatureId("feature".into())),
             ordinal: 0,
             name: id.into(),
             expression: String::new(),
@@ -34226,7 +34282,7 @@ mod profile_join_tests {
         ];
         let parameter = |id: &str, owner: &str, diameter: f64| DesignParameter {
             id: ParameterId(id.into()),
-            owner: FeatureId(owner.into()),
+            owner: Some(FeatureId(owner.into())),
             ordinal: 0,
             name: "D1".into(),
             expression: format!("<MOD-DIAM>{diameter}"),
@@ -35307,7 +35363,7 @@ fn validate_generated_marker_constraint(
                     if sketch == &constraint.sketch
             )
         });
-        if owner.is_none_or(|owner| owner.id != parameter.owner) {
+        if owner.is_none_or(|owner| parameter.owner.as_ref() != Some(&owner.id)) {
             return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
                 "source-less SLDPRT dimension parameter {} is not owned by its sketch feature",
                 parameter.id.0
@@ -37179,6 +37235,7 @@ fn generated_marker_kind(geometry: &SketchGeometry) -> SketchInputKind {
         | SketchGeometry::Parabola { .. }
         | SketchGeometry::Nurbs { .. }
         | SketchGeometry::Native { .. } => SketchInputKind::LineOrCircle,
+        SketchGeometry::Text { .. } => unreachable!("sketch text has no marker loci"),
     }
 }
 
@@ -37463,6 +37520,8 @@ fn sketch_brep(
                 } else {
                     Sense::Forward
                 },
+                use_curve: None,
+                use_curve_parameter_range: None,
                 pcurves: Vec::new(),
             });
         }
@@ -37522,6 +37581,8 @@ fn sketch_brep(
             previous: coedge_id.clone(),
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
+            use_curve: None,
+            use_curve_parameter_range: None,
             pcurves: Vec::new(),
         });
         ir.model.loops.push(Loop {
@@ -37725,6 +37786,7 @@ fn generated_sketch_curve(
             })
         }
         SketchGeometry::Point { .. }
+        | SketchGeometry::Text { .. }
         | SketchGeometry::ReferenceLine { .. }
         | SketchGeometry::Hyperbola { .. }
         | SketchGeometry::Parabola { .. }

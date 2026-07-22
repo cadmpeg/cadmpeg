@@ -767,23 +767,22 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
     assert!(matches!(
         definition("Fillet"),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
-            edges: cadmpeg_ir::features::EdgeSelection::All,
-            radius: cadmpeg_ir::features::RadiusSpec::Constant {
-                radius: cadmpeg_ir::features::Length(2.0)
-            },
-            ..
+            groups,
         }
+        if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+            edges: cadmpeg_ir::features::EdgeSelection::All,
+            radius: cadmpeg_ir::features::RadiusSpec::Constant { radius: cadmpeg_ir::features::Length(2.0) },
+            tangency_weight: None,
+        }])
     ));
     assert!(matches!(
         definition("Chamfer"),
         cadmpeg_ir::features::FeatureDefinition::Chamfer {
-            spec: cadmpeg_ir::features::ChamferSpec::DistanceAngle {
-                distance: cadmpeg_ir::features::Length(1.5),
-                angle,
-            },
-            flip_direction: Some(true),
-            ..
-        } if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12
+            groups,
+            flip_direction: true,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+            spec: cadmpeg_ir::features::ChamferSpec::DistanceAngle { distance: cadmpeg_ir::features::Length(1.5), angle }, ..
+        }] if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12)
     ));
 }
 
@@ -1670,16 +1669,16 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
     assert!(matches!(
         &feature("Loft").definition,
         cadmpeg_ir::features::FeatureDefinition::Loft {
-            profiles,
+            sections,
             closed: true,
             solid: true,
             ruled: true,
             allow_multi_profile_faces: Some(false),
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        } if matches!(profiles.as_slice(), [
-            cadmpeg_ir::features::ProfileRef::Sketch(first),
-            cadmpeg_ir::features::ProfileRef::Sketch(second),
+        } if matches!(sections.as_slice(), [
+            cadmpeg_ir::features::LoftSection::Profile(cadmpeg_ir::features::ProfileRef::Sketch(first)),
+            cadmpeg_ir::features::LoftSection::Profile(cadmpeg_ir::features::ProfileRef::Sketch(second)),
         ] if first.0.ends_with("#Section1") && second.0.ends_with("#Section2"))
     ));
     assert!(matches!(
@@ -3094,7 +3093,7 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == pad.id && parameter.name == "Length")
+        .find(|parameter| parameter.owner.as_ref() == Some(&pad.id) && parameter.name == "Length")
         .expect("pad length");
     assert_eq!(length.dependencies, vec![width.id.clone()]);
     let sheet = result.ir.model.spreadsheets.first().expect("sheet state");
@@ -4254,7 +4253,7 @@ fn transfers_non_default_extrusion_termination_branches() {
     assert!(matches!(
         definition("Symmetric"),
         FeatureDefinition::Extrude {
-            direction: Some(direction),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
             extent: Extent::Symmetric { length },
             draft: Some(Angle(draft)),
             ..
@@ -4264,10 +4263,10 @@ fn transfers_non_default_extrusion_termination_branches() {
         definition("PartExtrusion"),
         FeatureDefinition::Extrude {
             profile: _,
-            direction: Some(direction),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
             extent: Extent::TwoSided { first, second },
             draft: Some(Angle(draft)),
-            reverse_draft: Some(Angle(reverse_draft)),
+            second_draft: Some(Angle(reverse_draft)),
             direction_source: Some(ExtrusionDirectionSource::Edge { reference: PathRef::Native(reference) }),
             solid: Some(true),
             face_maker: Some(face_maker),
@@ -4323,7 +4322,7 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
             direction_source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal),
             solid: Some(false),
             draft: Some(cadmpeg_ir::features::Angle(draft)),
-            reverse_draft: Some(cadmpeg_ir::features::Angle(reverse_draft)),
+            second_draft: Some(cadmpeg_ir::features::Angle(reverse_draft)),
             ..
         } if length.0 == 12.0
             && (*draft - 3_f64.to_radians()).abs() < 1e-12
@@ -4395,10 +4394,10 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
         definition("Mixed"),
         FeatureDefinition::Extrude {
             extent: Extent::TwoSidedExtents { first, second },
-            direction: Some(direction),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
             direction_source: Some(ExtrusionDirectionSource::Edge { reference: PathRef::Native(reference) }),
             draft: Some(Angle(first_draft)),
-            reverse_draft: Some(Angle(second_draft)),
+            second_draft: Some(Angle(second_draft)),
             first_offset: Some(Length(1.0)),
             second_offset: Some(Length(-2.0)),
             length_along_profile_normal: Some(false),
@@ -4541,7 +4540,9 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == pocket.id && parameter.name == "Length")
+        .find(|parameter| {
+            parameter.owner.as_ref() == Some(&pocket.id) && parameter.name == "Length"
+        })
         .expect("pocket length");
     assert_eq!(pocket_length.expression, "Pad.Length / 4");
     assert_eq!(pocket_length.dependencies.len(), 1);

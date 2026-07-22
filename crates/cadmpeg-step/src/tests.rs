@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
+//! Self-contained tests: IR documents are built in code (via the IR crate's
+//! fixtures or inline), and expected STEP fragments are asserted inline. No test
+//! depends on an external STEP consumer.
 #![allow(clippy::unwrap_used)]
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::Cursor;
-
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
@@ -14,7 +14,7 @@ use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
-use cadmpeg_ir::LossCode;
+use std::io::Cursor;
 
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -97,8 +97,11 @@ fn parser_rejects_excessive_parameter_nesting_without_recursing_unboundedly() {
 fn parser_bounds_exponential_anchor_expansion() {
     let mut anchors = String::from("<a0>=(1,1);\n");
     for index in 1..40 {
-        writeln!(anchors, "<a{index}>=(<a{}>,<a{}>);", index - 1, index - 1)
-            .expect("writing to String cannot fail");
+        anchors.push_str(&format!(
+            "<a{index}>=(<a{}>,<a{}>);\n",
+            index - 1,
+            index - 1
+        ));
     }
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
@@ -111,13 +114,15 @@ fn parser_bounds_exponential_anchor_expansion() {
 fn parser_bounds_aggregate_anchor_materialization() {
     let mut anchors = String::from("<a0>=(1,1);\n");
     for index in 1..18 {
-        writeln!(anchors, "<a{index}>=(<a{}>,<a{}>);", index - 1, index - 1)
-            .expect("writing to String cannot fail");
+        anchors.push_str(&format!(
+            "<a{index}>=(<a{}>,<a{}>);\n",
+            index - 1,
+            index - 1
+        ));
     }
-    let mut records = String::new();
-    for id in 1..=8 {
-        write!(records, "#{id}=ITEM(<a17>);").expect("writing to String cannot fail");
-    }
+    let records = (1..=8)
+        .map(|id| format!("#{id}=ITEM(<a17>);"))
+        .collect::<String>();
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
@@ -140,10 +145,7 @@ fn codec_detects_and_inspects_ap242_exchange_structure() {
     assert_eq!(codec.detect(b"PK\x03\x04"), Confidence::No);
 
     let summary = codec
-        .inspect(
-            &mut Cursor::new(bytes),
-            &cadmpeg_ir::decode::InspectOptions::default(),
-        )
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("inspect minimal AP242");
     assert_eq!(summary.format, "step");
     assert_eq!(summary.container_kind, "iso-10303-21-clear-text");
@@ -197,10 +199,7 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
 fn codec_inspects_edition3_sections_and_external_references() {
     let bytes = include_bytes!("../tests/fixtures/ap242_ed3_sections.p21");
     let summary = StepCodec::default()
-        .inspect(
-            &mut Cursor::new(bytes),
-            &cadmpeg_ir::decode::InspectOptions::default(),
-        )
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("inspect edition 3 sections");
 
     assert_eq!(
@@ -258,10 +257,7 @@ fn decode_reports_data_section_external_dependencies() {
         .contains(&"external source https://example.invalid/library item fastener-table".into()));
 
     let summary = StepCodec::default()
-        .inspect(
-            &mut Cursor::new(bytes),
-            &cadmpeg_ir::decode::InspectOptions::default(),
-        )
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("inspect external document dependencies");
     let dependencies = summary
         .entries
@@ -1421,7 +1417,7 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert_eq!(mesh.triangles, [[0, 1, 2]]);
     assert_eq!(mesh.normals.len(), 3);
     assert_eq!(
-        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        mesh.body.as_ref().map(|body| body.as_str()),
         Some("step:data:body#38")
     );
     let complex = result
@@ -1697,19 +1693,17 @@ fn mapped_representation_dag_is_memoized() {
         let map = 1_000 + level;
         let first = 2_000 + level * 2;
         let second = first + 1;
-        write!(
-            records,
+        records.push_str(&format!(
             "#{representation}=SHAPE_REPRESENTATION('',(#{first},#{second}),$);\n\
 #{map}=REPRESENTATION_MAP($,#{next});\n\
 #{first}=MAPPED_ITEM('',#{map},$);\n\
 #{second}=MAPPED_ITEM('',#{map},$);\n"
-        )
-        .expect("writing to String cannot fail");
+        ));
     }
-    write!(records,
+    records.push_str(&format!(
         "#{}=SHAPE_REPRESENTATION('',(#9000),$);\n#9000=MANIFOLD_SOLID_BREP('',#9001);\n#9001=CLOSED_SHELL('',());",
         100 + depth
-    ).expect("writing to String cannot fail");
+    ));
 
     let result = decode_inline(&records);
     assert_eq!(result.ir.model.products.len(), 1);
@@ -2170,6 +2164,8 @@ fn failed_face_bounds_do_not_duplicate_the_shared_surface() {
     ir.model.faces[0].surface = ir.model.faces[1].surface.clone();
     ir.model.faces[0].loops.clear();
     let output = export(&ir);
+    // Five face-owned surfaces remain after sharing, and the displaced carrier
+    // is retained once as standalone construction geometry.
     assert_eq!(output.matches("= PLANE(").count(), 6);
 }
 
@@ -2447,18 +2443,22 @@ fn presentation_reader_normalizes_invalid_layer_and_common_datum_inputs() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
+/// Emit a single surface carrier in isolation and return the DATA lines joined.
 fn emit_surface_only(g: &SurfaceGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
     crate::geometry::surface(&mut e, g);
     e.into_lines().join("\n")
 }
 
+/// Emit a single curve carrier in isolation and return the DATA lines joined.
 fn emit_curve_only(g: &CurveGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
     crate::geometry::curve(&mut e, g);
     e.into_lines().join("\n")
 }
 
+/// A one-face document whose single edge has no attributed curve, so the writer
+/// must omit that edge and record a loss.
 fn edgeless_doc() -> CadIr {
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId, VertexId,
@@ -2513,6 +2513,8 @@ fn edgeless_doc() -> CadIr {
         radial_next: CoedgeId("ce0".into()),
         sense: Sense::Forward,
         pcurves: Vec::new(),
+        use_curve: None,
+        use_curve_parameter_range: None,
     });
     ir.model.loops.push(Loop {
         id: LoopId("lp0".into()),
@@ -2563,6 +2565,7 @@ fn cube_has_valid_part21_envelope() {
     assert!(s.contains("FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));"));
     assert!(s.contains("\nDATA;\n"));
     assert!(s.trim_end().ends_with("END-ISO-10303-21;"));
+    // ENDSEC appears twice: once closing HEADER, once closing DATA.
     assert_eq!(s.matches("ENDSEC;").count(), 2);
 }
 
@@ -2571,13 +2574,16 @@ fn cube_emits_full_brep_hierarchy() {
     let s = export(&unit_cube());
     assert!(s.contains("MANIFOLD_SOLID_BREP"));
     assert!(s.contains("CLOSED_SHELL"));
+    // Six planar faces, twelve unique edges, eight vertices.
     assert_eq!(s.matches("ADVANCED_FACE").count(), 6);
     assert_eq!(s.matches("= PLANE(").count(), 6);
     assert_eq!(s.matches("EDGE_CURVE").count(), 12);
     assert_eq!(s.matches("VERTEX_POINT").count(), 8);
+    // 6 loops * 4 coedges = 24 oriented edges.
     assert_eq!(s.matches("ORIENTED_EDGE").count(), 24);
     assert_eq!(s.matches("= EDGE_LOOP(").count(), 6);
     assert_eq!(s.matches("FACE_OUTER_BOUND").count(), 6);
+    // Every line edge carries a LINE curve.
     assert_eq!(s.matches("= LINE(").count(), 12);
 }
 
@@ -2597,6 +2603,7 @@ fn cube_product_and_context_boilerplate_present() {
     ] {
         assert!(s.contains(kw), "missing {kw}");
     }
+    // mm document → millimetre SI length unit.
     assert!(s.contains("SI_UNIT(.MILLI.,.METRE.)"));
 }
 
@@ -2652,16 +2659,20 @@ fn reports_entity_counts_and_no_geometry_loss_for_cube() {
     assert_eq!(report.total_entities, buf_line_count(&buf));
     assert_eq!(report.entity_counts.get("ADVANCED_FACE"), Some(&6));
     assert_eq!(report.entity_counts.get("VERTEX_POINT"), Some(&8));
+    // The cube is fully representable: no error/blocking losses.
     assert_eq!(report.error_count(), 0);
 }
 
 fn buf_line_count(buf: &[u8]) -> usize {
+    // Count DATA-section instance lines: those starting with '#'.
     String::from_utf8_lossy(buf)
         .lines()
         .filter(|l| l.starts_with('#'))
         .count()
 }
 
+/// A minimal single-cylinder-surface document exercising analytic emission and
+/// interning of shared points/directions.
 fn cylinder_surface_doc() -> CadIr {
     let mut ir = CadIr::empty(Units::default());
     ir.model.surfaces.push(Surface {
@@ -2679,6 +2690,7 @@ fn cylinder_surface_doc() -> CadIr {
 
 #[test]
 fn analytic_surfaces_map_to_their_step_entities() {
+    // Build one doc per analytic kind and check the keyword appears.
     let cases: Vec<(SurfaceGeometry, &str)> = vec![
         (
             SurfaceGeometry::Cylinder {
@@ -2727,6 +2739,8 @@ fn analytic_surfaces_map_to_their_step_entities() {
             geometry: geom,
             source_object: None,
         });
+        // Surfaces alone aren't reachable from a shell, so they won't be emitted
+        // by the topology walk; emit directly via the geometry module instead.
         let s = emit_surface_only(&ir.model.surfaces[0].geometry);
         assert!(s.contains(kw), "missing {kw} in {s}");
     }
@@ -2847,7 +2861,9 @@ fn real_formatting_always_has_decimal_point() {
 
 #[test]
 fn edge_without_curve_is_reported_and_omitted() {
-    let _ = cylinder_surface_doc();
+    let _ = cylinder_surface_doc(); // keep helper exercised
+                                    // Build a tiny doc: one face on a plane, one loop, one coedge whose edge has
+                                    // no curve. The edge should be omitted and a loss recorded.
     let ir = edgeless_doc();
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
@@ -2859,11 +2875,11 @@ fn edge_without_curve_is_reported_and_omitted() {
         },
         source_object: None,
     };
-    let _ = curve;
+    let _ = curve; // silence unused import path
     assert!(report
         .losses
         .iter()
-        .any(|l| l.code == LossCode::CurvelessEdgeOmitted));
+        .any(|l| l.message.contains("edge(s) have no typed 3D curve")));
 }
 
 #[test]
@@ -2902,22 +2918,33 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         });
 
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default()).unwrap();
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| { loss.code == LossCode::SubdOmitted }));
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| { loss.code == LossCode::TessellationOmitted }));
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| { loss.code == LossCode::SourceAssociationOmitted }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss
+                .message
+                .contains("1 subdivision surface(s) were omitted")
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss
+                .message
+                .contains("1 tessellation(s) require an AP242 target")
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Metadata
+            && loss
+                .message
+                .contains("2 source-object association(s) were not represented")
+    }));
 }
 
 #[test]
 fn face_on_unknown_surface_is_skipped_and_reported() {
+    // Turn the cube's first face onto an unknown (opaque) surface. That face
+    // cannot become an ADVANCED_FACE, so the writer must skip it and record one
+    // aggregated, counted loss — the remaining five faces still export.
     let mut ir = unit_cube();
     let target = ir.model.faces[0].surface.0.clone();
     for s in &mut ir.model.surfaces {
@@ -2937,7 +2964,7 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
     let unknown_notes: Vec<_> = report
         .losses
         .iter()
-        .filter(|l| l.code == LossCode::UnknownSurfaceFaceOmitted)
+        .filter(|l| l.message.contains("rest on an unknown"))
         .collect();
     assert_eq!(
         unknown_notes.len(),
@@ -3007,10 +3034,10 @@ fn signed_analytic_radius_normalization_is_reported() {
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
 
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| { loss.code == LossCode::AnalyticSurfaceNormalized }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.message.contains("normalized to positive STEP radii")
+    }));
 }
 
 #[test]
@@ -3028,10 +3055,10 @@ fn elliptical_cone_reduction_is_reported() {
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
 
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| { loss.code == LossCode::EllipticalConeReduced }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.message.contains("elliptical cone surface(s)")
+    }));
 }
 
 #[test]
@@ -3059,10 +3086,9 @@ fn procedural_construction_reduction_is_reported() {
 
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code == LossCode::ProceduralReduced));
+    assert!(report.losses.iter().any(|loss| loss
+        .message
+        .contains("reduced to their solved STEP carriers")));
 }
 
 #[test]
@@ -3072,17 +3098,16 @@ fn source_native_record_reduction_is_reported() {
         "asm_histories".into(),
         vec![cadmpeg_ir::NativeRecord {
             id: "asm-history-0".into(),
-            fields: <_>::default(),
+            fields: Default::default(),
         }],
     );
     ir.finalize();
 
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code == LossCode::ParametricRecordOmitted));
+    assert!(report.losses.iter().any(|loss| loss
+        .message
+        .contains("source-native record(s) were not represented in STEP")));
 }
 
 #[test]
@@ -3092,7 +3117,7 @@ fn strict_writer_rejects_before_emitting_bytes() {
         "asm_histories".into(),
         vec![cadmpeg_ir::NativeRecord {
             id: "asm-history-0".into(),
-            fields: <_>::default(),
+            fields: Default::default(),
         }],
     );
     ir.finalize();
@@ -3138,13 +3163,37 @@ fn hidden_body_geometry_and_visibility_round_trip() {
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
     let s = String::from_utf8(buf).unwrap();
-    assert!(!s.contains("MANIFOLD_SOLID_BREP"));
-    assert!(!s.contains("ADVANCED_FACE"));
-    assert!(report
-        .losses
-        .iter()
-        .any(|l| l.code == LossCode::HiddenBodyOmitted));
+    assert!(s.contains("MANIFOLD_SOLID_BREP"));
+    assert!(s.contains("ADVANCED_FACE"));
+    assert!(s.contains("INVISIBILITY"));
+    assert!(report.losses.is_empty());
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(s.into_bytes()), &DecodeOptions::default())
+        .expect("decode hidden body");
+    assert_eq!(decoded.ir.model.bodies[0].visible, Some(false));
 
+    let mut transformed = unit_cube();
+    transformed.model.bodies[0].visible = Some(false);
+    transformed.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform {
+        rows: [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    });
+    let transformed_text = export(&transformed);
+    assert!(transformed_text.contains("MAPPED_ITEM"));
+    assert!(!transformed_text.contains("ADVANCED_BREP_SHAPE_REPRESENTATION"));
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(transformed_text),
+            &DecodeOptions::default(),
+        )
+        .expect("decode hidden transformed body");
+    assert_eq!(decoded.ir.model.bodies[0].visible, Some(false));
+
+    // An explicitly visible body exports unchanged.
     let mut ir = unit_cube();
     ir.model.bodies[0].visible = Some(true);
     let s = export(&ir);
@@ -3210,7 +3259,8 @@ fn face_appearance_binding_styles_the_advanced_face() {
             b: 0.125,
             a: 1.0,
         }),
-        properties: BTreeMap::default(),
+        properties: Default::default(),
+        textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#face".to_string(),
@@ -3218,12 +3268,13 @@ fn face_appearance_binding_styles_the_advanced_face() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
-        channels: BTreeMap::default(),
+        channels: Default::default(),
     });
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.125,0.125,0.125)"));
     let styled: Vec<&str> = s.lines().filter(|l| l.contains("STYLED_ITEM")).collect();
     assert_eq!(styled.len(), 1);
+    // The styled item targets an ADVANCED_FACE instance.
     let target = styled[0]
         .rsplit_once(',')
         .map(|(_, tail)| tail.trim_end_matches(");").to_string())
@@ -3234,6 +3285,9 @@ fn face_appearance_binding_styles_the_advanced_face() {
     assert!(face_line.is_some(), "styled item must reference a face");
 }
 
+/// The soccer-ball case: a body carries a base color and one face overrides it.
+/// Every face must be styled (body color pushed down onto the faces that do not
+/// override it), and the overriding face must carry its own color.
 #[test]
 fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -3241,12 +3295,14 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
 
     let mut ir = unit_cube();
     let face_count = ir.model.faces.len();
+    // White body base color.
     ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
         r: 1.0,
         g: 1.0,
         b: 1.0,
         a: 1.0,
     });
+    // Black override on a single face, via an appearance binding.
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId("test:appearance#black".to_string()),
@@ -3262,7 +3318,8 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
             b: 0.0,
             a: 1.0,
         }),
-        properties: BTreeMap::default(),
+        properties: Default::default(),
+        textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#face".to_string(),
@@ -3270,10 +3327,11 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
-        channels: BTreeMap::default(),
+        channels: Default::default(),
     });
 
     let s = export(&ir);
+    // Both colors are present, and every face is styled.
     assert!(s.contains("COLOUR_RGB('',1.,1.,1.)"));
     assert!(s.contains("COLOUR_RGB('',0.,0.,0.)"));
     let styled: Vec<&str> = s.lines().filter(|l| l.contains("STYLED_ITEM")).collect();
@@ -3281,8 +3339,9 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     // Each color's style chain is emitted once and shared; grouping the styled
     // items by their style ref must yield exactly two groups sized 1 and
     // face_count - 1 (the lone override plus every inherited face).
-    let mut per_style: std::collections::BTreeMap<String, usize> = BTreeMap::default();
+    let mut per_style: std::collections::BTreeMap<String, usize> = Default::default();
     for item in &styled {
+        // STYLED_ITEM('color',(#psa),#face)
         let psa = item
             .split_once(",(")
             .and_then(|(_, tail)| tail.split(')').next())

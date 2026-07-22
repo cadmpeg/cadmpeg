@@ -283,6 +283,7 @@ pub(crate) fn transfer(
             schema: Some("FCStd ViewProvider ShapeMaterial".into()),
             category: None,
             base_color: Some(decode_color(packed_color, transparency)),
+            textures: Vec::new(),
             properties: material_properties,
         });
         for (index, body) in body_ids.into_iter().enumerate() {
@@ -458,6 +459,7 @@ fn transfer_edge_appearance(
         schema: Some("FCStd ViewProvider line style".into()),
         category: None,
         base_color: Some(decode_color(packed_color, None)),
+        textures: Vec::new(),
         properties: width
             .filter(|width| width.is_finite() && *width >= 0.0)
             .map(|width| [("line_width".into(), width)].into())
@@ -507,6 +509,7 @@ fn transfer_vertex_appearance(
         schema: Some("FCStd ViewProvider point style".into()),
         category: None,
         base_color: Some(decode_color(packed_color, None)),
+        textures: Vec::new(),
         properties: size
             .filter(|size| size.is_finite() && *size >= 0.0)
             .map(|size| [("point_size".into(), size)].into())
@@ -791,6 +794,7 @@ fn transfer_topology_colors(
                     schema: Some(kind.schema().into()),
                     category: None,
                     base_color: Some(decode_color(packed, None)),
+                    textures: Vec::new(),
                     properties: BTreeMap::new(),
                 });
                 emitted_appearance = true;

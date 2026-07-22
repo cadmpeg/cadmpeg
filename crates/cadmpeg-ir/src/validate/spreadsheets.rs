@@ -36,7 +36,7 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !cells.insert(cell) {
                 spreadsheet_finding(findings, &sheet.id.0, "spreadsheet repeats a cell identity");
             }
-            if parameter.owner != sheet.feature {
+            if parameter.owner.as_ref() != Some(&sheet.feature) {
                 spreadsheet_finding(
                     findings,
                     &sheet.id.0,

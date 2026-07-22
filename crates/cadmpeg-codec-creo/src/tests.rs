@@ -2066,10 +2066,12 @@ fn decode_types_class_914_as_unresolved_chamfer() {
     assert!(matches!(
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Chamfer {
+            ref groups,
+            ..
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
             spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
-            ..
-        }
+        }])
     ));
 }
 
@@ -2214,8 +2216,11 @@ fn decode_types_z_prefixed_round_with_unresolved_operands() {
     assert_eq!(
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
-            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
+            groups: vec![cadmpeg_ir::features::FilletGroup {
+                edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+                radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
+                tangency_weight: None,
+            }],
         }
     );
     assert_eq!(
@@ -2248,7 +2253,7 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             ..
         }
@@ -2293,7 +2298,7 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
@@ -2319,7 +2324,7 @@ fn decode_types_named_base_protrusion_as_new_body() {
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::NewBody,
             ..
@@ -2353,7 +2358,7 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
         feature("creo:model:feature#4").definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::Unresolved,
             ..
@@ -2375,7 +2380,7 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
         feature("creo:model:feature#6").definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
@@ -2513,9 +2518,12 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
     assert!(matches!(
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
             radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
-        }
+            ..
+        }])
     ));
     assert_eq!(
         feature.source_properties["native_parameter.choice.blend_choice.count"],
@@ -2549,9 +2557,12 @@ fn decode_types_class_913_without_an_edge_array() {
     assert!(matches!(
         result.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
             radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
-        }
+            ..
+        }])
     ));
 }
 
@@ -2586,11 +2597,12 @@ fn torus_only_round_uses_agreeing_tagged_minor_radii() {
     assert!(matches!(
         result.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: cadmpeg_ir::features::RadiusSpec::Constant {
                 radius: cadmpeg_ir::features::Length(radius),
-            },
-            ..
-        } if (radius - 0.249_999_999_951_747_04).abs() < 1e-12
+            }, ..
+        }] if (radius - 0.249_999_999_951_747_04).abs() < 1e-12)
     ));
 
     let conflicting = round(&[
@@ -2602,9 +2614,10 @@ fn torus_only_round_uses_agreeing_tagged_minor_radii() {
     assert!(matches!(
         result.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
-            ..
-        }
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. }, ..
+        }])
     ));
 }
 
@@ -2622,9 +2635,11 @@ fn decode_types_named_german_round_without_a_schema_row() {
     assert!(matches!(
         result.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
-        }
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. }, ..
+        }])
     ));
 }
 
@@ -2822,10 +2837,13 @@ fn decode_types_round_with_labeled_edge_selection() {
     assert_eq!(
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
-            edges: cadmpeg_ir::features::EdgeSelection::Native(
-                "creo:allfeatur:edgs_affected#4:44,45".to_string()
-            ),
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
+            groups: vec![cadmpeg_ir::features::FilletGroup {
+                edges: cadmpeg_ir::features::EdgeSelection::Native(
+                    "creo:allfeatur:edgs_affected#4:44,45".to_string()
+                ),
+                radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
+                tangency_weight: None,
+            }],
         }
     );
     assert_eq!(
@@ -2884,11 +2902,12 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
     assert!(matches!(
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
                 form: Some(cadmpeg_ir::features::RadiusForm::Variable)
-            },
-            ..
-        }
+            }, ..
+        }])
     ));
 
     let mixed = build_prt(
@@ -2905,9 +2924,10 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
     assert!(matches!(
         mixed.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
-            ..
-        }
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None }, ..
+        }])
     ));
 }
 
@@ -3031,9 +3051,11 @@ fn scan_partitions_allfeatur_positional_round_operands() {
     assert!(matches!(
         &result.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
+            groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Native(selection),
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
-        } if selection == "creo:allfeatur:replay_edgs_affected#4:9"
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. }, ..
+        }] if selection == "creo:allfeatur:replay_edgs_affected#4:9")
     ));
     let records =
         &result.ir.native.namespace("creo").unwrap().arenas["feature_replay_affected_ids"];
@@ -3176,7 +3198,7 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
@@ -3204,7 +3226,7 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
@@ -3582,7 +3604,9 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
         assert_eq!(parameters.len(), 1);
         assert_eq!(
             parameters[0].owner,
-            cadmpeg_ir::features::FeatureId(format!("creo:model:sketch_feature#{identity_scope}"))
+            Some(cadmpeg_ir::features::FeatureId(format!(
+                "creo:model:sketch_feature#{identity_scope}"
+            )))
         );
         assert!(parameters[0].id.0.contains(&format!("#{identity_scope}:")));
     }
@@ -4215,7 +4239,10 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         .iter()
         .find(|parameter| parameter.name == "result")
         .expect("relation parameter");
-    assert_eq!(parameter.owner.as_str(), "creo:model:sketch_feature#917");
+    assert_eq!(
+        parameter.owner.as_ref().unwrap().as_str(),
+        "creo:model:sketch_feature#917"
+    );
     assert_eq!(parameter.name, "d917_42_1");
     assert_eq!(repeated.name, "d917_42_2");
     assert_ne!(parameter.id, repeated.id);
@@ -4300,12 +4327,12 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
         .expect("decode incomplete dimension table");
 
     assert_eq!(result.ir.model.parameters.len(), 2);
-    assert!(result
-        .ir
-        .model
-        .parameters
-        .iter()
-        .all(|parameter| parameter.owner.as_str() == "creo:model:sketch_feature#917"));
+    assert!(result.ir.model.parameters.iter().all(|parameter| parameter
+        .owner
+        .as_ref()
+        .unwrap()
+        .as_str()
+        == "creo:model:sketch_feature#917"));
     let coverage = &result.report.coverage;
     assert_eq!(coverage["decoded_feature_dimension_count"], 2);
     assert_eq!(coverage["transferred_feature_dimension_parameter_count"], 2);
@@ -6688,8 +6715,11 @@ fn decode_transfers_closed_plane_intersection_brep() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature 4");
     assert_eq!(feature.outputs, vec![model.bodies[0].id.clone()]);
-    let cadmpeg_ir::features::FeatureDefinition::Fillet { edges, .. } = &feature.definition else {
+    let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } = &feature.definition else {
         panic!("round definition: {:#?}", feature.definition);
+    };
+    let [cadmpeg_ir::features::FilletGroup { edges, .. }] = groups.as_slice() else {
+        panic!("round groups: {groups:#?}");
     };
     let cadmpeg_ir::features::EdgeSelection::Resolved { edges, native } = edges else {
         panic!("round edges: {edges:#?}");
@@ -7078,9 +7108,11 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     assert!(matches!(
         &result.ir.model.features[1].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
+            groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
-        }
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. }, ..
+        }])
     ));
     assert_eq!(
         result

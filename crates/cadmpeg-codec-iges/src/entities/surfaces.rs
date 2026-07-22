@@ -532,6 +532,7 @@ pub(super) fn project(
                 second: CurveId(format!("iges:model:curve#D{second_sequence}")),
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         let _ = (first_interval, second_interval, developable_flag);
         decoded.insert(entry.sequence);
@@ -643,6 +644,7 @@ pub(super) fn project(
                 native_position: Some(target),
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         decoded.insert(entry.sequence);
     }
@@ -846,8 +848,10 @@ pub(super) fn project(
                     angular_interval: [start_angle, end_angle],
                     parameter_interval: Some(parameter_interval),
                     transposed: false,
+                    revision_form: None,
                 },
                 cache_fit_tolerance: None,
+                record_bounds: None,
             });
         }
         decoded.insert(entry.sequence);
@@ -1180,8 +1184,10 @@ pub(super) fn project(
                 u_sense: Some(0),
                 v_sense: Some(0),
                 extension_flags: Vec::new(),
+                revision_form: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         decoded.insert(entry.sequence);
     }

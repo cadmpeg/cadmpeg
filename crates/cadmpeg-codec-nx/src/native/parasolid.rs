@@ -1453,6 +1453,7 @@ mod tests {
             u_sense,
             v_sense,
             extension_flags,
+            ..
         } = &procedural.definition
         else {
             panic!("offset definition");

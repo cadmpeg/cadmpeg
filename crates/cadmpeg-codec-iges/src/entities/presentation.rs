@@ -70,6 +70,7 @@ fn appearance(ir: &mut CadIr, id: AppearanceId, name: Option<String>, color: Col
             category: None,
             base_color: Some(color),
             properties: BTreeMap::new(),
+            textures: Vec::new(),
         });
     }
 }

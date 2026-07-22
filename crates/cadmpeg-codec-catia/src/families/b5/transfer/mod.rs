@@ -52,6 +52,7 @@ struct RevolutionPlan {
     parameter_interval: [f64; 2],
 }
 
+#[allow(clippy::large_enum_variant)]
 enum SurfaceProcedure {
     Revolution(RevolutionPlan),
     RollingBall {

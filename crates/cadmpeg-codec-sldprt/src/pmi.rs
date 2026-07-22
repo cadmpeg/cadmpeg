@@ -260,7 +260,7 @@ pub(crate) fn apply_to_parameters(
         };
         if let Some(parameter) = parameters
             .iter_mut()
-            .find(|parameter| parameter.owner == owner.id && parameter.name == name)
+            .find(|parameter| parameter.owner.as_ref() == Some(&owner.id) && parameter.name == name)
         {
             parameter.expression = expression;
             parameter.display = display;
@@ -270,13 +270,13 @@ pub(crate) fn apply_to_parameters(
         }
         let ordinal = parameters
             .iter()
-            .filter(|parameter| parameter.owner == owner.id)
+            .filter(|parameter| parameter.owner.as_ref() == Some(&owner.id))
             .map(|parameter| parameter.ordinal)
             .max()
             .map_or(0, |ordinal| ordinal.saturating_add(1));
         parameters.push(DesignParameter {
             id: ParameterId(format!("sldprt:model:parameter#pmi:{}", record.guid)),
-            owner: owner.id.clone(),
+            owner: Some(owner.id.clone()),
             ordinal,
             name: name.to_string(),
             expression,

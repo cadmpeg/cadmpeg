@@ -725,42 +725,11 @@
     }
   ],
   "observed": {
-    "shape_forms": [
-      "binary",
-      "text"
-    ],
-    "curves_2d": [
-      "circle",
-      "line",
-      "nurbs",
-      "trimmed"
-    ],
-    "curves_3d": [
-      "circle",
-      "ellipse",
-      "line",
-      "nurbs",
-      "trimmed"
-    ],
-    "surfaces": [
-      "cone",
-      "cylinder",
-      "extrusion",
-      "nurbs",
-      "plane",
-      "sphere",
-      "torus",
-      "trimmed"
-    ],
-    "topology": [
-      "compound",
-      "edge",
-      "face",
-      "shell",
-      "solid",
-      "vertex",
-      "wire"
-    ],
+    "shape_forms": ["binary", "text"],
+    "curves_2d": ["circle", "line", "nurbs", "trimmed"],
+    "curves_3d": ["circle", "ellipse", "line", "nurbs", "trimmed"],
+    "surfaces": ["cone", "cylinder", "extrusion", "nurbs", "plane", "sphere", "torus", "trimmed"],
+    "topology": ["compound", "edge", "face", "shell", "solid", "vertex", "wire"],
     "feature_definitions": [
       "chamfer",
       "datum_axis",
@@ -780,15 +749,7 @@
       "sweep",
       "tree_node"
     ],
-    "feature_operations": [
-      "combine",
-      "draft",
-      "extrude",
-      "fillet",
-      "hole",
-      "pattern",
-      "primitive"
-    ],
+    "feature_operations": ["combine", "draft", "extrude", "fillet", "hole", "pattern", "primitive"],
     "feature_branches": [
       "chamfer:edges.kind=native",
       "chamfer:flip_direction=false",
@@ -941,14 +902,8 @@
       "part",
       "persistent_joint_operands"
     ],
-    "joint_kinds": [
-      "Revolute",
-      "grounded"
-    ],
-    "document_variants": [
-      "gui",
-      "headless"
-    ],
+    "joint_kinds": ["Revolute", "grounded"],
+    "document_variants": ["gui", "headless"],
     "presentation_constructs": [
       "drawing_asset",
       "gui_state:Camera",
@@ -988,10 +943,7 @@
       "TechDraw::DrawViewPart",
       "TechDraw::DrawViewSymbol"
     ],
-    "application_constructs": [
-      "embedded_payload",
-      "inert_payload"
-    ],
+    "application_constructs": ["embedded_payload", "inert_payload"],
     "application_types": [
       "App::DocumentObjectGroup",
       "App::FeaturePython",

@@ -28,7 +28,7 @@ fn main() {
 
 fn generate_f3d_seeds() {
     let dir = Path::new("seeds/f3d_container");
-    fs::create_dir_all(dir).expect("required invariant");
+    fs::create_dir_all(dir).unwrap();
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty_zip", f3d::empty_zip()),
@@ -52,7 +52,7 @@ fn generate_f3d_seeds() {
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).expect("required invariant");
+        fs::write(dir.join(name), &data).unwrap();
         println!("  f3d/{} ({} bytes)", name, data.len());
     }
 }
@@ -63,16 +63,16 @@ mod f3d {
     pub fn empty_zip() -> Vec<u8> {
         zip::ZipWriter::new(Cursor::new(Vec::new()))
             .finish()
-            .expect("required invariant")
+            .unwrap()
             .into_inner()
     }
 
     pub fn bare_zip_with_txt() -> Vec<u8> {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-        zip.start_file("readme.txt", stored).expect("required invariant");
-        zip.write_all(b"hello").expect("required invariant");
-        zip.finish().expect("required invariant").into_inner()
+        zip.start_file("readme.txt", stored).unwrap();
+        zip.write_all(b"hello").unwrap();
+        zip.finish().unwrap().into_inner()
     }
 
     pub fn corrupt_zip_magic() -> Vec<u8> {
@@ -467,12 +467,12 @@ mod f3d {
     pub fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-        zip.start_file("Manifest.dat", stored).expect("required invariant");
-        zip.write_all(b"synthetic-manifest").expect("required invariant");
+        zip.start_file("Manifest.dat", stored).unwrap();
+        zip.write_all(b"synthetic-manifest").unwrap();
         zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
-            .expect("required invariant");
-        zip.write_all(smbh).expect("required invariant");
-        zip.finish().expect("required invariant").into_inner()
+            .unwrap();
+        zip.write_all(smbh).unwrap();
+        zip.finish().unwrap().into_inner()
     }
 
     pub fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
@@ -481,33 +481,33 @@ mod f3d {
         let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
         let folder = "FusionAssetName[Active]";
-        zip.start_file("Manifest.dat", stored).expect("required invariant");
-        zip.write_all(b"synthetic-manifest").expect("required invariant");
+        zip.start_file("Manifest.dat", stored).unwrap();
+        zip.write_all(b"synthetic-manifest").unwrap();
 
         if include_smbh {
             zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smbh"), deflated)
-                .expect("required invariant");
-            zip.write_all(&synthetic_smbh()).expect("required invariant");
+                .unwrap();
+            zip.write_all(&synthetic_smbh()).unwrap();
         }
 
         let mut smb = synthetic_smbh();
         smb.truncate(60);
         zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smb"), stored)
-            .expect("required invariant");
-        zip.write_all(&smb).expect("required invariant");
+            .unwrap();
+        zip.write_all(&smb).unwrap();
 
         zip.start_file(
             format!("{folder}/FusionDesignSegmentType1/BulkStream.dat"),
             stored,
         )
-        .expect("required invariant");
-        zip.write_all(b"design-bulk").expect("required invariant");
+        .unwrap();
+        zip.write_all(b"design-bulk").unwrap();
 
         zip.start_file(format!("{folder}/Previews/thumbnail.png"), stored)
-            .expect("required invariant");
-        zip.write_all(b"\x89PNG").expect("required invariant");
+            .unwrap();
+        zip.write_all(b"\x89PNG").unwrap();
 
-        zip.finish().expect("required invariant").into_inner()
+        zip.finish().unwrap().into_inner()
     }
 }
 
@@ -517,7 +517,7 @@ mod f3d {
 
 fn generate_sldprt_seeds() {
     let dir = Path::new("seeds/sldprt_container");
-    fs::create_dir_all(dir).expect("required invariant");
+    fs::create_dir_all(dir).unwrap();
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -534,7 +534,7 @@ fn generate_sldprt_seeds() {
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).expect("required invariant");
+        fs::write(dir.join(name), &data).unwrap();
         println!("  sldprt/{} ({} bytes)", name, data.len());
     }
 }
@@ -550,8 +550,8 @@ mod sldprt {
 
     fn raw_deflate(data: &[u8]) -> Vec<u8> {
         let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
-        enc.write_all(data).expect("required invariant");
-        enc.finish().expect("required invariant")
+        enc.write_all(data).unwrap();
+        enc.finish().unwrap()
     }
 
     fn crc32(data: &[u8]) -> u32 {
@@ -841,7 +841,7 @@ mod sldprt {
 
 fn generate_catia_seeds() {
     let dir = Path::new("seeds/catia_container");
-    fs::create_dir_all(dir).expect("required invariant");
+    fs::create_dir_all(dir).unwrap();
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -851,7 +851,7 @@ fn generate_catia_seeds() {
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).expect("required invariant");
+        fs::write(dir.join(name), &data).unwrap();
         println!("  catia/{} ({} bytes)", name, data.len());
     }
 }
@@ -968,7 +968,7 @@ mod catia {
 
 fn generate_creo_seeds() {
     let dir = Path::new("seeds/creo_container");
-    fs::create_dir_all(dir).expect("required invariant");
+    fs::create_dir_all(dir).unwrap();
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -978,7 +978,7 @@ fn generate_creo_seeds() {
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).expect("required invariant");
+        fs::write(dir.join(name), &data).unwrap();
         println!("  creo/{} ({} bytes)", name, data.len());
     }
 }
@@ -1031,7 +1031,7 @@ mod creo {
 
 fn generate_nx_seeds() {
     let dir = Path::new("seeds/nx_container");
-    fs::create_dir_all(dir).expect("required invariant");
+    fs::create_dir_all(dir).unwrap();
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -1041,7 +1041,7 @@ fn generate_nx_seeds() {
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).expect("required invariant");
+        fs::write(dir.join(name), &data).unwrap();
         println!("  nx/{} ({} bytes)", name, data.len());
     }
 }
@@ -1108,8 +1108,8 @@ mod nx {
 
     fn zlib_compress(raw: &[u8]) -> Vec<u8> {
         let mut e = ZlibEncoder::new(Vec::new(), Compression::new(1));
-        e.write_all(raw).expect("required invariant");
-        e.finish().expect("required invariant")
+        e.write_all(raw).unwrap();
+        e.finish().unwrap()
     }
 
     pub fn just_magic() -> Vec<u8> {
@@ -1165,18 +1165,19 @@ mod nx {
 fn generate_ir_seeds() {
     let minimal = cadmpeg_ir::CadIr::empty(Default::default())
         .to_canonical_json()
-        .expect("required invariant");
+        .unwrap();
     let cube = cadmpeg_ir::examples::unit_cube()
         .to_canonical_json()
-        .expect("required invariant");
+        .unwrap();
     let directed_subd_sum = cadmpeg_ir::examples::directed_subd_sum()
         .to_canonical_json()
-        .expect("required invariant");
+        .unwrap();
     let canonical = [
         ("minimal_v13.json", minimal.as_bytes()),
         ("unit_cube_v13.json", cube.as_bytes()),
         ("directed_subd_sum_v13.json", directed_subd_sum.as_bytes()),
     ];
+    let valid_v0 = minimal.replacen(r#""ir_version": "54""#, r#""ir_version": "0""#, 1);
     let current_version_field = format!(r#""ir_version": "{}""#, cadmpeg_ir::IR_VERSION);
     let valid_v0 = minimal.replacen(&current_version_field, r#""ir_version": "0""#, 1);
     assert_ne!(valid_v0, minimal, "current ir_version field must match");
@@ -1184,29 +1185,32 @@ fn generate_ir_seeds() {
     let from_json = Path::new("seeds/ir_from_json");
     replace_seed_directory(from_json);
     for (name, data) in &canonical {
-        fs::write(from_json.join(name), data).expect("required invariant");
+        fs::write(from_json.join(name), data).unwrap();
         println!("  ir/{name} ({} bytes)", data.len());
     }
-    fs::write(from_json.join("valid_v0_rejected.json"), valid_v0).expect("required invariant");
+    fs::write(from_json.join("valid_v0_rejected.json"), valid_v0).unwrap();
 
     let migrate = Path::new("seeds/ir_migrate_json");
     replace_seed_directory(migrate);
     for (name, data) in &canonical {
-        let current = std::str::from_utf8(data).expect("required invariant");
+        let legacy = std::str::from_utf8(data).unwrap().replacen(
+            r#""ir_version": "54""#,
+            r#""ir_version": "53""#,
+        let current = std::str::from_utf8(data).unwrap();
         let legacy = current.replacen(
             &current_version_field,
             &format!(r#""ir_version": "{}""#, cadmpeg_ir::PREVIOUS_IR_VERSION),
             1,
         );
         assert_ne!(legacy, current, "current ir_version field must match");
-        fs::write(migrate.join(name.replace("_v13.json", "_v12.json")), legacy).expect("required invariant");
+        fs::write(migrate.join(name.replace("_v13.json", "_v12.json")), legacy).unwrap();
     }
 
     for target in ["ir_validate", "ir_canonical_roundtrip", "step_writer"] {
         let dir = Path::new("seeds").join(target);
         replace_seed_directory(&dir);
         for (name, data) in &canonical {
-            fs::write(dir.join(name), data).expect("required invariant");
+            fs::write(dir.join(name), data).unwrap();
         }
     }
 
@@ -1215,7 +1219,7 @@ fn generate_ir_seeds() {
     for (index, (name, data)) in canonical.iter().enumerate() {
         let mut input = vec![index as u8];
         input.extend_from_slice(data);
-        fs::write(mutated.join(name), input).expect("required invariant");
+        fs::write(mutated.join(name), input).unwrap();
     }
 
     let custom = Path::new("seeds/step_writer_custom");
@@ -1223,7 +1227,7 @@ fn generate_ir_seeds() {
     for (index, (name, data)) in canonical.iter().enumerate() {
         let mut input = vec![index as u8; 8];
         input.extend_from_slice(data);
-        fs::write(custom.join(name), input).expect("required invariant");
+        fs::write(custom.join(name), input).unwrap();
     }
 
     let diff = Path::new("seeds/ir_diff");
@@ -1242,18 +1246,18 @@ fn generate_ir_seeds() {
         input.extend_from_slice(left);
         input.push(0);
         input.extend_from_slice(right);
-        fs::write(diff.join(name), input).expect("required invariant");
+        fs::write(diff.join(name), input).unwrap();
     }
 }
 
 fn replace_seed_directory(directory: &Path) {
-    fs::create_dir_all(directory).expect("required invariant");
-    for entry in fs::read_dir(directory).expect("required invariant") {
-        let path = entry.expect("required invariant").path();
+    fs::create_dir_all(directory).unwrap();
+    for entry in fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
         if path.is_dir() {
-            fs::remove_dir_all(path).expect("required invariant");
+            fs::remove_dir_all(path).unwrap();
         } else {
-            fs::remove_file(path).expect("required invariant");
+            fs::remove_file(path).unwrap();
         }
     }
 }
@@ -1280,40 +1284,40 @@ fn generate_mutated_seeds() {
         "seeds/nx_container",
     ];
     for dir in container_dirs {
-        for entry in fs::read_dir(dir).expect("required invariant") {
-            let path = entry.expect("required invariant").path();
-            let name = path.file_name().expect("required invariant").to_str().expect("required invariant");
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_str().unwrap();
             if MUTANT_SUFFIXES.iter().any(|suffix| name.ends_with(suffix)) {
-                fs::remove_file(path).expect("required invariant");
+                fs::remove_file(path).unwrap();
             }
         }
     }
 
     for dir in ["seeds/ir_from_json"] {
-        for entry in fs::read_dir(dir).expect("required invariant") {
-            let path = entry.expect("required invariant").path();
-            let name = path.file_name().expect("required invariant").to_str().expect("required invariant");
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_str().unwrap();
             if MUTANT_SUFFIXES.iter().any(|suffix| name.ends_with(suffix)) {
-                fs::remove_file(path).expect("required invariant");
+                fs::remove_file(path).unwrap();
             }
         }
         let mut entries: Vec<_> = fs::read_dir(dir)
-            .expect("required invariant")
-            .map(|e| e.expect("required invariant").path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
             .filter(|p| {
-                let name = p.file_name().expect("required invariant").to_str().expect("required invariant");
+                let name = p.file_name().unwrap().to_str().unwrap();
                 p.is_file() && !MUTANT_SUFFIXES.iter().any(|s| name.ends_with(s))
             })
             .collect();
         entries.sort();
         for path in entries {
-            let data = fs::read(&path).expect("required invariant");
+            let data = fs::read(&path).unwrap();
             // Too small to have structure past the magic; corruptions would
             // duplicate the existing bad-magic/truncation seeds.
             if data.len() < 32 {
                 continue;
             }
-            let name = path.file_name().expect("required invariant").to_str().expect("required invariant").to_string();
+            let name = path.file_name().unwrap().to_str().unwrap().to_string();
 
             let mut trunc = data.clone();
             trunc.truncate(data.len() / 2);
@@ -1330,7 +1334,7 @@ fn generate_mutated_seeds() {
 
             for (suffix, mutant) in MUTANT_SUFFIXES.iter().zip([trunc, flip, lenmax]) {
                 let out = path.with_file_name(format!("{name}{suffix}"));
-                fs::write(&out, &mutant).expect("required invariant");
+                fs::write(&out, &mutant).unwrap();
                 println!("  {} ({} bytes)", out.display(), mutant.len());
             }
         }
