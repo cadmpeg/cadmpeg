@@ -6158,7 +6158,7 @@ pub(crate) fn parse_positive_dimension_length_mm(value: &str) -> Option<f64> {
     })
 }
 
-fn parse_dimension_length_mm(value: &str) -> Option<f64> {
+pub(crate) fn parse_dimension_length_mm(value: &str) -> Option<f64> {
     parse_length_mm(value).or_else(|| {
         value
             .trim()

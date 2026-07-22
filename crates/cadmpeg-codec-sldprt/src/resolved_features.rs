@@ -847,7 +847,8 @@ mod marker_tests {
         marker_local_id, marker_local_links, marker_object_index, marker_spatial_coordinates,
         matrix_reference_plane_frame, minimal_reference_plane_frame,
         mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
+        native_scalar_matches_discrete_parameter, object_names,
+        offset_plane_reference_frame_matches, ordered_compact_line_profile,
         ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
         plane_intersection_axis_sources, principal_sketch_frame, profile_roster_construction_axis,
         reconcile_reference_plane_frame, resolve_operand_marker, resolve_operand_marker_excluding,
@@ -1265,6 +1266,54 @@ mod marker_tests {
             constraint_reference_plane_frame(&payload, root, "moRefPlane_c"),
             None
         );
+    }
+
+    #[test]
+    fn offset_plane_face_reference_owns_a_fixed_plane_frame() {
+        const CLASS: &str = "moFaceRefPlnData_c";
+        let root = 11;
+        let mut payload = vec![0xaa; root];
+        payload.extend(CLASS_MARKER);
+        payload.extend((CLASS.len() as u16).to_le_bytes());
+        payload.extend(CLASS.as_bytes());
+        let body = payload.len();
+        payload.resize(body + FIXED_REFERENCE_PLANE_FRAME_LEN, 0);
+        for (relative, value) in [(0, 0.0025_f64), (24, 1.0), (57, 1.0), (89, 1.0)] {
+            payload[body + relative..body + relative + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        payload[body + 48] = 1;
+
+        assert_eq!(
+            constraint_reference_plane_frame(&payload, root, CLASS),
+            Some((
+                Point3::new(2.5, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            ))
+        );
+    }
+
+    #[test]
+    fn offset_plane_reference_matches_parallel_frame_at_declared_distance() {
+        let reference = (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        );
+        let offset = (
+            Point3::new(0.0, 0.0, 6.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        );
+        assert!(offset_plane_reference_frame_matches(reference, offset, 6.0));
+        assert!(!offset_plane_reference_frame_matches(
+            reference, offset, 5.0
+        ));
+        assert!(!offset_plane_reference_frame_matches(
+            reference,
+            (Point3::new(1.0, 0.0, 6.0), offset.1, offset.2,),
+            6.0,
+        ));
     }
 
     #[test]
@@ -11849,6 +11898,69 @@ pub(crate) fn enrich_history_reference_planes(
                 .push((origin, normal, u_axis));
         }
     }
+    let unique_frames = candidates
+        .iter()
+        .filter_map(|(index, frames)| {
+            let mut frames = frames.clone();
+            frames.sort_by_key(reference_plane_frame_key);
+            frames.dedup();
+            let [frame] = frames.as_slice() else {
+                return None;
+            };
+            Some((*index, *frame))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut frames_by_source = histories
+        .iter()
+        .enumerate()
+        .flat_map(|(history_index, history)| {
+            history
+                .features
+                .iter()
+                .enumerate()
+                .filter_map(move |(feature_index, feature)| {
+                    Some((
+                        feature.source_id.as_deref()?.parse::<u32>().ok()?,
+                        (history_index, feature_index),
+                        principal_sketch_frame(principal_plane(feature)?),
+                    ))
+                })
+        })
+        .collect::<Vec<_>>();
+    frames_by_source.extend(unique_frames.iter().filter_map(|(index, frame)| {
+        let feature = &histories[index.0].features[index.1];
+        Some((
+            feature.source_id.as_deref()?.parse::<u32>().ok()?,
+            *index,
+            *frame,
+        ))
+    }));
+    for (&index, &frame) in &unique_frames {
+        let feature = &histories[index.0].features[index.1];
+        if !feature.parameters.contains_key("D1") || reference_candidates.contains_key(&index) {
+            continue;
+        }
+        let Some(distance) = feature
+            .parameters
+            .get("D1")
+            .and_then(|value| crate::history::parse_dimension_length_mm(value))
+        else {
+            continue;
+        };
+        let mut sources = frames_by_source
+            .iter()
+            .filter(|(_, candidate_index, candidate)| {
+                *candidate_index != index
+                    && offset_plane_reference_frame_matches(*candidate, frame, distance)
+            })
+            .map(|(source, _, _)| *source)
+            .collect::<Vec<_>>();
+        sources.sort_unstable();
+        sources.dedup();
+        if let [source] = sources.as_slice() {
+            reference_candidates.entry(index).or_default().push(*source);
+        }
+    }
     for ((history_index, feature_index), mut sources) in reference_candidates {
         sources.sort_unstable();
         sources.dedup();
@@ -11879,6 +11991,32 @@ pub(crate) fn enrich_history_reference_planes(
             format!("{},{},{}", u_axis.x, u_axis.y, u_axis.z),
         );
     }
+}
+
+fn offset_plane_reference_frame_matches(
+    reference: (Point3, Vector3, Vector3),
+    offset: (Point3, Vector3, Vector3),
+    distance: f64,
+) -> bool {
+    let (reference_origin, reference_normal, _) = reference;
+    let (offset_origin, offset_normal, _) = offset;
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let delta = Vector3::new(
+        offset_origin.x - reference_origin.x,
+        offset_origin.y - reference_origin.y,
+        offset_origin.z - reference_origin.z,
+    );
+    let axial = dot(delta, reference_normal);
+    let tangential = Vector3::new(
+        delta.x - axial * reference_normal.x,
+        delta.y - axial * reference_normal.y,
+        delta.z - axial * reference_normal.z,
+    );
+    let tangential_length = dot(tangential, tangential).sqrt();
+    (dot(reference_normal, offset_normal).abs() - 1.0).abs() <= 1.0e-9
+        && tangential_length <= 1.0e-8
+        && (axial.abs() - distance.abs()).abs() <= 1.0e-8
 }
 
 /// Resolve sketch-block definition ownership and placement from typed object records.
@@ -12599,6 +12737,14 @@ fn constraint_reference_plane_frame(
     match class_name {
         "moConstraintPerpPlnTanOneCylinderRefplaneData_c" => {
             fixed_reference_plane_frame(payload.get(body..body + FIXED_REFERENCE_PLANE_FRAME_LEN)?)
+        }
+        "moFaceRefPlnData_c" => {
+            fixed_reference_plane_frame(payload.get(body..body + FIXED_REFERENCE_PLANE_FRAME_LEN)?)
+                .or_else(|| {
+                    minimal_reference_plane_frame(
+                        payload.get(body..body + MINIMAL_REFERENCE_PLANE_FRAME_LEN)?,
+                    )
+                })
         }
         "moConstraintPrllPlnTanOneCylinderRefplaneData_c" => minimal_reference_plane_frame(
             payload.get(body..body + MINIMAL_REFERENCE_PLANE_FRAME_LEN)?,
