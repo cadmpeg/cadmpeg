@@ -888,7 +888,7 @@ pub(crate) fn resolved_edge_candidate_intersection<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
-    resolved_edge_candidate_intersection_with_extra_proof(selector_contexts, shared_edge_sets, None)
+    resolved_edge_candidate_intersection_with_extra_proofs(selector_contexts, shared_edge_sets, [])
 }
 
 pub(crate) fn resolved_edge_candidate_intersection_with_deleted_proofs<'a>(
@@ -904,18 +904,6 @@ pub(crate) fn resolved_edge_candidate_intersection_with_deleted_proofs<'a>(
             unique_deleted_triplet_candidate(selector_contexts, deleted_boundary_edges),
             deleted_reference,
         ],
-    )
-}
-
-fn resolved_edge_candidate_intersection_with_extra_proof<'a>(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
-    extra_proof: Option<i64>,
-) -> Option<i64> {
-    resolved_edge_candidate_intersection_with_extra_proofs(
-        selector_contexts,
-        shared_edge_sets,
-        [extra_proof],
     )
 }
 
