@@ -60,7 +60,6 @@ pub mod native;
 pub(crate) mod nurbs;
 pub mod object_graph;
 pub(crate) mod solve;
-pub mod topology;
 pub mod value_block;
 pub mod variant;
 pub(crate) mod wire;

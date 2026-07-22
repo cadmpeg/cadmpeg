@@ -37,9 +37,10 @@ use cadmpeg_ir::SourceFidelity;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::container::{self, ContainerScan};
+use crate::families::standard::{fbb, topology};
 use crate::native::{cgm_source, CatiaNative};
 use crate::solve::UnionFind;
-use crate::topology;
+use crate::solve::{mesh_quotient, missing_edge};
 use crate::variant::Variant;
 
 /// Decodes a `.CATPart` reader into an IR document and decode report.
@@ -5356,14 +5357,14 @@ fn emit_standard_extrusion_definition(
 
 fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
     let brep = scan.brep.as_ref()?;
-    let points = topology::standard_vertex_points(brep)
+    let points = fbb::standard_vertex_points(brep)
         .unwrap_or_default()
         .into_iter()
         .map(|[x, y, z]| Point3::new(x, y, z))
         .collect::<Vec<_>>();
     let vertex_roster =
         crate::families::standard::records::standard_vertex_roster(&scan.data, points.len());
-    let face_count = topology::standard_face_count(brep).unwrap_or_default();
+    let face_count = fbb::standard_face_count(brep).unwrap_or_default();
     let records = crate::families::standard::records::standard_surface_records(brep, face_count)
         .unwrap_or_else(|| {
             crate::families::standard::records::surface_prefixes(brep)
@@ -5403,7 +5404,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
             )
         })
         .count();
-    let face_frame_vectors = topology::standard_face_frame_vectors(brep);
+    let face_frame_vectors = fbb::standard_face_frame_vectors(brep);
     let curve_supports =
         crate::families::standard::records::standard_curve_supports(brep, face_count);
     let curved_surfaces = records
@@ -6032,7 +6033,7 @@ fn attach_standard_faces(
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
 ) {
-    let face_count = topology::standard_face_count(brep).unwrap_or_default();
+    let face_count = fbb::standard_face_count(brep).unwrap_or_default();
     if face_count == 0 || face_count != bindings.len() {
         return;
     }
@@ -6322,7 +6323,8 @@ fn attach_standard_topology(
         .iter()
         .map(|support| support.faces)
         .collect::<Vec<_>>();
-    let Some(mut edge_faces) = topology::resolve_standard_edge_faces(brep, &serialized_edge_faces)
+    let Some(mut edge_faces) =
+        missing_edge::resolve_standard_edge_faces(brep, &serialized_edge_faces)
     else {
         return false;
     };
@@ -6503,7 +6505,7 @@ fn attach_standard_topology(
     let graph_propagated_endpoint_pairs = match native_endpoint_evidence.as_ref() {
         Some(pairs) => {
             let Some(propagated) =
-                topology::propagate_partial_edge_port_points(&native_port_options, pairs)
+                missing_edge::propagate_partial_edge_port_points(&native_port_options, pairs)
             else {
                 return false;
             };
@@ -6556,11 +6558,11 @@ fn attach_standard_topology(
             allowed_faces[edge].retain(|face| {
                 let mut trial = edge_faces.clone();
                 trial[edge][1] = *face;
-                topology::face_endpoint_candidates_close(&trial, options, *face)
+                missing_edge::face_endpoint_candidates_close(&trial, options, *face)
             });
         }
         if let Some(completed) =
-            topology::resolve_standard_duplicate_edge_faces(brep, &edge_faces, &allowed_faces)
+            missing_edge::resolve_standard_duplicate_edge_faces(brep, &edge_faces, &allowed_faces)
         {
             edge_faces = completed;
             for (edge, (support, faces)) in supports.iter_mut().zip(&edge_faces).enumerate() {
@@ -6640,7 +6642,7 @@ fn attach_standard_topology(
                 .collect::<Vec<_>>();
             let mut changed = false;
             if let Some(placement_domains) =
-                topology::standard_mesh_placement_endpoint_pairs(brep, &edge_faces, &seeds)
+                missing_edge::standard_mesh_placement_endpoint_pairs(brep, &edge_faces, &seeds)
             {
                 for (edge, domain) in placement_domains.into_iter().enumerate() {
                     if domain.is_empty() {
@@ -6651,9 +6653,9 @@ fn attach_standard_topology(
                         options[edge] = domain;
                     } else {
                         options[edge].retain(|pair| {
-                            domain
-                                .iter()
-                                .any(|candidate| topology::same_unordered_pair(*pair, *candidate))
+                            domain.iter().any(|candidate| {
+                                missing_edge::same_unordered_pair(*pair, *candidate)
+                            })
                         });
                     }
                     changed |= options[edge] != previous;
@@ -6663,7 +6665,11 @@ fn attach_standard_topology(
                 .iter()
                 .all(|domain| !domain.is_empty())
                 .then(|| {
-                    topology::standard_mesh_prune_endpoint_candidates(brep, &edge_faces, options)
+                    missing_edge::standard_mesh_prune_endpoint_candidates(
+                        brep,
+                        &edge_faces,
+                        options,
+                    )
                 })
                 .flatten()
             {
@@ -6673,9 +6679,9 @@ fn attach_standard_topology(
                         options[edge] = domain;
                     } else {
                         options[edge].retain(|pair| {
-                            domain
-                                .iter()
-                                .any(|candidate| topology::same_unordered_pair(*pair, *candidate))
+                            domain.iter().any(|candidate| {
+                                missing_edge::same_unordered_pair(*pair, *candidate)
+                            })
                         });
                     }
                     changed |= options[edge] != previous;
@@ -6710,7 +6716,7 @@ fn attach_standard_topology(
                         .map(|[pair]| pair)
                 })
                 .collect::<Vec<_>>();
-            let propagated = topology::propagate_edge_port_points(ports, &seeds)?;
+            let propagated = missing_edge::propagate_edge_port_points(ports, &seeds)?;
             if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
                 return Some(complete);
             }
@@ -6723,12 +6729,12 @@ fn attach_standard_topology(
                     .len()
                     .checked_mul(choice_count)
                     .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK))
-            .then(|| topology::bind_edge_port_candidates(ports, options))?
+            .then(|| missing_edge::bind_edge_port_candidates(ports, options))?
         })
     });
     let propagated_endpoint_pairs = endpoint_options
         .as_ref()
-        .zip(topology::standard_edge_port_identities(brep))
+        .zip(missing_edge::standard_edge_port_identities(brep))
         .and_then(|(options, ports)| {
             let pairs = options
                 .iter()
@@ -6738,7 +6744,7 @@ fn attach_standard_topology(
                         .map(|pair| pair[0])
                 })
                 .collect::<Vec<_>>();
-            topology::propagate_edge_port_points(&ports, &pairs)
+            missing_edge::propagate_edge_port_points(&ports, &pairs)
         })
         .zip(endpoint_options.as_ref())
         .map(|(propagated, options)| {
@@ -6756,7 +6762,7 @@ fn attach_standard_topology(
         });
     let mesh_propagated_endpoint_pairs = endpoint_options
         .as_ref()
-        .zip(topology::standard_mesh_edge_ports(brep))
+        .zip(missing_edge::standard_mesh_edge_ports(brep))
         .and_then(|(options, ports)| {
             let pairs = options
                 .iter()
@@ -6766,7 +6772,7 @@ fn attach_standard_topology(
                         .map(|pair| pair[0])
                 })
                 .collect::<Vec<_>>();
-            topology::propagate_edge_port_points(&ports, &pairs)
+            missing_edge::propagate_edge_port_points(&ports, &pairs)
         });
     let propagated_endpoint_pairs = combine_propagated_endpoint_pairs(
         propagated_endpoint_pairs,
@@ -6786,9 +6792,9 @@ fn attach_standard_topology(
     });
     if let (Some(options), Some(ports)) = (
         constrained_endpoint_options.as_mut(),
-        topology::standard_mesh_edge_ports(brep),
+        missing_edge::standard_mesh_edge_ports(brep),
     ) {
-        if let Some(pruned) = topology::prune_edge_candidates_by_port_domains(&ports, options) {
+        if let Some(pruned) = fbb::prune_edge_candidates_by_port_domains(&ports, options) {
             *options = pruned;
         }
     }
@@ -6798,7 +6804,7 @@ fn attach_standard_topology(
         let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
         include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
     }
-    let mesh_bound = topology::parse_standard(brep)
+    let mesh_bound = fbb::parse_standard(brep)
         .or_else(|| topology::parse_fbb_with_native_vertices(brep, native_ports.as_ref()?))
         .and_then(|topology| {
             let endpoint_pairs = resolved_endpoint_pairs
@@ -6817,7 +6823,7 @@ fn attach_standard_topology(
                             Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
                         })
                         .collect::<Option<Vec<_>>>()?;
-                    topology::bind_edge_port_candidates(
+                    missing_edge::bind_edge_port_candidates(
                         &ports,
                         constrained_endpoint_options.as_ref()?,
                     )
@@ -6836,7 +6842,7 @@ fn attach_standard_topology(
             | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
         })
         .collect();
-    let motif_topology = topology::parse_standard_motif(brep, &edge_faces, &circle_anchors);
+    let motif_topology = fbb::parse_standard_motif(brep, &edge_faces, &circle_anchors);
     let circle_constraint_edges = supports
         .iter()
         .enumerate()
@@ -6852,7 +6858,7 @@ fn attach_standard_topology(
     let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
     } else if let Some(topology) = native_endpoint_pairs.as_ref().and_then(|pairs| {
-        topology::parse_standard_endpoints_with_edge_classes(
+        fbb::parse_standard_endpoints_with_edge_classes(
             brep,
             &edge_faces,
             pairs,
@@ -6862,7 +6868,7 @@ fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
-        topology::parse_standard_mesh_incidence_candidates(
+        mesh_quotient::parse_standard_mesh_incidence_candidates(
             brep,
             &edge_faces,
             options,
@@ -6879,20 +6885,17 @@ fn attach_standard_topology(
                 )
             },
         )
-        .or_else(|| topology::parse_standard_mesh_endpoint_candidates(brep, &edge_faces, options))
+        .or_else(|| {
+            mesh_quotient::parse_standard_mesh_endpoint_candidates(brep, &edge_faces, options)
+        })
     }) {
         bound
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
-        topology::standard_mesh_edge_ports(brep)
+        missing_edge::standard_mesh_edge_ports(brep)
             .and_then(|ports| {
-                topology::parse_standard_port_endpoint_candidates(
-                    brep,
-                    &edge_faces,
-                    options,
-                    &ports,
-                )
+                fbb::parse_standard_port_endpoint_candidates(brep, &edge_faces, options, &ports)
             })
-            .or_else(|| topology::parse_standard_endpoint_candidates(brep, &edge_faces, options))
+            .or_else(|| fbb::parse_standard_endpoint_candidates(brep, &edge_faces, options))
     }) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)

@@ -150,7 +150,7 @@ fn standard_quad_topology_stream() -> Vec<u8> {
 
 #[test]
 fn standard_topology_recovers_a_quad_boundary_and_port_vertices() {
-    let topology = crate::topology::parse_standard(&standard_quad_topology_stream())
+    let topology = crate::families::standard::fbb::parse_standard(&standard_quad_topology_stream())
         .expect("valid standard topology");
 
     assert_eq!(topology.face_count(), 1);
@@ -179,7 +179,7 @@ fn standard_counted_vertex_table_excludes_incidental_markers() {
     bytes.extend_from_slice(&le_f32(30.0));
 
     assert_eq!(
-        crate::topology::standard_vertex_points(&bytes)
+        crate::families::standard::fbb::standard_vertex_points(&bytes)
             .unwrap()
             .len(),
         4
@@ -264,7 +264,7 @@ fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
         ],
     );
 
-    let topology = crate::topology::parse_standard(&bytes).expect("two edge tables");
+    let topology = crate::families::standard::fbb::parse_standard(&bytes).expect("two edge tables");
     assert_eq!(
         topology
             .edge_rows()
@@ -274,7 +274,7 @@ fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
         vec![1, 1, 2, 2]
     );
     assert_eq!(
-        crate::topology::standard_edge_rows(&bytes)
+        crate::solve::missing_edge::standard_edge_rows(&bytes)
             .expect("edge rows")
             .iter()
             .map(|row| row.kind)
@@ -299,9 +299,10 @@ fn standard_mesh_ports_bridge_table_local_endpoint_names() {
         ],
     );
 
-    let ports = crate::topology::standard_mesh_edge_ports(&bytes).expect("mesh port collapse");
-    let table_ports =
-        crate::topology::standard_edge_port_identities(&bytes).expect("table-local ports");
+    let ports =
+        crate::solve::missing_edge::standard_mesh_edge_ports(&bytes).expect("mesh port collapse");
+    let table_ports = crate::solve::missing_edge::standard_edge_port_identities(&bytes)
+        .expect("table-local ports");
     assert_ne!(table_ports[1][1], table_ports[2][0]);
     assert_eq!(
         table_ports
@@ -327,8 +328,9 @@ fn standard_mesh_ports_bridge_table_local_endpoint_names() {
 
 #[test]
 fn standard_mesh_ports_are_occurrence_components_not_coordinate_indices() {
-    let ports = crate::topology::standard_mesh_edge_ports(&standard_quad_topology_stream())
-        .expect("mesh endpoint components");
+    let ports =
+        crate::solve::missing_edge::standard_mesh_edge_ports(&standard_quad_topology_stream())
+            .expect("mesh endpoint components");
     assert_eq!(ports.len(), 4);
     assert_eq!(
         ports
@@ -342,7 +344,7 @@ fn standard_mesh_ports_are_occurrence_components_not_coordinate_indices() {
 
 #[test]
 fn standard_mesh_coverage_reports_exact_matched_partition() {
-    let coverage = crate::topology::standard_mesh_face_coverage(
+    let coverage = crate::solve::missing_edge::standard_mesh_face_coverage(
         &standard_quad_topology_stream(),
         &[[0, 0]; 4],
     )
@@ -360,18 +362,24 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     let first_row = header + 3;
     bytes[first_row + 1] = 2;
     bytes.drain(first_row + 4..first_row + 6);
-    let coverage =
-        crate::topology::standard_mesh_face_coverage(&bytes, &[[0, 0]; 4]).expect("one gap");
+    let coverage = crate::solve::missing_edge::standard_mesh_face_coverage(&bytes, &[[0, 0]; 4])
+        .expect("one gap");
     assert_eq!(coverage[0].missing_edges, [0]);
     assert_eq!(coverage[0].gaps.len(), 1);
     assert_eq!(coverage[0].gaps[0].length, 2);
-    let placements = crate::topology::standard_mesh_missing_edge_placements(&bytes, &[[0, 0]; 4])
-        .expect("complete missing-edge placement domain");
+    let placements =
+        crate::solve::missing_edge::standard_mesh_missing_edge_placements(&bytes, &[[0, 0]; 4])
+            .expect("complete missing-edge placement domain");
     assert_eq!(placements[0].len(), 1);
     assert_eq!(placements[0][0].edge, 0);
     assert_eq!(placements[0][0].segment_count, 2);
-    let assignments = crate::topology::standard_mesh_missing_edge_assignments(&bytes, &[[0, 0]; 4])
-        .expect("complete missing-edge assignments");
+    let assignments = crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+        &bytes,
+        &[[0, 0]; 4],
+        None,
+        false,
+    )
+    .expect("complete missing-edge assignments");
     assert_eq!(assignments[0], [placements[0].clone()]);
     let mut local_ports = bytes.clone();
     let first_row = local_ports
@@ -381,11 +389,17 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     local_ports[first_row + 2..first_row + 4].copy_from_slice(&200u16.to_be_bytes());
     local_ports[first_row + 4..first_row + 6].copy_from_slice(&201u16.to_be_bytes());
     assert!(
-        crate::topology::standard_mesh_missing_edge_assignments(&local_ports, &[[0, 0]; 4])
-            .is_some()
+        crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+            &local_ports,
+            &[[0, 0]; 4],
+            None,
+            false
+        )
+        .is_some()
     );
-    let boundaries = crate::topology::standard_mesh_boundary_assignments(&bytes, &[[0, 0]; 4])
-        .expect("complete ordered boundary assignments");
+    let boundaries =
+        crate::solve::missing_edge::standard_mesh_boundary_assignments(&bytes, &[[0, 0]; 4], None)
+            .expect("complete ordered boundary assignments");
     assert_eq!(boundaries[0].len(), 1);
     assert_eq!(boundaries[0][0].boundaries.len(), 1);
     assert_eq!(
@@ -400,7 +414,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             (3, Some(false))
         ]
     );
-    let selected = crate::topology::parse_standard_mesh_selection(
+    let selected = crate::solve::missing_edge::parse_standard_mesh_selection(
         &bytes,
         &[[0, 0]; 4],
         &[0],
@@ -412,12 +426,13 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
         selected.edge_vertices().expect("selected edge vertices"),
         [[0, 1], [1, 2], [2, 3], [3, 0]]
     );
-    let (searched, point_assignment) = crate::topology::parse_standard_mesh_endpoint_candidates(
-        &bytes,
-        &[[0, 0]; 4],
-        &[Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
-    )
-    .expect("abstract mesh quotient search");
+    let (searched, point_assignment) =
+        crate::solve::mesh_quotient::parse_standard_mesh_endpoint_candidates(
+            &bytes,
+            &[[0, 0]; 4],
+            &[Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
+        )
+        .expect("abstract mesh quotient search");
     assert_eq!(searched.logical_vertex_count(), 4);
     assert_eq!(
         searched
@@ -432,7 +447,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             .collect::<Vec<_>>(),
         [[0, 1], [1, 2], [2, 3], [0, 3]]
     );
-    let cycle_domains = crate::topology::standard_mesh_prune_endpoint_candidates(
+    let cycle_domains = crate::solve::missing_edge::standard_mesh_prune_endpoint_candidates(
         &bytes,
         &[[0, 0]; 4],
         &[
@@ -444,41 +459,44 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     )
     .expect("ordered boundary endpoint domains");
     assert_eq!(cycle_domains[0], [[0, 1]]);
-    let inferred_cycle_domains = crate::topology::standard_mesh_prune_endpoint_candidates(
-        &bytes,
-        &[[0, 0]; 4],
-        &[Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
-    )
-    .expect("endpoint domain inferred from ordered neighbors");
+    let inferred_cycle_domains =
+        crate::solve::missing_edge::standard_mesh_prune_endpoint_candidates(
+            &bytes,
+            &[[0, 0]; 4],
+            &[Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
+        )
+        .expect("endpoint domain inferred from ordered neighbors");
     assert_eq!(inferred_cycle_domains[0], [[0, 1]]);
-    let endpoint_domains = crate::topology::standard_mesh_placement_endpoint_pairs(
+    let endpoint_domains = crate::solve::missing_edge::standard_mesh_placement_endpoint_pairs(
         &bytes,
         &[[0, 0]; 4],
         &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
     )
     .expect("gap-corner endpoint domains");
     assert_eq!(endpoint_domains[0], [[0, 1]]);
-    let endpoint_assignments = crate::topology::standard_mesh_missing_edge_endpoint_assignments(
-        &bytes,
-        &[[0, 0]; 4],
-        &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
-    )
-    .expect("correlated gap-corner endpoint assignments");
+    let endpoint_assignments =
+        crate::solve::missing_edge::standard_mesh_missing_edge_endpoint_assignments(
+            &bytes,
+            &[[0, 0]; 4],
+            &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
+        )
+        .expect("correlated gap-corner endpoint assignments");
     assert_eq!(endpoint_assignments[0].len(), 1);
     assert_eq!(endpoint_assignments[0][0].len(), 1);
     assert_eq!(
         endpoint_assignments[0][0][0].endpoint_pairs,
         Some(vec![[0, 1]])
     );
-    let pruned = crate::topology::standard_mesh_pruned_missing_edge_endpoint_assignments(
-        &bytes,
-        &[[0, 0]; 4],
-        &[Some([1, 0]), Some([1, 2]), Some([2, 3]), Some([3, 0])],
-    )
-    .expect("endpoint-compatible face assignment");
+    let pruned =
+        crate::solve::missing_edge::standard_mesh_pruned_missing_edge_endpoint_assignments(
+            &bytes,
+            &[[0, 0]; 4],
+            &[Some([1, 0]), Some([1, 2]), Some([2, 3]), Some([3, 0])],
+        )
+        .expect("endpoint-compatible face assignment");
     assert_eq!(pruned[0][0][0].endpoint_pairs, Some(vec![[0, 1]]));
     assert!(
-        crate::topology::standard_mesh_pruned_missing_edge_endpoint_assignments(
+        crate::solve::missing_edge::standard_mesh_pruned_missing_edge_endpoint_assignments(
             &bytes,
             &[[0, 0]; 4],
             &[Some([0, 2]), Some([1, 2]), Some([2, 3]), Some([3, 0]),],
@@ -498,20 +516,26 @@ fn unmatched_standard_row_arity_does_not_fix_trim_span() {
     bytes[first_row + 1] = 4;
     bytes.splice(first_row + 6..first_row + 6, 0x7ffe_u16.to_be_bytes());
 
-    let coverage = crate::topology::standard_mesh_face_coverage(&bytes, &[[0, 0]; 4])
+    let coverage = crate::solve::missing_edge::standard_mesh_face_coverage(&bytes, &[[0, 0]; 4])
         .expect("unmatched row coverage");
     assert_eq!(coverage[0].missing_edges, [0]);
     assert_eq!(coverage[0].gaps[0].length, 2);
-    let assignments = crate::topology::standard_mesh_missing_edge_assignments(&bytes, &[[0, 0]; 4])
-        .expect("unmatched curve samples do not determine trim span");
+    let assignments = crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+        &bytes,
+        &[[0, 0]; 4],
+        None,
+        false,
+    )
+    .expect("unmatched curve samples do not determine trim span");
     assert_eq!(assignments[0].len(), 1);
     assert_eq!(assignments[0][0][0].segment_count, 2);
 }
 
 #[test]
 fn standard_mesh_runs_include_flanking_segments() {
-    let runs = crate::topology::standard_mesh_edge_runs(&standard_quad_topology_stream())
-        .expect("mesh edge runs");
+    let runs =
+        crate::solve::missing_edge::standard_mesh_edge_runs(&standard_quad_topology_stream())
+            .expect("mesh edge runs");
     assert_eq!(runs.len(), 4);
     assert_eq!(
         runs.iter()
@@ -568,13 +592,14 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
         }
     }
 
-    let topology = crate::topology::parse_fbb(&bytes).expect("valid FBB topology");
+    let topology =
+        crate::families::standard::topology::parse_fbb(&bytes).expect("valid FBB topology");
     assert_eq!(topology.edge_rows()[0].handles, vec![0x01_0010, 0x01_0011]);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
     assert_eq!(topology.logical_vertex_count(), 8);
     assert_eq!(topology.vertex_points().len(), 4);
-    let table_ports =
-        crate::topology::standard_edge_port_identities(&bytes).expect("scoped FBB ports");
+    let table_ports = crate::solve::missing_edge::standard_edge_port_identities(&bytes)
+        .expect("scoped FBB ports");
     assert_eq!(table_ports[0][1], table_ports[1][0]);
     assert_eq!(table_ports[1][1], table_ports[2][0]);
     assert_eq!(table_ports[2][1], table_ports[3][0]);
@@ -592,8 +617,9 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
         [102, 103],
         [103, 100],
     ];
-    let quotient = crate::topology::parse_fbb_with_native_vertices(&bytes, &native_ports)
-        .expect("native endpoint quotient");
+    let quotient =
+        crate::families::standard::topology::parse_fbb_with_native_vertices(&bytes, &native_ports)
+            .expect("native endpoint quotient");
     assert_eq!(quotient.logical_vertex_count(), 4);
     assert_eq!(
         quotient.edge_vertices().expect("edge vertices"),
@@ -614,11 +640,11 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
             .expect("coordinate binding"),
         vec![0, 1, 2, 3]
     );
-    let runs = crate::topology::standard_mesh_edge_runs(&bytes).expect("u24 edge runs");
+    let runs = crate::solve::missing_edge::standard_mesh_edge_runs(&bytes).expect("u24 edge runs");
     assert_eq!(runs.len(), 8);
     assert!(runs.iter().all(|run| run.segment_count == 1));
     assert_eq!(
-        crate::topology::standard_vertex_points(&bytes)
+        crate::families::standard::fbb::standard_vertex_points(&bytes)
             .unwrap()
             .len(),
         4
@@ -653,7 +679,8 @@ fn fbb_topology_reads_u16_mesh_and_edge_handles() {
         }
     }
 
-    let topology = crate::topology::parse_fbb(&bytes).expect("valid u16 FBB topology");
+    let topology =
+        crate::families::standard::topology::parse_fbb(&bytes).expect("valid u16 FBB topology");
     assert_eq!(topology.edge_rows()[0].handles, vec![0x1010, 0x1011]);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
@@ -671,8 +698,13 @@ fn standard_mesh_gap_assignment_does_not_merge_row_local_endpoint_names() {
         bytes.drain(row + 4..row + 6);
     }
 
-    let assignments = crate::topology::standard_mesh_missing_edge_assignments(&bytes, &[[0, 0]; 4])
-        .expect("native port-ordered full gap");
+    let assignments = crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+        &bytes,
+        &[[0, 0]; 4],
+        None,
+        false,
+    )
+    .expect("native port-ordered full gap");
     assert_eq!(assignments.len(), 1);
     assert_eq!(assignments[0].len(), 840);
     assert!(assignments[0].iter().all(|assignment| {
@@ -683,7 +715,7 @@ fn standard_mesh_gap_assignment_does_not_merge_row_local_endpoint_names() {
             .len()
             == 4
     }));
-    let (topology, points) = crate::topology::parse_standard_mesh_endpoint_candidates(
+    let (topology, points) = crate::solve::mesh_quotient::parse_standard_mesh_endpoint_candidates(
         &bytes,
         &[[0, 0]; 4],
         &[vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
@@ -706,7 +738,7 @@ fn standard_mesh_endpoint_domains_ignore_row_local_endpoint_order() {
     bytes[first_row + 2..first_row + 4].copy_from_slice(&end);
     bytes[first_row + 6..first_row + 8].copy_from_slice(&start);
 
-    let (topology, _) = crate::topology::parse_standard_mesh_endpoint_candidates(
+    let (topology, _) = crate::solve::mesh_quotient::parse_standard_mesh_endpoint_candidates(
         &bytes,
         &[[0, 0]; 4],
         &[vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
@@ -743,12 +775,13 @@ fn fbb_topology_reads_u8_mesh_and_edge_handles() {
         }
     }
 
-    let topology = crate::topology::parse_fbb(&bytes).expect("valid u8 FBB topology");
+    let topology =
+        crate::families::standard::topology::parse_fbb(&bytes).expect("valid u8 FBB topology");
     assert_eq!(topology.edge_rows()[0].handles, vec![0x10, 0x11]);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
     assert_eq!(
-        crate::topology::standard_face_frame_vectors(&bytes),
+        crate::families::standard::fbb::standard_face_frame_vectors(&bytes),
         [Some([0.0, 0.0, 1.0])]
     );
 }
@@ -775,7 +808,7 @@ fn fbb_topology_requires_one_u16_delimiter_family() {
     }
     bytes.extend_from_slice(&[0x01, 0x06, 0]);
 
-    assert!(crate::topology::parse_fbb(&bytes).is_none());
+    assert!(crate::families::standard::topology::parse_fbb(&bytes).is_none());
 }
 
 #[test]
@@ -821,7 +854,8 @@ fn standard_topology_matches_edge_interiors_and_collapses_endpoint_ports() {
         }
     }
 
-    let topology = crate::topology::parse_standard(&bytes).expect("interior-run topology");
+    let topology =
+        crate::families::standard::fbb::parse_standard(&bytes).expect("interior-run topology");
     let coedges = &topology.faces()[0].boundaries[0].coedges;
     assert_eq!(
         coedges.iter().map(|use_| use_.edge_row).collect::<Vec<_>>(),
@@ -861,7 +895,8 @@ fn standard_legacy_two_strip_packet_recovers_two_face_boundaries() {
         }
     }
 
-    let topology = crate::topology::parse_standard(&bytes).expect("legacy B=2 packet");
+    let topology =
+        crate::families::standard::fbb::parse_standard(&bytes).expect("legacy B=2 packet");
     assert_eq!(topology.faces()[0].boundaries.len(), 2);
     assert!(topology.faces()[0]
         .boundaries
@@ -895,8 +930,8 @@ fn standard_curve_support_table_recovers_leading_spline_and_widened_faces() {
 
 #[test]
 fn topology_binds_logical_vertices_from_exact_edge_endpoint_pairs() {
-    let topology =
-        crate::topology::parse_standard(&standard_quad_topology_stream()).expect("quad topology");
+    let topology = crate::families::standard::fbb::parse_standard(&standard_quad_topology_stream())
+        .expect("quad topology");
     let assignment = topology
         .bind_vertex_points(&[[0, 1], [1, 2], [2, 3], [3, 0]])
         .expect("unique point assignment");
