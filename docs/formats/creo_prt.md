@@ -477,9 +477,14 @@ scalar frame after `15` or `00 15 1c`, or two scalar frames separated by the
 literal byte `12`. In the compact-control form, one selector in `11..14`
 precedes a one-scalar first-diameter frame, another selector in `11..14`
 separates it from the seven-scalar second-diameter-and-extent frame. The
-selectors do not contribute geometry. A replay body may append one complete
-`f7 <reference-id>` after the last scalar frame; that reference does not alter
-the envelope. The diameter endpoints are distinct. Exactly one coordinate span
+selectors do not contribute geometry. In the auxiliary-control form, selector
+`19` or `32` precedes a two-scalar frame containing an auxiliary value and the
+first diameter endpoint; literal `12` separates that frame from the
+seven-scalar second-diameter-and-extent frame. The selector and auxiliary value
+do not contribute geometry. A replay body may append one complete reference
+encoded as `f7 <reference-id>` after the last scalar frame; that reference does
+not alter the envelope. The diameter endpoints are distinct. Exactly one
+coordinate span
 between the extent endpoints equals their absolute difference. That coordinate
 is radial: its midpoint is the corresponding cylinder-origin
 coordinate, its sign from the first endpoint to the second defines the

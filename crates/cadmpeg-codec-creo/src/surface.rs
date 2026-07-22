@@ -1092,7 +1092,8 @@ impl SurfaceParameterRecord {
                 let [second, a0, a1, a2, b0, b1, b2] = trailing_values.as_slice() else {
                     return None;
                 };
-                (leading.offset == 0
+                ((leading.offset == 0
+                    || (leading.offset == 1 && matches!(self.body.first(), Some(0x19 | 0x32))))
                     && self.body.get(leading_end..trailing.offset) == Some(&[0x12])
                     && frame_reaches_body_end(trailing_end))
                 .then_some(())?;
@@ -6512,6 +6513,36 @@ mod tests {
         invalid_control = compact_controls;
         invalid_control[9] = 0x15;
         assert!(record(&invalid_control).positional_cylinder_frame.is_none());
+        let prefixed_auxiliary = [
+            0x19, 0xd3, 0xae, 0x70, 0x14, 0x6d, 0xb6, 0xde, 0x2d, 0x4b, 0xc1, 0x0d, 0x60, 0xad,
+            0x2a, 0x4e, 0x12, 0x2d, 0x4f, 0x01, 0x49, 0xdf, 0x84, 0xdb, 0x36, 0x48, 0x58, 0xc0,
+            0x2d, 0x57, 0x75, 0x9c, 0xe9, 0x32, 0x3b, 0xfb, 0x48, 0x24, 0x00, 0x48, 0x57, 0x00,
+            0x2d, 0x59, 0x15, 0xbb, 0x28, 0x9e, 0x14, 0x6f, 0x48, 0x08, 0x00, 0xf7, 0x40,
+        ];
+        let prefixed_frame = record(&prefixed_auxiliary)
+            .positional_cylinder_frame
+            .expect("selector-prefixed auxiliary repeated-diameter carrier");
+        assert!((prefixed_frame.radius - 3.250_923_087_748_478).abs() < 1e-12);
+        assert_eq!(prefixed_frame.ref_direction, [0.0, -1.0, 0.0]);
+        assert!(prefixed_frame
+            .axis
+            .into_iter()
+            .zip([
+                std::f64::consts::FRAC_1_SQRT_2,
+                0.0,
+                std::f64::consts::FRAC_1_SQRT_2
+            ])
+            .all(|(actual, expected)| (actual - expected).abs() < 1e-12));
+        let mut alternate_selector = prefixed_auxiliary;
+        alternate_selector[0] = 0x32;
+        assert!(record(&alternate_selector)
+            .positional_cylinder_frame
+            .is_some());
+        let mut invalid_selector = prefixed_auxiliary;
+        invalid_selector[0] = 0x18;
+        assert!(record(&invalid_selector)
+            .positional_cylinder_frame
+            .is_none());
 
         let equal_span = record(&[
             24, 45, 47, 73, 81, 130, 169, 147, 32, 18, 45, 49, 164, 168, 193, 84, 201, 144, 47, 12,
