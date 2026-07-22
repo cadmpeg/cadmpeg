@@ -18,7 +18,7 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
     FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
-    FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleKind, Length, ParameterId,
+    FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleForm, HoleKind, Length, ParameterId,
     ParameterValue, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
     RevolutionConstruction, SketchSpace,
 };
@@ -15039,6 +15039,8 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 911 {
+        let unresolved_form =
+            stepped_hole_form(feature_id, &scan.feature_entity_tables, &scan.surface_rows);
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
@@ -15104,7 +15106,7 @@ fn schema_feature_definition(
                 HoleKind::Simple
             } else {
                 HoleKind::Unresolved {
-                    form: None,
+                    form: unresolved_form,
                     counterbore_diameter: None,
                     counterbore_depth: None,
                     countersink_diameter: None,
@@ -15800,6 +15802,67 @@ struct SimpleHoleGeometry {
     direction: [f64; 3],
     extent: Extent,
     geometry: SurfaceGeometry,
+}
+
+fn stepped_hole_form(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> Option<HoleForm> {
+    let tables = tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    let mut generated_by_source = BTreeMap::<u32, Vec<Option<crate::surface::SurfaceKind>>>::new();
+    for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
+        let source_id = entry.source_entity_id?;
+        let kind = if table.surface_ids.contains(&entry.entity_id) {
+            Some(
+                crate::surface::unique_surface_row(rows, entry.entity_id)
+                    .filter(|row| row.feature_id == feature_id)?
+                    .kind,
+            )
+        } else {
+            table
+                .non_surface_entity_ids
+                .contains(&entry.entity_id)
+                .then_some(())?;
+            None
+        };
+        generated_by_source.entry(source_id).or_default().push(kind);
+    }
+    let cylinder_sources = generated_by_source
+        .values()
+        .filter(|entries| {
+            matches!(
+                entries.as_slice(),
+                [
+                    Some(crate::surface::SurfaceKind::Cylinder),
+                    Some(crate::surface::SurfaceKind::Cylinder)
+                ]
+            )
+        })
+        .count();
+    let shoulder_sources = generated_by_source
+        .values()
+        .filter(|entries| {
+            entries.len() == 2
+                && entries
+                    .iter()
+                    .filter(|kind| **kind == Some(crate::surface::SurfaceKind::Plane))
+                    .count()
+                    == 1
+                && entries.iter().filter(|kind| kind.is_none()).count() == 1
+        })
+        .count();
+    let has_cone = generated_by_source
+        .values()
+        .flatten()
+        .any(|kind| *kind == Some(crate::surface::SurfaceKind::Cone));
+    (cylinder_sources == 2 && shoulder_sources == 1 && !has_cone).then_some(HoleForm::Counterbore)
 }
 
 fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleHoleGeometry> {
@@ -17074,6 +17137,63 @@ mod resolved_sketch_tests {
             &[table],
             &rows,
         ));
+    }
+
+    #[test]
+    fn paired_cylinder_sources_and_planar_shoulder_identify_counterbore_form() {
+        let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+            entity_id,
+            class_id: 200,
+            source_entity_id: Some(source_entity_id),
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
+        let entries = vec![
+            entry(11, 4),
+            entry(12, 4),
+            entry(13, 6),
+            entry(14, 6),
+            entry(15, 7),
+            entry(16, 7),
+        ];
+        let table = crate::feature::FeatureEntityTable {
+            feature_id: Some(9),
+            table_class_id: 29,
+            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
+            entries,
+            surface_ids: vec![11, 12, 13, 15, 16],
+            non_surface_entity_ids: vec![14],
+            offset: 0,
+        };
+        let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+            id,
+            type_byte: kind.canonical_type_byte(),
+            kind,
+            feature_id: 9,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 0,
+        };
+        let mut rows = vec![
+            row(11, crate::surface::SurfaceKind::Cylinder),
+            row(12, crate::surface::SurfaceKind::Cylinder),
+            row(13, crate::surface::SurfaceKind::Plane),
+            row(15, crate::surface::SurfaceKind::Cylinder),
+            row(16, crate::surface::SurfaceKind::Cylinder),
+        ];
+
+        assert_eq!(
+            stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+            Some(HoleForm::Counterbore)
+        );
+
+        rows[4].kind = crate::surface::SurfaceKind::Cone;
+        assert_eq!(
+            stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+            None
+        );
     }
 
     #[test]

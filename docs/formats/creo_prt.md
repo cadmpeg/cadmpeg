@@ -1891,6 +1891,15 @@ the neutral hole position, twice the square half-span is its diameter, and the
 four-entry form is a simple cylindrical hole.
 The termination plane is the flat blind bottom of that simple hole.
 
+In a class-911 table-class-29 generated table, a cylindrical stepped entry has
+two distinct source section entities that each generate exactly two
+materialized cylinder rows and one other source entity that generates one
+materialized plane row plus one rowless face use. The paired cylinder rows are
+the two patches of each cylindrical step, and the plane source is the shoulder
+between them. When the feature generates no conical surface, this structure
+selects counterbore form independently of whether both cylinder carriers and
+the counterbore dimensions are evaluable.
+
 A cylinder patch may end with two scalar coordinate pairs separated by
 `00 0c 98`, followed by orientation scalar `-1`. The pairs are opposite
 corners of an axis-normal rectangle. Two cylinder rows from the same feature
