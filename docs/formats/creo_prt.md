@@ -1281,7 +1281,10 @@ the constraint and one enables it. Higher status bits are independent solver
 state and remain in the native row. A disabled incidence does not supply point
 equations, line orientation, radius equality, relation-operand binding, or
 native-geometry role evidence. It remains an inactive neutral constraint and a
-complete native incidence row.
+complete native incidence row. Defined incidence type, flag, and locus-sense
+patterns retain their neutral constraint kind when disabled; saved coordinates
+and unresolved carrier geometry are not required to satisfy an inactive
+equation.
 
 For a two-item type-zero incidence, sense `2` selects the native first endpoint
 and sense `3` selects the native second endpoint. Sense `4` selects an arc or

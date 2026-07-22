@@ -10858,30 +10858,35 @@ fn section_skamp_same_coordinate(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
     skamp: &crate::feature::FeatureSkamp,
+    require_satisfied: bool,
 ) -> Option<(SketchLocus, SketchLocus, SketchCoordinateAxis)> {
     let [first, second] = skamp.items.as_slice() else {
         return None;
     };
     let first_locus = section_skamp_point_locus(definition, sketch, first)?;
     let second_locus = section_skamp_point_locus(definition, sketch, second)?;
-    let ([first_source, second_source], coordinate) =
-        section_skamp_same_coordinate_sources(definition, skamp)?;
+    let coordinate = section_skamp_same_coordinate_axis(skamp)?;
     let axis = [SketchCoordinateAxis::U, SketchCoordinateAxis::V][coordinate];
-    let points = resolved_section_points(definition);
-    let point = |source| {
-        Some(match source {
-            SectionPointSource::Point(point_id) => *points.get(&point_id)?,
-            SectionPointSource::Value(point) => point,
-        })
-    };
-    if let (Some(first_point), Some(second_point)) = (point(first_source), point(second_source)) {
-        let scale = first_point
-            .iter()
-            .chain(&second_point)
-            .map(|coordinate| coordinate.abs())
-            .fold(1.0, f64::max);
-        ((first_point[coordinate] - second_point[coordinate]).abs() <= 1e-9 * scale)
-            .then_some(())?;
+    if require_satisfied {
+        let ([first_source, second_source], _) =
+            section_skamp_same_coordinate_sources(definition, skamp)?;
+        let points = resolved_section_points(definition);
+        let point = |source| {
+            Some(match source {
+                SectionPointSource::Point(point_id) => *points.get(&point_id)?,
+                SectionPointSource::Value(point) => point,
+            })
+        };
+        if let (Some(first_point), Some(second_point)) = (point(first_source), point(second_source))
+        {
+            let scale = first_point
+                .iter()
+                .chain(&second_point)
+                .map(|coordinate| coordinate.abs())
+                .fold(1.0, f64::max);
+            ((first_point[coordinate] - second_point[coordinate]).abs() <= 1e-9 * scale)
+                .then_some(())?;
+        }
     }
     Some((first_locus, second_locus, axis))
 }
@@ -10893,13 +10898,7 @@ fn section_skamp_same_coordinate_sources(
     let [first, second] = skamp.items.as_slice() else {
         return None;
     };
-    let coordinate = match (skamp.kind, skamp.flags) {
-        (17, 1) => 0,
-        (17, 2) => 1,
-        (30, _) => 1,
-        (31, _) => 0,
-        _ => return None,
-    };
+    let coordinate = section_skamp_same_coordinate_axis(skamp)?;
     Some((
         [
             section_skamp_selected_point(definition, first)?,
@@ -10907,6 +10906,16 @@ fn section_skamp_same_coordinate_sources(
         ],
         coordinate,
     ))
+}
+
+fn section_skamp_same_coordinate_axis(skamp: &crate::feature::FeatureSkamp) -> Option<usize> {
+    Some(match (skamp.kind, skamp.flags) {
+        (17, 1) => 0,
+        (17, 2) => 1,
+        (30, _) => 1,
+        (31, _) => 0,
+        _ => return None,
+    })
 }
 
 fn section_skamp_is_line(
@@ -11321,9 +11330,12 @@ fn section_skamp_constraints_for_geometry(
                         }
                     }
                     (17 | 30 | 31, [_, _]) => {
-                        if let Some((first, second, axis)) =
-                            section_skamp_same_coordinate(definition, sketch, skamp)
-                        {
+                        if let Some((first, second, axis)) = section_skamp_same_coordinate(
+                            definition,
+                            sketch,
+                            skamp,
+                            section_skamp_active(skamp.status),
+                        ) {
                             SketchConstraintDefinition::SameCoordinate {
                                 first,
                                 second,
@@ -11347,9 +11359,11 @@ fn section_skamp_constraints_for_geometry(
             } else {
                 native_constraint()?
             };
-            if geometry.is_some_and(|geometry| {
-                !sketch_constraint_loci_compatible(&constraint_definition, geometry)
-            }) {
+            if section_skamp_active(skamp.status)
+                && geometry.is_some_and(|geometry| {
+                    !sketch_constraint_loci_compatible(&constraint_definition, geometry)
+                })
+            {
                 constraint_definition = native_constraint()?;
             }
             Some((
@@ -21411,7 +21425,76 @@ mod resolved_sketch_tests {
             .relations
             .as_mut()
             .expect("relations");
-        point_coincidence_relations.skamps[0].items[1].sense = 2;
+        point_coincidence_relations.skamps[0].kind = 17;
+        point_coincidence_relations.skamps[0].flags = 1;
+        point_coincidence_relations.skamps[0].status = 0;
+        point_coincidence_relations.skamps[0].items = vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 13,
+                sense: 2,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 13,
+                sense: 4,
+            },
+        ];
+        let mut unresolved_arc_geometry = incidence_geometry.clone();
+        unresolved_arc_geometry.insert(
+            SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            SketchGeometry::Native {
+                native_kind: "arc".to_string(),
+            },
+        );
+        let inactive = section_skamp_constraints_for_geometry(
+            &point_coincidence_definition,
+            &SketchId("creo:model:sketch#917".into()),
+            Some(&unresolved_arc_geometry),
+        );
+        assert_eq!(
+            inactive[0].0.definition,
+            SketchConstraintDefinition::SameCoordinate {
+                first: SketchLocus::End(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:13".to_string()
+                )),
+                second: SketchLocus::Center(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:13".to_string()
+                )),
+                axis: SketchCoordinateAxis::U,
+            }
+        );
+        assert_eq!(inactive[0].0.active, Some(false));
+        point_coincidence_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0]
+            .status = 1;
+        assert!(matches!(
+            section_skamp_constraints_for_geometry(
+                &point_coincidence_definition,
+                &SketchId("creo:model:sketch#917".into()),
+                Some(&unresolved_arc_geometry),
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
+        let point_coincidence_relations = point_coincidence_definition
+            .relations
+            .as_mut()
+            .expect("relations");
+        point_coincidence_relations.skamps[0].kind = 3;
+        point_coincidence_relations.skamps[0].flags = 0;
+        point_coincidence_relations.skamps[0].items = vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 13,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 99,
+                sense: 2,
+            },
+        ];
         point_coincidence_relations.skamps.insert(
             0,
             crate::feature::FeatureSkamp {
