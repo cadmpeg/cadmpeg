@@ -6619,6 +6619,7 @@ fn decode_types_schema_less_datum_plane_names() {
             outline\0\xf9\x02\x03"
             .to_vec();
         payload.extend_from_slice(&[0xe4, 0x0f, 0x2f, 0, 0, 0x0d, 0x0f, 0x48, 0, 0]);
+        payload.extend_from_slice(b"\xe0\x00srf_prim_ptr(plane)\0\xe3");
         let stored_name = format!("{name} id 4\0");
         let data = build_prt(
             "c",

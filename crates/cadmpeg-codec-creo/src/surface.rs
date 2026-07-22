@@ -4846,7 +4846,15 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
         let named_end = payload[row.offset..row_end]
             .windows(b"srf_prim_ptr(".len())
             .position(|window| window == b"srf_prim_ptr(")
-            .map_or(row_end, |relative| row.offset + relative);
+            .map_or(row_end, |relative| {
+                let prototype = row.offset + relative;
+                prototype
+                    .checked_sub(2)
+                    .filter(|start| {
+                        payload.get(*start..prototype) == Some(&[psb::token::NAMED_RECORD, 0x00])
+                    })
+                    .unwrap_or(prototype)
+            });
         let Some(relative) = payload[row.offset..named_end]
             .windows(NAMED_OUTLINE.len())
             .position(|window| window == NAMED_OUTLINE)
@@ -4855,11 +4863,19 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
         };
         let outline = row.offset + relative;
         let scalar_start = outline + NAMED_OUTLINE.len();
+        let field_end = named_record_boundary(
+            SurfaceKind::Plane,
+            &payload[scalar_start..named_end],
+            &cache,
+        )
+        .map_or(named_end, |relative| scalar_start + relative);
         let (slots, consumed) =
-            scalar_slots_with_tokens_and_end(&payload[scalar_start..named_end], 6, &cache);
+            scalar_slots_with_tokens_and_end(&payload[scalar_start..field_end], 6, &cache);
         if slots
             .iter()
             .any(|slot| slot.0.is_none() || slot.1.is_empty())
+            || consumed != field_end - scalar_start
+            || slots.iter().map(|slot| slot.1.len()).sum::<usize>() != consumed
         {
             continue;
         }
@@ -7186,6 +7202,14 @@ mod tests {
                 offset: 104,
             }]
         );
+    }
+
+    #[test]
+    fn named_plane_outline_rejects_bytes_between_the_wrapper_and_slots() {
+        let payload = b"srf_array\0\xf8\x01\xe0\x01geom_id\0\x07\xe0\x01geom_type\0\x22\xe0\x01feat_id\0\x04\xe0\x01orient\0\x01\xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\x00\xe0\x02outline\0\xf9\x02\x03\xfb\xe4\x18\xe4\xe4\xe4\x18\xe0\x00srf_prim_ptr(plane)\0\xe3";
+
+        assert_eq!(rows(payload).len(), 1);
+        assert!(plane_envelopes(payload).is_empty());
     }
 
     #[test]

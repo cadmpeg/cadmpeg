@@ -2335,7 +2335,8 @@ Positional `ActDatums` plane rows contain flat `envlp(2x2)` and `outline(2x3)` s
 
 Named `srf_array` plane rows store `outline\0 f9 02 03` followed by two
 model-space corner triples. The scalar lane resolves `18 <index>` through the
-section-local dictionary of distinct `46` tokens. A complete outline with
+section-local dictionary of distinct `46` tokens. The six slot encodings are
+contiguous and consume the bounded field body. A complete outline with
 exactly one equal coordinate pair defines the corresponding axis-aligned plane
 and offset.
 
