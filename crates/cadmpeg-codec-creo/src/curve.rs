@@ -2146,8 +2146,13 @@ fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Opt
         (CreoMathFunction::Near, [x, y, delta]) if *delta >= 0.0 => {
             ((x - y).abs() <= *delta) as u8 as f64
         }
-        (CreoMathFunction::Min, [x, y]) => x.min(*y),
-        (CreoMathFunction::Max, [x, y]) => x.max(*y),
+        (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [x, y]) => {
+            if extremum_selects_left(name, *x, *y)? {
+                *x
+            } else {
+                *y
+            }
+        }
         (CreoMathFunction::Log, [x]) => x.log10(),
         (CreoMathFunction::Ln, [x]) => x.ln(),
         (CreoMathFunction::Exp, [x]) => x.exp(),
@@ -2186,6 +2191,14 @@ fn relation_round(value: f64, decimal_places: f64, upward: bool) -> Option<f64> 
             scaled.floor()
         } / scale,
     )
+}
+
+fn extremum_selects_left(name: CreoMathFunction, left: f64, right: f64) -> Option<bool> {
+    match name {
+        CreoMathFunction::Min => Some(left < right),
+        CreoMathFunction::Max => Some(left > right),
+        _ => None,
+    }
 }
 
 fn evaluate_creo_relation_function(
@@ -2382,7 +2395,7 @@ fn evaluate_creo_relation_function(
             let (left_value, left_dimension) = quantity_parts_ref(left)?;
             let (right_value, right_dimension) = quantity_parts_ref(right)?;
             (left_dimension == right_dimension).then_some(())?;
-            if matches!(name, CreoMathFunction::Min) == (left_value <= right_value) {
+            if extremum_selects_left(name, left_value, right_value)? {
                 left.clone()
             } else {
                 right.clone()
@@ -3866,6 +3879,24 @@ mod tests {
                 "{expression}"
             );
         }
+        assert!(evaluate_expression("min(0,-0)", &values)
+            .expect("minimum tie")
+            .is_sign_negative());
+        assert!(evaluate_expression("max(-0,0)", &values)
+            .expect("maximum tie")
+            .is_sign_positive());
+        let Some(CurveExpressionValue::Length(minimum)) = evaluate_relation_expression(
+            "min(0[mm],-0[mm])",
+            &BTreeMap::new(),
+            RelationEvaluationContext::default(),
+        ) else {
+            panic!("dimensioned minimum tie")
+        };
+        assert!(minimum.is_sign_negative());
+        let maximum =
+            evaluate_affine_expression("max(-0,0)", &BTreeMap::new()).expect("affine maximum tie");
+        assert!(maximum.constant.is_sign_positive());
+        assert_eq!(maximum.linear, 0.0);
         assert_eq!(relation_round(f64::MAX, 8.0, true), Some(f64::MAX));
         assert_eq!(relation_round(f64::MAX, 8.0, false), Some(f64::MAX));
         assert_eq!(relation_round(-f64::MAX, 8.0, true), Some(-f64::MAX));

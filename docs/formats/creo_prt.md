@@ -2751,6 +2751,9 @@ A curve-from-equation entity stores `expression f8 <count>` followed by exactly 
 `G` is the reserved acceleration 9.8 meters per square second and is not a
 dependency.
 
+`min(x,y)` selects `x` only when `x < y`; `max(x,y)` selects `x` only when
+`x > y`. Both functions select `y` when the operands are equal.
+
 Square brackets following a numeric literal or parameter expression contain a
 unit expression. Identifiers inside the brackets are unit symbols, not relation
 dependencies. Length symbols `mm`, `cm`, `m`, `in`, `inch`, `ft`, `foot`, and
