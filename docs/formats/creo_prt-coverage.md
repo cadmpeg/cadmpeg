@@ -91,7 +91,8 @@ fixtures, claims above L1 remain unproven.
    decoded and transferred section dimensions separately and counts dimensions
    whose scalar values resolve. It likewise counts decoded, transferred, and
    evaluated active curve-equation assignments separately and partitions them
-   by active, inactive, and unresolved-conditional state.
+   by active, inactive, and unresolved-conditional state. Prohibited active
+   records and their distinct prohibited construct kinds are counted separately.
 5. Run malformed-input and fuzz gates for every admitted parser family.
 
 The current public score remains L1 claimed. Capabilities above L1 are extras

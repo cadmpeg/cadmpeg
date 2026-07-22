@@ -4949,9 +4949,16 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
         "1"
     );
     assert_eq!(
-        source.attributes["prohibited_active_curve_expression_construct_count"],
+        source.attributes["prohibited_active_curve_expression_kind_count"],
         "1"
     );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(
+            "1 active curve-equation record(s) containing prohibited datum-curve constructs"
+        )));
     assert_eq!(
         native.fields["assignments"][4]["expression"],
         "rtos(123.456,2)"

@@ -36182,7 +36182,7 @@ fn build_ir(
             .clone()
             .filter(|record| !record.prohibited_constructs.is_empty())
             .count();
-        let prohibited_curve_expression_construct_count = active_expressions
+        let prohibited_curve_expression_kind_count = active_expressions
             .clone()
             .map(|record| record.prohibited_constructs.len())
             .sum::<usize>();
@@ -36210,8 +36210,8 @@ fn build_ir(
             prohibited_curve_expression_record_count.to_string(),
         );
         source.attributes.insert(
-            "prohibited_active_curve_expression_construct_count".to_string(),
-            prohibited_curve_expression_construct_count.to_string(),
+            "prohibited_active_curve_expression_kind_count".to_string(),
+            prohibited_curve_expression_kind_count.to_string(),
         );
         for (name, activation) in [
             ("active", crate::curve::CurveExpressionActivation::Active),
@@ -38025,6 +38025,24 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         }
         None => ", configuration presence",
     };
+    let prohibited_curve_expression_record_count = scan
+        .curve_expressions
+        .iter()
+        .filter(|record| !record.backup && !record.prohibited_constructs.is_empty())
+        .count();
+    let curve_expression_transfer = if prohibited_curve_expression_record_count == 0 {
+        "Curve-equation assignments transfer with their source, dependencies, and closed numeric \
+         and string operator and deterministic function values."
+            .to_string()
+    } else {
+        format!(
+            "Admitted curve-equation assignments transfer with their source, dependencies, and \
+             closed numeric and string operator and deterministic function values. \
+             {prohibited_curve_expression_record_count} active curve-equation record(s) containing \
+             prohibited datum-curve constructs retain source and dependencies without values or \
+             derived curves."
+        )
+    };
 
     // Features, history, materials.
     losses.push(LossNote {
@@ -38032,8 +38050,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         severity: Severity::Warning,
         message: format!(
             "Named feature operations and their decoded dependency/input tables transfer as typed \
-             or native design records. Curve-equation assignments transfer with their source, \
-             dependencies, and closed numeric and string operator and deterministic function values. \
+             or native design records. {curve_expression_transfer} \
              Full neutral operation semantics\
              {configuration_gap}, graph, case-study, cabling, and cross-model relation functions, \
              materials, and display data \
