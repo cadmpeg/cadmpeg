@@ -1576,6 +1576,7 @@ fn build_geometry_ir(
         &histories,
         &lanes,
         &sketches,
+        &brep.surfaces,
     );
     crate::resolved_features::bind_pattern_inputs(&mut ir.model.features, &histories, &lanes);
     crate::resolved_features::bind_sweep_adjacent_profiles(
@@ -2262,6 +2263,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &histories,
         &lanes,
         &ir.model.sketches,
+        &ir.model.surfaces,
     );
     crate::resolved_features::bind_pattern_inputs(&mut ir.model.features, &histories, &lanes);
     crate::resolved_features::bind_sweep_adjacent_profiles(

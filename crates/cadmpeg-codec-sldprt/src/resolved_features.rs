@@ -1136,7 +1136,8 @@ mod marker_tests {
         compact_reference_plane_source, compact_single_face_reference_path_at,
         compact_single_face_reference_record_at, compact_sketch_surface_component_path_at,
         compact_surface_selection_at, complete_ordered_compact_line_profile,
-        component_path_features, component_path_preceding_feature, component_path_terminal_feature,
+        common_generated_surface_axis, component_path_features,
+        component_path_preceding_feature, component_path_terminal_feature,
         component_profile_source_at, component_reference_curve_path_at,
         consecutive_legacy_profile_line_endpoints, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_centered_line_endpoints,
@@ -1183,6 +1184,8 @@ mod marker_tests {
         FeatureInputOperandKind, SketchInputEntity, SketchInputKind, SketchInputLink,
         SketchRelationKind,
     };
+    use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchGeometry, SketchId, SketchLocus};
     use std::collections::{BTreeMap, HashSet};
@@ -7191,7 +7194,7 @@ mod marker_tests {
         };
 
         assert_eq!(
-            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
             Some(cadmpeg_ir::features::RevolutionAxis {
                 origin: Point3::new(0.0, 0.0, 19.5),
                 direction: Vector3::new(1.0, 0.0, 0.0),
@@ -7227,7 +7230,7 @@ mod marker_tests {
         lane.native_payload[292..297].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         lane.sketch_entities[3].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
         assert_eq!(
-            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
             Some(cadmpeg_ir::features::RevolutionAxis {
                 origin: Point3::new(0.0, 0.0, 19.5),
                 direction: Vector3::new(1.0, 0.0, 0.0),
@@ -7250,7 +7253,7 @@ mod marker_tests {
         lane.native_payload[284..289].copy_from_slice(SKETCH_MARKER);
         lane.sketch_entities[3].kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
         assert_eq!(
-            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
             Some(cadmpeg_ir::features::RevolutionAxis {
                 origin: Point3::new(0.0, 0.0, 19.5),
                 direction: Vector3::new(1.0, 0.0, 0.0),
@@ -7279,7 +7282,7 @@ mod marker_tests {
         lane.native_payload[312..317].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         lane.sketch_entities[3].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
         assert_eq!(
-            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
             Some(cadmpeg_ir::features::RevolutionAxis {
                 origin: Point3::new(0.0, 0.0, 19.5),
                 direction: Vector3::new(1.0, 0.0, 0.0),
@@ -7355,14 +7358,14 @@ mod marker_tests {
         };
 
         assert_eq!(
-            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
             Some(cadmpeg_ir::features::RevolutionAxis {
                 origin: Point3::new(0.0, 0.0, 19.5),
                 direction: Vector3::new(1.0, 0.0, 0.0),
             })
         );
         lane.sketch_entities[0].kind = SketchInputKind::Arc;
-        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
+        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
     }
 
     #[test]
@@ -7432,7 +7435,7 @@ mod marker_tests {
         };
 
         assert_eq!(
-            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
             Some(cadmpeg_ir::features::RevolutionAxis {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(0.0, 0.0, 1.0),
@@ -7463,7 +7466,7 @@ mod marker_tests {
         lane.sketch_entities.pop();
 
         lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
-        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
+        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
 
         lane.sketch_entities[2].kind = SketchInputKind::Point;
         lane.sketch_entities[2].coordinates_m = Some([-0.01, 0.01]);
@@ -7476,7 +7479,7 @@ mod marker_tests {
         lane.native_payload[curve + 84..curve + 92].fill(0);
         lane.native_payload[curve + 92..curve + 92 + SKETCH_MARKER.len()]
             .copy_from_slice(SKETCH_MARKER);
-        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
+        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
 
         lane.native_payload[curve..curve + LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -7502,18 +7505,18 @@ mod marker_tests {
             compact_bounded_curve_tangent(&lane.native_payload, curve),
             Some([-1.0, 0.0])
         );
-        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
+        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
 
         lane.native_payload[curve..curve + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         lane.native_payload[detail..detail + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
-        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
+        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
 
         lane.native_payload[curve..curve + LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         lane.native_payload[detail..detail + LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         lane.native_payload[curve + 17..curve + 21].copy_from_slice(&2u32.to_le_bytes());
-        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
+        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
 
         lane.native_payload[curve + 17..curve + 21].copy_from_slice(&1u32.to_le_bytes());
         lane.sketch_entities[0].coordinates_m = Some([-0.01, 0.0]);
@@ -7524,7 +7527,7 @@ mod marker_tests {
         lane.sketch_entities
             .push(marker("axis-end", 460, None, Some([0.0, 0.02])));
         assert_eq!(
-            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
             Some(cadmpeg_ir::features::RevolutionAxis {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(0.0, 0.0, 1.0),
@@ -7539,7 +7542,7 @@ mod marker_tests {
         lane.native_payload[126..130].copy_from_slice(&1u32.to_le_bytes());
         lane.native_payload[curve + 58..curve + 60].copy_from_slice(&2u16.to_le_bytes());
         assert_eq!(
-            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
             Some(cadmpeg_ir::features::RevolutionAxis {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(0.0, 0.0, 1.0),
@@ -7550,11 +7553,43 @@ mod marker_tests {
         lane.native_payload[curve + 56..curve + 58].copy_from_slice(&2u16.to_le_bytes());
         lane.native_payload[curve + 58..curve + 60].copy_from_slice(&3u16.to_le_bytes());
         assert_eq!(
-            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
             Some(cadmpeg_ir::features::RevolutionAxis {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(0.0, 0.0, 1.0),
             })
+        );
+    }
+
+    #[test]
+    fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
+        let cylinder = |id: &str, origin: Point3| Surface {
+            id: SurfaceId(id.into()),
+            geometry: SurfaceGeometry::Cylinder {
+                origin,
+                axis: Vector3::new(1.0, 0.0, 0.0),
+                ref_direction: Vector3::new(0.0, 1.0, 0.0),
+                radius: 5.0,
+            },
+            source_object: None,
+        };
+        let first = cylinder("first", Point3::new(0.0, 0.0, 0.0));
+        let second = cylinder("second", Point3::new(10.0, 0.0, 0.0));
+
+        assert_eq!(common_generated_surface_axis(&[first.clone()]), None);
+        assert_eq!(
+            common_generated_surface_axis(&[first.clone(), second]),
+            Some(cadmpeg_ir::features::RevolutionAxis {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            })
+        );
+        assert_eq!(
+            common_generated_surface_axis(&[
+                first,
+                cylinder("offset", Point3::new(0.0, 1.0, 0.0)),
+            ]),
+            None
         );
     }
 
@@ -8693,12 +8728,13 @@ pub(crate) fn enrich_history_revolution_inputs(
     }
 }
 
-/// Bind a revolution axis selected from its profile sketch's indexed construction line.
+/// Bind revolution axes from profile records or complete coaxial generated geometry.
 pub(crate) fn bind_profile_revolution_axes(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     sketches: &[Sketch],
+    surfaces: &[Surface],
 ) {
     let native_by_id = histories
         .iter()
@@ -8779,9 +8815,25 @@ pub(crate) fn bind_profile_revolution_axes(
         let Some(sketch) = sketch_by_id.get(sketch_id).copied() else {
             continue;
         };
+        let generated_axis_surfaces = if matches!(
+            construction.extent.as_ref(),
+            Some(cadmpeg_ir::features::Extent::Angle { angle })
+                if (angle.0.abs() - std::f64::consts::TAU).abs() <= 1.0e-9
+        ) {
+            surfaces
+        } else {
+            &[]
+        };
         let mut candidates = lanes
             .iter()
-            .filter_map(|lane| profile_roster_construction_axis(lane, profile_native, sketch))
+            .filter_map(|lane| {
+                profile_roster_construction_axis(
+                    lane,
+                    profile_native,
+                    sketch,
+                    generated_axis_surfaces,
+                )
+            })
             .collect::<Vec<_>>();
         candidates.sort_by_key(|axis| {
             [
@@ -8814,6 +8866,7 @@ fn profile_roster_construction_axis(
     lane: &FeatureInputLane,
     profile_native: &str,
     sketch: &Sketch,
+    surfaces: &[Surface],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
     const QUANTUM: f64 = 1.0e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
@@ -8835,25 +8888,34 @@ fn profile_roster_construction_axis(
             Some([*start, *end])
         });
     let native_endpoints = match (axes.next(), axes.next()) {
-        (Some(endpoints), None) => [
+        (Some(endpoints), None) => Some([
             endpoints[0].coordinates_m?,
             endpoints[1].coordinates_m?,
-        ],
+        ]),
         (None, None) => {
             if let Some(endpoints) =
                 profile_roster_implicit_axis_endpoints(lane, profile_native, &markers)
             {
-                [endpoints[0].coordinates_m?, endpoints[1].coordinates_m?]
+                Some([endpoints[0].coordinates_m?, endpoints[1].coordinates_m?])
             } else {
                 profile_roster_origin_axis_endpoints(lane, profile_native, &markers).or_else(
                     || profile_roster_principal_axis_endpoints(lane, profile_native, &markers),
-                )?
+                )
             }
         }
         _ => return None,
     };
-    let [native_start, native_end] = native_endpoints;
     let transform = sketch_frame_marker_transform(sketch, QUANTUM)?;
+    let Some([native_start, native_end]) = native_endpoints else {
+        return profile_generated_surface_axis(
+            lane,
+            profile_native,
+            &markers,
+            sketch,
+            &transform,
+            surfaces,
+        );
+    };
     let project = |point: [f64; 2]| {
         let point = transform.apply(quantize(
             Point2::new(point[0] * NATIVE_TO_IR, point[1] * NATIVE_TO_IR),
@@ -8881,6 +8943,172 @@ fn profile_roster_construction_axis(
     (length.is_finite() && length > 1.0e-9).then_some(cadmpeg_ir::features::RevolutionAxis {
         origin: start,
         direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+    })
+}
+
+fn profile_generated_surface_axis(
+    lane: &FeatureInputLane,
+    profile_native: &str,
+    markers: &[&SketchInputEntity],
+    sketch: &Sketch,
+    transform: &MarkerTransform,
+    surfaces: &[Surface],
+) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+    const QUANTUM: f64 = 1.0e-8;
+    const NATIVE_TO_IR: f64 = 1000.0;
+    const LINE_TOLERANCE: f64 = 1.0e-6;
+
+    let mut axis = common_generated_surface_axis(surfaces)?;
+    let relative_origin = Vector3::new(
+        axis.origin.x - sketch.origin.x,
+        axis.origin.y - sketch.origin.y,
+        axis.origin.z - sketch.origin.z,
+    );
+    if dot(axis.direction, sketch.normal).abs() > 1.0e-9
+        || dot(relative_origin, sketch.normal).abs() > LINE_TOLERANCE
+    {
+        return None;
+    }
+    let origin_offset = Vector3::new(
+        sketch.origin.x - axis.origin.x,
+        sketch.origin.y - axis.origin.y,
+        sketch.origin.z - axis.origin.z,
+    );
+    let perpendicular = cross(origin_offset, axis.direction);
+    if dot(perpendicular, perpendicular).sqrt() <= LINE_TOLERANCE {
+        axis.origin = sketch.origin;
+    } else {
+        let projection = dot(origin_offset, axis.direction);
+        axis.origin = Point3::new(
+            axis.origin.x + projection * axis.direction.x,
+            axis.origin.y + projection * axis.direction.y,
+            axis.origin.z + projection * axis.direction.z,
+        );
+    }
+    let curve_endpoints = markers
+        .iter()
+        .copied()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
+        .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
+        .filter(|endpoint| endpoint.object_index.is_some())
+        .collect::<Vec<_>>();
+    let mut endpoint_ids = HashSet::new();
+    let v_axis = cross(sketch.normal, sketch.u_axis);
+    let mut sides = Vec::new();
+    for endpoint in curve_endpoints {
+        if !endpoint_ids.insert(endpoint.id.as_str()) {
+            continue;
+        }
+        let [u, v] = endpoint.coordinates_m?;
+        let point = transform.apply(quantize(
+            Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
+            QUANTUM,
+        ))?;
+        let point = Point3::new(
+            sketch.origin.x
+                + point.0 as f64 * QUANTUM * sketch.u_axis.x
+                + point.1 as f64 * QUANTUM * v_axis.x,
+            sketch.origin.y
+                + point.0 as f64 * QUANTUM * sketch.u_axis.y
+                + point.1 as f64 * QUANTUM * v_axis.y,
+            sketch.origin.z
+                + point.0 as f64 * QUANTUM * sketch.u_axis.z
+                + point.1 as f64 * QUANTUM * v_axis.z,
+        );
+        let relative = Vector3::new(
+            point.x - axis.origin.x,
+            point.y - axis.origin.y,
+            point.z - axis.origin.z,
+        );
+        sides.push(dot(cross(axis.direction, relative), sketch.normal));
+    }
+    if sides.len() < 2
+        || !sides.iter().any(|side| side.abs() > LINE_TOLERANCE)
+        || (sides.iter().any(|side| *side > LINE_TOLERANCE)
+            && sides.iter().any(|side| *side < -LINE_TOLERANCE))
+    {
+        return None;
+    }
+    Some(axis)
+}
+
+fn common_generated_surface_axis(
+    surfaces: &[Surface],
+) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+    const DIRECTION_TOLERANCE: f64 = 1.0e-9;
+    const LINE_TOLERANCE: f64 = 1.0e-6;
+
+    let axes = surfaces
+        .iter()
+        .filter_map(|surface| match &surface.geometry {
+            SurfaceGeometry::Cylinder { origin, axis, .. }
+            | SurfaceGeometry::Cone { origin, axis, .. } => Some((*origin, *axis)),
+            SurfaceGeometry::Torus { center, axis, .. } => Some((*center, *axis)),
+            SurfaceGeometry::Plane { .. }
+            | SurfaceGeometry::Sphere { .. }
+            | SurfaceGeometry::Nurbs(_)
+            | SurfaceGeometry::Unknown { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    let [(origin, direction), ..] = axes.as_slice() else {
+        return None;
+    };
+    if axes.len() < 2 {
+        return None;
+    }
+    let length = dot(*direction, *direction).sqrt();
+    if !length.is_finite() || length <= 1.0e-9 {
+        return None;
+    }
+    let mut direction = Vector3::new(
+        direction.x / length,
+        direction.y / length,
+        direction.z / length,
+    );
+    for (candidate_origin, candidate_direction) in &axes[1..] {
+        let candidate_length = dot(*candidate_direction, *candidate_direction).sqrt();
+        if !candidate_length.is_finite() || candidate_length <= 1.0e-9 {
+            return None;
+        }
+        let candidate_direction = Vector3::new(
+            candidate_direction.x / candidate_length,
+            candidate_direction.y / candidate_length,
+            candidate_direction.z / candidate_length,
+        );
+        let origin_delta = Vector3::new(
+            candidate_origin.x - origin.x,
+            candidate_origin.y - origin.y,
+            candidate_origin.z - origin.z,
+        );
+        let direction_cross = cross(direction, candidate_direction);
+        let line_offset = cross(origin_delta, direction);
+        if dot(direction_cross, direction_cross).sqrt() > DIRECTION_TOLERANCE
+            || dot(line_offset, line_offset).sqrt() > LINE_TOLERANCE
+        {
+            return None;
+        }
+    }
+    if direction.x < -DIRECTION_TOLERANCE
+        || (direction.x.abs() <= DIRECTION_TOLERANCE
+            && direction.y < -DIRECTION_TOLERANCE)
+        || (direction.x.abs() <= DIRECTION_TOLERANCE
+            && direction.y.abs() <= DIRECTION_TOLERANCE
+            && direction.z < 0.0)
+    {
+        direction = Vector3::new(-direction.x, -direction.y, -direction.z);
+    }
+    let origin_projection = dot(
+        Vector3::new(origin.x, origin.y, origin.z),
+        direction,
+    );
+    let origin = Point3::new(
+        origin.x - origin_projection * direction.x,
+        origin.y - origin_projection * direction.y,
+        origin.z - origin_projection * direction.z,
+    );
+    Some(cadmpeg_ir::features::RevolutionAxis {
+        origin,
+        direction,
     })
 }
 
