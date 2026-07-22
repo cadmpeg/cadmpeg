@@ -3667,7 +3667,11 @@ fn encoder_writes_source_less_native_features() {
         FeatureDefinition::Pattern {
             pattern: PatternKind::Linear {
                 second: Some(cadmpeg_ir::features::LinearPatternDirection {
-                    direction: Vector3 { x: 0.0, y: 1.0, z: 0.0 },
+                    direction: Vector3 {
+                        x: 0.0,
+                        y: 1.0,
+                        z: 0.0
+                    },
                     spacing: Length(20.0),
                     count: 4,
                 }),
@@ -19909,4 +19913,120 @@ fn compact_carriers_reject_zero_direction_frames() {
 
     let cylinder = cylinder_carrier(6, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 1.0);
     assert!(parse_carrier(&cylinder, 0).is_none());
+}
+
+/// Translate every positional carrier in the model by `t`. Directions and
+/// normals are invariant under translation, so a pure translation is a rigid
+/// motion of the whole body.
+fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
+    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::Point3;
+    let shift = |p: &Point3| Point3::new(p.x + t[0], p.y + t[1], p.z + t[2]);
+    for point in &mut ir.model.points {
+        point.position = shift(&point.position);
+    }
+    for curve in &mut ir.model.curves {
+        if let CurveGeometry::Line { origin, .. } = &mut curve.geometry {
+            *origin = shift(origin);
+        }
+    }
+    for surface in &mut ir.model.surfaces {
+        if let SurfaceGeometry::Plane { origin, .. } = &mut surface.geometry {
+            *origin = shift(origin);
+        }
+    }
+}
+
+fn source_less_cube() -> cadmpeg_ir::CadIr {
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.model.bodies[0].name = None;
+    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    ir.model
+        .edges
+        .iter_mut()
+        .for_each(|edge| edge.param_range = None);
+    ir
+}
+
+fn encode_decode(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::CadIr {
+    let mut encoded = Vec::new();
+    SldprtCodec.encode(ir, &mut encoded).unwrap();
+    SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap()
+        .ir
+}
+
+fn sorted_point_positions(ir: &cadmpeg_ir::CadIr) -> Vec<[f64; 3]> {
+    let mut positions: Vec<[f64; 3]> = ir
+        .model
+        .points
+        .iter()
+        .map(|point| [point.position.x, point.position.y, point.position.z])
+        .collect();
+    positions.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    positions
+}
+
+/// Metamorphic property: a rigid translation of the input produces the same
+/// rigid translation of the decoded output (equivariance), and topology is
+/// invariant. Reader and writer cannot silently drop or reorient geometry
+/// without breaking one of these relations.
+#[test]
+fn decode_is_equivariant_under_rigid_translation() {
+    let base = source_less_cube();
+    let t = [3.5, -7.25, 11.0];
+
+    let mut moved = base.clone();
+    translate_model(&mut moved, t);
+
+    let base_out = encode_decode(&base);
+    let moved_out = encode_decode(&moved);
+
+    // Topology is invariant under a rigid motion.
+    assert_eq!(base_out.model.faces.len(), moved_out.model.faces.len());
+    assert_eq!(base_out.model.edges.len(), moved_out.model.edges.len());
+    assert_eq!(
+        base_out.model.vertices.len(),
+        moved_out.model.vertices.len()
+    );
+
+    // Point positions of the moved decode equal the base decode shifted by t.
+    let base_positions = sorted_point_positions(&base_out);
+    let moved_positions = sorted_point_positions(&moved_out);
+    assert_eq!(base_positions.len(), moved_positions.len());
+    for (b, m) in base_positions.iter().zip(&moved_positions) {
+        for axis in 0..3 {
+            assert!(
+                (b[axis] + t[axis] - m[axis]).abs() < 1e-6,
+                "axis {axis}: {b:?} + {t:?} != {m:?}"
+            );
+        }
+    }
+}
+
+/// Decode → encode → decode fixpoint: once through the writer, a source-less
+/// model reaches a fixed point whose semantic hash and topology no longer
+/// change. Paired with the value golden below so a shared reader/writer
+/// misconception cannot hide behind a self-consistent round trip.
+#[test]
+fn source_less_cube_reaches_encode_decode_fixpoint() {
+    let first = encode_decode(&source_less_cube());
+    let second = encode_decode(&first);
+
+    let first_hash = crate::decode::semantic_hash(&first);
+    let second_hash = crate::decode::semantic_hash(&second);
+    assert_eq!(first_hash, second_hash, "round trip is not a fixed point");
+
+    // Value golden: the cube's record families and counts, asserted directly.
+    assert_eq!(first.model.bodies.len(), 1);
+    assert_eq!(first.model.faces.len(), 6);
+    assert_eq!(first.model.edges.len(), 12);
+    assert_eq!(first.model.vertices.len(), 8);
+    assert_eq!(first.model.coedges.len(), 24);
+    assert_eq!(first.model.loops.len(), 6);
+    assert_eq!(
+        sorted_point_positions(&first),
+        sorted_point_positions(&second)
+    );
 }

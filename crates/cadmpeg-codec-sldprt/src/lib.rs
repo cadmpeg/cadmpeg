@@ -73,6 +73,7 @@ mod compound;
 pub mod container;
 pub mod decode;
 mod history;
+pub mod loss;
 mod metadata;
 mod native;
 pub mod parasolid;

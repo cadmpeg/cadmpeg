@@ -24,7 +24,9 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 use cadmpeg_ir::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::DecodeReport;
+
+use crate::loss::SldprtLossCode;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
@@ -140,15 +142,10 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .filter(|configuration| configuration.active)
         .count();
     if !ir.model.configurations.is_empty() && active_configurations != 1 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::ConfigActiveIdentityUnresolved.note(format!(
                 "active configuration identity is unresolved; {active_configurations} of {} configuration records are active.",
                 ir.model.configurations.len()
-            ),
-            provenance: None,
-        });
+            )));
     }
     let active_partition = ir
         .source
@@ -166,14 +163,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             })
     });
     if let Some(active_partition) = active_partition_mismatch {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::ConfigActivePartitionMismatch.note(format!(
                 "active configuration identity does not resolve to active geometry partition {active_partition}."
-            ),
-            provenance: None,
-        });
+            )));
     }
     let inferred_configurations = ir
         .model
@@ -182,14 +174,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .filter(|configuration| configuration.native_ref.is_none())
         .count();
     if inferred_configurations > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::ConfigInferredWithoutNative.note(format!(
                 "{inferred_configurations} configuration state(s) are inferred from geometry partitions without native configuration definitions."
-            ),
-            provenance: None,
-        });
+            )));
     }
     let unresolved_configuration_parameter_lanes = native.as_ref().map_or(0, |native| {
         let mut counts = BTreeMap::<&str, usize>::new();
@@ -223,14 +210,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             .sum()
     });
     if unresolved_configuration_parameter_lanes > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::ConfigLaneIdentityUnresolved.note(format!(
                 "{unresolved_configuration_parameter_lanes} configuration-scoped feature-input lane(s) have duplicate or unresolved configuration identity."
-            ),
-            provenance: None,
-        });
+            )));
     }
     let mut configuration_source_counts = BTreeMap::new();
     for source_index in ir
@@ -249,14 +231,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .copied()
         .sum::<usize>();
     if ambiguous_configuration_sources > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::ConfigAmbiguousPartition.note(format!(
                 "{ambiguous_configuration_sources} configuration record(s) share non-unique geometry partition identities."
-            ),
-            provenance: None,
-        });
+            )));
     }
     let empty_configuration_names = ir
         .model
@@ -294,14 +271,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         || ambiguous_configuration_names > 0
         || ambiguous_configuration_ordinals > 0
     {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::ConfigAmbiguousNaming.note(format!(
                 "{empty_configuration_names} configuration record(s) have empty names; {ambiguous_configuration_names} configuration record(s) share non-unique names; {ambiguous_configuration_ordinals} configuration record(s) share regeneration ordinals."
-            ),
-            provenance: None,
-        });
+            )));
     }
     let model_body_ids = ir
         .model
@@ -322,14 +294,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         })
         .count();
     if incoherent_configuration_bodies > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::ConfigIncoherentBodyRefs.note(format!(
                 "{incoherent_configuration_bodies} configuration record(s) contain missing or repeated body references."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let feature_ids = ir
@@ -373,14 +340,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     if incomplete_configuration_feature_snapshots > 0
         || incomplete_configuration_parameter_snapshots > 0
     {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::ConfigIncompleteSnapshot.note(format!(
                 "{incomplete_configuration_feature_snapshots} configuration(s) lack a complete evaluated feature snapshot; {incomplete_configuration_parameter_snapshots} configuration(s) lack a complete evaluated parameter snapshot."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let feature_names = ir
@@ -469,14 +431,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         || incoherent_parameter_dependencies > 0
         || incoherent_parameter_values > 0
     {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::ParameterUnevaluated.note(format!(
                 "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; {unevaluable_parameter_expressions} parameter expression(s) cannot regenerate a finite typed value; {invalid_parameter_dependency_order} parameter record(s) contain missing or non-preceding dependency edges; {incoherent_parameter_dependencies} parameter record(s) have dependency edges inconsistent with their expressions; {incoherent_parameter_values} dependency-driven parameter(s) disagree with their evaluated expressions."
-            ),
-            provenance: None,
-        });
+            )));
     }
     let empty_parameter_names = ir
         .model
@@ -510,14 +467,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         || duplicate_parameter_names > 0
         || duplicate_parameter_ordinals > 0
     {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::ParameterAmbiguousIdentity.note(format!(
                 "{empty_parameter_names} parameter record(s) have empty names; {duplicate_parameter_names} parameter record(s) share owner-local names; {duplicate_parameter_ordinals} parameter record(s) share owner-local ordinals."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let bound_pmi = ir
@@ -548,28 +500,18 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         })
         .count();
     if unbound_pmi_dimensions > 0 || native_pmi_subtypes > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::PmiDimensionUnbound.note(format!(
                 "{unbound_pmi_dimensions} semantic dimension record(s) are not bound to parameters; {native_pmi_subtypes} parameter dimension(s) retain native subtypes."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let incomplete_history_references = native.as_ref().map_or(0, |native| {
         crate::history::incomplete_history_reference_features(&native.feature_histories)
     });
     if incomplete_history_references > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::HistoryIncompleteReferences.note(format!(
                 "{incomplete_history_references} feature history record(s) contain duplicate identities or unresolved parent, dependency, dimension, or child references."
-            ),
-            provenance: None,
-        });
+            )));
     }
     let feature_positions = ir
         .model
@@ -642,14 +584,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .copied()
         .sum::<usize>();
     if incoherent_feature_edges > 0 || duplicate_feature_ordinals > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::FeatureIncoherentEdges.note(format!(
                 "{incoherent_feature_edges} feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; {duplicate_feature_ordinals} feature record(s) share regeneration ordinals."
-            ),
-            provenance: None,
-        });
+            )));
     }
     let parameter_owners = ir
         .model
@@ -689,14 +626,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         })
         .count();
     if incoherent_feature_content > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::FeatureIncoherentContent.note(format!(
                 "{incoherent_feature_content} feature record(s) contain missing, repeated, misowned, or structurally inconsistent source-content references."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let unresolved_output_scopes = evaluated_feature_states
@@ -711,14 +643,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         })
         .count();
     if unresolved_output_scopes > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::FeatureUnresolvedOutputScope.note(format!(
                 "{unresolved_output_scopes} feature(s) retain non-empty native output scopes that do not resolve to model bodies."
-            ),
-            provenance: None,
-        });
+            )));
     }
     let body_ids = ir
         .model
@@ -737,14 +664,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         })
         .count();
     if incoherent_feature_outputs > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::FeatureIncoherentOutputs.note(format!(
                 "{incoherent_feature_outputs} feature record(s) contain missing or repeated output body references."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let native_constraints = ir
@@ -759,14 +681,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         })
         .count();
     if native_constraints > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::SketchNativeConstraint.note(format!(
                 "{native_constraints} sketch constraint(s) retain native relation kinds and operands without complete neutral geometric semantics."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let native_sketch_geometry = ir
@@ -781,41 +698,26 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             .filter(|entity| matches!(entity.geometry, SpatialSketchGeometry::Native { .. }))
             .count();
     if native_sketch_geometry > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::SketchNativeGeometry.note(format!(
                 "{native_sketch_geometry} sketch entity geometry record(s) retain native kinds without solved neutral geometry."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let unprojected_relations = native
         .as_ref()
         .map_or(0, |native| unprojected_sketch_relation_records(ir, native));
     if unprojected_relations > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::SketchRelationUnprojected.note(format!(
                 "{unprojected_relations} native sketch relation record(s) have no projected neutral constraint."
-            ),
-            provenance: None,
-        });
+            )));
     }
     let multiply_projected_relations = native.as_ref().map_or(0, |native| {
         multiply_projected_sketch_relation_records(ir, native)
     });
     if multiply_projected_relations > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::SketchRelationMultiplyProjected.note(format!(
                 "{multiply_projected_relations} native sketch relation record(s) are claimed by multiple neutral objects."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let native_features = evaluated_feature_states
@@ -823,27 +725,17 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .filter(|state| matches!(state.definition, FeatureDefinition::Native { .. }))
         .count();
     if native_features > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::FeatureNativeKindRetained.note(format!(
                 "{native_features} feature(s) retain their native kind without a complete neutral operation definition."
-            ),
-            provenance: None,
-        });
+            )));
     }
     let unbound_feature_input_objects = native
         .as_ref()
         .map_or(0, unbound_feature_input_operation_objects);
     if unbound_feature_input_objects > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::FeatureInputObjectUnbound.note(format!(
                 "{unbound_feature_input_objects} native feature-input operation object(s) do not bind uniquely to a history feature."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let incomplete_edge_selection = |selection: &EdgeSelection| match selection {
@@ -1109,14 +1001,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         })
         .count();
     if incomplete_typed_features > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::FeatureTypedOperandIncomplete.note(format!(
                 "{incomplete_typed_features} typed feature(s) retain native or unresolved required operation operands."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let unresolved_body_modes = evaluated_feature_states
@@ -1132,14 +1019,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         })
         .count();
     if unresolved_body_modes > 0 {
-        report.losses.push(LossNote {
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: format!(
+        report.losses.push(SldprtLossCode::FeatureBodyRetentionUnresolved.note(format!(
                 "{unresolved_body_modes} body delete/keep feature(s) retain selected native body identities without a decoded retention mode."
-            ),
-            provenance: None,
-        });
+            )));
     }
 }
 
@@ -1519,7 +1401,11 @@ fn build_geometry_ir(
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::bind_extrusion_operations(&mut ir.model.features, &histories, &lanes);
-    crate::resolved_features::bind_revolution_operations(&mut ir.model.features, &histories, &lanes);
+    crate::resolved_features::bind_revolution_operations(
+        &mut ir.model.features,
+        &histories,
+        &lanes,
+    );
     crate::resolved_features::bind_sweep_operations(&mut ir.model.features, &histories, &lanes);
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
@@ -2096,40 +1982,33 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     let mut losses = Vec::new();
 
     if s.unknown_surface_faces > 0 {
-        losses.push(LossNote {
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
+        losses.push(
+            SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(format!(
                 "{} face(s) rest on a support surface this codec does not type (offset, swept, \
                  blended, intersection, or spline-on-surface); \
                  the face, its loops, and trims are emitted with an unknown-geometry surface \
                  linking to the preserved record bytes. Topology is transferred; the underlying \
                  surface shape is not.",
                 s.unknown_surface_faces
-            ),
-            provenance: None,
-        });
+            )),
+        );
     }
     if s.unknown_curve_edges > 0 {
-        losses.push(LossNote {
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
+        losses.push(
+            SldprtLossCode::GeometryEdgeSupportCurveUntyped.note(format!(
                 "{} edge(s) reference an untyped support curve; topology references an opaque \
                  curve carrier linked to the retained partition.",
                 s.unknown_curve_edges
-            ),
-            provenance: None,
-        });
+            )),
+        );
     }
     if s.synthetic_body_grouping {
-        losses.push(LossNote {
-            category: LossCategory::Topology,
-            severity: Severity::Warning,
-            message: "No body record was available; one body/region/shell hierarchy was derived."
-                .to_string(),
-            provenance: None,
-        });
+        losses.push(
+            SldprtLossCode::TopologyBodyHierarchyDerived.note(
+                "No body record was available; one body/region/shell hierarchy was derived."
+                    .to_string(),
+            ),
+        );
     }
     DecodeReport {
         format: "sldprt".to_string(),
@@ -2357,19 +2236,31 @@ fn project_design_history(
         &mut semantic_projection,
         lanes,
     );
-    crate::resolved_features::enrich_history_combine_selections(&mut semantic_projection, lanes);
+    crate::resolved_features::enrich_history_combine_selections(
+        &mut semantic_projection,
+        lanes,
+    );
     crate::resolved_features::enrich_history_sweep_paths(&mut semantic_projection, lanes);
     crate::resolved_features::enrich_history_sketch_block_references(
         &mut semantic_projection,
         lanes,
     );
     crate::resolved_features::enrich_history_parameters(&mut semantic_projection, lanes, true);
-    crate::resolved_features::enrich_history_hole_constructions(&mut semantic_projection, lanes);
-    crate::resolved_features::enrich_history_reference_planes(&mut semantic_projection, lanes);
+    crate::resolved_features::enrich_history_hole_constructions(
+        &mut semantic_projection,
+        lanes,
+    );
+    crate::resolved_features::enrich_history_reference_planes(
+        &mut semantic_projection,
+        lanes,
+    );
     crate::pmi::enrich_history_parameters(&mut semantic_projection, pmi_dimensions);
     crate::history::apply_evaluated_parameters(&mut semantic_projection);
     crate::resolved_features::enrich_history_reference_axes(&mut semantic_projection, lanes);
-    crate::resolved_features::enrich_history_revolution_inputs(&mut semantic_projection, lanes);
+    crate::resolved_features::enrich_history_revolution_inputs(
+        &mut semantic_projection,
+        lanes,
+    );
     ir.model.features = crate::history::project_features(&semantic_projection);
     crate::resolved_features::bind_pattern_inputs(
         &mut ir.model.features,
@@ -2786,44 +2677,29 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     let payload_sources = scan.blocks.len() + scan.compound_streams.len();
 
     let mut losses = vec![
-        LossNote {
-            category: LossCategory::Geometry,
-            severity: Severity::Blocking,
-            message: format!(
-                "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved \
-                 into a topology graph. {} payload source(s) were enumerated, {} carrying \
-                 Parasolid streams.",
-                payload_sources, parasolid_sources
-            ),
-            provenance: None,
-        },
-        LossNote {
-            category: LossCategory::Topology,
-            severity: Severity::Blocking,
-            message:
-                "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
-                      built for this file."
-                    .to_string(),
-            provenance: None,
-        },
-        LossNote {
-            category: LossCategory::Material,
-            severity: Severity::Warning,
-            message: "Body-bound appearances and tessellation were not transferred because no \
-                      body graph exists."
+        SldprtLossCode::GeometryParasolidNotTransferred.note(format!(
+            "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved \
+             into a topology graph. {payload_sources} payload source(s) were enumerated, \
+             {parasolid_sources} carrying Parasolid streams."
+        )),
+        SldprtLossCode::TopologyGraphNotTransferred.note(
+            "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
+             for this file."
                 .to_string(),
-            provenance: None,
-        },
+        ),
+        SldprtLossCode::MaterialMetadataNotTransferred.note(
+            "Body-bound appearances and tessellation were not transferred because no body graph \
+             exists."
+                .to_string(),
+        ),
     ];
 
     if !container::has_parasolid_body_stream(scan) {
-        losses.push(LossNote {
-            category: LossCategory::Geometry,
-            severity: Severity::Error,
-            message: "no Parasolid partition/deltas stream was located in the container"
-                .to_string(),
-            provenance: None,
-        });
+        losses.push(
+            SldprtLossCode::ContainerNoParasolidStream.note(
+                "no Parasolid partition/deltas stream was located in the container".to_string(),
+            ),
+        );
     }
 
     DecodeReport {

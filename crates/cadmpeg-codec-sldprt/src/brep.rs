@@ -25,6 +25,7 @@ mod entity;
 mod intersection;
 mod spline;
 mod subset;
+mod sweep;
 mod topology;
 
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
@@ -147,6 +148,8 @@ pub(crate) enum CarrierGeometry {
 pub(crate) struct CarrierIndex {
     curves: HashMap<u16, Carrier>,
     surfaces: HashMap<u16, Carrier>,
+    /// Swept/spun surface constructions, resolved to a patch at face binding.
+    sweeps: HashMap<u16, sweep::SweepCarrier>,
     /// Curve attrs whose geometry is a derived cache, not an exact carrier.
     derived_curves: HashSet<u16>,
 }
@@ -171,6 +174,11 @@ impl CarrierIndex {
         self.surfaces.get(&attr)
     }
 
+    /// Swept/spun surface construction carried by one attribute.
+    pub(crate) fn sweep(&self, attr: u16) -> Option<&sweep::SweepCarrier> {
+        self.sweeps.get(&attr)
+    }
+
     /// Whether a curve attr holds a derived solved cache rather than an
     /// exact carrier.
     pub(crate) fn curve_is_derived(&self, attr: u16) -> bool {
@@ -188,6 +196,9 @@ impl CarrierIndex {
         }
         for (attr, carrier) in other.surfaces {
             self.surfaces.entry(attr).or_insert(carrier);
+        }
+        for (attr, carrier) in other.sweeps {
+            self.sweeps.entry(attr).or_insert(carrier);
         }
     }
 }
@@ -363,6 +374,7 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
     for carrier in subset::scan(body, &out) {
         out.insert(carrier);
     }
+    out.sweeps = sweep::scan_sweep_carriers(body);
     for (attr, carrier) in intersection::scan_intersection_carriers(body) {
         debug_assert_eq!(attr, carrier.attr);
         if let std::collections::hash_map::Entry::Vacant(entry) = out.curves.entry(attr) {

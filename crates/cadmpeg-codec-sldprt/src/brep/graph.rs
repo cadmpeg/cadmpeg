@@ -24,6 +24,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
 
 use super::entity;
+use super::sweep::{self, SweepKind};
 use super::topology::{self, Record};
 use super::{scan_carriers, Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
@@ -240,6 +241,89 @@ struct WalkedFace {
 
 /// Follow the sibling loop-head chain of a bridge and each loop's coedge ring,
 /// returning the ordered structure with cycles guarded.
+/// Resolve a face whose `refs[4]` carrier is a swept/spun construction to a
+/// solved NURBS patch. Returns `(geometry, record offset, annotation tag,
+/// derived exactness)`. A spun surface is exact for an exact profile; a swept
+/// surface patch is derived because its ruling extent comes from the face's
+/// vertex points rather than a stored interval.
+fn resolve_sweep_surface(
+    carriers: &CarrierIndex,
+    t: &topology::Tables,
+    f: &WalkedFace,
+) -> Option<(SurfaceGeometry, usize, &'static str, bool)> {
+    let construction = carriers.sweep(f.surface_attr)?;
+    let profile = carriers.curve(construction.profile_attr)?;
+    let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &profile.geometry else {
+        return None;
+    };
+    let profile_derived = carriers.curve_is_derived(construction.profile_attr);
+    match &construction.kind {
+        SweepKind::Spun { base, axis } => Some((
+            SurfaceGeometry::Nurbs(sweep::spun_nurbs(curve, *base, *axis)?),
+            construction.offset,
+            "00_44",
+            profile_derived,
+        )),
+        SweepKind::Swept { direction } => {
+            // Ruling extent: face vertex travel bracketed by the profile poles'
+            // own travel along the sweep direction, in millimetres.
+            let project = |p: &cadmpeg_ir::math::Point3| {
+                p.x * direction.x + p.y * direction.y + p.z * direction.z
+            };
+            let mut point_lo = f64::INFINITY;
+            let mut point_hi = f64::NEG_INFINITY;
+            for (_, ring) in &f.loops {
+                for ce_attr in ring {
+                    let Some(vuse) = t
+                        .coedges
+                        .get(ce_attr)
+                        .and_then(|ce| ce.refs.get(4).copied())
+                    else {
+                        continue;
+                    };
+                    let Some([x, y, z]) = t
+                        .vertex_uses
+                        .get(&vuse)
+                        .and_then(|vu| vu.refs.get(4).copied())
+                        .and_then(|pa| t.points.get(&pa))
+                        .and_then(|p| p.xyz_m)
+                    else {
+                        continue;
+                    };
+                    let travel = x * LEN_TO_MM * direction.x
+                        + y * LEN_TO_MM * direction.y
+                        + z * LEN_TO_MM * direction.z;
+                    point_lo = point_lo.min(travel);
+                    point_hi = point_hi.max(travel);
+                }
+            }
+            if point_lo > point_hi {
+                return None;
+            }
+            let pole_travel: Vec<f64> = curve.control_points.iter().map(|p| project(p)).collect();
+            let pole_lo = pole_travel.iter().copied().fold(f64::INFINITY, f64::min);
+            let pole_hi = pole_travel
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max);
+            let v_start = point_lo - pole_hi;
+            let v_end = point_hi - pole_lo;
+            let pad = 1.0e-6_f64.max((v_end - v_start) * 1.0e-3);
+            Some((
+                SurfaceGeometry::Nurbs(sweep::swept_nurbs(
+                    curve,
+                    *direction,
+                    v_start - pad,
+                    v_end + pad,
+                )?),
+                construction.offset,
+                "00_43",
+                true,
+            ))
+        }
+    }
+}
+
 fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
     let surface_attr = *bridge.refs.get(4).unwrap_or(&0);
     let mut loops = Vec::new();
@@ -739,16 +823,32 @@ fn decode_graph(
                 });
             }
             _ => {
-                out.stats.unknown_surface_faces += 1;
-                annotations
-                    .note(id_surf(f.bridge_attr), source_stream, surf_off as u64)
-                    .tag("unknown_surface");
-                annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
-                out.surfaces.push(Surface {
-                    id: SurfaceId(id_surf(f.bridge_attr)),
-                    source_object: None,
-                    geometry: SurfaceGeometry::Unknown { record: None },
-                });
+                if let Some((geometry, offset, tag, derived)) =
+                    resolve_sweep_surface(carriers, t, f)
+                {
+                    annotations
+                        .note(id_surf(f.bridge_attr), source_stream, offset as u64)
+                        .tag(tag);
+                    if derived {
+                        annotations.exactness(id_surf(f.bridge_attr), Exactness::Derived);
+                    }
+                    out.surfaces.push(Surface {
+                        id: SurfaceId(id_surf(f.bridge_attr)),
+                        source_object: None,
+                        geometry,
+                    });
+                } else {
+                    out.stats.unknown_surface_faces += 1;
+                    annotations
+                        .note(id_surf(f.bridge_attr), source_stream, surf_off as u64)
+                        .tag("unknown_surface");
+                    annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
+                    out.surfaces.push(Surface {
+                        id: SurfaceId(id_surf(f.bridge_attr)),
+                        source_object: None,
+                        geometry: SurfaceGeometry::Unknown { record: None },
+                    });
+                }
             }
         }
         annotations
