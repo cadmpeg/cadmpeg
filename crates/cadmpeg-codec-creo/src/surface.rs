@@ -6891,6 +6891,31 @@ mod tests {
     }
 
     #[test]
+    fn decodes_negative_a7_repeated_diameter_round_envelope() {
+        let body = [
+            0x18, 0x2d, 0x45, 0x30, 0x89, 0xa0, 0x27, 0x52, 0x54, 0x12, 0x2d, 0x45, 0x7d, 0x56,
+            0x6c, 0xf4, 0x1f, 0x22, 0x2d, 0x45, 0x26, 0x66, 0x66, 0x66, 0x66, 0x66, 0x2a, 0xf4,
+            0x00, 0xa7, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80, 0x2e, 0x45, 0x66, 0x2a, 0xfc, 0x00,
+            0x5e, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80,
+        ];
+        let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        payload.extend_from_slice(&body);
+        payload.push(0xe3);
+        let frame = parameter_records(&payload)[0]
+            .positional_cylinder_frame
+            .expect("complete signed-DICT repeated-diameter carrier");
+
+        assert_eq!(frame.origin, [-42.3, 1.25, 0.0]);
+        assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
+        assert!((frame.radius - 0.3).abs() < 1.0e-12);
+        let length = 85.1_f64.hypot(0.5);
+        assert!((frame.length.unwrap() - length).abs() < 1.0e-12);
+        assert!((frame.axis[0] - 85.1 / length).abs() < 1.0e-12);
+        assert!((frame.axis[1] - 0.5 / length).abs() < 1.0e-12);
+        assert_eq!(frame.axis[2], 0.0);
+    }
+
+    #[test]
     fn decodes_held_coordinate_type24_round_envelope() {
         let record = |body: &[u8]| {
             let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];

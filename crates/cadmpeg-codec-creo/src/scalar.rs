@@ -255,6 +255,7 @@ pub fn decode_in_surface_row_lane(
     }
     if let Some(high) = match data.get(offset) {
         Some(0x73) => Some(0x3fe8),
+        Some(0xa7) => Some(0xbfd3),
         Some(0xbb) => Some(0xbfe8),
         _ => None,
     } {
@@ -1236,6 +1237,20 @@ mod tests {
             decode_in_surface_row_lane(&data, 0, &cache),
             Some((
                 f64::from_be_bytes([0xc0, 0x15, 0x5c, 0x28, 0xf5, 0xc2, 0x8f, 0x5c]),
+                7
+            ))
+        );
+        assert_eq!(decode_in_surface_row_lane(&data, 7, &cache), Some((1.0, 8)));
+    }
+
+    #[test]
+    fn surface_row_lane_decodes_negative_a7_dict_form() {
+        let cache = ScalarCache::default();
+        let data = [0xa7, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80, 0xe4];
+        assert_eq!(
+            decode_in_surface_row_lane(&data, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xbf, 0xd3, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80]),
                 7
             ))
         );
