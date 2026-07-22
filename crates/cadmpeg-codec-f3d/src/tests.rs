@@ -241,7 +241,7 @@ fn diff_reports_design_material_assignment_changes() {
         .get_mut("design_material_assignments")
         .unwrap()[0]
         .fields
-        .insert("entity_suffix".into(), serde_json::json!(123456));
+        .insert("entity_suffix".into(), serde_json::json!(123_456));
     let report = cadmpeg_ir::diff(&decoded.ir, &edited);
     let arena = report
         .per_arena
@@ -12298,15 +12298,11 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
             (
                 ScaledCompoundLoftShape::Full,
                 ScaledCompoundLoftBranch::ExtendedVector { .. }
-            ) | (
-                ScaledCompoundLoftShape::Full,
-                ScaledCompoundLoftBranch::ExtendedCurve { .. }
-            ) | (
-                ScaledCompoundLoftShape::Full,
-                ScaledCompoundLoftBranch::Direct {
-                    direction: CompoundLoftDirection::Curve { .. },
-                    ..
-                }
+                    | ScaledCompoundLoftBranch::ExtendedCurve { .. }
+                    | ScaledCompoundLoftBranch::Direct {
+                        direction: CompoundLoftDirection::Curve { .. },
+                        ..
+                    }
             )
         ));
     }

@@ -1385,7 +1385,7 @@ pub(crate) mod tests {
         else {
             panic!("typed plane carrier");
         };
-        assert_eq!(origin, Point3::new(25.4, 50.8, 76.19999999999999));
+        assert_eq!(origin, Point3::new(25.4, 50.8, 76.199_999_999_999_99));
         assert!(derived);
 
         let invalid = clipping_plane_payload(false);

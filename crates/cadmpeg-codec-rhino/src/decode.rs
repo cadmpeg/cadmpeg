@@ -1949,6 +1949,7 @@ impl<'a> DecodeContext<'a> {
                 format: "rhino".to_string(),
                 container_only: false,
                 geometry_transferred: self.geometry_transferred,
+                coverage: std::collections::BTreeMap::new(),
                 losses,
                 notes,
             },
@@ -2849,13 +2850,15 @@ fn stage_extrusion_caps(
         return false;
     }
     let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}.caps").into();
-    let region_id: cadmpeg_ir::ids::RegionId = format!("rhino:object:region#{key}.caps").into();
-    let shell_id: cadmpeg_ir::ids::ShellId = format!("rhino:object:shell#{key}.caps").into();
-    let mut face_ids = Vec::new();
+    let mut region_ids = Vec::new();
     for cap in 0..2 {
         if !extrusion.caps[cap] {
             continue;
         }
+        let region_id: cadmpeg_ir::ids::RegionId =
+            format!("rhino:object:region#{key}.cap-{cap}").into();
+        let shell_id: cadmpeg_ir::ids::ShellId =
+            format!("rhino:object:shell#{key}.cap-{cap}").into();
         let surface_id: cadmpeg_ir::ids::SurfaceId =
             format!("rhino:object:surface#{key}.cap-{cap}").into();
         let face_id: cadmpeg_ir::ids::FaceId = format!("rhino:object:face#{key}.cap-{cap}").into();
@@ -3004,39 +3007,35 @@ fn stage_extrusion_caps(
         });
         annotate_derived(annotations, &surface_id.to_string());
         annotate_derived(annotations, &face_id.to_string());
-        face_ids.push(face_id);
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id.clone(),
+            faces: vec![face_id],
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id.clone()],
+        });
+        annotate_derived(annotations, &shell_id.to_string());
+        annotate_derived(annotations, &region_id.to_string());
+        region_ids.push(region_id);
     }
-    if face_ids.is_empty() {
+    if region_ids.is_empty() {
         return false;
     }
-    ir.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id.clone(),
-        faces: face_ids,
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
-    ir.model.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id.clone()],
-    });
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Sheet,
-        regions: vec![region_id.clone()],
+        regions: region_ids,
         transform: None,
         name: association.name.clone(),
         color: association.color,
         visible: association.visible,
     });
-    for id in [
-        body_id.to_string(),
-        region_id.to_string(),
-        shell_id.to_string(),
-    ] {
-        annotate_derived(annotations, &id);
-    }
+    annotate_derived(annotations, &body_id.to_string());
     links.push(body_id.to_string());
     true
 }
@@ -5598,6 +5597,8 @@ mod tests {
                 &mut links,
             ));
             assert_eq!(ir.model.faces.len(), expected_faces);
+            assert_eq!(ir.model.regions.len(), expected_faces);
+            assert_eq!(ir.model.shells.len(), expected_faces);
             assert_eq!(ir.model.loops.len(), expected_faces * 2);
             assert_eq!(ir.model.pcurves.len(), expected_faces * 2);
             if expected_faces == 2 {

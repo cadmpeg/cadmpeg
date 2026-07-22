@@ -5672,7 +5672,8 @@ fn native_procedural_surface(
                 procedural.id
             )))
         }
-        ProceduralSurfaceDefinition::LinearSweep { .. }
+        ProceduralSurfaceDefinition::RollingBallJet { .. }
+        | ProceduralSurfaceDefinition::LinearSweep { .. }
         | ProceduralSurfaceDefinition::AxisRevolution { .. }
         | ProceduralSurfaceDefinition::ParallelOffset { .. }
         | ProceduralSurfaceDefinition::DegenerateTorus { .. }
@@ -8763,6 +8764,16 @@ fn native_intcurve_support_context(
     target: &CadIr,
     context: &cadmpeg_ir::geometry::IntcurveSupportContext,
 ) -> Result<(), CodecError> {
+    if context
+        .sides
+        .iter()
+        .any(|side| side.pcurve_parameter_range.is_some())
+    {
+        return Err(CodecError::NotImplemented(
+            "F3D intcurve writing does not encode independent support-pcurve parameter intervals"
+                .into(),
+        ));
+    }
     for side in &context.sides {
         if let Some(surface_id) = &side.surface {
             let surface = target
@@ -9009,6 +9020,12 @@ fn native_pcurve_geometry(
                 periodic: false,
             })
         }
+        PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. } => Err(CodecError::NotImplemented(
+            "F3D analytic pcurve writing is not supported".into(),
+        )),
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -9026,9 +9043,7 @@ fn native_pcurve_geometry(
             parameter_range,
             basis,
         } => native_pcurve_geometry(basis, *parameter_range),
-        PcurveGeometry::Circle { .. }
-        | PcurveGeometry::Ellipse { .. }
-        | PcurveGeometry::Parabola { .. }
+        PcurveGeometry::Parabola { .. }
         | PcurveGeometry::Hyperbola { .. }
         | PcurveGeometry::Offset { .. } => Err(CodecError::NotImplemented(
             "F3D writing of this exact pcurve family is not implemented".into(),
@@ -16335,6 +16350,41 @@ fn patch_tagged_integer_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn f3d_intcurve_writer_rejects_independent_pcurve_parameter_mapping() {
+        let context = cadmpeg_ir::geometry::IntcurveSupportContext {
+            sides: [
+                cadmpeg_ir::geometry::IntcurveSupportSide {
+                    surface: None,
+                    pcurve: Some(cadmpeg_ir::geometry::PcurveGeometry::Line {
+                        origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                        direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    }),
+                    pcurve_parameter_range: Some([2.0, 5.0]),
+                },
+                cadmpeg_ir::geometry::IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                    pcurve_parameter_range: None,
+                },
+            ],
+            parameter_range: [0.0, 1.0],
+            discontinuities: std::array::from_fn(|_| Vec::new()),
+        };
+        let error = native_intcurve_support_context(
+            &mut Vec::new(),
+            &CadIr::empty(cadmpeg_ir::units::Units::default()),
+            &context,
+        )
+        .expect_err("independent mapping is not writable");
+
+        assert!(matches!(
+            error,
+            CodecError::NotImplemented(message)
+                if message.contains("independent support-pcurve parameter intervals")
+        ));
+    }
 
     #[test]
     fn generated_face_sense_edit_preserves_native_normalization_relation() {

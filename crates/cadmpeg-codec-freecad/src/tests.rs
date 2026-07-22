@@ -946,7 +946,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "53");
+    assert_eq!(result.ir.ir_version, cadmpeg_ir::IR_VERSION);
     let feature = |name: &str| {
         &result
             .ir
@@ -1919,6 +1919,7 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
                 direction: Some(direction),
                 spacing: cadmpeg_ir::features::Length(4.0),
                 count: 4,
+                ..
             },
         } if seeds.len() == 1 && direction.y == 1.0
     ));
@@ -2811,13 +2812,14 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             faces: cadmpeg_ir::features::FaceSelection::Native(faces),
             neutral_plane: cadmpeg_ir::features::FaceSelection::Native(plane),
             pull_direction,
-            angle: cadmpeg_ir::features::Angle(angle),
-            outward: true,
+            angle: Some(cadmpeg_ir::features::Angle(angle)),
+            outward: Some(true),
         } if faces.ends_with(":Base")
             && plane.ends_with(":NeutralPlane")
-            && (pull_direction.x - 0.0).abs() < 1e-12
-            && (pull_direction.y + 1.0).abs() < 1e-12
-            && pull_direction.z.abs() < 1e-12
+            && pull_direction.is_some_and(|direction|
+                (direction.x - 0.0).abs() < 1e-12
+                    && (direction.y + 1.0).abs() < 1e-12
+                    && direction.z.abs() < 1e-12)
             && (*angle + 5f64.to_radians()).abs() < 1e-12
     ));
     assert_eq!(draft.dependencies.len(), 3);
@@ -4488,8 +4490,11 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     assert_eq!(result.ir.model.sketch_entities.len(), 4);
     assert_eq!(result.ir.model.sketches[0].profiles.len(), 1);
     assert_eq!(result.ir.model.sketches[0].profiles[0].len(), 4);
-    assert_eq!(result.ir.model.sketches[0].origin.x, 1.0);
-    assert!((result.ir.model.sketches[0].normal.y + 1.0).abs() < 1e-12);
+    let (origin, normal, _) = result.ir.model.sketches[0]
+        .resolved_placement()
+        .expect("resolved sketch placement");
+    assert_eq!(origin.x, 1.0);
+    assert!((normal.y + 1.0).abs() < 1e-12);
     assert_eq!(result.ir.model.features.len(), 4);
     assert_eq!(result.ir.model.sketch_constraints.len(), 2);
     assert_eq!(result.ir.model.parameters.len(), 3);
@@ -4624,7 +4629,14 @@ fn retains_support_attachment_and_distinct_offset_frame() {
     assert_eq!(attachments[0].offset.expect("offset")[0][3], 2.0);
     assert_eq!(attachments[0].effective_frame[0][3], 10.0);
     let sketch = result.ir.model.sketches.first().expect("sketch");
-    assert_eq!(sketch.origin.x, 10.0);
+    assert_eq!(
+        sketch
+            .resolved_placement()
+            .expect("resolved sketch placement")
+            .0
+            .x,
+        10.0
+    );
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
 }

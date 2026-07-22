@@ -8,39 +8,53 @@ use crate::features::{DesignConfiguration, DesignParameter};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Component, Occurrence};
 use crate::semantic_annotations::SemanticAnnotation;
-use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
+use crate::sketches::{Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchEntity};
 use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 
 macro_rules! define_model_entity_json {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] => $key:expr; )*) => {
-        fn model_entity_json(ir: &CadIr, id: &str) -> Option<serde_json::Value> {
+        fn model_entity_json(
+            ir: &CadIr,
+            wanted: &HashSet<&str>,
+        ) -> HashMap<String, serde_json::Value> {
+            let mut entities = HashMap::new();
             $(
                 let key: fn(&$element) -> String = $key;
-                if let Some(entity) = ir.model.$field.iter().find(|entity| key(entity) == id) {
-                    return serde_json::to_value(entity).ok();
+                for entity in &ir.model.$field {
+                    let id = key(entity);
+                    if wanted.contains(id.as_str()) {
+                        if let Ok(value) = serde_json::to_value(entity) {
+                            entities.insert(id, value);
+                        }
+                    }
                 }
             )*
-            None
+            entities
         }
     };
 }
 crate::document::arena_registry!(define_model_entity_json);
 
-/// Serialize the single entity `id` names. Covers the same id universe as the
-/// identity checks: model arenas, unknowns, and native records including
+/// Serialize annotated entities in one arena pass. Covers the same id universe
+/// as the identity checks: model arenas, unknowns, and native records including
 /// nested history and feature entities.
-fn entity_json(ir: &CadIr, id: &str) -> Option<serde_json::Value> {
-    if let Some(value) = model_entity_json(ir, id) {
-        return Some(value);
-    }
-    ir.native
+fn annotated_entity_json(ir: &CadIr, wanted: &HashSet<&str>) -> HashMap<String, serde_json::Value> {
+    let mut entities = model_entity_json(ir, wanted);
+    for record in ir
+        .native
         .0
         .values()
         .flat_map(|namespace| namespace.arenas.values())
         .flatten()
-        .find(|record| record.id == id)
-        .and_then(|record| serde_json::to_value(record).ok())
+    {
+        if wanted.contains(record.id.as_str()) {
+            if let Ok(value) = serde_json::to_value(record) {
+                entities.entry(record.id.clone()).or_insert(value);
+            }
+        }
+    }
+    entities
 }
 
 pub(super) fn check_annotations(
@@ -49,6 +63,12 @@ pub(super) fn check_annotations(
     all_ids: &HashSet<String>,
     findings: &mut Vec<Finding>,
 ) {
+    let wanted: HashSet<&str> = annotations
+        .exactness
+        .iter()
+        .filter_map(|(id, note)| (!note.fields.is_empty()).then_some(id.as_str()))
+        .collect();
+    let entity_json = annotated_entity_json(ir, &wanted);
     for (id, provenance) in &annotations.provenance {
         if !all_ids.contains(id) {
             annotation_finding(
@@ -80,7 +100,7 @@ pub(super) fn check_annotations(
         if note.fields.is_empty() {
             continue;
         }
-        let Some(entity) = entity_json(ir, id) else {
+        let Some(entity) = entity_json.get(id) else {
             annotation_finding(
                 findings,
                 Severity::Warning,
@@ -90,7 +110,7 @@ pub(super) fn check_annotations(
             continue;
         };
         for path in note.fields.keys() {
-            if path.is_empty() || !field_path_resolves(&entity, path) {
+            if path.is_empty() || !field_path_resolves(entity, path) {
                 annotation_finding(
                     findings,
                     Severity::Warning,
@@ -276,5 +296,36 @@ pub(super) fn check_native_links(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::annotated_entity_json;
+    use crate::{examples::unit_cube, NativeNamespace, NativeRecord};
+    use serde_json::{Map, Value};
+    use std::collections::HashSet;
+
+    #[test]
+    fn model_entity_wins_when_native_id_collides() {
+        let mut ir = unit_cube();
+        let id = ir.model.points[0].id.0.clone();
+        ir.native.0.insert(
+            "collision".into(),
+            NativeNamespace {
+                version: 1,
+                arenas: [(
+                    "records".into(),
+                    vec![NativeRecord {
+                        id: id.clone(),
+                        fields: Map::from_iter([("native_only".into(), Value::Bool(true))]),
+                    }],
+                )]
+                .into(),
+            },
+        );
+        let entities = annotated_entity_json(&ir, &HashSet::from([id.as_str()]));
+        assert!(entities[&id].get("position").is_some());
+        assert!(entities[&id].get("native_only").is_none());
     }
 }

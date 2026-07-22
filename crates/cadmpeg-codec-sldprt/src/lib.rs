@@ -15,7 +15,7 @@
 //! use std::io::Cursor;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::{Codec, CodecEntry, DecodeOptions};
+//! use cadmpeg_ir::{CodecEntry, DecodeOptions};
 //!
 //! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_ir::CodecError> {
 //! let decoded = SldprtCodec.decode(
@@ -36,7 +36,7 @@
 //! IR with blocking diagnostics. Set [`DecodeOptions::container_only`] to request
 //! that result without attempting geometry.
 //!
-//! [`CodecEntry::inspect`] inventories the outer blocks, section directory, cache
+//! [`Codec::inspect`] inventories the outer blocks, section directory, cache
 //! cells, payload families, and Parasolid schemas. It does not build model
 //! geometry.
 //!
@@ -61,19 +61,20 @@
 //! metadata and feature records, base colors, and sequential triangle-strip
 //! tessellation. It bakes right-handed rigid body transforms into geometry.
 //!
-//! [`CodecEntry::inspect`]: cadmpeg_ir::CodecEntry::inspect
+//! [`Codec::inspect`]: cadmpeg_ir::Codec::inspect
 //! [`CodecError::NotImplemented`]: cadmpeg_ir::CodecError::NotImplemented
 //! [`DecodeOptions::container_only`]: cadmpeg_ir::DecodeOptions::container_only
-
-#![allow(clippy::disallowed_methods)]
 
 mod annotations;
 mod appearance;
 pub mod brep;
 mod classification;
+mod compound;
 pub mod container;
 pub mod decode;
+mod feature_schema;
 mod history;
+pub mod loss;
 mod metadata;
 mod native;
 pub mod parasolid;
@@ -85,15 +86,13 @@ mod writer;
 mod writer_patch;
 mod writer_transform;
 
-#[cfg(feature = "fuzzing")]
-pub mod fuzzing;
-
 use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::{Annotations, Check, Finding, Severity, SourceFidelity, UnknownRecord};
+use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::{Annotations, Finding, SourceFidelity};
 use std::io::Write;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
@@ -102,350 +101,7 @@ pub struct SldprtCodec;
 
 /// Validate `SolidWorks` native feature-input byte references.
 pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
-    const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
-
-    let Some(namespace) = ir.native.namespace("sldprt") else {
-        return Vec::new();
-    };
-    if namespace.version != native::SLDPRT_NATIVE_VERSION {
-        let version = namespace.version;
-        return vec![Finding {
-            check: Check::Version,
-            severity: Severity::Error,
-            message: format!("unsupported SolidWorks native namespace version {version}"),
-            entity: None,
-        }];
-    }
-    let native = match native::SldprtNative::load(namespace) {
-        Ok(native) => native,
-        Err(error) => {
-            return vec![Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: format!("invalid SolidWorks native namespace: {error}"),
-                entity: None,
-            }]
-        }
-    };
-    let mut findings = Vec::new();
-    for history in &native.feature_histories {
-        if let Err(error) = crate::writer::validate_feature_graph(&history.features) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: error.to_string(),
-                entity: Some(history.id.clone()),
-            });
-        }
-        let mut feature_ordinals = std::collections::HashSet::new();
-        for feature in &history.features {
-            if !feature_ordinals.insert(feature.ordinal) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!(
-                        "SolidWorks history repeats feature ordinal {}",
-                        feature.ordinal
-                    ),
-                    entity: Some(feature.id.clone()),
-                });
-            }
-        }
-        let mut configuration_ordinals = std::collections::HashSet::new();
-        for configuration in &history.configurations {
-            if !configuration_ordinals.insert(configuration.ordinal) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!(
-                        "SolidWorks history repeats configuration ordinal {}",
-                        configuration.ordinal
-                    ),
-                    entity: Some(configuration.id.clone()),
-                });
-            }
-        }
-        if !history.content.is_empty() {
-            let configurations = history
-                .configurations
-                .iter()
-                .map(|configuration| configuration.id.as_str())
-                .collect::<std::collections::HashSet<_>>();
-            let root_features = history
-                .features
-                .iter()
-                .filter(|feature| {
-                    feature.tree_parent.is_none() && feature.parent_source_id.is_none()
-                })
-                .map(|feature| feature.id.as_str())
-                .collect::<std::collections::HashSet<_>>();
-            let all_features = history
-                .features
-                .iter()
-                .map(|feature| feature.id.as_str())
-                .collect::<std::collections::HashSet<_>>();
-            let mut seen_configurations = std::collections::HashSet::new();
-            let mut seen_features = std::collections::HashSet::new();
-            for item in &history.content {
-                let error = match item {
-                    crate::records::HistoryContent::Configuration(id) => {
-                        if !configurations.contains(id.as_str()) {
-                            Some(format!(
-                                "SolidWorks history root references missing configuration {id}"
-                            ))
-                        } else if !seen_configurations.insert(id.as_str()) {
-                            Some(format!(
-                                "SolidWorks history root repeats configuration {id}"
-                            ))
-                        } else {
-                            None
-                        }
-                    }
-                    crate::records::HistoryContent::Feature(id) => {
-                        if !all_features.contains(id.as_str()) {
-                            Some(format!(
-                                "SolidWorks history root references missing feature {id}"
-                            ))
-                        } else if !root_features.contains(id.as_str()) {
-                            Some(format!(
-                                "SolidWorks history root references nested feature {id}"
-                            ))
-                        } else if !seen_features.insert(id.as_str()) {
-                            Some(format!("SolidWorks history root repeats feature {id}"))
-                        } else {
-                            None
-                        }
-                    }
-                    crate::records::HistoryContent::Text(_) => None,
-                };
-                if let Some(message) = error {
-                    findings.push(Finding {
-                        check: Check::NativeLinks,
-                        severity: Severity::Error,
-                        message,
-                        entity: Some(history.id.clone()),
-                    });
-                }
-            }
-            for missing in configurations.difference(&seen_configurations) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!("SolidWorks history root omits configuration {missing}"),
-                    entity: Some(history.id.clone()),
-                });
-            }
-            for missing in root_features.difference(&seen_features) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!("SolidWorks history root omits feature {missing}"),
-                    entity: Some(history.id.clone()),
-                });
-            }
-        }
-    }
-    for lane in &native.feature_input_lanes {
-        let expected_classes =
-            crate::resolved_features::class_declarations(&lane.native_payload, &lane.id);
-        if lane.classes != expected_classes {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "SolidWorks feature-input class index does not match its native payload"
-                    .into(),
-                entity: Some(lane.id.clone()),
-            });
-        }
-        let expected_names = crate::resolved_features::object_names(&lane.native_payload, &lane.id);
-        if lane.names.len() != expected_names.len()
-            || lane
-                .names
-                .iter()
-                .zip(&expected_names)
-                .any(|(actual, expected)| {
-                    actual.id != expected.id
-                        || actual.parent != expected.parent
-                        || actual.ordinal != expected.ordinal
-                        || actual.offset != expected.offset
-                })
-        {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "SolidWorks feature-input name structure does not match its native payload"
-                        .into(),
-                entity: Some(lane.id.clone()),
-            });
-        }
-        let mut expected_lane = lane.clone();
-        expected_lane.scalars =
-            crate::resolved_features::named_scalars(&lane.native_payload, &lane.id, &lane.names);
-        expected_lane.relation_bindings = crate::resolved_features::relation_bindings(
-            &lane.id,
-            &lane.classes,
-            &expected_lane.scalars,
-        );
-        expected_lane.references =
-            crate::resolved_features::reference_cells(&expected_lane.scalars);
-        crate::resolved_features::bind_scalar_operands(
-            &native.feature_histories,
-            std::slice::from_mut(&mut expected_lane),
-        );
-        if !crate::resolved_features::scalar_indices_match(&lane.scalars, &expected_lane.scalars) {
-            let detail = lane
-                .scalars
-                .iter()
-                .zip(&expected_lane.scalars)
-                .find(|(actual, expected)| {
-                    !crate::resolved_features::scalar_indices_match(
-                        std::slice::from_ref(actual),
-                        std::slice::from_ref(expected),
-                    )
-                })
-                .map_or_else(
-                    || {
-                        format!(
-                            "count {} != {}",
-                            lane.scalars.len(),
-                            expected_lane.scalars.len()
-                        )
-                    },
-                    |(actual, expected)| format!("{actual:?} != {expected:?}"),
-                );
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: format!(
-                    "SolidWorks feature-input scalar index does not match its native payload: {detail}"
-                ),
-                entity: Some(lane.id.clone()),
-            });
-        }
-        if lane.relation_bindings != expected_lane.relation_bindings {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "SolidWorks feature-input relation bindings do not match the native payload"
-                        .into(),
-                entity: Some(lane.id.clone()),
-            });
-        }
-        if lane.relation_instances != expected_lane.relation_instances {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "SolidWorks feature-input relation instances do not match the native payload"
-                        .into(),
-                entity: Some(lane.id.clone()),
-            });
-        }
-        if lane.references != expected_lane.references {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "SolidWorks feature-input reference index does not match its native payload"
-                        .into(),
-                entity: Some(lane.id.clone()),
-            });
-        }
-        let expected_offsets = lane
-            .native_payload
-            .windows(MARKER.len())
-            .enumerate()
-            .filter_map(|(offset, bytes)| (bytes == MARKER).then_some(offset as u64))
-            .collect::<std::collections::HashSet<_>>();
-        let mut ordinals = std::collections::HashSet::new();
-        let mut offsets = std::collections::HashSet::new();
-        let mut previous_offset = None;
-        for (index, entity) in lane.sketch_entities.iter().enumerate() {
-            if entity.ordinal != index as u32 {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!(
-                        "SolidWorks feature-input lane expects entity ordinal {index}, found {}",
-                        entity.ordinal
-                    ),
-                    entity: Some(entity.id.clone()),
-                });
-            }
-            if previous_offset.is_some_and(|offset| entity.offset <= offset) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "SolidWorks feature-input entities are not in stream order".into(),
-                    entity: Some(entity.id.clone()),
-                });
-            }
-            previous_offset = Some(entity.offset);
-            if !ordinals.insert(entity.ordinal) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!(
-                        "SolidWorks feature-input lane repeats entity ordinal {}",
-                        entity.ordinal
-                    ),
-                    entity: Some(entity.id.clone()),
-                });
-            }
-            if !offsets.insert(entity.offset) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!(
-                        "SolidWorks feature-input lane repeats entity offset {}",
-                        entity.offset
-                    ),
-                    entity: Some(entity.id.clone()),
-                });
-            }
-            let valid = usize::try_from(entity.offset).ok().is_some_and(|offset| {
-                offset
-                    .checked_add(MARKER.len())
-                    .and_then(|end| lane.native_payload.get(offset..end))
-                    == Some(MARKER)
-                    && offset
-                        .checked_add(21)
-                        .is_some_and(|end| end <= lane.native_payload.len())
-            });
-            if !valid {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "feature-input entity is outside its native payload".into(),
-                    entity: Some(lane.id.clone()),
-                });
-            }
-            if usize::try_from(entity.offset).ok().is_some_and(|offset| {
-                entity.local_id
-                    != crate::resolved_features::marker_local_id(&lane.native_payload, offset)
-            }) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message:
-                        "SolidWorks feature-input local object id does not match its native payload"
-                            .into(),
-                    entity: Some(entity.id.clone()),
-                });
-            }
-        }
-        for offset in expected_offsets.difference(&offsets) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: format!("SolidWorks feature-input lane omits marker at offset {offset}"),
-                entity: Some(lane.id.clone()),
-            });
-        }
-    }
-    findings
+    resolved_features::validate_native(ir)
 }
 
 impl SldprtCodec {
@@ -466,12 +122,6 @@ impl SldprtCodec {
         records: &[UnknownRecord],
         writer: &mut dyn Write,
     ) -> Result<(), CodecError> {
-        let Some(record) = records
-            .iter()
-            .find(|record| record.id.0 == "sldprt:file:source-image#0")
-        else {
-            return writer::write_semantic_with_records(ir, annotations, records, writer);
-        };
         let expected = ir
             .source
             .as_ref()
@@ -479,6 +129,12 @@ impl SldprtCodec {
         if expected.is_none_or(|expected| decode::semantic_hash(ir) != *expected) {
             return writer::write_semantic_with_records(ir, annotations, records, writer);
         }
+        let record = records
+            .iter()
+            .find(|record| record.id.0 == "sldprt:file:source-image#0")
+            .ok_or_else(|| {
+                CodecError::NotImplemented("IR has no retained SLDPRT source image".into())
+            })?;
         let data = record.data.as_ref().ok_or_else(|| {
             CodecError::Malformed("retained SLDPRT source image has no bytes".into())
         })?;
@@ -508,10 +164,10 @@ impl Codec for SldprtCodec {
 
     fn inspect_impl(
         &self,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_view(ctx, root)?;
+        let scan = container::scan_bytes(root.window());
         Ok(container::summarize(&scan))
     }
 

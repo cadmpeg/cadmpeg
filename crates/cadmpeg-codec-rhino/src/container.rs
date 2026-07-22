@@ -681,6 +681,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
             format: "rhino".to_string(),
             container_only: true,
             geometry_transferred: false,
+            coverage: std::collections::BTreeMap::new(),
             losses,
             notes,
         },

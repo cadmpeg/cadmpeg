@@ -87,15 +87,38 @@ fn attr_at(buf: &[u8], p: usize) -> Option<u16> {
 
 /// Bridge `00 0e`: 37-byte body, magic at body+8, `refs[5]` at body+16,
 /// marker at body+26. `refs[4]` = surface carrier, `refs[2]` = loop head.
+/// The deltas form stores the owner as a `[hi][lo][01]` triple, so the magic
+/// sits at body+9 and the five refs follow as triples with the marker after.
 fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
     let p = body_start(buf, off, 0x0e)?;
+    if buf.get(p + 8) == Some(&1) && buf.get(p + 9..p + 17) == Some(MAGIC.as_slice()) {
+        let attr = attr_at(buf, p)?;
+        let owner = u16_be(buf, p + 6)?;
+        let refs = refs_tripled(buf, p + 17, 5)?;
+        let marker = *buf.get(p + 32)?;
+        if marker != 0x2b && marker != 0x2d {
+            return None;
+        }
+        return Some(Record {
+            attr,
+            refs,
+            marker: Some(marker),
+            xyz_m: None,
+            owner: (owner > 1).then_some(owner),
+            offset: off,
+        });
+    }
     if p + 37 > buf.len() || buf.get(p + 8..p + 16)? != MAGIC {
         return None;
     }
     let attr = attr_at(buf, p)?;
     let owner = u16_be(buf, p + 6)?;
-    let refs = refs_be(buf, p + 16, 5)?;
-    let marker = *buf.get(p + 26)?;
+    let tripled = (0..5).all(|index| buf.get(p + 18 + index * 3) == Some(&1));
+    let (refs, marker) = if tripled {
+        (refs_tripled(buf, p + 16, 5)?, *buf.get(p + 31)?)
+    } else {
+        (refs_be(buf, p + 16, 5)?, *buf.get(p + 26)?)
+    };
     if marker != 0x2b && marker != 0x2d {
         return None;
     }
@@ -117,7 +140,7 @@ fn parse_loop(buf: &[u8], off: usize) -> Option<Record> {
         return None;
     }
     let attr = attr_at(buf, p)?;
-    let refs = refs_be(buf, p + 6, 4)?;
+    let refs = refs_tripled(buf, p + 6, 4).or_else(|| refs_be(buf, p + 6, 4))?;
     Some(Record {
         attr,
         refs,
@@ -143,9 +166,18 @@ fn parse_edge_use(buf: &[u8], off: usize) -> Option<Record> {
             .find(|at| buf.get(*at..*at + MAGIC.len()) == Some(MAGIC.as_slice()))?;
         let mut decoded = Vec::new();
         let mut q = magic + MAGIC.len();
-        while buf.get(q) == Some(&1) && decoded.len() < 8 {
-            decoded.push(u16_be(buf, q + 1)?);
-            q += 3;
+        if buf.get(q) == Some(&1) {
+            // `[01][hi][lo]` triples.
+            while buf.get(q) == Some(&1) && decoded.len() < 8 {
+                decoded.push(u16_be(buf, q + 1)?);
+                q += 3;
+            }
+        } else {
+            // `[hi][lo][01]` triples.
+            while buf.get(q + 2) == Some(&1) && decoded.len() < 8 {
+                decoded.push(u16_be(buf, q)?);
+                q += 3;
+            }
         }
         if decoded.len() < 3 {
             return None;
@@ -247,6 +279,9 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
     } else {
         (refs_be(buf, p + 6, 4)?, p + 14)
     };
+    if refs.first().is_none_or(|reference| *reference > 1) {
+        return None;
+    }
     let x = f64_be(buf, xyz_at)?;
     let y = f64_be(buf, xyz_at + 8)?;
     let z = f64_be(buf, xyz_at + 16)?;
@@ -387,4 +422,63 @@ fn scan_with_point_framing(body: &[u8], prefixed_points: bool) -> Tables {
         }
     }
     t
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bridge_with_refs(refs: &[u16], tripled: bool) -> Vec<u8> {
+        let mut bytes = vec![0, 0x0e];
+        bytes.extend(0x1234_u16.to_be_bytes());
+        bytes.extend(7_u32.to_be_bytes());
+        bytes.extend(0x4321_u16.to_be_bytes());
+        bytes.extend(MAGIC);
+        for reference in refs {
+            bytes.extend(reference.to_be_bytes());
+            if tripled {
+                bytes.push(1);
+            }
+        }
+        bytes.push(0x2d);
+        bytes.resize(40, 0);
+        bytes
+    }
+
+    #[test]
+    fn bridge_deltas_form_reads_tripled_owner_and_refs() {
+        let expected: Vec<u16> = vec![0x101, 0x202, 0x303, 0x404, 0x505];
+        let mut bytes = vec![0, 0x0e, 0xff];
+        bytes.extend(0x1234_u16.to_be_bytes());
+        bytes.extend(7_u32.to_be_bytes());
+        bytes.extend(0x4321_u16.to_be_bytes());
+        bytes.push(1);
+        bytes.extend(MAGIC);
+        for reference in &expected {
+            bytes.extend(reference.to_be_bytes());
+            bytes.push(1);
+        }
+        bytes.push(0x2b);
+        bytes.resize(48, 0);
+
+        let bridge = parse_bridge(&bytes, 0).expect("deltas-form bridge");
+        assert_eq!(bridge.attr, 0x1234);
+        assert_eq!(bridge.owner, Some(0x4321));
+        assert_eq!(bridge.refs, expected);
+        assert_eq!(bridge.marker, Some(0x2b));
+    }
+
+    #[test]
+    fn bridge_refs_accept_adjacent_and_tripled_cells() {
+        let expected = vec![0x101, 0x202, 0x303, 0x404, 0x505];
+        for tripled in [false, true] {
+            let bytes = bridge_with_refs(&expected, tripled);
+            let bridge = parse_bridge(&bytes, 0)
+                .unwrap_or_else(|| panic!("bridge tripled={tripled} bytes={bytes:02x?}"));
+            assert_eq!(bridge.attr, 0x1234);
+            assert_eq!(bridge.owner, Some(0x4321));
+            assert_eq!(bridge.refs, expected);
+            assert_eq!(bridge.marker, Some(0x2d));
+        }
+    }
 }

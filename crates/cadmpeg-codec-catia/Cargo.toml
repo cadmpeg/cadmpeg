@@ -13,9 +13,14 @@ documentation = "https://docs.rs/cadmpeg-codec-catia"
 keywords = ["cad", "catia", "catpart", "brep", "geometry"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
+[features]
+# Exposes the `fuzz` facade of `()`-returning parser wrappers for `cadmpeg-fuzz`.
+fuzz = []
+
 [dependencies]
 cadmpeg-ir.workspace = true
 sha2.workspace = true
+memchr.workspace = true
 serde.workspace = true
 schemars.workspace = true
 

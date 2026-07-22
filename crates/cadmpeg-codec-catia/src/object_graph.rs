@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Outer `7C08` feature and object-ownership graph decoder.
-#![deny(clippy::disallowed_methods)]
 
-use cadmpeg_ir::decode::View;
 use cadmpeg_ir::le::u32_at as u32_le;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use crate::{catalog, value_block};
 
 /// One decoded outer object graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -14,8 +14,28 @@ pub struct ObjectGraph {
     pub pos: usize,
     /// Root total length, including its six-byte header.
     pub total_len: usize,
+    /// Byte offset of the immediately associated `7C02` schema catalog.
+    pub catalog_pos: Option<usize>,
     /// Consecutive nested `7C09` records.
     pub records: Vec<ObjectRecord>,
+}
+
+impl ObjectGraph {
+    /// Resolve a one-based serialized object ordinal.
+    #[must_use]
+    #[cfg(test)]
+    pub fn record(&self, ordinal: u32) -> Option<&ObjectRecord> {
+        let index = usize::try_from(ordinal.checked_sub(1)?).ok()?;
+        self.records.get(index)
+    }
+
+    /// Return records directly owned by `owner_ordinal`, in serialization order.
+    #[cfg(test)]
+    pub fn children(&self, owner_ordinal: u32) -> impl Iterator<Item = &ObjectRecord> {
+        self.records
+            .iter()
+            .filter(move |record| record.owner_ref == Some(owner_ordinal))
+    }
 }
 
 /// One `7C09` ownership record and its nested `7C0A` payload.
@@ -31,10 +51,12 @@ pub struct ObjectRecord {
     pub lead: u8,
     /// Decoded head tokens.
     pub head: Vec<HeadToken>,
-    /// First head reference, identifying the owner.
+    /// First head reference, identifying the owner by one-based record ordinal.
     pub owner_ref: Option<u32>,
     /// Second head reference, identifying the per-file class.
     pub class_ref: Option<u32>,
+    /// UTF-8 class name at `class_ref` in the associated schema catalog.
+    pub class_name: Option<String>,
     /// Third head reference, selecting the class-specific storage form.
     pub storage_ref: Option<u32>,
     /// Decoded nested payload.
@@ -52,7 +74,7 @@ pub enum HeadToken {
     Separator,
     /// Compact or continued reference.
     Reference(u32),
-    /// Literal byte below `0x80`.
+    /// Literal byte outside an assigned reference or sentinel form.
     Literal(u8),
     /// Four-byte absent-handle sentinel.
     NullHandle,
@@ -86,7 +108,7 @@ pub enum PayloadField {
         /// Byte offset within the payload.
         offset: usize,
     },
-    /// `0x81` reference field.
+    /// Compact `0x81` or fixed-width `0x32` reference field.
     Reference {
         /// Referenced ordinal.
         value: u32,
@@ -107,6 +129,8 @@ pub enum PayloadField {
         /// Length declared by the frame.
         declared_len: usize,
         /// Available blob bytes.
+        #[serde(with = "cadmpeg_ir::bytes")]
+        #[schemars(with = "String")]
         bytes: Vec<u8>,
         /// Byte offset within the payload.
         offset: usize,
@@ -158,7 +182,7 @@ pub enum PayloadSubtype {
 }
 
 /// Classification of the four-byte word preceding a surface-alias marker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum AliasLead {
     /// Low byte `0x01`: ordinary surface-support storage.
     SurfaceSupportStorage,
@@ -197,6 +221,7 @@ pub struct SurfaceAlias {
 
 /// Literal unresolved `7C D9` marker occurrence and bounded source context.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub struct Marker7cd9 {
     /// Marker byte offset.
     pub pos: usize,
@@ -207,102 +232,137 @@ pub struct Marker7cd9 {
 }
 
 /// Expose literal `7C D9` occurrences without assigning record framing or semantics.
-///
-pub fn markers_7cd9(view: View<'_>, context_len: usize) -> Vec<Marker7cd9> {
-    let data = view.window();
-    let mut positions = Vec::new();
-    for (pos, bytes) in data.windows(2).enumerate() {
-        if bytes == [0x7c, 0xd9] {
-            positions.push(pos);
-        }
-    }
-    let positions = positions;
-    let mut markers = Vec::new();
-    for (index, &pos) in positions.iter().enumerate() {
-        let end = pos.saturating_add(context_len).min(data.len());
-        markers.push(Marker7cd9 {
+#[must_use]
+#[cfg(test)]
+pub fn markers_7cd9(data: &[u8], context_len: usize) -> Vec<Marker7cd9> {
+    let positions: Vec<usize> = data
+        .windows(2)
+        .enumerate()
+        .filter_map(|(pos, bytes)| (bytes == [0x7c, 0xd9]).then_some(pos))
+        .collect();
+    positions
+        .iter()
+        .enumerate()
+        .map(|(index, &pos)| Marker7cd9 {
             pos,
-            context: data[pos..end].to_vec(),
+            context: data[pos..pos.saturating_add(context_len).min(data.len())].to_vec(),
             next_delta: positions.get(index + 1).map(|next| next - pos),
-        });
-    }
-    markers
+        })
+        .collect()
 }
 
 /// Decode fixed surface-alias row cores from an outer body.
-///
-pub fn surface_aliases(view: View<'_>) -> Vec<SurfaceAlias> {
+#[must_use]
+pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
     const MARKER: [u8; 4] = [0x01, 0x00, 0x04, 0x00];
-    let data = view.window();
-    let mut rows = Vec::new();
-    for pos in 0..data.len().saturating_sub(MARKER.len() - 1) {
-        if data[pos..pos + MARKER.len()] != MARKER {
-            continue;
-        }
-        if let Some(row) = alias_at(data, pos) {
-            rows.push(row);
-        }
-    }
-    rows
-}
-
-fn alias_at(data: &[u8], pos: usize) -> Option<SurfaceAlias> {
-    let tag_raw = u32_le(data, pos + 4)?;
-    let tag = tag_raw & 0x00ff_ffff;
-    if tag == 0 || pos + 20 > data.len() {
-        return None;
-    }
-    let lead_raw = pos
-        .checked_sub(4)
-        .and_then(|at| u32_le(data, at))
-        .unwrap_or(0);
-    let lead = if lead_raw & 0xff == 1 {
-        AliasLead::SurfaceSupportStorage
-    } else if lead_raw == 0x8e {
-        AliasLead::E5LinkedSurfaceStorage
-    } else if lead_raw == 0 {
-        AliasLead::NonSurfaceAlias
-    } else {
-        AliasLead::Unclassified(lead_raw)
-    };
-    let f1 = [data[pos + 9], data[pos + 10], data[pos + 11]];
-    Some(SurfaceAlias {
-        pos,
-        lead,
-        lead_raw,
-        tag,
-        tag_raw,
-        flag: data[pos + 8],
-        f1,
-        entity_record_ordinal: f1[2],
-        f2: u32_le(data, pos + 12)?,
-        f3: u32_le(data, pos + 16)?,
-    })
+    data.windows(MARKER.len())
+        .enumerate()
+        .filter(|(_, bytes)| *bytes == MARKER)
+        .filter_map(|(pos, _)| {
+            let tag_raw = u32_le(data, pos + 4)?;
+            let tag = tag_raw & 0x00ff_ffff;
+            if pos + 20 > data.len() {
+                return None;
+            }
+            let lead_raw = u32_le(data, pos.checked_sub(4)?)?;
+            let lead = if lead_raw & 0xff == 1 {
+                AliasLead::SurfaceSupportStorage
+            } else if lead_raw == 0x8e {
+                AliasLead::E5LinkedSurfaceStorage
+            } else if lead_raw == 0 {
+                AliasLead::NonSurfaceAlias
+            } else {
+                AliasLead::Unclassified(lead_raw)
+            };
+            let f1 = [data[pos + 9], data[pos + 10], data[pos + 11]];
+            Some(SurfaceAlias {
+                pos,
+                lead,
+                lead_raw,
+                tag,
+                tag_raw,
+                flag: data[pos + 8],
+                f1,
+                entity_record_ordinal: f1[2],
+                f2: u32_le(data, pos + 12)?,
+                f3: u32_le(data, pos + 16)?,
+            })
+        })
+        .collect()
 }
 
 /// Parse the valid `7C08` candidate containing the most `7C09` records.
-pub fn parse(view: View<'_>) -> Option<ObjectGraph> {
-    let data = view.window();
-    let mut best: Option<ObjectGraph> = None;
-    for pos in 0..data.len().saturating_sub(1) {
-        if data[pos..pos + 2] != [0x7c, 0x08] {
+#[must_use]
+#[cfg(test)]
+pub fn parse(data: &[u8]) -> Option<ObjectGraph> {
+    parse_all(data)
+        .into_iter()
+        .max_by_key(|graph| graph.records.len())
+}
+
+/// Parse every length-closed `7C08` object graph in source order.
+#[must_use]
+pub fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
+    let catalogs = catalog::parse(data);
+    let value_blocks = value_block::parse(data);
+    let candidates = data
+        .windows(2)
+        .enumerate()
+        .filter(|(_, marker)| *marker == [0x7c, 0x08])
+        .filter_map(|(pos, _)| parse_candidate(data, pos))
+        .collect::<Vec<_>>();
+    let mut roots = Vec::<ObjectGraph>::new();
+    for graph in candidates {
+        let graph_end = graph.pos + graph.total_len;
+        if roots
+            .iter()
+            .any(|outer| outer.pos < graph.pos && outer.pos + outer.total_len >= graph_end)
+        {
             continue;
         }
-        if let Some(candidate) = parse_candidate(data, pos) {
-            // Equal record counts select the later candidate.
-            if best
-                .as_ref()
-                .is_none_or(|graph| candidate.records.len() >= graph.records.len())
-            {
-                best = Some(candidate);
-            }
-        }
+        roots.push(graph);
     }
-    best
+    roots
+        .into_iter()
+        .map(|mut graph| {
+            bind_catalog(&mut graph, &catalogs, &value_blocks);
+            graph
+        })
+        .collect()
+}
+
+fn bind_catalog(
+    graph: &mut ObjectGraph,
+    catalogs: &[catalog::Catalog],
+    value_blocks: &[value_block::ValueBlock],
+) {
+    let Some(graph_end) = graph.pos.checked_add(graph.total_len) else {
+        return;
+    };
+    let schema = catalogs
+        .iter()
+        .find(|schema| schema.pos == graph_end)
+        .or_else(|| {
+            value_blocks
+                .iter()
+                .find(|block| block.pos == graph_end)
+                .and_then(|block| block.pos.checked_add(block.total_len))
+                .and_then(|value_end| catalogs.iter().find(|schema| schema.pos == value_end))
+        });
+    let Some(schema) = schema else {
+        return;
+    };
+    graph.catalog_pos = Some(schema.pos);
+    for record in &mut graph.records {
+        record.class_name = record
+            .class_ref
+            .and_then(|ordinal| schema.entries.get(ordinal as usize))
+            .map(|entry| entry.value.clone());
+    }
 }
 
 fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
-    let total_len = u32_le(data, pos + 2).and_then(|len| usize::try_from(len).ok())?;
+    let total_len = usize::try_from(u32_le(data, pos + 2)?).ok()?;
     let end = pos.checked_add(total_len)?;
     if total_len < 15 || end > data.len() {
         return None;
@@ -310,58 +370,87 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
     let mut at = pos + 6;
     let mut records = Vec::new();
     while at + 6 <= end && data.get(at..at + 2) == Some(&[0x7c, 0x09]) {
-        let record_len = u32_le(data, at + 2).and_then(|len| usize::try_from(len).ok())?;
+        let record_len = usize::try_from(u32_le(data, at + 2)?).ok()?;
         let record_end = at.checked_add(record_len)?;
         if record_len < 6 || record_end > end {
             return None;
         }
         let head_start = at + 6;
-        let child = data[head_start..record_end]
+        let mut children = data[head_start..record_end]
             .windows(2)
-            .position(|bytes| bytes == [0x7c, 0x0a])
-            .map(|relative| head_start + relative)?;
-        let child_len = u32_le(data, child + 2).and_then(|len| usize::try_from(len).ok())?;
-        if child.checked_add(child_len) != Some(record_end) || child_len < 6 {
+            .enumerate()
+            .filter_map(|(relative, marker)| {
+                if marker != [0x7c, 0x0a] {
+                    return None;
+                }
+                let child = head_start + relative;
+                let child_len = usize::try_from(u32_le(data, child + 2)?).ok()?;
+                (child_len >= 6 && child.checked_add(child_len) == Some(record_end))
+                    .then_some((child, child_len))
+            });
+        let (child, _) = children.next()?;
+        if children.next().is_some() {
             return None;
         }
+        let lead = *data.get(head_start..child)?.first()?;
         let head = decode_head(&data[head_start..child]);
-        let references: Vec<u32> = head
-            .iter()
-            .filter_map(|token| match token {
-                HeadToken::Reference(value) => Some(*value),
-                _ => None,
-            })
-            .collect();
-        let payload = decode_payload(&data[child + 6..record_end]);
+        let roles = if matches!(head.get(1), Some(HeadToken::Separator)) {
+            &head[2..]
+        } else {
+            let native_role_count = match lead {
+                0x02 => 1,
+                0x12 => 2,
+                0x52 => 3,
+                _ => 0,
+            };
+            if head.len() == native_role_count + 1 {
+                &head[1..]
+            } else {
+                &[]
+            }
+        };
+        let owner_ref = match roles.first() {
+            Some(HeadToken::Reference(value)) => Some(*value),
+            _ => None,
+        };
+        let class_ref = owner_ref.and_then(|_| match roles.get(1) {
+            Some(HeadToken::Reference(value)) => Some(*value),
+            _ => None,
+        });
+        let storage_ref = class_ref.and_then(|_| match roles.get(2) {
+            Some(HeadToken::Reference(value)) => Some(*value),
+            _ => None,
+        });
+        let payload = decode_payload(&data[child + 6..record_end])?;
         let subtype = classify(&payload.fields);
         records.push(ObjectRecord {
             index: records.len(),
             pos: at,
             total_len: record_len,
-            lead: data.get(head_start).copied().unwrap_or(0),
+            lead,
             head,
-            owner_ref: references.first().copied(),
-            class_ref: references.get(1).copied(),
-            storage_ref: references.get(2).copied(),
+            owner_ref,
+            class_ref,
+            class_name: None,
+            storage_ref,
             payload,
             subtype,
         });
         at = record_end;
     }
-    let records = records;
-    (records.len() >= 2).then_some(ObjectGraph {
+    (!records.is_empty() && at == end).then_some(ObjectGraph {
         pos,
         total_len,
+        catalog_pos: None,
         records,
     })
 }
 
 fn decode_head(bytes: &[u8]) -> Vec<HeadToken> {
-    let mut tokens = Vec::new();
     let Some(&lead) = bytes.first() else {
-        return tokens;
+        return Vec::new();
     };
-    tokens.push(HeadToken::Lead(lead));
+    let mut tokens = vec![HeadToken::Lead(lead)];
     let mut at = 1;
     while at < bytes.len() {
         let byte = bytes[at];
@@ -371,12 +460,12 @@ fn decode_head(bytes: &[u8]) -> Vec<HeadToken> {
         } else if bytes.get(at..at + 4) == Some(&[0xff; 4]) {
             tokens.push(HeadToken::NullHandle);
             at += 4;
-        } else if byte == 0x81 && at + 2 < bytes.len() {
+        } else if (0xd1..=0xe4).contains(&byte) && at + 1 < bytes.len() {
             tokens.push(HeadToken::Reference(
-                u32::from(bytes[at + 1].wrapping_sub(0x80)) * 128 + u32::from(bytes[at + 2]),
+                u32::from(byte - 0xd1) * 256 + u32::from(bytes[at + 1]) + 1,
             ));
-            at += 3;
-        } else if byte >= 0x80 {
+            at += 2;
+        } else if (0x80..=0xd0).contains(&byte) {
             tokens.push(HeadToken::Reference(u32::from(byte - 0x80)));
             at += 1;
         } else {
@@ -400,7 +489,7 @@ fn atom(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     }
 }
 
-fn decode_payload(bytes: &[u8]) -> ObjectPayload {
+fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
     let mut fields = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
@@ -408,6 +497,7 @@ fn decode_payload(bytes: &[u8]) -> ObjectPayload {
         match bytes[at] {
             0xfe => {
                 fields.push(PayloadField::Terminator);
+                at += 1;
                 break;
             }
             0xe5 if at + 5 <= bytes.len() => {
@@ -451,6 +541,14 @@ fn decode_payload(bytes: &[u8]) -> ObjectPayload {
                 }
             }
             0x3b => {
+                if bytes.get(at + 1) == Some(&0xfe) {
+                    fields.push(PayloadField::Atom {
+                        value: 0x3b,
+                        offset,
+                    });
+                    at += 1;
+                    continue;
+                }
                 let Some((declared_count, advance)) = atom(bytes, at + 1) else {
                     fields.push(PayloadField::Atom {
                         value: 0x3b,
@@ -462,12 +560,18 @@ fn decode_payload(bytes: &[u8]) -> ObjectPayload {
                 at += 1 + advance;
                 let mut items = Vec::new();
                 for _ in 0..declared_count {
-                    if at >= bytes.len() {
+                    if at >= bytes.len() || bytes[at] == 0xfe {
                         break;
                     }
                     let tagged_reference = bytes[at] == 0x81;
                     let tagged_atom = bytes[at] == 0x80;
                     let value_at = at + usize::from(tagged_reference || tagged_atom);
+                    if (tagged_reference || tagged_atom)
+                        && (value_at >= bytes.len() || bytes[value_at] == 0xfe)
+                    {
+                        at = value_at;
+                        break;
+                    }
                     let Some((value, consumed)) = atom(bytes, value_at) else {
                         break;
                     };
@@ -484,8 +588,31 @@ fn decode_payload(bytes: &[u8]) -> ObjectPayload {
                     offset,
                 });
             }
-            0x81 | 0x80 | 0x3a | 0x32 | 0x39 | 0x7a => {
+            0x80 | 0x32 if at + 5 <= bytes.len() => {
                 let tag = bytes[at];
+                fields.push(if tag == 0x80 {
+                    PayloadField::Atom {
+                        value: u32_le(bytes, at + 1).expect("checked escaped atom extent"),
+                        offset,
+                    }
+                } else {
+                    PayloadField::Reference {
+                        value: u32_le(bytes, at + 1).expect("checked scalar extent"),
+                        offset,
+                    }
+                });
+                at += 5;
+            }
+            0x81 | 0x3a | 0x39 | 0x7a => {
+                let tag = bytes[at];
+                if bytes.get(at + 1) == Some(&0xfe) {
+                    fields.push(PayloadField::Atom {
+                        value: u32::from(tag),
+                        offset,
+                    });
+                    at += 1;
+                    continue;
+                }
                 let Some((value, consumed)) = atom(bytes, at + 1) else {
                     fields.push(PayloadField::Atom {
                         value: u32::from(tag),
@@ -496,7 +623,6 @@ fn decode_payload(bytes: &[u8]) -> ObjectPayload {
                 };
                 fields.push(match tag {
                     0x81 => PayloadField::Reference { value, offset },
-                    0x80 => PayloadField::Atom { value, offset },
                     _ => PayloadField::Scalar { tag, value, offset },
                 });
                 at += 1 + consumed;
@@ -512,10 +638,12 @@ fn decode_payload(bytes: &[u8]) -> ObjectPayload {
             }
         }
     }
-    ObjectPayload {
-        size: bytes.len(),
-        fields,
-    }
+    (at == bytes.len() && matches!(fields.last(), Some(PayloadField::Terminator))).then_some(
+        ObjectPayload {
+            size: bytes.len(),
+            fields,
+        },
+    )
 }
 
 fn classify(fields: &[PayloadField]) -> PayloadSubtype {
@@ -558,12 +686,7 @@ fn classify(fields: &[PayloadField]) -> PayloadSubtype {
     if atom_count >= 2 && triplets == 0 && list_count == 0 {
         return PayloadSubtype::AtomVector;
     }
-    if fields.is_empty()
-        || (fields.len() <= 3
-            && fields
-                .iter()
-                .any(|field| matches!(field, PayloadField::Terminator)))
-    {
+    if fields.is_empty() || matches!(fields, [PayloadField::Terminator]) {
         PayloadSubtype::Empty
     } else {
         PayloadSubtype::Mixed

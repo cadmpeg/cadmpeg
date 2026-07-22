@@ -250,9 +250,12 @@ mod tests {
 
     #[test]
     fn canonical_json_orders_retained_records() {
-        let mut sidecar = SourceFidelity::default();
-        sidecar.retained_records = vec![record("b", &[2]), record("a", &[1])];
-        let parsed = SourceFidelity::from_json(&sidecar.to_canonical_json().unwrap()).unwrap();
+        let sidecar = SourceFidelity {
+            retained_records: vec![record("b", &[2]), record("a", &[1])],
+            ..SourceFidelity::default()
+        };
+        let json = sidecar.to_canonical_json().expect("serialize sidecar");
+        let parsed = SourceFidelity::from_json(&json).expect("parse sidecar");
         assert_eq!(parsed.retained_records[0].id, "a");
     }
 

@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"53"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"55"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -21,6 +21,8 @@ CadIr
 `model` is format-neutral. `native` is a map keyed by format ID. Each value contains an integer `version` and an `arenas` map. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the independently versioned `SourceFidelity` sidecar and are not serialized in `CadIr`.
 
 The neutral model arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `features`, `tessellations`, `appearances`, `appearance_bindings`, and `attributes`. Every arena is a required flat JSON array. References are string IDs, never array indices. `subds` contains subdivision-surface control cages and is a free carrier arena; it is not owned by B-rep topology.
+
+Pcurve geometry is a parameter-space line, angular circle, angular ellipse, polar harmonic, polar NURBS, or NURBS curve. Circle and ellipse carriers store independent `x_axis` and `y_axis` parameter directions; a clockwise parameterization has a negated `y_axis`. A polar harmonic maps first-order radial-plane and axial harmonic coefficients to `(atan2(y, x), v)` without changing the spatial curve parameter. A polar NURBS evaluates radial-plane and axial control channels with one degree, knot vector, weight vector, and parameter, then maps the radial result through `atan2`.
 
 Maps serialize with lexicographically sorted keys. Arena entries are strictly sorted by ID. Canonical serialization therefore does not use discovery order as semantic state.
 
@@ -175,7 +177,7 @@ outputs identify any retained exact bodies. `native` is the sole escape hatch fo
 no neutral definition and carries its source kind, parameter map, and non-parameter property map.
 Length wrappers are millimeters and angle wrappers are radians.
 
-Extents are blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles reference native profile identity or solved faces. Fillets use constant or sampled variable radii. Chamfers use distance, two distances, or distance-angle. Holes are simple, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
+Datum planes retain their operation family when placement is unresolved and carry a model-space frame when resolved. Extents are unresolved, blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles are unresolved, reference native profile identity, or resolve to sketches or faces. Draft faces, neutral plane, pull direction, angle, and side state resolve independently. Filled-surface boundaries, supports, continuity, and merge state also resolve independently. Boundary surfaces retain their operation family when their directional curve networks are unresolved. Surface-knit operands, entity merging, solid conversion, and tolerance resolve independently. Fillets use constant or sampled variable radii. Chamfers use distance, two distances, or distance-angle. Holes are simple, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
 
 `native_ref` identifies the full-fidelity native record corresponding to a neutral projection. It does not change the neutral definition's meaning.
 
@@ -240,7 +242,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "53",
+  "ir_version": "55",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {

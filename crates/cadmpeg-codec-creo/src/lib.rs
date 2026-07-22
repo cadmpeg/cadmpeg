@@ -8,13 +8,13 @@
 //! # Quick start
 //!
 //! [`CreoCodec`] implements [`cadmpeg_ir::codec::Codec`]. Use
-//! [`CodecEntry::inspect`](cadmpeg_ir::CodecEntry::inspect) to enumerate sections and read container diagnostics:
+//! [`cadmpeg_ir::CodecEntry::inspect`] to enumerate sections and read container diagnostics:
 //!
 //! ```no_run
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_creo::CreoCodec;
-//! use cadmpeg_ir::codec::{Codec, CodecEntry};
+//! use cadmpeg_ir::codec::CodecEntry;
 //! use cadmpeg_ir::decode::InspectOptions;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,7 +25,7 @@
 //! # }
 //! ```
 //!
-//! Use [`CodecEntry::decode`](cadmpeg_ir::CodecEntry::decode) for a [`cadmpeg_ir::document::CadIr`] document and
+//! Use [`cadmpeg_ir::CodecEntry::decode`] for a [`cadmpeg_ir::document::CadIr`] document and
 //! its [`cadmpeg_ir::report::DecodeReport`].
 //!
 //! # Format model
@@ -41,23 +41,26 @@
 //!
 //! # Decode scope
 //!
-//! Decode transfers standard model-space datum planes from `ActDatums` as
-//! derived, unbounded plane surfaces. It preserves PSB geometry sections as
+//! Decode transfers complete model-space planes, selected cylinders, connected
+//! plane topology, placed section sketches, and native feature records. It
+//! preserves PSB geometry sections as
 //! [`cadmpeg_ir::unknown::UnknownRecord`] values.
 //!
 //! Surface prototype parameters describe family templates rather than placed
-//! instances. Per-instance coordinates, curve geometry, face bindings, and
-//! feature evaluation are incomplete, so the codec does not emit a body B-rep.
-//! The decode report identifies these losses and reports whether any datum
-//! planes were transferred.
+//! instances. Other per-instance coordinates, curve families, face bindings,
+//! and feature evaluation remain incomplete. The decode report identifies
+//! these losses.
 
-mod builder;
+mod compress;
 pub mod container;
 pub mod curve;
 pub mod datum;
 pub mod decode;
 pub mod feature;
+pub mod placement;
+pub mod primdata;
 pub mod psb;
+pub mod reference;
 pub mod scalar;
 pub mod surface;
 pub mod topology;
@@ -75,6 +78,8 @@ impl Codec for CreoCodec {
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {
+        // The `#UGC:2` ASCII magic is unique to the Creo/Pro-E PSB container and
+        // distinguishes it from a Siemens NX `.prt` sharing the extension.
         if container::looks_like_creo(prefix) {
             Confidence::High
         } else {
@@ -87,7 +92,7 @@ impl Codec for CreoCodec {
         _ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_bytes(root.window());
+        let scan = container::scan_bytes(root.window().to_vec());
         Ok(container::summarize(&scan))
     }
 

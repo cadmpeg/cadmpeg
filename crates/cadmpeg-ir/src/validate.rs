@@ -44,7 +44,10 @@ mod topology;
 use annotations_native::{check_annotations, check_native_links};
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
-use geometry_consistency::{check_edge_endpoint_consistency, check_pcurve_surface_consistency};
+use geometry_consistency::{
+    check_edge_endpoint_consistency, check_pcurve_surface_consistency,
+    check_procedural_support_consistency,
+};
 use geometry_payloads::{check_bounds, check_tessellations};
 use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
 use pmi::check_pmi;
@@ -56,7 +59,8 @@ use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
 use topology::{
-    check_coedge_pairing, check_loops, check_references, check_units, check_wire_topology, IdSets,
+    check_coedge_pairing, check_loops, check_references, check_shell_connectivity, check_units,
+    check_wire_topology, IdSets,
 };
 
 /// A radius/length that is not a finite positive number is invalid geometry.
@@ -81,12 +85,14 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     check_pmi(ir, &mut findings);
     check_loops(ir, &mut findings);
     check_coedge_pairing(ir, &mut findings);
+    check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
     check_carrier_reachability(ir, &mut findings);
     check_native_links(ir, &all_ids, &mut findings);
     check_parameter_domains(ir, &mut findings);
     check_edge_endpoint_consistency(ir, &mut findings);
     check_pcurve_surface_consistency(ir, &mut findings);
+    check_procedural_support_consistency(ir, &mut findings);
     check_bounds(ir, &mut findings);
     check_tessellations(ir, &mut findings);
     check_subds(ir, &mut findings);
@@ -142,4 +148,79 @@ pub fn validate_with_source_fidelity(
         &mut report.findings,
     );
     report
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate;
+    use crate::features::{
+        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, Feature,
+        FeatureDefinition, FeatureId,
+    };
+    use crate::math::{Point3, Vector3};
+    use crate::sketches::{Sketch, SketchId};
+    use crate::units::Units;
+    use crate::CadIr;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn configuration_feature_sketch_resolves_against_model_sketches() {
+        let mut ir = CadIr::empty(Units::default());
+        let feature_id = FeatureId("test:model:feature#sketch".into());
+        let sketch_id = SketchId("test:model:sketch#sketch".into());
+        ir.model.features.push(Feature {
+            id: feature_id.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch { sketch: None },
+            native_ref: None,
+        });
+        ir.model.sketches.push(Sketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            placement: crate::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles: Vec::new(),
+            native_ref: None,
+        });
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId("test:model:configuration#default".into()),
+            ordinal: 0,
+            active: true,
+            source_index: None,
+            name: "Default".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: Vec::new(),
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::from([(
+                feature_id,
+                ConfigurationFeatureState {
+                    suppressed: false,
+                    dependencies: Vec::new(),
+                    outputs: Vec::new(),
+                    definition: FeatureDefinition::Sketch {
+                        sketch: Some(sketch_id),
+                    },
+                },
+            )]),
+            native_ref: None,
+        });
+
+        let report = validate(&ir, Vec::new());
+
+        assert!(report.findings.is_empty(), "{:?}", report.findings);
+    }
 }

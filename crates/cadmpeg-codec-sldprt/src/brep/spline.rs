@@ -418,7 +418,7 @@ fn surface_refs(bytes: &[u8], arrays: &Arrays) -> HashMap<u16, [u16; 5]> {
 }
 
 #[allow(clippy::manual_is_multiple_of)] // `is_multiple_of` exceeds the workspace MSRV.
-fn surface_shape(
+pub(crate) fn infer_surface_shape(
     control_len: usize,
     u_mult: &[u16],
     v_mult: &[u16],
@@ -438,7 +438,10 @@ fn surface_shape(
                 let Some(v_count) = v_sum.checked_sub(v_degree + 1) else {
                     continue;
                 };
-                if u_count > 0 && v_count > 0 && u_count * v_count == poles {
+                // `checked_mul` bounds the pole count: `u_count`/`v_count` derive from
+                // multiplicity sums and their product can exceed `usize`, so an overflowing
+                // shape never matches `poles` (and never reaches the `with_capacity` below).
+                if u_count > 0 && v_count > 0 && u_count.checked_mul(v_count) == Some(poles) {
                     return Some((
                         u_count,
                         v_count,
@@ -490,7 +493,7 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
             continue;
         };
         let Some((u_count, v_count, u_degree, v_degree, dimension)) =
-            surface_shape(control.len(), u_mult, v_mult)
+            infer_surface_shape(control.len(), u_mult, v_mult)
         else {
             continue;
         };

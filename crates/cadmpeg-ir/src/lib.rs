@@ -79,7 +79,7 @@ pub use document::{CadIr, SourceMeta, IR_VERSION, PREVIOUS_IR_VERSION};
 pub use features::{
     BodyRetentionMode, BodySelection, ConfigurationId, DesignConfiguration, DesignParameter,
     FaceMotion, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterPmi, ParameterValue,
-    PmiDimensionSubtype, ScaleCenter, ScaleFactors, SketchSpace,
+    PmiDimensionSubtype, ScaleCenter, ScaleFactors,
 };
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 pub use pmi::{
@@ -105,7 +105,9 @@ pub use report::{
 };
 pub use sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand, SpatialSketch,
+    SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchEntityUse, SpatialSketchGeometry,
+    SpatialSketchId, SpatialSketchProfile,
 };
 pub use source_fidelity::{RetainedSourceRecord, SourceFidelity, SOURCE_FIDELITY_VERSION};
 pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};

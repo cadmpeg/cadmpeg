@@ -19,6 +19,8 @@ pub mod token {
     pub const ENTITY_REF: u8 = 0xf7;
     /// Array close.
     pub const ARRAY_CLOSE: u8 = 0xfb;
+    /// Compound-record close.
+    pub const COMPOUND_CLOSE: u8 = 0xe3;
 }
 
 /// One structurally framed PSB token.
@@ -44,6 +46,8 @@ pub enum TokenKind {
     CompactInt,
     /// A 3-byte short-form float token ([spec §3.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#23-scalar-tokens)): `<prefix> XX YY`.
     ShortFloat,
+    /// A seven-byte subunit float token beginning with `0x5e`.
+    SevenByteFloat,
     /// An 8-byte world-coordinate token whose leading byte is `0x46`
     /// (positive) or `0x2d` (negative).
     WorldCoordinate,
@@ -105,14 +109,28 @@ pub fn tokens(data: &[u8]) -> Vec<Token> {
                     (end - offset, TokenKind::ArrayOpen)
                 }
             }
-            token::SCALAR_BODY if offset + 2 < data.len() => (3, TokenKind::ScalarBody),
-            token::SCALAR_BODY => (data.len() - offset, TokenKind::Truncated(head)),
+            token::SCALAR_BODY => {
+                let (_, dimensions_end) = compact_int(data, offset + 1);
+                let (_, count_end) = compact_int(data, dimensions_end);
+                if dimensions_end == offset + 1 || count_end == dimensions_end {
+                    (data.len() - offset, TokenKind::Truncated(head))
+                } else {
+                    (count_end - offset, TokenKind::ScalarBody)
+                }
+            }
             token::ARRAY_CLOSE => (1, TokenKind::ArrayClose),
             0xe2 => (1, TokenKind::CompoundOpen),
-            0xe3 => (1, TokenKind::CompoundClose),
+            token::COMPOUND_CLOSE => (1, TokenKind::CompoundClose),
             0x29 | 0x2a | 0x2e | 0x2f | 0x42 | 0x43 | 0x47 | 0x48 => {
                 if offset + 3 <= data.len() {
                     (3, TokenKind::ShortFloat)
+                } else {
+                    (data.len() - offset, TokenKind::Truncated(head))
+                }
+            }
+            0x5e => {
+                if offset + 7 <= data.len() {
+                    (7, TokenKind::SevenByteFloat)
                 } else {
                     (data.len() - offset, TokenKind::Truncated(head))
                 }
@@ -236,6 +254,73 @@ pub fn short_form_float(data: &[u8], offset: usize) -> Option<(f64, usize)> {
     Some((f64::from_be_bytes(ieee), offset + 3))
 }
 
+/// A forward-only byte cursor over a PSB body.
+///
+/// The cursor owns a borrowed slice and a read position. Typed takes delegate
+/// to the module's free decoders ([`compact_int`], [`short_form_float`],
+/// [`reference_id`]) and to any caller-supplied decoder of the same
+/// `fn(&[u8], usize) -> Option<(T, usize)>` shape, advancing the position only
+/// when the decode succeeds. A failed take leaves the position unchanged: the
+/// wrapped decoders are pure and report their consumed extent through the
+/// returned offset, so the cursor never advances partially. This lets a
+/// best-effort walker thread a single `Cursor` instead of hand-carrying a
+/// `(value, next)` tuple through every field, while preserving the exact
+/// truncation behavior (`break`/`continue` on a `None` take).
+pub(crate) struct Cursor<'a> {
+    data: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Cursor<'a> {
+    /// Start a cursor at the beginning of `data`.
+    pub(crate) fn new(data: &'a [u8]) -> Self {
+        Self { data, pos: 0 }
+    }
+
+    /// Start a cursor at an explicit byte position within `data`.
+    pub(crate) fn at(data: &'a [u8], pos: usize) -> Self {
+        Self { data, pos }
+    }
+
+    /// The current read position, i.e. the offset of the next unread byte.
+    pub(crate) fn pos(&self) -> usize {
+        self.pos
+    }
+
+    /// Decode one value at the current position with `decode`, advancing to the
+    /// decoder's reported offset on success.
+    ///
+    /// Returns `None` — leaving the position unchanged — exactly when `decode`
+    /// returns `None`. Because `decode` reports its consumed extent through the
+    /// returned offset rather than by mutating state, the cursor never advances
+    /// on failure and never advances partially.
+    pub(crate) fn take_with<T>(
+        &mut self,
+        decode: impl FnOnce(&'a [u8], usize) -> Option<(T, usize)>,
+    ) -> Option<T> {
+        let (value, next) = decode(self.data, self.pos)?;
+        self.pos = next;
+        Some(value)
+    }
+
+    /// Advance past `prefix` when the bytes at the current position match it.
+    ///
+    /// Returns `true` and consumes exactly `prefix.len()` bytes on a match;
+    /// returns `false` and leaves the position unchanged otherwise.
+    pub(crate) fn take_slice_if(&mut self, prefix: &[u8]) -> bool {
+        if self
+            .data
+            .get(self.pos..)
+            .is_some_and(|tail| tail.starts_with(prefix))
+        {
+            self.pos += prefix.len();
+            true
+        } else {
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,6 +391,14 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn token_walker_bounds_compact_scalar_body_extents() {
+        let tokens = tokens(&[0xf9, 0x80, 0x88, 0x03, 0x0f]);
+        assert_eq!(tokens[0].kind, TokenKind::ScalarBody);
+        assert_eq!(tokens[0].length, 4);
+        assert_eq!(tokens[1].offset, 4);
     }
 
     #[test]

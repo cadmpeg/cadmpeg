@@ -4,12 +4,14 @@
 
 use crate::records::Feature;
 use crate::records::{FeatureInputClassRole, FeatureInputRelationFamily};
-use cadmpeg_ir::features::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{FeatureTreeNodeRole, PrincipalPlane};
 
 /// Semantic family established by native record identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FeatureClass {
     Sketch,
+    SketchBlockDefinition,
+    SketchBlockInstance,
     ReferencePlane,
     ReferenceAxis,
     ReferencePoint,
@@ -47,6 +49,7 @@ pub(crate) enum FeatureClass {
     Sweep,
     Loft,
     Rib,
+    CosmeticThread,
 }
 
 /// Semantic kind of a serialized native object class.
@@ -57,14 +60,22 @@ pub(crate) enum NativeClassKind {
     Chamfer,
     OriginProfileFeature,
     ProfileFeature,
+    SketchBlockDefinition,
+    SketchBlockInstance,
     ReferencePlane,
+    ReferenceAxis,
     Thicken,
     Sweep,
     SweepReferenceSurface,
     Helix,
+    HoleWizard,
+    Revolution,
     LinearPattern,
     CurvePattern,
+    MirrorPattern,
+    Combine,
     DeleteBody,
+    CosmeticThread,
     TreeNode(FeatureTreeNodeRole),
     Sketch,
     SketchEntity,
@@ -92,7 +103,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
     };
 
     let (kind, role, feature, tree_node) = match name {
-        "moExtrusion_c" => (
+        "moExtrusion_c" | "moICE_c" | "moCut_c" => (
             NativeClassKind::Extrusion,
             Feature,
             Some(FeatureClass::Extrude),
@@ -113,19 +124,37 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moOriginProfileFeature_c" => (
             NativeClassKind::OriginProfileFeature,
             Feature,
-            Some(FeatureClass::Sketch),
             None,
+            Some(FeatureTreeNodeRole::ModelOrigin),
         ),
-        "moProfileFeature_c" => (
+        "moProfileFeature_c" | "mo3DProfileFeature_c" => (
             NativeClassKind::ProfileFeature,
             Feature,
             Some(FeatureClass::Sketch),
+            None,
+        ),
+        "moSketchBlockDef_c" => (
+            NativeClassKind::SketchBlockDefinition,
+            Feature,
+            Some(FeatureClass::SketchBlockDefinition),
+            None,
+        ),
+        "moSketchBlockInst_c" => (
+            NativeClassKind::SketchBlockInstance,
+            Feature,
+            Some(FeatureClass::SketchBlockInstance),
             None,
         ),
         "moRefPlane_c" => (
             NativeClassKind::ReferencePlane,
             Reference,
             Some(FeatureClass::ReferencePlane),
+            None,
+        ),
+        "moRefAxis_c" => (
+            NativeClassKind::ReferenceAxis,
+            Reference,
+            Some(FeatureClass::ReferenceAxis),
             None,
         ),
         "moThicken_c" => (
@@ -152,6 +181,18 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             Some(FeatureClass::Helix),
             None,
         ),
+        "moHoleWzd_c" => (
+            NativeClassKind::HoleWizard,
+            Feature,
+            Some(FeatureClass::Hole),
+            None,
+        ),
+        "moRevolution_c" | "moRevCut_c" => (
+            NativeClassKind::Revolution,
+            Feature,
+            Some(FeatureClass::Revolve),
+            None,
+        ),
         "moLPattern_c" => (
             NativeClassKind::LinearPattern,
             Feature,
@@ -164,6 +205,18 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             Some(FeatureClass::Pattern),
             None,
         ),
+        "moMirrorPattern_c" => (
+            NativeClassKind::MirrorPattern,
+            Feature,
+            Some(FeatureClass::Pattern),
+            None,
+        ),
+        "moCombineBodies_c" => (
+            NativeClassKind::Combine,
+            Feature,
+            Some(FeatureClass::Combine),
+            None,
+        ),
         "moDeleteBody_c" => (
             NativeClassKind::DeleteBody,
             Feature,
@@ -172,20 +225,35 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         ),
 
         "moDetailCabinet_c" => tree_node_class(FeatureTreeNodeRole::Annotations),
+        "moDetailFolder_c" => tree_node_class(FeatureTreeNodeRole::Details),
         "moCommentsFolder_c" => tree_node_class(FeatureTreeNodeRole::Comments),
+        "moCosmeticThread_c" | "moDerivedCosmeticThread_c" => (
+            NativeClassKind::CosmeticThread,
+            Feature,
+            Some(FeatureClass::CosmeticThread),
+            None,
+        ),
         "moDocsFolder_c" => tree_node_class(FeatureTreeNodeRole::DesignBinder),
+        "moEnvFolder_c" => tree_node_class(FeatureTreeNodeRole::LightsAndCameras),
         "moEqnFolder_c" => tree_node_class(FeatureTreeNodeRole::Equations),
         "moFavoriteFolder_c" => tree_node_class(FeatureTreeNodeRole::Favorites),
+        "moFtrFolder_c" => tree_node_class(FeatureTreeNodeRole::FeatureFolder),
         "moHistoryFolder_c" => tree_node_class(FeatureTreeNodeRole::History),
+        "moInkMarkupFolder_c" => tree_node_class(FeatureTreeNodeRole::Markups),
         "moMaterialFolder_c" => tree_node_class(FeatureTreeNodeRole::Materials),
         "moNotesAreaFtrFolder_c" => tree_node_class(FeatureTreeNodeRole::Notes),
         "moSelectionSetFolder_c" => tree_node_class(FeatureTreeNodeRole::SelectionSets),
         "moSensorFolder_c" => tree_node_class(FeatureTreeNodeRole::Sensors),
         "moSolidBodyFolder_c" => tree_node_class(FeatureTreeNodeRole::SolidBodies),
         "moSurfaceBodyFolder_c" => tree_node_class(FeatureTreeNodeRole::SurfaceBodies),
+        "moTableFolder_c" => tree_node_class(FeatureTreeNodeRole::Tables),
+        "moAmbientLight_c" => tree_node_class(FeatureTreeNodeRole::AmbientLight),
+        "moDirectionLight_c" => tree_node_class(FeatureTreeNodeRole::DirectionalLight),
+        "moPointLight_c" => tree_node_class(FeatureTreeNodeRole::PointLight),
+        "moSpotLight_c" => tree_node_class(FeatureTreeNodeRole::SpotLight),
 
         "sgSketch" => (NativeClassKind::Sketch, Sketch, None, None),
-        "sgArcHandle" | "sgEntHandle" | "sgLineHandle" | "sgPointHandle" => {
+        "sgArcHandle" | "sgEntHandle" | "sgLineHandle" | "sgPointHandle" | "sgSplineHandle" => {
             (NativeClassKind::SketchEntity, SketchEntity, None, None)
         }
         "sgLLDist" => relation_class(FeatureInputRelationFamily::LineLineDistance),
@@ -198,6 +266,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             relation_class(FeatureInputRelationFamily::PointPointVerticalDistance)
         }
         "sgAnglDim" => relation_class(FeatureInputRelationFamily::Angle),
+        "sgCircleDim" => relation_class(FeatureInputRelationFamily::CircleDiameter),
         "ParallelPlaneDistanceDim_c"
         | "ThreeDRadiusDim_c"
         | "faceRadiusObject_c"
@@ -206,17 +275,35 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         | "moFeatureDimHandle_c"
         | "moSkDimHandleRadial_c"
         | "moSkDimHandleValG2_c"
-        | "sgCircleDim" => (NativeClassKind::Dimension, Dimension, None, None),
+        | "moSkDimHandleOffset_c"
+        | "moSkDimHandleLinearPattCnt_c"
+        | "moDisplayAngularDim_c"
+        | "moDisplayDim_c"
+        | "moDisplayLinearPattCntDim_c"
+        | "moNumberDim_c"
+        | "moScalerDim_c"
+        | "AngleDim_c" => (NativeClassKind::Dimension, Dimension, None, None),
+        "sgDimEntityHelpData_c" | "sgLinearPattCntDim" | "sgOffsetDim" | "sgSkOffsetDim" => {
+            (NativeClassKind::Dimension, Dimension, None, None)
+        }
         "moLengthParameter_c" => (NativeClassKind::LengthParameter, Parameter, None, None),
         "moCompEdge_c"
         | "moCompFace_c"
         | "moCompFeature_c"
         | "moCompRefPlane_c"
+        | "moCompReferenceCurve_c"
         | "moCompSketchEntHandle_c"
         | "moCompSolidBody_c"
+        | "moCompSurfaceBody_c"
         | "moCompVertex_c"
+        | "moConstSurfRef_w"
         | "moEdgeRef_c"
+        | "moEndPointRef_w"
         | "moFaceRef_c"
+        | "moGeneralCurveRef_w"
+        | "moLineRef_w"
+        | "moSingleFaceRef_w"
+        | "moSolidRef_w"
         | "moVertexRef_c" => (NativeClassKind::Reference, Reference, None, None),
         "moBBoxCenterData_c"
         | "moDefaultRefPlnData_c"
@@ -237,6 +324,8 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         | "moSketchExtRef_w"
         | "moSketchRegion_c"
         | "moSurfaceIdRep_c"
+        | "moMirPatternSurfIdRep_c"
+        | "moWzdHoleSurfIdRep_c"
         | "sgExtEnt_c" => (NativeClassKind::Auxiliary, Auxiliary, None, None),
         _ => (NativeClassKind::Unknown, Native, None, None),
     };
@@ -292,6 +381,22 @@ pub(crate) fn classify(feature: &Feature) -> Option<FeatureClass> {
     classes.all(|class| class == first).then_some(first)
 }
 
+/// Classify a built-in principal plane from its native class and reserved identity.
+pub(crate) fn principal_plane(feature: &Feature) -> Option<PrincipalPlane> {
+    if native_object_class(feature.input_class.as_deref()?).kind != NativeClassKind::ReferencePlane
+        || !feature.parameters.is_empty()
+        || !feature.properties.is_empty()
+    {
+        return None;
+    }
+    match feature.source_id.as_deref()? {
+        "2" => Some(PrincipalPlane::Front),
+        "3" => Some(PrincipalPlane::Top),
+        "4" => Some(PrincipalPlane::Right),
+        _ => None,
+    }
+}
+
 fn classify_input_class(class: Option<&str>) -> Option<FeatureClass> {
     native_object_class(class?).feature
 }
@@ -308,7 +413,7 @@ fn classify_xml_element(tag: &str) -> Option<FeatureClass> {
         "CompositeCurve" => FeatureClass::CompositeCurve,
         "Helix" | "HelixSpiral" | "Helix/Spiral" => FeatureClass::Helix,
         "Wrap" => FeatureClass::Wrap,
-        "Extrusion" => FeatureClass::Extrude,
+        "Extrusion" | "Cut" => FeatureClass::Extrude,
         "Fillet" => FeatureClass::Fillet,
         "Chamfer" => FeatureClass::Chamfer,
         "Shell" => FeatureClass::Shell,
@@ -330,7 +435,7 @@ fn classify_xml_element(tag: &str) -> Option<FeatureClass> {
         "Dome" => FeatureClass::Dome,
         "Flex" => FeatureClass::Flex,
         "Scale" => FeatureClass::Scale,
-        "Hole" => FeatureClass::Hole,
+        "Hole" | "HoleWizard" => FeatureClass::Hole,
         "Revolve" | "Revolution" => FeatureClass::Revolve,
         "Pattern" | "Mirror" => FeatureClass::Pattern,
         "Sweep" | "Surface-Sweep" => FeatureClass::Sweep,
@@ -343,6 +448,9 @@ fn classify_xml_element(tag: &str) -> Option<FeatureClass> {
 fn classify_type_token(kind: &str) -> Option<FeatureClass> {
     Some(match kind {
         "BossExtrude" | "CutExtrude" => FeatureClass::Extrude,
+        "Helix" | "HelixSpiral" | "Helix/Spiral" => FeatureClass::Helix,
+        "Surface-Sweep" => FeatureClass::Sweep,
+        "Thicken" | "Thickness" => FeatureClass::Thicken,
         "LinearPattern" | "CircularPattern" | "CrvPattern" | "CurvePattern"
         | "CurveDrivenPattern" | "Mirror" => FeatureClass::Pattern,
         "BossLoft" | "CutLoft" | "BoundaryBoss" | "BoundaryCut" => FeatureClass::Loft,
@@ -401,6 +509,46 @@ mod tests {
     }
 
     #[test]
+    fn operation_classes_classify_without_localized_type_tokens() {
+        for (class, expected) in [
+            ("moHoleWzd_c", FeatureClass::Hole),
+            ("moRevolution_c", FeatureClass::Revolve),
+            ("moRevCut_c", FeatureClass::Revolve),
+            ("moRefAxis_c", FeatureClass::ReferenceAxis),
+            ("moMirrorPattern_c", FeatureClass::Pattern),
+        ] {
+            assert_eq!(
+                classify(&feature("Feature", "localized", "localized", Some(class))),
+                Some(expected),
+                "{class}"
+            );
+        }
+    }
+
+    #[test]
+    fn serialized_type_tokens_classify_generic_feature_elements() {
+        for (kind, class) in [
+            ("Helix/Spiral", FeatureClass::Helix),
+            ("Surface-Sweep", FeatureClass::Sweep),
+            ("Thicken", FeatureClass::Thicken),
+        ] {
+            assert_eq!(
+                classify(&feature("Feature", "localized display name", kind, None)),
+                Some(class),
+                "{kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn hole_wizard_element_is_a_hole_independent_of_display_language() {
+        assert_eq!(
+            classify(&feature("HoleWizard", "localized", "localized", None)),
+            Some(FeatureClass::Hole)
+        );
+    }
+
+    #[test]
     fn conflicting_native_identities_are_not_classified() {
         assert_eq!(
             classify(&feature(
@@ -426,11 +574,126 @@ mod tests {
         assert_eq!(folder.feature, None);
         assert_eq!(folder.tree_node, Some(FeatureTreeNodeRole::SolidBodies));
 
+        let markup = native_object_class("moInkMarkupFolder_c");
+        assert_eq!(markup.role, FeatureInputClassRole::Auxiliary);
+        assert_eq!(markup.tree_node, Some(FeatureTreeNodeRole::Markups));
+
+        for class in ["moMirPatternSurfIdRep_c", "moWzdHoleSurfIdRep_c"] {
+            let output = native_object_class(class);
+            assert_eq!(output.role, FeatureInputClassRole::Auxiliary, "{class}");
+            assert_eq!(output.feature, None, "{class}");
+            assert_eq!(output.tree_node, None, "{class}");
+        }
+
+        for class in ["moCosmeticThread_c", "moDerivedCosmeticThread_c"] {
+            let thread = native_object_class(class);
+            assert_eq!(thread.kind, NativeClassKind::CosmeticThread, "{class}");
+            assert_eq!(thread.role, FeatureInputClassRole::Feature, "{class}");
+            assert_eq!(
+                thread.feature,
+                Some(FeatureClass::CosmeticThread),
+                "{class}"
+            );
+            assert_eq!(thread.tree_node, None, "{class}");
+        }
+
+        for (class, role) in [
+            ("moAmbientLight_c", FeatureTreeNodeRole::AmbientLight),
+            ("moDetailFolder_c", FeatureTreeNodeRole::Details),
+            ("moDirectionLight_c", FeatureTreeNodeRole::DirectionalLight),
+            ("moEnvFolder_c", FeatureTreeNodeRole::LightsAndCameras),
+            ("moFtrFolder_c", FeatureTreeNodeRole::FeatureFolder),
+            ("moPointLight_c", FeatureTreeNodeRole::PointLight),
+            ("moSpotLight_c", FeatureTreeNodeRole::SpotLight),
+            ("moTableFolder_c", FeatureTreeNodeRole::Tables),
+        ] {
+            let folder = native_object_class(class);
+            assert_eq!(folder.role, FeatureInputClassRole::Auxiliary, "{class}");
+            assert_eq!(folder.feature, None, "{class}");
+            assert_eq!(folder.tree_node, Some(role), "{class}");
+        }
+
+        let origin = native_object_class("moOriginProfileFeature_c");
+        assert_eq!(origin.kind, NativeClassKind::OriginProfileFeature);
+        assert_eq!(origin.role, FeatureInputClassRole::Feature);
+        assert_eq!(origin.feature, None);
+        assert_eq!(origin.tree_node, Some(FeatureTreeNodeRole::ModelOrigin));
+
+        for (name, kind, feature) in [
+            (
+                "moSketchBlockDef_c",
+                NativeClassKind::SketchBlockDefinition,
+                FeatureClass::SketchBlockDefinition,
+            ),
+            (
+                "moSketchBlockInst_c",
+                NativeClassKind::SketchBlockInstance,
+                FeatureClass::SketchBlockInstance,
+            ),
+        ] {
+            let block = native_object_class(name);
+            assert_eq!(block.kind, kind, "{name}");
+            assert_eq!(block.role, FeatureInputClassRole::Feature, "{name}");
+            assert_eq!(block.feature, Some(feature), "{name}");
+        }
+
+        for name in [
+            "moCompReferenceCurve_c",
+            "moCompSurfaceBody_c",
+            "moConstSurfRef_w",
+            "moEndPointRef_w",
+            "moGeneralCurveRef_w",
+            "moLineRef_w",
+            "moSingleFaceRef_w",
+            "moSolidRef_w",
+        ] {
+            let reference = native_object_class(name);
+            assert_eq!(reference.kind, NativeClassKind::Reference, "{name}");
+            assert_eq!(reference.role, FeatureInputClassRole::Reference, "{name}");
+        }
+
         let relation = native_object_class("sgPntPntDist");
         assert_eq!(
             relation.kind,
             NativeClassKind::SketchRelation(FeatureInputRelationFamily::PointPointDistance)
         );
+        let diameter = native_object_class("sgCircleDim");
+        assert_eq!(
+            diameter.kind,
+            NativeClassKind::SketchRelation(FeatureInputRelationFamily::CircleDiameter)
+        );
+        assert_eq!(diameter.role, FeatureInputClassRole::SketchConstraint);
+
+        for name in [
+            "sgArcHandle",
+            "sgEntHandle",
+            "sgLineHandle",
+            "sgPointHandle",
+            "sgSplineHandle",
+        ] {
+            let entity = native_object_class(name);
+            assert_eq!(entity.kind, NativeClassKind::SketchEntity, "{name}");
+            assert_eq!(entity.role, FeatureInputClassRole::SketchEntity, "{name}");
+        }
+
+        for name in [
+            "AngleDim_c",
+            "moDisplayAngularDim_c",
+            "moDisplayDim_c",
+            "moDisplayLinearPattCntDim_c",
+            "moNumberDim_c",
+            "moScalerDim_c",
+            "moSkDimHandleLinearPattCnt_c",
+            "moSkDimHandleOffset_c",
+            "sgDimEntityHelpData_c",
+            "sgLinearPattCntDim",
+            "sgOffsetDim",
+            "sgSkOffsetDim",
+        ] {
+            let dimension = native_object_class(name);
+            assert_eq!(dimension.kind, NativeClassKind::Dimension, "{name}");
+            assert_eq!(dimension.role, FeatureInputClassRole::Dimension, "{name}");
+        }
 
         assert_eq!(
             native_object_class("futureClass_c").kind,
@@ -439,13 +702,18 @@ mod tests {
     }
 
     #[test]
-    fn every_known_feature_class_has_feature_input_role() {
+    fn every_known_feature_class_has_projection_role() {
         for name in [
             "moExtrusion_c",
+            "moICE_c",
+            "moCut_c",
             "Fillet_c",
             "Chamfer_c",
             "moOriginProfileFeature_c",
             "moProfileFeature_c",
+            "mo3DProfileFeature_c",
+            "moSketchBlockDef_c",
+            "moSketchBlockInst_c",
             "moRefPlane_c",
             "moThicken_c",
             "moSweep_c",
@@ -453,10 +721,14 @@ mod tests {
             "moHelix_c",
             "moLPattern_c",
             "moCurvePattern_c",
+            "moCombineBodies_c",
             "moDeleteBody_c",
         ] {
             let class = native_object_class(name);
-            assert!(class.feature.is_some(), "missing feature family for {name}");
+            assert!(
+                class.feature.is_some() || class.tree_node.is_some(),
+                "missing projection role for {name}"
+            );
             assert_ne!(
                 class.role,
                 FeatureInputClassRole::Native,

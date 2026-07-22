@@ -72,7 +72,7 @@ The repository contains six native-format codecs:
 - **Rhino `.3dm` — [L9](docs/format-support.md#support-ladder) for archive 50/60/70/80:** complete built-in model, product structure, presentation, annotations, application-data retention, and bounded semantic native writing; older bands have inspection and metadata support.
 - **Siemens NX `.prt` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology.
 - **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.
-- **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** container mastered; no placed model geometry.
+- **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** structural decode with partial placed geometry, topology, sketches, and design records.
 - **STEP Part 21 AP203/AP214/AP242 — [L9](docs/format-support.md#support-ladder):** full-document read and semantic clear-text write with target-schema selection and strict fidelity checks.
 
 The pure-Rust STEP writer re-decodes generated files and can reject every reported semantic loss before writing.
@@ -87,7 +87,7 @@ input file ──▶ container decoder ──▶ format decoder ──▶ IR ─
 
 The IR connects the pipeline. Decoders produce it, validators check it, and exporters consume it. Version 2 serializes a format-neutral model, the required `subds` control-cage arena, free-carrier source associations, sparse source annotations, independently versioned native namespaces, and opaque records as canonical JSON. Arena entries are ordered by ID after finalization, and carrier reachability follows topology links, procedural references, and source associations.
 
-- [CAD IR version 53](docs/cad-ir.md) defines byte semantics, canonical units and parameterization, identity, topology, directed SubD control cages, bounded procedural constructions, annotations, native opacity, and versioning.
+- [CAD IR version 55](docs/cad-ir.md) defines byte semantics, canonical units and parameterization, identity, topology, directed SubD control cages, bounded procedural constructions, annotations, native opacity, and versioning.
 - [Architecture](docs/architecture.md) describes the pipeline, codec interface, and crate map.
 - [Format support](docs/format-support.md) records current capability by format.
 - [Roadmap](docs/roadmap.md) defines milestones and contributor entry points.

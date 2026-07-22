@@ -42,7 +42,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | CATIA V5 `.CATPart` (standard-nested band) | **L2 claimed** | conditionally connected B-rep                                                                         |
 | Siemens NX `.prt`                          | **L2 claimed** | conditional connected B-rep, external-dependency inspection                                           |
 | CATIA V5 `.CATPart` (other layout bands)   | **L1 claimed** |                                                                                                       |
-| Creo Parametric `.prt`                     | **L1 claimed** | derived datum planes, prototype geometry census                                                       |
+| Creo Parametric `.prt`                     | **L1 claimed** | partial placed geometry, connected topology, sketches, constraints, parameters, expressions, features |
 | Rhino `.3dm` (V3/V4)                       | **L1 tested**  | metadata and bounded object-record retention                                                          |
 | Rhino `.3dm` (V1/V2 and archive 5)         | **L0 tested**  | header-only inspection; decode is rejected                                                            |
 | STEP Part 21 AP242 editions 1–3            | **L9 tested**  |                                                                                                         |
@@ -189,16 +189,16 @@ See [`formats/rhino_3dm.md`](formats/rhino_3dm.md) and [`formats/rhino_3dm-open-
 
 - **Container and versions: Partial.** The codec validates CRC-framed blocks, enumerates cache cells and the tail directory, extracts active Parasolid partitions, and preserves the source image. Coverage across historical schemas remains incomplete.
 - **Geometry: Partial.** Analytic and NURBS surfaces and curves transfer into typed carriers. Offset, swept, blend, intersection, and other unsupported families remain opaque or produce unknown carriers.
-- **Topology: Partial.** The codec builds body, region, shell, face, loop, coedge, edge, and vertex ownership for supported layouts, including multiple regions and shells per body. Schema-32001 solid and sheet regions and schema-33103 solid regions follow their native region/lump/shell chains. Schema-33103 interleaved faces partition by native adjacency components rather than stream intervals. Disc14 faces partition through native region, shell, face-use, and face geometry rings. Partition face membership excludes superseded deltas geometry; deltas update referenced points and complete missing subordinate records. Periodic seams, orientation, and several pcurves are derived. Older body layouts and schema-33103 sheet classification remain open.
+- **Topology: Partial.** The codec builds body, region, shell, face, loop, coedge, edge, and vertex ownership for supported layouts, including multiple regions and shells per body. Schema-32001 and schema-33103 solid and sheet regions follow their native region/lump/shell chains. Schema-36001 single-region solids follow their complete bidirectional root lattices. Schema-33103 interleaved faces partition by native adjacency components rather than stream intervals. Disc14 faces partition through native region, shell, face-use, and face geometry rings. Partition face membership excludes superseded deltas geometry; deltas update referenced points and complete missing subordinate records. Periodic cylinder seams follow the stored two-loop convention, and face orientation follows bridge-anchored coedge parity. Several pcurves are derived. Older body layouts remain open.
 - **Tessellation: Partial.** Display-list geometry transfers into tessellation arenas and can be regenerated. Stable face-to-triangle ownership remains open.
-- **Design intent: Partial.** Configurations transfer as neutral records with material and property overrides and retain their configuration-specific solids. Keywords history retains feature element tags, exact containment including id-less nodes, order, names, suppression, dimensions, expressions, and attributes. Unknown operation families retain their kind, dimensions, and non-parameter attributes in the neutral native-operation definition. Reference planes, axes, points, and coordinate systems retain complete model-space placement. Planar profile B-reps nested in feature-input lanes transfer as placed sketches with solved lines, circles, arcs, ellipses, and rational or non-rational NURBS, plus oriented profile loops. Boss and cut extrusions retain blind, symmetric, two-sided, through-all, and native-face termination, explicit direction, draft, profile, and Boolean operation. Explicit-axis revolutions retain one-sided, symmetric, and two-sided angular extents, profile, axis placement, and Boolean operation. Profile sweeps, lofts including boundary boss and cut forms, ribs, bending, twisting, tapering, and stretching flexes, drafts with selected faces and neutral planes, direct body Boolean combines, body deletion and isolation, body scaling about an explicit center, face deletion and replacement, face offset/translation/rotation, spherical and elliptical domes, linear and circular patterns, mirrors, constant and variable-radius fillets with selected edges, dimensional chamfers with selected edges, shells with removed faces, face thickening in either direction or both directions, and simple, counterbore, and countersink holes with explicit face, position, direction, and blind or through-all termination project to neutral operations and write edits through retained native records. Sketch constraints and other operation families remain open.
+- **Design intent: Partial.** Configurations transfer as neutral records with material and property overrides and retain their configuration-specific solids. Active configuration names resolve uniquely and take precedence over the active geometry partition; unresolved active identity is reported. Geometry partitions without native configuration definitions produce explicitly reported inferred states. Keywords history retains feature element tags, exact containment including id-less nodes, order, names, suppression, dimensions, expressions, and attributes. Arithmetic parameter expressions evaluate across unambiguous dependency references with dimensional type checking. Semantic PMI dimensions enrich uniquely owner-qualified parameters; unbound records and native dimension subtypes are reported. Explicit feature output scopes resolve to model bodies; unresolved non-empty scopes are reported. Unknown operation families retain their kind, dimensions, and non-parameter attributes in the neutral native-operation definition. Reference planes, axes, points, and coordinate systems retain complete model-space placement. Planar profile B-reps nested in feature-input lanes transfer as placed sketches with solved lines, circles, arcs, ellipses, and rational or non-rational NURBS, plus oriented profile loops. Boss and cut extrusions retain blind, symmetric, two-sided, through-all, and native-face termination, explicit direction, draft, profile, and Boolean operation. Explicit-axis revolutions retain one-sided, symmetric, and two-sided angular extents, profile, axis placement, and Boolean operation. Profile sweeps, lofts including boundary boss and cut forms, ribs, bending, twisting, tapering, and stretching flexes, drafts with selected faces and neutral planes, direct body Boolean combines, body deletion and isolation, body scaling about an explicit center, face deletion and replacement, face offset/translation/rotation, spherical and elliptical domes, linear and circular patterns, mirrors, constant and variable-radius fillets with selected edges, dimensional chamfers with selected edges, shells with removed faces, face thickening in either direction or both directions, and simple, counterbore, and countersink holes with explicit face, position, direction, and blind or through-all termination project to neutral operations and write edits through retained native records. Decode reports parameters without evaluated scalars, expressions with unresolved quoted parameter references, history records with ambiguous identities or unresolved structural references, native sketch relation records omitted before constraint projection, native-only sketch geometry and constraints, native-only feature definitions, every typed feature retaining unresolved required operation semantics, and body delete/keep features whose retention mode is unresolved. Sketch constraints and other operation families remain open.
 - **Product structure: None.** `.sldprt` support covers parts only.
 - **Presentation and metadata: Partial.** Base colors, appearance bindings, previews, SolidWorks XML metadata, units, and selected attributes transfer. Full appearance precedence and all embedded metadata stores remain open.
 
 ### Write and round trip
 
 - **Native write: Partial.** Unchanged IR with a retained source image writes byte for byte. Modified or source-less supported IR regenerates native blocks and a section directory.
-- **Semantic write limits:** at most five regions per body and six shells per solid region; sheet regions require one shell. Explicit face names, stored edge parameter ranges, periodic NURBS carriers, and unbounded appearance data are not encoded.
+- **Semantic write limits:** at most five regions per body and six shells per solid region; sheet regions require one shell. Ellipses whose declared major radius is smaller than the minor radius, elliptical or non-acute cones, signed sphere or torus parameterizations, explicit face names, stored edge parameter ranges, periodic NURBS carriers, NURBS surface degrees outside 1–8 or shapes that do not re-infer identically, and unbounded appearance data are not encoded.
 - **Round trip: Partial.** Byte-exact unchanged-file and semantic regeneration paths have generated-fixture tests. The public version and feature matrix remains to be built.
 
 See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`](formats/sldprt-open-items.md).
@@ -261,20 +261,20 @@ See [`formats/siemens_nx.md`](formats/siemens_nx.md) and [`formats/siemens_nx-op
 
 ### Read profile
 
-- **Container and versions: Partial.** The codec decodes `V5_CFV2` containers and distinguishes standard-nested, FBB-only, zero-entity, float-packed, E5, and inner-without-directory layouts.
-- **Geometry: Partial.** Standard-nested files transfer vertices, planes when their bridge records resolve, curved analytic surfaces, and supported edge curves. Other layouts transfer subsets of analytic or freeform carriers.
-- **Topology: Partial.** Standard-nested files can emit a connected body, shell, face, loop, coedge, edge, and vertex graph when trim, support, and endpoint assignment resolve. Other parsed topology families remain disconnected from the common IR.
+- **Container and versions: Partial.** The codec decodes `V5_CFV2` containers, enumerates named outer and inner directory streams with reconstructed extents, inventories every bounded outer `FINJPL` block by stored name/type/family, reads the saved-by CATIA version/release/service-pack/hot-fix tuple, enumerates CATIA document references, and distinguishes standard-nested, FBB-only, zero-entity, float-packed, E5, and inner-without-directory layouts.
+- **Geometry: Partial.** Standard-nested and FBB-only files transfer vertices, bridged planes, signed-axis analytic carriers, supported edge curves, consolidated NURBS carriers, uniquely domain-bound constant-offset constructions, and fit-free rolling-ball surface jets. E5 one-pcurve boundary supports lift analytic isoparametric lines and circles into exact 3D edge carriers and retain general nonplanar pcurves as exact parametric surface-curve constructions. Zero-entity graphs transfer analytic, NURBS, and typed procedural curve carriers. Freeform face aliases and unbridged planes remain unknown.
+- **Topology: Partial.** Standard-nested and FBB-only files emit a connected body, shell, face, loop, coedge, edge, and vertex graph when trim, support, and endpoint assignment resolve. Reference-closed E5 and zero-entity graphs emit the same connected common-IR topology. Incomplete endpoint quotients and owner graphs decline atomically to disconnected geometry.
 - **Tessellation: None.**
 - **Design intent: None.**
 - **Product structure: None.**
-- **Presentation and metadata: None.** Persistent tags, attributes, materials, and appearance bindings remain outside the IR.
+- **Presentation and metadata: Partial.** The summary-information JPEG preview transfers byte-exactly with its dimensions. Persistent tags, attributes, materials, and appearance bindings remain outside the IR.
 
 ### Write and round trip
 
 - **Native write: None.**
 - **Round trip: None.**
 
-Open gates include endpoint incidence for additional variants, orientation signs, pcurve attachment, spline edge curves, persistent tags, attributes, and the consolidated-stream tag resolver.
+Open gates include endpoint incidence for additional variants, orientation signs, pcurve attachment, spline edge curves, remaining persistent edge/cache bindings, attributes, and the consolidated-stream tag resolver.
 
 See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](formats/catia-open-items.md).
 
@@ -282,26 +282,98 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
 
 **Kernel:** Granite, serialized through PSB
 
-**Ladder: L1 claimed.** Prototype geometry lacks model-space placement required by L2. Derived datum planes and the geometry census exceed the L1 gates.
+**Ladder: L1 claimed.** Incomplete model-space coverage across analytic and spline carrier families blocks L2. Exact plane components, selected cylinders, placed sketches, and native design records exceed the L1 gates.
 
 ### Read profile
 
-- **Container and versions: Partial.** The codec detects `#UGC:2`, enumerates sections, identifies ND and DEPDB layouts, and decodes supported PSB compact integers and floats.
-- **Geometry: Partial.** ActDatums plane outlines transfer as derived plane carriers. VisibGeom surfaces and curves remain unplaced prototype records.
-- **Topology: None.** Scanning identifies prototype surface rows, half-edges, and loops. Placed body topology remains outside the IR.
-- **Tessellation: None.**
-- **Design intent: None.**
-- **Product structure: None.**
-- **Presentation and metadata: Partial.** Container attributes and geometry censuses transfer as source metadata. Features, materials, and display data remain open.
+- **Container and versions: Partial.** The codec detects `#UGC:2`, enumerates sections, identifies ND and DEPDB layouts, decodes supported PSB compact integers and floats, expands Unix-compress payloads, and retains complete counted `double_xar` scalar dictionaries with literal values and unresolved reference slots.
+- **Geometry: Partial.** ActDatums and VisibGeom plane carriers transfer in model space. Finite `MdlRefInfo` lines and circular records transfer as model-space carriers; named conic records retain their endpoints, coefficients, parameters, and complete local-system slots without premature conic-family classification. Visible and nonvisible surface and curve namespaces remain separate and retain stable native identities, raw type bytes, feature ownership, topology links, exact parameter bodies, named prototype fields, and source offsets. Named surface prototypes, bounded curve parameter records, and tabulated-cylinder cubic curve replays retain typed named parameter wrappers, exact parameter and packed control-point bodies, and decoded two-coordinate control points where complete. Complete named ND plane and torus-family prototypes transfer their adjacent first positional instances from local frames and family parameters. Complementary five-coordinate hemisphere envelopes sharing a zero-major-radius prototype transfer as placed spheres. Other tagged positional torus/sphere radius overrides and complete terminal outline extents retain typed row-local fields until the same positional body establishes a complete model-space placement. Cylinder and cone prototype frames remain templates until a positional construction or feature placement establishes model space. Unbound straight `geom_type = 2c` rows transfer as planes and extrusion constructions. Replay-bound rows with a unique directrix-to-frame span assignment transfer as cubic NURBS curves, tensor-product extrusion surfaces, and extrusion constructions; other frame variants remain native. Topology-bound cylinders transfer when cap records establish their complete placement. Complete saved-section lines, arcs, and circles generate placed plane or cylinder carriers when the order and generated-entity tables bind them to a same-family surface owned by the linear sweep. Resolved linear sweeps also evaluate closed-profile vertex line carriers independently of extent trimming. A type-20127 zero-offset placement instruction resolves the blind class-917 circular section against its standard datum; the generated cap envelope aligns its saved circle with the model-space cylinder carrier. A class-913 slot fillet with two independent equal-gap parallel support pairs transfers its unique tangent cylinder. In a four-entry round table, a rowless third face inherits the complete cylinder equation of the following materialized cylinder under the schema-913 sibling invariant. A uniquely owned DEPDB section with one complete local-system frame uses its stored local z axis and origin as the section plane; this places its sketch against the stored perpendicular reference plane. Resolved rotational sweeps evaluate unbounded plane, cylinder, cone, sphere, torus, tensor-product NURBS, and non-axis profile-vertex circular orbit carriers independently of unresolved angular trimming. Explicit source-entity identifiers bind generated carriers to native surface rows. Feature-generated carriers are evaluated before native intersection curves and topology. Plane/plane intersections transfer as lines; unique plane/cylinder intersections transfer as circles, ellipses, or tangent lines; a two-generator plane/cylinder secant transfers when solved native endpoints select exactly one generator; internally or externally tangent parallel cylinders transfer their single common generator. Placed circular cones contribute perpendicular-plane section circles, tangent-plane generator lines, endpoint-selected two-generator apex sections, endpoint-selected coaxial-cone circles, endpoint-selected coaxial-cylinder circles, endpoint-selected coaxial-torus circles, and endpoint-selected coaxial-sphere tangent or secant circles. Placed spheres participate in plane-intersection and sphere-intersection circles; an equal-radius cylinder whose axis contains the sphere center contributes their single equatorial circle. Axis-normal planes contribute endpoint-selected tangent or secant torus circles. Coaxial cylinders, axis-centered spheres, and coaxial tori contribute endpoint-selected tangent or secant torus circles. Other secant cases with multiple components remain unresolved. Other analytic and spline families remain incomplete.
+  Invariant-complete positional conic records additionally transfer as model-space ellipses.
+  Strict-secant parallel cylinders transfer one common generator when solved
+  native endpoints select exactly one of the two candidates.
+  Analytic carrier pairs with one derived curve component transfer without
+  solved endpoints; present endpoints must agree with that component. Multiple
+  components require endpoints that select exactly one candidate.
+  Positive-ratio elliptical cones transfer tangent apex generators and
+  endpoint-selected two-generator apex sections.
+  Coaxial positive-ratio cones with proportional transverse quadratic forms
+  transfer unique or endpoint-selected axis-normal elliptical sections,
+  including reciprocal-ratio sections with exchanged principal frames.
+  A cylinder through a sphere center transfers its equatorial tangent circle
+  or one endpoint-selected secant circle.
+  Third-plane intersections resolve vertices across every transferred
+  multi-component analytic circle family when exactly one point remains.
+  Planes containing a torus axis contribute the two exact meridian circles;
+  paired solved endpoints select one component.
+  Solved native edges on derived intersection lines use start-anchored unit
+  carriers and `[0, length]` parameter intervals. Exact native line carriers
+  retain their source parameterization and use projected endpoint intervals.
+  Complete positional and uniquely face-bound labeled UV endpoint pairs
+  transfer as straight pcurves when their face-surface images uniquely agree
+  with the solved coedge traversal. Their mapped midpoints select minor, major,
+  or full-turn parameter intervals on circular and elliptical native edges;
+  adjacent face paths must agree.
+  A periodic conic used only by one-edge closed native loops uses one full
+  period from its seam vertex when no native pcurve candidate is present.
+  Parabolic edges recover endpoint parameters from their focal frame.
+  Hyperbolic edges recover endpoint parameters after paired vertices select
+  exactly one of the two analytic branches.
+  Degree-one nonperiodic NURBS edges algebraically invert positive-weight
+  rational line spans and transfer any bounded interval whose solved vertices
+  each have one global parameter. Higher-degree carriers use their full
+  intrinsic knot domain when solved vertices uniquely match its endpoints.
+  A positive-weight periodic NURBS used only by one-edge closed native loops
+  uses its intrinsic domain when both bounds evaluate to the seam and no
+  pcurve candidate exists.
+  Exact line, conic, and NURBS edges on solved planar faces project into exact
+  plane-chart pcurves when no native pcurve candidate is present, preserving
+  the 3D carrier parameterization and edge interval.
+  Coaxial constant-parameter circular edges on cylinders, spheres, and tori,
+  plus circular or elliptical edges on matching cone parallels, project into
+  exact affine surface-chart pcurves under the same absence rule, preserving
+  their native angular parameter and edge interval across either cone nappe
+  and signed torus ring branches.
+  Exact sphere and torus meridian circles project to constant-azimuth affine
+  pcurves, preserving their native angular parameter and edge interval through
+  sphere poles.
+  Exact generator lines on cylinders and positive-ratio cones project to
+  constant-azimuth affine pcurves, preserving arbitrary nonzero native line
+  scales and edge intervals.
+  Positive-ratio elliptical cones participate in exact point containment,
+  axis-normal and oblique ellipse, parabola, and hyperbola sections, and
+  plane/plane/cone vertex solving; rotational-symmetry reductions remain
+  restricted to circular cones.
+- **Topology: Partial.** Native half-edges and closed loops decode. Canonical curve adjacency rows retain their feature owner, orientation bytes, incident faces, next-edge links, and source offsets as native records. The first resolved linear section sweep evaluates into a connected body, region, shell, correctly oriented cap and side faces, loops, coedges, edges, and vertices with exact plane and cylinder pcurves. It supports one line/arc outer profile with pairwise-disjoint, unnested, oppositely oriented line/arc holes; analytic line/line, line/arc, and arc/arc predicates reject touching or intersecting boundaries. A one-circle profile evaluates into two planar caps and one cylindrical side face with closed circular edges, seam vertices, constant-offset side pcurves, and paired radial uses. A full-turn, one-profile line/arc revolution evaluates into a connected solid across planar, cylindrical, conical, spherical, ring-torus, and spindle-torus faces. Axis vertices collapse; off-axis vertices become closed circular edges with exact analytic pcurves and paired radial uses. Later sweeps remain withheld until their Boolean operation is resolved. Native components with uniquely solved plane/plane/plane, plane/plane/cylinder, plane/plane/cone, plane/plane/sphere, plane/sphere/sphere, plane/coaxial-cone/cone, plane/coaxial-cone/cylinder, plane/coaxial-cone/torus, plane/coaxial-cone/tangent-sphere, plane/equal-radius-coaxial-cylinder/sphere, plane/axis-centered-tangent-sphere/torus, plane/plane/axis-containing-torus, plane/tangent-coaxial-tori, plane/plane/tangent-torus, or plane/tangent-cylinder-pair vertex coordinates also transfer as connected topology. Planar multi-loop faces require one strict containment outer boundary and transfer that loop as outer with every contained loop marked inner. Single-loop native faces transfer their sole loop as outer. Native non-planar faces transfer only with one loop until their byte-backed multi-loop discriminator is decoded. Multiple analytic intersection roots remain unresolved, and unsolved carriers stay linked opaque geometry rather than being guessed.
+- **Tessellation: Partial.** Complete named `prim_tristripsetwithatt` position
+  arrays transfer as triangle strips with alternating winding. Primitive arrays
+  without a complete position lane or persistent geometry binding remain
+  native records.
+- **Design intent: Partial.** Ordered stored feature-operation states and their current-state projection, the configuration driver-table root pointer, dependencies, the implicit `AllFeatur` entity/reference graph and mixed generated-entity tables, order-validated visible-to-nonvisible surface replay associations, placed and unplaced section sketches and their ordered planar-sketch history nodes, source-offset-scoped repeated sketch snapshots, typed and opaque `segtab` entities including type-10 circles, ordered saved lines, arcs, circles, and splines, typed horizontal, vertical, coincidence, point-on-object, tangency, perpendicular, parallel, equal, axial and central symmetry, same-coordinate, and radius/diameter constraints, snapshot-owned dimensions including geometry-free dimension tables and radius/diameter display semantics, curve-equation programs with scalar operators and standard mathematical functions, and cylindrical native-axis helix semantics transfer as typed or native design records. A resolved base linear section sweep carries its resolved sketch profile, direction, blind, symmetric, or two-sided extent, new-body operation, solid construction state, and evaluated output body. A resolved circular section sweep carries its resolved sketch profile, direction, blind extent, Boolean effect, solid construction state, and evaluated output body. A uniquely placed DEPDB rotational section carries its profile, axis, Boolean effect, solid construction state, native definition reference, full-turn angular extent when its angle choice is present, and evaluated output body. Repeated identical full-turn sequences remain separate native regeneration-state records.
+  Solver-only section entity identifiers transfer as shared native construction
+  entities, preserving complete incidence references without assigning an
+  unsupported geometry family.
+  Current feature display names preserve the stored `id` or `ID` form while excluding the separate one-byte state prefix.
+  Named datum-plane, draft, fill, surface-merge, boundary-surface, protrusion, extrusion, subtractive cut, and revolution families retain their exact operation family when their construction inputs remain unresolved. A current recipe supplies the linear or rotational construction and Boolean effect independently of the display-name family. Row-only class-927 and class-946 features remain typed drafts and surface merges when their display names and operands are absent. Non-rotational class-916 and class-917 section sweeps remain typed subtractive and additive extrusions when placement or extent operands are incomplete. Sketch entities reference model-space curve carriers only when a unique section placement materializes that carrier; unplaced entities and isolated sketch points retain no fabricated curve reference.
+  Boolean classification treats only actual body outputs and prior new-body
+  sweeps as established material; consuming operations do not fabricate a
+  body when their source history is partial.
+  The final stored state for each feature supplies its active recipe, Boolean
+  effect, schema parent, and source tag while every preceding state remains an
+  ordered native regeneration record.
+- **Product structure: Partial.** A unique native model-name header defines one
+  part product and one root identity occurrence. The product owns every
+  transferred body. Assembly component definitions, child occurrences,
+  placements, and constraints remain open.
+- **Presentation and metadata: Partial.** Container attributes transfer as source metadata; decode-coverage counts transfer as the decode report's coverage census. Materials and display data remain open.
 
-`geometry_transferred` is true only when datum-plane carriers transfer. VisibGeom-only files report no transferred model geometry.
+`geometry_transferred` is true when any complete model-space carrier transfers.
 
 ### Write and round trip
 
 - **Native write: None.**
 - **Round trip: None.**
 
-The principal geometry gate is the unresolved general 8-byte PSB float-token formula needed to place prototype geometry in model space.
+The principal geometry gates are per-instance analytic parameter bindings, feature-generated carrier evaluation, dense curve and spline bodies, and complete face-instance placement.
 
 See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-items.md`](formats/creo_prt-open-items.md).
 
