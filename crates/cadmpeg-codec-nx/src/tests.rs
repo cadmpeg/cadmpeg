@@ -6,10 +6,7 @@
 //! code regresses.
 #![allow(clippy::unwrap_used)]
 
-use std::io::{Cursor, Write};
-
-use flate2::write::ZlibEncoder;
-use flate2::Compression;
+use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::geometry::{

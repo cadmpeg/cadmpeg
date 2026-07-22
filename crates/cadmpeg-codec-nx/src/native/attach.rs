@@ -1817,7 +1817,7 @@ fn records_by_operation<'a, T>(
 
 // ===== Feature-semantics and attachment helpers (moved from decode.rs) =====
 
-pub(crate) fn attach_parasolid_topology_string_attributes(
+fn attach_parasolid_topology_string_attributes(
     ir: &mut CadIr,
     topology_references: &[crate::native::parasolid::ParasolidTopologyAttributeListReference],
     class_uses: &[crate::native::parasolid::ParasolidTopologyAttributeClassUse],
@@ -1907,7 +1907,7 @@ pub(crate) fn attach_parasolid_topology_string_attributes(
         .sort_by(|first, second| first.id.0.cmp(&second.id.0));
 }
 
-pub(crate) struct ParasolidNumericAttributeSources<'a> {
+struct ParasolidNumericAttributeSources<'a> {
     pub(crate) topology_references:
         &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
     pub(crate) class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
@@ -1986,7 +1986,7 @@ fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, Attribut
         .collect()
 }
 
-pub(crate) fn attach_parasolid_topology_numeric_attributes(
+fn attach_parasolid_topology_numeric_attributes(
     ir: &mut CadIr,
     sources: &ParasolidNumericAttributeSources<'_>,
     annotations: &mut AnnotationBuilder,
@@ -2110,7 +2110,7 @@ pub(crate) fn attach_parasolid_topology_numeric_attributes(
         .sort_by(|first, second| first.id.0.cmp(&second.id.0));
 }
 
-pub(crate) fn preceding_operation_dependency(
+fn preceding_operation_dependency(
     operation: &str,
     consumer_position: usize,
     operation_positions: &BTreeMap<&str, usize>,
@@ -2123,11 +2123,11 @@ pub(crate) fn preceding_operation_dependency(
     feature_ids.get(operation).cloned()
 }
 
-pub(crate) fn projects_neutral_feature(label: &str) -> bool {
+fn projects_neutral_feature(label: &str) -> bool {
     label != "Container"
 }
 
-pub(crate) fn text_semantic_annotation(
+fn text_semantic_annotation(
     operation_kind: &str,
     feature: &FeatureId,
     native_ref: &str,
@@ -2176,7 +2176,7 @@ pub(crate) fn parameter_owner_dependencies(
     dependencies
 }
 
-pub(crate) fn extrude_feature_definition(
+fn extrude_feature_definition(
     construction_profile: Option<&str>,
     structured_construction: Option<&str>,
     op: BooleanOp,
@@ -2206,7 +2206,7 @@ pub(crate) fn extrude_feature_definition(
     })
 }
 
-pub(crate) fn extrude_boolean_op(
+fn extrude_boolean_op(
     has_previous_writer: bool,
     output_kinds: &[cadmpeg_ir::topology::BodyKind],
 ) -> BooleanOp {
@@ -2294,7 +2294,7 @@ fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>>
 
 /// Neutral operand family named by an NX rolling-ball blend operation.
 #[derive(Clone, Copy)]
-pub(crate) enum NxBlendFamily {
+enum NxBlendFamily {
     /// Edge-selected `BLEND` operation.
     Edge,
     /// Face-selected `FACE_BLEND` operation.
@@ -2302,7 +2302,7 @@ pub(crate) enum NxBlendFamily {
 }
 
 /// Project complete owned rolling-ball carriers into their named blend family.
-pub(crate) fn blend_feature_definition(
+fn blend_feature_definition(
     ir: &CadIr,
     outputs: &[BodyId],
     family: NxBlendFamily,
@@ -2427,7 +2427,7 @@ pub(crate) fn blend_feature_definition(
 /// its lowest surface identity on the first side. The support graph must be
 /// complete bipartite: odd cycles and missing cross-pairs cannot be represented
 /// by one neutral face-blend operation.
-pub(crate) fn blend_support_bipartition(
+fn blend_support_bipartition(
     pairs: Vec<[SurfaceId; 2]>,
 ) -> Option<(Vec<SurfaceId>, Vec<SurfaceId>)> {
     let mut adjacent = BTreeMap::<SurfaceId, BTreeSet<SurfaceId>>::new();
@@ -2483,7 +2483,7 @@ pub(crate) fn blend_support_bipartition(
     Some((first, second))
 }
 
-pub(crate) fn offset_surface_feature_definition(
+fn offset_surface_feature_definition(
     ir: &CadIr,
     outputs: &[BodyId],
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
@@ -2553,7 +2553,7 @@ fn owned_offset_carriers<'a>(
     (!carriers.is_empty()).then_some((body, carriers))
 }
 
-pub(crate) fn thicken_feature_definition(
+fn thicken_feature_definition(
     ir: &CadIr,
     outputs: &[BodyId],
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
@@ -2728,7 +2728,7 @@ pub(crate) fn feature_source_content(
     content.into_iter().map(|(_, content)| content).collect()
 }
 
-pub(crate) fn append_feature_expression_content<const N: usize>(
+fn append_feature_expression_content<const N: usize>(
     content: &mut Vec<FeatureSourceContent>,
     expressions: &[String; N],
 ) {
@@ -2743,7 +2743,7 @@ pub(crate) fn append_feature_expression_content<const N: usize>(
     }
 }
 
-pub(crate) fn simple_hole_native_properties(
+fn simple_hole_native_properties(
     operation_label: &str,
     templates: &[crate::native::features::FeatureSimpleHoleTemplate],
     repeated_lanes: &[crate::native::features::FeatureSimpleHoleRepeatedScalarLane],
@@ -2789,11 +2789,7 @@ pub(crate) fn simple_hole_native_properties(
     properties
 }
 
-pub(crate) fn block_placement(
-    ir: &CadIr,
-    dimensions: [f64; 3],
-    outputs: &[BodyId],
-) -> Option<Transform> {
+fn block_placement(ir: &CadIr, dimensions: [f64; 3], outputs: &[BodyId]) -> Option<Transform> {
     struct PlaneBand {
         normal: Vector3,
         offsets: Vec<f64>,
@@ -2968,7 +2964,7 @@ pub(crate) fn block_placement(
 }
 
 #[cfg(test)]
-pub(crate) fn non_boolean_feature_definition(
+fn non_boolean_feature_definition(
     kind: &str,
     payload_strings: &[&str],
     block_dimensions: Option<[f64; 3]>,
@@ -2990,14 +2986,14 @@ pub(crate) fn non_boolean_feature_definition(
 
 /// Permutation-invariant hole properties derived from one complete body partition.
 #[derive(Clone, Copy, Default)]
-pub(crate) struct HoleProjection {
+struct HoleProjection {
     pub(crate) position: Option<Point3>,
     pub(crate) diameter: Option<Length>,
     pub(crate) direction: Option<Vector3>,
     pub(crate) chamfer: Option<HoleKind>,
 }
 
-pub(crate) fn non_boolean_feature_definition_with_parameters(
+fn non_boolean_feature_definition_with_parameters(
     kind: &str,
     payload_strings: &[&str],
     block_dimensions: Option<[f64; 3]>,
@@ -3195,7 +3191,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
     }
 }
 
-pub(crate) fn native_feature_parameters(
+fn native_feature_parameters(
     uses: &[&crate::native::features::FeatureParameterUse],
     expressions: &[crate::native::om::Expression],
 ) -> BTreeMap<String, String> {
@@ -3224,7 +3220,7 @@ pub(crate) fn native_feature_parameters(
 /// when present. Without a group, a uniform equal-cardinality bore set makes
 /// every possible bijection yield the same diameter. Differing radii or any
 /// unmatched operation or bore wall reject the projection atomically.
-pub(crate) fn simple_hole_diameters(
+fn simple_hole_diameters(
     ir: &CadIr,
     templates: &[crate::native::features::FeatureSimpleHoleTemplate],
     groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
@@ -3237,7 +3233,7 @@ pub(crate) fn simple_hole_diameters(
     hole_diameters_for_operations(ir, &operations, outputs)
 }
 
-pub(crate) fn simple_hole_operations(
+fn simple_hole_operations(
     templates: &[crate::native::features::FeatureSimpleHoleTemplate],
     groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
 ) -> Option<Vec<String>> {
@@ -3277,7 +3273,7 @@ pub(crate) fn simple_hole_operations(
 /// Derive one diameter per operation when the complete operation set and its
 /// exact output-body topology form a uniform through-bore bijection in every
 /// body partition.
-pub(crate) fn hole_diameters_for_operations(
+fn hole_diameters_for_operations(
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
@@ -3325,7 +3321,7 @@ pub(crate) fn hole_diameters_for_operations(
 /// in a body partition has one common axis direction. Radii need not match:
 /// direction remains invariant when operation-to-bore diameter ownership is
 /// ambiguous.
-pub(crate) fn hole_directions_for_operations(
+fn hole_directions_for_operations(
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
@@ -3383,7 +3379,7 @@ pub(crate) fn hole_directions_for_operations(
 /// Derive the canonical point on a hole axis when one operation owns exactly
 /// one through bore. The closest point to the model origin is invariant under
 /// axial shifts of the serialized cylinder origin.
-pub(crate) fn hole_positions_for_operations(
+fn hole_positions_for_operations(
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
@@ -3566,7 +3562,7 @@ fn through_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<(Point
 /// Derive identical entry and exit chamfer treatments only when every simple
 /// through-hole bore has exactly two coaxial conical faces and every cone is
 /// bounded by the bore circle and one equal larger circle.
-pub(crate) fn simple_hole_chamfers(
+fn simple_hole_chamfers(
     ir: &CadIr,
     templates: &[crate::native::features::FeatureSimpleHoleTemplate],
     outputs: &BTreeMap<String, Vec<BodyId>>,
@@ -3753,7 +3749,7 @@ fn unique_simple_hole_template(
     crate::native::features::parse_simple_hole_template(candidate)
 }
 
-pub(crate) fn feature_body_selection(
+fn feature_body_selection(
     object_indices: &[u32],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
     native: String,
@@ -3838,7 +3834,7 @@ pub(crate) fn boolean_feature_definition(
 /// Project `DELETE` as body deletion only when its bounded operation record
 /// carries a primary-body field. Other `DELETE` payloads target a different
 /// object family and remain native until that family is decoded.
-pub(crate) fn delete_body_feature_definition(
+fn delete_body_feature_definition(
     body_object_index: Option<u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
@@ -3853,7 +3849,7 @@ pub(crate) fn delete_body_feature_definition(
     })
 }
 
-pub(crate) fn sew_body_feature_definition(
+fn sew_body_feature_definition(
     primary_body_object_index: u32,
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
@@ -3880,7 +3876,7 @@ pub(crate) fn sew_body_feature_definition(
     })
 }
 
-pub(crate) fn trim_body_feature_definition(
+fn trim_body_feature_definition(
     target_object_index: u32,
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
@@ -3917,7 +3913,7 @@ pub(crate) fn trim_body_feature_definition(
     })
 }
 
-pub(crate) fn feature_body_outputs(
+fn feature_body_outputs(
     object_index: u32,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Vec<BodyId> {
@@ -4172,7 +4168,7 @@ fn order_expression_dependencies(
     dependency_ordered_expression_ids
 }
 
-pub(crate) fn attach_block_dimension_parameter_consumers(
+fn attach_block_dimension_parameter_consumers(
     ir: &mut CadIr,
     dimensions: &[crate::native::features::FeatureBlockDimensions],
     annotations: &mut AnnotationBuilder,
