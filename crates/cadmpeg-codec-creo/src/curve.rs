@@ -1609,14 +1609,35 @@ fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Opt
         (CreoMathFunction::Pow, [base, exponent]) => base.powf(*exponent),
         (CreoMathFunction::Sqrt, [x]) => x.sqrt(),
         (CreoMathFunction::Abs, [x]) => x.abs(),
-        (CreoMathFunction::Ceil, [x]) => (x - 1e-9).ceil(),
-        (CreoMathFunction::Floor, [x]) => (x + 1e-9).floor(),
+        (CreoMathFunction::Ceil, [x]) => relation_round(*x, 0.0, true)?,
+        (CreoMathFunction::Ceil, [x, decimal_places]) => relation_round(*x, *decimal_places, true)?,
+        (CreoMathFunction::Floor, [x]) => relation_round(*x, 0.0, false)?,
+        (CreoMathFunction::Floor, [x, decimal_places]) => {
+            relation_round(*x, *decimal_places, false)?
+        }
         (CreoMathFunction::DblInTol, [first, second, tolerance]) if *tolerance >= 0.0 => {
             ((first - second).abs() <= *tolerance) as u8 as f64
         }
         _ => return None,
     };
     value.is_finite().then_some(value)
+}
+
+fn relation_round(value: f64, decimal_places: f64, upward: bool) -> Option<f64> {
+    (value.is_finite() && decimal_places.is_finite() && decimal_places >= 0.0).then_some(())?;
+    let decimal_places = decimal_places.trunc();
+    if decimal_places > 8.0 {
+        return Some(value);
+    }
+    let scale = 10_f64.powi(decimal_places as i32);
+    let scaled = (value + if upward { -1e-9 } else { 1e-9 }) * scale;
+    Some(
+        if upward {
+            scaled.ceil()
+        } else {
+            scaled.floor()
+        } / scale,
+    )
 }
 
 fn evaluate_creo_relation_function(
@@ -2987,6 +3008,12 @@ mod tests {
             ("ln(exp(1))", 1.0),
             ("abs(-2)", 2.0),
             ("ceil(2.1)+floor(2.9)", 5.0),
+            ("ceil(10.255,2)", 10.26),
+            ("ceil(10.255,2.9)", 10.26),
+            ("floor(10.255,1)", 10.2),
+            ("floor(-10.255,2)", -10.26),
+            ("ceil(10.255,9)", 10.255),
+            ("floor(10.255,9)", 10.255),
             ("dbl_in_tol(2,2.1,0.2)", 1.0),
             ("2^3^2", 512.0),
             ("-2^2", -4.0),
@@ -3006,6 +3033,7 @@ mod tests {
         assert_eq!(evaluate_expression("sqrt(-1)", &values), None);
         assert_eq!(evaluate_expression("sinh(86)", &values), None);
         assert_eq!(evaluate_expression("bound(1,2,1)", &values), None);
+        assert_eq!(evaluate_expression("ceil(1.2,-1)", &values), None);
         assert_eq!(evaluate_expression("sin()", &values), None);
         assert_eq!(evaluate_expression("1<2<3", &values), None);
         let excessive_power_depth = format!("{}2", "2^".repeat(129));

@@ -4,6 +4,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 
 ## Geometry
 
+- Negative optional decimal-place arguments to curve-relation `ceil` and
+  `floor` have unspecified evaluation semantics.
 - Curve-equation `local_sys f9 04 03` inherited-slot transitions other than
   the defined rank-two body are unspecified.
 - DICT sign lattices outside the defined scalar lanes are unspecified.
