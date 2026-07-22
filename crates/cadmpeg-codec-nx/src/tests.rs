@@ -10984,6 +10984,58 @@ fn display_jt_shape_lod_stream() -> Vec<u8> {
     data
 }
 
+/// Raw bytes for a `/Root/UG_PART/DisplayJT` container entry whose single type-31
+/// property segment inflates to one string-property atom, decoding
+/// `display_jt_string_property_atoms`.
+fn display_jt_string_property_stream() -> Vec<u8> {
+    const STRING_PROPERTY_ATOM_TYPE: [u8; 16] = [
+        0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    // String atom body: the fixed prefix, a UTF-16 length, then the code units.
+    let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
+    body.extend_from_slice(&2u32.to_le_bytes());
+    for unit in "JT".encode_utf16() {
+        body.extend_from_slice(&unit.to_le_bytes());
+    }
+
+    let mut inflated = jt_scene_element(STRING_PROPERTY_ATOM_TYPE, 5, 1, &body);
+    inflated.extend_from_slice(&16u32.to_le_bytes());
+    inflated.extend_from_slice(&[0xff; 16]);
+
+    let compressed = zlib_compress_at_level(&inflated, 1);
+    let segment_byte_len = 24 + 9 + compressed.len() as u32;
+
+    let mut data = Vec::new();
+    data.extend_from_slice(&9_u32.to_le_bytes());
+    data.extend_from_slice(&1_u32.to_le_bytes());
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&100_u32.to_le_bytes());
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&28_u32.to_le_bytes());
+    data.extend_from_slice(&[0; 4]);
+    let mut version = [b' '; 80];
+    version[..14].copy_from_slice(b"Version 9.4 JT");
+    data.extend_from_slice(&version);
+    data.push(0);
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&105_u32.to_le_bytes());
+    data.extend_from_slice(&[1; 16]);
+    data.extend_from_slice(&1_u32.to_le_bytes());
+    data.extend_from_slice(&[2; 16]);
+    data.extend_from_slice(&137_u32.to_le_bytes());
+    data.extend_from_slice(&segment_byte_len.to_le_bytes());
+    data.extend_from_slice(&31_u32.to_be_bytes()); // attribute type 31
+    data.extend_from_slice(&[2; 16]);
+    data.extend_from_slice(&31_u32.to_le_bytes()); // segment type 31
+    data.extend_from_slice(&segment_byte_len.to_le_bytes());
+    data.extend_from_slice(&2_u32.to_le_bytes());
+    data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
+    data.push(2);
+    data.extend_from_slice(&compressed);
+    data
+}
+
 /// Frame one JT logical element: length-prefixed `[type_id][base_type][object_id]
 /// [body]`, matching `parse_jt_element_sequence`.
 fn jt_scene_element(type_id: [u8; 16], base_type: u8, object_id: u32, body: &[u8]) -> Vec<u8> {
@@ -20010,7 +20062,7 @@ mod golden {
     /// Frozen from the generated snapshots; if a refactor drops an arena from
     /// every fixture, `arena_coverage_meets_floor` fails. Raise it (never lower
     /// it) when new covering fixtures are added.
-    const ARENA_COVERAGE_FLOOR: usize = 74;
+    const ARENA_COVERAGE_FLOOR: usize = 75;
 
     /// Build the covering fixture set: `(golden name, full `.prt` bytes)`. Each
     /// stream builder is wrapped exactly as its originating white-box test wraps
@@ -20082,6 +20134,16 @@ mod golden {
             prt_with_named_payloads(&[
                 ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
                 ("/Root/UG_PART/DisplayJT", display_jt_shape_lod_stream()),
+            ]),
+        ));
+        f.push((
+            "display_jt_string_property",
+            prt_with_named_payloads(&[
+                ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+                (
+                    "/Root/UG_PART/DisplayJT",
+                    display_jt_string_property_stream(),
+                ),
             ]),
         ));
 
