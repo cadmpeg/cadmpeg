@@ -1410,6 +1410,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|feature| (feature.id.0.as_str(), feature.ordinal))
         .collect::<HashMap<_, _>>();
+    let feature_definitions = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.id.0.as_str(), &feature.definition))
+        .collect::<HashMap<_, _>>();
     let sketch_block_definitions = ir
         .model
         .features
@@ -2338,18 +2344,42 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 distance,
             } => {
                 if let Some(reference) = reference {
-                    match features.get(reference.0.as_str()) {
+                    match feature_definitions.get(reference.0.as_str()) {
                         None => ref_error(findings, &feature.id.0, "reference plane", &reference.0),
-                        Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                        Some(
+                            FeatureDefinition::DatumPrincipalPlane { .. }
+                            | FeatureDefinition::DatumPlane { .. }
+                            | FeatureDefinition::DatumOffsetPlane { .. },
+                        ) => {}
+                        Some(_) => findings.push(Finding {
                             check: Check::ReferentialIntegrity,
                             severity: Severity::Error,
                             message: format!(
-                                "reference plane `{}` does not precede its offset plane",
+                                "reference plane `{}` is not a datum plane",
                                 reference.0
                             ),
                             entity: Some(feature.id.0.clone()),
                         }),
-                        Some(_) => {}
+                    }
+                    let mut visited = HashSet::from([feature.id.0.as_str()]);
+                    let mut next = Some(reference.0.as_str());
+                    while let Some(candidate) = next {
+                        if !visited.insert(candidate) {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: "datum-plane reference cycle".into(),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                            break;
+                        }
+                        next = match feature_definitions.get(candidate) {
+                            Some(FeatureDefinition::DatumOffsetPlane {
+                                reference: Some(reference),
+                                ..
+                            }) => Some(reference.0.as_str()),
+                            _ => None,
+                        };
                     }
                 }
                 if !distance.0.is_finite() {

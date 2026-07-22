@@ -765,6 +765,93 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
 }
 
 #[test]
+fn datum_plane_references_follow_graph_not_serialized_order() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId, Length, PrincipalPlane};
+    use crate::math::{Point3, Vector3};
+
+    let mut ir = unit_cube();
+    let principal = FeatureId("synthetic:test:feature#principal".into());
+    let constructed = FeatureId("synthetic:test:feature#constructed".into());
+    let feature = |id: &str, ordinal: u64, definition: FeatureDefinition| Feature {
+        id: FeatureId(id.into()),
+        ordinal,
+        name: None,
+        suppressed: false,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    };
+    ir.model.features.push(feature(
+        "synthetic:test:feature#offset",
+        0,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(principal.clone()),
+            distance: Length(25.0),
+        },
+    ));
+    ir.model.features.push(feature(
+        "synthetic:test:feature#second-offset",
+        1,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(constructed.clone()),
+            distance: Length(10.0),
+        },
+    ));
+    ir.model.features.push(feature(
+        &constructed.0,
+        2,
+        FeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(1.0, 0.0, 0.0),
+            u_axis: Vector3::new(0.0, 1.0, 0.0),
+        },
+    ));
+    ir.model.features.push(feature(
+        &principal.0,
+        3,
+        FeatureDefinition::DatumPrincipalPlane {
+            plane: PrincipalPlane::Right,
+        },
+    ));
+
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(!findings.iter().any(|finding| {
+        finding.message.contains("reference plane")
+            || finding.message.contains("datum-plane reference cycle")
+    }));
+
+    let first = FeatureId("synthetic:test:feature#cycle-a".into());
+    let second = FeatureId("synthetic:test:feature#cycle-b".into());
+    let mut cyclic = unit_cube();
+    cyclic.model.features.push(feature(
+        &first.0,
+        0,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(second.clone()),
+            distance: Length(1.0),
+        },
+    ));
+    cyclic.model.features.push(feature(
+        &second.0,
+        1,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(first),
+            distance: Length(1.0),
+        },
+    ));
+    assert!(validate(&cyclic, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == "datum-plane reference cycle"));
+}
+
+#[test]
 fn feature_parameters_require_unique_names_and_ordinals() {
     use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
     use std::collections::BTreeMap;

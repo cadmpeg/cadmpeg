@@ -1162,6 +1162,7 @@ mod marker_tests {
         mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
         native_scalar_matches_discrete_parameter, object_names,
         offset_plane_reference_frame_matches, offset_plane_reference_source,
+        offset_reference_plane_frame_pair,
         ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
         plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
         profile_roster_construction_axis, reconcile_reference_plane_frame, resolve_operand_marker,
@@ -1569,6 +1570,51 @@ mod marker_tests {
         frame[73..81].copy_from_slice(&1.0f64.to_le_bytes());
         assert_eq!(fixed_reference_plane_frame(&frame), None);
         assert_eq!(fixed_reference_plane_frame(&frame[..96]), None);
+    }
+
+    #[test]
+    fn offset_plane_frame_pair_stores_result_before_reference() {
+        let frame = |origin_x: f64| {
+            let mut bytes = [0; FIXED_REFERENCE_PLANE_FRAME_LEN];
+            for (offset, value) in [
+                (0, origin_x / 1000.0),
+                (8, 0.0),
+                (16, 0.0),
+                (24, 1.0),
+                (32, 0.0),
+                (40, 0.0),
+                (49, 0.0),
+                (57, 0.0),
+                (65, 1.0),
+                (73, 0.0),
+                (81, 1.0),
+                (89, 0.0),
+            ] {
+                bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+            }
+            bytes[48] = 1;
+            bytes
+        };
+        let mut payload = frame(-37.0).to_vec();
+        payload.extend([0; 13]);
+        payload.extend(frame(0.0));
+
+        assert_eq!(
+            offset_reference_plane_frame_pair(&payload, 37.0),
+            Some((
+                (
+                    Point3::new(-37.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                ),
+                (
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                ),
+            ))
+        );
+        assert_eq!(offset_reference_plane_frame_pair(&payload, 38.0), None);
     }
 
     #[test]
@@ -14279,6 +14325,8 @@ pub(crate) fn enrich_history_reference_planes(
 ) {
     let mut candidates = BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
     let mut reference_candidates = BTreeMap::<(usize, usize), Vec<u32>>::new();
+    let mut reference_frame_candidates =
+        BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
     let known_sources = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -14330,6 +14378,21 @@ pub(crate) fn enrich_history_reference_planes(
                     .or_default()
                     .push(source);
             }
+            let offset_frames = feature
+                .parameters
+                .get("D1")
+                .and_then(|value| crate::history::parse_dimension_length_mm(value))
+                .and_then(|distance| offset_reference_plane_frame_pair(bytes, distance));
+            if let Some((offset, reference)) = offset_frames {
+                reference_frame_candidates
+                    .entry((history_index, feature_index))
+                    .or_default()
+                    .push(reference);
+                candidates
+                    .entry((history_index, feature_index))
+                    .or_default()
+                    .push(offset);
+            }
             let constraint = constraint_midplane_frame(bytes);
             let mut anchored_frames = lane
                 .classes
@@ -14343,7 +14406,9 @@ pub(crate) fn enrich_history_reference_planes(
                 .collect::<Vec<_>>();
             anchored_frames.sort_by_key(reference_plane_frame_key);
             anchored_frames.dedup_by_key(|frame| reference_plane_frame_key(frame));
-            let explicit = if anchored_frames.is_empty() {
+            let explicit = if offset_frames.is_some() {
+                None
+            } else if anchored_frames.is_empty() {
                 match explicit_reference_plane_frame(bytes) {
                     Ok(frame) => frame,
                     Err(()) if constraint.is_some() => None,
@@ -14402,6 +14467,28 @@ pub(crate) fn enrich_history_reference_planes(
             *frame,
         ))
     }));
+    for (index, frames) in reference_frame_candidates {
+        let mut sources = Vec::new();
+        for reference in frames {
+            for (source, candidate_index, candidate) in &frames_by_source {
+                if candidate_index.0 == index.0
+                    && (candidate_index.1 < index.1
+                        || principal_plane(
+                            &histories[candidate_index.0].features[candidate_index.1],
+                        )
+                        .is_some())
+                    && offset_plane_reference_frame_matches(*candidate, reference, 0.0)
+                {
+                    sources.push(*source);
+                }
+            }
+        }
+        sources.sort_unstable();
+        sources.dedup();
+        if let [source] = sources.as_slice() {
+            reference_candidates.entry(index).or_default().push(*source);
+        }
+    }
     for (&index, &frame) in &unique_frames {
         let feature = &histories[index.0].features[index.1];
         if !feature.parameters.contains_key("D1") || reference_candidates.contains_key(&index) {
@@ -15308,6 +15395,26 @@ fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3
         && dot(normal, v_axis).abs() <= 1.0e-9
         && dot(u_axis, v_axis).abs() <= 1.0e-9)
         .then_some((origin, normal, u_axis))
+}
+
+fn offset_reference_plane_frame_pair(
+    payload: &[u8],
+    distance: f64,
+) -> Option<((Point3, Vector3, Vector3), (Point3, Vector3, Vector3))> {
+    let frames = payload
+        .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
+        .filter_map(fixed_reference_plane_frame)
+        .collect::<Vec<_>>();
+    let [offset, reference] = frames.as_slice() else {
+        return None;
+    };
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    (distance.is_finite()
+        && offset_plane_reference_frame_matches(*reference, *offset, distance)
+        && (dot(offset.1, reference.1) - 1.0).abs() <= 1.0e-9
+        && (dot(offset.2, reference.2) - 1.0).abs() <= 1.0e-9)
+        .then_some((*offset, *reference))
 }
 
 fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
