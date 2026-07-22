@@ -2515,6 +2515,7 @@ fn decode_positional_cylinder_frame(
         .or_else(|| decode_zero_support_cylinder_frame(body, cache))
         .or_else(|| decode_signed_zero_support_cylinder_frame(body, cache))
         .or_else(|| decode_signed_axis_aligned_cylinder_frame(body, cache))
+        .or_else(|| decode_signed_axial_radial_cylinder_frame(body, cache))
         .or_else(|| decode_signed_radial_envelope_cylinder_frame(body, cache))
         .or_else(|| decode_precise_center_edge_cylinder_frame(body, cache))
         .or_else(|| decode_precise_held_center_cylinder_frame(body, cache))
@@ -2960,7 +2961,25 @@ fn decode_axial_radial_cylinder_frame(
     let (radial_center, next) = decode(cursor)?;
     (body.get(next..) == Some(&[0xf7, 0x17])).then_some(())?;
 
-    (length > 0.0).then_some(())?;
+    axial_radial_cylinder_frame(
+        length,
+        first_axial,
+        radial_sample,
+        second_axial,
+        radial_center,
+        origin_at_first,
+    )
+}
+
+fn axial_radial_cylinder_frame(
+    length: f64,
+    first_axial: f64,
+    radial_sample: f64,
+    second_axial: f64,
+    radial_center: f64,
+    origin_at_first: bool,
+) -> Option<PositionalCylinderFrame> {
+    (length.is_finite() && length > 0.0).then_some(())?;
     let scale = [
         length,
         first_axial,
@@ -3305,6 +3324,45 @@ fn decode_signed_axis_aligned_cylinder_frame(
         radius,
         length: Some(signed_length.abs()),
     })
+}
+
+fn decode_signed_axial_radial_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    (body.first() == Some(&0x11)).then_some(())?;
+    let decode = |offset| {
+        let (value, next) = scalar::decode_in_surface_row_lane(body, offset, cache)?;
+        value.is_finite().then_some((value, next))
+    };
+    let (signed_length, mut cursor) = decode(1)?;
+    (signed_length != 0.0 && body.get(cursor) == Some(&0x13)).then_some(())?;
+    cursor += 1;
+    let (auxiliary, next) = decode(cursor)?;
+    cursor = next;
+    (auxiliary.abs() < signed_length.abs()).then_some(())?;
+    let (first_axial, next) = decode(cursor)?;
+    cursor = next;
+    let (radial_sample, next) = decode(cursor)?;
+    cursor = next;
+    (body.get(cursor) == Some(&0xe4)).then_some(())?;
+    cursor += 1;
+    let (second_axial, next) = decode(cursor)?;
+    cursor = next;
+    (body.get(cursor) == Some(&0x19)).then_some(())?;
+    let (_, next) = scalar::decode_model_reference_coordinate(body, cursor, cache)?;
+    cursor = next;
+    let (radial_center, next) = decode(cursor)?;
+    (body.get(next..) == Some(&[0xf7, 0x17])).then_some(())?;
+
+    axial_radial_cylinder_frame(
+        signed_length.abs(),
+        first_axial,
+        radial_sample,
+        second_axial,
+        radial_center,
+        false,
+    )
 }
 
 fn decode_signed_radial_envelope_cylinder_frame(
@@ -5453,6 +5511,48 @@ mod tests {
         assert!(decode_positional_cylinder_frame(&ambiguous_axis, &cache).is_none());
         assert!(
             decode_positional_cylinder_frame(&reversed[..reversed.len() - 1], &cache).is_none()
+        );
+    }
+
+    #[test]
+    fn positional_cylinder_frame_decodes_signed_axial_radial_envelopes() {
+        let cache = scalar::ScalarCache::default();
+        let positive_end = [
+            17, 66, 201, 153, 19, 24, 46, 61, 204, 72, 22, 0, 228, 47, 62, 0, 25, 200, 68, 116,
+            134, 59, 254, 138, 47, 22, 0, 247, 23,
+        ];
+        assert_eq!(
+            decode_positional_cylinder_frame(&positive_end, &cache),
+            Some(PositionalCylinderFrame {
+                origin: [30.0, 0.0, 5.5],
+                axis: [-1.0, 0.0, 0.0],
+                ref_direction: [0.0, 0.0, 1.0],
+                radius: 11.0,
+                length: Some(0.199_999_999_999_999_98),
+            })
+        );
+
+        let negative_end = [
+            17, 66, 201, 153, 19, 24, 72, 62, 0, 72, 22, 0, 228, 71, 61, 204, 25, 210, 51, 87, 100,
+            172, 254, 232, 47, 22, 0, 247, 23,
+        ];
+        assert_eq!(
+            decode_positional_cylinder_frame(&negative_end, &cache),
+            Some(PositionalCylinderFrame {
+                origin: [-29.799_999_999_999_997, 0.0, 5.5],
+                axis: [-1.0, 0.0, 0.0],
+                ref_direction: [0.0, 0.0, 1.0],
+                radius: 11.0,
+                length: Some(0.199_999_999_999_999_98),
+            })
+        );
+
+        let mut wrong_separator = positive_end;
+        wrong_separator[12] = 0x10;
+        assert!(decode_positional_cylinder_frame(&wrong_separator, &cache).is_none());
+        assert!(
+            decode_positional_cylinder_frame(&negative_end[..negative_end.len() - 2], &cache)
+                .is_none()
         );
     }
 

@@ -459,6 +459,18 @@ coordinate. The radius is the absolute radial sample-to-center distance. The
 reference direction is model Z with the sign opposite the radial offset. The
 model-reference token does not contribute a geometric coordinate.
 
+A signed-prefix axial/radial cylinder begins `11`, one nonzero signed axial
+length, and `13`. It then stores one auxiliary scalar, first axial coordinate,
+radial sample, literal `e4`, second axial coordinate, one complete `19`
+model-reference token, radial center, and the exact trailer `f7 17`. Numeric
+fields use the positional surface-row scalar lane. The auxiliary magnitude is
+less than the axial length, and the axial-coordinate span equals the absolute
+stored length. The second axial coordinate is the model X origin and the axis
+points toward the first. Model Y is zero. The radial center is the model Z
+origin; its distance from the radial sample is the radius, and the reference
+direction has the opposite model Z sign. The model-reference token does not
+contribute a geometric coordinate.
+
 A repeated-diameter type-24 round body stores two scalar diameter endpoints
 and two model-space XYZ extent endpoints. The body is either one contiguous
 scalar frame after `15` or `00 15 1c`, or two scalar frames separated by the
