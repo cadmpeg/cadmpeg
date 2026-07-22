@@ -50,10 +50,8 @@ use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::asm_header;
 use crate::nurbs;
+use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
-
-/// Millimetres per ASM model-space length unit (centimetres).
-const LEN_TO_MM: f64 = 10.0;
 
 fn embedded_pcurve_geometry(pcurve: nurbs::pcurve::NurbsPcurve) -> PcurveGeometry {
     PcurveGeometry::Nurbs {
