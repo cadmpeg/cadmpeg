@@ -12913,6 +12913,15 @@ fn deltas_intersection_curve_stream() -> Vec<u8> {
 const DELTAS_PREAMBLE: &[u8] =
     b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00";
 
+/// Append `count` deltas topology references, each the placeholder index `1`
+/// followed by a set status byte, matching the deltas record framing.
+fn push_reference_run(record: &mut Vec<u8>, count: usize) {
+    for _ in 0..count {
+        record.extend_from_slice(&1u16.to_be_bytes());
+        record.push(1);
+    }
+}
+
 fn status_framed_deltas_stream() -> Vec<u8> {
     let mut stream = DELTAS_PREAMBLE.to_vec();
     let mut face = Vec::new();
@@ -12925,13 +12934,9 @@ fn status_framed_deltas_stream() -> Vec<u8> {
     };
     push_ref(&mut face, 1);
     face.extend_from_slice(&(-31_415_800_000_000.0f64).to_be_bytes());
-    for reference in [1u16; 5] {
-        push_ref(&mut face, reference);
-    }
+    push_reference_run(&mut face, 5);
     face.push(b'+');
-    for reference in [1u16; 5] {
-        push_ref(&mut face, reference);
-    }
+    push_reference_run(&mut face, 5);
     stream.extend(face);
     stream.extend_from_slice(&16u16.to_be_bytes());
     stream.extend_from_slice(&50_000u16.to_be_bytes());
@@ -13025,10 +13030,7 @@ fn deltas_face_vertex_partition_stream() -> Vec<u8> {
         stream.push(1);
     }
     stream.push(b'+');
-    for reference in [1u16; 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
+    push_reference_run(&mut stream, 5);
 
     stream.extend_from_slice(&18u16.to_be_bytes());
     stream.extend_from_slice(&10u16.to_be_bytes());
@@ -13084,10 +13086,7 @@ fn deltas_line_partition_stream() -> Vec<u8> {
     stream.extend_from_slice(&30u16.to_be_bytes());
     stream.extend_from_slice(&9u16.to_be_bytes());
     stream.extend_from_slice(&906u32.to_be_bytes());
-    for reference in [1u16; 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
+    push_reference_run(&mut stream, 5);
     stream.push(b'+');
     for value in [0.004f64, 0.005, 0.006, 0.0, 1.0, 0.0] {
         stream.extend_from_slice(&value.to_be_bytes());
@@ -13100,10 +13099,7 @@ fn deltas_plane_partition_stream() -> Vec<u8> {
     stream.extend_from_slice(&50u16.to_be_bytes());
     stream.extend_from_slice(&6u16.to_be_bytes());
     stream.extend_from_slice(&907u32.to_be_bytes());
-    for reference in [1u16; 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
+    push_reference_run(&mut stream, 5);
     stream.push(b'+');
     for value in [0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0] {
         stream.extend_from_slice(&value.to_be_bytes());
@@ -13116,10 +13112,7 @@ fn deltas_offset_surface_partition_stream() -> Vec<u8> {
     stream.extend_from_slice(&60u16.to_be_bytes());
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&907u32.to_be_bytes());
-    for reference in [1u16; 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
+    push_reference_run(&mut stream, 5);
     stream.push(b'+');
     stream.extend_from_slice(b"V");
     stream.push(1);
@@ -13227,10 +13220,7 @@ fn deltas_circle_partition_stream() -> Vec<u8> {
     stream.extend_from_slice(&31u16.to_be_bytes());
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&908u32.to_be_bytes());
-    for reference in [1u16; 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
+    push_reference_run(&mut stream, 5);
     stream.push(b'+');
     for value in [0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.025] {
         stream.extend_from_slice(&value.to_be_bytes());
@@ -13264,10 +13254,7 @@ fn deltas_ellipse_partition_stream() -> Vec<u8> {
     stream.extend_from_slice(&32u16.to_be_bytes());
     stream.extend_from_slice(&13u16.to_be_bytes());
     stream.extend_from_slice(&909u32.to_be_bytes());
-    for reference in [1u16; 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
+    push_reference_run(&mut stream, 5);
     stream.push(b'+');
     for value in [
         0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.03, 0.012,
@@ -13300,10 +13287,7 @@ fn deltas_cylinder_partition_stream() -> Vec<u8> {
     stream.extend_from_slice(&51u16.to_be_bytes());
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&910u32.to_be_bytes());
-    for reference in [1u16; 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
+    push_reference_run(&mut stream, 5);
     stream.push(b'+');
     for value in [0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 0.025, 1.0, 0.0, 0.0] {
         stream.extend_from_slice(&value.to_be_bytes());
@@ -13336,10 +13320,7 @@ fn deltas_cone_partition_stream() -> Vec<u8> {
     stream.extend_from_slice(&52u16.to_be_bytes());
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&911u32.to_be_bytes());
-    for reference in [1u16; 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
+    push_reference_run(&mut stream, 5);
     stream.push(b'+');
     for value in [
         0.001f64,
@@ -13383,10 +13364,7 @@ fn deltas_sphere_partition_stream() -> Vec<u8> {
     stream.extend_from_slice(&53u16.to_be_bytes());
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&912u32.to_be_bytes());
-    for reference in [1u16; 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
+    push_reference_run(&mut stream, 5);
     stream.push(b'+');
     for value in [0.001f64, 0.002, 0.003, 0.025, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0] {
         stream.extend_from_slice(&value.to_be_bytes());
@@ -13418,10 +13396,7 @@ fn deltas_torus_partition_stream() -> Vec<u8> {
     stream.extend_from_slice(&54u16.to_be_bytes());
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&913u32.to_be_bytes());
-    for reference in [1u16; 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
+    push_reference_run(&mut stream, 5);
     stream.push(b'+');
     for value in [
         0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 0.04, 0.015, 1.0, 0.0, 0.0,
@@ -13658,10 +13633,7 @@ fn deltas_bspline_surface_wrapper_stream() -> Vec<u8> {
     stream.extend_from_slice(&124u16.to_be_bytes());
     stream.extend_from_slice(&10u16.to_be_bytes());
     stream.extend_from_slice(&914u32.to_be_bytes());
-    for reference in [1u16; 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
+    push_reference_run(&mut stream, 5);
     stream.push(b'+');
     for reference in [60u16, 61] {
         stream.extend_from_slice(&reference.to_be_bytes());
@@ -13698,10 +13670,7 @@ fn deltas_bspline_curve_wrapper_stream() -> Vec<u8> {
     stream.extend_from_slice(&134u16.to_be_bytes());
     stream.extend_from_slice(&50u16.to_be_bytes());
     stream.extend_from_slice(&915u32.to_be_bytes());
-    for reference in [1u16; 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
+    push_reference_run(&mut stream, 5);
     stream.push(b'+');
     for reference in [70u16, 71] {
         stream.extend_from_slice(&reference.to_be_bytes());
