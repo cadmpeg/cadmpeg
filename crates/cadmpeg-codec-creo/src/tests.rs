@@ -5499,6 +5499,11 @@ fn decode_places_first_cylinder_instance_from_complete_named_prototype() {
             radius: 1.0,
         }
     );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message.contains(
+            "first-instance ND plane, cylinder, cone, torus, or interpolation-spline carrier",
+        )
+    }));
 }
 
 #[test]

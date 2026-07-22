@@ -37040,7 +37040,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
              Outline-backed planes, guarded non-axis support frames, complete ND first-instance \
-             plane, cone, torus, and interpolation-spline prototypes, unbound straight positional \
+             plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional \
              surface-of-extrusion planes, \
              topology-bound `fc 05` \
              cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind \
@@ -37103,7 +37103,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             severity: Severity::Info,
             message: format!(
                 "Transferred {first_instance_prototype_surface_count} first-instance ND plane, \
-                 cone, torus, or interpolation-spline carrier(s) from complete named parameters."
+                 cylinder, cone, torus, or interpolation-spline carrier(s) from complete named \
+                 parameters."
             ),
             provenance: None,
         });
