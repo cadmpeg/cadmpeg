@@ -6,8 +6,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 
 - Negative optional decimal-place arguments to curve-relation `ceil` and
   `floor` have unspecified evaluation semantics.
-- Curve-relation custom unit symbols and units requiring an affine offset have
-  unspecified normalization semantics.
+- Curve-relation custom unit symbols, including custom units requiring an
+  affine offset, have unspecified normalization semantics.
 - Curve-equation `local_sys f9 04 03` inherited-slot transitions other than
   the defined rank-two body are unspecified.
 - DICT sign lattices outside the defined scalar lanes are unspecified.
