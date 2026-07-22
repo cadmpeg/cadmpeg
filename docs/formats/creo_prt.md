@@ -177,6 +177,8 @@ The positional surface-row lane defines the same-tail sign pair
 `73→3F E8` and `bb→BF E8`.
 The positional surface-row lane maps `d1`, `d3`, `de`, and `df` to IEEE
 prefixes `3F FF`, `40 01`, `40 10`, and `40 11`, respectively.
+In that lane, `92 <signed-i48>` and `da <signed-i48>` store an exact signed
+six-byte big-endian integer and convert it directly to a finite scalar.
 
 Each record grammar defines the DICT lane for its scalar slots. A decoder must not apply DICT sign rules across unrelated record grammars.
 
@@ -477,15 +479,18 @@ scalar frame after `15` or `00 15 1c`, or two scalar frames separated by the
 literal byte `12`. In the compact-control form, one selector in `11..14`
 precedes a one-scalar first-diameter frame, another selector in `11..14`
 separates it from the seven-scalar second-diameter-and-extent frame. The
-selectors do not contribute geometry. In the auxiliary-control form, selector
+selectors do not contribute geometry. Three split-control forms use the same
+one-scalar and seven-scalar frames: `14 <first> 00 13 1a <second-and-extents>`
+and `00 11 13 <first> 14 <second-and-extents>`, plus `12 <first> 00 11 13
+<second-and-extents>`. In the auxiliary-control form, selector
 `19` or `32` precedes a two-scalar frame containing an auxiliary value and the
 first diameter endpoint; literal `12` separates that frame from the
 seven-scalar second-diameter-and-extent frame. The selector and auxiliary value
 do not contribute geometry. A replay body may append one complete reference
 encoded as `f7 <reference-id>` after the last scalar frame; that reference does
 not alter the envelope. The diameter endpoints are distinct. Exactly one
-coordinate span
-between the extent endpoints equals their absolute difference. That coordinate
+coordinate span between the extent endpoints equals their absolute difference.
+That coordinate
 is radial: its midpoint is the corresponding cylinder-origin
 coordinate, its sign from the first endpoint to the second defines the
 reference direction, and half its span is the radius. Removing that radial

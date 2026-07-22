@@ -227,7 +227,9 @@ pub fn decode_in_surface_row_lane(
     offset: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
-    if data.get(offset) == Some(&0x18) && matches!(data.get(offset + 1), Some(0x73 | 0xa0 | 0xbb)) {
+    if data.get(offset) == Some(&0x18)
+        && matches!(data.get(offset + 1), Some(0x73 | 0x92 | 0xa0 | 0xbb | 0xda))
+    {
         return Some((0.0, offset + 1));
     }
     if data.get(offset) == Some(&0xa0) {
@@ -236,6 +238,20 @@ pub fn decode_in_surface_row_lane(
         raw[..2].copy_from_slice(&[0xc0, 0x15]);
         raw[2..].copy_from_slice(tail);
         return Some((f64::from_be_bytes(raw), offset + 7));
+    }
+    if matches!(data.get(offset), Some(0x92 | 0xda)) {
+        let payload: [u8; 6] = data.get(offset + 1..offset + 7)?.try_into().ok()?;
+        let signed = i64::from_be_bytes([
+            if payload[0] & 0x80 == 0 { 0 } else { 0xff },
+            if payload[0] & 0x80 == 0 { 0 } else { 0xff },
+            payload[0],
+            payload[1],
+            payload[2],
+            payload[3],
+            payload[4],
+            payload[5],
+        ]);
+        return Some((signed as f64, offset + 7));
     }
     if let Some(high) = match data.get(offset) {
         Some(0x73) => Some(0x3fe8),
@@ -1227,10 +1243,31 @@ mod tests {
     }
 
     #[test]
+    fn surface_row_lane_decodes_signed_i48_form() {
+        let cache = ScalarCache::default();
+        assert_eq!(
+            decode_in_surface_row_lane(&[0x92, 0xff, 0xff, 0xff, 0xff, 0xff, 0xe8], 0, &cache),
+            Some((-24.0, 7))
+        );
+        assert_eq!(
+            decode_in_surface_row_lane(&[0x92, 0x00, 0x00, 0x00, 0x00, 0x01, 0x23], 0, &cache),
+            Some((291.0, 7))
+        );
+        assert_eq!(
+            decode_in_surface_row_lane(&[0xda, 0x00, 0x00, 0x00, 0x00, 0x00, 0x15], 0, &cache),
+            Some((21.0, 7))
+        );
+        assert_eq!(
+            decode_in_surface_row_lane(&[0x92, 0xff, 0xff], 0, &cache),
+            None
+        );
+    }
+
+    #[test]
     fn surface_row_zero_does_not_consume_a_surface_only_opener() {
         let cache = ScalarCache::default();
 
-        for opener in [0x73, 0xa0, 0xbb] {
+        for opener in [0x73, 0x92, 0xa0, 0xbb, 0xda] {
             assert_eq!(
                 decode_in_surface_row_lane(&[0x18, opener, 0, 0, 0, 0, 0, 0], 0, &cache),
                 Some((0.0, 1))

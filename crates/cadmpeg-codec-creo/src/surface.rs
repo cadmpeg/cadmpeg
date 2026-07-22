@@ -1075,12 +1075,22 @@ impl SurfaceParameterRecord {
                 let [second, a0, a1, a2, b0, b1, b2] = trailing_values.as_slice() else {
                     return None;
                 };
-                (leading.offset == 1
+                let controls_match = (leading.offset == 1
                     && matches!(self.body.first(), Some(0x11..=0x14))
                     && trailing.offset == leading_end + 1
-                    && matches!(self.body.get(leading_end), Some(0x11..=0x14))
-                    && frame_reaches_body_end(trailing_end))
-                .then_some(())?;
+                    && matches!(self.body.get(leading_end), Some(0x11..=0x14)))
+                    || (leading.offset == 1
+                        && self.body.first() == Some(&0x14)
+                        && self.body.get(leading_end..trailing.offset)
+                            == Some(&[0x00, 0x13, 0x1a]))
+                    || (leading.offset == 1
+                        && self.body.first() == Some(&0x12)
+                        && self.body.get(leading_end..trailing.offset)
+                            == Some(&[0x00, 0x11, 0x13]))
+                    || (leading.offset == 3
+                        && self.body.get(..3) == Some(&[0x00, 0x11, 0x13])
+                        && self.body.get(leading_end..trailing.offset) == Some(&[0x14]));
+                (controls_match && frame_reaches_body_end(trailing_end)).then_some(())?;
                 ([*first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
             }
             [leading, trailing] => {
@@ -6541,6 +6551,50 @@ mod tests {
         let mut invalid_selector = prefixed_auxiliary;
         invalid_selector[0] = 0x18;
         assert!(record(&invalid_selector)
+            .positional_cylinder_frame
+            .is_none());
+        let split_controls = [
+            0x14, 0x2d, 0x4b, 0xc1, 0x0d, 0x60, 0xad, 0x2a, 0x4f, 0x00, 0x13, 0x1a, 0x2d, 0x4f,
+            0x01, 0x49, 0xdf, 0x84, 0xdb, 0x35, 0x48, 0x58, 0xc0, 0x2d, 0x57, 0x75, 0x9c, 0xe9,
+            0x32, 0x3b, 0xfc, 0x92, 0xff, 0xff, 0xff, 0xff, 0xff, 0xe8, 0x48, 0x57, 0x00, 0x2d,
+            0x59, 0x15, 0xbb, 0x28, 0x9e, 0x14, 0x6e, 0x2f, 0x24, 0x00, 0xf7, 0x40,
+        ];
+        let split_frame = record(&split_controls)
+            .positional_cylinder_frame
+            .expect("split-control repeated-diameter carrier");
+        assert!((split_frame.radius - 3.250_923_087_748_47).abs() < 1e-12);
+        assert_eq!(split_frame.ref_direction, [0.0, -1.0, 0.0]);
+        let mut invalid_split_controls = split_controls;
+        invalid_split_controls[10] = 0x14;
+        assert!(record(&invalid_split_controls)
+            .positional_cylinder_frame
+            .is_none());
+        let prefixed_split_controls = [
+            0x00, 0x11, 0x13, 0x2d, 0x41, 0x83, 0x08, 0x72, 0x35, 0x71, 0xa6, 0x14, 0x2d, 0x44,
+            0xff, 0xd2, 0xa6, 0xae, 0x74, 0x27, 0x46, 0x64, 0x9f, 0xff, 0xff, 0xff, 0xff, 0xfc,
+            0x2d, 0x52, 0x56, 0x9a, 0x71, 0xf6, 0x5f, 0xa7, 0x92, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xeb, 0x46, 0x64, 0x1f, 0xff, 0xff, 0xff, 0xff, 0xfc, 0x2d, 0x54, 0x14, 0xff, 0x8c,
+            0x32, 0xe0, 0xe8, 0x2f, 0x1c, 0x00, 0xf7, 0x40,
+        ];
+        assert!(record(&prefixed_split_controls)
+            .positional_cylinder_frame
+            .is_some());
+        let mut invalid_prefix = prefixed_split_controls;
+        invalid_prefix[2] = 0x12;
+        assert!(record(&invalid_prefix).positional_cylinder_frame.is_none());
+        let positive_integer_extent = [
+            0x12, 0x2d, 0x41, 0x83, 0x08, 0x72, 0x35, 0x71, 0xa2, 0x00, 0x11, 0x13, 0x2d, 0x44,
+            0xff, 0xd2, 0xa6, 0xae, 0x74, 0x2a, 0x46, 0x64, 0x9f, 0xff, 0xff, 0xff, 0xff, 0xfc,
+            0x2d, 0x52, 0x56, 0x9a, 0x71, 0xf6, 0x5f, 0xa5, 0x48, 0x1c, 0x00, 0x46, 0x64, 0x1f,
+            0xff, 0xff, 0xff, 0xff, 0xfc, 0x2d, 0x54, 0x14, 0xff, 0x8c, 0x32, 0xe0, 0xe9, 0xda,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x15,
+        ];
+        assert!(record(&positive_integer_extent)
+            .positional_cylinder_frame
+            .is_some());
+        let mut invalid_integer_controls = positive_integer_extent;
+        invalid_integer_controls[10] = 0x12;
+        assert!(record(&invalid_integer_controls)
             .positional_cylinder_frame
             .is_none());
 
