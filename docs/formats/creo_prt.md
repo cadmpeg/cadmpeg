@@ -698,6 +698,9 @@ The `41` form in the other slots stores the positive image beginning with
 Compact token `0e` encodes positive `0.5` in a named prototype local-system
 coordinate slot. Its negative positional-row meaning does not apply.
 
+In the named prototype local-system coordinate lane, `5d <tail6>` reconstructs
+the negative IEEE-754 image `BF D2 <tail6>`.
+
 Within a `geom_type = 26` positional row, `2d b1 b2 b3 b4 b5 b6` immediately
 before a structural control byte or the bounded body end is a seven-byte
 negative coordinate token. Its value is the big-endian IEEE-754 binary64 image

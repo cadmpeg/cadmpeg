@@ -417,6 +417,9 @@ pub fn decode_named_local_system_coordinate(
     if slot == 6 && data.get(offset) == Some(&0x41) {
         return ieee8(data, offset, 0xbf);
     }
+    if data.get(offset) == Some(&0x5d) {
+        return ieee7_dict(data, offset, 0xbfd2);
+    }
     decode_tabulated_cylinder_second_coordinate(data, offset, cache)
 }
 
@@ -1255,6 +1258,23 @@ mod tests {
             ))
         );
         assert_eq!(decode_in_surface_row_lane(&data, 7, &cache), Some((1.0, 8)));
+    }
+
+    #[test]
+    fn named_local_system_decodes_negative_5d_dict_form() {
+        let cache = ScalarCache::default();
+        let data = [0x5d, 0x3c, 0xfc, 0xe9, 0x9e, 0x37, 0xb2, 0xe4];
+        assert_eq!(
+            decode_named_local_system_coordinate(&data, 0, 4, &cache),
+            Some((
+                f64::from_be_bytes([0xbf, 0xd2, 0x3c, 0xfc, 0xe9, 0x9e, 0x37, 0xb2]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_named_local_system_coordinate(&data, 7, 5, &cache),
+            Some((1.0, 8))
+        );
     }
 
     #[test]
