@@ -3197,7 +3197,17 @@ mod marker_tests {
             extrusion_operation(Some("moExtrusion_c"), 82),
             Some(BooleanOp::Join)
         );
+        assert_eq!(
+            extrusion_operation(Some("moExtrusion_c"), 4),
+            Some(BooleanOp::Join)
+        );
         assert_eq!(extrusion_operation(Some("moICE_c"), 82), None);
+        for code in [6, 21, 0x3ee4_f8b5] {
+            assert_eq!(
+                extrusion_operation(Some("moICE_c"), code),
+                Some(BooleanOp::Join)
+            );
+        }
         assert_eq!(
             extrusion_operation(Some("moICE_c"), 10),
             Some(BooleanOp::Cut)
@@ -3210,6 +3220,12 @@ mod marker_tests {
             extrusion_operation(Some("moICE_c"), u32::MAX),
             Some(BooleanOp::Cut)
         );
+        for code in [5, 7, 15] {
+            assert_eq!(
+                extrusion_operation(Some("moICE_c"), code),
+                Some(BooleanOp::Cut)
+            );
+        }
         assert_eq!(extrusion_operation(Some("moExtrusion_c"), u32::MAX), None);
     }
 
@@ -17443,8 +17459,12 @@ fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
 
 fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     match (class, code) {
-        (Some("moExtrusion_c"), 1 | 82) | (_, 3) => Some(BooleanOp::Join),
-        (Some("moICE_c"), 1 | 2 | 10 | 14 | u32::MAX) | (_, 11) => Some(BooleanOp::Cut),
+        (Some("moExtrusion_c"), 1 | 4 | 82)
+        | (Some("moICE_c"), 6 | 21 | 0x3ee4_f8b5)
+        | (_, 3) => Some(BooleanOp::Join),
+        (Some("moICE_c"), 1 | 2 | 5 | 7 | 10 | 14 | 15 | u32::MAX) | (_, 11) => {
+            Some(BooleanOp::Cut)
+        }
         _ => None,
     }
 }
