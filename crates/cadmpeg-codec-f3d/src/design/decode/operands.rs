@@ -10,7 +10,7 @@ use crate::design::decode::sketch::{
     next_indexed_record_offset, next_indexed_record_offset_with_index,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
-use crate::ids::{self, native_stream, neutral_sketch_id, neutral_spatial_sketch_id};
+use crate::ids::{self, native_stream};
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand, DesignBodyRecipeReference,
     DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
@@ -19,10 +19,9 @@ use crate::records::{
     DesignExtrudeOperandRole, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
     DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
     DesignObjectKind, DesignParameter, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchPlacement, DesignSketchProfileOperand,
-    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
-    LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
-    SketchRelationOperand,
+    DesignRecordHeader, DesignSketchProfileOperand, DesignTopologyRecipeEntry,
+    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference,
+    PersistentSubentityTag, SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, u32_at, u64_at as read_u64};
@@ -468,175 +467,6 @@ pub fn bind_sketch_profiles(
                 scope.base_flange_profile = Some(profile.clone());
             } else {
                 scope.extrude_profile = Some(profile.clone());
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Solved sketch records used to bind Loft section and guide selections.
-pub(crate) struct LoftSketchResolution<'a> {
-    pub(crate) entities: &'a [DesignEntityHeader],
-    pub(crate) entity_selection_operands: &'a [DesignEntitySelectionOperand],
-    pub(crate) placements: &'a [DesignSketchPlacement],
-    pub(crate) curve_identities: &'a [SketchCurveIdentity],
-    pub(crate) spatial_sketches: &'a [cadmpeg_ir::sketches::SpatialSketch],
-}
-
-pub(crate) fn bind_loft_sketch_selections(
-    scan: &ContainerScan,
-    groups: &[DesignConstructionOperandGroup],
-    headers: &[DesignRecordHeader],
-    resolution: &LoftSketchResolution<'_>,
-    features: &mut [cadmpeg_ir::features::Feature],
-) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, LoftSection, PathRef, ProfileRef};
-
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
-    let mut resolved_profiles = HashMap::new();
-    for group in groups.iter().filter(|group| {
-        matches!(group.role, 0x41_0000_0000 | 0x43_0000_0000) && group.members.len() == 1
-    }) {
-        let Some(stream) = native_stream(&group.id) else {
-            continue;
-        };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
-                && stream == ids::native_scope(&entry.name)
-        }) else {
-            continue;
-        };
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(header) = headers.get(&(stream, group.members[0])) else {
-            continue;
-        };
-        let Some(profile) = parse_sketch_profile(
-            bytes,
-            stream,
-            group.scope_reference_ordinal,
-            header,
-            resolution.entities,
-        ) else {
-            continue;
-        };
-        let matches = resolution
-            .placements
-            .iter()
-            .filter(|placement| {
-                native_stream(&placement.id) == Some(stream)
-                    && placement.entity_id == profile.entity_id
-                    && !resolution
-                        .spatial_sketches
-                        .iter()
-                        .any(|sketch| sketch.id == neutral_spatial_sketch_id(placement))
-            })
-            .collect::<Vec<_>>();
-        let [placement] = matches.as_slice() else {
-            continue;
-        };
-        resolved_profiles.insert(
-            group.id.clone(),
-            ProfileRef::Sketch(neutral_sketch_id(placement)),
-        );
-    }
-    let mut resolved_spatial_paths = HashMap::new();
-    for group in groups
-        .iter()
-        .filter(|group| group.role == 0x5_0000_0000 && group.members.len() == 1)
-    {
-        let Some(stream) = native_stream(&group.id) else {
-            continue;
-        };
-        let mut operands = resolution
-            .entity_selection_operands
-            .iter()
-            .filter(|operand| {
-                native_stream(&operand.id) == Some(stream)
-                    && operand.scope_record_index == group.scope_record_index
-                    && operand.group_record_index == group.record_index
-                    && operand.group_member_ordinal == 0
-                    && operand.record_index == group.members[0]
-            });
-        let Some(operand) = operands.next() else {
-            continue;
-        };
-        if operands.next().is_some() {
-            continue;
-        }
-        let mut matching_placements = resolution.placements.iter().filter(|placement| {
-            native_stream(&placement.id) == Some(stream)
-                && placement.entity_suffix == operand.primary_identity
-        });
-        let Some(placement) = matching_placements.next() else {
-            continue;
-        };
-        if matching_placements.next().is_some() {
-            continue;
-        }
-        let spatial_sketch = neutral_spatial_sketch_id(placement);
-        if !resolution
-            .spatial_sketches
-            .iter()
-            .any(|sketch| sketch.id == spatial_sketch)
-        {
-            continue;
-        }
-        let Ok(owner_reference) = u32::try_from(operand.primary_identity) else {
-            continue;
-        };
-        let geometry_matches = resolution
-            .curve_identities
-            .iter()
-            .filter(|curve| {
-                native_stream(&curve.id) == Some(stream)
-                    && curve.owner_reference == Some(owner_reference)
-                    && curve.primary_id == operand.secondary_identity
-            })
-            .count();
-        if geometry_matches != 1 {
-            continue;
-        }
-        let selections = vec![operand.id.clone()];
-        resolved_profiles.insert(
-            group.id.clone(),
-            ProfileRef::SpatialSketchSelection {
-                sketch: spatial_sketch.clone(),
-                selections: selections.clone(),
-            },
-        );
-        resolved_spatial_paths.insert(
-            group.id.clone(),
-            PathRef::SpatialSketchSelection {
-                sketch: spatial_sketch,
-                selections,
-            },
-        );
-    }
-    for feature in features {
-        let FeatureDefinition::Loft {
-            sections, guides, ..
-        } = &mut feature.definition
-        else {
-            continue;
-        };
-        for section in sections {
-            let LoftSection::Profile(ProfileRef::Native(native)) = section else {
-                continue;
-            };
-            if let Some(profile) = resolved_profiles.get(native) {
-                *section = LoftSection::Profile(profile.clone());
-            }
-        }
-        for guide in guides {
-            let PathRef::Native(native) = guide else {
-                continue;
-            };
-            if let Some(path) = resolved_spatial_paths.get(native) {
-                *guide = path.clone();
             }
         }
     }

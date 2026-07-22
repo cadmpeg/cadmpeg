@@ -1078,11 +1078,11 @@ pub fn decode(
                     &native.sketch_relations,
                     ir.tolerances.linear,
                 );
-            crate::design::decode::operands::bind_loft_sketch_selections(
+            crate::design::profile_select::bind_loft_sketch_selections(
                 &scan,
                 &native.design_construction_operand_groups,
                 &native.design_record_headers,
-                &crate::design::decode::operands::LoftSketchResolution {
+                &crate::design::profile_select::LoftSketchResolution {
                     entities: &native.design_entity_headers,
                     entity_selection_operands: &native.design_entity_selection_operands,
                     placements: &native.design_sketch_placements,
@@ -1430,11 +1430,11 @@ pub fn decode(
             &native.sketch_relations,
             ir.tolerances.linear,
         );
-    crate::design::decode::operands::bind_loft_sketch_selections(
+    crate::design::profile_select::bind_loft_sketch_selections(
         &scan,
         &native.design_construction_operand_groups,
         &native.design_record_headers,
-        &crate::design::decode::operands::LoftSketchResolution {
+        &crate::design::profile_select::LoftSketchResolution {
             entities: &native.design_entity_headers,
             entity_selection_operands: &native.design_entity_selection_operands,
             placements: &native.design_sketch_placements,
