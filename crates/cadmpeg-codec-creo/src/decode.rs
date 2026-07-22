@@ -10379,6 +10379,9 @@ fn section_dimension_constraints(
                 )
             });
             let parameter = dimension.as_ref().map(|(_, parameter)| parameter.clone());
+            let joined_incidence = unique_relation_id
+                .then(|| joined_relation_incidence(definition, relation.relation_id))
+                .flatten();
             let typed = (|| {
                 unique_relation_id.then_some(())?;
                 let (dimension, _) = dimension.as_ref()?;
@@ -10554,6 +10557,32 @@ fn section_dimension_constraints(
                         parameter,
                     });
                 }
+                if let Some(incidence) =
+                    joined_incidence.filter(|incidence| !section_skamp_active(incidence.status))
+                {
+                    if let [first, second] = incidence.items.as_slice() {
+                        if let (Some(first), Some(second)) = (
+                            section_skamp_locus(definition, sketch, first),
+                            section_skamp_locus(definition, sketch, second),
+                        ) {
+                            return Some(SketchConstraintDefinition::DistanceLoci {
+                                first,
+                                second,
+                                parameter,
+                            });
+                        }
+                    }
+                    if !incidence.items.is_empty() {
+                        return Some(SketchConstraintDefinition::Distance {
+                            entities: incidence
+                                .items
+                                .iter()
+                                .map(|item| sketch_entity_id(sketch, item.entity_id))
+                                .collect(),
+                            parameter,
+                        });
+                    }
+                }
                 let entities =
                     relation_incidence_entities(definition, sketch, relation.relation_id);
                 (!entities.is_empty()).then_some(SketchConstraintDefinition::Distance {
@@ -10566,10 +10595,7 @@ fn section_dimension_constraints(
             } else {
                 Vec::new()
             };
-            let active = unique_relation_id
-                .then(|| joined_relation_incidence(definition, relation.relation_id))
-                .flatten()
-                .map(|incidence| section_skamp_active(incidence.status));
+            let active = joined_incidence.map(|incidence| section_skamp_active(incidence.status));
             let constraint_definition =
                 typed.unwrap_or_else(|| SketchConstraintDefinition::Native {
                     native_kind: format!("creo:relation:{}", relation.relation_type),
@@ -23629,6 +23655,41 @@ mod resolved_sketch_tests {
             .0
             .active,
             Some(false)
+        );
+        assert!(matches!(
+            section_dimension_constraints(
+                &inactive_incidence,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::DistanceLoci { .. }
+        ));
+        inactive_incidence
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0]
+            .items
+            .push(crate::feature::FeatureSkampItem {
+                entity_id: 15,
+                sense: 2,
+            });
+        assert_eq!(
+            section_dimension_constraints(
+                &inactive_incidence,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Distance {
+                entities: [12, 13, 15]
+                    .map(|entity_id| {
+                        SketchEntityId(format!("creo:featdefs:sketch_entity#917:{entity_id}"))
+                    })
+                    .to_vec(),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            }
         );
         let mut incomplete_triples = incidence_distance.clone();
         incomplete_triples

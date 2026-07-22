@@ -1450,6 +1450,9 @@ schema-defined selected dimension does not define a neutral distance. The more
 specific operand-vector and `verhor` forms below refine that distance to
 horizontal or vertical endpoint loci; incomplete operand vectors do not discard
 the incidence-backed distance.
+The same locus and entity mappings apply when the joined incidence is disabled;
+the resulting distance is inactive and does not require its equation to be
+satisfied by resolved geometry.
 
 Within the three four-slot `relat_ptr` operand vectors, `e5` expands to two
 zero slots and `e6` expands to three zero slots. `e4` is the integer value one,
