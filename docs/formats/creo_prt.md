@@ -1603,7 +1603,9 @@ Two coaxial cones whose positive transverse quadratic forms are proportional red
 
 A circular cone and a coaxial torus reduce their intersection to the two signed cone lines and the torus tube circle in a shared axial meridian plane. For cone axial coordinate `t`, signed radial sense `s ∈ {-1, 1}`, torus major radius `R`, minor radius `r`, and torus-center axial coordinate `c` from the cone origin, each branch satisfies `(s(r0 + kt) - R)² + (t - c)² = r²` and contributes only roots where `s(r0 + kt) > 0`. Each retained root defines an axis-normal circle of radius `|r0 + kt|`. Repeated roots define tangent circles. The edge's paired solved endpoints select one circle when exactly one candidate contains both endpoints.
 
-An analytic carrier pair transfers its sole intersection-curve candidate without requiring solved edge endpoints. When the pair produces multiple curve candidates, transfer requires paired solved endpoints contained by exactly one candidate. Solved endpoints must lie on the selected candidate even when the candidate set contains one curve.
+An analytic carrier pair transfers its sole intersection-curve candidate when edge endpoints are unresolved. When solved edge endpoints exist, they must lie on the candidate. When the pair produces multiple curve candidates, transfer requires paired solved endpoints contained by exactly one candidate.
+
+Every uniquely identified transferred analytic surface is available to the native topology solver as its model-space carrier. This includes planes derived from feature geometry even when the plane has no independently complete row-local placement frame.
 
 A plane with any two cylinder, cone, or sphere carriers restricts both carrier
 quadrics to conics in an orthonormal plane chart. The determinant of their

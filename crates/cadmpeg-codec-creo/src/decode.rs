@@ -27553,7 +27553,22 @@ fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEqu
         let Some(surface) = ir.model.surfaces.iter().find(|surface| surface.id == id) else {
             continue;
         };
-        if let SurfaceGeometry::Cylinder {
+        if let SurfaceGeometry::Plane { origin, normal, .. } = &surface.geometry {
+            let plane = PlaneEquation {
+                origin: [origin.x, origin.y, origin.z],
+                normal: [normal.x, normal.y, normal.z],
+            };
+            let agreed = match carriers.get(&row.id) {
+                Some(CarrierEquation::Plane(existing)) => agreed_plane(&[*existing, plane]),
+                Some(_) => None,
+                None => Some(plane),
+            };
+            if let Some(plane) = agreed {
+                carriers.insert(row.id, CarrierEquation::Plane(plane));
+            } else {
+                carriers.remove(&row.id);
+            }
+        } else if let SurfaceGeometry::Cylinder {
             origin,
             axis,
             ref_direction,
