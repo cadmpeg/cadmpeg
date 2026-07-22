@@ -2803,9 +2803,11 @@ must have the same dimension. The parameter identity excludes the bracketed
 declaration.
 
 `ceil(value)` and `floor(value)` round to an integer after applying their
-defined numeric tolerance. Their optional second argument selects zero through
-eight decimal places after truncation to an integer. A value above eight leaves
-the first argument unchanged.
+defined numeric tolerance. Their optional second argument selects a decimal
+position after truncation to an integer. Zero rounds to an integer, a positive
+value rounds digits after the decimal point, and a negative value rounds digits
+before the decimal point. A value above eight leaves the first argument
+unchanged.
 
 `IF <condition>`, optional `ELSE`, and `ENDIF` occupy separate source lines and
 may nest. `TRUE` and `YES` are numeric true; `FALSE` and `NO` are numeric

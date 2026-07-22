@@ -2241,23 +2241,24 @@ fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Opt
 }
 
 fn relation_round(value: f64, decimal_places: f64, upward: bool) -> Option<f64> {
-    (value.is_finite() && decimal_places.is_finite() && decimal_places >= 0.0).then_some(())?;
+    (value.is_finite() && decimal_places.is_finite()).then_some(())?;
     let decimal_places = decimal_places.trunc();
     if decimal_places > 8.0 {
         return Some(value);
     }
+    (decimal_places >= i32::MIN as f64).then_some(())?;
     let scale = 10_f64.powi(decimal_places as i32);
+    (scale.is_finite() && scale > 0.0).then_some(())?;
     let scaled = (value + if upward { -1e-9 } else { 1e-9 }) * scale;
     if !scaled.is_finite() {
         return Some(value);
     }
-    Some(
-        if upward {
-            scaled.ceil()
-        } else {
-            scaled.floor()
-        } / scale,
-    )
+    let rounded = if upward {
+        scaled.ceil()
+    } else {
+        scaled.floor()
+    } / scale;
+    rounded.is_finite().then_some(rounded)
 }
 
 fn extremum_selects_left(name: CreoMathFunction, left: f64, right: f64) -> Option<bool> {
@@ -3911,6 +3912,10 @@ mod tests {
             ("ceil(10.255,2.9)", 10.26),
             ("floor(10.255,1)", 10.2),
             ("floor(-10.255,2)", -10.26),
+            ("ceil(12.5,-1)", 20.0),
+            ("ceil(12.5,-1.9)", 20.0),
+            ("floor(12.5,-1)", 10.0),
+            ("floor(-12.5,-1)", -20.0),
             ("ceil(10.255,9)", 10.255),
             ("floor(10.255,9)", 10.255),
             ("dbl_in_tol(2,2.1,0.2)", 1.0),
@@ -3932,7 +3937,6 @@ mod tests {
         assert_eq!(evaluate_expression("sqrt(-1)", &values), None);
         assert_eq!(evaluate_expression("sinh(86)", &values), None);
         assert_eq!(evaluate_expression("bound(1,2,1)", &values), None);
-        assert_eq!(evaluate_expression("ceil(1.2,-1)", &values), None);
         assert_eq!(evaluate_expression("sin()", &values), None);
         assert_eq!(evaluate_expression("1<2<3", &values), None);
         for expression in [
@@ -4273,6 +4277,7 @@ mod tests {
             ("mod(25[mm],1[cm])", CurveExpressionValue::Length(5.0)),
             ("sign(2[cm],-1[s])", CurveExpressionValue::Length(-20.0)),
             ("ceil(2.1[mm])", CurveExpressionValue::Length(3.0)),
+            ("ceil(12.5[mm],-1)", CurveExpressionValue::Length(20.0)),
             ("floor(2.19[cm],1)", CurveExpressionValue::Length(21.9)),
             ("atan(1)", CurveExpressionValue::Angle(45.0)),
         ];
