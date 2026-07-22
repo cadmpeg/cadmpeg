@@ -3473,6 +3473,56 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn configuration_hole_inherits_shared_construction_and_placement() {
+        use cadmpeg_ir::features::{
+            Extent, FeatureDefinition, FeatureId, HoleKind, HolePlacement, Length,
+        };
+
+        let id = FeatureId("test:model:feature#hole".into());
+        let base = cadmpeg_ir::features::Feature {
+            id: id.clone(),
+            ordinal: 0,
+            name: Some("Hole".into()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Hole {
+                face: None,
+                placements: vec![HolePlacement::Axis {
+                    origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                    axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                }],
+                kind: HoleKind::Counterbore {
+                    diameter: Length(8.0),
+                    depth: Length(4.0),
+                },
+                diameter: Some(Length(5.0)),
+                extent: Some(Extent::Blind {
+                    length: Length(12.0),
+                }),
+            },
+            native_ref: None,
+        };
+        let mut configured = base.clone();
+        configured.definition = FeatureDefinition::Hole {
+            face: None,
+            placements: Vec::new(),
+            kind: HoleKind::Simple,
+            diameter: None,
+            extent: None,
+        };
+
+        inherit_configuration_hole_semantics(&mut configured.definition, &base.definition);
+
+        assert_eq!(configured.definition, base.definition);
+    }
+
+    #[test]
     fn configuration_numeric_override_inherits_parameter_dimension() {
         use cadmpeg_ir::features::{
             ConfigurationId, DesignConfiguration, DesignParameter, FeatureId, ParameterId,
@@ -7273,6 +7323,61 @@ pub(crate) fn project_configuration_sketch_states(
             state.outputs = feature.outputs;
             state.definition = feature.definition;
         }
+    }
+    let base = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.id.clone(), feature.definition.clone()))
+        .collect::<HashMap<_, _>>();
+    for configuration in &mut ir.model.configurations {
+        for (feature_id, state) in &mut configuration.feature_states {
+            if let Some(base_definition) = base.get(feature_id) {
+                inherit_configuration_hole_semantics(&mut state.definition, base_definition);
+            }
+        }
+    }
+}
+
+fn inherit_configuration_hole_semantics(
+    definition: &mut FeatureDefinition,
+    base_definition: &FeatureDefinition,
+) {
+    let FeatureDefinition::Hole {
+        face,
+        placements,
+        kind,
+        diameter,
+        extent,
+    } = definition
+    else {
+        return;
+    };
+    let FeatureDefinition::Hole {
+        face: base_face,
+        placements: base_placements,
+        kind: base_kind,
+        diameter: base_diameter,
+        extent: base_extent,
+    } = base_definition
+    else {
+        return;
+    };
+    let missing_construction = diameter.is_none() && extent.is_none();
+    if face.is_none() {
+        face.clone_from(base_face);
+    }
+    if placements.is_empty() {
+        placements.clone_from(base_placements);
+    }
+    if missing_construction {
+        kind.clone_from(base_kind);
+    }
+    if diameter.is_none() {
+        diameter.clone_from(base_diameter);
+    }
+    if extent.is_none() {
+        extent.clone_from(base_extent);
     }
 }
 

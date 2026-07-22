@@ -1631,11 +1631,6 @@ fn build_geometry_ir(
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
     ir.model.sketch_constraints = sketch_constraints;
-    crate::history::project_configuration_sketch_states(
-        &mut ir,
-        &histories,
-        &native.feature_input_lanes,
-    );
     stamp_sketch_baseline(&mut ir, &native);
 
     ir.model.bodies = brep.bodies;
@@ -1682,6 +1677,11 @@ fn build_geometry_ir(
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     stamp_feature_baseline(&mut ir);
     assign_configuration_bodies(&mut ir, configuration_bodies);
+    crate::history::project_configuration_sketch_states(
+        &mut ir,
+        &histories,
+        &native.feature_input_lanes,
+    );
     mark_active_configuration(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
