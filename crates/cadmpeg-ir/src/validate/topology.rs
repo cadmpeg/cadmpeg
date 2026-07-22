@@ -1890,8 +1890,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
 
 fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
     use crate::features::{
-        BodySelection, EdgeSelection, Extent, FaceSelection, FeatureDefinition, PathRef,
-        ProfileRef, ScaleCenter,
+        BodySelection, EdgeSelection, ExtrudeExtent, FaceSelection, FeatureDefinition, PathRef,
+        ProfileRef, RevolveExtent, ScaleCenter, Termination,
     };
 
     let mut configuration_ordinals = HashSet::new();
@@ -2367,16 +2367,20 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 direction,
                 start,
                 extent,
-                draft,
-                second_draft,
                 direction_source,
                 face_maker,
-                first_offset,
-                second_offset,
                 ..
             } => {
                 profiles.push(profile);
-                extents.push(extent);
+                let sides = match extent {
+                    ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                        vec![side]
+                    }
+                    ExtrudeExtent::TwoSided { first, second } => vec![first, second],
+                };
+                for side in &sides {
+                    extents.push(&side.termination);
+                }
                 if let crate::features::ExtrudeDirection::Explicit(vector) = direction {
                     if !valid_feature_direction(*vector) {
                         feature_geometry_error(findings, feature, "extrusion direction is invalid");
@@ -2387,32 +2391,16 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 {
                     paths.push(reference);
                 }
-                if [draft, second_draft].into_iter().flatten().any(|angle| {
-                    !angle.0.is_finite() || angle.0.abs() >= std::f64::consts::FRAC_PI_2
+                if sides.iter().any(|side| {
+                    side.draft.is_some_and(|angle| {
+                        !angle.0.is_finite() || angle.0.abs() >= std::f64::consts::FRAC_PI_2
+                    })
                 }) {
                     feature_geometry_error(findings, feature, "extrusion draft is invalid");
                 }
-                if second_draft.is_some()
-                    && !matches!(
-                        extent,
-                        Extent::TwoSided { .. }
-                            | Extent::TwoSidedExtents { .. }
-                            | Extent::TwoSidedAngles { .. }
-                            | Extent::Symmetric { .. }
-                            | Extent::SymmetricExtent { .. }
-                            | Extent::SymmetricAngle { .. }
-                    )
-                {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "opposite-side extrusion draft requires a two-sided extent",
-                    );
-                }
-                if [first_offset, second_offset]
-                    .into_iter()
-                    .flatten()
-                    .any(|offset| !offset.0.is_finite())
+                if sides
+                    .iter()
+                    .any(|side| side.offset.is_some_and(|offset| !offset.0.is_finite()))
                     || face_maker
                         .as_ref()
                         .is_some_and(|maker| maker.class.is_empty())
@@ -2456,7 +2444,16 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             FeatureDefinition::Revolve { construction, .. } => {
                 profiles.extend(&construction.profile);
-                extents.extend(&construction.extent);
+                match &construction.extent {
+                    Some(
+                        RevolveExtent::OneSided { termination }
+                        | RevolveExtent::Symmetric { termination },
+                    ) => extents.push(termination),
+                    Some(RevolveExtent::TwoSided { first, second }) => {
+                        extents.extend([first, second]);
+                    }
+                    None => {}
+                }
                 paths.extend(&construction.axis_reference);
                 if construction.axis.as_ref().is_some_and(|axis| {
                     !axis.origin.x.is_finite()
@@ -3789,89 +3786,56 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 | PathRef::SpatialSketchSelection { .. } => {}
             }
         }
-        for extent in extents {
-            let mut pending = vec![extent];
-            while let Some(extent) = pending.pop() {
-                match extent {
-                    Extent::TwoSidedExtents { first, second } => {
-                        pending.push(first);
-                        pending.push(second);
-                        continue;
-                    }
-                    Extent::SymmetricExtent { extent } => {
-                        pending.push(extent);
-                        continue;
-                    }
-                    _ => {}
+        for termination in extents {
+            let valid_magnitude = match termination {
+                Termination::Blind { length } => length.0.is_finite() && length.0 != 0.0,
+                Termination::Angle { angle } => angle.0.is_finite() && angle.0 > 0.0,
+                Termination::OffsetFromFace { offset, .. } => {
+                    offset.0.is_finite() && offset.0 > 0.0
                 }
-                let valid_magnitude = match extent {
-                    Extent::Blind { length } | Extent::Symmetric { length } => {
-                        length.0.is_finite() && length.0 != 0.0
-                    }
-                    Extent::TwoSided { first, second } => {
-                        first.0.is_finite()
-                            && first.0 != 0.0
-                            && second.0.is_finite()
-                            && second.0 != 0.0
-                    }
-                    Extent::Angle { angle } | Extent::SymmetricAngle { angle } => {
-                        angle.0.is_finite() && angle.0 > 0.0
-                    }
-                    Extent::TwoSidedAngles { first, second } => {
-                        first.0.is_finite()
-                            && first.0 > 0.0
-                            && second.0.is_finite()
-                            && second.0 > 0.0
-                    }
-                    Extent::ThroughAll
-                    | Extent::ThroughAllBoth
-                    | Extent::ThroughNext
-                    | Extent::ToFirst
-                    | Extent::ToLast
-                    | Extent::ToVertex { .. }
-                    | Extent::ToShape { .. } => true,
-                    Extent::OffsetFromFace { offset, .. } => offset.0.is_finite() && offset.0 > 0.0,
-                    Extent::Unresolved => true,
-                    Extent::ToFace { offset, .. } => {
-                        offset.is_none_or(|offset| offset.0.is_finite())
-                    }
-                    Extent::TwoSidedExtents { .. } | Extent::SymmetricExtent { .. } => {
-                        unreachable!("composite extents are expanded above")
-                    }
-                };
-                if !valid_magnitude {
-                    findings.push(Finding {
-                        check: Check::GeometricConsistency,
-                        severity: Severity::Error,
-                        message: "feature extent magnitude is invalid".into(),
-                        entity: Some(feature.id.0.clone()),
-                    });
+                Termination::ToFace { offset, .. } => {
+                    offset.is_none_or(|offset| offset.0.is_finite())
                 }
-                if let Extent::ToFace {
-                    face: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
-                    ..
-                } = extent
-                {
-                    check_ids(
-                        findings,
-                        &feature.id.0,
-                        "termination face",
-                        faces.iter().map(|id| id.0.as_str()),
-                        &ids.faces,
-                    );
-                }
-                if let Extent::ToShape {
-                    target: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
-                } = extent
-                {
-                    check_ids(
-                        findings,
-                        &feature.id.0,
-                        "termination shape face",
-                        faces.iter().map(|id| id.0.as_str()),
-                        &ids.faces,
-                    );
-                }
+                Termination::Unresolved
+                | Termination::ThroughAll
+                | Termination::ThroughNext
+                | Termination::ToFirst
+                | Termination::ToLast
+                | Termination::ToVertex { .. }
+                | Termination::ToShape { .. } => true,
+            };
+            if !valid_magnitude {
+                findings.push(Finding {
+                    check: Check::GeometricConsistency,
+                    severity: Severity::Error,
+                    message: "feature extent magnitude is invalid".into(),
+                    entity: Some(feature.id.0.clone()),
+                });
+            }
+            if let Termination::ToFace {
+                face: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
+                ..
+            } = termination
+            {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "termination face",
+                    faces.iter().map(|id| id.0.as_str()),
+                    &ids.faces,
+                );
+            }
+            if let Termination::ToShape {
+                target: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
+            } = termination
+            {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "termination shape face",
+                    faces.iter().map(|id| id.0.as_str()),
+                    &ids.faces,
+                );
             }
         }
         for selection in edge_selections {

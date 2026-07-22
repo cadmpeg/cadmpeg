@@ -148,9 +148,9 @@ fn decode_result(
 
 fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     use cadmpeg_ir::features::{
-        BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, Extent,
+        BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
         FaceSelection, FeatureDefinition, FeatureSourceContent, PathRef, PatternKind, ProfileRef,
-        RadiusSpec,
+        RadiusSpec, RevolveExtent, Termination,
     };
     use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry, SpatialSketchGeometry};
 
@@ -824,9 +824,26 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         PathRef::Unresolved(_) | PathRef::Native(_) => true,
         PathRef::Sketch(_) => false,
     };
-    let incomplete_extent = |extent: &Extent| {
-        matches!(extent, Extent::Unresolved)
-            || matches!(extent, Extent::ToFace { face, .. } if incomplete_face_selection(face))
+    let incomplete_termination = |termination: &Termination| {
+        matches!(termination, Termination::Unresolved)
+            || matches!(termination, Termination::ToFace { face, .. } if incomplete_face_selection(face))
+    };
+    let incomplete_extrude_extent = |extent: &ExtrudeExtent| match extent {
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+            incomplete_termination(&side.termination)
+        }
+        ExtrudeExtent::TwoSided { first, second } => {
+            incomplete_termination(&first.termination)
+                || incomplete_termination(&second.termination)
+        }
+    };
+    let incomplete_revolve_extent = |extent: &RevolveExtent| match extent {
+        RevolveExtent::OneSided { termination } | RevolveExtent::Symmetric { termination } => {
+            incomplete_termination(termination)
+        }
+        RevolveExtent::TwoSided { first, second } => {
+            incomplete_termination(first) || incomplete_termination(second)
+        }
     };
     let incomplete_typed_features = evaluated_feature_states
         .iter()
@@ -881,13 +898,13 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 ..
             } => {
                 incomplete_profile(profile)
-                    || incomplete_extent(extent)
+                    || incomplete_extrude_extent(extent)
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Revolve { construction, op } => {
                 construction.profile.as_ref().is_none_or(incomplete_profile)
                     || construction.axis.is_none()
-                    || construction.extent.as_ref().is_none_or(incomplete_extent)
+                    || construction.extent.as_ref().is_none_or(incomplete_revolve_extent)
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Sweep {
@@ -1042,7 +1059,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || placements.is_empty()
                     || matches!(kind, cadmpeg_ir::features::HoleKind::Unresolved { .. })
                     || diameter.is_none()
-                    || extent.as_ref().is_none_or(incomplete_extent)
+                    || extent.as_ref().is_none_or(incomplete_termination)
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
                 seeds.is_empty()

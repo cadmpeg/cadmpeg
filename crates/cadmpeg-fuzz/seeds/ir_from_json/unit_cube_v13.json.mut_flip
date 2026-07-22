@@ -1,5 +1,5 @@
 {
-  "ir_version": "54",
+  "ir_version": "56",
   "units": {
     "length": "millimeter"
   },
@@ -380,8 +380,8 @@
         "sense": "reversed"
       },
       {
-        "id": "synthetic:cube:coedge#top:3",
-        "owner_loop"Å "synthetic:cube:loop#top",
+        "id": "synthetic:cubš:coedge#top:3",
+        "owner_loop": "synthetic:cube:loop#top",
         "edge": "synthetic:cube:edge#4",
         "next": "synthetic:cube:coedge#top:0",
         "previous": "synthetic:cube:coedge#top:2",
@@ -938,7 +938,6 @@
     "procedural_surfaces": [],
     "procedural_curves": [],
     "features": [],
-    "feature_input_topologies": [],
     "configurations": [],
     "parameters": [],
     "sketches": [],
@@ -946,7 +945,6 @@
     "sketch_constraints": [],
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
-    "spatial_sketch_constraints": [],
     "spreadsheets": [],
     "components": [],
     "occurrences": [],

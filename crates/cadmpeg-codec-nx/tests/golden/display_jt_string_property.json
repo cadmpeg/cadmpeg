@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "55",
+      "ir_version": "56",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -155,7 +155,7 @@
                 "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 31,
-                "source_offset": 495,
+                "source_offset": 515,
                 "tail": [],
                 "tail_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
               }
@@ -189,7 +189,7 @@
                 "ordinal": 0,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 31,
-                "source_offset": 495
+                "source_offset": 515
               }
             ],
             "display_jt_documents": [
@@ -217,8 +217,8 @@
                   1,
                   1
                 ],
-                "physical_byte_len": 224,
-                "source_offset": 334,
+                "physical_byte_len": 234,
+                "source_offset": 354,
                 "toc_entries": [
                   {
                     "attributes": [
@@ -229,7 +229,7 @@
                     ],
                     "id": "nx:display-jt:toc-entry#0-row-0-0",
                     "ordinal": 0,
-                    "segment_byte_len": 87,
+                    "segment_byte_len": 97,
                     "segment_id": [
                       2,
                       2,
@@ -249,7 +249,7 @@
                       2
                     ],
                     "segment_offset": 137,
-                    "source_offset": 443
+                    "source_offset": 463
                   }
                 ],
                 "toc_offset": 105,
@@ -265,11 +265,11 @@
                     "header_offset": 28,
                     "id": "nx:display-jt:index#0-row-0",
                     "ordinal": 0,
-                    "source_offset": 314,
+                    "source_offset": 334,
                     "value": 100
                   }
                 ],
-                "source_offset": 306,
+                "source_offset": 326,
                 "version": 9
               }
             ],
@@ -277,15 +277,15 @@
               {
                 "compression": {
                   "algorithm": 2,
-                  "compressed_byte_len": 54,
-                  "compressed_data_byte_len": 55,
+                  "compressed_byte_len": 64,
+                  "compressed_data_byte_len": 65,
                   "flag": 2,
                   "inflated_sha256": "f27bcae38cc8dce4e5a705688ac240c82d125258bd9fe08aff1cea0213f25963"
                 },
                 "document": "nx:display-jt:document#0-row-0",
                 "id": "nx:display-jt:segment#0-row-0-0",
-                "payload_sha256": "85b5b25534348b45d81c607150843df1670e9f6b6d49eeec48ab9f3b9587baf4",
-                "segment_byte_len": 87,
+                "payload_sha256": "0150a790ad42dba8e443628ef0edc10c291598d0da281184359b1d13d014b4d2",
+                "segment_byte_len": 97,
                 "segment_id": [
                   2,
                   2,
@@ -305,7 +305,7 @@
                   2
                 ],
                 "segment_type": 31,
-                "source_offset": 471,
+                "source_offset": 491,
                 "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
               }
             ],
@@ -318,7 +318,7 @@
                 "element": "nx:display-jt:segment#0-row-0-0-inflated-element-0",
                 "id": "nx:display-jt:segment#0-row-0-0-string-property-atom-0",
                 "object_id": 1,
-                "source_offset": 495,
+                "source_offset": 515,
                 "value": "JT"
               }
             ],
@@ -340,7 +340,7 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "558",
+          "file_size": "588",
           "footer_offset": "0",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -506,22 +506,22 @@
           "file_offset": "115",
           "region": "HEADER"
         },
-        "compressed_size": 191,
+        "compressed_size": 211,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "stream",
-        "uncompressed_size": 191
+        "uncompressed_size": 211
       },
       {
         "attributes": {
-          "file_offset": "306",
+          "file_offset": "326",
           "region": "HEADER"
         },
-        "compressed_size": 252,
+        "compressed_size": 262,
         "compression": "none",
         "name": "/Root/UG_PART/DisplayJT",
         "role": "stream",
-        "uncompressed_size": 252
+        "uncompressed_size": 262
       },
       {
         "attributes": {

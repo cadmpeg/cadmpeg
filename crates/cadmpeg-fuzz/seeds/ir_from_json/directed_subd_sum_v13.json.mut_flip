@@ -1,5 +1,5 @@
 {
-  "ir_version": "54",
+  "ir_version": "56",
   "units": {
     "length": "millimeter"
   },
@@ -114,8 +114,8 @@
               0.25,
               0.75
             ],
-            "tag": "crease",
-            "sector_coeffic–ents": [
+            "tag": Ýcrease",
+            "sector_coefficients": [
               0.125,
               0.875
             ]
@@ -191,7 +191,6 @@
     ],
     "procedural_curves": [],
     "features": [],
-    "feature_input_topologies": [],
     "configurations": [],
     "parameters": [],
     "sketches": [],
@@ -199,7 +198,6 @@
     "sketch_constraints": [],
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
-    "spatial_sketch_constraints": [],
     "spreadsheets": [],
     "components": [],
     "occurrences": [],

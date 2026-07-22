@@ -8,15 +8,15 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin,
     BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp, ChamferSpec,
-    DesignParameter, EdgeSelection, Extent, ExtrusionDirectionSource, ExtrusionFaceMaker, Feature,
-    FeatureDefinition, FeatureId, FeatureTreeNodeRole, FuzzyTolerance, GeometryImportFormat,
-    HelicalSweepConstruction, HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleKind,
-    HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper, Length, ParameterId,
-    ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternSeed, PatternStage,
-    PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, RevolutionFuseOrder, RuledCurveOrientation, ScaleCenter, ScaleFactors,
-    ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation,
-    SweepTransition, ThreadHand,
+    DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource,
+    ExtrusionFaceMaker, Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, FuzzyTolerance,
+    GeometryImportFormat, HelicalSweepConstruction, HelicalSweepLaw, HelixConstructionStyle,
+    HoleBottom, HoleKind, HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper,
+    Length, ParameterId, ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternSeed,
+    PatternStage, PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, RevolutionFuseOrder, RevolveExtent, RuledCurveOrientation, ScaleCenter,
+    ScaleFactors, ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode, SweepOrientation,
+    SweepTransformation, SweepTransition, Termination, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -1960,35 +1960,51 @@ fn revolution_definition(
     let extent = if kind == "Part::Revolution" {
         let angle = angle()?;
         if bool_property(properties, "Symmetric").unwrap_or(false) {
-            Extent::SymmetricAngle { angle }
+            RevolveExtent::Symmetric {
+                termination: Termination::Angle { angle },
+            }
         } else {
-            Extent::Angle { angle }
+            RevolveExtent::OneSided {
+                termination: Termination::Angle { angle },
+            }
         }
     } else {
         match mode {
             0 => {
                 let angle = angle()?;
                 if bool_property(properties, "Midplane").unwrap_or(false) {
-                    Extent::SymmetricAngle { angle }
+                    RevolveExtent::Symmetric {
+                        termination: Termination::Angle { angle },
+                    }
                 } else {
-                    Extent::Angle { angle }
+                    RevolveExtent::OneSided {
+                        termination: Termination::Angle { angle },
+                    }
                 }
             }
-            1 => Extent::ThroughAll,
-            2 => Extent::ToFirst,
-            3 => Extent::ToFace {
-                face: cadmpeg_ir::features::FaceSelection::Native(
-                    property(properties, "UpToFace")?.id.clone(),
-                ),
-                offset: None,
+            1 => RevolveExtent::OneSided {
+                termination: Termination::ThroughAll,
             },
-            4 => Extent::TwoSidedAngles {
-                first: angle()?,
-                second: cadmpeg_ir::features::Angle(
-                    scalar_named(properties, "Angle2")
-                        .filter(|angle| angle.is_finite() && *angle > 0.0)?
-                        .to_radians(),
-                ),
+            2 => RevolveExtent::OneSided {
+                termination: Termination::ToFirst,
+            },
+            3 => RevolveExtent::OneSided {
+                termination: Termination::ToFace {
+                    face: cadmpeg_ir::features::FaceSelection::Native(
+                        property(properties, "UpToFace")?.id.clone(),
+                    ),
+                    offset: None,
+                },
+            },
+            4 => RevolveExtent::TwoSided {
+                first: Termination::Angle { angle: angle()? },
+                second: Termination::Angle {
+                    angle: cadmpeg_ir::features::Angle(
+                        scalar_named(properties, "Angle2")
+                            .filter(|angle| angle.is_finite() && *angle > 0.0)?
+                            .to_radians(),
+                    ),
+                },
             },
             _ => return None,
         }
@@ -2258,31 +2274,70 @@ fn extrusion_definition(
             forward = magnitude;
         }
         let symmetric = bool_property(properties, "Symmetric").unwrap_or(false);
+        let forward_draft = scalar_named(properties, "TaperAngle").unwrap_or(0.0);
+        let reverse_draft = scalar_named(properties, "TaperAngleRev").unwrap_or(0.0);
+        let to_draft = |degrees: f64| {
+            (degrees != 0.0).then_some(cadmpeg_ir::features::Angle(degrees.to_radians()))
+        };
         let (extent, reverse_direction) = if symmetric {
+            // A symmetric extent mirrors one side across the profile plane, so
+            // its single side carries the taper once (from `TaperAngle`).
             (
-                Extent::Symmetric {
-                    length: Length((forward > 0.0).then_some(forward)?),
+                ExtrudeExtent::Symmetric {
+                    side: ExtrudeSide {
+                        termination: Termination::Blind {
+                            length: Length((forward > 0.0).then_some(forward)?),
+                        },
+                        draft: to_draft(forward_draft),
+                        offset: None,
+                    },
                 },
                 false,
             )
         } else {
             match (forward > 0.0, reverse > 0.0) {
                 (true, false) => (
-                    Extent::Blind {
-                        length: Length(forward),
+                    ExtrudeExtent::OneSided {
+                        side: ExtrudeSide {
+                            termination: Termination::Blind {
+                                length: Length(forward),
+                            },
+                            draft: to_draft(forward_draft),
+                            offset: None,
+                        },
                     },
                     false,
                 ),
                 (false, true) => (
-                    Extent::Blind {
-                        length: Length(reverse),
+                    // Reverse-only: the direction is flipped and the single
+                    // traveled side carries `TaperAngleRev`.
+                    ExtrudeExtent::OneSided {
+                        side: ExtrudeSide {
+                            termination: Termination::Blind {
+                                length: Length(reverse),
+                            },
+                            draft: to_draft(reverse_draft),
+                            offset: None,
+                        },
                     },
                     true,
                 ),
                 (true, true) => (
-                    Extent::TwoSided {
-                        first: Length(forward),
-                        second: Length(reverse),
+                    ExtrudeExtent::TwoSided {
+                        first: ExtrudeSide {
+                            termination: Termination::Blind {
+                                length: Length(forward),
+                            },
+                            draft: to_draft(forward_draft),
+                            offset: None,
+                        },
+                        second: ExtrudeSide {
+                            termination: Termination::Blind {
+                                length: Length(reverse),
+                            },
+                            draft: to_draft(reverse_draft),
+                            offset: None,
+                        },
                     },
                     false,
                 ),
@@ -2292,14 +2347,6 @@ fn extrusion_definition(
         if reverse_direction {
             direction = Vector3::new(-direction.x, -direction.y, -direction.z);
         }
-        let forward_draft = scalar_named(properties, "TaperAngle").unwrap_or(0.0);
-        let reverse_draft = scalar_named(properties, "TaperAngleRev").unwrap_or(0.0);
-        let (draft, reverse_draft) = match (symmetric, forward > 0.0, reverse > 0.0) {
-            (true, _, _) => (forward_draft, forward_draft),
-            (false, false, true) => (reverse_draft, 0.0),
-            (false, true, true) => (forward_draft, reverse_draft),
-            _ => (forward_draft, 0.0),
-        };
         let direction_source = match integer_property(properties, "DirMode").unwrap_or(0) {
             0 => ExtrusionDirectionSource::Custom,
             1 => {
@@ -2342,15 +2389,10 @@ fn extrusion_definition(
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent,
             op: BooleanOp::NewBody,
-            draft: (draft != 0.0).then_some(cadmpeg_ir::features::Angle(draft.to_radians())),
-            second_draft: (reverse_draft != 0.0)
-                .then_some(cadmpeg_ir::features::Angle(reverse_draft.to_radians())),
             direction_source: Some(direction_source),
             solid: Some(bool_property(properties, "Solid").unwrap_or(false)),
             face_maker,
             inner_wire_taper,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         });
@@ -2369,21 +2411,21 @@ fn extrusion_definition(
             integer_property(properties, &type_name).unwrap_or(0)
         };
         match termination_type {
-            0 => Some(Extent::Blind {
+            0 => Some(Termination::Blind {
                 length: Length(
                     scalar_named(properties, &length_name).filter(|value| *value != 0.0)?,
                 ),
             }),
-            1 if kind.contains("Pocket") => Some(Extent::ThroughAll),
-            1 => Some(Extent::ToLast),
-            2 => Some(Extent::ToFirst),
-            3 => Some(Extent::ToFace {
+            1 if kind.contains("Pocket") => Some(Termination::ThroughAll),
+            1 => Some(Termination::ToLast),
+            2 => Some(Termination::ToFirst),
+            3 => Some(Termination::ToFace {
                 face: cadmpeg_ir::features::FaceSelection::Native(
                     property(properties, &face_name)?.id.clone(),
                 ),
                 offset: None,
             }),
-            5 => Some(Extent::ToShape {
+            5 => Some(Termination::ToShape {
                 target: cadmpeg_ir::features::FaceSelection::Native(
                     property(properties, &shape_name)?.id.clone(),
                 ),
@@ -2398,16 +2440,50 @@ fn extrusion_definition(
             u64::from(integer_property(properties, "Type") == Some(4))
         }
     });
+    // First-side draft and offset apply to every extent shape. `TaperAngle2`
+    // and `Offset2` describe a second, independent side and are read only when
+    // the extent actually carries one (`SideType` 1 / two-sided). A symmetric
+    // (Midplane) pad mirrors side one, so it has no second side to receive
+    // them; the native properties remain retained but map nowhere in the IR.
+    let first_draft = scalar_named(properties, "TaperAngle")
+        .filter(|angle| *angle != 0.0)
+        .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()));
+    let first_offset = if property(properties, "Offset").is_some() {
+        Some(Length(scalar_named(properties, "Offset")?))
+    } else {
+        None
+    };
     let extent = match side_type {
-        0 => termination(1)?,
-        1 => Extent::TwoSidedExtents {
-            first: Box::new(termination(1)?),
-            second: Box::new(termination(2)?),
+        0 => ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: termination(1)?,
+                draft: first_draft,
+                offset: first_offset,
+            },
         },
-        2 => match termination(1)? {
-            Extent::Blind { length } => Extent::Symmetric { length },
-            extent => Extent::SymmetricExtent {
-                extent: Box::new(extent),
+        1 => ExtrudeExtent::TwoSided {
+            first: ExtrudeSide {
+                termination: termination(1)?,
+                draft: first_draft,
+                offset: first_offset,
+            },
+            second: ExtrudeSide {
+                termination: termination(2)?,
+                draft: scalar_named(properties, "TaperAngle2")
+                    .filter(|angle| *angle != 0.0)
+                    .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians())),
+                offset: if property(properties, "Offset2").is_some() {
+                    Some(Length(scalar_named(properties, "Offset2")?))
+                } else {
+                    None
+                },
+            },
+        },
+        2 => ExtrudeExtent::Symmetric {
+            side: ExtrudeSide {
+                termination: termination(1)?,
+                draft: first_draft,
+                offset: first_offset,
             },
         },
         _ => return None,
@@ -2460,32 +2536,6 @@ fn extrusion_definition(
     if bool_property(properties, "Reversed").unwrap_or(false) {
         direction = Vector3::new(-direction.x, -direction.y, -direction.z);
     }
-    let draft = scalar_named(properties, "TaperAngle")
-        .filter(|angle| *angle != 0.0)
-        .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()));
-    // FreeCAD applies `TaperAngle2` only when the pad extends on a second
-    // side; a retained value alongside a one-sided extent has no effect.
-    let second_draft = scalar_named(properties, "TaperAngle2")
-        .filter(|angle| *angle != 0.0)
-        .filter(|_| {
-            matches!(
-                extent,
-                Extent::TwoSidedExtents { .. }
-                    | Extent::Symmetric { .. }
-                    | Extent::SymmetricExtent { .. }
-            )
-        })
-        .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()));
-    let first_offset = if property(properties, "Offset").is_some() {
-        Some(Length(scalar_named(properties, "Offset")?))
-    } else {
-        None
-    };
-    let second_offset = if property(properties, "Offset2").is_some() {
-        Some(Length(scalar_named(properties, "Offset2")?))
-    } else {
-        None
-    };
     let length_along_profile_normal = if property(properties, "AlongSketchNormal").is_some() {
         Some(bool_property(properties, "AlongSketchNormal")?)
     } else {
@@ -2506,14 +2556,10 @@ fn extrusion_definition(
         } else {
             BooleanOp::Join
         },
-        draft,
-        second_draft,
         direction_source: Some(direction_source),
         solid: Some(true),
         face_maker: None,
         inner_wire_taper: None,
-        first_offset,
-        second_offset,
         length_along_profile_normal,
         allow_multi_profile_faces,
     })
@@ -3332,10 +3378,10 @@ fn hole_definition(
         _ => return None,
     };
     let extent = match integer_property(properties, "DepthType").unwrap_or(0) {
-        0 => Extent::Blind {
+        0 => Termination::Blind {
             length: Length(positive("Depth")?),
         },
-        1 => Extent::ThroughAll,
+        1 => Termination::ThroughAll,
         _ => return None,
     };
     let bottom = match integer_property(properties, "DrillPoint").unwrap_or(1) {

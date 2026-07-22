@@ -21,9 +21,9 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
-    CurveProjectionDirection, CurveProjectionDirectionState, EdgeSelection, Extent, FaceSelection,
-    FeatureDefinition, HoleKind, Length, ParameterId, PathRef, PatternKind, ProfileRef, RadiusSpec,
-    RibConstruction, RibDraft, SketchSpace, TrimRegion,
+    CurveProjectionDirection, CurveProjectionDirectionState, EdgeSelection, ExtrudeExtent,
+    FaceSelection, FeatureDefinition, HoleKind, Length, ParameterId, PathRef, PatternKind,
+    ProfileRef, RadiusSpec, RibConstruction, RibDraft, SketchSpace, Termination, TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -6828,7 +6828,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 op,
                 ..
             } if profile_ref_is_incomplete(profile)
-                || extent_is_incomplete(extent)
+                || extrude_extent_is_incomplete(extent)
                 || matches!(op, BooleanOp::Unresolved) =>
             {
                 "extrude"
@@ -7083,7 +7083,7 @@ pub(crate) fn hole_feature_is_incomplete(
     direction: Option<Vector3>,
     treatments: (&HoleKind, Option<&HoleKind>),
     diameter: Option<Length>,
-    extent: Option<&Extent>,
+    extent: Option<&Termination>,
 ) -> bool {
     let (kind, exit_kind) = treatments;
     let profile_incomplete = profile.is_some_and(profile_ref_is_incomplete);
@@ -7098,31 +7098,34 @@ pub(crate) fn hole_feature_is_incomplete(
         || matches!(kind, HoleKind::Unresolved { .. })
         || exit_kind.is_some_and(|kind| matches!(kind, HoleKind::Unresolved { .. }))
         || diameter.is_none()
-        || extent.is_none_or(extent_is_incomplete)
+        || extent.is_none_or(termination_is_incomplete)
 }
 
-pub(crate) fn extent_is_incomplete(extent: &Extent) -> bool {
+pub(crate) fn extrude_extent_is_incomplete(extent: &ExtrudeExtent) -> bool {
     match extent {
-        Extent::Unresolved => true,
-        Extent::TwoSidedExtents { first, second } => {
-            extent_is_incomplete(first) || extent_is_incomplete(second)
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+            termination_is_incomplete(&side.termination)
         }
-        Extent::SymmetricExtent { extent } => extent_is_incomplete(extent),
-        Extent::ToFace { face, .. } => face_selection_is_incomplete(face),
-        Extent::ToShape { target } => face_selection_is_incomplete(target),
-        Extent::Blind { .. }
-        | Extent::Symmetric { .. }
-        | Extent::TwoSided { .. }
-        | Extent::ThroughAll
-        | Extent::ThroughAllBoth
-        | Extent::ThroughNext
-        | Extent::ToFirst
-        | Extent::ToLast
-        | Extent::ToVertex { .. }
-        | Extent::OffsetFromFace { .. }
-        | Extent::Angle { .. }
-        | Extent::SymmetricAngle { .. }
-        | Extent::TwoSidedAngles { .. } => false,
+        ExtrudeExtent::TwoSided { first, second } => {
+            termination_is_incomplete(&first.termination)
+                || termination_is_incomplete(&second.termination)
+        }
+    }
+}
+
+pub(crate) fn termination_is_incomplete(termination: &Termination) -> bool {
+    match termination {
+        Termination::Unresolved => true,
+        Termination::ToFace { face, .. } => face_selection_is_incomplete(face),
+        Termination::ToShape { target } => face_selection_is_incomplete(target),
+        Termination::Blind { .. }
+        | Termination::ThroughAll
+        | Termination::ThroughNext
+        | Termination::ToFirst
+        | Termination::ToLast
+        | Termination::ToVertex { .. }
+        | Termination::OffsetFromFace { .. }
+        | Termination::Angle { .. } => false,
     }
 }
 

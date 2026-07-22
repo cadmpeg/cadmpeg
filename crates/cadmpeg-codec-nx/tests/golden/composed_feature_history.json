@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "55",
+      "ir_version": "56",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -357,7 +357,12 @@
             "definition": {
               "definition": "extrude",
               "extent": {
-                "kind": "unresolved"
+                "kind": "one_sided",
+                "side": {
+                  "termination": {
+                    "kind": "unresolved"
+                  }
+                }
               },
               "op": "unresolved",
               "profile": {
@@ -402,7 +407,12 @@
             "definition": {
               "definition": "extrude",
               "extent": {
-                "kind": "unresolved"
+                "kind": "one_sided",
+                "side": {
+                  "termination": {
+                    "kind": "unresolved"
+                  }
+                }
               },
               "op": "unresolved",
               "profile": {
@@ -446,7 +456,12 @@
             "definition": {
               "definition": "extrude",
               "extent": {
-                "kind": "unresolved"
+                "kind": "one_sided",
+                "side": {
+                  "termination": {
+                    "kind": "unresolved"
+                  }
+                }
               },
               "op": "unresolved",
               "profile": {

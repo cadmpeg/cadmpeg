@@ -1193,9 +1193,6 @@ fn generate_ir_seeds() {
     let migrate = Path::new("seeds/ir_migrate_json");
     replace_seed_directory(migrate);
     for (name, data) in &canonical {
-        let legacy = std::str::from_utf8(data).unwrap().replacen(
-            r#""ir_version": "54""#,
-            r#""ir_version": "53""#,
         let current = std::str::from_utf8(data).unwrap();
         let legacy = current.replacen(
             &current_version_field,

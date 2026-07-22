@@ -925,8 +925,19 @@ pub(crate) fn bind_feature_face_selections(
                 if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
                     bind_face_selection(face, scope, groups, operands);
                 }
-                if let cadmpeg_ir::features::Extent::ToFace { face, .. } = extent {
-                    bind_face_selection(face, scope, groups, operands);
+                let sides = match extent {
+                    cadmpeg_ir::features::ExtrudeExtent::OneSided { side }
+                    | cadmpeg_ir::features::ExtrudeExtent::Symmetric { side } => vec![side],
+                    cadmpeg_ir::features::ExtrudeExtent::TwoSided { first, second } => {
+                        vec![first, second]
+                    }
+                };
+                for side in sides {
+                    if let cadmpeg_ir::features::Termination::ToFace { face, .. } =
+                        &mut side.termination
+                    {
+                        bind_face_selection(face, scope, groups, operands);
+                    }
                 }
             }
             cadmpeg_ir::features::FeatureDefinition::MoveFace { faces, .. } => {

@@ -2075,7 +2075,8 @@ fn encoder_writes_source_less_ir() {
 #[test]
 fn encoder_rejects_source_less_unresolved_extrusion_profile() {
     use cadmpeg_ir::features::{
-        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
+        ProfileRef, Termination,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -2095,18 +2096,20 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
             profile: ProfileRef::Unresolved("native:missing-owner".into()),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            extent: Extent::Blind {
-                length: Length(10.0),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(10.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             op: BooleanOp::Join,
-            draft: None,
-            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         },
@@ -2122,8 +2125,8 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
 #[test]
 fn encoder_writes_source_less_line_sketches() {
     use cadmpeg_ir::features::{
-        Angle, BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, PathRef,
-        ProfileRef,
+        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
+        Length, PathRef, ProfileRef, RevolveExtent, Termination,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
@@ -2278,7 +2281,9 @@ fn encoder_writes_source_less_line_sketches() {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     direction: Vector3::new(0.0, 1.0, 0.0),
                 }),
-                extent: Some(Extent::Angle { angle: Angle(1.2) }),
+                extent: Some(RevolveExtent::OneSided {
+                    termination: Termination::Angle { angle: Angle(1.2) },
+                }),
                 axis_reference: None,
                 solid: Some(true),
                 face_maker_class: None,
@@ -2364,18 +2369,20 @@ fn encoder_writes_source_less_line_sketches() {
                 0.0, 0.0, 1.0,
             )),
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            extent: Extent::Blind {
-                length: Length(12.0),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(12.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             op: BooleanOp::Join,
-            draft: None,
-            second_draft: None,
             direction_source: None,
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         },
@@ -2495,8 +2502,13 @@ fn encoder_writes_source_less_line_sketches() {
         &feature.definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(_),
-            extent: Extent::Blind {
-                length: Length(12.0)
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(12.0)
+                    },
+                    ..
+                }
             },
             op: BooleanOp::Join,
             ..
@@ -3576,9 +3588,9 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
 #[test]
 fn encoder_writes_source_less_native_features() {
     use cadmpeg_ir::features::{
-        Angle, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, Extent, FaceMotion,
-        FaceSelection, Feature, FeatureDefinition, FeatureId, HoleKind, Length, PatternKind,
-        RadiusSpec,
+        Angle, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, FaceMotion, FaceSelection,
+        Feature, FeatureDefinition, FeatureId, HoleKind, Length, PatternKind, RadiusSpec,
+        Termination,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::BTreeMap;
@@ -3694,7 +3706,7 @@ fn encoder_writes_source_less_native_features() {
             },
             exit_kind: None,
             diameter: Some(Length(5.0)),
-            extent: Some(Extent::Blind {
+            extent: Some(Termination::Blind {
                 length: Length(20.0),
             }),
             bottom: None,
@@ -3778,8 +3790,13 @@ fn encoder_writes_source_less_native_features() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Extrude {
-            extent: cadmpeg_ir::features::Extent::Blind {
-                length: cadmpeg_ir::features::Length(25.0),
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Blind {
+                        length: cadmpeg_ir::features::Length(25.0),
+                    },
+                    ..
+                }
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
@@ -4194,7 +4211,7 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
         FeatureDefinition::Hole {
             kind: cadmpeg_ir::features::HoleKind::Simple,
             diameter: None,
-            extent: Some(cadmpeg_ir::features::Extent::Blind {
+            extent: Some(cadmpeg_ir::features::Termination::Blind {
                 length: cadmpeg_ir::features::Length(5.0),
             }),
             ..
@@ -7915,11 +7932,16 @@ fn decode_extracts_parametric_history() {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(profile),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            extent: cadmpeg_ir::features::Extent::Blind {
-                length: cadmpeg_ir::features::Length(12.5),
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Blind {
+                        length: cadmpeg_ir::features::Length(12.5),
+                    },
+                    draft: None,
+                    ..
+                }
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
-            draft: None,
             ..
         } if profile == &history.features[0].id
     ));
@@ -8086,7 +8108,7 @@ fn decode_leaves_position_allocated_tree_nodes_untyped() {
 
 #[test]
 fn reserved_tree_node_ids_require_builtin_record_shape() {
-    use cadmpeg_ir::features::{Extent, FeatureDefinition};
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, Termination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -8104,7 +8126,12 @@ fn reserved_tree_node_ids_require_builtin_record_shape() {
     assert!(matches!(
         decoded.ir.model.features[0].definition,
         FeatureDefinition::Extrude {
-            extent: Extent::Unresolved,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Unresolved,
+                    ..
+                }
+            },
             ..
         }
     ));
@@ -9335,7 +9362,9 @@ fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
 
 #[test]
 fn decode_projects_evaluated_equations_into_feature_semantics() {
-    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length};
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, Termination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -9350,8 +9379,13 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
     assert!(matches!(
         decoded.ir.model.features[0].definition,
         FeatureDefinition::Extrude {
-            extent: Extent::Blind {
-                length: Length(8.0)
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(8.0)
+                    },
+                    ..
+                }
             },
             op: BooleanOp::Join,
             ..
@@ -9387,8 +9421,13 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::Extrude {
-            extent: Extent::Blind {
-                length: Length(8.0)
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(8.0)
+                    },
+                    ..
+                }
             },
             ..
         }
@@ -9941,8 +9980,13 @@ fn decode_projects_cut_extrude_with_canonical_length() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            extent: cadmpeg_ir::features::Extent::Blind {
-                length: cadmpeg_ir::features::Length(12.7),
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Blind {
+                        length: cadmpeg_ir::features::Length(12.7),
+                    },
+                    ..
+                }
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
@@ -9952,7 +9996,9 @@ fn decode_projects_cut_extrude_with_canonical_length() {
 
 #[test]
 fn decode_projects_compact_extrusion_with_unresolved_extent() {
-    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, ProfileRef, Termination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -9967,7 +10013,12 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
-            extent: Extent::Unresolved,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Unresolved,
+                    ..
+                }
+            },
             op: BooleanOp::Unresolved,
             ..
         }
@@ -9985,7 +10036,12 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
-            extent: Extent::Unresolved,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Unresolved,
+                    ..
+                }
+            },
             ..
         }
     ));
@@ -9993,7 +10049,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
 
 #[test]
 fn decode_does_not_globalize_configuration_local_extrusion_termination() {
-    use cadmpeg_ir::features::{Extent, FeatureDefinition};
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, Termination};
 
     fn compact_extrusion_payload(through_all: bool) -> Vec<u8> {
         let mut payload = resolved_feature_classes_with_ids(&[("moExtrusion_c", "Boss", 9)]);
@@ -10039,7 +10095,12 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
     assert!(matches!(
         feature.definition,
         FeatureDefinition::Extrude {
-            extent: Extent::Unresolved,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Unresolved,
+                    ..
+                }
+            },
             ..
         }
     ));
@@ -10050,7 +10111,12 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
             .get(&feature_id)
             .map(|state| &state.definition),
         Some(FeatureDefinition::Extrude {
-            extent: Extent::ThroughAll,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ThroughAll,
+                    ..
+                }
+            },
             ..
         })
     ));
@@ -10060,7 +10126,12 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
             .get(&feature_id)
             .map(|state| &state.definition),
         Some(FeatureDefinition::Extrude {
-            extent: Extent::Unresolved,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Unresolved,
+                    ..
+                }
+            },
             ..
         })
     ));
@@ -10337,7 +10408,10 @@ fn decode_binds_profile_to_inline_extrusion_with_ambiguous_class_token() {
 
 #[test]
 fn semantic_writer_round_trips_sparse_positional_extrusions() {
-    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length, ParameterValue};
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, ParameterValue,
+        Termination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -10357,8 +10431,13 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         matches!(
             first_definition,
             FeatureDefinition::Extrude {
-                extent: Extent::Blind {
-                    length: Length(200.0)
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: Termination::Blind {
+                            length: Length(200.0)
+                        },
+                        ..
+                    }
                 },
                 op: BooleanOp::Unresolved,
                 ..
@@ -10369,8 +10448,13 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     assert!(matches!(
         decoded.ir.model.features[1].definition,
         FeatureDefinition::Extrude {
-            extent: Extent::Blind {
-                length: Length(3.0)
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(3.0)
+                    },
+                    ..
+                }
             },
             op: BooleanOp::Unresolved,
             ..
@@ -10379,8 +10463,13 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     assert!(matches!(
         decoded.ir.model.features[2].definition,
         FeatureDefinition::Extrude {
-            extent: Extent::Blind {
-                length: Length(4.0)
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(4.0)
+                    },
+                    ..
+                }
             },
             op: BooleanOp::Unresolved,
             ..
@@ -10400,7 +10489,14 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     );
 
     let FeatureDefinition::Extrude {
-        extent: Extent::Blind { length },
+        extent:
+            ExtrudeExtent::OneSided {
+                side:
+                    ExtrudeSide {
+                        termination: Termination::Blind { length },
+                        ..
+                    },
+            },
         ..
     } = &mut decoded.ir.model.features[0].definition
     else {
@@ -10408,7 +10504,14 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     };
     *length = Length(250.0);
     let FeatureDefinition::Extrude {
-        extent: Extent::Blind { length },
+        extent:
+            ExtrudeExtent::OneSided {
+                side:
+                    ExtrudeSide {
+                        termination: Termination::Blind { length },
+                        ..
+                    },
+            },
         ..
     } = &mut decoded.ir.model.features[1].definition
     else {
@@ -10435,8 +10538,13 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::Extrude {
-            extent: Extent::Blind {
-                length: Length(250.0)
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(250.0)
+                    },
+                    ..
+                }
             },
             op: BooleanOp::Unresolved,
             ..
@@ -10445,8 +10553,13 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     assert!(matches!(
         regenerated.ir.model.features[1].definition,
         FeatureDefinition::Extrude {
-            extent: Extent::Blind {
-                length: Length(4.5)
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(4.5)
+                    },
+                    ..
+                }
             },
             op: BooleanOp::Unresolved,
             ..
@@ -10455,8 +10568,13 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     assert!(matches!(
         regenerated.ir.model.features[2].definition,
         FeatureDefinition::Extrude {
-            extent: Extent::Blind {
-                length: Length(4.0)
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(4.0)
+                    },
+                    ..
+                }
             },
             op: BooleanOp::Unresolved,
             ..
@@ -10492,7 +10610,8 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
 #[test]
 fn decode_resolves_feature_topology_selections() {
     use cadmpeg_ir::features::{
-        BodySelection, EdgeSelection, Extent, FaceSelection, FeatureDefinition, PathRef, ProfileRef,
+        BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition,
+        PathRef, ProfileRef, Termination,
     };
 
     let body_bytes = triangle_body();
@@ -10551,9 +10670,14 @@ fn decode_resolves_feature_topology_selections() {
         &decoded.ir.model.features[3].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Faces(profile_faces),
-            extent: Extent::ToFace {
-                face: FaceSelection::Resolved { faces, native },
-                ..
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToFace {
+                        face: FaceSelection::Resolved { faces, native },
+                        ..
+                    },
+                    ..
+                }
             },
             ..
         } if profile_faces == &[base.ir.model.faces[0].id.clone()]
@@ -10590,7 +10714,14 @@ fn decode_resolves_feature_topology_selections() {
         *tools = BodySelection::Bodies(vec![body_id.clone()]);
     }
     if let FeatureDefinition::Extrude {
-        extent: Extent::ToFace { face, .. },
+        extent:
+            ExtrudeExtent::OneSided {
+                side:
+                    ExtrudeSide {
+                        termination: Termination::ToFace { face, .. },
+                        ..
+                    },
+            },
         ..
     } = &mut decoded.ir.model.features[3].definition
     {
@@ -10705,7 +10836,9 @@ fn decode_reports_unresolved_feature_output_scope() {
 
 #[test]
 fn decode_projects_generic_extrusion_with_explicit_operation() {
-    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length};
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, Termination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -10719,8 +10852,13 @@ fn decode_projects_generic_extrusion_with_explicit_operation() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Extrude {
-            extent: Extent::Blind {
-                length: Length(6.0),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(6.0),
+                    },
+                    ..
+                }
             },
             op: BooleanOp::NewBody,
             ..
@@ -10845,7 +10983,10 @@ fn decode_dispatches_typed_features_by_xml_family() {
 
 #[test]
 fn semantic_writer_round_trips_all_extrusion_forms() {
-    use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FeatureDefinition, Length, ProfileRef};
+    use cadmpeg_ir::features::{
+        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, ProfileRef,
+        Termination,
+    };
     use cadmpeg_ir::math::Vector3;
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -10864,9 +11005,14 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             profile: ProfileRef::Feature(profile),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            extent: Extent::Blind { length: Length(2.0) },
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind { length: Length(2.0) },
+                    draft: None,
+                    ..
+                }
+            },
             op: BooleanOp::Join,
-            draft: None,
             ..
         } if profile == &profile_feature
     ));
@@ -10874,18 +11020,33 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         decoded.ir.model.features[2].definition,
         FeatureDefinition::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
-            extent: Extent::Symmetric { length: Length(4.0) },
+            extent: ExtrudeExtent::Symmetric {
+                side: ExtrudeSide {
+                    termination: Termination::Blind { length: Length(4.0) },
+                    draft: Some(Angle(value)),
+                    ..
+                }
+            },
             op: BooleanOp::NewBody,
-            draft: Some(Angle(value)),
             ..
         } if (value - 5f64.to_radians()).abs() < 1e-12
     ));
     assert!(matches!(
         decoded.ir.model.features[3].definition,
         FeatureDefinition::Extrude {
-            extent: Extent::TwoSided {
-                first: Length(3.0),
-                second: Length(7.0),
+            extent: ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(3.0)
+                    },
+                    ..
+                },
+                second: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(7.0)
+                    },
+                    ..
+                },
             },
             op: BooleanOp::Cut,
             ..
@@ -10899,7 +11060,12 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
                 y: 1.0,
                 z: 0.0
             }),
-            extent: Extent::ThroughAll,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ThroughAll,
+                    ..
+                }
+            },
             ..
         }
     ));
@@ -10908,31 +11074,43 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         direction,
         extent,
         op,
-        draft,
         ..
     } = &mut decoded.ir.model.features[1].definition
     else {
         panic!("typed extrusion");
     };
     *direction = cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(1.0, 0.0, 0.0));
-    *extent = Extent::TwoSided {
-        first: Length(8.0),
-        second: Length(9.0),
+    *extent = ExtrudeExtent::TwoSided {
+        first: ExtrudeSide {
+            termination: Termination::Blind {
+                length: Length(8.0),
+            },
+            draft: Some(Angle(0.1)),
+            offset: None,
+        },
+        second: ExtrudeSide {
+            termination: Termination::Blind {
+                length: Length(9.0),
+            },
+            draft: None,
+            offset: None,
+        },
     };
     *op = BooleanOp::Intersect;
-    *draft = Some(Angle(0.1));
     let FeatureDefinition::Extrude {
-        direction,
-        extent,
-        draft,
-        ..
+        direction, extent, ..
     } = &mut decoded.ir.model.features[3].definition
     else {
         panic!("typed extrusion");
     };
     *direction = cadmpeg_ir::features::ExtrudeDirection::ProfileNormal;
-    *extent = Extent::ThroughAll;
-    *draft = None;
+    *extent = ExtrudeExtent::OneSided {
+        side: ExtrudeSide {
+            termination: Termination::ThroughAll,
+            draft: None,
+            offset: None,
+        },
+    };
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -10956,7 +11134,9 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
 
 #[test]
 fn semantic_writer_round_trips_extrusion_to_face() {
-    use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{
+        ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, Termination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -10973,14 +11153,26 @@ fn semantic_writer_round_trips_extrusion_to_face() {
     };
     assert_eq!(
         extent,
-        &Extent::ToFace {
-            face: FaceSelection::Native("face:12".into()),
-            offset: None,
+        &ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::ToFace {
+                    face: FaceSelection::Native("face:12".into()),
+                    offset: None,
+                },
+                draft: None,
+                offset: None,
+            }
         }
     );
-    *extent = Extent::ToFace {
-        face: FaceSelection::Native("face:13".into()),
-        offset: None,
+    *extent = ExtrudeExtent::OneSided {
+        side: ExtrudeSide {
+            termination: Termination::ToFace {
+                face: FaceSelection::Native("face:13".into()),
+                offset: None,
+            },
+            draft: None,
+            offset: None,
+        },
     };
 
     let mut encoded = Vec::new();
@@ -10996,9 +11188,14 @@ fn semantic_writer_round_trips_extrusion_to_face() {
     assert!(matches!(
         &regenerated.ir.model.features[1].definition,
         FeatureDefinition::Extrude {
-            extent: Extent::ToFace {
-                face: FaceSelection::Native(face),
-                ..
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToFace {
+                        face: FaceSelection::Native(face),
+                        ..
+                    },
+                    ..
+                }
             },
             ..
         } if face == "face:13"
@@ -14364,7 +14561,7 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
 
 #[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
-    use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length, Termination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -14382,7 +14579,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
             ref placements,
             kind: HoleKind::Simple,
             diameter: Some(Length(6.35)),
-            extent: Some(Extent::Blind {
+            extent: Some(Termination::Blind {
                 length: Length(12.0),
             }),
             ..
@@ -14396,7 +14593,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
         panic!("typed hole feature");
     };
     *diameter = Some(Length(8.0));
-    *extent = Some(Extent::Blind {
+    *extent = Some(Termination::Blind {
         length: Length(16.0),
     });
 
@@ -14414,7 +14611,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
 #[test]
 fn semantic_writer_retains_partial_native_hole_construction() {
-    use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleForm, HoleKind, Length};
+    use cadmpeg_ir::features::{FeatureDefinition, HoleForm, HoleKind, Length, Termination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -14435,7 +14632,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         FeatureDefinition::Hole {
             kind: HoleKind::Simple,
             diameter: None,
-            extent: Some(Extent::ThroughAll),
+            extent: Some(Termination::ThroughAll),
             ..
         }
     ));
@@ -14450,7 +14647,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
                 countersink_angle: None,
             },
             diameter: Some(Length(6.0)),
-            extent: Some(Extent::ThroughAll),
+            extent: Some(Termination::ThroughAll),
             ..
         }
     ));
@@ -14519,7 +14716,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
 
 #[test]
 fn semantic_writer_round_trips_hole_placement() {
-    use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition, HolePlacement};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, HolePlacement, Termination};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -14554,7 +14751,7 @@ fn semantic_writer_round_trips_hole_placement() {
         position: Point3::new(4.0, 5.0, 6.0),
         direction: Vector3::new(0.0, 1.0, 0.0),
     }];
-    *extent = Some(Extent::ThroughAll);
+    *extent = Some(Termination::ThroughAll);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -14574,7 +14771,7 @@ fn semantic_writer_round_trips_hole_placement() {
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Native(face)),
             placements,
-            extent: Some(Extent::ThroughAll),
+            extent: Some(Termination::ThroughAll),
             ..
         } if face == "face:13"
             && placements == &[HolePlacement::Directed {
@@ -14586,7 +14783,7 @@ fn semantic_writer_round_trips_hole_placement() {
 
 #[test]
 fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
-    use cadmpeg_ir::features::{Angle, Extent, FeatureDefinition, HoleKind, Length};
+    use cadmpeg_ir::features::{Angle, FeatureDefinition, HoleKind, Length, Termination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -14607,7 +14804,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
                 diameter: Length(10.0),
                 depth: Length(4.0),
             },
-            extent: Some(Extent::Blind {
+            extent: Some(Termination::Blind {
                 length: Length(20.0),
             }),
             ..
@@ -14620,7 +14817,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
                 diameter: Length(9.0),
                 angle: Angle(value),
             },
-            extent: Some(Extent::ThroughAll),
+            extent: Some(Termination::ThroughAll),
             ..
         } if (*value - 82f64.to_radians()).abs() < 1e-12
     ));
@@ -14633,7 +14830,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         diameter: Length(12.0),
         depth: Length(5.0),
     };
-    *extent = Some(Extent::ThroughAll);
+    *extent = Some(Termination::ThroughAll);
     let FeatureDefinition::Hole { kind, extent, .. } = &mut decoded.ir.model.features[1].definition
     else {
         panic!("countersink hole");
@@ -14642,7 +14839,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         diameter: Length(11.0),
         angle: Angle(90f64.to_radians()),
     };
-    *extent = Some(Extent::Blind {
+    *extent = Some(Termination::Blind {
         length: Length(25.0),
     });
 
@@ -14669,7 +14866,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
 
 #[test]
 fn decode_projects_generic_revolution_with_explicit_operation() {
-    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition};
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, RevolveExtent, Termination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -14684,7 +14881,9 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
-                extent: Some(Extent::Angle { angle }),
+                extent: Some(RevolveExtent::OneSided {
+                    termination: Termination::Angle { angle },
+                }),
                 ..
             },
             op: BooleanOp::Cut,
@@ -14694,7 +14893,7 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
 
 #[test]
 fn semantic_writer_round_trips_typed_revolution() {
-    use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FeatureDefinition};
+    use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, RevolveExtent, Termination};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -14715,7 +14914,9 @@ fn semantic_writer_round_trips_typed_revolution() {
                     origin: Point3 { x: 10.0, y: 20.0, z: 30.0 },
                     direction: Vector3 { x: 0.0, y: 1.0, z: 0.0 },
                 }),
-                extent: Some(Extent::Angle { angle: Angle(value) }),
+                extent: Some(RevolveExtent::OneSided {
+                    termination: Termination::Angle { angle: Angle(value) },
+                }),
                 ..
             },
             op: BooleanOp::Join,
@@ -14732,8 +14933,10 @@ fn semantic_writer_round_trips_typed_revolution() {
     };
     axis.origin = Point3::new(1.0, 2.0, 3.0);
     axis.direction = Vector3::new(0.0, 0.0, 1.0);
-    construction.extent = Some(Extent::Angle {
-        angle: Angle(std::f64::consts::FRAC_PI_2),
+    construction.extent = Some(RevolveExtent::OneSided {
+        termination: Termination::Angle {
+            angle: Angle(std::f64::consts::FRAC_PI_2),
+        },
     });
     *op = BooleanOp::Cut;
 
@@ -14832,7 +15035,9 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
 
 #[test]
 fn semantic_writer_round_trips_all_revolution_extents() {
-    use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{
+        Angle, BooleanOp, FeatureDefinition, ProfileRef, RevolveExtent, Termination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -14849,7 +15054,9 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 profile: Some(ProfileRef::Feature(profile)),
-                extent: Some(Extent::Angle { angle: Angle(value) }),
+                extent: Some(RevolveExtent::OneSided {
+                    termination: Termination::Angle { angle: Angle(value) },
+                }),
                 ..
             },
             op: BooleanOp::Join,
@@ -14859,7 +15066,9 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         decoded.ir.model.features[2].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
-                extent: Some(Extent::SymmetricAngle { angle: Angle(value) }),
+                extent: Some(RevolveExtent::Symmetric {
+                    termination: Termination::Angle { angle: Angle(value) },
+                }),
                 ..
             },
             op: BooleanOp::NewBody,
@@ -14869,9 +15078,9 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         decoded.ir.model.features[3].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
-                extent: Some(Extent::TwoSidedAngles {
-                    first: Angle(first),
-                    second: Angle(second),
+                extent: Some(RevolveExtent::TwoSided {
+                    first: Termination::Angle { angle: Angle(first) },
+                    second: Termination::Angle { angle: Angle(second) },
                 }),
                 ..
             },
@@ -14885,7 +15094,9 @@ fn semantic_writer_round_trips_all_revolution_extents() {
     else {
         panic!("typed revolution");
     };
-    construction.extent = Some(Extent::Angle { angle: Angle(0.75) });
+    construction.extent = Some(RevolveExtent::OneSided {
+        termination: Termination::Angle { angle: Angle(0.75) },
+    });
     *op = BooleanOp::Intersect;
 
     let mut encoded = Vec::new();
@@ -16151,8 +16362,14 @@ fn semantic_writer_applies_neutral_feature_edits() {
     else {
         panic!("typed extrusion feature");
     };
-    *extent = cadmpeg_ir::features::Extent::Blind {
-        length: cadmpeg_ir::features::Length(18.0),
+    *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
+        side: cadmpeg_ir::features::ExtrudeSide {
+            termination: cadmpeg_ir::features::Termination::Blind {
+                length: cadmpeg_ir::features::Length(18.0),
+            },
+            draft: None,
+            offset: None,
+        },
     };
 
     let mut encoded = Vec::new();
@@ -16170,8 +16387,13 @@ fn semantic_writer_applies_neutral_feature_edits() {
     assert!(matches!(
         &regenerated.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            extent: cadmpeg_ir::features::Extent::Blind {
-                length: cadmpeg_ir::features::Length(18.0),
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Blind {
+                        length: cadmpeg_ir::features::Length(18.0),
+                    },
+                    ..
+                }
             },
             ..
         }
@@ -16191,8 +16413,14 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
     else {
         panic!("typed extrusion feature");
     };
-    *extent = cadmpeg_ir::features::Extent::Blind {
-        length: cadmpeg_ir::features::Length(18.0),
+    *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
+        side: cadmpeg_ir::features::ExtrudeSide {
+            termination: cadmpeg_ir::features::Termination::Blind {
+                length: cadmpeg_ir::features::Length(18.0),
+            },
+            draft: None,
+            offset: None,
+        },
     };
     update_sldprt_native(&mut decoded.ir, |native| {
         native.feature_histories[0].features[0]
@@ -16231,8 +16459,14 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
     else {
         panic!("typed extrusion feature");
     };
-    *extent = cadmpeg_ir::features::Extent::Blind {
-        length: cadmpeg_ir::features::Length(50.0),
+    *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
+        side: cadmpeg_ir::features::ExtrudeSide {
+            termination: cadmpeg_ir::features::Termination::Blind {
+                length: cadmpeg_ir::features::Length(50.0),
+            },
+            draft: None,
+            offset: None,
+        },
     };
     update_sldprt_native(&mut decoded.ir, |native| {
         native.feature_histories[0].part_name = Some("Edited".into());
@@ -16253,8 +16487,13 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
     assert!(matches!(
         &regenerated.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            extent: cadmpeg_ir::features::Extent::Blind {
-                length: cadmpeg_ir::features::Length(50.0),
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Blind {
+                        length: cadmpeg_ir::features::Length(50.0),
+                    },
+                    ..
+                }
             },
             ..
         }
@@ -16765,8 +17004,14 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
     };
     assert_eq!(
         extent,
-        &cadmpeg_ir::features::Extent::Blind {
-            length: cadmpeg_ir::features::Length(25.0),
+        &cadmpeg_ir::features::ExtrudeExtent::OneSided {
+            side: cadmpeg_ir::features::ExtrudeSide {
+                termination: cadmpeg_ir::features::Termination::Blind {
+                    length: cadmpeg_ir::features::Length(25.0),
+                },
+                draft: None,
+                offset: None,
+            }
         }
     );
     let parameter = decoded
@@ -17138,8 +17383,14 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
     else {
         panic!("typed extrusion feature");
     };
-    *extent = cadmpeg_ir::features::Extent::Blind {
-        length: cadmpeg_ir::features::Length(50.0),
+    *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
+        side: cadmpeg_ir::features::ExtrudeSide {
+            termination: cadmpeg_ir::features::Termination::Blind {
+                length: cadmpeg_ir::features::Length(50.0),
+            },
+            draft: None,
+            offset: None,
+        },
     };
 
     let mut encoded = Vec::new();
@@ -17152,8 +17403,13 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
     assert!(matches!(
         &regenerated.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            extent: cadmpeg_ir::features::Extent::Blind {
-                length: cadmpeg_ir::features::Length(50.0),
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Blind {
+                        length: cadmpeg_ir::features::Length(50.0),
+                    },
+                    ..
+                }
             },
             ..
         }
@@ -18474,7 +18730,9 @@ fn decode_reports_unbound_pmi_semantic_dimension() {
 
 #[test]
 fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
-    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length, ProfileRef};
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, ProfileRef, Termination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -18500,8 +18758,13 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
-            extent: Extent::Blind {
-                length: Length(25.0)
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(25.0)
+                    },
+                    ..
+                }
             },
             op: BooleanOp::Unresolved,
             ..
@@ -18748,7 +19011,10 @@ fn decode_preserves_configuration_local_parameter_values() {
 
 #[test]
 fn decode_separates_document_expression_from_evaluated_feature_scalar() {
-    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length, ParameterValue};
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, ParameterValue,
+        Termination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -18775,8 +19041,13 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
     assert!(matches!(
         feature.definition,
         FeatureDefinition::Extrude {
-            extent: Extent::Blind {
-                length: Length(25.0)
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(25.0)
+                    },
+                    ..
+                }
             },
             op: BooleanOp::Join,
             ..
@@ -19110,7 +19381,10 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
 fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     use std::collections::BTreeMap;
 
-    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, FeatureId, ProfileRef};
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureId, ProfileRef,
+        Termination,
+    };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchId};
 
@@ -19182,16 +19456,18 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
                 profile: ProfileRef::Native("native-alias".into()),
                 direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
                 start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-                extent: Extent::Unresolved,
-                draft: None,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: Termination::Unresolved,
+                        draft: None,
+                        offset: None,
+                    },
+                },
                 op: BooleanOp::Join,
-                second_draft: None,
                 direction_source: None,
                 solid: None,
                 face_maker: None,
                 inner_wire_taper: None,
-                first_offset: None,
-                second_offset: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
             },

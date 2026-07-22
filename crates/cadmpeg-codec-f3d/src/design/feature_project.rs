@@ -2015,7 +2015,8 @@ pub(crate) fn project_fixed_revolve(
     edge_operands: &[DesignEdgeOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        Angle, Extent, FeatureDefinition, ProfileRef, RevolutionAxis, RevolutionConstruction,
+        Angle, FeatureDefinition, ProfileRef, RevolutionAxis, RevolutionConstruction,
+        RevolveExtent, Termination,
     };
 
     let DesignPathFeatureConstruction::Revolve {
@@ -2071,8 +2072,10 @@ pub(crate) fn project_fixed_revolve(
         construction: RevolutionConstruction {
             profile: Some(ProfileRef::Native(profile.id.clone())),
             axis: Some(axis),
-            extent: Some(Extent::Angle {
-                angle: Angle(*angle),
+            extent: Some(RevolveExtent::OneSided {
+                termination: Termination::Angle {
+                    angle: Angle(*angle),
+                },
             }),
             axis_reference: None,
             solid: None,
@@ -2515,9 +2518,19 @@ pub(crate) fn project_extrude(
     placements: &[DesignSketchPlacement],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        Angle, BooleanOp, Extent, ExtrudeDirection, ExtrudeStart, FaceSelection, FeatureDefinition,
-        Length, ProfileRef,
+        Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+        FaceSelection, FeatureDefinition, Length, ProfileRef, Termination,
     };
+
+    // Per-side terminations without side-local modifiers; drafts and offsets
+    // are attached below once they are resolved.
+    enum ExtentShape {
+        OneSided(Termination),
+        TwoSided {
+            first: Termination,
+            second: Termination,
+        },
+    }
 
     let supported_parameter = |source_kind: &str| {
         matches!(
@@ -2663,7 +2676,7 @@ pub(crate) fn project_extrude(
         }
         _ => return None,
     };
-    let (extent, reverse_direction) = match (scope.extrude_extent?, along, against) {
+    let (shape, reverse_direction) = match (scope.extrude_extent?, along, against) {
         (DesignExtrudeExtent::OneSidedDistance, Some(along), None)
             if along.0 != 0.0
                 && scope.extrude_direction_reversed == Some(false)
@@ -2671,9 +2684,9 @@ pub(crate) fn project_extrude(
                 && side_one_offset.is_none() =>
         {
             (
-                Extent::Blind {
+                ExtentShape::OneSided(Termination::Blind {
                     length: Length(along.0.abs()),
-                },
+                }),
                 along.0 < 0.0,
             )
         }
@@ -2685,9 +2698,13 @@ pub(crate) fn project_extrude(
                 && side_one_offset.is_none() =>
         {
             (
-                Extent::TwoSided {
-                    first: Length(along.0.abs()),
-                    second: Length(against.0.abs()),
+                ExtentShape::TwoSided {
+                    first: Termination::Blind {
+                        length: Length(along.0.abs()),
+                    },
+                    second: Termination::Blind {
+                        length: Length(against.0.abs()),
+                    },
                 },
                 along.0 < 0.0,
             )
@@ -2698,11 +2715,11 @@ pub(crate) fn project_extrude(
                 return None;
             };
             (
-                Extent::ToFace {
+                ExtentShape::OneSided(Termination::ToFace {
                     face: resolved_face_group(termination, face_operands)
                         .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
                     offset: (offset.0 != 0.0).then_some(offset),
-                },
+                }),
                 scope.extrude_direction_reversed?,
             )
         }
@@ -2734,9 +2751,32 @@ pub(crate) fn project_extrude(
     }
     .filter(|angle| angle.0 != 0.0);
     let second_draft = side_two_draft.filter(|angle| angle.0 != 0.0);
-    if second_draft.is_some() && !matches!(extent, Extent::TwoSided { .. }) {
+    // A side-two draft has nowhere to live outside the second side of a
+    // two-sided extent, so reject it rather than silently drop it.
+    if second_draft.is_some() && !matches!(shape, ExtentShape::TwoSided { .. }) {
         return None;
     }
+    let extent = match shape {
+        ExtentShape::OneSided(termination) => ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination,
+                draft,
+                offset: None,
+            },
+        },
+        ExtentShape::TwoSided { first, second } => ExtrudeExtent::TwoSided {
+            first: ExtrudeSide {
+                termination: first,
+                draft,
+                offset: None,
+            },
+            second: ExtrudeSide {
+                termination: second,
+                draft: second_draft,
+                offset: None,
+            },
+        },
+    };
     let has_body_operands = scope_groups
         .iter()
         .any(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Bodies));
@@ -2753,14 +2793,10 @@ pub(crate) fn project_extrude(
         start,
         extent,
         op,
-        draft,
-        second_draft,
         direction_source: None,
         solid: None,
         face_maker: None,
         inner_wire_taper: None,
-        first_offset: None,
-        second_offset: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
     })
