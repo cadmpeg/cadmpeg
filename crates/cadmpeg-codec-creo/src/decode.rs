@@ -2910,6 +2910,7 @@ fn transfer_curve_expression_features(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    dimension_parameters: &BTreeMap<String, ParameterId>,
 ) -> usize {
     let ordinal_base = ir
         .model
@@ -2963,7 +2964,7 @@ fn transfer_curve_expression_features(
                 "creo:depdb:curve_expression_parameter#{}-{}-{}",
                 record.entity_id, record.offset, assignment_ordinal
             ));
-            let dependencies = assignment
+            let mut dependencies = assignment
                 .dependencies
                 .iter()
                 .filter_map(|name| {
@@ -2982,12 +2983,22 @@ fn transfer_curve_expression_features(
                     ))
                 })
                 .collect::<Vec<_>>();
+            dependencies.extend(assignment.dependencies.iter().filter_map(|name| {
+                let key = crate::curve::expression_identifier_key(name);
+                if assignment_indices_by_name.contains_key(&key) {
+                    None
+                } else {
+                    dimension_parameters.get(&key).cloned()
+                }
+            }));
             let external_dependencies = assignment
                 .dependencies
                 .iter()
                 .filter(|name| {
                     let key = crate::curve::expression_identifier_key(name);
-                    key != "t" && !assignment_indices_by_name.contains_key(&key)
+                    key != "t"
+                        && !assignment_indices_by_name.contains_key(&key)
+                        && !dimension_parameters.contains_key(&key)
                 })
                 .cloned()
                 .collect::<Vec<_>>();
@@ -13549,7 +13560,7 @@ fn transfer_feature_dimensions(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> (usize, BTreeMap<String, ParameterId>) {
     let feature_ids = ir
         .model
         .features
@@ -13578,14 +13589,24 @@ fn transfer_feature_dimensions(
         .map(|(sketch, _, _, dimension)| (sketch.clone(), dimension.external_id))
         .collect::<Vec<_>>();
     let Some(layout) = feature_dimension_parameter_layout(&keys) else {
-        return 0;
+        return (0, BTreeMap::new());
     };
+    let unique_external_ids = keys
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, (_, external_id)| {
+            *counts.entry(*external_id).or_insert(0usize) += 1;
+            counts
+        });
     let transferred = layout.len();
+    let mut relation_parameters = BTreeMap::new();
     for ((sketch, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in
         candidates.into_iter().zip(layout)
     {
         let owner_id = section_owner_feature_id(scan, definition.id, &sketch);
         let id = feature_dimension_parameter_row_id(&sketch, dimension.external_id, occurrence);
+        if unique_external_ids[&dimension.external_id] == 1 {
+            relation_parameters.insert(format!("d{}", dimension.external_id), id.clone());
+        }
         annotate(
             annotations,
             &id.0,
@@ -13663,7 +13684,7 @@ fn transfer_feature_dimensions(
                 .push(FeatureSourceContent::Parameter(id));
         }
     }
-    transferred
+    (transferred, relation_parameters)
 }
 
 fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
@@ -34811,10 +34832,10 @@ fn build_ir(
     }
     link_feature_sketch_history(scan, &mut ir);
     reconcile_feature_links(scan, &mut ir);
-    let transferred_curve_expression_assignment_count =
-        transfer_curve_expression_features(scan, &mut ir, &mut annotations);
-    let transferred_feature_dimension_count =
+    let (transferred_feature_dimension_count, dimension_parameters) =
         transfer_feature_dimensions(scan, &mut ir, &mut annotations);
+    let transferred_curve_expression_assignment_count =
+        transfer_curve_expression_features(scan, &mut ir, &mut annotations, &dimension_parameters);
     if let Some(source) = &mut ir.source {
         let active_expressions = scan
             .curve_expressions

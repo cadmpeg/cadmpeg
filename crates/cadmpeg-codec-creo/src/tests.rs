@@ -3972,6 +3972,12 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         &[
             ("FeatDefs", payload),
             ("MdlStatus", b"Extrude id 40\0".to_vec()),
+            (
+                "DEPDB_DATA",
+                b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+                    \xe0\x0aexpression\0\xf8\x01result=d42+1\0"
+                    .to_vec(),
+            ),
         ],
     );
     let scan = container::scan_bytes(data.clone());
@@ -3979,10 +3985,28 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(scan.feature_definitions[0].owner_feature_id, Some(40));
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
 
-    assert_eq!(result.ir.model.parameters.len(), 2);
-    let [parameter, repeated] = result.ir.model.parameters.as_slice() else {
-        panic!("two repeated dimensions");
-    };
+    assert_eq!(result.ir.model.parameters.len(), 3);
+    let parameter = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "d917_42_1")
+        .expect("first repeated dimension");
+    let repeated = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "d917_42_2")
+        .expect("second repeated dimension");
+    let relation = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "result")
+        .expect("relation parameter");
     assert_eq!(parameter.owner.as_str(), "creo:model:sketch_feature#917");
     assert_eq!(parameter.name, "d917_42_1");
     assert_eq!(repeated.name, "d917_42_2");
@@ -3992,6 +4016,14 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
             cadmpeg_ir::features::Angle(1.0)
+        ))
+    );
+    assert!(relation.dependencies.is_empty());
+    assert_eq!(relation.properties["external_dependencies"], "d42");
+    assert_eq!(
+        relation.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            1.0f64.to_degrees() + 1.0
         ))
     );
     let model_feature = result
@@ -4748,6 +4780,54 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
         source.attributes["evaluated_active_curve_expression_assignment_count"],
         "0"
     );
+}
+
+#[test]
+fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
+    let featdefs = b"feat_defs_917\0\xe0\x01feat_id\0\x28\xe0\x00gsec2d_ptr\0\
+        dimtab_ptr\0\xf8\x01\xf7\x81\x02\xfb\xe2\
+        \xe0\x01type\0\x0a\xe0\x01value\0\xe4\
+        \xe0\x01direct\0\x01\xe0\x01aux_value\0\x0f\
+        \xe0\x01ext_id\0\x2a\xe0\x00relat_ptr\0"
+        .to_vec();
+    let expressions = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01result=d42+1\0"
+        .to_vec();
+    let data = build_prt(
+        "c",
+        &[
+            ("FeatDefs", featdefs),
+            ("MdlStatus", b"Extrude id 40\0".to_vec()),
+            ("DEPDB_DATA", expressions),
+        ],
+    );
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let dimension = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "d42")
+        .expect("dimension parameter");
+    let relation = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "result")
+        .expect("relation parameter");
+
+    assert_eq!(relation.dependencies, [dimension.id.clone()]);
+    assert!(!relation.properties.contains_key("external_dependencies"));
+    assert_eq!(
+        relation.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            1.0f64.to_degrees() + 1.0
+        ))
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
 }
 
 #[test]

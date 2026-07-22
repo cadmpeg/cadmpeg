@@ -45,8 +45,10 @@ fixtures, claims above L1 remain unproven.
   `exists()` queries resolve against the complete local assignment namespace
   and decoded `d<external_id>` section-dimension identities. Unambiguous
   decoded dimension values initialize those relation symbols in millimeters or
-  degrees; conflicting and unresolved occurrences remain symbolic. Other
-  namespaces remain unresolved. Affine
+  degrees; conflicting and unresolved occurrences remain symbolic. A unique
+  transferred dimension identity becomes the neutral parameter dependency;
+  duplicate identities remain source metadata. Other namespaces remain
+  unresolved. Affine
   cylindrical-coordinate programs transfer as helices.
 - Feature rows, parent/input tables, affected geometry and edge identifiers,
   recipe effects, saved sections, and operation states retain stable native

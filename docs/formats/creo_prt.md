@@ -2521,7 +2521,11 @@ assigned once is its parameter name. Repeated assignments use the parameter
 names `<identifier>#1`, `<identifier>#2`, and so on in source order and retain
 the unqualified identifier as `source_name`. A reference to multiple executing
 or conditional assignments of one identifier is ambiguous and does not bind to
-one occurrence. Inactive assignments do not define the current dependency.
+one occurrence. An unscoped `d<external_id>` dependency binds to its transferred
+section-dimension parameter only when exactly one such parameter exists in the
+model. Repeated dimension identities remain external source metadata even when
+their equal values permit expression evaluation. Inactive assignments do not
+define the current dependency.
 Parameter dependencies precede their consumers when the unique dependency
 graph is acyclic. A cyclic edge remains source metadata instead of forming an
 invalid neutral dependency order.
