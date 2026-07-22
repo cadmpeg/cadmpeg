@@ -37001,6 +37001,8 @@ fn append_reference_marker(
     let start = payload.len();
     payload.resize(start + 92, 0);
     payload[start..start + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[start + 5..start + 13].fill(0xff);
+    payload[start + 13..start + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
     payload[start + 17..start + 21].copy_from_slice(&kind.native_code().to_le_bytes());
     payload[start + 48..start + 56].copy_from_slice(&1.0f64.to_le_bytes());
     payload[start + 64..start + 66].copy_from_slice(&links[0].to_le_bytes());
