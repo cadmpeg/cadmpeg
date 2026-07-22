@@ -715,6 +715,18 @@ reference direction points from `y0` to `y1`, its radius is half the nonzero Y
 span, and its finite length is the XZ span. The auxiliary magnitude is less
 than that length, and the body contains no trailing bytes.
 
+A symmetric-revolution type-24 cylinder body begins with `15 <y0> 18 <y1>`
+or `17 <y0> 15 <y1>`. Four geometric scalars follow: `<r0> <y1-opposite> <r1>
+<y0-opposite>`. The `15` form has a zero byte before `r1`, repeats `r1`, and
+then ends with `f7 19`. The `17` form repeats `r0` before `r1`, stores one
+model-reference scalar after `y0-opposite`, and then ends with `f7 19`. The
+repeated radial value agrees with its first occurrence. The two axial pairs
+have one midpoint, the second pair extends beyond the first pair, and the
+radial midpoint is zero. The cylinder origin is `(0, axial-midpoint, 0)`, its
+axis points from `y0-opposite` to `y0`, its reference direction points from
+`r1` to `r0`, its radius is half the radial span, and its finite length is the
+first axial span. The model-reference scalar does not contribute geometry.
+
 A held-coordinate type-24 round envelope has three contiguous scalar frames
 with slot counts two, two, and five. The first frame starts at the body with a
 zero slot and ends before control bytes `78 ac`; the second starts immediately

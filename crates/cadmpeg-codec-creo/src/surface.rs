@@ -2622,6 +2622,7 @@ fn decode_positional_cylinder_frame(
         .or_else(|| decode_signed_axial_radial_cylinder_frame(body, cache))
         .or_else(|| decode_signed_radial_envelope_cylinder_frame(body, cache))
         .or_else(|| decode_xz_axis_y_radial_cylinder_frame(body, cache))
+        .or_else(|| decode_symmetric_revolution_cylinder_frame(body, cache))
         .or_else(|| decode_precise_center_edge_cylinder_frame(body, cache))
         .or_else(|| decode_precise_held_center_cylinder_frame(body, cache))
         .or_else(|| decode_local_system_suffix_cylinder_frame(body, cache))
@@ -2678,6 +2679,83 @@ fn decode_xz_axis_y_radial_cylinder_frame(
         ref_direction: [0.0, (y1 - y0).signum(), 0.0],
         radius,
         length: Some(length),
+    })
+}
+
+fn decode_symmetric_revolution_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    let mut cursor = 1;
+    let (first_axial, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    let separator = match body.first()? {
+        0x15 => 0x18,
+        0x17 => 0x15,
+        _ => return None,
+    };
+    (body.get(cursor) == Some(&separator)).then_some(())?;
+    cursor += 1;
+    let (second_axial, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    let (radial_low, next) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+    cursor = next;
+    let (second_opposite, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    if body[0] == 0x15 {
+        (body.get(cursor) == Some(&0x18)).then_some(())?;
+        cursor += 1;
+    } else {
+        let (repeated_radial_low, next) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+        cursor = next;
+        let scale = radial_low.abs().max(repeated_radial_low.abs()).max(1.0);
+        ((radial_low - repeated_radial_low).abs() <= 1e-9 * scale).then_some(())?;
+    }
+    let (radial_high, next) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+    cursor = next;
+    let (first_opposite, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    if body[0] == 0x15 {
+        let (repeated_radial_high, next) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+        cursor = next;
+        let scale = radial_high.abs().max(repeated_radial_high.abs()).max(1.0);
+        ((radial_high - repeated_radial_high).abs() <= 1e-9 * scale).then_some(())?;
+    } else {
+        let (_, next) = scalar::decode_model_reference_coordinate(body, cursor, cache)?;
+        cursor = next;
+    }
+    (body.get(cursor..) == Some(&[0xf7, 0x19])).then_some(())?;
+
+    let values = [
+        first_axial,
+        second_axial,
+        radial_low,
+        radial_high,
+        second_opposite,
+        first_opposite,
+    ];
+    values.into_iter().all(f64::is_finite).then_some(())?;
+    let scale = values.into_iter().map(f64::abs).fold(1.0, f64::max);
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let axial_midpoint = f64::midpoint(first_axial, first_opposite);
+    close(axial_midpoint, f64::midpoint(second_axial, second_opposite)).then_some(())?;
+    let radius = 0.5 * (radial_high - radial_low).abs();
+    (radius > 1e-12 * scale
+        && close(f64::midpoint(radial_low, radial_high), 0.0)
+        && (first_axial - first_opposite).abs() > 1e-12 * scale
+        && (second_axial - axial_midpoint).abs() > (first_axial - axial_midpoint).abs())
+    .then_some(())?;
+
+    Some(PositionalCylinderFrame {
+        origin: [0.0, axial_midpoint, 0.0],
+        axis: [0.0, (first_axial - first_opposite).signum(), 0.0],
+        ref_direction: [(radial_low - radial_high).signum(), 0.0, 0.0],
+        radius,
+        length: Some((first_opposite - first_axial).abs()),
     })
 }
 
@@ -5695,6 +5773,39 @@ mod tests {
         let mut inconsistent = compact_zero;
         inconsistent[54] = 0x18;
         assert!(decode_positional_cylinder_frame(&inconsistent, &cache).is_none());
+    }
+
+    #[test]
+    fn positional_cylinder_frame_decodes_symmetric_revolution_envelopes() {
+        let cache = scalar::ScalarCache::default();
+        let direct = [
+            21, 45, 35, 122, 225, 71, 174, 20, 124, 24, 45, 36, 28, 61, 7, 246, 190, 79, 71, 27,
+            153, 70, 36, 28, 61, 7, 246, 190, 79, 24, 46, 27, 153, 70, 35, 122, 225, 71, 174, 20,
+            124, 46, 27, 153, 247, 25,
+        ];
+        let replay = [
+            23, 45, 35, 122, 225, 71, 174, 20, 124, 21, 45, 36, 28, 61, 7, 246, 190, 79, 71, 27,
+            153, 70, 36, 28, 61, 7, 246, 190, 79, 71, 27, 153, 46, 27, 153, 70, 35, 122, 225, 71,
+            174, 20, 124, 25, 206, 113, 206, 177, 182, 81, 242, 247, 25,
+        ];
+        for body in [direct.as_slice(), replay.as_slice()] {
+            let frame = decode_positional_cylinder_frame(body, &cache)
+                .expect("complete symmetric-revolution cylinder");
+            assert_eq!(frame.origin, [0.0, 0.0, 0.0]);
+            assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
+            assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
+            assert!((frame.radius - 6.9).abs() < 1e-12);
+            assert!(frame
+                .length
+                .is_some_and(|length| (length - 19.48).abs() < 1e-12));
+        }
+
+        let mut mismatched_repetition = replay;
+        mismatched_repetition[31..34].copy_from_slice(&[0x2e, 0x1b, 0x99]);
+        assert!(decode_positional_cylinder_frame(&mismatched_repetition, &cache).is_none());
+        let mut trailing = direct.to_vec();
+        trailing.push(0x18);
+        assert!(decode_positional_cylinder_frame(&trailing, &cache).is_none());
     }
 
     #[test]
