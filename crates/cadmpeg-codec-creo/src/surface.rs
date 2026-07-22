@@ -797,9 +797,12 @@ impl SurfaceParameterRecord {
                 (slot.offset == cursor).then(|| cursor + slot.length)
             })?;
         if terminal_end != self.body.len() {
-            (self.body.get(terminal_end) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-            let (_, reference_end) = psb::reference_id(&self.body, terminal_end + 1).ok()?;
-            (reference_end == self.body.len()).then_some(())?;
+            let suffix = self.body.get(terminal_end..)?;
+            if !matches!(suffix, [0x00 | 0x10 | 0x18]) {
+                (suffix.first() == Some(&psb::token::ENTITY_REF)).then_some(())?;
+                let (_, reference_end) = psb::reference_id(&self.body, terminal_end + 1).ok()?;
+                (reference_end == self.body.len()).then_some(())?;
+            }
         }
         let corners = &terminal.slots[terminal.slots.len() - 6..];
         let values = corners
@@ -6880,6 +6883,27 @@ mod tests {
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert_eq!(frame.radius, 4.5);
         assert!((frame.length.unwrap() - 6.872_998_848_194_527).abs() < 1.0e-12);
+
+        let control_terminated_body = [
+            24, 45, 53, 164, 168, 193, 84, 201, 135, 18, 45, 59, 164, 168, 193, 84, 201, 135, 72,
+            51, 0, 47, 67, 0, 72, 24, 0, 72, 34, 0, 47, 72, 0, 24,
+        ];
+        let mut control_terminated_payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        control_terminated_payload.extend_from_slice(&control_terminated_body);
+        control_terminated_payload.push(0xe3);
+        let control_terminated = parameter_records(&control_terminated_payload).remove(0);
+        let frame = control_terminated
+            .positional_cylinder_frame
+            .expect("control-terminated square-radial carrier");
+        assert!(frame
+            .origin
+            .into_iter()
+            .zip([-27.643_2, -14.0, 43.0])
+            .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
+        assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
+        assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
+        assert!((frame.radius - 5.0).abs() < 1.0e-12);
+        assert!((frame.length.unwrap() - 21.643_2).abs() < 1.0e-12);
 
         let mut ambiguous = record.clone();
         ambiguous.scalar_frames[1].slots[6].value = Some(-102.837_702_082_688_25);
