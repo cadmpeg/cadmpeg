@@ -474,11 +474,14 @@ contribute a geometric coordinate.
 A repeated-diameter type-24 round body stores two scalar diameter endpoints
 and two model-space XYZ extent endpoints. The body is either one contiguous
 scalar frame after `15` or `00 15 1c`, or two scalar frames separated by the
-literal byte `12`. A replay body may append `f7 18` after the last scalar
-frame; those bytes do not alter the envelope. The diameter endpoints are
-distinct. Exactly one coordinate span between the extent endpoints equals
-their absolute difference. That coordinate is radial: its midpoint is the
-corresponding cylinder-origin
+literal byte `12`. In the compact-control form, one selector in `11..14`
+precedes a one-scalar first-diameter frame, another selector in `11..14`
+separates it from the seven-scalar second-diameter-and-extent frame. The
+selectors do not contribute geometry. A replay body may append one complete
+`f7 <reference-id>` after the last scalar frame; that reference does not alter
+the envelope. The diameter endpoints are distinct. Exactly one coordinate span
+between the extent endpoints equals their absolute difference. That coordinate
+is radial: its midpoint is the corresponding cylinder-origin
 coordinate, its sign from the first endpoint to the second defines the
 reference direction, and half its span is the radius. Removing that radial
 component from the extent-endpoint displacement produces the nonzero cylinder

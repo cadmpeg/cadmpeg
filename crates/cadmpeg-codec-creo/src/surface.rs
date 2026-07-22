@@ -1033,8 +1033,14 @@ impl SurfaceParameterRecord {
     }
 
     fn type24_scalar_frame_round_layout(&self) -> Option<Type24RoundEnvelope> {
-        let frame_reaches_body_end =
-            |end: usize| end == self.body.len() || self.body.get(end..) == Some(&[0xf7, 0x18]);
+        let frame_reaches_body_end = |end: usize| {
+            if end == self.body.len() {
+                return true;
+            }
+            self.body.get(end) == Some(&psb::token::ENTITY_REF)
+                && psb::reference_id(&self.body, end + 1)
+                    .is_ok_and(|(_, reference_end)| reference_end == self.body.len())
+        };
         let contiguous_values = |frame: &SurfaceParameterScalarFrame| {
             let mut cursor = frame.offset;
             let mut values = Vec::with_capacity(frame.slots.len());
@@ -1058,6 +1064,23 @@ impl SurfaceParameterRecord {
                     return None;
                 };
                 frame_reaches_body_end(end).then_some(())?;
+                ([*first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
+            }
+            [leading, trailing] if leading.slots.len() == 1 => {
+                let (leading_values, leading_end) = contiguous_values(leading)?;
+                let [first] = leading_values.as_slice() else {
+                    unreachable!("one leading diameter slot was checked above");
+                };
+                let (trailing_values, trailing_end) = contiguous_values(trailing)?;
+                let [second, a0, a1, a2, b0, b1, b2] = trailing_values.as_slice() else {
+                    return None;
+                };
+                (leading.offset == 1
+                    && matches!(self.body.first(), Some(0x11..=0x14))
+                    && trailing.offset == leading_end + 1
+                    && matches!(self.body.get(leading_end), Some(0x11..=0x14))
+                    && frame_reaches_body_end(trailing_end))
+                .then_some(())?;
                 ([*first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
             }
             [leading, trailing] => {
@@ -6457,6 +6480,38 @@ mod tests {
                 length: Some(2.0_f64.sqrt()),
             }
         );
+        let compact_controls = [
+            0x12, 0x2d, 0x40, 0x7a, 0x35, 0xc4, 0x3e, 0x21, 0x5b, 0x11, 0x2d, 0x44, 0xff, 0xd2,
+            0xa6, 0xae, 0x74, 0x2b, 0x46, 0x65, 0x3f, 0xff, 0xff, 0xff, 0xff, 0xfc, 0x2d, 0x51,
+            0xd2, 0x31, 0x1a, 0xfa, 0xb7, 0x82, 0x48, 0x28, 0x00, 0x46, 0x64, 0x1f, 0xff, 0xff,
+            0xff, 0xff, 0xfc, 0x2d, 0x54, 0x14, 0xff, 0x8c, 0x32, 0xe0, 0xea, 0x48, 0x08, 0x00,
+        ];
+        let compact_record = record(&compact_controls);
+        let compact_frame = compact_record
+            .positional_cylinder_frame
+            .expect("compact-control repeated-diameter carrier");
+        assert!((compact_frame.radius - 4.521_925_117_895_819).abs() < 1e-12);
+        assert!(compact_frame
+            .axis
+            .into_iter()
+            .zip([
+                -std::f64::consts::FRAC_1_SQRT_2,
+                0.0,
+                std::f64::consts::FRAC_1_SQRT_2
+            ])
+            .all(|(actual, expected)| (actual - expected).abs() < 1e-12));
+        assert_eq!(compact_frame.ref_direction, [0.0, -1.0, 0.0]);
+        let mut referenced_controls = compact_controls.to_vec();
+        referenced_controls.extend_from_slice(&[0xf7, 0x40]);
+        assert!(record(&referenced_controls)
+            .positional_cylinder_frame
+            .is_some());
+        let mut invalid_control = compact_controls;
+        invalid_control[0] = 0x15;
+        assert!(record(&invalid_control).positional_cylinder_frame.is_none());
+        invalid_control = compact_controls;
+        invalid_control[9] = 0x15;
+        assert!(record(&invalid_control).positional_cylinder_frame.is_none());
 
         let equal_span = record(&[
             24, 45, 47, 73, 81, 130, 169, 147, 32, 18, 45, 49, 164, 168, 193, 84, 201, 144, 47, 12,
