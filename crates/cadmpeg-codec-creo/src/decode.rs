@@ -56,7 +56,9 @@ use serde::Serialize;
 use crate::container::{self, role, ContainerScan};
 use crate::topology::HalfEdgeId;
 
+mod native;
 mod records;
+use native::{annotate, emit_arena, store_arena};
 #[allow(clippy::wildcard_imports)]
 use records::*;
 
@@ -22608,19 +22610,22 @@ fn build_ir(
                 offset: line.offset,
             })
             .collect::<Vec<_>>();
-        for record in &records {
-            annotate(
-                &mut annotations,
-                &record.id,
-                "MdlRefInfo",
-                record.offset as u64,
-                "reference_line_record",
-                Exactness::ByteExact,
-            );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("reference_lines", &records)?;
+        emit_arena(
+            &mut ir,
+            &mut annotations,
+            "reference_lines",
+            &records,
+            |annotations, record| {
+                annotate(
+                    annotations,
+                    &record.id,
+                    "MdlRefInfo",
+                    record.offset as u64,
+                    "reference_line_record",
+                    Exactness::ByteExact,
+                );
+            },
+        )?;
     }
     if !scan.reference_circles.is_empty() {
         let records = scan
@@ -22641,19 +22646,22 @@ fn build_ir(
                 offset: circle.offset,
             })
             .collect::<Vec<_>>();
-        for record in &records {
-            annotate(
-                &mut annotations,
-                &record.id,
-                "MdlRefInfo",
-                record.offset as u64,
-                "reference_circle_record",
-                Exactness::Derived,
-            );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("reference_circles", &records)?;
+        emit_arena(
+            &mut ir,
+            &mut annotations,
+            "reference_circles",
+            &records,
+            |annotations, record| {
+                annotate(
+                    annotations,
+                    &record.id,
+                    "MdlRefInfo",
+                    record.offset as u64,
+                    "reference_circle_record",
+                    Exactness::Derived,
+                );
+            },
+        )?;
     }
     if !scan.reference_conics.is_empty() {
         let records = scan
@@ -22672,19 +22680,22 @@ fn build_ir(
                 offset: conic.offset,
             })
             .collect::<Vec<_>>();
-        for record in &records {
-            annotate(
-                &mut annotations,
-                &record.id,
-                "MdlRefInfo",
-                record.offset as u64,
-                "reference_conic_record",
-                Exactness::ByteExact,
-            );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("reference_conics", &records)?;
+        emit_arena(
+            &mut ir,
+            &mut annotations,
+            "reference_conics",
+            &records,
+            |annotations, record| {
+                annotate(
+                    annotations,
+                    &record.id,
+                    "MdlRefInfo",
+                    record.offset as u64,
+                    "reference_conic_record",
+                    Exactness::ByteExact,
+                );
+            },
+        )?;
     }
     if !scan.reference_ellipses.is_empty() {
         let records = scan
@@ -22702,19 +22713,22 @@ fn build_ir(
                 offset: ellipse.offset,
             })
             .collect::<Vec<_>>();
-        for record in &records {
-            annotate(
-                &mut annotations,
-                &record.id,
-                "MdlRefInfo",
-                record.offset as u64,
-                "reference_ellipse_carrier",
-                Exactness::Derived,
-            );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("reference_ellipses", &records)?;
+        emit_arena(
+            &mut ir,
+            &mut annotations,
+            "reference_ellipses",
+            &records,
+            |annotations, record| {
+                annotate(
+                    annotations,
+                    &record.id,
+                    "MdlRefInfo",
+                    record.offset as u64,
+                    "reference_ellipse_carrier",
+                    Exactness::Derived,
+                );
+            },
+        )?;
     }
     let line3d_id_counts =
         scan.reference_lines
@@ -23631,788 +23645,745 @@ fn build_ir(
     close_sketch_constraint_parameter_references(&mut ir);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     let surface_rows = surface_row_records(scan, &scan.surface_rows, "visibgeom");
-    if !surface_rows.is_empty() {
-        for record in &surface_rows {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "surface_rows",
+        &surface_rows,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "surface_namespace_row",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("surface_rows", &surface_rows)?;
-    }
+        },
+    )?;
     let nonvisible_surface_rows =
         surface_row_records(scan, &scan.nonvisible_surface_rows, "novisgeom");
-    if !nonvisible_surface_rows.is_empty() {
-        for record in &nonvisible_surface_rows {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "nonvisible_surface_rows",
+        &nonvisible_surface_rows,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "nonvisible_surface_namespace_row",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("nonvisible_surface_rows", &nonvisible_surface_rows)?;
-    }
+        },
+    )?;
     let cross_section_surface_rows = surface_row_records(
         scan,
         &scan.cross_section_surface_rows,
         "cross_section_geometry",
     );
-    if !cross_section_surface_rows.is_empty() {
-        for record in &cross_section_surface_rows {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "cross_section_surface_rows",
+        &cross_section_surface_rows,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "cross_section_surface_namespace_row",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("cross_section_surface_rows", &cross_section_surface_rows)?;
-    }
+        },
+    )?;
     let surface_prototypes =
         surface_prototype_records(scan, &scan.surface_prototype_records, "visibgeom");
-    if !surface_prototypes.is_empty() {
-        for record in &surface_prototypes {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "surface_prototypes",
+        &surface_prototypes,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "surface_prototype_record",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("surface_prototypes", &surface_prototypes)?;
-    }
+        },
+    )?;
     let nonvisible_surface_prototypes = surface_prototype_records(
         scan,
         &scan.nonvisible_surface_prototype_records,
         "novisgeom",
     );
-    if !nonvisible_surface_prototypes.is_empty() {
-        for record in &nonvisible_surface_prototypes {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "nonvisible_surface_prototypes",
+        &nonvisible_surface_prototypes,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "nonvisible_surface_prototype_record",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena(
-            "nonvisible_surface_prototypes",
-            &nonvisible_surface_prototypes,
-        )?;
-    }
+        },
+    )?;
     let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replay_records(scan);
-    if !tabulated_cylinder_curve_replays.is_empty() {
-        for record in &tabulated_cylinder_curve_replays {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "tabulated_cylinder_curve_replays",
+        &tabulated_cylinder_curve_replays,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "tabulated_cylinder_curve_replay",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena(
-            "tabulated_cylinder_curve_replays",
-            &tabulated_cylinder_curve_replays,
-        )?;
-    }
+        },
+    )?;
     let curve_parameters = curve_parameter_records(scan, &scan.curve_parameters, "visibgeom");
-    if !curve_parameters.is_empty() {
-        for record in &curve_parameters {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "curve_parameters",
+        &curve_parameters,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "curve_parameter_record",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("curve_parameters", &curve_parameters)?;
-    }
+        },
+    )?;
     let nonvisible_curve_parameters =
         curve_parameter_records(scan, &scan.nonvisible_curve_parameters, "novisgeom");
-    if !nonvisible_curve_parameters.is_empty() {
-        for record in &nonvisible_curve_parameters {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "nonvisible_curve_parameters",
+        &nonvisible_curve_parameters,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "nonvisible_curve_parameter_record",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("nonvisible_curve_parameters", &nonvisible_curve_parameters)?;
-    }
+        },
+    )?;
     let fc_curve_coordinates = fc_curve_coordinate_records(scan);
-    if !fc_curve_coordinates.is_empty() {
-        for record in &fc_curve_coordinates {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "fc_curve_coordinates",
+        &fc_curve_coordinates,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "fc_curve_coordinates",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("fc_curve_coordinates", &fc_curve_coordinates)?;
-    }
+        },
+    )?;
     let fc05_circles = fc05_circle_records(scan);
-    if !fc05_circles.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("fc05_circles", &fc05_circles)?;
-    }
+    store_arena(&mut ir, "fc05_circles", &fc05_circles)?;
     let fc05_cylinder_cap_pairs = fc05_cylinder_cap_pair_records(scan);
-    if !fc05_cylinder_cap_pairs.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("fc05_cylinder_cap_pairs", &fc05_cylinder_cap_pairs)?;
-    }
+    store_arena(&mut ir, "fc05_cylinder_cap_pairs", &fc05_cylinder_cap_pairs)?;
     let prototype_pcurves = prototype_pcurve_records(scan);
-    if !prototype_pcurves.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("prototype_pcurves", &prototype_pcurves)?;
-    }
+    store_arena(&mut ir, "prototype_pcurves", &prototype_pcurves)?;
     let curve_prototype_topology = curve_prototype_topology_records(scan);
-    if !curve_prototype_topology.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("curve_prototype_topology", &curve_prototype_topology)?;
-    }
+    store_arena(
+        &mut ir,
+        "curve_prototype_topology",
+        &curve_prototype_topology,
+    )?;
     let curve_prototypes =
         curve_prototype_records(scan, &scan.curve_prototypes, "creo:curve:prototype");
-    if !curve_prototypes.is_empty() {
-        for record in &curve_prototypes {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "curve_prototypes",
+        &curve_prototypes,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "curve_prototype",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("curve_prototypes", &curve_prototypes)?;
-    }
+        },
+    )?;
     let nonvisible_curve_prototypes = curve_prototype_records(
         scan,
         &scan.nonvisible_curve_prototypes,
         "creo:novisgeom:curve_prototype",
     );
-    if !nonvisible_curve_prototypes.is_empty() {
-        for record in &nonvisible_curve_prototypes {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "nonvisible_curve_prototypes",
+        &nonvisible_curve_prototypes,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "nonvisible_curve_prototype",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("nonvisible_curve_prototypes", &nonvisible_curve_prototypes)?;
-    }
+        },
+    )?;
     let cross_section_curve_prototypes = curve_prototype_records(
         scan,
         &scan.cross_section_curve_prototypes,
         "creo:cross_section_geometry:curve_prototype",
     );
-    if !cross_section_curve_prototypes.is_empty() {
-        for record in &cross_section_curve_prototypes {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "cross_section_curve_prototypes",
+        &cross_section_curve_prototypes,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "cross_section_curve_prototype",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena(
-            "cross_section_curve_prototypes",
-            &cross_section_curve_prototypes,
-        )?;
-    }
+        },
+    )?;
     let curve_topology_rows =
         curve_topology_row_records(scan, &scan.curve_topology_rows, "visibgeom");
-    if !curve_topology_rows.is_empty() {
-        for record in &curve_topology_rows {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "curve_topology_rows",
+        &curve_topology_rows,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "curve_topology_row",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("curve_topology_rows", &curve_topology_rows)?;
-    }
+        },
+    )?;
     let nonvisible_curve_topology_rows =
         curve_topology_row_records(scan, &scan.nonvisible_curve_topology_rows, "novisgeom");
-    if !nonvisible_curve_topology_rows.is_empty() {
-        for record in &nonvisible_curve_topology_rows {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "nonvisible_curve_topology_rows",
+        &nonvisible_curve_topology_rows,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "nonvisible_curve_topology_row",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena(
-            "nonvisible_curve_topology_rows",
-            &nonvisible_curve_topology_rows,
-        )?;
-    }
+        },
+    )?;
     let cross_section_curve_rows = cross_section_curve_row_records(scan);
-    if !cross_section_curve_rows.is_empty() {
-        for record in &cross_section_curve_rows {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "cross_section_curve_rows",
+        &cross_section_curve_rows,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "cross_section_curve_row",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("cross_section_curve_rows", &cross_section_curve_rows)?;
-    }
+        },
+    )?;
     let half_edges = half_edge_records(scan);
-    if !half_edges.is_empty() {
-        for record in &half_edges {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "half_edges",
+        &half_edges,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "native_half_edge",
                 Exactness::Derived,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("half_edges", &half_edges)?;
-    }
+        },
+    )?;
     let native_loops = loop_records(scan);
-    if !native_loops.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("loops", &native_loops)?;
-    }
+    store_arena(&mut ir, "loops", &native_loops)?;
     let topological_vertices = topological_vertex_records(scan);
-    if !topological_vertices.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("topological_vertices", &topological_vertices)?;
-    }
+    store_arena(&mut ir, "topological_vertices", &topological_vertices)?;
     let half_edge_vertex_incidence = half_edge_vertex_incidence_records(scan);
-    if !half_edge_vertex_incidence.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("half_edge_vertex_incidence", &half_edge_vertex_incidence)?;
-    }
+    store_arena(
+        &mut ir,
+        "half_edge_vertex_incidence",
+        &half_edge_vertex_incidence,
+    )?;
     let face_components = face_component_records(scan);
-    if !face_components.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("face_components", &face_components)?;
-    }
+    store_arena(&mut ir, "face_components", &face_components)?;
     let surface_parameters = surface_parameter_records(
         scan,
         &scan.surface_rows,
         &scan.surface_parameters,
         "visibgeom",
     );
-    if !surface_parameters.is_empty() {
-        for record in &surface_parameters {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "surface_parameters",
+        &surface_parameters,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.body_offset as u64,
                 "surface_parameter_frame",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("surface_parameters", &surface_parameters)?;
-    }
+        },
+    )?;
     let nonvisible_surface_parameters = surface_parameter_records(
         scan,
         &scan.nonvisible_surface_rows,
         &scan.nonvisible_surface_parameters,
         "novisgeom",
     );
-    if !nonvisible_surface_parameters.is_empty() {
-        for record in &nonvisible_surface_parameters {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "nonvisible_surface_parameters",
+        &nonvisible_surface_parameters,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.body_offset as u64,
                 "nonvisible_surface_parameter_frame",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena(
-            "nonvisible_surface_parameters",
-            &nonvisible_surface_parameters,
-        )?;
-    }
+        },
+    )?;
     let cross_section_surface_parameters = surface_parameter_records(
         scan,
         &scan.cross_section_surface_rows,
         &scan.cross_section_surface_parameters,
         "cross_section_geometry",
     );
-    if !cross_section_surface_parameters.is_empty() {
-        for record in &cross_section_surface_parameters {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "cross_section_surface_parameters",
+        &cross_section_surface_parameters,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.body_offset as u64,
                 "cross_section_surface_parameter_frame",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena(
-            "cross_section_surface_parameters",
-            &cross_section_surface_parameters,
-        )?;
-    }
+        },
+    )?;
     let plane_local_systems = plane_local_system_records(
         scan,
         &scan.plane_local_systems,
         "creo:surface:plane_local_system",
     );
-    if !plane_local_systems.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("plane_local_systems", &plane_local_systems)?;
-    }
+    store_arena(&mut ir, "plane_local_systems", &plane_local_systems)?;
     let cross_section_plane_local_systems = plane_local_system_records(
         scan,
         &scan.cross_section_plane_local_systems,
         "creo:cross_section_geometry:plane_local_system",
     );
-    if !cross_section_plane_local_systems.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena(
-            "cross_section_plane_local_systems",
-            &cross_section_plane_local_systems,
-        )?;
-    }
+    store_arena(
+        &mut ir,
+        "cross_section_plane_local_systems",
+        &cross_section_plane_local_systems,
+    )?;
     let plane_envelopes =
         plane_envelope_records(scan, &scan.plane_envelopes, "creo:surface:plane_envelope");
-    if !plane_envelopes.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("plane_envelopes", &plane_envelopes)?;
-    }
+    store_arena(&mut ir, "plane_envelopes", &plane_envelopes)?;
     let cross_section_plane_envelopes = plane_envelope_records(
         scan,
         &scan.cross_section_plane_envelopes,
         "creo:cross_section_geometry:plane_envelope",
     );
-    if !cross_section_plane_envelopes.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena(
-            "cross_section_plane_envelopes",
-            &cross_section_plane_envelopes,
-        )?;
-    }
+    store_arena(
+        &mut ir,
+        "cross_section_plane_envelopes",
+        &cross_section_plane_envelopes,
+    )?;
     let outline_planes =
         outline_plane_records(scan, &scan.outline_planes, "creo:surface:outline_plane");
-    if !outline_planes.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("outline_planes", &outline_planes)?;
-    }
+    store_arena(&mut ir, "outline_planes", &outline_planes)?;
     let positional_frame_planes = outline_plane_records(
         scan,
         &scan.positional_frame_planes,
         "creo:surface:positional_frame_plane",
     );
-    if !positional_frame_planes.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("positional_frame_planes", &positional_frame_planes)?;
-    }
+    store_arena(&mut ir, "positional_frame_planes", &positional_frame_planes)?;
     let cross_section_outline_planes = outline_plane_records(
         scan,
         &scan.cross_section_outline_planes,
         "creo:cross_section_geometry:outline_plane",
     );
-    if !cross_section_outline_planes.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena(
-            "cross_section_outline_planes",
-            &cross_section_outline_planes,
-        )?;
-    }
+    store_arena(
+        &mut ir,
+        "cross_section_outline_planes",
+        &cross_section_outline_planes,
+    )?;
     let datum_planes = datum_plane_records(scan);
-    if !datum_planes.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("datum_planes", &datum_planes)?;
-    }
+    store_arena(&mut ir, "datum_planes", &datum_planes)?;
     let feature_section_transforms = feature_section_transform_records(scan);
-    if !feature_section_transforms.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_section_transforms", &feature_section_transforms)?;
-    }
+    store_arena(
+        &mut ir,
+        "feature_section_transforms",
+        &feature_section_transforms,
+    )?;
     let feature_placement_instructions = feature_placement_instruction_records(scan);
-    if !feature_placement_instructions.is_empty() {
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena(
-            "feature_placement_instructions",
-            &feature_placement_instructions,
-        )?;
-    }
+    store_arena(
+        &mut ir,
+        "feature_placement_instructions",
+        &feature_placement_instructions,
+    )?;
+    // Bespoke annotation: the arena payload drops the per-record source offset the
+    // annotation needs, so the offset travels alongside each record in a tuple.
     let pcurve_endpoints = pcurve_endpoint_records(scan);
-    if !pcurve_endpoints.is_empty() {
-        for (record, offset) in &pcurve_endpoints {
-            annotate(
-                &mut annotations,
-                &record.id,
-                "VisibGeom",
-                *offset as u64,
-                "pcurve_endpoint_frames",
-                Exactness::Derived,
-            );
-        }
-        let records = pcurve_endpoints
-            .iter()
-            .map(|(record, _)| record)
-            .collect::<Vec<_>>();
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("pcurve_endpoints", &records)?;
+    for (record, offset) in &pcurve_endpoints {
+        annotate(
+            &mut annotations,
+            &record.id,
+            "VisibGeom",
+            *offset as u64,
+            "pcurve_endpoint_frames",
+            Exactness::Derived,
+        );
     }
+    let pcurve_endpoint_payload = pcurve_endpoints
+        .iter()
+        .map(|(record, _)| record)
+        .collect::<Vec<_>>();
+    store_arena(&mut ir, "pcurve_endpoints", &pcurve_endpoint_payload)?;
     let feature_definitions = feature_definition_records(scan);
-    if !feature_definitions.is_empty() {
-        for definition in &feature_definitions {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_definitions",
+        &feature_definitions,
+        |annotations, definition| {
             annotate(
-                &mut annotations,
+                annotations,
                 &definition.id,
                 &definition.source_section,
                 definition.offset as u64,
                 "feature_definition_record",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_definitions", &feature_definitions)?;
-    }
+        },
+    )?;
     let feature_entities = feature_entity_records(scan);
-    if !feature_entities.is_empty() {
-        for entity in &feature_entities {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_entities",
+        &feature_entities,
+        |annotations, entity| {
             annotate(
-                &mut annotations,
+                annotations,
                 &entity.id,
                 "AllFeatur",
                 entity.offset as u64,
                 "feature_entity",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_entities", &feature_entities)?;
-    }
+        },
+    )?;
     let feature_entity_references = feature_entity_reference_records(scan);
-    if !feature_entity_references.is_empty() {
-        for reference in &feature_entity_references {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_entity_references",
+        &feature_entity_references,
+        |annotations, reference| {
             annotate(
-                &mut annotations,
+                annotations,
                 &reference.id,
                 "AllFeatur",
                 reference.offset as u64,
                 "feature_entity_reference",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_entity_references", &feature_entity_references)?;
-    }
+        },
+    )?;
     let feature_entity_tables = feature_entity_table_records(scan);
-    if !feature_entity_tables.is_empty() {
-        for table in &feature_entity_tables {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_entity_tables",
+        &feature_entity_tables,
+        |annotations, table| {
             annotate(
-                &mut annotations,
+                annotations,
                 &table.id,
                 "AllFeatur",
                 table.offset as u64,
                 "feature_entity_table",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_entity_tables", &feature_entity_tables)?;
-    }
+        },
+    )?;
     let feature_surface_replays = feature_surface_replay_associations(scan);
-    if !feature_surface_replays.is_empty() {
-        for association in &feature_surface_replays {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_surface_replays",
+        &feature_surface_replays,
+        |annotations, association| {
             annotate(
-                &mut annotations,
+                annotations,
                 &association.id,
                 "AllFeatur",
                 association.table_offset as u64,
                 "feature_surface_replay_association",
                 Exactness::Derived,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_surface_replays", &feature_surface_replays)?;
-    }
+        },
+    )?;
     let feature_geometry_tables = feature_geometry_table_records(scan);
-    if !feature_geometry_tables.is_empty() {
-        for table in &feature_geometry_tables {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_geometry_tables",
+        &feature_geometry_tables,
+        |annotations, table| {
             annotate(
-                &mut annotations,
+                annotations,
                 &table.id,
                 &table.source_section,
                 table.offset as u64,
                 "feature_geometry_table",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_geometry_tables", &feature_geometry_tables)?;
-    }
+        },
+    )?;
     let feature_affected_ids = feature_affected_id_records(scan);
-    if !feature_affected_ids.is_empty() {
-        for record in &feature_affected_ids {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_affected_ids",
+        &feature_affected_ids,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "feature_affected_ids",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_affected_ids", &feature_affected_ids)?;
-    }
+        },
+    )?;
     let feature_replay_affected_ids = feature_replay_affected_id_records(scan);
-    if !feature_replay_affected_ids.is_empty() {
-        for record in &feature_replay_affected_ids {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_replay_affected_ids",
+        &feature_replay_affected_ids,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "feature_replay_affected_ids",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_replay_affected_ids", &feature_replay_affected_ids)?;
-    }
+        },
+    )?;
     let feature_loop_restore_directions = feature_loop_restore_direction_records(scan);
-    if !feature_loop_restore_directions.is_empty() {
-        for record in &feature_loop_restore_directions {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_loop_restore_directions",
+        &feature_loop_restore_directions,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "feature_loop_restore_direction",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena(
-            "feature_loop_restore_directions",
-            &feature_loop_restore_directions,
-        )?;
-    }
+        },
+    )?;
     let feature_revolution_extents = feature_revolution_extent_records(scan);
-    if !feature_revolution_extents.is_empty() {
-        for record in &feature_revolution_extents {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_revolution_extents",
+        &feature_revolution_extents,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "feature_revolution_extent",
                 Exactness::Derived,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_revolution_extents", &feature_revolution_extents)?;
-    }
+        },
+    )?;
     let feature_rows = feature_row_records(scan);
-    if !feature_rows.is_empty() {
-        for record in &feature_rows {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_rows",
+        &feature_rows,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "feature_row",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_rows", &feature_rows)?;
-    }
+        },
+    )?;
     let depdb_recipe_rows = depdb_recipe_row_records(scan);
-    if !depdb_recipe_rows.is_empty() {
-        for record in &depdb_recipe_rows {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "depdb_recipe_rows",
+        &depdb_recipe_rows,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "depdb_recipe_row",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("depdb_recipe_rows", &depdb_recipe_rows)?;
-    }
+        },
+    )?;
     let feature_choices = feature_choice_records(scan);
-    if !feature_choices.is_empty() {
-        for record in &feature_choices {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_choices",
+        &feature_choices,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "feature_choice",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_choices", &feature_choices)?;
-    }
+        },
+    )?;
     let feature_choice_fields = feature_choice_field_records(scan);
-    if !feature_choice_fields.is_empty() {
-        for record in &feature_choice_fields {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_choice_fields",
+        &feature_choice_fields,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
                 "feature_choice_field",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_choice_fields", &feature_choice_fields)?;
-    }
+        },
+    )?;
     let sketches = sketch_records(scan);
-    if !sketches.is_empty() {
-        for sketch in &sketches {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "sketches",
+        &sketches,
+        |annotations, sketch| {
             annotate(
-                &mut annotations,
+                annotations,
                 &sketch.id,
                 &sketch.source_section,
                 sketch.offset as u64,
                 "feature_sketch",
                 Exactness::Derived,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("sketches", &sketches)?;
-    }
+        },
+    )?;
+    // Bespoke annotation: the source offset comes from the parallel scan rows, not
+    // the record, so annotation zips the two before the arena is stored.
     let curve_expressions = curve_expression_records(scan);
-    if !curve_expressions.is_empty() {
-        for (expression, source) in curve_expressions.iter().zip(&scan.curve_expressions) {
-            annotate(
-                &mut annotations,
-                &expression.id,
-                "DEPDB_DATA",
-                source.expression_offset as u64,
-                "curve_expression_program",
-                Exactness::ByteExact,
-            );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("curve_expressions", &curve_expressions)?;
+    for (expression, source) in curve_expressions.iter().zip(&scan.curve_expressions) {
+        annotate(
+            &mut annotations,
+            &expression.id,
+            "DEPDB_DATA",
+            source.expression_offset as u64,
+            "curve_expression_program",
+            Exactness::ByteExact,
+        );
     }
+    store_arena(&mut ir, "curve_expressions", &curve_expressions)?;
     let feature_operation_states = feature_operation_state_records(scan);
-    if !feature_operation_states.is_empty() {
-        for state in &feature_operation_states {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_operation_states",
+        &feature_operation_states,
+        |annotations, state| {
             let section = scan
                 .sections
                 .iter()
@@ -24422,34 +24393,32 @@ fn build_ir(
                 })
                 .map_or("MdlStatus", |section| section.name.as_str());
             annotate(
-                &mut annotations,
+                annotations,
                 &state.id,
                 section,
                 state.state_offset as u64,
                 "feature_operation_state",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_operation_states", &feature_operation_states)?;
-    }
+        },
+    )?;
     let feature_reference_names = feature_reference_name_records(scan);
-    if !feature_reference_names.is_empty() {
-        for record in &feature_reference_names {
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_reference_names",
+        &feature_reference_names,
+        |annotations, record| {
             annotate(
-                &mut annotations,
+                annotations,
                 &record.id,
                 "MdlRefInfo",
                 record.offset as u64,
                 "feature_reference_name",
                 Exactness::ByteExact,
             );
-        }
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("feature_reference_names", &feature_reference_names)?;
-    }
+        },
+    )?;
     if let Some(family_table) = family_table_record(scan) {
         annotate(
             &mut annotations,
@@ -24459,24 +24428,9 @@ fn build_ir(
             "configuration_driver_table_pointer",
             Exactness::ByteExact,
         );
-        let namespace = ir.native.namespace_mut("creo");
-        namespace.version = 1;
-        namespace.set_arena("configuration", &[family_table])?;
+        store_arena(&mut ir, "configuration", &[family_table])?;
     }
     Ok((ir, annotations.build(), unknowns))
-}
-
-fn annotate(
-    annotations: &mut AnnotationBuilder,
-    id: impl std::fmt::Display,
-    source_stream: &str,
-    offset: u64,
-    tag: &str,
-    exactness: Exactness,
-) {
-    let stream = annotations.stream(format!("creo:{source_stream}"));
-    annotations.note(id.to_string(), stream, offset).tag(tag);
-    annotations.exactness(id, exactness);
 }
 
 #[derive(Default)]
