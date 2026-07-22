@@ -3369,15 +3369,10 @@ pub fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoint
         let Some(points_label) = find_in(payload, b"crv_pnt_arr\0", after_id, prototype_end) else {
             continue;
         };
-        let search_end = (points_label + 64).min(prototype_end);
-        let Some(header) = find_in(
-            payload,
-            &[psb::token::SCALAR_BODY, 0x02, 0x04],
-            points_label,
-            search_end,
-        ) else {
+        let header = points_label + b"crv_pnt_arr\0".len();
+        if payload.get(header..header + 3) != Some(&[psb::token::SCALAR_BODY, 0x02, 0x04]) {
             continue;
-        };
+        }
         let mut cursor = header + 3;
         let mut values = Vec::with_capacity(8);
         while cursor < prototype_end && values.len() < 8 {

@@ -6153,6 +6153,21 @@ fn scan_withholds_non_exact_labeled_prototype_pcurve_arrays() {
 }
 
 #[test]
+fn scan_withholds_displaced_labeled_prototype_pcurve_wrapper() {
+    let mut payload = visibgeom_payload(0, 0);
+    payload.extend_from_slice(b"crv_id\0\x2c type\0\x00 crv_pnt_arr\0junk\xf9\x02\x04");
+    payload.extend_from_slice(&[0x12, 0xe4]);
+    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x12, 0xe4, 0x12]);
+    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0xe4]);
+    payload.extend_from_slice(b"topol_ref_data\0");
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert!(scan.prototype_pcurves.is_empty());
+}
+
+#[test]
 fn scan_decodes_and_binds_labeled_prototype_topology() {
     let mut payload = visibgeom_payload(0, 0);
     payload.extend_from_slice(b"crv_id\0\x2c type\0\x00");
