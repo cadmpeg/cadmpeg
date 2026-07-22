@@ -708,7 +708,6 @@ fn finite_coordinate_pair(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
 }
 
 fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
-    let next = offset.checked_add(154)?;
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(0)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
@@ -720,24 +719,37 @@ fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> 
         || payload.get(offset + 56..offset + 58) != Some(&[0x1a, 0x00])
         || payload.get(offset + 74..offset + 76) != Some(&[0; 2])
         || payload.get(offset + 76..offset + 78) != Some(&2u16.to_le_bytes())
-        || payload.get(offset + 102..offset + 108)
-            != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
-        || payload.get(offset + 108..offset + 150) != Some(&[0; 42])
-        || !sketch_marker_prefix_at(payload, next)
     {
         return None;
     }
-    let first = &payload[offset + 78..offset + 90];
-    let second = &payload[offset + 90..offset + 102];
-    (first[..2] == second[..2]
-        && first[2..4] != [0; 2]
-        && second[2..4] != [0; 2]
-        && first[2..4] != second[2..4]
-        && first[4..8] == [0xff; 4]
-        && second[4..8] == [0xff; 4]
-        && first[8..12] == [0; 4]
-        && second[8..12] == [0; 4])
-        .then(|| finite_coordinate_pair(payload, offset + 58))?
+    let cells = if payload.get(offset + 102..offset + 108)
+        == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 108..offset + 150) == Some(&[0; 42])
+        && sketch_marker_prefix_at(payload, offset.checked_add(154)?)
+    {
+        [&payload[offset + 78..offset + 90], &payload[offset + 90..offset + 102]]
+    } else if payload.get(offset + 94..offset + 100)
+        == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 100..offset + 138) == Some(&[0; 38])
+        && sketch_marker_prefix_at(payload, offset.checked_add(146)?)
+    {
+        [&payload[offset + 78..offset + 86], &payload[offset + 86..offset + 94]]
+    } else {
+        return None;
+    };
+    let [first, second] = cells;
+    if first[..2] != second[..2]
+        || first[2..4] == [0; 2]
+        || second[2..4] == [0; 2]
+        || first[2..4] == second[2..4]
+        || first[4..8] != [0xff; 4]
+        || second[4..8] != [0xff; 4]
+        || first.get(8..12).is_some_and(|tail| tail != [0; 4])
+        || second.get(8..12).is_some_and(|tail| tail != [0; 4])
+    {
+        return None;
+    }
+    finite_coordinate_pair(payload, offset + 58)
 }
 
 fn indexed_profile_coordinate_candidate(payload: &[u8], offset: usize) -> bool {
@@ -4014,6 +4026,20 @@ mod marker_tests {
         payload[90] ^= 1;
         assert_eq!(legacy_linked_coordinates(&payload, 0), None);
         assert_eq!(marker_coordinates(&payload, 0), None);
+
+        let mut compact = vec![0; 146 + LEGACY_SKETCH_MARKER.len()];
+        compact[..78].copy_from_slice(&payload[..78]);
+        for (start, local_id) in [(78, 2u16), (86, 5u16)] {
+            compact[start..start + 2].copy_from_slice(&[0x2b, 0x82]);
+            compact[start + 2..start + 4].copy_from_slice(&local_id.to_le_bytes());
+            compact[start + 4..start + 8].fill(0xff);
+        }
+        compact[94..100].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        compact[138..142].copy_from_slice(&17u32.to_le_bytes());
+        compact[142..146].copy_from_slice(&29u32.to_le_bytes());
+        compact[146..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert_eq!(legacy_linked_coordinates(&compact, 0), Some([0.0025, 0.01]));
+        assert_eq!(marker_coordinates(&compact, 0), Some([0.0025, 0.01]));
     }
 
     #[test]
