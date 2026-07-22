@@ -1166,7 +1166,8 @@ mod marker_tests {
         offset_reference_plane_frame_pair,
         ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
         plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
-        profile_roster_construction_axis, reconcile_reference_plane_frame, resolve_operand_marker,
+        profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
+        reconcile_reference_plane_frame, resolve_operand_marker,
         resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
         roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
@@ -7482,6 +7483,75 @@ mod marker_tests {
     }
 
     #[test]
+    fn omitted_origin_axis_uses_the_unique_maximum_incidence_support_line() {
+        let mut payload = vec![0; 700];
+        let curve = |payload: &mut [u8], offset: usize, start: u16, end: u16| {
+            payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+            payload[offset + 5..offset + 13].fill(0xff);
+            payload[offset + 13..offset + 17].copy_from_slice(&[0, 0, 0x80, 0xbf]);
+            payload[offset + 23..offset + 27].copy_from_slice(&[4, 0, 2, 0]);
+            payload[offset + 27..offset + 29].copy_from_slice(&1u16.to_le_bytes());
+            payload[offset + 31..offset + 39]
+                .copy_from_slice(&[0, 0, 0x80, 0xbf, 0, 0, 4, 0]);
+            payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+            payload[offset + 56..offset + 58].copy_from_slice(&start.to_le_bytes());
+            payload[offset + 58..offset + 60].copy_from_slice(&end.to_le_bytes());
+            payload[offset + 60..offset + 64].copy_from_slice(&1u32.to_le_bytes());
+        };
+        curve(&mut payload, 400, 0, 1);
+        curve(&mut payload, 484, 1, 2);
+        curve(&mut payload, 568, 2, 0);
+        let marker = |id: &str, offset, object_index, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("profile-native".into()),
+            ordinal: offset as u32,
+            offset,
+            object_index,
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: None,
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let mut entities = vec![
+            marker("vertical-near", 0, Some(1), Some([0.0, 0.01])),
+            marker("vertical-far", 100, Some(2), Some([0.0, 0.02])),
+            marker("tangent", 200, Some(3), Some([-0.01, 0.01])),
+            marker("origin", 300, Some(4), Some([0.0, 0.0])),
+            marker("curve-a", 400, None, None),
+            marker("curve-b", 484, None, None),
+            marker("curve-c", 568, None, None),
+        ];
+        for entity in &mut entities[4..] {
+            entity.kind = SketchInputKind::LineOrCircle;
+        }
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: entities,
+        };
+        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
+
+        assert_eq!(
+            profile_roster_origin_axis_endpoints(&lane, "profile-native", &markers),
+            Some([[0.0, 0.0], [0.0, 0.01]])
+        );
+    }
+
+    #[test]
     fn revolution_form_words_distinguish_new_body_and_join() {
         assert_eq!(
             revolution_operation(Some("moRevolution_c"), 6),
@@ -8684,13 +8754,23 @@ fn profile_roster_construction_axis(
             };
             Some([*start, *end])
         });
-    let endpoints = match (axes.next(), axes.next()) {
-        (Some(endpoints), None) => endpoints,
-        (None, None) => profile_roster_implicit_axis_endpoints(lane, profile_native, &markers)?,
+    let native_endpoints = match (axes.next(), axes.next()) {
+        (Some(endpoints), None) => [
+            endpoints[0].coordinates_m?,
+            endpoints[1].coordinates_m?,
+        ],
+        (None, None) => {
+            if let Some(endpoints) =
+                profile_roster_implicit_axis_endpoints(lane, profile_native, &markers)
+            {
+                [endpoints[0].coordinates_m?, endpoints[1].coordinates_m?]
+            } else {
+                profile_roster_origin_axis_endpoints(lane, profile_native, &markers)?
+            }
+        }
         _ => return None,
     };
-    let native_start = endpoints[0].coordinates_m?;
-    let native_end = endpoints[1].coordinates_m?;
+    let [native_start, native_end] = native_endpoints;
     let transform = sketch_frame_marker_transform(sketch, QUANTUM)?;
     let project = |point: [f64; 2]| {
         let point = transform.apply(quantize(
@@ -8720,6 +8800,93 @@ fn profile_roster_construction_axis(
         origin: start,
         direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
     })
+}
+
+fn profile_roster_origin_axis_endpoints(
+    lane: &FeatureInputLane,
+    profile_native: &str,
+    markers: &[&SketchInputEntity],
+) -> Option<[[f64; 2]; 2]> {
+    let curve_endpoints = markers
+        .iter()
+        .copied()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
+        .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
+        .map(|endpoint| endpoint.id.as_str())
+        .collect::<HashSet<_>>();
+    let unreferenced_points = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref.as_deref() == Some(profile_native)
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+                && marker.coordinates_m.is_some()
+                && !curve_endpoints.contains(marker.id.as_str())
+        })
+        .collect::<Vec<_>>();
+    let [origin] = unreferenced_points.as_slice() else {
+        return None;
+    };
+    let [origin_u, origin_v] = origin.coordinates_m?;
+    if origin_u.abs() > 1.0e-9 || origin_v.abs() > 1.0e-9 {
+        return None;
+    }
+    let mut candidates = markers
+        .iter()
+        .copied()
+        .filter(|marker| curve_endpoints.contains(marker.id.as_str()))
+        .filter_map(|marker| {
+            let end = marker.coordinates_m?;
+            let endpoints = [[origin_u, origin_v], end];
+            bounded_profile_axis_coordinates(profile_native, markers, &curve_endpoints, endpoints)
+                .then_some(endpoints)
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        left[1][0]
+            .total_cmp(&right[1][0])
+            .then(left[1][1].total_cmp(&right[1][1]))
+    });
+    let mut lines = Vec::<[[f64; 2]; 2]>::new();
+    for candidate in candidates {
+        let [u, v] = [
+            candidate[1][0] - origin_u,
+            candidate[1][1] - origin_v,
+        ];
+        if lines.iter().any(|line| {
+            let [line_u, line_v] = [line[1][0] - origin_u, line[1][1] - origin_v];
+            (u * line_v - v * line_u).abs() <= 1.0e-9 * u.hypot(v) * line_u.hypot(line_v)
+        }) {
+            continue;
+        }
+        lines.push(candidate);
+    }
+    let incidence = |line: &[[f64; 2]; 2]| {
+        let [line_u, line_v] = [line[1][0] - origin_u, line[1][1] - origin_v];
+        markers
+            .iter()
+            .filter(|marker| curve_endpoints.contains(marker.id.as_str()))
+            .filter_map(|marker| marker.coordinates_m)
+            .filter(|[u, v]| {
+                let relative_u = u - origin_u;
+                let relative_v = v - origin_v;
+                (relative_u * line_v - relative_v * line_u).abs()
+                    <= 1.0e-9 * relative_u.hypot(relative_v) * line_u.hypot(line_v)
+            })
+            .count()
+    };
+    let maximum_incidence = lines.iter().map(incidence).max()?;
+    let selected = lines
+        .iter()
+        .filter(|line| incidence(line) == maximum_incidence)
+        .collect::<Vec<_>>();
+    let [axis] = selected.as_slice() else {
+        return None;
+    };
+    Some(**axis)
 }
 
 fn profile_roster_implicit_axis_endpoints<'a>(
@@ -8863,13 +9030,21 @@ fn bounded_profile_axis_endpoints(
     curve_endpoints: &HashSet<&str>,
     endpoints: [&SketchInputEntity; 2],
 ) -> bool {
+    let [Some(start), Some(end)] = endpoints.map(|endpoint| endpoint.coordinates_m) else {
+        return false;
+    };
+    bounded_profile_axis_coordinates(profile_native, markers, curve_endpoints, [start, end])
+}
+
+fn bounded_profile_axis_coordinates(
+    profile_native: &str,
+    markers: &[&SketchInputEntity],
+    curve_endpoints: &HashSet<&str>,
+    endpoints: [[f64; 2]; 2],
+) -> bool {
     const TOLERANCE_M: f64 = 1.0e-9;
 
-    let ([start_u, start_v], [end_u, end_v]) =
-        match (endpoints[0].coordinates_m, endpoints[1].coordinates_m) {
-            (Some(start), Some(end)) => (start, end),
-            _ => return false,
-        };
+    let [[start_u, start_v], [end_u, end_v]] = endpoints;
     let delta_u = end_u - start_u;
     let delta_v = end_v - start_v;
     let length = delta_u.hypot(delta_v);
@@ -8880,24 +9055,25 @@ fn bounded_profile_axis_endpoints(
     let tangent_v = delta_v / length;
     let mut minimum_side = f64::INFINITY;
     let mut maximum_side = f64::NEG_INFINITY;
+    let mut observed = false;
     for [u, v] in markers.iter().filter_map(|marker| {
         (marker.feature_ref.as_deref() == Some(profile_native)
             && matches!(
                 marker.kind,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
-            && (curve_endpoints.contains(marker.id.as_str())
-                || endpoints.iter().any(|endpoint| endpoint.id == marker.id)))
+            && curve_endpoints.contains(marker.id.as_str()))
         .then_some(marker.coordinates_m)
         .flatten()
     }) {
         let relative_u = u - start_u;
         let relative_v = v - start_v;
         let side = relative_u * -tangent_v + relative_v * tangent_u;
+        observed = true;
         minimum_side = minimum_side.min(side);
         maximum_side = maximum_side.max(side);
     }
-    minimum_side >= -TOLERANCE_M || maximum_side <= TOLERANCE_M
+    observed && (minimum_side >= -TOLERANCE_M || maximum_side <= TOLERANCE_M)
 }
 
 /// Bind pattern operands carried by adjacent feature-input objects.

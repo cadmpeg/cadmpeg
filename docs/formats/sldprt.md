@@ -172,6 +172,8 @@ An extended-prefix horizontal relation may carry a boundary-axis candidate in a 
 
 The selected axis line may be omitted from the curve roster while its two endpoint markers remain. In this form, exactly two coordinate-bearing point markers in the profile object are not endpoints of any indexed profile curve. Every endpoint-owned point marker in the object lies on one side of the infinite line through their chord. The two retained points are the revolution axis endpoints.
 
+The selected axis may instead omit its line while retaining one coordinate-bearing marker at the profile origin. Candidate axis lines pass through that origin marker and a profile-curve endpoint. Collinear candidates denote one line. Among candidates having every profile-curve endpoint on one side, the unique line incident to the greatest number of distinct profile-curve endpoints is the revolution axis.
+
 An omitted axis may coexist with other unreferenced coordinate handles. In this form, exactly two non-curve endpoint markers store little-endian u32 `1` at marker +76. Every endpoint-owned point marker lies on one side of the infinite line through the selected pair.
 
 An omitted axis may share its first point with a profile curve. Its sole non-curve endpoint immediately follows that shared coordinate-bearing point in the feature-local marker roster and stores little-endian u32 `1` at marker +76. Every endpoint-owned point marker lies on one side of the infinite line through the retained pair.
