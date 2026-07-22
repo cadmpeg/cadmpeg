@@ -1291,6 +1291,7 @@ fn multiplicative_relation_unit_symbol(symbol: &str) -> Option<(f64, RelationDim
         "kn" => (1_000_000.0, RelationDimension::FORCE),
         "dyne" => (0.01, RelationDimension::FORCE),
         "lbf" => (4_448.221_615_260_5, RelationDimension::FORCE),
+        "ton" => (9_806_650.0, RelationDimension::FORCE),
         "erg" => (
             0.1,
             RelationDimension::FORCE.combine(RelationDimension::LENGTH, false)?,
@@ -3915,6 +3916,7 @@ mod tests {
             "1[joule]/(1[N]*1[m])",
             "1[kW]/(1000[joule]/1[s])",
             "1[MPa]/1[N/mm^2]",
+            "1[ton]/(1000[kg]*9.80665[m/s^2])",
         ] {
             let Some(CurveExpressionValue::Number(value)) = evaluate_relation_expression(
                 expression,

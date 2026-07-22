@@ -2518,9 +2518,10 @@ are area units; `cu_mm`, `cu_cm`, `cu_m`, `cu_in`, and `cu_ft` are volume units.
 Mass symbols `kg`, `g`, `mg`, `lb`, `lbm`, `slug`, and `tonne` convert to
 kilograms. Time symbols `s`, `sec`, `second`, `Msec`, `min`, `minute`, `hr`,
 `hour`, and `day` convert to seconds. Force symbols `N`, `newton`, `kN`, `dyne`,
-and `lbf` convert to kilogram-millimeters per square second. `erg` and `joule`
-are energy units; `kW` and `MW` are power units; `Pa`, `MPa`, `GPa`, `psi`, and
-`ksi` are pressure units. Angle symbols `deg`, `degree`, `rad`, and `radian`
+`lbf`, and metric ton-force `ton` convert to kilogram-millimeters per square
+second. `erg` and `joule` are energy units; `kW` and `MW` are power units;
+`Pa`, `MPa`, `GPa`, `psi`, and `ksi` are pressure units. Angle symbols `deg`,
+`degree`, `rad`, and `radian`
 convert to relation degrees. Temperature symbols `K`, `C`, `F`, and `R`
 convert Kelvin, Celsius, Fahrenheit, and Rankine to canonical kelvin values.
 Unit symbols are ASCII case-insensitive. Unit multiplication, division,
