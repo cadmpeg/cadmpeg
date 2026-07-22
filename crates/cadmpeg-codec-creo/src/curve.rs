@@ -2116,6 +2116,79 @@ fn evaluate_creo_relation_function(
             name @ (CreoMathFunction::Sin | CreoMathFunction::Cos | CreoMathFunction::Tan),
             [Angle(value)],
         ) => Number(evaluate_creo_math_function(name, &[*value])?),
+        (
+            name @ (CreoMathFunction::Asin | CreoMathFunction::Acos | CreoMathFunction::Atan),
+            [Number(value)],
+        ) => Angle(evaluate_creo_math_function(name, &[*value])?),
+        (CreoMathFunction::Atan2, [left, right]) => {
+            let (left, left_dimension) = quantity_parts_ref(left)?;
+            let (right, right_dimension) = quantity_parts_ref(right)?;
+            (left_dimension == right_dimension).then_some(())?;
+            Angle(evaluate_creo_math_function(
+                CreoMathFunction::Atan2,
+                &[left, right],
+            )?)
+        }
+        (CreoMathFunction::If, [Number(condition), when_true, when_false]) => {
+            match (when_true, when_false) {
+                (String(_), String(_)) => {}
+                (when_true, when_false) => {
+                    let (_, true_dimension) = quantity_parts_ref(when_true)?;
+                    let (_, false_dimension) = quantity_parts_ref(when_false)?;
+                    (true_dimension == false_dimension).then_some(())?;
+                }
+            }
+            if *condition == 0.0 {
+                when_false.clone()
+            } else {
+                when_true.clone()
+            }
+        }
+        (CreoMathFunction::Sign, [value, sign]) => {
+            let (value, dimension) = quantity_parts_ref(value)?;
+            let (sign, _) = quantity_parts_ref(sign)?;
+            quantity_value(
+                if sign < 0.0 {
+                    -value.abs()
+                } else {
+                    value.abs()
+                },
+                dimension,
+            )
+        }
+        (CreoMathFunction::Mod, [left, right]) => {
+            let (left, left_dimension) = quantity_parts_ref(left)?;
+            let (right, right_dimension) = quantity_parts_ref(right)?;
+            (left_dimension == right_dimension && right != 0.0).then_some(())?;
+            quantity_value(left - (left / right).trunc() * right, left_dimension)
+        }
+        (CreoMathFunction::Bound, [value, lower, upper]) => {
+            let (value, value_dimension) = quantity_parts_ref(value)?;
+            let (lower, lower_dimension) = quantity_parts_ref(lower)?;
+            let (upper, upper_dimension) = quantity_parts_ref(upper)?;
+            (value_dimension == lower_dimension
+                && value_dimension == upper_dimension
+                && lower < upper)
+                .then_some(())?;
+            quantity_value(value.clamp(lower, upper), value_dimension)
+        }
+        (CreoMathFunction::Dead, [value, lower, upper]) => {
+            let (value, value_dimension) = quantity_parts_ref(value)?;
+            let (lower, lower_dimension) = quantity_parts_ref(lower)?;
+            let (upper, upper_dimension) = quantity_parts_ref(upper)?;
+            (value_dimension == lower_dimension
+                && value_dimension == upper_dimension
+                && lower <= upper)
+                .then_some(())?;
+            let value = if value < lower {
+                value - lower
+            } else if value > upper {
+                value - upper
+            } else {
+                0.0
+            };
+            quantity_value(value, value_dimension)
+        }
         (CreoMathFunction::Pow, [base, Number(exponent)]) => {
             base.clone().power(Number(*exponent))?
         }
@@ -2127,6 +2200,27 @@ fn evaluate_creo_relation_function(
         (CreoMathFunction::Abs, [argument]) => {
             let (value, dimension) = quantity_parts_ref(argument)?;
             quantity_value(value.abs(), dimension)
+        }
+        (name @ (CreoMathFunction::Ceil | CreoMathFunction::Floor), [argument]) => {
+            let (value, dimension) = quantity_parts_ref(argument)?;
+            quantity_value(
+                relation_round(value, 0.0, matches!(name, CreoMathFunction::Ceil))?,
+                dimension,
+            )
+        }
+        (
+            name @ (CreoMathFunction::Ceil | CreoMathFunction::Floor),
+            [argument, Number(decimal_places)],
+        ) => {
+            let (value, dimension) = quantity_parts_ref(argument)?;
+            quantity_value(
+                relation_round(
+                    value,
+                    *decimal_places,
+                    matches!(name, CreoMathFunction::Ceil),
+                )?,
+                dimension,
+            )
         }
         (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
             let (left_value, left_dimension) = quantity_parts_ref(left)?;
@@ -3709,6 +3803,57 @@ mod tests {
             ),
             Some(CurveExpressionValue::Number(1.0))
         );
+        let dimensioned_cases = [
+            ("if(1,2[cm],1[inch])", CurveExpressionValue::Length(20.0)),
+            (
+                "bound(30[mm],1[cm],2[cm])",
+                CurveExpressionValue::Length(20.0),
+            ),
+            (
+                "dead(25[mm],1[cm],2[cm])",
+                CurveExpressionValue::Length(5.0),
+            ),
+            ("mod(25[mm],1[cm])", CurveExpressionValue::Length(5.0)),
+            ("sign(2[cm],-1[s])", CurveExpressionValue::Length(-20.0)),
+            ("ceil(2.1[mm])", CurveExpressionValue::Length(3.0)),
+            ("floor(2.19[cm],1)", CurveExpressionValue::Length(21.9)),
+            ("atan(1)", CurveExpressionValue::Angle(45.0)),
+        ];
+        for (expression, expected) in dimensioned_cases {
+            assert_eq!(
+                evaluate_relation_expression(
+                    expression,
+                    &values,
+                    RelationEvaluationContext::default(),
+                ),
+                Some(expected),
+                "{expression}"
+            );
+        }
+        assert_eq!(
+            evaluate_relation_expression(
+                "atan2(1[cm],5[mm])",
+                &values,
+                RelationEvaluationContext::default(),
+            ),
+            Some(CurveExpressionValue::Angle(2.0f64.atan().to_degrees()))
+        );
+        for incompatible in [
+            "if(1,1[mm],1[s])",
+            "bound(1[mm],0[s],2[mm])",
+            "mod(1[mm],1[s])",
+            "atan2(1[mm],1[s])",
+        ] {
+            assert_eq!(
+                evaluate_relation_expression(
+                    incompatible,
+                    &values,
+                    RelationEvaluationContext::default(),
+                ),
+                None,
+                "{incompatible}"
+            );
+        }
         let force_ratio = evaluate_relation_expression(
             "1[lbf]/1[N]",
             &values,

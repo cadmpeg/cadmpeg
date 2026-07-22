@@ -52,6 +52,9 @@ fixtures, claims above L1 remain unproven.
   arithmetic. Length and angle results transfer as typed neutral values; other
   dimensions remain evaluated native values because the neutral parameter
   model has no corresponding scalar types.
+  Conditional selection, range and deadband functions, sign and remainder,
+  rounding, tolerance tests, and trigonometric results preserve dimensional
+  validity and typed angular results.
   Unit declarations on newly created assignment targets define typed parameter
   values and remain separate from parameter identity.
   A unique transferred dimension identity becomes the neutral parameter

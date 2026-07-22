@@ -2519,9 +2519,11 @@ parentheses, and signed integer powers form compound dimensions. Addition,
 subtraction, and comparison require equal dimensions. Multiplication and
 division add and subtract base-dimension powers. An integer power multiplies
 the powers, and `sqrt` divides even powers by two. `abs`, `min`, `max`, `near`,
-`dbl_in_tol`, and `pow` preserve or validate dimensions. Circular trigonometric
-functions accept angular quantities. Evaluated assignments retain their
-physical dimensions.
+`dbl_in_tol`, `pow`, `if`, `sign`, `mod`, `bound`, `dead`, `ceil`, and `floor`
+preserve or validate dimensions. Circular trigonometric functions accept
+angular quantities. Inverse circular trigonometric functions produce angular
+quantities; the two arguments of `atan2` require equal dimensions. Evaluated
+assignments retain their physical dimensions.
 An assignment target may append a bracketed unit expression only when that
 assignment creates the parameter. A dimensionless right-hand value is
 interpreted in the declared unit; an explicitly dimensioned right-hand value
