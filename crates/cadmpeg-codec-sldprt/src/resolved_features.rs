@@ -2,7 +2,7 @@
 //! Typed views over `SolidWorks` `ResolvedFeatures` sketch records.
 
 use crate::classification::{
-    classify, native_object_class, principal_plane, FeatureClass, NativeClassKind,
+    FeatureClass, NativeClassKind, classify, native_object_class, principal_plane,
 };
 use crate::records::{
     FeatureInputBodySelection, FeatureInputClass, FeatureInputClassRole,
@@ -12,6 +12,7 @@ use crate::records::{
     FeatureInputScalar, FeatureInputScalarRole, FeatureInputSurfaceSelection, SketchInputEntity,
     SketchInputKind, SketchInputLink, SketchRelationKind,
 };
+use cadmpeg_ir::Exactness;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::features::{
@@ -32,7 +33,6 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::Exactness;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -48,6 +48,10 @@ const NAME_MARKER: &[u8] = &[0x04, 0x80, 0xff, 0xfe, 0xff];
 const SCALAR_HEADER: &[u8] = &[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
     0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
+];
+const COMPACT_SCALAR_HEADER: &[u8] = &[
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00,
 ];
 const SKETCH_POINT_TOLERANCE: f64 = 1.0e-9;
 const SPATIAL_VERTEX_PREFIX: &[u8] = &[
@@ -639,6 +643,12 @@ pub(crate) fn reference_cells(scalars: &[FeatureInputScalar]) -> Vec<FeatureInpu
 }
 
 pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
+    if marker_is_geometry_locus(payload, offset)
+        && payload.get(offset + 31..offset + 37) == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00])
+    {
+        let id = u16::from_le_bytes(payload.get(offset + 37..offset + 39)?.try_into().ok()?);
+        return (id != u16::MAX).then_some(u32::from(id));
+    }
     let relative = if marker_local_links(payload, offset).is_some() {
         88
     } else if marker_coordinates(payload, offset).is_some() {
@@ -825,6 +835,9 @@ fn legacy_extended_profile_curve_kind(payload: &[u8], offset: usize) -> Option<S
 #[cfg(test)]
 mod marker_tests {
     use super::{
+        Angle, BooleanOp, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, CompactPointReferenceKind,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
+        Length, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
         alternate_current_indexed_curve_endpoint_indices,
         alternate_current_selected_axis_endpoint_indices, angled_reference_plane_frame,
         append_spatial_vertex, arc_angle_relation_kind, bind_indexed_curve_vertices,
@@ -874,10 +887,7 @@ mod marker_tests {
         sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
         spatial_vertex_coordinates, tangent_bounded_curve, unique_arc_center_marker,
         unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
-        wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind, Length,
-        CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
-        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
-        SKETCH_MARKER,
+        wide_indexed_curve_endpoint_indices,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -1101,12 +1111,14 @@ mod marker_tests {
             .len(),
             1
         );
-        assert!(relation_bindings(
-            "lane",
-            &[class],
-            &[scalar(FeatureInputOperandKind::Native(0x8dda))],
-        )
-        .is_empty());
+        assert!(
+            relation_bindings(
+                "lane",
+                &[class],
+                &[scalar(FeatureInputOperandKind::Native(0x8dda))],
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -1647,6 +1659,17 @@ mod marker_tests {
     }
 
     #[test]
+    fn geometry_locus_local_id_is_the_body_u16() {
+        let mut payload = vec![0; 80];
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[31..37].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00]);
+        payload[37..39].copy_from_slice(&5u16.to_le_bytes());
+        assert_eq!(marker_local_id(&payload, 0), Some(5));
+        payload[37..39].fill(0xff);
+        assert_eq!(marker_local_id(&payload, 0), None);
+    }
+
+    #[test]
     fn marker_object_index_precedes_the_marker() {
         let mut payload = 37u32.to_le_bytes().to_vec();
         payload.extend(super::SKETCH_MARKER);
@@ -2113,6 +2136,34 @@ mod marker_tests {
             resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x837b), 7,)
                 .map(|marker| marker.id.as_str()),
             Some("geometry")
+        );
+    }
+
+    #[test]
+    fn compact_point_operand_selects_the_authored_locus_from_placeholders() {
+        let marker = |id: &str, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: 0,
+            object_index: None,
+            local_id: Some(5),
+            kind: SketchInputKind::Point,
+            state_value: None,
+            coordinates_m: Some(coordinates_m),
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let markers = [
+            marker("placeholder-a", [0.0, 0.0]),
+            marker("placeholder-b", [0.0, 0.0]),
+            marker("authored", [1.0, 2.0]),
+        ];
+        assert_eq!(
+            resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x8152), 5)
+                .map(|marker| marker.id.as_str()),
+            Some("authored")
         );
     }
 
@@ -3147,9 +3198,11 @@ mod marker_tests {
         let components = component_reference_curve_path_at(&payload, marker).unwrap();
         assert_eq!(components.len(), 4);
         assert_eq!(components[0].instance, Some(0x8c20));
-        assert!(components
-            .iter()
-            .all(|component| component.local_id == Some(1)));
+        assert!(
+            components
+                .iter()
+                .all(|component| component.local_id == Some(1))
+        );
 
         payload[cursor + 8] ^= 1;
         assert_eq!(component_reference_curve_path_at(&payload, marker), None);
@@ -3183,6 +3236,50 @@ mod marker_tests {
         assert_eq!(scalar.object_id, 42);
         assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
         assert_eq!(scalar.entity_indices, [7, 9]);
+    }
+
+    #[test]
+    fn compact_scalar_header_ends_at_the_value() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(NAME_MARKER);
+        payload.push(2);
+        for unit in "D1".encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.extend_from_slice(super::COMPACT_SCALAR_HEADER);
+        payload.extend_from_slice(&0.025f64.to_le_bytes());
+        let trailer = payload.len();
+        payload.resize(trailer + 51, 0);
+        payload[trailer + 3..trailer + 7].copy_from_slice(&115u32.to_le_bytes());
+        payload[trailer + 21..trailer + 27].copy_from_slice(&[1, 0, 0, 0, 2, 0]);
+        payload[trailer + 27] = 0;
+        payload[trailer + 35..trailer + 37].copy_from_slice(&0x8152u16.to_le_bytes());
+        payload[trailer + 37..trailer + 39].copy_from_slice(&7u16.to_le_bytes());
+        payload[trailer + 39..trailer + 43].fill(0xff);
+        payload[trailer + 43..trailer + 45].copy_from_slice(&0x8152u16.to_le_bytes());
+        payload[trailer + 45..trailer + 47].copy_from_slice(&9u16.to_le_bytes());
+        payload[trailer + 47..trailer + 51].fill(0xff);
+
+        let names = object_names(&payload, "lane");
+        let scalars = named_scalars(&payload, "lane", &names);
+        let [scalar] = scalars.as_slice() else {
+            panic!("expected one scalar");
+        };
+        assert_eq!(scalar.value, 0.025);
+        assert_eq!(scalar.object_id, 115);
+        assert_eq!(scalar.role, super::FeatureInputScalarRole::Driving);
+        assert!(scalar.entity_indices.is_empty());
+        assert_eq!(
+            scalar
+                .operands
+                .iter()
+                .map(|operand| (operand.kind, operand.entity_index))
+                .collect::<Vec<_>>(),
+            [
+                (FeatureInputOperandKind::Native(0x8152), 7),
+                (FeatureInputOperandKind::Native(0x8152), 9),
+            ]
+        );
     }
 
     #[test]
@@ -6334,11 +6431,7 @@ pub(crate) fn named_scalars(
         .iter()
         .filter_map(|name| {
             let name_offset = usize::try_from(name.offset).ok()?;
-            let value_offset = scalar_value_offset(name_offset, &name.value)?;
-            let header_offset = value_offset.checked_sub(SCALAR_HEADER.len())?;
-            if payload.get(header_offset..value_offset)? != SCALAR_HEADER {
-                return None;
-            }
+            let value_offset = scalar_value_offset(payload, name_offset, &name.value)?;
             let value = f64::from_le_bytes(
                 payload
                     .get(value_offset..value_offset + 8)?
@@ -6390,11 +6483,16 @@ pub(crate) fn named_scalars(
         .collect()
 }
 
-fn scalar_value_offset(name_offset: usize, name: &str) -> Option<usize> {
-    name_offset
+fn scalar_value_offset(payload: &[u8], name_offset: usize, name: &str) -> Option<usize> {
+    let header_offset = name_offset
         .checked_add(NAME_MARKER.len() + 1)?
-        .checked_add(name.encode_utf16().count().checked_mul(2)?)?
-        .checked_add(SCALAR_HEADER.len())
+        .checked_add(name.encode_utf16().count().checked_mul(2)?)?;
+    [SCALAR_HEADER, COMPACT_SCALAR_HEADER]
+        .into_iter()
+        .find_map(|header| {
+            let value_offset = header_offset.checked_add(header.len())?;
+            (payload.get(header_offset..value_offset) == Some(header)).then_some(value_offset)
+        })
 }
 
 pub(crate) fn scalar_indices_match(
@@ -6435,6 +6533,26 @@ fn scalar_operands(
     parent: &str,
 ) -> Vec<FeatureInputOperand> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    if compact_scalar_layout(payload, trailer_offset) {
+        return [35, 43]
+            .into_iter()
+            .filter_map(|relative| {
+                let offset = trailer_offset.checked_add(relative)?;
+                let cell = payload.get(offset..offset + 8)?;
+                if cell[4..8] != [0xff; 4] {
+                    return None;
+                }
+                let kind = operand_kind([cell[0], cell[1]])?;
+                Some(FeatureInputOperand {
+                    offset: offset as u64,
+                    reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
+                    kind,
+                    entity_index: u16::from_le_bytes([cell[2], cell[3]]),
+                    entity_ref: None,
+                })
+            })
+            .collect();
+    }
     let first = if legacy_scalar_layout(payload, trailer_offset) {
         36
     } else {
@@ -9703,6 +9821,20 @@ fn resolve_operand_marker_excluding<'a>(
             .filter(|entity| !excluded.contains(&entity.id))
             .collect::<Vec<_>>()
     };
+    if kind == FeatureInputOperandKind::Native(0x8152) {
+        let nonzero = exact
+            .iter()
+            .copied()
+            .filter(|entity| {
+                entity
+                    .coordinates_m
+                    .is_some_and(|[u, v]| u != 0.0 || v != 0.0)
+            })
+            .collect::<Vec<_>>();
+        if let [entity] = nonzero.as_slice() {
+            return Some(*entity);
+        }
+    }
     match exact.as_slice() {
         [entity] => Some(*entity),
         [] => {
@@ -11249,7 +11381,9 @@ pub(crate) fn operand_accepts_marker(
 ) -> bool {
     match kind {
         FeatureInputOperandKind::D6
-        | FeatureInputOperandKind::Native(0x80cc | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69) => {
+        | FeatureInputOperandKind::Native(
+            0x80cc | 0x8152 | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69,
+        ) => {
             matches!(
                 marker,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
@@ -11648,7 +11782,7 @@ fn relation_signature(
     family: FeatureInputRelationFamily,
     operands: &[FeatureInputOperand],
 ) -> bool {
-    use FeatureInputOperandKind::{Native, D6, E1};
+    use FeatureInputOperandKind::{D6, E1, Native};
     use FeatureInputRelationFamily::{
         Angle, CircleDiameter, LineLineDistance, PointLineDistance, PointPointDistance,
         PointPointHorizontalDistance, PointPointVerticalDistance,
@@ -11666,6 +11800,7 @@ fn relation_signature(
     match family {
         PointPointDistance => {
             (first.kind == D6 && second.kind == D6)
+                || (first.kind == Native(0x8152) && second.kind == Native(0x8152))
                 || (first.kind == Native(0x837b) && second.kind == Native(0x837b))
                 || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc7c))
         }
@@ -11680,7 +11815,8 @@ fn relation_signature(
                 || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc87))
         }
         PointPointHorizontalDistance | PointPointVerticalDistance => {
-            first.kind == Native(0x8dcb) && second.kind == Native(0x8dcb)
+            (first.kind == Native(0x8152) && second.kind == Native(0x8152))
+                || (first.kind == Native(0x8dcb) && second.kind == Native(0x8dcb))
         }
         Angle => first.kind == Native(0x8dda) && second.kind == Native(0x8dda),
         CircleDiameter => unreachable!("handled as a unary relation"),
@@ -11693,7 +11829,9 @@ fn scalar_role(payload: &[u8], trailer_offset: usize) -> FeatureInputScalarRole 
             .get(trailer_offset + 7..trailer_offset + 21)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
         && payload.get(trailer_offset + 24..trailer_offset + 29) == Some(&[0, 0, 0, 2, 0]);
-    let role_offset = if fixed_layout {
+    let role_offset = if compact_scalar_layout(payload, trailer_offset) {
+        trailer_offset + 27
+    } else if fixed_layout {
         trailer_offset + 29
     } else if legacy_scalar_layout(payload, trailer_offset) {
         trailer_offset + 30
@@ -11705,6 +11843,19 @@ fn scalar_role(payload: &[u8], trailer_offset: usize) -> FeatureInputScalarRole 
         Some(1) => FeatureInputScalarRole::Display,
         _ => FeatureInputScalarRole::Native,
     }
+}
+
+fn compact_scalar_layout(payload: &[u8], trailer_offset: usize) -> bool {
+    payload.get(trailer_offset..trailer_offset + 3) == Some(&[0, 0, 0])
+        && payload
+            .get(trailer_offset + 7..trailer_offset + 21)
+            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+        && payload.get(trailer_offset + 21..trailer_offset + 27) == Some(&[1, 0, 0, 0, 2, 0])
+        && payload
+            .get(trailer_offset + 28..trailer_offset + 35)
+            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+        && payload.get(trailer_offset + 39..trailer_offset + 43) == Some(&[0xff; 4])
+        && payload.get(trailer_offset + 47..trailer_offset + 51) == Some(&[0xff; 4])
 }
 
 fn legacy_scalar_layout(payload: &[u8], trailer_offset: usize) -> bool {
@@ -14318,10 +14469,12 @@ mod idless_history_binding_tests {
 
         bind_history_classes(&mut histories, &[lane]);
 
-        assert!(histories[0]
-            .features
-            .iter()
-            .all(|feature| feature.input_class.as_deref() == Some("moHoleWzd_c")));
+        assert!(
+            histories[0]
+                .features
+                .iter()
+                .all(|feature| feature.input_class.as_deref() == Some("moHoleWzd_c"))
+        );
     }
 
     #[test]
@@ -14388,10 +14541,12 @@ mod idless_history_binding_tests {
 
         bind_history_classes(&mut histories, &[lane]);
 
-        assert!(histories[0]
-            .features
-            .iter()
-            .all(|feature| { feature.input_class.as_deref() == Some("moCosmeticThread_c") }));
+        assert!(
+            histories[0]
+                .features
+                .iter()
+                .all(|feature| { feature.input_class.as_deref() == Some("moCosmeticThread_c") })
+        );
     }
 }
 
@@ -15240,11 +15395,7 @@ pub(crate) fn project_marker_backed_sketches(
                     .and_then(|object| explicit_reference_plane_frame(object).ok().flatten())
                     .map(|(origin, normal, u_axis)| {
                         let finite_zero = |value: f64| {
-                            if value.abs() <= 1.0e-12 {
-                                0.0
-                            } else {
-                                value
-                            }
+                            if value.abs() <= 1.0e-12 { 0.0 } else { value }
                         };
                         (
                             Point3::new(
@@ -20185,8 +20336,8 @@ fn typed_marker_relation_definition_in_sketch(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
-        ArcAngle180, ArcAngle270, ArcAngle90, AtIntersection, Coincident, Collinear, Concentric,
-        Coradial, EllipseAngle180, EllipseAngle270, EllipseAngle90, Equal, Fixed, Horizontal,
+        ArcAngle90, ArcAngle180, ArcAngle270, AtIntersection, Coincident, Collinear, Concentric,
+        Coradial, EllipseAngle90, EllipseAngle180, EllipseAngle270, Equal, Fixed, Horizontal,
         HorizontalPoints, MergePoints, Midpoint, Parallel, Perpendicular, Symmetric, Tangent,
         Vertical, VerticalPoints,
     };
@@ -25053,9 +25204,10 @@ fn marker_entities_inner(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        binary_relation_matches_evaluated_geometry, bind_circle_dimension_centers,
-        bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
-        bind_sweep_adjacent_profiles, closed_marker_profiles, compact_line_reference_direction,
+        LEGACY_SKETCH_MARKER, MarkerTransform, binary_relation_matches_evaluated_geometry,
+        bind_circle_dimension_centers, bind_circular_profile_by_dimension,
+        bind_detached_relation_drivers, bind_pattern_inputs, bind_sweep_adjacent_profiles,
+        closed_marker_profiles, compact_line_reference_direction,
         dimensioned_circle_surface_transforms, dimensioned_circle_transform, fitted_marker_circle,
         implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
         marker_point_locus, owned_relation_parameters, profile_loci_by_marker,
@@ -25076,7 +25228,6 @@ mod profile_join_tests {
         unique_profile_line_point_locus, unique_profile_point_line_entity,
         unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
         unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
-        MarkerTransform, LEGACY_SKETCH_MARKER,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -25542,9 +25693,11 @@ mod profile_join_tests {
         assert_eq!(replacement_sketches.len(), 1);
         assert_eq!(replacement_sketches[0].id, expected_sketch);
         assert_eq!(replacement_entities.len(), 12);
-        assert!(replacement_entities
-            .iter()
-            .all(|entity| entity.sketch == expected_sketch));
+        assert!(
+            replacement_entities
+                .iter()
+                .all(|entity| entity.sketch == expected_sketch)
+        );
     }
 
     #[test]
@@ -25615,9 +25768,11 @@ mod profile_join_tests {
             };
         }
         resolve_connected_marker_arcs(&mut entities, 1.0e-8);
-        assert!(entities[3..]
-            .iter()
-            .all(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. })));
+        assert!(
+            entities[3..]
+                .iter()
+                .all(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
+        );
         entities.push(SketchEntity {
             id: SketchEntityId("entity-line".into()),
             sketch,
@@ -29754,9 +29909,11 @@ mod profile_join_tests {
         assert!(transform.swap);
         assert_eq!(transform.u_sign, 1);
         assert_eq!(transform.v_sign, 1);
-        assert!(markers
-            .into_iter()
-            .all(|point| loci.contains(&transform.apply(point).unwrap())));
+        assert!(
+            markers
+                .into_iter()
+                .all(|point| loci.contains(&transform.apply(point).unwrap()))
+        );
     }
 
     #[test]
@@ -31419,7 +31576,7 @@ fn validate_solved_dimension(
                     return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
                         "source-less SLDPRT radial dimension {} requires circular geometry",
                         constraint.id.0
-                    )))
+                    )));
                 }
             };
             if matches!(
@@ -32066,10 +32223,10 @@ mod source_less_lane_tests {
     };
 
     use super::{
-        append_coordinate_marker, append_coordinate_marker_link, append_generated_sketch_markers,
-        append_reference_marker, assemble_source_less_lanes, coordinate_marker_local_links,
-        generated_marker_relations, marker_local_links, validate_source_less_constraints,
-        GeneratedMarkerRelation,
+        GeneratedMarkerRelation, append_coordinate_marker, append_coordinate_marker_link,
+        append_generated_sketch_markers, append_reference_marker, assemble_source_less_lanes,
+        coordinate_marker_local_links, generated_marker_relations, marker_local_links,
+        validate_source_less_constraints,
     };
 
     fn generated_sketch() -> Sketch {
@@ -32217,10 +32374,12 @@ mod source_less_lane_tests {
             coordinate_marker_local_links(&payload, 0),
             Some((vec![2, 3], 0x8386))
         );
-        assert!(append_coordinate_marker_link(&mut payload, 1, 4)
-            .unwrap_err()
-            .to_string()
-            .contains("exceeds two reverse relations"));
+        assert!(
+            append_coordinate_marker_link(&mut payload, 1, 4)
+                .unwrap_err()
+                .to_string()
+                .contains("exceeds two reverse relations")
+        );
     }
 
     #[test]
@@ -32356,10 +32515,12 @@ mod source_less_lane_tests {
             second: SketchLocus::Entity(SketchEntityId("first".into())),
             axis: SketchEntityId("axis".into()),
         };
-        assert!(validate_source_less_constraints(&ir)
-            .unwrap_err()
-            .to_string()
-            .contains("repeats one locus"));
+        assert!(
+            validate_source_less_constraints(&ir)
+                .unwrap_err()
+                .to_string()
+                .contains("repeats one locus")
+        );
     }
 }
 
@@ -32813,7 +32974,7 @@ fn append_generated_sketch_markers(
                 return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
                     "source-less SLDPRT angular dimension {} has a length value",
                     parameter.id.0
-                )))
+                )));
             }
             (Some(cadmpeg_ir::features::ParameterValue::Angle(value)), "sgAnglDim") => value.0,
             (Some(cadmpeg_ir::features::ParameterValue::Length(value)), _) => value.0 * 0.001,
@@ -32821,7 +32982,7 @@ fn append_generated_sketch_markers(
                 return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
                     "source-less SLDPRT dimension parameter {} has no compatible evaluated value",
                     parameter.id.0
-                )))
+                )));
             }
         };
         append_generated_scalar(payload, class, &parameter.name, value, next_id, &operands)?;
@@ -33731,7 +33892,7 @@ fn patch_line_profiles(
                 _ => {
                     return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
                         "SLDPRT sketch write-back does not support this curve family".into(),
-                    ))
+                    ));
                 }
             }
         }
@@ -33898,7 +34059,7 @@ fn patch_direct_curve_body(
         _ => {
             return Err(cadmpeg_ir::codec::CodecError::Malformed(
                 "SLDPRT sketch carrier family changed".into(),
-            ))
+            ));
         }
     };
     let center = lift_point(center_2d, request.origin, request.u_axis, request.v_axis);
