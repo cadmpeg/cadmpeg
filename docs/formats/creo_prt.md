@@ -1838,7 +1838,12 @@ feature rows.
 A mixed generated-entity table opens as
 `f8 <count> f7 <table-class> fb e3`. The first entry can begin with
 `f7 <entry-class>`; table and entry schema-class identifiers vary by schema
-stream. Exactly `count` entries follow, each ending at `e3`.
+stream. A first counted prototype stores that prefixed class, its identifier,
+and its body without repeating the class after the identifier. Positional
+entries store their identifier and repeated class. Exactly `count` entries
+follow. An entry normally ends at `e3`. A final class-200 entry with one-byte
+body `00` or `01` can end immediately before the `f2 f7` separator that opens
+the following table's inherited-class prefix.
 
 When a section-sweep feature has one `dtm_id_tab` entry equal to its
 `gsec3d_ptr.sketch_plane_entity_id`, generated-table entry classes 204 and 203
@@ -2120,7 +2125,7 @@ center and increasing full-turn parameterization; side pcurves run from zero
 through `2π` at constant sweep offset.
 Each cap's sole loop is its outer boundary.
 
-A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. The array's compact-integer count is not limited to a one-byte or 64-entry range. Each declared entry has an optional `f7 1e` prefix, a canonical entity-reference identifier, a compact entry class, a positional body, and an `e3` close within the bounded feature row. A class `200` entry carries its source section entity's external identifier immediately after the class when that lane is populated; a structural marker in that position leaves the source absent. The record close follows these typed compact lanes; an `e3` byte can be the low byte of their canonical two-byte form. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
+A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. The array's compact-integer count is not limited to a one-byte or 64-entry range. A positional entry has a canonical entity-reference identifier, a compact entry class, and a positional body. The first counted entry can instead be a prototype whose `f7 <entry-class>` prefix supplies the class omitted after its identifier. A class `200` entry carries its source section entity's external identifier immediately after the class when that lane is populated; a structural marker in that position leaves the source absent. An entry normally closes with `e3`; the final class-200 entry can terminate at the following `f2 f7` table separator after its one-byte `00` or `01` body. An `e3` byte inside a canonical two-byte typed integer is not a record close. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
 
 In a mixed generated-entity table whose leading run has entry class `254`,
 that run is the ordered visible-surface sequence. Entry-class `214` rows after

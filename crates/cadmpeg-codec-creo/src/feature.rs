@@ -412,7 +412,9 @@ pub struct FeatureEntityTableEntry {
     pub prefixed: bool,
     /// Byte offset of the entity identifier in the original stream.
     pub offset: usize,
-    /// Byte offset immediately after the record's structural `e3` close.
+    /// Byte offset immediately after the entry body. This follows the
+    /// structural `e3`, or points at the enclosing `f2 f7` table separator
+    /// when the final entry uses that separator as its terminator.
     pub end_offset: usize,
 }
 
@@ -6578,15 +6580,22 @@ fn read_entries(
     (count <= remaining / 2).then_some(())?;
     let mut entries = Vec::with_capacity(count);
     let mut cursor = body_start;
-    for _ in 0..count {
-        let prefixed = payload.get(cursor) == Some(&psb::token::ENTITY_REF);
-        if prefixed {
-            let (_, after_class) = psb::reference_id(payload, cursor + 1).ok()?;
+    for index in 0..count {
+        let prefixed_class = (payload.get(cursor) == Some(&psb::token::ENTITY_REF))
+            .then(|| psb::reference_id(payload, cursor + 1).ok())
+            .flatten();
+        let prefixed = prefixed_class.is_some();
+        if let Some((_, after_class)) = prefixed_class {
             cursor = after_class;
         }
         let offset = cursor;
         let (id, after) = psb::reference_id(payload, cursor).ok()?;
-        let (class_id, after_class) = psb::reference_id(payload, after).ok()?;
+        let (class_id, after_class) = psb::reference_id(payload, after).ok().or_else(|| {
+            (index == 0)
+                .then_some(prefixed_class)
+                .flatten()
+                .map(|(class_id, _)| (class_id, after))
+        })?;
         let (source_entity_id, body_start) = if class_id == 200 {
             match psb::reference_id(payload, after_class) {
                 Ok((order, after_order)) => (Some(order), after_order),
@@ -6595,11 +6604,22 @@ fn read_entries(
         } else {
             (None, after_class)
         };
-        let close = payload
-            .get(body_start..)?
-            .iter()
-            .position(|&byte| byte == 0xe3)?;
-        let end_offset = body_start + close + 1;
+        let terminal_table_separator = (index + 1 == count
+            && class_id == 200
+            && matches!(payload.get(body_start), Some(0x00 | 0x01))
+            && payload.get(body_start + 1..body_start + 3)
+                == Some(&[0xf2, psb::token::ENTITY_REF]))
+        .then_some(body_start + 1);
+        let end_offset = if let Some(end_offset) = terminal_table_separator {
+            end_offset
+        } else {
+            body_start
+                + payload
+                    .get(body_start..)?
+                    .iter()
+                    .position(|&byte| byte == 0xe3)?
+                + 1
+        };
         entries.push(FeatureEntityTableEntry {
             entity_id: id,
             class_id,
@@ -6678,6 +6698,34 @@ pub fn entity_tables(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn final_generated_entry_may_terminate_at_the_table_separator() {
+        let payload = [10, 0x80, 200, 4, 0, 0xe3, 11, 0x80, 200, 7, 1, 0xf2, 0xf7];
+        let entries = read_entries(&payload, 0, 2).expect("complete generated table");
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].source_entity_id, Some(4));
+        assert_eq!(entries[0].end_offset, 6);
+        assert_eq!(entries[1].source_entity_id, Some(7));
+        assert_eq!(entries[1].end_offset, 11);
+    }
+
+    #[test]
+    fn generated_table_prototype_uses_its_prefixed_entry_class() {
+        let payload = [0xf7, 30, 20, 0xe4, 0xe3, 11, 0x80, 200, 7, 1, 0xe3];
+        let entries = read_entries(&payload, 0, 2).expect("prototype and positional entry");
+
+        assert_eq!(entries[0].entity_id, 20);
+        assert_eq!(entries[0].class_id, 30);
+        assert!(entries[0].prefixed);
+        assert_eq!(entries[0].end_offset, 5);
+        assert_eq!(entries[1].class_id, 200);
+        assert_eq!(entries[1].source_entity_id, Some(7));
+
+        let misplaced = [10, 30, 0, 0xe3, 0xf7, 31, 20, 0xe4, 0xe3];
+        assert!(read_entries(&misplaced, 0, 2).is_none());
+    }
 
     #[test]
     fn choice_fields_ignore_overlapping_headers() {
