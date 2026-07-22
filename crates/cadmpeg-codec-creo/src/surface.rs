@@ -1432,9 +1432,26 @@ pub fn positional_frame_planes(
             (record.body.ends_with(&[0xf7, 0x0c]) && corners.len() == 6)
                 .then(|| (corners[0].offset, corners))
         })();
+        let terminal_corner_frame = (|| {
+            let frame_end = record.body.len().checked_sub(2)?;
+            (record.body.first() == Some(&0x37) && record.body.ends_with(&[0xf7, 0x1f]))
+                .then_some(())?;
+            let [terminal] = record.scalar_frames.as_slice() else {
+                return None;
+            };
+            ((6..=10).contains(&terminal.slots.len())
+                && terminal
+                    .slots
+                    .last()
+                    .is_some_and(|slot| slot.offset.checked_add(slot.length) == Some(frame_end)))
+            .then_some(())?;
+            let corners = &terminal.slots[terminal.slots.len() - 6..];
+            Some((corners[0].offset, corners))
+        })();
         let mut candidates = marked_frames
             .chain(auxiliary_frame)
             .chain(suffixed_auxiliary_frame)
+            .chain(terminal_corner_frame)
             .filter_map(|(offset, slots)| {
                 let values = slots
                     .iter()
@@ -7103,6 +7120,63 @@ mod tests {
             slots: vec![slot(1.0, 18, 1)],
         });
         assert!(positional_frame_planes(&[short], &[row]).is_empty());
+    }
+
+    #[test]
+    fn derives_plane_from_terminal_corner_frame() {
+        let body = [
+            0x37, 0x01, 0x5f, 0xff, 0xff, 0xff, 0xff, 0xf4, 0x2d, 0x4c, 0x75, 0xdb, 0x19, 0xc2,
+            0x89, 0x40, 0x2e, 0x17, 0xff, 0x2d, 0x4f, 0x01, 0x49, 0xdf, 0x84, 0xdb, 0x18, 0x48,
+            0x57, 0x00, 0x2d, 0x57, 0xd0, 0x03, 0xc5, 0xbc, 0xeb, 0x74, 0xda, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x11, 0x47, 0x56, 0xff, 0x2d, 0x59, 0x15, 0xbb, 0x28, 0x9e, 0x14, 0x60,
+            0x2e, 0x07, 0xff, 0xf7, 0x1f,
+        ];
+        let mut payload = vec![7, 0x22, 4, 0x01, 0, 0];
+        payload.extend_from_slice(&body);
+        payload.push(0xe3);
+        let record = parameter_records(&payload).remove(0);
+        let row = SurfaceRow {
+            id: record.surface_id,
+            type_byte: SurfaceKind::Plane.canonical_type_byte(),
+            kind: SurfaceKind::Plane,
+            feature_id: 17,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 3,
+        };
+
+        assert_eq!(
+            positional_frame_planes(&[record.clone()], &[row.clone()]),
+            vec![OutlinePlane {
+                surface_id: record.surface_id,
+                origin: [-92.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                u_axis: [0.0, 1.0, 0.0],
+                offset: record.body_offset + 27,
+            }]
+        );
+
+        let mut wrong_trailer = record.clone();
+        *wrong_trailer
+            .body
+            .last_mut()
+            .expect("terminal reference id") = 0x1e;
+        assert!(positional_frame_planes(&[wrong_trailer], &[row.clone()]).is_empty());
+
+        let mut multiple_frames = record.clone();
+        multiple_frames.scalar_frames.insert(
+            0,
+            SurfaceParameterScalarFrame {
+                offset: 0,
+                slots: vec![multiple_frames.scalar_frames[0].slots[0].clone()],
+            },
+        );
+        assert!(positional_frame_planes(&[multiple_frames], &[row.clone()]).is_empty());
+
+        let mut ambiguous = record;
+        ambiguous.scalar_frames[0].slots[7].value = Some(-95.250_230_249_874_05);
+        assert!(positional_frame_planes(&[ambiguous], &[row]).is_empty());
     }
 
     #[test]

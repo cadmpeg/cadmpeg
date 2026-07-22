@@ -295,6 +295,13 @@ coordinate. The other two coordinate pairs are byte-distinct. This defines
 the plane equation independently of the positional `local_sys`; it does not
 define the plane's parameter-space reference direction.
 
+A terminal-corner positional plane body begins `37`, ends `f7 1f`, and has
+one scalar frame ending immediately before that trailer. The frame contains
+six through ten scalars. Its final six scalars are two model-space XYZ diagonal
+corners; preceding frame scalars and bytes do not contribute to the plane
+equation. Exactly one corner-coordinate pair is equal. That held coordinate
+defines the axis-aligned plane equation.
+
 A complete positional cylinder body begins `11 18 13`, followed by axial
 length and the first corner's three coordinates, then the second corner's first
 two coordinates in the positional surface-row scalar lane. An opaque third
