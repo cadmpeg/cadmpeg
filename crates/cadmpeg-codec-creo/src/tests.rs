@@ -4736,8 +4736,9 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
 #[test]
 fn decode_transfers_evaluated_curve_expression_strings() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x0aexpression\0\xf8\x05material='steel'\0label=material+'-'+itos(2)\0\
-        length=string_length(label)\0match=label=='steel-2'\0formatted=rtos(123.456,2)\0"
+        \xe0\x0aexpression\0\xf8\x06material='steel'\0label=material+'-'+itos(2)\0\
+        length=string_length(label)\0match=label=='steel-2'\0formatted=rtos(123.456,2)\0\
+        kind=rel_model_type()\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
@@ -4768,6 +4769,12 @@ fn decode_transfers_evaluated_curve_expression_strings() {
         parameters[4].value,
         Some(cadmpeg_ir::features::ParameterValue::String(
             "123.46".to_owned()
+        ))
+    );
+    assert_eq!(
+        parameters[5].value,
+        Some(cadmpeg_ir::features::ParameterValue::String(
+            "part".to_owned()
         ))
     );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());

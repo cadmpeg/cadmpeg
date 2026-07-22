@@ -1413,6 +1413,7 @@ enum CreoMathFunction {
     DblInTol,
     Itos,
     Rtos,
+    RelModelType,
     Search,
     Extract,
     StringLength,
@@ -1451,6 +1452,7 @@ fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
         "dbl_in_tol" => Some(CreoMathFunction::DblInTol),
         "itos" => Some(CreoMathFunction::Itos),
         "rtos" => Some(CreoMathFunction::Rtos),
+        "rel_model_type" => Some(CreoMathFunction::RelModelType),
         "search" => Some(CreoMathFunction::Search),
         "extract" => Some(CreoMathFunction::Extract),
         "string_length" => Some(CreoMathFunction::StringLength),
@@ -1547,6 +1549,7 @@ fn evaluate_creo_relation_function(
                 *scientific != 0.0,
             )?)
         }
+        (CreoMathFunction::RelModelType, []) => String("part".to_owned()),
         (CreoMathFunction::Search, [String(value), String(needle)]) => {
             let position = value
                 .find(needle)
@@ -2944,6 +2947,7 @@ mod tests {
             ("rtos(0)", ""),
             ("rtos(-0,3,YES)", ""),
             ("rtos(0.01234,2,TRUE)", "1.23e-02"),
+            ("rel_model_type()", "part"),
         ];
         for (expression, expected) in cases {
             assert_eq!(
