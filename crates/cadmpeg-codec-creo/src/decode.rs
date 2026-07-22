@@ -36577,6 +36577,16 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         .and_then(|source| source.attributes.get("transferred_positional_cone_count"))
         .and_then(|count| count.parse::<usize>().ok())
         .unwrap_or(0);
+    let positional_cylinder_count = ir
+        .source
+        .as_ref()
+        .and_then(|source| {
+            source
+                .attributes
+                .get("transferred_positional_cylinder_count")
+        })
+        .and_then(|count| count.parse::<usize>().ok())
+        .unwrap_or(0);
     let paired_envelope_sphere_count = ir
         .source
         .as_ref()
@@ -36708,6 +36718,18 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             message: format!(
                 "Transferred {positional_torus_count} exact positional torus carrier(s) from \
                  complete local-system, radius, and five-coordinate envelope bodies."
+            ),
+            provenance: None,
+        });
+    }
+
+    if !container_only && positional_cylinder_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {positional_cylinder_count} exact positional cylinder carrier(s) \
+                 from complete per-instance parameter bodies."
             ),
             provenance: None,
         });

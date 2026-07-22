@@ -1040,6 +1040,33 @@ fn decode_places_complete_positional_torus() {
 }
 
 #[test]
+fn decode_reports_transferred_positional_cylinders() {
+    let body = [
+        17, 72, 0, 0, 19, 24, 72, 55, 192, 70, 29, 255, 255, 255, 255, 255, 143, 72, 38, 0, 72, 52,
+        64, 70, 21, 255, 255, 255, 255, 255, 143, 72, 34, 128,
+    ];
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
+    payload.extend(body);
+    payload.push(0xe3);
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode positional cylinder");
+
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes["transferred_positional_cylinder_count"],
+        "1"
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("1 exact positional cylinder carrier")));
+}
+
+#[test]
 fn decode_places_paired_five_coordinate_sphere_envelopes() {
     let lower = [
         0x18, 0x18, 0x01, 0x11, 0x2e, 0xb0, 0x12, 0x47, 0x05, 0x33, 0x2d, 0x2d, 0xff, 0xff, 0xff,
