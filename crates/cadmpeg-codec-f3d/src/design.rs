@@ -32,10 +32,10 @@ use crate::records::{
     SketchRelationOperand, SketchSurface, SketchText,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
-use cadmpeg_ir::le::{
-    f64_at, f64s_at, lp_u32_bytes_at, u32_at, u32_at as read_u32, u64_at as read_u64, utf16le_at,
-};
+use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u32_at as read_u32, u64_at as read_u64, utf16le_at};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+
+use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
 
 use crate::container::{role, ContainerScan};
 
@@ -13645,7 +13645,7 @@ pub fn decode_parameters(
 }
 
 fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
-    let (class_tag, after_tag) = lp_ascii(payload, 0)?;
+    let (class_tag, after_tag) = lp_ascii_filtered(payload, 0, 0..=2000, u8::is_ascii_graphic)?;
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || after_tag != 7
@@ -13662,19 +13662,19 @@ fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
         1 if payload.get(40..46) == Some(&[0; 6]) => (Some(u32_at(payload, 36)?), 46, [0; 9]),
         _ => return None,
     };
-    let (expression, expression_end) = lp_utf16(payload, expression_at)?;
+    let (expression, expression_end) = lp_utf16_bounded(payload, expression_at, 1..=256)?;
     if payload.get(expression_end..expression_end + 9) != Some(&expression_trailer) {
         return None;
     }
     let source_kind_at = if owner_record_index.is_some()
         && payload.get(expression_end..expression_end + 10) == Some(&[0; 10])
-        && lp_utf16(payload, expression_end + 10).is_some()
+        && lp_utf16_bounded(payload, expression_end + 10, 1..=256).is_some()
     {
         expression_end + 10
     } else {
         expression_end + 9
     };
-    let (source_kind, source_kind_end) = lp_utf16(payload, source_kind_at)?;
+    let (source_kind, source_kind_end) = lp_utf16_bounded(payload, source_kind_at, 1..=256)?;
     if u32_at(payload, source_kind_end) != Some(0)
         || !valid_design_parameter_prefix(prefix_value, &source_kind)
     {
@@ -13683,11 +13683,11 @@ fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
     let first_at = source_kind_end + 4;
     let (unit, unit_offset, name, name_at, name_end) = if u32_at(payload, first_at) == Some(0) {
         let name_at = first_at + 4;
-        let (name, name_end) = lp_utf16(payload, name_at)?;
+        let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
         (None, None, name, name_at, name_end)
     } else {
-        let (first, first_end) = lp_utf16(payload, first_at)?;
-        if let Some((second, second_end)) = lp_utf16(payload, first_end) {
+        let (first, first_end) = lp_utf16_bounded(payload, first_at, 1..=256)?;
+        if let Some((second, second_end)) = lp_utf16_bounded(payload, first_end, 1..=256) {
             (
                 Some(first),
                 Some(first_at + 4),
@@ -13816,7 +13816,7 @@ pub fn decode_parameter_owners(
 }
 
 fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
-    let (class_tag, after_tag) = lp_ascii(frame, 0)?;
+    let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != 7
         || class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -13984,7 +13984,7 @@ pub fn decode_parameter_companions(
 }
 
 fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameterCompanion> {
-    let (class_tag, after_tag) = lp_ascii(prefix, 0)?;
+    let (class_tag, after_tag) = lp_ascii_filtered(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
     if prefix.len() != 58
         || after_tag != 7
         || class_tag.len() != 3
@@ -14198,12 +14198,15 @@ pub(crate) fn decode_recipe_references(
             return Vec::new();
         };
         let token_encoding_at = at + 4;
-        let length_prefixed = lp_ascii(prefix, token_encoding_at).and_then(|(token, marker_at)| {
-            (!token.is_empty()
-                && token.bytes().all(|byte| byte.is_ascii_digit())
-                && u32_at(prefix, marker_at) == Some(0))
-            .then_some((token, token_encoding_at + 4, marker_at + 4))
-        });
+        let length_prefixed =
+            lp_ascii_filtered(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic).and_then(
+                |(token, marker_at)| {
+                    (!token.is_empty()
+                        && token.bytes().all(|byte| byte.is_ascii_digit())
+                        && u32_at(prefix, marker_at) == Some(0))
+                    .then_some((token, token_encoding_at + 4, marker_at + 4))
+                },
+            );
         let packed = (1usize..=8).find_map(|length| {
             let token = prefix.get(token_encoding_at..token_encoding_at + length)?;
             let zero_at = token_encoding_at.checked_add(length)?;
@@ -14473,7 +14476,7 @@ fn indexed_record_containing(
             return containing
                 .map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, at));
         }
-        let (class_tag, after_tag) = lp_ascii(bytes, at)?;
+        let (class_tag, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         containing = Some((at, class_tag, u32_at(bytes, after_tag)?));
         cursor = at + 11;
     }
@@ -14664,7 +14667,7 @@ fn parse_dimension_locus_pair(
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusPair> {
-    let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     let record_index = u32_at(bytes, after_tag)?;
     if after_tag != start.checked_add(7)?
         || class_tag.len() != 3
@@ -14692,7 +14695,8 @@ fn parse_dimension_locus_pair(
     let mut position = start.checked_add(69)?;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, position)?;
-        let (candidate_tag, candidate_after_tag) = lp_ascii(bytes, at)?;
+        let (candidate_tag, candidate_after_tag) =
+            lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if u32_at(bytes, candidate_after_tag) == Some(record_index) {
             break (at, candidate_tag);
         }
@@ -14879,7 +14883,7 @@ fn parse_dimension_null_locus_pair(
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
 ) -> Option<DesignDimensionNullLocusPair> {
-    let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     let record_index = u32_at(bytes, after_tag)?;
     if after_tag != start.checked_add(7)?
         || class_tag.len() != 3
@@ -14902,7 +14906,8 @@ fn parse_dimension_null_locus_pair(
     let mut position = start.checked_add(54)?;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, position)?;
-        let (candidate_tag, candidate_after_tag) = lp_ascii(bytes, at)?;
+        let (candidate_tag, candidate_after_tag) =
+            lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if u32_at(bytes, candidate_after_tag) == Some(record_index) {
             break (at, candidate_tag);
         }
@@ -15097,7 +15102,7 @@ fn parse_dimension_annotation_frame(
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
 ) -> Option<DesignDimensionAnnotationFrame> {
-    let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != start.checked_add(7)?
         || class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -15134,8 +15139,9 @@ fn parse_dimension_annotation_frame(
     if bytes.get(position) != Some(&1) || u32_at(bytes, position + 1) != Some(1) {
         return None;
     }
-    let (key, after_key) = lp_ascii(bytes, position + 5)?;
-    let (meta_type, after_type) = lp_ascii(bytes, after_key)?;
+    let (key, after_key) = lp_ascii_filtered(bytes, position + 5, 0..=2000, u8::is_ascii_graphic)?;
+    let (meta_type, after_type) =
+        lp_ascii_filtered(bytes, after_key, 0..=2000, u8::is_ascii_graphic)?;
     if key != "EntityGenesis" || meta_type != "IntrinsicMetaTypeuint64" {
         return None;
     }
@@ -15145,7 +15151,7 @@ fn parse_dimension_annotation_frame(
     let mut paired_search = annotation_byte_offset;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, paired_search)?;
-        let (tag, after) = lp_ascii(bytes, at)?;
+        let (tag, after) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if u32_at(bytes, after) == Some(record_index) {
             break (at, tag);
         }
@@ -15478,7 +15484,7 @@ fn parse_dimension_locus_group(
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusGroup> {
-    let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != start.checked_add(7)?
         || class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -15553,7 +15559,8 @@ fn parse_dimension_locus_group(
         return None;
     }
     let next_byte_offset = position.checked_add(1)?;
-    let (next_class_tag, next_after_tag) = lp_ascii(bytes, next_byte_offset)?;
+    let (next_class_tag, next_after_tag) =
+        lp_ascii_filtered(bytes, next_byte_offset, 0..=2000, u8::is_ascii_graphic)?;
     if next_after_tag != next_byte_offset.checked_add(7)?
         || next_class_tag.len() != 3
         || !next_class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -15691,7 +15698,8 @@ fn exact_copy_paste_bodies_operation(
         .checked_add(1)?;
     let body_group_at =
         next_indexed_record_offset_with_index(bytes, search_at, body_group_record_index)?;
-    let (body_group_class_tag, body_group_after_tag) = lp_ascii(bytes, body_group_at)?;
+    let (body_group_class_tag, body_group_after_tag) =
+        lp_ascii_filtered(bytes, body_group_at, 0..=2000, u8::is_ascii_graphic)?;
     let body_group_after_index = body_group_after_tag.checked_add(4)?;
     if bytes.get(body_group_after_index..body_group_after_index + 10)? != [0; 10] {
         return None;
@@ -15715,7 +15723,8 @@ fn exact_copy_paste_bodies_operation(
     }
     let relation_at =
         next_indexed_record_offset_with_index(bytes, search_at, relation_record_index)?;
-    let (relation_class_tag, after_tag) = lp_ascii(bytes, relation_at)?;
+    let (relation_class_tag, after_tag) =
+        lp_ascii_filtered(bytes, relation_at, 0..=2000, u8::is_ascii_graphic)?;
     let after_index = after_tag.checked_add(4)?;
     if bytes.get(after_index..after_index + 8)? != [0; 8] {
         return None;
@@ -16018,7 +16027,8 @@ fn exact_fixed_scalar(bytes: &[u8], record_index: u32) -> Option<FixedScalarFram
             let frame_length = pair[1].checked_sub(start)?;
             matches!(frame_length, 100 | 104 | 105).then_some(())?;
             if frame_length == 100 {
-                let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+                let (class_tag, after_tag) =
+                    lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
                 if after_tag != start + 7
                     || class_tag.len() != 3
                     || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -16130,7 +16140,8 @@ fn exact_move_operation(bytes: &[u8], scope: &DesignParameterScope) -> Option<De
     let mut candidates = Vec::new();
     for record_index in &scope.reference_members {
         for (start, paired) in indexed_record_pairs(bytes, *record_index) {
-            let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+            let (class_tag, after_tag) =
+                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
             let frame_length = paired.checked_sub(start)?;
             if u32_at(bytes, after_tag) != Some(*record_index)
                 || bytes.get(start + 11..start + 43) != Some(&[0; 32])
@@ -16520,7 +16531,8 @@ fn exact_work_point_position(
     let mut candidates = Vec::new();
     for record_index in &scope.reference_members {
         for (start, paired) in indexed_record_pairs(bytes, *record_index) {
-            let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+            let (class_tag, after_tag) =
+                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
             if class_tag != "282" || u32_at(bytes, after_tag) != Some(*record_index) {
                 continue;
             }
@@ -16578,7 +16590,9 @@ fn parameter_scope_candidate_headers(bytes: &[u8]) -> Vec<DesignRecordHeader> {
     let mut indexed = HashMap::<u32, Vec<(usize, String)>>::new();
     let mut position = 0;
     while let Some(at) = next_indexed_record_offset(bytes, position) {
-        if let Some((class_tag, after_tag)) = lp_ascii(bytes, at) {
+        if let Some((class_tag, after_tag)) =
+            lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)
+        {
             if let Some(record_index) = u32_at(bytes, after_tag) {
                 indexed
                     .entry(record_index)
@@ -17538,8 +17552,10 @@ fn parse_construction_operand_group(
         {
             return None;
         }
-        let (property, after_property) = lp_ascii(bytes, start + 25)?;
-        let (property_type, after_property_type) = lp_ascii(bytes, after_property)?;
+        let (property, after_property) =
+            lp_ascii_filtered(bytes, start + 25, 0..=2000, u8::is_ascii_graphic)?;
+        let (property_type, after_property_type) =
+            lp_ascii_filtered(bytes, after_property, 0..=2000, u8::is_ascii_graphic)?;
         if property != "DcFeatureOperationIdFlag" || property_type != "IntrinsicMetaTypeuint64" {
             return None;
         }
@@ -17611,7 +17627,8 @@ fn parse_construction_operand_group(
     } else {
         return None;
     };
-    let (paired_class_tag, after_tag) = lp_ascii(bytes, paired_at)?;
+    let (paired_class_tag, after_tag) =
+        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     if u32_at(bytes, after_tag)? != header.record_index {
         return None;
     }
@@ -17790,7 +17807,8 @@ fn parse_construction_operand_identity(
         wrapper_byte_offsets.push(u64::try_from(current_at).ok()?);
         wrapper_class_tags.push(current_class_tag);
         current_at = current_at.checked_add(24)?;
-        let (next_class_tag, after_next_tag) = lp_ascii(bytes, current_at)?;
+        let (next_class_tag, after_next_tag) =
+            lp_ascii_filtered(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
         current_record_index = u32_at(bytes, after_next_tag)?;
         current_class_tag = next_class_tag;
     }
@@ -17874,7 +17892,8 @@ fn parse_extrude_selection_group(
         return None;
     }
     let paired_at = position.checked_add(53)?;
-    let (paired_class_tag, after_paired_tag) = lp_ascii(bytes, paired_at)?;
+    let (paired_class_tag, after_paired_tag) =
+        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     if u32_at(bytes, after_paired_tag)? != header.record_index {
         return None;
     }
@@ -18001,10 +18020,10 @@ fn parse_entity_selection_operand(
     {
         return None;
     }
-    let (asset_id, after_asset_id) = lp_utf16(bytes, start + 36)?;
-    let (context_id, after_context_id) = lp_utf16(bytes, after_asset_id)?;
-    if !is_guid(&asset_id)
-        || !is_guid(&context_id)
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 36, 1..=256)?;
+    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+    if !is_guid_relaxed(&asset_id)
+        || !is_guid_relaxed(&context_id)
         || u32_at(bytes, after_context_id)? != 2
         || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
     {
@@ -18032,7 +18051,7 @@ fn parse_entity_selection_operand(
     .into_iter()
     .zip(expected)
     {
-        let (_, after_tag) = lp_ascii(bytes, offset)?;
+        let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
         if u32_at(bytes, after_tag)? != expected {
             return None;
         }
@@ -18150,7 +18169,7 @@ fn body_recipe_operand_end(bytes: &[u8], start: usize, record_index: u32) -> Opt
     .enumerate()
     {
         let at = next_indexed_record_offset(bytes, search)?;
-        let (_, after_tag) = lp_ascii(bytes, at)?;
+        let (_, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if u32_at(bytes, after_tag)? != expected {
             return None;
         }
@@ -18202,10 +18221,10 @@ fn parse_body_recipe_operand(
     }
     let nested_record_index = read_u64(bytes, cursor + 1)?;
     let asset_id_at = cursor.checked_add(15)?;
-    let (asset_id, after_asset_id) = lp_utf16(bytes, asset_id_at)?;
-    let (context_id, after_context_id) = lp_utf16(bytes, after_asset_id)?;
-    if !is_guid(&asset_id)
-        || !is_guid(&context_id)
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_id_at, 1..=256)?;
+    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+    if !is_guid_relaxed(&asset_id)
+        || !is_guid_relaxed(&context_id)
         || u32_at(bytes, after_context_id)? != 2
         || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
         || nested_record_index != u64::from(header.record_index.checked_add(3)?)
@@ -18413,16 +18432,16 @@ fn parse_extrude_identity_member(
         return None;
     }
     let local_id = read_u64(bytes, start + 21)?;
-    let (asset_id, after_asset_id) = lp_utf16(bytes, start + 29)?;
-    let (context_id, after_context_id) = lp_utf16(bytes, after_asset_id)?;
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 29, 1..=256)?;
+    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     let tail_slot_offset = after_context_id.checked_add(4)?;
     let tail_slot_present = match bytes.get(tail_slot_offset)? {
         0 => false,
         1 => true,
         _ => return None,
     };
-    if !is_guid(&asset_id)
-        || !is_guid(&context_id)
+    if !is_guid_relaxed(&asset_id)
+        || !is_guid_relaxed(&context_id)
         || u32_at(bytes, after_context_id)? != 2
         || u32_at(bytes, tail_slot_offset + 1)? != 0
         || after_context_id.checked_add(9)? != start.checked_add(190)?
@@ -18430,7 +18449,7 @@ fn parse_extrude_identity_member(
         return None;
     }
     let next_at = start.checked_add(190)?;
-    let (_, after_next_tag) = lp_ascii(bytes, next_at)?;
+    let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     Some(ParsedExtrudeIdentityMember {
         local_id,
         local_id_offset: u64::try_from(start + 21).ok()?,
@@ -18472,9 +18491,9 @@ fn parse_edge_identity_member(bytes: &[u8], start: usize) -> Option<ParsedEdgeId
         return None;
     }
     let local_id = u64::from(u32_at(bytes, start + local_id_offset)?);
-    let (asset_id, after_asset_id) = lp_utf16(bytes, start + asset_offset)?;
-    let (context_id, _after_context_id) = lp_utf16(bytes, after_asset_id)?;
-    if !is_guid(&asset_id) || !is_guid(&context_id) {
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + asset_offset, 1..=256)?;
+    let (context_id, _after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+    if !is_guid_relaxed(&asset_id) || !is_guid_relaxed(&context_id) {
         return None;
     }
     Some(ParsedEdgeIdentityMember {
@@ -18504,14 +18523,16 @@ fn parse_sketch_profile(
     {
         return None;
     }
-    let (asset_id, after_asset_id) = lp_utf16(bytes, start + 36)?;
-    if !is_guid(&asset_id) {
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 36, 1..=256)?;
+    if !is_guid_relaxed(&asset_id) {
         return None;
     }
-    let (entity_suffix_text, after_entity_suffix) = lp_utf16(bytes, after_asset_id)?;
+    let (entity_suffix_text, after_entity_suffix) =
+        lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     let entity_suffix = entity_suffix_text.parse::<u64>().ok()?;
     let paired_at = next_indexed_record_offset(bytes, start + 11)?;
-    let (paired_class_tag, after_paired_tag) = lp_ascii(bytes, paired_at)?;
+    let (paired_class_tag, after_paired_tag) =
+        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     if u32_at(bytes, after_paired_tag)? != header.record_index
         || after_entity_suffix.checked_add(94)? != paired_at
     {
@@ -18561,7 +18582,8 @@ fn parse_edge_operand(
     offsets.push(next_indexed_record_offset(bytes, position)?);
     let mut indexed = Vec::with_capacity(offsets.len());
     for offset in &offsets {
-        let (class_tag, after_tag) = lp_ascii(bytes, *offset)?;
+        let (class_tag, after_tag) =
+            lp_ascii_filtered(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
         indexed.push((class_tag, u32_at(bytes, after_tag)?));
     }
     let next_one = header.record_index.checked_add(1)?;
@@ -18952,7 +18974,8 @@ fn parse_face_operand(
     offsets.push(immediate_next);
     let mut indexed = Vec::with_capacity(offsets.len());
     for offset in &offsets {
-        let (class_tag, after_tag) = lp_ascii(bytes, *offset)?;
+        let (class_tag, after_tag) =
+            lp_ascii_filtered(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
         indexed.push((class_tag, u32_at(bytes, after_tag)?));
     }
     let recipe_record_index = header.record_index.checked_add(3)?;
@@ -19101,7 +19124,7 @@ fn parse_parameter_scope(
     let mut position = start.checked_add(11)?;
     let (paired_at, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, position)?;
-        let (class_tag, after_tag) = lp_ascii(bytes, at)?;
+        let (class_tag, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if u32_at(bytes, after_tag)? == header.record_index {
             break (at, class_tag);
         }
@@ -19109,7 +19132,7 @@ fn parse_parameter_scope(
     };
     let mut candidates = Vec::new();
     for at in start + 11..paired_at {
-        if let Some((kind, end)) = lp_utf16(bytes, at) {
+        if let Some((kind, end)) = lp_utf16_bounded(bytes, at, 1..=256) {
             let Some(tail_length) = paired_at.checked_sub(end) else {
                 continue;
             };
@@ -19744,7 +19767,8 @@ fn parse_member_run_head_placement(
         }
         position = at + 1;
     };
-    let (paired_class_tag, paired_after_tag) = lp_ascii(bytes, paired_at)?;
+    let (paired_class_tag, paired_after_tag) =
+        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     if paired_class_tag.len() != 3 || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
@@ -19769,7 +19793,7 @@ fn parse_member_run_head_placement(
         }
         position = at + 1;
     };
-    let (class_tag, after_tag) = lp_ascii(bytes, head_at)?;
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, head_at, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != head_at + 7
         || class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -19841,10 +19865,14 @@ fn parse_sketch_placement_candidates(
         {
             continue;
         }
-        let Some((class_tag, after_tag)) = lp_ascii(bytes, start) else {
+        let Some((class_tag, after_tag)) =
+            lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)
+        else {
             continue;
         };
-        let Some((paired_class_tag, paired_after_tag)) = lp_ascii(bytes, paired_at) else {
+        let Some((paired_class_tag, paired_after_tag)) =
+            lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)
+        else {
             continue;
         };
         if after_tag != start + 7
@@ -20069,7 +20097,9 @@ pub fn decode_lost_edge_references(
             let Some(header_offset) = offset.checked_sub(29) else {
                 continue;
             };
-            let Some((class_tag, after_tag)) = lp_ascii(bytes, header_offset) else {
+            let Some((class_tag, after_tag)) =
+                lp_ascii_filtered(bytes, header_offset, 0..=2000, u8::is_ascii_graphic)
+            else {
                 continue;
             };
             if after_tag != header_offset + 7
@@ -20083,7 +20113,9 @@ pub fn decode_lost_edge_references(
                 continue;
             };
             let next_byte_offset = offset + marker.len();
-            let Some((next_class_tag, after_next_tag)) = lp_ascii(bytes, next_byte_offset) else {
+            let Some((next_class_tag, after_next_tag)) =
+                lp_ascii_filtered(bytes, next_byte_offset, 0..=2000, u8::is_ascii_graphic)
+            else {
                 continue;
             };
             if after_next_tag != next_byte_offset + 7
@@ -20128,12 +20160,14 @@ pub fn decode_objects(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut offset = 0usize;
         while offset + 8 <= bytes.len() {
-            let Some((name, after_name)) = lp_ascii(bytes, offset) else {
+            let Some((name, after_name)) =
+                lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)
+            else {
                 offset += 1;
                 continue;
             };
             if name.is_empty()
-                || is_guid(&name)
+                || is_guid_relaxed(&name)
                 || !name.bytes().all(|byte| byte.is_ascii_graphic())
             {
                 offset += 1;
@@ -20167,7 +20201,8 @@ pub fn decode_objects(
                 .map(|index| (after_name + 4 + index * 8) as u64)
                 .collect();
             let Some((self_guid, after_self)) =
-                lp_ascii(bytes, ids_end).filter(|(guid, _)| is_guid(guid))
+                lp_ascii_filtered(bytes, ids_end, 0..=2000, u8::is_ascii_graphic)
+                    .filter(|(guid, _)| is_guid_relaxed(guid))
             else {
                 offset += 1;
                 continue;
@@ -20177,11 +20212,12 @@ pub fn decode_objects(
                 tail += 1;
             }
             let zero_run_length = u32::try_from(tail - after_self).unwrap_or(u32::MAX);
-            let (parent_guid, parent_guid_offset, revision_offset) = lp_ascii(bytes, tail)
-                .filter(|(guid, _)| is_guid(guid))
-                .map_or((None, None, tail), |(guid, end)| {
-                    (Some(guid), Some((tail + 4) as u64), end)
-                });
+            let (parent_guid, parent_guid_offset, revision_offset) =
+                lp_ascii_filtered(bytes, tail, 0..=2000, u8::is_ascii_graphic)
+                    .filter(|(guid, _)| is_guid_relaxed(guid))
+                    .map_or((None, None, tail), |(guid, end)| {
+                        (Some(guid), Some((tail + 4) as u64), end)
+                    });
             let Some(revision_raw) = bytes.get(revision_offset..revision_offset + 4) else {
                 offset += 1;
                 continue;
@@ -20229,7 +20265,7 @@ fn parse_settled_entity_header(bytes: &[u8], start: usize) -> Option<(u64, Strin
         1 if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => (true, start + 25),
         _ => return None,
     };
-    let (entity_id, end) = lp_utf16(bytes, string_offset)?;
+    let (entity_id, end) = lp_utf16_bounded(bytes, string_offset, 1..=256)?;
     let (_, suffix) = entity_id.rsplit_once('_')?;
     (suffix.parse::<u64>().ok() == Some(entity_suffix)).then_some((
         entity_suffix,
@@ -20257,15 +20293,16 @@ fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<(u64, Strin
     {
         return None;
     }
-    let (key, after_key) = lp_ascii(bytes, cursor + 5)?;
+    let (key, after_key) = lp_ascii_filtered(bytes, cursor + 5, 0..=2000, u8::is_ascii_graphic)?;
     if key != "EntityGenesis" {
         return None;
     }
-    let (meta_type, after_type) = lp_ascii(bytes, after_key)?;
+    let (meta_type, after_type) =
+        lp_ascii_filtered(bytes, after_key, 0..=2000, u8::is_ascii_graphic)?;
     if meta_type != "IntrinsicMetaTypeuint64" {
         return None;
     }
-    let (entity_id, end) = lp_utf16(bytes, after_type + 8)?;
+    let (entity_id, end) = lp_utf16_bounded(bytes, after_type + 8, 1..=256)?;
     let (_, suffix) = entity_id.rsplit_once('_')?;
     (suffix.parse::<u64>().ok() == Some(entity_suffix)).then_some((
         entity_suffix,
@@ -20340,7 +20377,8 @@ fn parse_legacy_sketch_member_run(
     {
         return None;
     }
-    let (paired_class_tag, after_tag) = lp_ascii(bytes, paired_at)?;
+    let (paired_class_tag, after_tag) =
+        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != paired_at + 7
         || paired_class_tag.len() != 3
         || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -20517,7 +20555,9 @@ pub fn decode_entity_headers(
             if !candidates.contains(&entity_suffix) || existing.contains(&entity_suffix) {
                 continue;
             }
-            let Some((class_tag, after_tag)) = lp_ascii(bytes, start) else {
+            let Some((class_tag, after_tag)) =
+                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)
+            else {
                 continue;
             };
             if after_tag != start + 7
@@ -20613,7 +20653,9 @@ fn decode_headers_for_indices(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 11 <= bytes.len() {
-            let Some((class_tag, after_tag)) = lp_ascii(bytes, position) else {
+            let Some((class_tag, after_tag)) =
+                lp_ascii_filtered(bytes, position, 0..=2000, u8::is_ascii_graphic)
+            else {
                 position += 1;
                 continue;
             };
@@ -20902,7 +20944,9 @@ pub fn decode_sketch_points(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut at = 0usize;
         while at + 113 <= bytes.len() {
-            let Some((class_tag, after_tag)) = lp_ascii(bytes, at) else {
+            let Some((class_tag, after_tag)) =
+                lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)
+            else {
                 at += 1;
                 continue;
             };
@@ -20960,7 +21004,9 @@ pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, Code
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut at = 0usize;
         while at + 230 <= bytes.len() {
-            let Some((class_tag, after_tag)) = lp_ascii(bytes, at) else {
+            let Some((class_tag, after_tag)) =
+                lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)
+            else {
                 at += 1;
                 continue;
             };
@@ -21143,7 +21189,9 @@ pub fn decode_sketch_curve_identities(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut at = 0usize;
         while at + 133 <= bytes.len() {
-            let Some((class_tag, after_tag)) = lp_ascii(bytes, at) else {
+            let Some((class_tag, after_tag)) =
+                lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)
+            else {
                 at += 1;
                 continue;
             };
@@ -21293,7 +21341,9 @@ pub fn decode_sketch_surfaces(scan: &ContainerScan) -> Result<Vec<SketchSurface>
         let mut at = 0usize;
         while let Some(record_at) = next_indexed_record_offset(bytes, at) {
             at = record_at + 1;
-            let Some((class_tag, after_tag)) = lp_ascii(bytes, record_at) else {
+            let Some((class_tag, after_tag)) =
+                lp_ascii_filtered(bytes, record_at, 0..=2000, u8::is_ascii_graphic)
+            else {
                 continue;
             };
             let Some(record_index) = u32_at(bytes, after_tag) else {
@@ -21617,7 +21667,8 @@ fn decode_text_frame_line(
         }
         cursor = end + zero_count;
     }
-    let (class_tag, after_tag) = lp_ascii(payload, cursor)?;
+    let (class_tag, after_tag) =
+        lp_ascii_filtered(payload, cursor, 0..=2000, u8::is_ascii_graphic)?;
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || u32_at(payload, after_tag) != Some(record_index)
@@ -21926,10 +21977,13 @@ fn parse_sketch_relation(
     let mut entity_genesis = None;
     if payload.get(cursor) == Some(&1)
         && u32_at(payload, cursor + 1) == Some(1)
-        && lp_ascii(payload, cursor + 5).is_some_and(|(key, _)| key == "EntityGenesis")
+        && lp_ascii_filtered(payload, cursor + 5, 0..=2000, u8::is_ascii_graphic)
+            .is_some_and(|(key, _)| key == "EntityGenesis")
     {
-        let (_, after_key) = lp_ascii(payload, cursor + 5)?;
-        let (meta_type, after_type) = lp_ascii(payload, after_key)?;
+        let (_, after_key) =
+            lp_ascii_filtered(payload, cursor + 5, 0..=2000, u8::is_ascii_graphic)?;
+        let (meta_type, after_type) =
+            lp_ascii_filtered(payload, after_key, 0..=2000, u8::is_ascii_graphic)?;
         if meta_type == "IntrinsicMetaTypeuint64" {
             entity_genesis = Some(u64::from_le_bytes(
                 payload.get(after_type..after_type + 8)?.try_into().ok()?,
@@ -22068,7 +22122,9 @@ fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
 
 fn next_indexed_record_offset(bytes: &[u8], mut position: usize) -> Option<usize> {
     while position + 11 <= bytes.len() {
-        let Some((class_tag, after_tag)) = lp_ascii(bytes, position) else {
+        let Some((class_tag, after_tag)) =
+            lp_ascii_filtered(bytes, position, 0..=2000, u8::is_ascii_graphic)
+        else {
             position += 1;
             continue;
         };
@@ -22090,7 +22146,7 @@ fn next_indexed_record_offset_with_index(
 ) -> Option<usize> {
     loop {
         let offset = next_indexed_record_offset(bytes, position)?;
-        let (_, after_tag) = lp_ascii(bytes, offset)?;
+        let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
         if u32_at(bytes, after_tag) == Some(record_index) {
             return Some(offset);
         }
@@ -22363,7 +22419,9 @@ fn indexed_headers_in(
         while position + 11 <= end {
             let at = position;
             position += 1;
-            let Some((class_tag, after_tag)) = lp_ascii(bytes, at) else {
+            let Some((class_tag, after_tag)) =
+                lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)
+            else {
                 continue;
             };
             if class_tag.len() == 3 && class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -22414,32 +22472,6 @@ fn object_kind(name: &str) -> DesignObjectKind {
         "CommonData" => DesignObjectKind::CommonData,
         _ => DesignObjectKind::Other(name.to_owned()),
     }
-}
-
-fn lp_ascii(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32_at(bytes, offset)?).ok()?;
-    if length > 2_000 {
-        return None;
-    }
-    let (raw, end) = lp_u32_bytes_at(bytes, offset)?;
-    raw.iter()
-        .all(u8::is_ascii_graphic)
-        .then(|| (String::from_utf8_lossy(raw).into_owned(), end))
-}
-
-fn lp_utf16(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32_at(bytes, offset)?).ok()?;
-    if !(1..=256).contains(&length) {
-        return None;
-    }
-    utf16le_at(bytes, offset.checked_add(4)?, length)
-}
-
-pub(crate) fn is_guid(value: &str) -> bool {
-    matches!(value.len(), 36..=38)
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
 fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) {
@@ -24891,7 +24923,7 @@ mod relation_tests {
             parameter_record(Some(301), "50.00 mm", "FlangeHeight", Some("mm"), "d2", 5.0);
         sheet_metal[22..30].copy_from_slice(&6u64.to_le_bytes());
         let (_, expression_end) =
-            super::lp_utf16(&sheet_metal, 46).expect("sheet-metal expression");
+            super::lp_utf16_bounded(&sheet_metal, 46, 1..=256).expect("sheet-metal expression");
         sheet_metal.insert(expression_end + 9, 0);
         let tail = sheet_metal.len() - 12;
         sheet_metal[tail + 2] = 16;

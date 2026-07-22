@@ -12,6 +12,7 @@ use serde::Deserialize;
 
 use cadmpeg_ir::codec::CodecError;
 
+use crate::bytes::lp_ascii_strict;
 use crate::container::role;
 use crate::container::ContainerScan;
 use crate::records::{XrefDesign, XrefReference};
@@ -315,7 +316,7 @@ fn occurrence_transforms(
 fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord> {
     let mut headers = Vec::new();
     for at in 0..bytes.len().saturating_sub(11) {
-        let Some((class_tag, after_tag)) = lp_ascii(bytes, at) else {
+        let Some((class_tag, after_tag)) = lp_ascii_strict(bytes, at, 0..=usize::MAX) else {
             continue;
         };
         if after_tag == at + 7
@@ -470,18 +471,6 @@ fn decode_rigid_matrix(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
         }
     }
     Some(rows)
-}
-
-fn lp_ascii(bytes: &[u8], at: usize) -> Option<(String, usize)> {
-    let count =
-        usize::try_from(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?)).ok()?;
-    let end = at.checked_add(4)?.checked_add(count)?;
-    Some((
-        std::str::from_utf8(bytes.get(at + 4..end)?)
-            .ok()?
-            .to_owned(),
-        end,
-    ))
 }
 
 #[cfg(test)]

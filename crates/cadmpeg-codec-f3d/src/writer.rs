@@ -2091,7 +2091,7 @@ fn encode_design_metastream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
     let mut out = Vec::new();
     for object in &native.design_objects {
         let kind_name = design_object_kind_name(&object.kind);
-        if kind_name.is_empty() || crate::design::is_guid(kind_name) {
+        if kind_name.is_empty() || crate::bytes::is_guid_relaxed(kind_name) {
             return Err(CodecError::Malformed(format!(
                 "Design object class is empty or GUID-shaped: {kind_name}"
             )));

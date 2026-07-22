@@ -11,6 +11,7 @@ use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
 use crate::asm_header;
+use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
 use crate::F3dCodec;
 
@@ -20670,13 +20671,6 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     );
 
     assert!(!visibility.contains_key(&("BREP.other.smbh".into(), 3)));
-}
-
-fn lp_utf16_bytes(value: &str) -> Vec<u8> {
-    let units: Vec<u8> = value.encode_utf16().flat_map(u16::to_le_bytes).collect();
-    let mut out = ((units.len() / 2) as u32).to_le_bytes().to_vec();
-    out.extend(units);
-    out
 }
 
 fn browser_body_record(entity: u64, name: Option<&str>, visual: &str) -> Vec<u8> {

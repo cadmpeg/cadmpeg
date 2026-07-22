@@ -6,6 +6,8 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::CodecError;
 
+use crate::bytes::take_lp_utf8_capped;
+
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -215,16 +217,16 @@ fn decode_record(
         return Ok(None);
     }
     let mut at = RECORD_MARKER.len();
-    let Some(schema) = take_lp(record, &mut at) else {
+    let Some(schema) = take_lp_utf8_capped(record, &mut at, 1_048_576) else {
         return Ok(None);
     };
-    let Some(guid) = take_lp(record, &mut at) else {
+    let Some(guid) = take_lp_utf8_capped(record, &mut at, 1_048_576) else {
         return Ok(None);
     };
-    let Some(base) = take_lp(record, &mut at) else {
+    let Some(base) = take_lp_utf8_capped(record, &mut at, 1_048_576) else {
         return Ok(None);
     };
-    let Some(_) = take_lp(record, &mut at) else {
+    let Some(_) = take_lp_utf8_capped(record, &mut at, 1_048_576) else {
         return Ok(None);
     };
     if schema == "PhysMatSchema"
@@ -323,7 +325,7 @@ fn read_value(
             value: f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
         },
         Carrier::String | Carrier::Uuid => {
-            PropertyValue::String(take_lp(bytes, at).ok_or_else(malformed)?)
+            PropertyValue::String(take_lp_utf8_capped(bytes, at, 1_048_576).ok_or_else(malformed)?)
         }
         Carrier::Color => {
             if connectable || id != "common_Tint_color" {
@@ -355,7 +357,7 @@ fn read_value(
             }
             let mut paths = Vec::with_capacity(count);
             for _ in 0..count {
-                paths.push(take_lp(bytes, at).ok_or_else(malformed)?);
+                paths.push(take_lp_utf8_capped(bytes, at, 1_048_576).ok_or_else(malformed)?);
             }
             PropertyValue::TextureUri(paths)
         }
@@ -388,7 +390,7 @@ fn read_connections(bytes: &[u8], at: &mut usize) -> Result<Vec<String>, CodecEr
     }
     let mut connections = Vec::with_capacity(count);
     for _ in 0..count {
-        connections.push(take_lp(bytes, at).ok_or_else(|| {
+        connections.push(take_lp_utf8_capped(bytes, at, 1_048_576).ok_or_else(|| {
             CodecError::Malformed("Protein property connection GUID is truncated".into())
         })?);
     }
@@ -398,17 +400,6 @@ fn read_connections(bytes: &[u8], at: &mut usize) -> Result<Vec<String>, CodecEr
 fn take<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u8; N]> {
     let end = at.checked_add(N)?;
     let value = bytes.get(*at..end)?.try_into().ok()?;
-    *at = end;
-    Some(value)
-}
-
-fn take_lp(bytes: &[u8], at: &mut usize) -> Option<String> {
-    let count = usize::try_from(u32::from_le_bytes(take(bytes, at)?)).ok()?;
-    if count > 1_048_576 {
-        return None;
-    }
-    let end = at.checked_add(count)?;
-    let value = std::str::from_utf8(bytes.get(*at..end)?).ok()?.to_owned();
     *at = end;
     Some(value)
 }

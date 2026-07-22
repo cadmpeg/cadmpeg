@@ -3,9 +3,9 @@
 
 use std::collections::BTreeMap;
 
+use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
 use crate::records::{ActEntity, ActGuid, ActRootComponent};
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
-use cadmpeg_ir::le::{lp_u32_bytes_at, u32_at, utf16le_at};
 
 use crate::container::{role, ContainerScan};
 
@@ -91,7 +91,7 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
     let mut out = Vec::new();
     let mut position = 0usize;
     while position + 4 <= bytes.len() {
-        let Some((class_tag, after_tag)) = lp_ascii(bytes, position) else {
+        let Some((class_tag, after_tag)) = lp_ascii_strict(bytes, position, 1..=128) else {
             position += 1;
             continue;
         };
@@ -113,7 +113,7 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
             continue;
         };
         let entity_id_offset = cursor + 4;
-        let Some((entity_id, cursor)) = lp_utf16(bytes, cursor) else {
+        let Some((entity_id, cursor)) = lp_utf16_bounded(bytes, cursor, 0..=1024) else {
             position += 1;
             continue;
         };
@@ -135,7 +135,7 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
             continue;
         }
         let display_name_offset = cursor + 4;
-        let Some((display_name, cursor)) = lp_utf16(bytes, cursor) else {
+        let Some((display_name, cursor)) = lp_utf16_bounded(bytes, cursor, 0..=1024) else {
             position += 1;
             continue;
         };
@@ -238,7 +238,7 @@ fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
             return (Vec::new(), Vec::new());
         }
         let entity_id_offset = cursor + 15;
-        let Some((entity_id, end)) = lp_utf16(bytes, cursor + 11) else {
+        let Some((entity_id, end)) = lp_utf16_bounded(bytes, cursor + 11, 0..=1024) else {
             return (Vec::new(), Vec::new());
         };
         indexed.push((
@@ -253,7 +253,9 @@ fn decode_table(bytes: &[u8]) -> (Vec<TableEntry>, Vec<(String, usize)>) {
     }
     let mut guids = Vec::new();
     while cursor + 4 <= bytes.len() {
-        if let Some((guid, end)) = lp_utf16(bytes, cursor).filter(|(value, _)| is_guid(value)) {
+        if let Some((guid, end)) =
+            lp_utf16_bounded(bytes, cursor, 0..=1024).filter(|(value, _)| is_guid_hyphenated(value))
+        {
             guids.push((guid, cursor));
             cursor = end;
         } else {
@@ -288,7 +290,7 @@ fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
     let mut out = Vec::new();
     let mut position = 0usize;
     while position + 4 <= bytes.len() {
-        let Some((class_tag, after_tag)) = lp_ascii(bytes, position) else {
+        let Some((class_tag, after_tag)) = lp_ascii_strict(bytes, position, 1..=128) else {
             position += 1;
             continue;
         };
@@ -319,11 +321,12 @@ fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
         let mut channels = BTreeMap::new();
         let mut guid_offsets = BTreeMap::new();
         for _ in 0..count {
-            let Some((name, after_name)) = lp_ascii(bytes, cursor) else {
+            let Some((name, after_name)) = lp_ascii_strict(bytes, cursor, 1..=128) else {
                 channels.clear();
                 break;
             };
-            let Some((guid, after_guid)) = lp_utf16(bytes, after_name).filter(|(v, _)| is_guid(v))
+            let Some((guid, after_guid)) = lp_utf16_bounded(bytes, after_name, 0..=1024)
+                .filter(|(v, _)| is_guid_hyphenated(v))
             else {
                 channels.clear();
                 break;
@@ -340,7 +343,7 @@ fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
             cursor = after_guid;
         }
         if !channels.is_empty() {
-            if let Some((entity_id, end)) = lp_utf16(bytes, cursor) {
+            if let Some((entity_id, end)) = lp_utf16_bounded(bytes, cursor, 0..=1024) {
                 out.push(ChannelGroup {
                     record_index: u32::from_le_bytes(index_raw.try_into().expect(
                         "invariant: index_raw is a 4-byte slice from bytes.get(range) of length 4",
@@ -359,33 +362,4 @@ fn decode_channel_groups(bytes: &[u8]) -> Vec<ChannelGroup> {
         position += 1;
     }
     out
-}
-
-fn lp_ascii(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32_at(bytes, position)?).ok()?;
-    if !(1..=128).contains(&length) {
-        return None;
-    }
-    let (raw, end) = lp_u32_bytes_at(bytes, position)?;
-    let value = std::str::from_utf8(raw).ok()?;
-    Some((value.into(), end))
-}
-
-fn lp_utf16(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let count = usize::try_from(u32_at(bytes, position)?).ok()?;
-    if count > 1024 {
-        return None;
-    }
-    utf16le_at(bytes, position.checked_add(4)?, count)
-}
-
-fn is_guid(value: &str) -> bool {
-    value.len() == 36
-        && value.bytes().enumerate().all(|(index, byte)| {
-            if matches!(index, 8 | 13 | 18 | 23) {
-                byte == b'-'
-            } else {
-                byte.is_ascii_hexdigit()
-            }
-        })
 }

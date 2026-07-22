@@ -16,9 +16,12 @@ use cadmpeg_ir::appearance::{
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
-use cadmpeg_ir::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, u64_at, utf16le_at};
+use cadmpeg_ir::le::{u32_at, u64_at};
 use cadmpeg_ir::topology::Color;
 
+use crate::bytes::{
+    is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, lp_utf16_bytes, take_lp_utf8,
+};
 use crate::container::{role, ContainerScan};
 
 const PAGE_SIZE: usize = 0x88;
@@ -237,13 +240,13 @@ fn patch_instance_colors(
     for start in starts {
         let record = &logical[start..];
         let mut position = RECORD_MARKER.len();
-        let schema = take_lp(record, &mut position).ok_or_else(|| {
+        let schema = take_lp_utf8(record, &mut position).ok_or_else(|| {
             CodecError::Malformed("Protein appearance schema is truncated".into())
         })?;
-        let guid = take_lp(record, &mut position)
+        let guid = take_lp_utf8(record, &mut position)
             .ok_or_else(|| CodecError::Malformed("Protein appearance GUID is truncated".into()))?;
-        let _ = take_lp(record, &mut position);
-        let _ = take_lp(record, &mut position);
+        let _ = take_lp_utf8(record, &mut position);
+        let _ = take_lp_utf8(record, &mut position);
         let Some(edit) = edits.get(&guid) else {
             continue;
         };
@@ -891,9 +894,9 @@ const BODY_RECORD_MARKER_GUIDS: [&str; 2] = [
 /// The scan requires the head entity and node entity to agree before
 /// accepting a record.
 pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
-    let marker: Vec<u8> = lp_utf16_needle(BODY_RECORD_MARKER_GUIDS[0])
+    let marker: Vec<u8> = lp_utf16_bytes(BODY_RECORD_MARKER_GUIDS[0])
         .into_iter()
-        .chain(lp_utf16_needle(BODY_RECORD_MARKER_GUIDS[1]))
+        .chain(lp_utf16_bytes(BODY_RECORD_MARKER_GUIDS[1]))
         .collect();
     let mut out = Vec::new();
     let mut position = 0usize;
@@ -915,23 +918,23 @@ fn browser_body_appearance_at(
     fields_at: usize,
 ) -> Option<(u64, String)> {
     // Physical-material token, then its entity reference.
-    let (token, after) = lp_utf16_at(bytes, skip_zeros(bytes, fields_at))?;
+    let (token, after) = lp_utf16_bounded(bytes, skip_zeros(bytes, fields_at), 1..=256)?;
     if !token.starts_with("PrismMaterial") || bytes.get(after)? != &0x01 {
         return None;
     }
     // Browser-node GUID, then the node's entity.
-    let (node_guid, after) = lp_utf16_at(bytes, skip_zeros(bytes, after + 9))?;
+    let (node_guid, after) = lp_utf16_bounded(bytes, skip_zeros(bytes, after + 9), 1..=256)?;
     if node_guid.len() != 36 || !is_guid_prefix(&node_guid) || bytes.get(after)? != &0x01 {
         return None;
     }
     let node_entity = u64_at(bytes, after + 1)?;
     // Optional display name, opacity, and the `01 01` marker.
-    let name_end = match lp_utf16_at(bytes, skip_zeros(bytes, after + 9)) {
+    let name_end = match lp_utf16_bounded(bytes, skip_zeros(bytes, after + 9), 1..=256) {
         Some((_, end)) => end,
         None => after + 9,
     };
     let visual_at = record_tail_visual_offset(bytes, name_end)?;
-    let (visual, _) = lp_utf16_at(bytes, visual_at)?;
+    let (visual, _) = lp_utf16_bounded(bytes, visual_at, 1..=256)?;
     if visual.len() < 36 || !is_guid_prefix(&visual) {
         return None;
     }
@@ -979,29 +982,6 @@ fn preceding_class_299_entity(bytes: &[u8], at: usize) -> Option<u64> {
 }
 
 /// Encode a string as its length-prefixed UTF-16 byte form.
-fn lp_utf16_needle(value: &str) -> Vec<u8> {
-    let units: Vec<u8> = value.encode_utf16().flat_map(u16::to_le_bytes).collect();
-    let mut out = ((units.len() / 2) as u32).to_le_bytes().to_vec();
-    out.extend(units);
-    out
-}
-
-/// Read one length-prefixed UTF-16 string of up to 256 characters at
-/// `position` and return it with the offset past its code units.
-fn lp_utf16_at(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let length = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?) as usize;
-    if !(1..=256).contains(&length) {
-        return None;
-    }
-    let end = position + 4 + length * 2;
-    let units: Vec<u16> = bytes
-        .get(position + 4..end)?
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-        .collect();
-    Some((String::from_utf16(&units).ok()?, end))
-}
-
 /// Advance past at most `cap` zero bytes starting at `position`.
 fn skip_zeros_capped(bytes: &[u8], position: usize, cap: usize) -> usize {
     let mut at = position;
@@ -1014,19 +994,6 @@ fn skip_zeros_capped(bytes: &[u8], position: usize, cap: usize) -> usize {
 /// Advance past at most eight zero bytes starting at `position`.
 fn skip_zeros(bytes: &[u8], position: usize) -> usize {
     skip_zeros_capped(bytes, position, 8)
-}
-
-/// Whether the first 36 characters of `value` form a hyphenated GUID.
-fn is_guid_prefix(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    bytes.len() >= 36
-        && bytes[..36].iter().enumerate().all(|(index, byte)| {
-            if matches!(index, 8 | 13 | 18 | 23) {
-                *byte == b'-'
-            } else {
-                byte.is_ascii_hexdigit()
-            }
-        })
 }
 
 fn bind_bodies<S: std::hash::BuildHasher>(
@@ -1080,7 +1047,9 @@ fn decode_design_object_types(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 8 <= bytes.len() {
-            let Some((object_type, after_type)) = lp_ascii(bytes, position) else {
+            let Some((object_type, after_type)) =
+                lp_ascii_filtered(bytes, position, 1..=64, |byte| (0x20..0x7f).contains(byte))
+            else {
                 position += 1;
                 continue;
             };
@@ -1125,7 +1094,9 @@ fn decode_act_channels(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 4 <= bytes.len() {
-            let Some((tag, after_tag)) = lp_ascii(bytes, position) else {
+            let Some((tag, after_tag)) =
+                lp_ascii_filtered(bytes, position, 1..=64, |byte| (0x20..0x7f).contains(byte))
+            else {
                 position += 1;
                 continue;
             };
@@ -1153,11 +1124,13 @@ fn decode_act_channels(
             let mut channels = BTreeMap::new();
             let mut valid = true;
             for _ in 0..count {
-                let Some((name, after_name)) = lp_ascii(bytes, cursor) else {
+                let Some((name, after_name)) =
+                    lp_ascii_filtered(bytes, cursor, 1..=64, |byte| (0x20..0x7f).contains(byte))
+                else {
                     valid = false;
                     break;
                 };
-                let Some((guid, after_guid)) = lp_utf16(bytes, after_name) else {
+                let Some((guid, after_guid)) = lp_utf16_bounded(bytes, after_name, 1..=64) else {
                     valid = false;
                     break;
                 };
@@ -1169,7 +1142,7 @@ fn decode_act_channels(
                 cursor = after_guid;
             }
             if valid {
-                if let Some((entity, end)) = lp_utf16(bytes, cursor) {
+                if let Some((entity, end)) = lp_utf16_bounded(bytes, cursor, 1..=64) {
                     if let Some(suffix) = entity_suffix(&entity) {
                         out.insert(suffix, channels);
                     }
@@ -1181,25 +1154,6 @@ fn decode_act_channels(
         }
     }
     Ok(out)
-}
-
-fn lp_ascii(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32_at(bytes, position)?).ok()?;
-    if !(1..=64).contains(&length) {
-        return None;
-    }
-    let (raw, end) = lp_u32_bytes_at(bytes, position)?;
-    raw.iter()
-        .all(|byte| (0x20..0x7f).contains(byte))
-        .then(|| (String::from_utf8_lossy(raw).into_owned(), end))
-}
-
-fn lp_utf16(bytes: &[u8], position: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32_at(bytes, position)?).ok()?;
-    if !(1..=64).contains(&length) {
-        return None;
-    }
-    utf16le_at(bytes, position.checked_add(4)?, length)
 }
 
 fn entity_suffix(value: &str) -> Option<u64> {
@@ -1380,10 +1334,10 @@ fn decode_fixed_logical_records(bytes: &[u8]) -> Vec<Appearance> {
 
 fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
     let mut position = RECORD_MARKER.len();
-    let schema = take_lp(record, &mut position)?;
-    let guid = take_lp(record, &mut position)?;
-    let base = take_lp(record, &mut position)?;
-    take_lp(record, &mut position)?;
+    let schema = take_lp_utf8(record, &mut position)?;
+    let guid = take_lp_utf8(record, &mut position)?;
+    let base = take_lp_utf8(record, &mut position)?;
+    take_lp_utf8(record, &mut position)?;
     let color = match schema.as_str() {
         "GenericSchema" => fixed_rgba(
             record,
@@ -1504,10 +1458,6 @@ fn find(bytes: &[u8], needle: &[u8], start: usize) -> Option<usize> {
         .windows(needle.len())
         .position(|window| window == needle)
         .map(|offset| start + offset)
-}
-
-fn take_lp(bytes: &[u8], position: &mut usize) -> Option<String> {
-    String::from_utf8(take_lp_u32_bytes(bytes, position)?.to_vec()).ok()
 }
 
 #[cfg(test)]

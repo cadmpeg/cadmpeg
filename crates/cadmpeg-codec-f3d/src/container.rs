@@ -12,6 +12,8 @@ use std::io::{Cursor, Read, SeekFrom};
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 use cadmpeg_ir::hash::sha256_hex;
+
+use crate::bytes::{is_guid_hyphenated, lp_utf16_bounded};
 use zip::CompressionMethod;
 
 use crate::asm_header;
@@ -364,7 +366,7 @@ fn counted_folder_run(bytes: &[u8], folders: &[&str]) -> Option<(Vec<String>, St
         let mut cursor = offset + 4;
         let mut names = Vec::with_capacity(count);
         for _ in 0..count {
-            let Some((name, after)) = read_lp_utf16(bytes, cursor) else {
+            let Some((name, after)) = lp_utf16_bounded(bytes, cursor, 0..=usize::MAX) else {
                 names.clear();
                 break;
             };
@@ -381,7 +383,7 @@ fn counted_folder_run(bytes: &[u8], folders: &[&str]) -> Option<(Vec<String>, St
         let Some(uuid) = lp_utf16_ending_at(bytes, offset) else {
             continue;
         };
-        if !is_guid(&uuid) || resolved.is_some() {
+        if !is_guid_hyphenated(&uuid) || resolved.is_some() {
             return None;
         }
         resolved = Some((names, uuid));
@@ -390,38 +392,18 @@ fn counted_folder_run(bytes: &[u8], folders: &[&str]) -> Option<(Vec<String>, St
 }
 
 fn first_asset_manifest_uuid(bytes: &[u8]) -> Option<String> {
-    let (_, cursor) = read_lp_utf16(bytes, 0)?;
-    let (uuid, _) = read_lp_utf16(bytes, cursor)?;
-    is_guid(&uuid).then_some(uuid)
+    let (_, cursor) = lp_utf16_bounded(bytes, 0, 0..=usize::MAX)?;
+    let (uuid, _) = lp_utf16_bounded(bytes, cursor, 0..=usize::MAX)?;
+    is_guid_hyphenated(&uuid).then_some(uuid)
 }
 
 fn lp_utf16_ending_at(bytes: &[u8], end: usize) -> Option<String> {
     (0..end)
         .rev()
-        .find_map(|start| read_lp_utf16(bytes, start).filter(|(_, after)| *after == end))
-        .map(|(value, _)| value)
-}
-
-fn read_lp_utf16(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let count = u32::from_le_bytes(bytes.get(offset..offset + 4)?.try_into().ok()?) as usize;
-    let byte_count = count.checked_mul(2)?;
-    let start = offset.checked_add(4)?;
-    let end = start.checked_add(byte_count)?;
-    let payload = bytes.get(start..end)?;
-    let units = payload
-        .chunks_exact(2)
-        .map(|unit| u16::from_le_bytes([unit[0], unit[1]]))
-        .collect::<Vec<_>>();
-    let value = String::from_utf16(&units).ok()?;
-    Some((value, end))
-}
-
-fn is_guid(value: &str) -> bool {
-    value.len() == 36
-        && value.bytes().enumerate().all(|(index, byte)| match index {
-            8 | 13 | 18 | 23 => byte == b'-',
-            _ => byte.is_ascii_hexdigit(),
+        .find_map(|start| {
+            lp_utf16_bounded(bytes, start, 0..=usize::MAX).filter(|(_, after)| *after == end)
         })
+        .map(|(value, _)| value)
 }
 
 /// Build a [`ContainerSummary`] with the active history-stream selection.
