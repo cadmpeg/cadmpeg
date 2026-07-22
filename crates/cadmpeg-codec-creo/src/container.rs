@@ -689,6 +689,14 @@ fn model_name(data: &[u8]) -> Option<(String, usize)> {
     Some((std::str::from_utf8(name).ok()?.to_string(), start + 3))
 }
 
+fn relation_model_name(filename: &str) -> Option<&str> {
+    let filename = filename.trim_end_matches(' ');
+    let suffix = filename.get(filename.len().checked_sub(4)?..)?;
+    suffix.eq_ignore_ascii_case(".prt").then_some(())?;
+    let name = filename.get(..filename.len() - 4)?;
+    (!name.is_empty()).then_some(name)
+}
+
 fn family_table(data: &[u8], sections: &[Section]) -> Option<FamilyTableRecord> {
     let section = sections
         .iter()
@@ -988,7 +996,11 @@ fn curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<CurvePrototype> {
     prototypes
 }
 
-fn curve_expressions(data: &[u8], sections: &[Section]) -> Vec<CurveExpressionRecord> {
+fn curve_expressions(
+    data: &[u8],
+    sections: &[Section],
+    model_name: Option<&str>,
+) -> Vec<CurveExpressionRecord> {
     let mut records = Vec::new();
     for section in sections
         .iter()
@@ -996,7 +1008,7 @@ fn curve_expressions(data: &[u8], sections: &[Section]) -> Vec<CurveExpressionRe
     {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
-            curve::expression_records(&data[section.offset..end])
+            curve::expression_records_with_model_name(&data[section.offset..end], model_name)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1682,7 +1694,11 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let nonvisible_curve_prototypes = curve_prototypes(&data, &nonvisible_geometry_sections);
     let curve_prototypes = curve_prototypes(&data, &model_geometry_sections);
     let cross_section_curve_prototypes = cross_section_curve_prototypes(&data, &sections);
-    let curve_expressions = curve_expressions(&data, &sections);
+    let curve_expressions = curve_expressions(
+        &data,
+        &sections,
+        model_name.as_deref().and_then(relation_model_name),
+    );
     let nonvisible_curve_parameters = curve_parameters(&data, &nonvisible_geometry_sections);
     let curve_parameters = curve_parameters(&data, &model_geometry_sections);
     let nonvisible_curve_topology_rows = curve_topology_rows(&data, &nonvisible_geometry_sections);

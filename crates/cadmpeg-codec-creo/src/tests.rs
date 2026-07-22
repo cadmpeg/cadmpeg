@@ -4782,6 +4782,33 @@ fn decode_transfers_evaluated_curve_expression_strings() {
 }
 
 #[test]
+fn decode_evaluates_relation_model_name_from_unique_counted_header() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01name=rel_model_name()\0"
+        .to_vec();
+    let mut data = build_prt("c", &[("DEPDB_DATA", payload)]);
+    let header_end = data
+        .windows(b"#-END_OF_UGC_HEADER\n".len())
+        .position(|window| window == b"#-END_OF_UGC_HEADER\n")
+        .expect("header end");
+    data.splice(
+        header_end..header_end,
+        b"#- CMNM 00bwidget.prt \n".iter().copied(),
+    );
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let [parameter] = result.ir.model.parameters.as_slice() else {
+        panic!("one curve-expression parameter")
+    };
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::String(
+            "widget".to_owned()
+        ))
+    );
+}
+
+#[test]
 fn decode_transfers_curve_expression_conditional_activation() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x07a=YES\0IF a\0value=5\0ELSE\0value=9\0ENDIF\0z=value\0"

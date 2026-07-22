@@ -476,6 +476,14 @@ pub fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
 
 /// Decode bounded curve-from-equation expression programs.
 pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
+    expression_records_with_model_name(payload, None)
+}
+
+/// Decode curve-expression programs with an unambiguous current-model name.
+pub(crate) fn expression_records_with_model_name(
+    payload: &[u8],
+    model_name: Option<&str>,
+) -> Vec<CurveExpressionRecord> {
     const PRIMARY: &[u8] = b"entity(crv_fr_eqn)\0";
     const BACKUP: &[u8] = b"backup_ents(crv_fr_eqn)\0";
     const ID: &[u8] = b"\xe0\x01id\0";
@@ -556,7 +564,7 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
             cursor = line_end + 1;
         }
         if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
-            let assignments = evaluate_expression_program(&lines);
+            let assignments = evaluate_expression_program(&lines, model_name);
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
@@ -780,7 +788,10 @@ fn branch_activation(
     }
 }
 
-fn evaluate_expression_program(lines: &[CurveExpressionLine]) -> Vec<CurveExpressionAssignment> {
+fn evaluate_expression_program(
+    lines: &[CurveExpressionLine],
+    model_name: Option<&str>,
+) -> Vec<CurveExpressionAssignment> {
     if !expression_program_control_is_valid(lines) {
         return lines
             .iter()
@@ -800,7 +811,7 @@ fn evaluate_expression_program(lines: &[CurveExpressionLine]) -> Vec<CurveExpres
         let source = line.text.trim();
         if let Some(condition_source) = conditional_keyword_expression(source, "if") {
             let condition = (activity == CurveExpressionActivation::Active)
-                .then(|| evaluate_relation_expression(condition_source, &values))
+                .then(|| evaluate_relation_expression(condition_source, &values, model_name))
                 .flatten()
                 .and_then(|value| value.truth());
             let parent = activity;
@@ -825,7 +836,8 @@ fn evaluate_expression_program(lines: &[CurveExpressionLine]) -> Vec<CurveExpres
         let key = expression_identifier_key(&assignment.name);
         match activity {
             CurveExpressionActivation::Active => {
-                assignment.value = evaluate_relation_expression(&assignment.expression, &values);
+                assignment.value =
+                    evaluate_relation_expression(&assignment.expression, &values, model_name);
                 if let Some(value) = assignment.value.clone() {
                     values.insert(key, value);
                 } else {
@@ -856,7 +868,11 @@ trait ExpressionValue: Clone {
     fn logical_and(self, right: Self) -> Option<Self>;
     fn logical_or(self, right: Self) -> Option<Self>;
     fn logical_not(self) -> Option<Self>;
-    fn function(name: CreoMathFunction, arguments: &[Self]) -> Option<Self>;
+    fn function(
+        name: CreoMathFunction,
+        arguments: &[Self],
+        model_name: Option<&str>,
+    ) -> Option<Self>;
     fn negate(self) -> Option<Self>;
     fn finite(self) -> bool;
 }
@@ -902,7 +918,11 @@ impl ExpressionValue for f64 {
         Some(f64::from(self == 0.0))
     }
 
-    fn function(name: CreoMathFunction, arguments: &[Self]) -> Option<Self> {
+    fn function(
+        name: CreoMathFunction,
+        arguments: &[Self],
+        _model_name: Option<&str>,
+    ) -> Option<Self> {
         evaluate_creo_math_function(name, arguments)
     }
 
@@ -989,7 +1009,11 @@ impl ExpressionValue for AffineValue {
         (self.linear == 0.0).then(|| Self::number(f64::from(self.constant == 0.0)))
     }
 
-    fn function(name: CreoMathFunction, arguments: &[Self]) -> Option<Self> {
+    fn function(
+        name: CreoMathFunction,
+        arguments: &[Self],
+        _model_name: Option<&str>,
+    ) -> Option<Self> {
         let constants = arguments
             .iter()
             .map(|argument| (argument.linear == 0.0).then_some(argument.constant))
@@ -1077,8 +1101,12 @@ impl ExpressionValue for CurveExpressionValue {
         Some(Self::Number(f64::from(value == 0.0)))
     }
 
-    fn function(name: CreoMathFunction, arguments: &[Self]) -> Option<Self> {
-        evaluate_creo_relation_function(name, arguments)
+    fn function(
+        name: CreoMathFunction,
+        arguments: &[Self],
+        model_name: Option<&str>,
+    ) -> Option<Self> {
+        evaluate_creo_relation_function(name, arguments, model_name)
     }
 
     fn negate(self) -> Option<Self> {
@@ -1113,6 +1141,7 @@ struct ExpressionParser<'a, V> {
     source: &'a [u8],
     cursor: usize,
     values: &'a BTreeMap<String, V>,
+    model_name: Option<&'a str>,
     nesting: usize,
 }
 
@@ -1378,7 +1407,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         (self.source.get(self.cursor) == Some(&b')')).then_some(())?;
         self.cursor += 1;
         self.nesting -= 1;
-        V::function(function, &arguments)
+        V::function(function, &arguments, self.model_name)
     }
 }
 
@@ -1413,6 +1442,7 @@ enum CreoMathFunction {
     DblInTol,
     Itos,
     Rtos,
+    RelModelName,
     RelModelType,
     Search,
     Extract,
@@ -1452,6 +1482,7 @@ fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
         "dbl_in_tol" => Some(CreoMathFunction::DblInTol),
         "itos" => Some(CreoMathFunction::Itos),
         "rtos" => Some(CreoMathFunction::Rtos),
+        "rel_model_name" => Some(CreoMathFunction::RelModelName),
         "rel_model_type" => Some(CreoMathFunction::RelModelType),
         "search" => Some(CreoMathFunction::Search),
         "extract" => Some(CreoMathFunction::Extract),
@@ -1523,6 +1554,7 @@ fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Opt
 fn evaluate_creo_relation_function(
     name: CreoMathFunction,
     arguments: &[CurveExpressionValue],
+    model_name: Option<&str>,
 ) -> Option<CurveExpressionValue> {
     use CurveExpressionValue::{Number, String};
     let value = match (name, arguments) {
@@ -1549,6 +1581,7 @@ fn evaluate_creo_relation_function(
                 *scientific != 0.0,
             )?)
         }
+        (CreoMathFunction::RelModelName, []) => String(model_name?.to_owned()),
         (CreoMathFunction::RelModelType, []) => String("part".to_owned()),
         (CreoMathFunction::Search, [String(value), String(needle)]) => {
             let position = value
@@ -1632,11 +1665,13 @@ fn integer_pair(first: f64, second: f64) -> Option<(usize, usize)> {
 fn evaluate_relation_expression(
     expression: &str,
     values: &BTreeMap<String, CurveExpressionValue>,
+    model_name: Option<&str>,
 ) -> Option<CurveExpressionValue> {
     let mut parser = ExpressionParser {
         source: expression.as_bytes(),
         cursor: 0,
         values,
+        model_name,
         nesting: 0,
     };
     let value = parser.logical_or()?;
@@ -1650,6 +1685,7 @@ fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Opti
         source: expression.as_bytes(),
         cursor: 0,
         values,
+        model_name: None,
         nesting: 0,
     };
     let value = parser.logical_or()?;
@@ -1665,6 +1701,7 @@ fn evaluate_affine_expression(
         source: expression.as_bytes(),
         cursor: 0,
         values,
+        model_name: None,
         nesting: 0,
     };
     let value = parser.logical_or()?;
@@ -2909,7 +2946,7 @@ mod tests {
                 offset,
             })
             .collect::<Vec<_>>();
-        let assignments = evaluate_expression_program(&lines);
+        let assignments = evaluate_expression_program(&lines, None);
 
         assert!(assignments[0].dependencies.is_empty());
         assert_eq!(
@@ -2951,16 +2988,33 @@ mod tests {
         ];
         for (expression, expected) in cases {
             assert_eq!(
-                evaluate_relation_expression(expression, &values),
+                evaluate_relation_expression(expression, &values, None),
                 Some(CurveExpressionValue::String(expected.to_owned())),
                 "{expression}"
             );
         }
-        assert_eq!(evaluate_relation_expression("rtos(1,-1)", &values), None);
-        assert_eq!(evaluate_relation_expression("rtos(1,1.5)", &values), None);
-        assert_eq!(evaluate_relation_expression("rtos(1,129)", &values), None);
         assert_eq!(
-            evaluate_relation_expression("rtos(1,2,YES,NO)", &values),
+            evaluate_relation_expression("rtos(1,-1)", &values, None),
+            None
+        );
+        assert_eq!(
+            evaluate_relation_expression("rtos(1,1.5)", &values, None),
+            None
+        );
+        assert_eq!(
+            evaluate_relation_expression("rtos(1,129)", &values, None),
+            None
+        );
+        assert_eq!(
+            evaluate_relation_expression("rtos(1,2,YES,NO)", &values, None),
+            None
+        );
+        assert_eq!(
+            evaluate_relation_expression("rel_model_name()", &values, Some("widget")),
+            Some(CurveExpressionValue::String("widget".to_owned()))
+        );
+        assert_eq!(
+            evaluate_relation_expression("rel_model_name()", &values, None),
             None
         );
     }

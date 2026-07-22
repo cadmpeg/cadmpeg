@@ -36607,7 +36607,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              or native design records. Curve-equation assignments transfer with their source, \
              dependencies, and closed numeric and string operator and deterministic function values. \
              Full neutral operation semantics\
-             {configuration_gap}, pattern-matching, model-name, and existence relation functions, \
+             {configuration_gap}, pattern-matching and existence relation functions, \
              materials, and display data \
              remain untransferred."
         ),
