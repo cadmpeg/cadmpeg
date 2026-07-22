@@ -4511,6 +4511,20 @@ fn plane_envelope_scalar_slots_with_tokens_and_end(
     (slots, cursor)
 }
 
+fn complete_plane_envelope_slots(
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<ScalarTokenSlot>> {
+    let (slots, consumed) = plane_envelope_scalar_slots_with_tokens_and_end(body, count, cache);
+    (consumed == body.len()
+        && slots
+            .iter()
+            .all(|(value, token)| value.is_some() && !token.is_empty())
+        && slots.iter().map(|(_, token)| token.len()).sum::<usize>() == consumed)
+        .then_some(slots)
+}
+
 fn slot_equality(first: &(Option<f64>, Vec<u8>), second: &(Option<f64>, Vec<u8>)) -> Option<bool> {
     match (first.0, second.0) {
         (Some(first), Some(second)) => {
@@ -4772,7 +4786,9 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
         let body = payload[*body_start..body_end].to_vec();
         let scalar_tokens;
         let (envelope, corner_coordinate_equal) = if body.first() == Some(&0x0e) {
-            let slots = plane_envelope_scalar_slots_with_tokens_and_end(&body[1..], 9, &cache).0;
+            let Some(slots) = complete_plane_envelope_slots(&body[1..], 9, &cache) else {
+                continue;
+            };
             let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
             scalar_tokens = slots.iter().map(|slot| slot.1.clone()).collect();
             (
@@ -4807,7 +4823,9 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
                 ],
             )
         } else {
-            let slots = plane_envelope_scalar_slots_with_tokens_and_end(&body, 10, &cache).0;
+            let Some(slots) = complete_plane_envelope_slots(&body, 10, &cache) else {
+                continue;
+            };
             let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
             scalar_tokens = slots.iter().map(|slot| slot.1.clone()).collect();
             (
@@ -4908,20 +4926,14 @@ fn complete_plane_compact_scalar_suffix(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<Vec<(Option<f64>, Vec<u8>)>> {
-    let standard = plane_envelope_scalar_slots_with_tokens_and_end(body, 10, cache).0;
-    if standard
-        .iter()
-        .all(|(value, token)| value.is_some() && !token.is_empty())
-    {
+    if complete_plane_envelope_slots(body, 10, cache).is_some() {
         return None;
     }
     let tokens = scalar_tokens(SurfaceKind::Plane, body, cache);
     let frames = scalar_frames(&tokens);
     let frame = terminal_scalar_frame(body, &frames)?;
     (frame.offset > 0 && frame.slots.len() == 9).then_some(())?;
-    let (slots, consumed) =
-        plane_envelope_scalar_slots_with_tokens_and_end(&body[frame.offset..], 9, cache);
-    (consumed == body.len() - frame.offset).then_some(())?;
+    let slots = complete_plane_envelope_slots(&body[frame.offset..], 9, cache)?;
     slots
         .into_iter()
         .map(|(value, raw)| Some((Some(value?), raw)))
@@ -7164,6 +7176,17 @@ mod tests {
             complete_plane_compact_scalar_suffix(&body[2..], &scalar::ScalarCache::default())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn positional_plane_envelope_rejects_bytes_before_a_complete_standard_frame() {
+        let payload = [
+            7, 0x22, 4, 0x01, 0, 0, 0xfb, 0x0f, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0xe4, 0x0f,
+            0xe4, 0xe3,
+        ];
+
+        assert_eq!(rows(&payload).len(), 1);
+        assert!(plane_envelopes(&payload).is_empty());
     }
 
     #[test]

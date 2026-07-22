@@ -859,7 +859,17 @@ model-space values.
 
 ### 3.4 Planes
 
-Plane row bodies contain envelope/domain data, `local_sys f9 04 03`, and a row/topology tail. `local_sys` has twelve scalar slots:
+Plane row bodies contain envelope/domain data, `local_sys f9 04 03`, and a row/topology tail.
+
+A standard positional envelope is exactly ten contiguous scalar slots: four
+two-dimensional domain bounds followed by two model-space corner triples. A
+leading-compact envelope is `0e` followed by exactly nine contiguous scalar
+slots: three prefix values followed by the two corner triples. Each layout
+consumes its complete compound-bounded body. A compact envelope can instead be
+the unique terminal nine-slot scalar frame after a nonempty structural prefix.
+Bytes outside these layouts do not form a plane envelope.
+
+`local_sys` has twelve scalar slots:
 
 ```text
 slots 0..2    support direction or [0, 0, 0]
