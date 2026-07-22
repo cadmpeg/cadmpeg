@@ -36,17 +36,18 @@ pub use parasolid::*;
 pub use segments::*;
 pub(crate) use substrate::ParsedStreams;
 
-/// Attach the native object model to `ir`: extract every record family from the
-/// scanned container, then emit annotations, namespace arenas, and the semantic
-/// islands. The single entry point the decode tier calls; extraction happens
-/// inside so the decode tier never names the record families.
+/// Attach the pre-extracted native object model to `ir`: emit annotations, the
+/// namespace arenas, and the semantic islands. The single entry point the
+/// decode tier calls once it holds a [`NativeModel`]. The model is passed in
+/// rather than extracted here so the geometry path can also feed it to body
+/// selection without extracting twice; build it with
+/// [`NativeModel::extract`](model::NativeModel::extract).
 pub(crate) fn attach_annotations(
     ir: &mut CadIr,
+    model: &NativeModel,
     scan: &Scan,
-    parsed: &ParsedStreams,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let model = NativeModel::extract(&scan.container, &scan.streams, parsed);
-    attach::attach(ir, &model, scan, annotations, unknowns)
+    attach::attach(ir, model, scan, annotations, unknowns)
 }

@@ -835,12 +835,19 @@ fn try_decode_geometry(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    // Extract the native model once, before body selection: terminal-feature
+    // body selection and annotation attachment both read it, and extraction is
+    // pure, so building it here avoids re-parsing the same container/stream
+    // bytes for the seven feature/segment families body selection consumes.
+    // This moves extraction slightly earlier on the geometry path — the RFC's
+    // accepted memory-high-water cost.
+    let model = crate::native::NativeModel::extract(&scan.container, &scan.streams, &parsed);
     let mut active_body_selection = select_active_body(&mut ir, &body_node_ids, &rmfastload_ids);
     if !active_body_selection {
-        active_body_selection = select_terminal_feature_bodies(&mut ir, scan);
+        active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
     }
     classify_body_kinds(&mut ir);
-    crate::native::attach_annotations(&mut ir, scan, &parsed, &mut annotations, &mut unknowns)
+    crate::native::attach_annotations(&mut ir, &model, scan, &mut annotations, &mut unknowns)
         .ok()?;
     prune_unreferenced_unknown_carriers(&mut ir);
     finalize_point_topology(&mut ir, &mut annotations);
@@ -1233,31 +1240,28 @@ fn select_active_body(
     true
 }
 
-fn select_terminal_feature_bodies(ir: &mut CadIr, scan: &Scan) -> bool {
+fn select_terminal_feature_bodies(ir: &mut CadIr, model: &crate::native::NativeModel) -> bool {
     if ir.model.bodies.len() <= 1 {
         return false;
     }
-    let labels = crate::native::feature_operation_labels(&scan.container);
-    let body_references = crate::native::feature_body_references(&scan.container);
-    let booleans = crate::native::feature_boolean_operations(&scan.container);
-    let bindings = crate::native::segment_body_bindings(&scan.container, &scan.streams);
-    let body_reference_occurrences =
-        crate::native::feature_body_reference_occurrences(&scan.container);
-    let body_members = crate::native::feature_operation_body_members(&scan.container);
-    let body_operands = crate::native::feature_operation_body_operands(
-        &body_members,
-        &body_reference_occurrences,
-        &bindings,
-    );
+    // These families are read straight from the pre-built model; extracting
+    // them here as well would parse the same container bytes a second time.
+    // `feature_operation_body_operands` already folds in the body-member and
+    // reference-occurrence families the legacy code computed inline.
+    let labels = model.features.feature_operation_labels.as_slice();
+    let body_references = model.features.feature_body_references.as_slice();
+    let booleans = model.features.feature_boolean_operations.as_slice();
+    let bindings = model.segments.segment_body_bindings.as_slice();
+    let body_operands = model.features.feature_operation_body_operands.as_slice();
     if booleans.is_empty() && body_operands.is_empty() {
         return false;
     }
     let Some(statuses) = crate::native::segment_body_lineage_statuses(
-        &labels,
-        &body_references,
-        &booleans,
-        &body_operands,
-        &bindings,
+        labels,
+        body_references,
+        booleans,
+        body_operands,
+        bindings,
     ) else {
         return false;
     };
@@ -7274,7 +7278,8 @@ fn build_metadata_ir(
         }
     }
     let parsed = crate::native::ParsedStreams::parse(scan);
-    crate::native::attach_annotations(&mut ir, scan, &parsed, &mut annotations, &mut unknowns)
+    let model = crate::native::NativeModel::extract(&scan.container, &scan.streams, &parsed);
+    crate::native::attach_annotations(&mut ir, &model, scan, &mut annotations, &mut unknowns)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     Ok((ir, annotations.build(), unknowns))
 }
