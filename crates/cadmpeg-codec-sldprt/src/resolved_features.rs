@@ -24882,6 +24882,38 @@ fn legacy_terminal_indexed_profile_line(
     })
 }
 
+// Curve endpoint-index decoders, one per record layout, tried in precedence
+// order. The first layout that accepts the bytes at `offset` yields the pair;
+// order is load-bearing because a record can satisfy more than one layout's
+// guards and the earliest entry must win.
+type CurveEndpointDecoder = fn(&[u8], usize) -> Option<[u32; 2]>;
+
+const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
+    wide_indexed_curve_endpoint_indices,
+    compact_indexed_curve_endpoint_indices,
+    direct_indexed_curve_endpoint_indices,
+    extended_compact_indexed_curve_endpoint_indices,
+    compact_legacy_curve_endpoint_indices,
+    alternate_current_indexed_curve_endpoint_indices,
+    legacy_state_five_curve_endpoint_indices,
+    legacy_coordinate_roster_selected_axis_endpoint_indices,
+    legacy_profile_roster_selected_axis_endpoint_indices,
+    standard_legacy_compact_selected_axis_endpoint_indices,
+    compact_legacy_selected_axis_endpoint_indices,
+    alternate_current_selected_axis_endpoint_indices,
+    legacy_code_five_or_six_selected_axis_endpoint_indices,
+    compact_curve_endpoint_indices,
+    extended_horizontal_axis_endpoint_indices,
+    current_vertical_axis_endpoint_indices,
+    extended_wide_horizontal_relation_endpoint_indices,
+];
+
+fn resolved_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    CURVE_ENDPOINT_INDEX_DECODERS
+        .iter()
+        .find_map(|decode| decode(payload, offset))
+}
+
 fn roster_curve_endpoint_markers<'a>(
     payload: &[u8],
     curve: &SketchInputEntity,
@@ -24923,24 +24955,7 @@ fn roster_curve_endpoint_markers<'a>(
             return endpoints;
         }
     }
-    if let Some(indices) = wide_indexed_curve_endpoint_indices(payload, offset)
-        .or_else(|| compact_indexed_curve_endpoint_indices(payload, offset))
-        .or_else(|| direct_indexed_curve_endpoint_indices(payload, offset))
-        .or_else(|| extended_compact_indexed_curve_endpoint_indices(payload, offset))
-        .or_else(|| compact_legacy_curve_endpoint_indices(payload, offset))
-        .or_else(|| alternate_current_indexed_curve_endpoint_indices(payload, offset))
-        .or_else(|| legacy_state_five_curve_endpoint_indices(payload, offset))
-        .or_else(|| legacy_coordinate_roster_selected_axis_endpoint_indices(payload, offset))
-        .or_else(|| legacy_profile_roster_selected_axis_endpoint_indices(payload, offset))
-        .or_else(|| standard_legacy_compact_selected_axis_endpoint_indices(payload, offset))
-        .or_else(|| compact_legacy_selected_axis_endpoint_indices(payload, offset))
-        .or_else(|| alternate_current_selected_axis_endpoint_indices(payload, offset))
-        .or_else(|| legacy_code_five_or_six_selected_axis_endpoint_indices(payload, offset))
-        .or_else(|| compact_curve_endpoint_indices(payload, offset))
-        .or_else(|| extended_horizontal_axis_endpoint_indices(payload, offset))
-        .or_else(|| current_vertical_axis_endpoint_indices(payload, offset))
-        .or_else(|| extended_wide_horizontal_relation_endpoint_indices(payload, offset))
-    {
+    if let Some(indices) = resolved_curve_endpoint_indices(payload, offset) {
         let indexed = indices
             .into_iter()
             .filter_map(|index| {
