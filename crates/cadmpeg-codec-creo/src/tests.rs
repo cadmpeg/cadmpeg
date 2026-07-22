@@ -6174,6 +6174,19 @@ fn scan_withholds_displaced_labeled_prototype_pcurve_wrapper() {
 }
 
 #[test]
+fn scan_withholds_duplicate_labeled_prototype_pcurve_arrays() {
+    let mut payload = visibgeom_payload(0, 0);
+    payload.extend_from_slice(b"crv_id\0\x2c type\0\x00 crv_pnt_arr\0\xf9\x02\x04");
+    payload.extend([0x0f; 8]);
+    payload.extend_from_slice(b"crv_pnt_arr\0\xf9\x02\x04");
+    payload.extend([0x0f; 8]);
+    payload.extend_from_slice(b"topol_ref_data\0");
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert!(scan.prototype_pcurves.is_empty());
+}
+
+#[test]
 fn scan_decodes_and_binds_labeled_prototype_topology() {
     let mut payload = visibgeom_payload(0, 0);
     payload.extend_from_slice(b"crv_id\0\x2c type\0\x00");
@@ -6209,6 +6222,20 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
         namespace.arenas["curve_prototype_topology"][0].fields["faces"][1],
         11
     );
+}
+
+#[test]
+fn scan_withholds_duplicate_labeled_prototype_topology_fields() {
+    let mut payload = visibgeom_payload(0, 0);
+    payload.extend_from_slice(b"crv_id\0\x2c type\0\x00");
+    payload.extend_from_slice(
+        b"crv_hdr_geom_ptr[0]\0\x0a crv_hdr_geom_ptr[0]\0\x0a \
+          crv_hdr_geom_ptr[1]\0\x0b next_crv_hdr_ptr[0]\0\x2c next_crv_hdr_ptr[1]\0\x2c",
+    );
+    payload.extend_from_slice(b"topol_ref_data\0");
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert!(scan.curve_prototype_topology.is_empty());
 }
 
 #[test]

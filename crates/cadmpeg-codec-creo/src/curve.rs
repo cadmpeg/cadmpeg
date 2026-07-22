@@ -3368,7 +3368,8 @@ pub fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoint
             continue;
         }
         let prototype_end = find_in(payload, b"topol_ref_data\0", after_id, end).unwrap_or(end);
-        let Some(points_label) = find_in(payload, b"crv_pnt_arr\0", after_id, prototype_end) else {
+        let Some(points_label) = unique_find_in(payload, b"crv_pnt_arr\0", after_id, prototype_end)
+        else {
             continue;
         };
         let header = points_label + b"crv_pnt_arr\0".len();
@@ -3393,7 +3394,7 @@ pub fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoint
             }
         }
         let array_is_bounded = cursor == prototype_end || payload.get(cursor) == Some(&0xe0);
-        if values.len() == 8 && array_is_bounded {
+        if values.len() == 8 && values.iter().all(|value| value.is_finite()) && array_is_bounded {
             result.push(PrototypePcurveEndpoints {
                 curve_id,
                 face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
@@ -3423,7 +3424,7 @@ pub fn prototype_topology(payload: &[u8]) -> Vec<CurvePrototypeTopology> {
         };
         let prototype_end = find_in(payload, b"topol_ref_data\0", id_start, end).unwrap_or(end);
         let reference = |label: &[u8]| {
-            let at = find_in(payload, label, id_start, prototype_end)? + label.len();
+            let at = unique_find_in(payload, label, id_start, prototype_end)? + label.len();
             reference_id(payload, at).ok().map(|(value, _)| value)
         };
         let Some(face_0) = reference(b"crv_hdr_geom_ptr[0]\0") else {
@@ -3563,6 +3564,16 @@ fn find_in(data: &[u8], needle: &[u8], from: usize, end: usize) -> Option<usize>
         .windows(needle.len())
         .position(|window| window == needle)
         .map(|relative| from + relative)
+}
+
+fn unique_find_in(data: &[u8], needle: &[u8], from: usize, end: usize) -> Option<usize> {
+    let mut matches = data
+        .get(from..end)?
+        .windows(needle.len())
+        .enumerate()
+        .filter_map(|(relative, window)| (window == needle).then_some(from + relative));
+    let offset = matches.next()?;
+    matches.next().is_none().then_some(offset)
 }
 
 #[cfg(test)]

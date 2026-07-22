@@ -1053,7 +1053,11 @@ parameter row and its uniquely identified topology row have the same raw
 | `6..7` | Endpoint B in face `F1` parameters |
 
 A bare terminal `18` supplies the final zero slot when seven preceding scalar
-slots are present. A direct `crv_pnt_arr f9 02 04` body stores the same layout.
+slots are present. A direct `crv_pnt_arr f9 02 04` body stores the same layout
+and occurs once in its labeled prototype. Each of
+`crv_hdr_geom_ptr[0]`, `crv_hdr_geom_ptr[1]`, `next_crv_hdr_ptr[0]`, and
+`next_crv_hdr_ptr[1]` occurs once in the same prototype; repeated endpoint or
+topology fields make the prototype ambiguous.
 
 ### 4.2 `fc` curve bodies
 
