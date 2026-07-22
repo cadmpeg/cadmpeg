@@ -11198,6 +11198,23 @@ fn section_skamp_constraints_for_geometry(
                     .then(|| SketchLocus::Center(sketch_entity_id(sketch, item.entity_id)))
                 })
             };
+            let inactive_point_entity = |item: &crate::feature::FeatureSkampItem| {
+                (!active
+                    && item.sense == 0
+                    && item_geometry(item).is_some_and(|geometry| {
+                        matches!(geometry, SketchGeometry::Point { .. })
+                            || matches!(
+                                geometry,
+                                SketchGeometry::Native { native_kind } if native_kind == "point"
+                            )
+                    }))
+                .then(|| sketch_entity_id(sketch, item.entity_id))
+            };
+            let inactive_point_locus = |item: &crate::feature::FeatureSkampItem| {
+                section_skamp_point_locus(definition, sketch, item)
+                    .or_else(|| inactive_point_entity(item).map(SketchLocus::Entity))
+                    .or_else(|| inactive_incidence_locus(item))
+            };
             let mut constraint_definition = if unique_skamp_id {
                 match (skamp.kind, skamp.items.as_slice()) {
                     (0, [first, second])
@@ -11362,15 +11379,17 @@ fn section_skamp_constraints_for_geometry(
                         }
                     }
                     (14, [center, first, second])
-                        if center.sense == 0
-                            && section_skamp_is_point(definition, center)
-                            && section_skamp_point_locus(definition, sketch, first).is_some()
-                            && section_skamp_point_locus(definition, sketch, second).is_some() =>
+                        if (center.sense == 0 && section_skamp_is_point(definition, center)
+                            || inactive_point_entity(center).is_some())
+                            && inactive_point_locus(first).is_some()
+                            && inactive_point_locus(second).is_some() =>
                     {
                         SketchConstraintDefinition::PointSymmetric {
-                            first: section_skamp_point_locus(definition, sketch, first)?,
-                            second: section_skamp_point_locus(definition, sketch, second)?,
-                            center: section_skamp_locus(definition, sketch, center)?,
+                            first: inactive_point_locus(first)?,
+                            second: inactive_point_locus(second)?,
+                            center: section_skamp_locus(definition, sketch, center).or_else(
+                                || inactive_point_entity(center).map(SketchLocus::Entity),
+                            )?,
                         }
                     }
                     (17 | 30 | 31, [_, _]) => {
@@ -21611,6 +21630,83 @@ mod resolved_sketch_tests {
                 &inactive_point_on_curve_definition,
                 &SketchId("creo:model:sketch#917".into()),
                 Some(&unresolved_curve_geometry),
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
+        let mut inactive_point_symmetry_definition = point_coincidence_definition.clone();
+        let inactive_point_symmetry = &mut inactive_point_symmetry_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0];
+        inactive_point_symmetry.kind = 14;
+        inactive_point_symmetry.items = vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 97,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 98,
+                sense: 4,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 99,
+                sense: 4,
+            },
+        ];
+        let unresolved_point_symmetry_geometry = BTreeMap::from([
+            (
+                SketchEntityId("creo:featdefs:sketch_entity#917:97".to_string()),
+                SketchGeometry::Native {
+                    native_kind: "point".to_string(),
+                },
+            ),
+            (
+                SketchEntityId("creo:featdefs:sketch_entity#917:98".to_string()),
+                SketchGeometry::Native {
+                    native_kind: "circle".to_string(),
+                },
+            ),
+            (
+                SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
+                SketchGeometry::Native {
+                    native_kind: "circle".to_string(),
+                },
+            ),
+        ]);
+        assert_eq!(
+            section_skamp_constraints_for_geometry(
+                &inactive_point_symmetry_definition,
+                &SketchId("creo:model:sketch#917".into()),
+                Some(&unresolved_point_symmetry_geometry),
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::PointSymmetric {
+                first: SketchLocus::Center(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:98".to_string()
+                )),
+                second: SketchLocus::Center(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:99".to_string()
+                )),
+                center: SketchLocus::Entity(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:97".to_string()
+                )),
+            }
+        );
+        inactive_point_symmetry_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0]
+            .status = 1;
+        assert!(matches!(
+            section_skamp_constraints_for_geometry(
+                &inactive_point_symmetry_definition,
+                &SketchId("creo:model:sketch#917".into()),
+                Some(&unresolved_point_symmetry_geometry),
             )[0]
             .0
             .definition,

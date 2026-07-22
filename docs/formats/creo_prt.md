@@ -1375,6 +1375,9 @@ point instead makes the following two selected loci centrally symmetric about
 that point entity. Senses `2`, `3`, and `4` select the same endpoint and center
 loci as other solver incidences. For each section coordinate, the two selected
 locus ordinates sum to twice the point entity ordinate.
+A disabled point-symmetry incidence retains that neutral form when the point
+center and both selected loci have defined native geometry families. Solved
+coordinates are not required to satisfy the disabled symmetry equation.
 A two-item type-seventeen incidence stores two endpoint or center loci that
 share one sketch coordinate. Flag `1` selects the section `u` coordinate and
 flag `2` selects the section `v` coordinate. This discriminator defines the
