@@ -4,12 +4,15 @@
 use cadmpeg_codec_catia::CatiaCodec;
 use cadmpeg_codec_creo::CreoCodec;
 use cadmpeg_codec_f3d::F3dCodec;
+use cadmpeg_codec_freecad::FcstdCodec;
+use cadmpeg_codec_iges::IgesCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
 use cadmpeg_ir::codec::{CadirEncoder, Codec, CodecError, Confidence, Encoder};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::SourceFidelity;
 use cadmpeg_step::StepCodec;
 
 /// Native codecs available to the CLI.
@@ -23,6 +26,7 @@ impl Registry {
     pub fn with_builtins() -> Self {
         Registry {
             codecs: vec![
+                Box::new(FcstdCodec),
                 Box::new(F3dCodec),
                 Box::new(SldprtCodec),
                 Box::new(CatiaCodec),
@@ -30,8 +34,10 @@ impl Registry {
                 Box::new(NxCodec),
                 Box::new(RhinoCodec),
                 Box::new(StepCodec::default()),
+                Box::new(IgesCodec),
             ],
             encoders: vec![
+                Box::new(FcstdCodec),
                 Box::new(F3dCodec),
                 Box::new(SldprtCodec),
                 Box::new(RhinoCodec),
@@ -43,13 +49,13 @@ impl Registry {
 
     /// Return the strongest codec match above [`Confidence::No`].
     pub fn detect<'a>(&'a self, prefix: &[u8]) -> Option<(&'a dyn Codec, Confidence)> {
-        // `max_by_key` selects the last registered codec on a tie. Built-in
-        // magic values do not overlap; keep tie resolution deterministic.
+        // Later codecs have explicit precedence when generic container
+        // signatures tie. This preserves F3D routing for marker-less ZIP prefixes.
         self.codecs
             .iter()
             .map(|c| (c.as_ref(), c.detect(prefix)))
             .filter(|(_, conf)| *conf > Confidence::No)
-            .max_by_key(|(_, conf)| *conf)
+            .max_by_key(|(_, confidence)| *confidence)
     }
 
     /// Return the codec with the given stable format identifier.
@@ -85,6 +91,7 @@ impl Registry {
         id: &str,
         rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
         ir: &CadIr,
+        source_fidelity: Option<&SourceFidelity>,
         output: &mut dyn std::io::Write,
     ) -> Option<Result<ExportReport, CodecError>> {
         if rhino_version.is_some() && id != "rhino" {
@@ -94,11 +101,17 @@ impl Registry {
         }
         if id == "rhino" {
             if let Some(version) = rhino_version {
-                return Some(cadmpeg_codec_rhino::RhinoEncoder::new(version).encode(ir, output));
+                return Some(
+                    cadmpeg_codec_rhino::RhinoEncoder::new(version).encode_with_source_fidelity(
+                        ir,
+                        source_fidelity,
+                        output,
+                    ),
+                );
             }
         }
         self.encoder_by_id(id)
-            .map(|encoder| encoder.encode(ir, output))
+            .map(|encoder| encoder.encode_with_source_fidelity(ir, source_fidelity, output))
     }
 }
 
@@ -113,6 +126,7 @@ mod tests {
         for format in [
             Format::Cadir,
             Format::Step,
+            Format::Fcstd,
             Format::F3d,
             Format::Sldprt,
             Format::Rhino,
@@ -123,6 +137,16 @@ mod tests {
                 format.name()
             );
         }
+    }
+
+    #[test]
+    fn ambiguous_zip_uses_last_registered_codec_precedence() {
+        let registry = Registry::with_builtins();
+        let (codec, confidence) = registry
+            .detect(b"PK\x03\x04 markerless")
+            .expect("required invariant");
+        assert_eq!(codec.id(), "f3d");
+        assert_eq!(confidence, cadmpeg_ir::codec::Confidence::Low);
     }
 
     #[test]

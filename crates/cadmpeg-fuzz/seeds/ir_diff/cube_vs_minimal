@@ -1,5 +1,5 @@
 {
-  "ir_version": "3",
+  "ir_version": "54",
   "units": {
     "length": "millimeter"
   },
@@ -107,6 +107,7 @@
       {
         "id": "synthetic:cube:loop#back",
         "face": "synthetic:cube:face#back",
+        "boundary_role": "outer",
         "coedges": [
           "synthetic:cube:coedge#back:0",
           "synthetic:cube:coedge#back:1",
@@ -117,6 +118,7 @@
       {
         "id": "synthetic:cube:loop#bottom",
         "face": "synthetic:cube:face#bottom",
+        "boundary_role": "outer",
         "coedges": [
           "synthetic:cube:coedge#bottom:0",
           "synthetic:cube:coedge#bottom:1",
@@ -127,6 +129,7 @@
       {
         "id": "synthetic:cube:loop#front",
         "face": "synthetic:cube:face#front",
+        "boundary_role": "outer",
         "coedges": [
           "synthetic:cube:coedge#front:0",
           "synthetic:cube:coedge#front:1",
@@ -137,6 +140,7 @@
       {
         "id": "synthetic:cube:loop#left",
         "face": "synthetic:cube:face#left",
+        "boundary_role": "outer",
         "coedges": [
           "synthetic:cube:coedge#left:0",
           "synthetic:cube:coedge#left:1",
@@ -147,6 +151,7 @@
       {
         "id": "synthetic:cube:loop#right",
         "face": "synthetic:cube:face#right",
+        "boundary_role": "outer",
         "coedges": [
           "synthetic:cube:coedge#right:0",
           "synthetic:cube:coedge#right:1",
@@ -157,6 +162,7 @@
       {
         "id": "synthetic:cube:loop#top",
         "face": "synthetic:cube:face#top",
+        "boundary_role": "outer",
         "coedges": [
           "synthetic:cube:coedge#top:0",
           "synthetic:cube:coedge#top:1",
@@ -932,618 +938,35 @@
     "procedural_surfaces": [],
     "procedural_curves": [],
     "features": [],
+    "feature_input_topologies": [],
+    "configurations": [],
+    "parameters": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
+    "spreadsheets": [],
+    "components": [],
+    "occurrences": [],
+    "assembly_joints": [],
+    "drawings": [],
+    "semantic_annotations": [],
+    "presentation_documents": [],
+    "view_presentations": [],
     "tessellations": [],
     "appearances": [],
     "appearance_bindings": [],
-    "attributes": []
-  },
-  "annotations": {
-    "streams": [
-      "synthetic:"
-    ],
-    "provenance": {
-      "synthetic:cube:body#0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#back:0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#back:1": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#back:2": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#back:3": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#bottom:0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#bottom:1": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#bottom:2": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#bottom:3": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#front:0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#front:1": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#front:2": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#front:3": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#left:0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#left:1": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#left:2": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#left:3": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#right:0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#right:1": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#right:2": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#right:3": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#top:0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#top:1": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#top:2": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:coedge#top:3": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:curve#0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:curve#1": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:curve#10": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:curve#11": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:curve#2": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:curve#3": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:curve#4": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:curve#5": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:curve#6": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:curve#7": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:curve#8": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:curve#9": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:edge#0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:edge#1": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:edge#10": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:edge#11": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:edge#2": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:edge#3": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:edge#4": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:edge#5": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:edge#6": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:edge#7": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:edge#8": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:edge#9": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:face#back": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:face#bottom": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:face#front": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:face#left": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:face#right": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:face#top": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:loop#back": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:loop#bottom": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:loop#front": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:loop#left": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:loop#right": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:loop#top": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:point#0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:point#1": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:point#2": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:point#3": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:point#4": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:point#5": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:point#6": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:point#7": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:region#0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:shell#0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:surface#back": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:surface#bottom": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:surface#front": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:surface#left": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:surface#right": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:surface#top": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:vertex#0": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:vertex#1": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:vertex#2": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:vertex#3": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:vertex#4": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:vertex#5": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:vertex#6": {
-        "stream": 0,
-        "offset": 0
-      },
-      "synthetic:cube:vertex#7": {
-        "stream": 0,
-        "offset": 0
-      }
-    },
-    "exactness": {
-      "synthetic:cube:body#0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#back:0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#back:1": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#back:2": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#back:3": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#bottom:0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#bottom:1": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#bottom:2": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#bottom:3": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#front:0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#front:1": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#front:2": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#front:3": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#left:0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#left:1": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#left:2": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#left:3": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#right:0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#right:1": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#right:2": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#right:3": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#top:0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#top:1": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#top:2": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:coedge#top:3": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:curve#0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:curve#1": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:curve#10": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:curve#11": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:curve#2": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:curve#3": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:curve#4": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:curve#5": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:curve#6": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:curve#7": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:curve#8": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:curve#9": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:edge#0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:edge#1": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:edge#10": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:edge#11": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:edge#2": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:edge#3": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:edge#4": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:edge#5": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:edge#6": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:edge#7": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:edge#8": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:edge#9": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:face#back": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:face#bottom": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:face#front": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:face#left": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:face#right": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:face#top": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:loop#back": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:loop#bottom": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:loop#front": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:loop#left": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:loop#right": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:loop#top": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:point#0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:point#1": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:point#2": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:point#3": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:point#4": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:point#5": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:point#6": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:point#7": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:region#0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:shell#0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:surface#back": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:surface#bottom": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:surface#front": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:surface#left": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:surface#right": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:surface#top": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:vertex#0": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:vertex#1": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:vertex#2": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:vertex#3": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:vertex#4": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:vertex#5": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:vertex#6": {
-        "entity": "inferred"
-      },
-      "synthetic:cube:vertex#7": {
-        "entity": "inferred"
-      }
-    }
+    "attributes": [],
+    "products": [],
+    "product_occurrences": [],
+    "pmi": [],
+    "presentation_layers": []
   },
   "native": {}
 } {
-  "ir_version": "3",
+  "ir_version": "54",
   "units": {
     "length": "millimeter"
   },
@@ -1568,11 +991,31 @@
     "procedural_surfaces": [],
     "procedural_curves": [],
     "features": [],
+    "feature_input_topologies": [],
+    "configurations": [],
+    "parameters": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
+    "spreadsheets": [],
+    "components": [],
+    "occurrences": [],
+    "assembly_joints": [],
+    "drawings": [],
+    "semantic_annotations": [],
+    "presentation_documents": [],
+    "view_presentations": [],
     "tessellations": [],
     "appearances": [],
     "appearance_bindings": [],
-    "attributes": []
+    "attributes": [],
+    "products": [],
+    "product_occurrences": [],
+    "pmi": [],
+    "presentation_layers": []
   },
-  "annotations": {},
   "native": {}
 }

@@ -43,6 +43,9 @@ pub(super) fn check_source_associations(ir: &CadIr, findings: &mut Vec<Finding>)
     for curve in &ir.model.curves {
         check_source(curve.source_object.as_ref(), &curve.id.0, findings);
     }
+    for point in &ir.model.points {
+        check_source(point.source_object.as_ref(), &point.id.0, findings);
+    }
     for mesh in &ir.model.tessellations {
         check_source(mesh.source_object.as_ref(), &mesh.id, findings);
     }
@@ -127,8 +130,9 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
             ..
         } = &procedural.definition
         {
-            let valid = [angular_interval, parameter_interval]
+            let valid = [Some(angular_interval), parameter_interval.as_ref()]
                 .into_iter()
+                .flatten()
                 .all(|interval| {
                     interval[0].is_finite() && interval[1].is_finite() && interval[0] < interval[1]
                 });

@@ -1,0 +1,6366 @@
+{
+  "decode": {
+    "ir": {
+      "ir_version": "55",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "assembly_joints": [],
+        "attributes": [],
+        "bodies": [
+          {
+            "id": "nx:s0:body#2",
+            "kind": "sheet",
+            "regions": [
+              "nx:s0:region#4"
+            ]
+          },
+          {
+            "id": "nx:s1:body#2",
+            "kind": "sheet",
+            "regions": [
+              "nx:s1:region#4"
+            ]
+          }
+        ],
+        "coedges": [],
+        "components": [],
+        "configurations": [],
+        "curves": [],
+        "drawings": [],
+        "edges": [],
+        "faces": [
+          {
+            "id": "nx:s0:face#300",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#0",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#301",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#1",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#302",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#2",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#303",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#3",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#304",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#4",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#305",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#5",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#306",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#6",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#307",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#7",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#308",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#8",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#309",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#9",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#310",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#10",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#311",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#11",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#312",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#12",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#313",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#13",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#314",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#14",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#315",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#15",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#316",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#16",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#317",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#17",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#318",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#18",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#319",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#19",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#320",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#20",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#321",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#21",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#322",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#22",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#323",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#23",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#324",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#24",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#325",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#25",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#326",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#26",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#327",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#27",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#328",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#28",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#329",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#29",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#330",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#30",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#331",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#31",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#332",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#32",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#333",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#33",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#334",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#34",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#335",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#35",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#336",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#36",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#337",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#37",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#338",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#38",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#339",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#39",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#340",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#40",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#341",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#41",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#342",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#42",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#343",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#43",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#344",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#44",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#345",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#45",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#346",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#46",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#347",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#47",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#348",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#48",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s0:face#349",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#49",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#300",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#0",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#301",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#1",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#302",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#2",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#303",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#3",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#304",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#4",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#305",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#5",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#306",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#6",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#307",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#7",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#308",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#8",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#309",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#9",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#310",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#10",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#311",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#11",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#312",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#12",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#313",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#13",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#314",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#14",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#315",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#15",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#316",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#16",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#317",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#17",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#318",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#18",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#319",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#19",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#320",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#20",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#321",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#21",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#322",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#22",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#323",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#23",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#324",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#24",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#325",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#25",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#326",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#26",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#327",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#27",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#328",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#28",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#329",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#29",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#330",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#30",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#331",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#31",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#332",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#32",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#333",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#33",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#334",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#34",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#335",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#35",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#336",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#36",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#337",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#37",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#338",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#38",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#339",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#39",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#340",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#40",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#341",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#41",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#342",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#42",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#343",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#43",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#344",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#44",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#345",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#45",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#346",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#46",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#347",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#47",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#348",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#48",
+            "tolerance": 0.1
+          },
+          {
+            "id": "nx:s1:face#349",
+            "loops": [],
+            "sense": "forward",
+            "shell": "nx:s1:shell#3",
+            "surface": "nx:s1:surf#49",
+            "tolerance": 0.1
+          }
+        ],
+        "features": [],
+        "loops": [],
+        "occurrences": [],
+        "parameters": [],
+        "pcurves": [],
+        "pmi": [],
+        "points": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "product_occurrences": [],
+        "products": [],
+        "regions": [
+          {
+            "body": "nx:s0:body#2",
+            "id": "nx:s0:region#4",
+            "shells": [
+              "nx:s0:shell#3"
+            ]
+          },
+          {
+            "body": "nx:s1:body#2",
+            "id": "nx:s1:region#4",
+            "shells": [
+              "nx:s1:shell#3"
+            ]
+          }
+        ],
+        "semantic_annotations": [],
+        "shells": [
+          {
+            "faces": [
+              "nx:s0:face#300",
+              "nx:s0:face#301",
+              "nx:s0:face#302",
+              "nx:s0:face#303",
+              "nx:s0:face#304",
+              "nx:s0:face#305",
+              "nx:s0:face#306",
+              "nx:s0:face#307",
+              "nx:s0:face#308",
+              "nx:s0:face#309",
+              "nx:s0:face#310",
+              "nx:s0:face#311",
+              "nx:s0:face#312",
+              "nx:s0:face#313",
+              "nx:s0:face#314",
+              "nx:s0:face#315",
+              "nx:s0:face#316",
+              "nx:s0:face#317",
+              "nx:s0:face#318",
+              "nx:s0:face#319",
+              "nx:s0:face#320",
+              "nx:s0:face#321",
+              "nx:s0:face#322",
+              "nx:s0:face#323",
+              "nx:s0:face#324",
+              "nx:s0:face#325",
+              "nx:s0:face#326",
+              "nx:s0:face#327",
+              "nx:s0:face#328",
+              "nx:s0:face#329",
+              "nx:s0:face#330",
+              "nx:s0:face#331",
+              "nx:s0:face#332",
+              "nx:s0:face#333",
+              "nx:s0:face#334",
+              "nx:s0:face#335",
+              "nx:s0:face#336",
+              "nx:s0:face#337",
+              "nx:s0:face#338",
+              "nx:s0:face#339",
+              "nx:s0:face#340",
+              "nx:s0:face#341",
+              "nx:s0:face#342",
+              "nx:s0:face#343",
+              "nx:s0:face#344",
+              "nx:s0:face#345",
+              "nx:s0:face#346",
+              "nx:s0:face#347",
+              "nx:s0:face#348",
+              "nx:s0:face#349"
+            ],
+            "id": "nx:s0:shell#3",
+            "region": "nx:s0:region#4"
+          },
+          {
+            "faces": [
+              "nx:s1:face#300",
+              "nx:s1:face#301",
+              "nx:s1:face#302",
+              "nx:s1:face#303",
+              "nx:s1:face#304",
+              "nx:s1:face#305",
+              "nx:s1:face#306",
+              "nx:s1:face#307",
+              "nx:s1:face#308",
+              "nx:s1:face#309",
+              "nx:s1:face#310",
+              "nx:s1:face#311",
+              "nx:s1:face#312",
+              "nx:s1:face#313",
+              "nx:s1:face#314",
+              "nx:s1:face#315",
+              "nx:s1:face#316",
+              "nx:s1:face#317",
+              "nx:s1:face#318",
+              "nx:s1:face#319",
+              "nx:s1:face#320",
+              "nx:s1:face#321",
+              "nx:s1:face#322",
+              "nx:s1:face#323",
+              "nx:s1:face#324",
+              "nx:s1:face#325",
+              "nx:s1:face#326",
+              "nx:s1:face#327",
+              "nx:s1:face#328",
+              "nx:s1:face#329",
+              "nx:s1:face#330",
+              "nx:s1:face#331",
+              "nx:s1:face#332",
+              "nx:s1:face#333",
+              "nx:s1:face#334",
+              "nx:s1:face#335",
+              "nx:s1:face#336",
+              "nx:s1:face#337",
+              "nx:s1:face#338",
+              "nx:s1:face#339",
+              "nx:s1:face#340",
+              "nx:s1:face#341",
+              "nx:s1:face#342",
+              "nx:s1:face#343",
+              "nx:s1:face#344",
+              "nx:s1:face#345",
+              "nx:s1:face#346",
+              "nx:s1:face#347",
+              "nx:s1:face#348",
+              "nx:s1:face#349"
+            ],
+            "id": "nx:s1:shell#3",
+            "region": "nx:s1:region#4"
+          }
+        ],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "subds": [],
+        "surfaces": [
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#0"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#1"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#10"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 11.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#11"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 12.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#12"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 13.000000000000002,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#13"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 14.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#14"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 15.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#15"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 16.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#16"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 17.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#17"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 18.000000000000004,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#18"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 19.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#19"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 2.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#2"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#20"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 21.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#21"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 22.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#22"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 23.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#23"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 24.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#24"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 25.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#25"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 26.000000000000004,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#26"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 27.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#27"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 28.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#28"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 29.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#29"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 3.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#3"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 30.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#30"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 31.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#31"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 32.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#32"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 33.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#33"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 34.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#34"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 35.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#35"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 36.00000000000001,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#36"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 37.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#37"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 38.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#38"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 39.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#39"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 4.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#4"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 40.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#40"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 41.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#41"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 42.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#42"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 43.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#43"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 44.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#44"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 45.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#45"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 46.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#46"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 47.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#47"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 48.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#48"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 49.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#49"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 5.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#5"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 6.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#6"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 7.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#7"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 8.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#8"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 9.000000000000002,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#9"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#0"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#1"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#10"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 11.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#11"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 12.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#12"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 13.000000000000002,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#13"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 14.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#14"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 15.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#15"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 16.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#16"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 17.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#17"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 18.000000000000004,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#18"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 19.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#19"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 2.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#2"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#20"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 21.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#21"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 22.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#22"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 23.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#23"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 24.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#24"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 25.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#25"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 26.000000000000004,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#26"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 27.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#27"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 28.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#28"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 29.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#29"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 3.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#3"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 30.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#30"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 31.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#31"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 32.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#32"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 33.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#33"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 34.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#34"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 35.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#35"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 36.00000000000001,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#36"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 37.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#37"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 38.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#38"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 39.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#39"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 4.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#4"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 40.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#40"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 41.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#41"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 42.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#42"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 43.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#43"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 44.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#44"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 45.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#45"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 46.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#46"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 47.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#47"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 48.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#48"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 49.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#49"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 5.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#5"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 6.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#6"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 7.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#7"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 8.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#8"
+          },
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 9.000000000000002,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s1:surf#9"
+          }
+        ],
+        "tessellations": [],
+        "vertices": [],
+        "view_presentations": []
+      },
+      "native": {
+        "nx": {
+          "arenas": {
+            "rmfastload_object_id_tables": [
+              {
+                "id": "nx:rmfastload:object-id-table#0",
+                "members": [
+                  "nx:rmfastload:object-id#0000000000",
+                  "nx:rmfastload:object-id#0000000001",
+                  "nx:rmfastload:object-id#0000000002",
+                  "nx:rmfastload:object-id#0000000003",
+                  "nx:rmfastload:object-id#0000000004",
+                  "nx:rmfastload:object-id#0000000005",
+                  "nx:rmfastload:object-id#0000000006",
+                  "nx:rmfastload:object-id#0000000007",
+                  "nx:rmfastload:object-id#0000000008",
+                  "nx:rmfastload:object-id#0000000009",
+                  "nx:rmfastload:object-id#0000000010",
+                  "nx:rmfastload:object-id#0000000011",
+                  "nx:rmfastload:object-id#0000000012",
+                  "nx:rmfastload:object-id#0000000013",
+                  "nx:rmfastload:object-id#0000000014",
+                  "nx:rmfastload:object-id#0000000015",
+                  "nx:rmfastload:object-id#0000000016",
+                  "nx:rmfastload:object-id#0000000017",
+                  "nx:rmfastload:object-id#0000000018",
+                  "nx:rmfastload:object-id#0000000019",
+                  "nx:rmfastload:object-id#0000000020",
+                  "nx:rmfastload:object-id#0000000021",
+                  "nx:rmfastload:object-id#0000000022",
+                  "nx:rmfastload:object-id#0000000023",
+                  "nx:rmfastload:object-id#0000000024",
+                  "nx:rmfastload:object-id#0000000025",
+                  "nx:rmfastload:object-id#0000000026",
+                  "nx:rmfastload:object-id#0000000027",
+                  "nx:rmfastload:object-id#0000000028",
+                  "nx:rmfastload:object-id#0000000029",
+                  "nx:rmfastload:object-id#0000000030",
+                  "nx:rmfastload:object-id#0000000031",
+                  "nx:rmfastload:object-id#0000000032",
+                  "nx:rmfastload:object-id#0000000033",
+                  "nx:rmfastload:object-id#0000000034",
+                  "nx:rmfastload:object-id#0000000035",
+                  "nx:rmfastload:object-id#0000000036",
+                  "nx:rmfastload:object-id#0000000037",
+                  "nx:rmfastload:object-id#0000000038",
+                  "nx:rmfastload:object-id#0000000039",
+                  "nx:rmfastload:object-id#0000000040",
+                  "nx:rmfastload:object-id#0000000041",
+                  "nx:rmfastload:object-id#0000000042",
+                  "nx:rmfastload:object-id#0000000043",
+                  "nx:rmfastload:object-id#0000000044",
+                  "nx:rmfastload:object-id#0000000045",
+                  "nx:rmfastload:object-id#0000000046",
+                  "nx:rmfastload:object-id#0000000047",
+                  "nx:rmfastload:object-id#0000000048",
+                  "nx:rmfastload:object-id#0000000049"
+                ],
+                "raw_count": [
+                  50,
+                  0,
+                  0,
+                  0
+                ],
+                "registry_source_offset": 3626,
+                "source_entry": "/Root/FastLoad/RMFastLoad",
+                "source_offset": 3643
+              }
+            ],
+            "rmfastload_object_ids": [
+              {
+                "id": "nx:rmfastload:object-id#0000000000",
+                "ordinal": 0,
+                "raw": [
+                  232,
+                  3,
+                  0,
+                  0
+                ],
+                "source_offset": 3647,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 1000
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000001",
+                "ordinal": 1,
+                "raw": [
+                  233,
+                  3,
+                  0,
+                  0
+                ],
+                "source_offset": 3651,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 1001
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000002",
+                "ordinal": 2,
+                "raw": [
+                  234,
+                  3,
+                  0,
+                  0
+                ],
+                "source_offset": 3655,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 1002
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000003",
+                "ordinal": 3,
+                "raw": [
+                  235,
+                  3,
+                  0,
+                  0
+                ],
+                "source_offset": 3659,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 1003
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000004",
+                "ordinal": 4,
+                "raw": [
+                  236,
+                  3,
+                  0,
+                  0
+                ],
+                "source_offset": 3663,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 1004
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000005",
+                "ordinal": 5,
+                "raw": [
+                  21,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3667,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10005
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000006",
+                "ordinal": 6,
+                "raw": [
+                  22,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3671,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10006
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000007",
+                "ordinal": 7,
+                "raw": [
+                  23,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3675,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10007
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000008",
+                "ordinal": 8,
+                "raw": [
+                  24,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3679,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10008
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000009",
+                "ordinal": 9,
+                "raw": [
+                  25,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3683,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10009
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000010",
+                "ordinal": 10,
+                "raw": [
+                  26,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3687,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10010
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000011",
+                "ordinal": 11,
+                "raw": [
+                  27,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3691,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10011
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000012",
+                "ordinal": 12,
+                "raw": [
+                  28,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3695,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10012
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000013",
+                "ordinal": 13,
+                "raw": [
+                  29,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3699,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10013
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000014",
+                "ordinal": 14,
+                "raw": [
+                  30,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3703,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10014
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000015",
+                "ordinal": 15,
+                "raw": [
+                  31,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3707,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10015
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000016",
+                "ordinal": 16,
+                "raw": [
+                  32,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3711,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10016
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000017",
+                "ordinal": 17,
+                "raw": [
+                  33,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3715,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10017
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000018",
+                "ordinal": 18,
+                "raw": [
+                  34,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3719,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10018
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000019",
+                "ordinal": 19,
+                "raw": [
+                  35,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3723,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10019
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000020",
+                "ordinal": 20,
+                "raw": [
+                  36,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3727,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10020
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000021",
+                "ordinal": 21,
+                "raw": [
+                  37,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3731,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10021
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000022",
+                "ordinal": 22,
+                "raw": [
+                  38,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3735,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10022
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000023",
+                "ordinal": 23,
+                "raw": [
+                  39,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3739,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10023
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000024",
+                "ordinal": 24,
+                "raw": [
+                  40,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3743,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10024
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000025",
+                "ordinal": 25,
+                "raw": [
+                  41,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3747,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10025
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000026",
+                "ordinal": 26,
+                "raw": [
+                  42,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3751,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10026
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000027",
+                "ordinal": 27,
+                "raw": [
+                  43,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3755,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10027
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000028",
+                "ordinal": 28,
+                "raw": [
+                  44,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3759,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10028
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000029",
+                "ordinal": 29,
+                "raw": [
+                  45,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3763,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10029
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000030",
+                "ordinal": 30,
+                "raw": [
+                  46,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3767,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10030
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000031",
+                "ordinal": 31,
+                "raw": [
+                  47,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3771,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10031
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000032",
+                "ordinal": 32,
+                "raw": [
+                  48,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3775,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10032
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000033",
+                "ordinal": 33,
+                "raw": [
+                  49,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3779,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10033
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000034",
+                "ordinal": 34,
+                "raw": [
+                  50,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3783,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10034
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000035",
+                "ordinal": 35,
+                "raw": [
+                  51,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3787,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10035
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000036",
+                "ordinal": 36,
+                "raw": [
+                  52,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3791,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10036
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000037",
+                "ordinal": 37,
+                "raw": [
+                  53,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3795,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10037
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000038",
+                "ordinal": 38,
+                "raw": [
+                  54,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3799,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10038
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000039",
+                "ordinal": 39,
+                "raw": [
+                  55,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3803,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10039
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000040",
+                "ordinal": 40,
+                "raw": [
+                  56,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3807,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10040
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000041",
+                "ordinal": 41,
+                "raw": [
+                  57,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3811,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10041
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000042",
+                "ordinal": 42,
+                "raw": [
+                  58,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3815,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10042
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000043",
+                "ordinal": 43,
+                "raw": [
+                  59,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3819,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10043
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000044",
+                "ordinal": 44,
+                "raw": [
+                  60,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3823,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10044
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000045",
+                "ordinal": 45,
+                "raw": [
+                  61,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3827,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10045
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000046",
+                "ordinal": 46,
+                "raw": [
+                  62,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3831,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10046
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000047",
+                "ordinal": 47,
+                "raw": [
+                  63,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3835,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10047
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000048",
+                "ordinal": 48,
+                "raw": [
+                  64,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3839,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10048
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000049",
+                "ordinal": 49,
+                "raw": [
+                  65,
+                  39,
+                  0,
+                  0
+                ],
+                "source_offset": 3843,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10049
+              }
+            ],
+            "unknowns": [
+              {
+                "id": "nx:container:parasolid#0",
+                "links": [
+                  "nx:s0:surf#0",
+                  "nx:s0:surf#1",
+                  "nx:s0:surf#2",
+                  "nx:s0:surf#3",
+                  "nx:s0:surf#4",
+                  "nx:s0:surf#5",
+                  "nx:s0:surf#6",
+                  "nx:s0:surf#7",
+                  "nx:s0:surf#8",
+                  "nx:s0:surf#9",
+                  "nx:s0:surf#10",
+                  "nx:s0:surf#11",
+                  "nx:s0:surf#12",
+                  "nx:s0:surf#13",
+                  "nx:s0:surf#14",
+                  "nx:s0:surf#15",
+                  "nx:s0:surf#16",
+                  "nx:s0:surf#17",
+                  "nx:s0:surf#18",
+                  "nx:s0:surf#19",
+                  "nx:s0:surf#20",
+                  "nx:s0:surf#21",
+                  "nx:s0:surf#22",
+                  "nx:s0:surf#23",
+                  "nx:s0:surf#24",
+                  "nx:s0:surf#25",
+                  "nx:s0:surf#26",
+                  "nx:s0:surf#27",
+                  "nx:s0:surf#28",
+                  "nx:s0:surf#29",
+                  "nx:s0:surf#30",
+                  "nx:s0:surf#31",
+                  "nx:s0:surf#32",
+                  "nx:s0:surf#33",
+                  "nx:s0:surf#34",
+                  "nx:s0:surf#35",
+                  "nx:s0:surf#36",
+                  "nx:s0:surf#37",
+                  "nx:s0:surf#38",
+                  "nx:s0:surf#39",
+                  "nx:s0:surf#40",
+                  "nx:s0:surf#41",
+                  "nx:s0:surf#42",
+                  "nx:s0:surf#43",
+                  "nx:s0:surf#44",
+                  "nx:s0:surf#45",
+                  "nx:s0:surf#46",
+                  "nx:s0:surf#47",
+                  "nx:s0:surf#48",
+                  "nx:s0:surf#49"
+                ]
+              },
+              {
+                "id": "nx:container:parasolid#1",
+                "links": [
+                  "nx:s1:surf#0",
+                  "nx:s1:surf#1",
+                  "nx:s1:surf#2",
+                  "nx:s1:surf#3",
+                  "nx:s1:surf#4",
+                  "nx:s1:surf#5",
+                  "nx:s1:surf#6",
+                  "nx:s1:surf#7",
+                  "nx:s1:surf#8",
+                  "nx:s1:surf#9",
+                  "nx:s1:surf#10",
+                  "nx:s1:surf#11",
+                  "nx:s1:surf#12",
+                  "nx:s1:surf#13",
+                  "nx:s1:surf#14",
+                  "nx:s1:surf#15",
+                  "nx:s1:surf#16",
+                  "nx:s1:surf#17",
+                  "nx:s1:surf#18",
+                  "nx:s1:surf#19",
+                  "nx:s1:surf#20",
+                  "nx:s1:surf#21",
+                  "nx:s1:surf#22",
+                  "nx:s1:surf#23",
+                  "nx:s1:surf#24",
+                  "nx:s1:surf#25",
+                  "nx:s1:surf#26",
+                  "nx:s1:surf#27",
+                  "nx:s1:surf#28",
+                  "nx:s1:surf#29",
+                  "nx:s1:surf#30",
+                  "nx:s1:surf#31",
+                  "nx:s1:surf#32",
+                  "nx:s1:surf#33",
+                  "nx:s1:surf#34",
+                  "nx:s1:surf#35",
+                  "nx:s1:surf#36",
+                  "nx:s1:surf#37",
+                  "nx:s1:surf#38",
+                  "nx:s1:surf#39",
+                  "nx:s1:surf#40",
+                  "nx:s1:surf#41",
+                  "nx:s1:surf#42",
+                  "nx:s1:surf#43",
+                  "nx:s1:surf#44",
+                  "nx:s1:surf#45",
+                  "nx:s1:surf#46",
+                  "nx:s1:surf#47",
+                  "nx:s1:surf#48",
+                  "nx:s1:surf#49"
+                ]
+              }
+            ]
+          },
+          "version": 155
+        }
+      },
+      "source": {
+        "attributes": {
+          "deltas_streams": "0",
+          "directory_entries": "2",
+          "file_size": "3847",
+          "footer_offset": "0",
+          "jpeg_preview_count": "0",
+          "parasolid_schema": "SCH_TEST_1_9999",
+          "partition_streams": "2",
+          "plain_streams": "0",
+          "rmfastload_active_object_count": "50"
+        },
+        "format": "nx"
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "container_only": false,
+      "format": "nx",
+      "geometry_transferred": true,
+      "losses": [
+        {
+          "category": "geometry",
+          "code": "carrier_summary",
+          "message": "Decoded 0 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 100 analytic surface carrier(s) (100 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 0 analytic curve carrier(s) (0 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
+          "severity": "info"
+        },
+        {
+          "category": "topology",
+          "code": "feature_history_retained",
+          "message": "This part is composed of 2 sub-body partition(s); its decoded feature-history Booleans do not resolve every intermediate body object to a partition image. Carriers from all sub-bodies are emitted without the unresolved composition that would remove interior/construction faces.",
+          "severity": "warning"
+        },
+        {
+          "category": "attribute",
+          "code": "attributes_not_transferred",
+          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
+          "severity": "warning"
+        }
+      ],
+      "notes": [
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 2 directory entry/ies",
+        "embedded streams: 2 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+        "Parasolid schema: SCH_TEST_1_9999"
+      ]
+    },
+    "source_fidelity": {
+      "annotations": {
+        "exactness": {
+          "nx:container:parasolid#0": {
+            "entity": "derived",
+            "fields": {
+              "links": "derived"
+            }
+          },
+          "nx:container:parasolid#1": {
+            "entity": "derived",
+            "fields": {
+              "links": "derived"
+            }
+          },
+          "nx:s0:face#300": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#301": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#302": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#303": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#304": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#305": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#306": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#307": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#308": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#309": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#310": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#311": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#312": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#313": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#314": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#315": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#316": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#317": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#318": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#319": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#320": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#321": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#322": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#323": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#324": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#325": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#326": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#327": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#328": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#329": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#330": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#331": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#332": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#333": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#334": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#335": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#336": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#337": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#338": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#339": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#340": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#341": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#342": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#343": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#344": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#345": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#346": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#347": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#348": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#349": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:region#4": {
+            "entity": "byte_exact",
+            "fields": {
+              "body": "derived"
+            }
+          },
+          "nx:s0:surf#0": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#1": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#10": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#11": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#12": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#13": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#14": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#15": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#16": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#17": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#18": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#19": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#2": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#20": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#21": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#22": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#23": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#24": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#25": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#26": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#27": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#28": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#29": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#3": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#30": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#31": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#32": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#33": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#34": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#35": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#36": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#37": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#38": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#39": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#4": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#40": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#41": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#42": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#43": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#44": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#45": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#46": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#47": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#48": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#49": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#5": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#6": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#7": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#8": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:surf#9": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:face#300": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#301": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#302": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#303": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#304": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#305": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#306": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#307": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#308": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#309": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#310": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#311": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#312": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#313": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#314": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#315": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#316": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#317": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#318": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#319": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#320": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#321": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#322": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#323": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#324": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#325": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#326": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#327": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#328": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#329": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#330": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#331": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#332": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#333": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#334": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#335": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#336": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#337": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#338": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#339": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#340": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#341": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#342": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#343": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#344": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#345": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#346": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#347": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#348": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:face#349": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s1:region#4": {
+            "entity": "byte_exact",
+            "fields": {
+              "body": "derived"
+            }
+          },
+          "nx:s1:surf#0": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#1": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#10": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#11": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#12": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#13": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#14": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#15": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#16": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#17": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#18": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#19": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#2": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#20": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#21": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#22": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#23": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#24": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#25": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#26": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#27": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#28": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#29": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#3": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#30": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#31": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#32": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#33": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#34": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#35": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#36": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#37": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#38": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#39": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#4": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#40": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#41": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#42": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#43": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#44": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#45": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#46": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#47": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#48": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#49": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#5": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#6": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#7": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#8": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s1:surf#9": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          }
+        },
+        "provenance": {
+          "nx:container:parasolid#0": {
+            "offset": 117,
+            "stream": 1,
+            "tag": "partition"
+          },
+          "nx:container:parasolid#1": {
+            "offset": 1869,
+            "stream": 1,
+            "tag": "partition"
+          },
+          "nx:s0:body#2": {
+            "offset": 70,
+            "stream": 0,
+            "tag": "BODY"
+          },
+          "nx:s0:face#300": {
+            "offset": 134,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#301": {
+            "offset": 173,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#302": {
+            "offset": 212,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#303": {
+            "offset": 251,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#304": {
+            "offset": 290,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#305": {
+            "offset": 329,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#306": {
+            "offset": 368,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#307": {
+            "offset": 407,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#308": {
+            "offset": 446,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#309": {
+            "offset": 485,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#310": {
+            "offset": 524,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#311": {
+            "offset": 563,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#312": {
+            "offset": 602,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#313": {
+            "offset": 641,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#314": {
+            "offset": 680,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#315": {
+            "offset": 719,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#316": {
+            "offset": 758,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#317": {
+            "offset": 797,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#318": {
+            "offset": 836,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#319": {
+            "offset": 875,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#320": {
+            "offset": 914,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#321": {
+            "offset": 953,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#322": {
+            "offset": 992,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#323": {
+            "offset": 1031,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#324": {
+            "offset": 1070,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#325": {
+            "offset": 1109,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#326": {
+            "offset": 1148,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#327": {
+            "offset": 1187,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#328": {
+            "offset": 1226,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#329": {
+            "offset": 1265,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#330": {
+            "offset": 1304,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#331": {
+            "offset": 1343,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#332": {
+            "offset": 1382,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#333": {
+            "offset": 1421,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#334": {
+            "offset": 1460,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#335": {
+            "offset": 1499,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#336": {
+            "offset": 1538,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#337": {
+            "offset": 1577,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#338": {
+            "offset": 1616,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#339": {
+            "offset": 1655,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#340": {
+            "offset": 1694,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#341": {
+            "offset": 1733,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#342": {
+            "offset": 1772,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#343": {
+            "offset": 1811,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#344": {
+            "offset": 1850,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#345": {
+            "offset": 1889,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#346": {
+            "offset": 1928,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#347": {
+            "offset": 1967,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#348": {
+            "offset": 2006,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:face#349": {
+            "offset": 2045,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:region#4": {
+            "offset": 118,
+            "stream": 0,
+            "tag": "REGION"
+          },
+          "nx:s0:shell#3": {
+            "offset": 94,
+            "stream": 0,
+            "tag": "SHELL"
+          },
+          "nx:s0:surf#0": {
+            "offset": 2084,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#1": {
+            "offset": 2175,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#10": {
+            "offset": 2994,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#11": {
+            "offset": 3085,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#12": {
+            "offset": 3176,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#13": {
+            "offset": 3267,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#14": {
+            "offset": 3358,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#15": {
+            "offset": 3449,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#16": {
+            "offset": 3540,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#17": {
+            "offset": 3631,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#18": {
+            "offset": 3722,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#19": {
+            "offset": 3813,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#2": {
+            "offset": 2266,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#20": {
+            "offset": 3904,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#21": {
+            "offset": 3995,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#22": {
+            "offset": 4086,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#23": {
+            "offset": 4177,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#24": {
+            "offset": 4268,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#25": {
+            "offset": 4359,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#26": {
+            "offset": 4450,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#27": {
+            "offset": 4541,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#28": {
+            "offset": 4632,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#29": {
+            "offset": 4723,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#3": {
+            "offset": 2357,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#30": {
+            "offset": 4814,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#31": {
+            "offset": 4905,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#32": {
+            "offset": 4996,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#33": {
+            "offset": 5087,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#34": {
+            "offset": 5178,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#35": {
+            "offset": 5269,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#36": {
+            "offset": 5360,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#37": {
+            "offset": 5451,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#38": {
+            "offset": 5542,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#39": {
+            "offset": 5633,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#4": {
+            "offset": 2448,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#40": {
+            "offset": 5724,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#41": {
+            "offset": 5815,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#42": {
+            "offset": 5906,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#43": {
+            "offset": 5997,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#44": {
+            "offset": 6088,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#45": {
+            "offset": 6179,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#46": {
+            "offset": 6270,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#47": {
+            "offset": 6361,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#48": {
+            "offset": 6452,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#49": {
+            "offset": 6543,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#5": {
+            "offset": 2539,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#6": {
+            "offset": 2630,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#7": {
+            "offset": 2721,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#8": {
+            "offset": 2812,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:surf#9": {
+            "offset": 2903,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s1:body#2": {
+            "offset": 70,
+            "stream": 2,
+            "tag": "BODY"
+          },
+          "nx:s1:face#300": {
+            "offset": 134,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#301": {
+            "offset": 173,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#302": {
+            "offset": 212,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#303": {
+            "offset": 251,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#304": {
+            "offset": 290,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#305": {
+            "offset": 329,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#306": {
+            "offset": 368,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#307": {
+            "offset": 407,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#308": {
+            "offset": 446,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#309": {
+            "offset": 485,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#310": {
+            "offset": 524,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#311": {
+            "offset": 563,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#312": {
+            "offset": 602,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#313": {
+            "offset": 641,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#314": {
+            "offset": 680,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#315": {
+            "offset": 719,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#316": {
+            "offset": 758,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#317": {
+            "offset": 797,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#318": {
+            "offset": 836,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#319": {
+            "offset": 875,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#320": {
+            "offset": 914,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#321": {
+            "offset": 953,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#322": {
+            "offset": 992,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#323": {
+            "offset": 1031,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#324": {
+            "offset": 1070,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#325": {
+            "offset": 1109,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#326": {
+            "offset": 1148,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#327": {
+            "offset": 1187,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#328": {
+            "offset": 1226,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#329": {
+            "offset": 1265,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#330": {
+            "offset": 1304,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#331": {
+            "offset": 1343,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#332": {
+            "offset": 1382,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#333": {
+            "offset": 1421,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#334": {
+            "offset": 1460,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#335": {
+            "offset": 1499,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#336": {
+            "offset": 1538,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#337": {
+            "offset": 1577,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#338": {
+            "offset": 1616,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#339": {
+            "offset": 1655,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#340": {
+            "offset": 1694,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#341": {
+            "offset": 1733,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#342": {
+            "offset": 1772,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#343": {
+            "offset": 1811,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#344": {
+            "offset": 1850,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#345": {
+            "offset": 1889,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#346": {
+            "offset": 1928,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#347": {
+            "offset": 1967,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#348": {
+            "offset": 2006,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:face#349": {
+            "offset": 2045,
+            "stream": 2,
+            "tag": "FACE"
+          },
+          "nx:s1:region#4": {
+            "offset": 118,
+            "stream": 2,
+            "tag": "REGION"
+          },
+          "nx:s1:shell#3": {
+            "offset": 94,
+            "stream": 2,
+            "tag": "SHELL"
+          },
+          "nx:s1:surf#0": {
+            "offset": 2084,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#1": {
+            "offset": 2175,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#10": {
+            "offset": 2994,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#11": {
+            "offset": 3085,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#12": {
+            "offset": 3176,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#13": {
+            "offset": 3267,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#14": {
+            "offset": 3358,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#15": {
+            "offset": 3449,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#16": {
+            "offset": 3540,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#17": {
+            "offset": 3631,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#18": {
+            "offset": 3722,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#19": {
+            "offset": 3813,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#2": {
+            "offset": 2266,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#20": {
+            "offset": 3904,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#21": {
+            "offset": 3995,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#22": {
+            "offset": 4086,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#23": {
+            "offset": 4177,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#24": {
+            "offset": 4268,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#25": {
+            "offset": 4359,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#26": {
+            "offset": 4450,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#27": {
+            "offset": 4541,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#28": {
+            "offset": 4632,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#29": {
+            "offset": 4723,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#3": {
+            "offset": 2357,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#30": {
+            "offset": 4814,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#31": {
+            "offset": 4905,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#32": {
+            "offset": 4996,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#33": {
+            "offset": 5087,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#34": {
+            "offset": 5178,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#35": {
+            "offset": 5269,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#36": {
+            "offset": 5360,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#37": {
+            "offset": 5451,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#38": {
+            "offset": 5542,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#39": {
+            "offset": 5633,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#4": {
+            "offset": 2448,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#40": {
+            "offset": 5724,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#41": {
+            "offset": 5815,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#42": {
+            "offset": 5906,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#43": {
+            "offset": 5997,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#44": {
+            "offset": 6088,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#45": {
+            "offset": 6179,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#46": {
+            "offset": 6270,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#47": {
+            "offset": 6361,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#48": {
+            "offset": 6452,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#49": {
+            "offset": 6543,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#5": {
+            "offset": 2539,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#6": {
+            "offset": 2630,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#7": {
+            "offset": 2721,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#8": {
+            "offset": 2812,
+            "stream": 2,
+            "tag": "PLANE"
+          },
+          "nx:s1:surf#9": {
+            "offset": 2903,
+            "stream": 2,
+            "tag": "PLANE"
+          }
+        },
+        "streams": [
+          "nx:parasolid#0:partition",
+          "nx:container",
+          "nx:parasolid#1:partition"
+        ]
+      },
+      "retained_records": [
+        {
+          "byte_len": 6634,
+          "data": "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",
+          "id": "nx:container:parasolid#0",
+          "offset": 117,
+          "sha256": "0c82f20dbb877af29f1bde040e315cca56026d9d4a7e6f1ef5a82f8528a2cafe",
+          "stream": "nx:container"
+        },
+        {
+          "byte_len": 6634,
+          "data": "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",
+          "id": "nx:container:parasolid#1",
+          "offset": 1869,
+          "sha256": "706f04bfdcd0672dbe0d7ca5aef03aa07c430722e809c6e980703444cc490155",
+          "stream": "nx:container"
+        }
+      ],
+      "version": "3"
+    }
+  },
+  "inspect": {
+    "container_kind": "splmsstr",
+    "entries": [
+      {
+        "attributes": {
+          "file_offset": "117",
+          "region": "HEADER"
+        },
+        "compressed_size": 3509,
+        "compression": "none",
+        "name": "/Root/UG_PART/UG_PART",
+        "role": "stream",
+        "uncompressed_size": 3509
+      },
+      {
+        "attributes": {
+          "file_offset": "3626",
+          "region": "HEADER"
+        },
+        "compressed_size": 221,
+        "compression": "none",
+        "name": "/Root/FastLoad/RMFastLoad",
+        "role": "stream",
+        "uncompressed_size": 221
+      },
+      {
+        "attributes": {
+          "file_offset": "117",
+          "kind": "partition",
+          "records.body": "1",
+          "records.edge": "0",
+          "records.face": "50",
+          "records.fin": "0",
+          "records.live.body": "1",
+          "records.live.edge": "0",
+          "records.live.face": "50",
+          "records.live.fin": "0",
+          "records.live.loop": "0",
+          "records.live.region": "1",
+          "records.live.shell": "1",
+          "records.live.vertex": "0",
+          "records.loop": "0",
+          "records.region": "1",
+          "records.shell": "1",
+          "records.vertex": "0",
+          "schema": "SCH_TEST_1_9999"
+        },
+        "compressed_size": 0,
+        "compression": "zlib",
+        "name": "parasolid#0",
+        "role": "parasolid-stream",
+        "uncompressed_size": 6634
+      },
+      {
+        "attributes": {
+          "file_offset": "1869",
+          "kind": "partition",
+          "records.body": "1",
+          "records.edge": "0",
+          "records.face": "50",
+          "records.fin": "0",
+          "records.live.body": "1",
+          "records.live.edge": "0",
+          "records.live.face": "50",
+          "records.live.fin": "0",
+          "records.live.loop": "0",
+          "records.live.region": "1",
+          "records.live.shell": "1",
+          "records.live.vertex": "0",
+          "records.loop": "0",
+          "records.region": "1",
+          "records.shell": "1",
+          "records.vertex": "0",
+          "schema": "SCH_TEST_1_9999"
+        },
+        "compressed_size": 0,
+        "compression": "zlib",
+        "name": "parasolid#1",
+        "role": "parasolid-stream",
+        "uncompressed_size": 6634
+      }
+    ],
+    "format": "nx",
+    "notes": [
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 2 directory entry/ies",
+      "embedded streams: 2 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+      "Parasolid schema: SCH_TEST_1_9999"
+    ]
+  }
+}

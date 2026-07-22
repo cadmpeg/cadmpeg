@@ -22,7 +22,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         .collect::<HashSet<_>>();
     let occurrences = ir
         .model
-        .occurrences
+        .product_occurrences
         .iter()
         .map(|occurrence| (occurrence.id.as_str(), occurrence))
         .collect::<HashMap<_, _>>();
@@ -34,7 +34,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
     }
-    for occurrence in &ir.model.occurrences {
+    for occurrence in &ir.model.product_occurrences {
         if !occurrence.transform.is_finite() {
             findings.push(Finding {
                 check: Check::ProductStructure,
@@ -63,7 +63,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     let mut parent_state = HashMap::<&str, u8>::new();
-    for occurrence in &ir.model.occurrences {
+    for occurrence in &ir.model.product_occurrences {
         if parent_state.get(occurrence.id.as_str()) == Some(&2) {
             continue;
         }

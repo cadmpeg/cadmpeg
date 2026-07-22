@@ -66,9 +66,10 @@ for the supported source-less profile.
 
 ## Data model and support
 
-The decoder selects the authoritative `.smbh` B-rep, or the first `.smb`
-construction snapshot when no `.smbh` exists. It frames the active SAB record
-slice and builds the topology chain from bodies through vertices and points.
+The decoder selects the `.smbh` history stream, or the first `.smb` when no
+`.smbh` exists. The Design body map selects every B-rep blob contributing
+bodies to the document model. The decoder frames their SAB record slices and
+builds each topology chain from bodies through vertices and points.
 ASM model-space lengths become millimetres in `CadIr`; directions, ratios,
 angles, knots, weights, and UV parameters retain their native scale.
 

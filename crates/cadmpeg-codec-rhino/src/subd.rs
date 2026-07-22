@@ -1343,6 +1343,10 @@ pub(crate) mod tests {
     use super::*;
 
     #[derive(Clone, Copy)]
+    #[expect(
+        clippy::struct_excessive_bools,
+        reason = "independent fixture toggles model orthogonal archive mutations"
+    )]
     struct Fixture {
         archive: ArchiveVersion,
         minor: i32,
@@ -1640,7 +1644,8 @@ pub(crate) mod tests {
     #[test]
     fn decodes_empty_outer_subd_without_carrier() {
         assert!(matches!(
-            decode(&[0], 0..1, ArchiveVersion::V5, 1.0, "test:subd#0".into()).unwrap(),
+            decode(&[0], 0..1, ArchiveVersion::V5, 1.0, "test:subd#0".into())
+                .expect("required invariant"),
             DecodedSubd::Empty
         ));
         assert!(decode(&[2], 0..1, ArchiveVersion::V5, 1.0, "test:subd#0".into()).is_err());
@@ -1678,13 +1683,13 @@ pub(crate) mod tests {
         ] {
             let decoded = decode_fixture(
                 Fixture {
-                    minor,
                     archive,
+                    minor,
                     ..Fixture::default()
                 },
                 1.0,
             )
-            .unwrap();
+            .expect("required invariant");
             assert!(matches!(decoded, DecodedSubd::Surface { .. }));
         }
     }
@@ -1717,7 +1722,7 @@ pub(crate) mod tests {
             },
             1.0,
         )
-        .unwrap() else {
+        .expect("required invariant") else {
             panic!("expected surface");
         };
         assert!(surface.faces[0].edges[1].reversed);
@@ -1766,7 +1771,7 @@ pub(crate) mod tests {
             },
             1.0,
         )
-        .unwrap() else {
+        .expect("required invariant") else {
             panic!("expected surface");
         };
         assert_eq!(surface.vertices[0].tag, SubdVertexTag::Dart);
@@ -1776,7 +1781,8 @@ pub(crate) mod tests {
 
     #[test]
     fn maps_scalar_and_preserves_v8_two_ended_sharpness() {
-        let DecodedSubd::Surface { surface, .. } = decode_fixture(Fixture::default(), 1.0).unwrap()
+        let DecodedSubd::Surface { surface, .. } =
+            decode_fixture(Fixture::default(), 1.0).expect("required invariant")
         else {
             panic!("expected old surface");
         };
@@ -1789,7 +1795,7 @@ pub(crate) mod tests {
             },
             1.0,
         )
-        .unwrap() else {
+        .expect("required invariant") else {
             panic!("expected V8 surface");
         };
         assert_eq!(surface.edges[0].sharpness, [0.25, 0.75]);
@@ -1820,7 +1826,7 @@ pub(crate) mod tests {
             },
             1.0,
         )
-        .unwrap();
+        .expect("required invariant");
         let DecodedSubd::Surface {
             neutral_metadata, ..
         } = decoded
@@ -1833,7 +1839,7 @@ pub(crate) mod tests {
     #[test]
     fn scales_control_points_once_without_scaling_edge_metadata() {
         let DecodedSubd::Surface { surface, .. } =
-            decode_fixture(Fixture::default(), 25.4).unwrap()
+            decode_fixture(Fixture::default(), 25.4).expect("required invariant")
         else {
             panic!("expected surface");
         };
@@ -1862,7 +1868,7 @@ pub(crate) mod tests {
         .is_err());
 
         let mut future = payload(Fixture::default());
-        future[1 + 12..1 + 16].copy_from_slice(&2_i32.to_le_bytes());
+        future[(1 + 12)..=16].copy_from_slice(&2_i32.to_le_bytes());
         assert!(matches!(
             decode(
                 &future,

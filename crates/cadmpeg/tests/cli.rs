@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-
-//! End-to-end command behavior and output-contract tests.
+//! CLI integration tests.
 
 #![allow(clippy::unwrap_used)]
 
 use std::fs;
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 
 use assert_cmd::Command;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::*;
 use tempfile::tempdir;
@@ -17,6 +16,56 @@ fn fixture(dir: &std::path::Path, name: &str, ir: &cadmpeg_ir::CadIr) -> std::pa
     let path = dir.join(name);
     fs::write(&path, ir.to_canonical_json().unwrap()).unwrap();
     path
+}
+
+fn minimal_fcstd(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let path = dir.join(name);
+    let file = fs::File::create(&path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    zip.start_file(
+        "Document.xml",
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+    )
+    .unwrap();
+    zip.write_all(
+        b"<Document SchemaVersion=\"4\" FileVersion=\"1\" ProgramVersion=\"1.0\"><Object/></Document>",
+    )
+    .unwrap();
+    zip.finish().unwrap();
+    path
+}
+
+#[test]
+fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
+    let dir = tempdir().unwrap();
+    let input = minimal_fcstd(dir.path(), "document.FCStd");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["inspect", input.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("format: fcstd (detected high)")
+                .and(predicate::str::contains("SchemaVersion=4")),
+        );
+
+    for forced in [false, true] {
+        let mut command = Command::cargo_bin("cadmpeg").unwrap();
+        command.args(["decode", input.to_str().unwrap(), "--container-only"]);
+        if forced {
+            command.args(["--input-format", "fcstd"]);
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["source"]["format"], "fcstd");
+        assert_eq!(value["source"]["attributes"]["schema_version"], "4");
+    }
 }
 
 fn geometryless_creo(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
@@ -137,9 +186,18 @@ fn minimal_rhino_archive(
     name: &str,
     version_text: &str,
 ) -> std::path::PathBuf {
+    minimal_rhino_archive_with_comment(dir, name, version_text, b"cadmpeg test")
+}
+
+fn minimal_rhino_archive_with_comment(
+    dir: &std::path::Path,
+    name: &str,
+    version_text: &str,
+    comment: &[u8],
+) -> std::path::PathBuf {
     let version = version_text.parse::<u64>().unwrap();
     let mut bytes = rhino_header(version_text);
-    bytes.extend(rhino_long_chunk(version, 0x0000_0001, b"cadmpeg test"));
+    bytes.extend(rhino_long_chunk(version, 0x0000_0001, comment));
     bytes.extend(rhino_table(version, 0x1000_0014));
     bytes.extend(rhino_table(version, 0x1000_0015));
     bytes.extend(rhino_table(version, 0x1000_0013));
@@ -244,6 +302,7 @@ fn source_less_ir_exports_to_decodable_rhino() {
     ir.model.points.push(cadmpeg_ir::topology::Point {
         id: cadmpeg_ir::ids::PointId("cadir:model:point#cli".into()),
         position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+        source_object: None,
     });
     let input = fixture(dir.path(), "point.cadir.json", &ir);
     let output = dir.path().join("point.3dm");
@@ -279,6 +338,7 @@ fn rhino_output_version_is_selected_explicitly() {
     ir.model.points.push(cadmpeg_ir::topology::Point {
         id: cadmpeg_ir::ids::PointId("cadir:model:point#version".into()),
         position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+        source_object: None,
     });
     let input = fixture(dir.path(), "point.cadir.json", &ir);
     let output = dir.path().join("point.3dm");
@@ -436,6 +496,30 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
 }
 
 #[test]
+fn diff_summarizes_the_source_fidelity_sidecar_for_native_inputs() {
+    let dir = tempdir().unwrap();
+    let a = minimal_rhino_archive(dir.path(), "a.3dm", "50");
+    let b = minimal_rhino_archive(dir.path(), "b.3dm", "50");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["diff", a.to_str().unwrap(), b.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("source fidelity: identical"));
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["diff", "--json", a.to_str().unwrap(), b.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("\"source_fidelity\"")
+                .and(predicate::str::contains("\"present\": \"both\"")),
+        );
+}
+
+#[test]
 fn garbage_reports_supported_formats() {
     let dir = tempdir().unwrap();
     let input = dir.path().join("garbage.bin");
@@ -446,7 +530,7 @@ fn garbage_reports_supported_formats() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM",
+            "supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP",
         ));
 }
 
@@ -477,7 +561,7 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");
@@ -519,13 +603,13 @@ fn rhino_forced_input_format_and_3dm_alias_bypass_detection() {
             .unwrap();
         assert!(output.status.success());
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["ir_version"], "3");
+        assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
         assert_eq!(value["source"]["format"], "rhino");
     }
 }
 
 #[test]
-fn rhino_full_band_empty_archive_decodes_to_current_ir_v3() {
+fn rhino_full_band_empty_archive_decodes_to_current_ir() {
     let dir = tempdir().unwrap();
     for version in ["50", "60", "70", "80"] {
         let input = minimal_rhino_archive(dir.path(), &format!("empty-{version}.3dm"), version);
@@ -542,7 +626,7 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir_v3() {
                 String::from_utf8_lossy(&output.stderr)
             );
             let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(value["ir_version"], "3");
+            assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
             assert_eq!(value["source"]["format"], "rhino");
             assert_eq!(value["source"]["attributes"]["archive_version"], version);
             assert_eq!(
@@ -608,7 +692,7 @@ fn rhino_v3_v4_decode_metadata_but_legacy_bands_are_header_only() {
             .unwrap();
         assert!(output.status.success());
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["ir_version"], "3");
+        assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
         assert_eq!(value["source"]["attributes"]["archive_version"], version);
         assert_eq!(value["model"]["subds"], serde_json::json!([]));
     }
@@ -679,7 +763,7 @@ fn inspect_garbage_reports_rhino_among_supported_formats() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM",
+            "supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP",
         ));
 }
 
@@ -800,6 +884,60 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
 }
 
 #[test]
+fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
+    let dir = tempdir().unwrap();
+    let lossy = geometryless_creo(dir.path(), "lossy.prt");
+
+    // `--reject-lossy` turns a lossy decode into a model refusal (exit 1),
+    // distinct from a decode error (exit 2). It is checked before the
+    // empty-geometry gate, so `--allow-empty` does not suppress it.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "export",
+            lossy.to_str().unwrap(),
+            "-f",
+            "step",
+            "--allow-empty",
+            "--reject-lossy",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("refusing to write a lossy"));
+
+    let report = dir.path().join("lossy-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            lossy.to_str().unwrap(),
+            "-f",
+            "step",
+            "--allow-empty",
+            "--reject-lossy",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1);
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert!(value["decode_report"].is_object());
+    assert!(value["export"].is_null());
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "export",
+            lossy.to_str().unwrap(),
+            "-f",
+            "step",
+            "--allow-empty",
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
 fn convert_rejects_empty_native_geometry_unless_allowed() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
@@ -874,7 +1012,7 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
         .success();
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(success_report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["command"], "convert");
     assert!(value["decode_report"].is_null());
     assert!(value["validation_report"].is_object());
@@ -927,7 +1065,7 @@ fn f3d_export_report_identifies_regenerated_output() {
         .assert()
         .success();
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["export"]["format"], "f3d");
     assert!(value["export"]["notes"]
         .as_array()
@@ -996,7 +1134,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["command"], "validate");
 
     let diff = Command::cargo_bin("cadmpeg")
@@ -1010,7 +1148,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&diff.stdout).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["command"], "diff");
 
     let native = geometryless_creo(dir.path(), "ambiguous.bin");
@@ -1027,7 +1165,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .unwrap();
     assert!(inspect.status.success());
     let value: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["command"], "inspect");
 }
 

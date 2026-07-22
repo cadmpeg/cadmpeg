@@ -1267,7 +1267,7 @@ pub(crate) mod tests {
             push_f64(&mut bytes, value);
         }
         if bad_frame {
-            bytes[1 + 24..1 + 32].copy_from_slice(&2.0_f64.to_le_bytes());
+            bytes[(1 + 24)..=32].copy_from_slice(&2.0_f64.to_le_bytes());
         }
         for range in [[0.0, 1.0], [2.0, 3.0]] {
             push_f64(&mut bytes, range[0]);
@@ -1385,7 +1385,7 @@ pub(crate) mod tests {
         else {
             panic!("typed plane carrier");
         };
-        assert_eq!(origin, Point3::new(25.4, 50.8, 76.19999999999999));
+        assert_eq!(origin, Point3::new(25.4, 50.8, 76.199_999_999_999_99));
         assert!(derived);
 
         let invalid = clipping_plane_payload(false);
@@ -1430,7 +1430,7 @@ pub(crate) mod tests {
 
     pub(crate) fn valid_revolution_payload(version: u8) -> Vec<u8> {
         let mut bytes = revolution_prefix(version);
-        *bytes.last_mut().unwrap() = 1;
+        *bytes.last_mut().expect("required invariant") = 1;
         bytes.extend(line_wrapper(1.0));
         bytes
     }
@@ -1448,19 +1448,23 @@ pub(crate) mod tests {
     #[test]
     fn reconstructs_spec_examples_and_one_sided_vectors() {
         assert_eq!(
-            reconstruct_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6).unwrap(),
+            reconstruct_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6)
+                .expect("required invariant"),
             vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0]
         );
         assert_eq!(
-            reconstruct_knots(&[0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0], 3, 6).unwrap(),
+            reconstruct_knots(&[0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0], 3, 6)
+                .expect("required invariant"),
             vec![-2.0, 0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 9.0]
         );
         assert_eq!(
-            reconstruct_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0], 3, 6).unwrap()[0],
+            reconstruct_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0], 3, 6)
+                .expect("required invariant")[0],
             0.0
         );
         assert_eq!(
-            reconstruct_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 5.0], 3, 6).unwrap()[8],
+            reconstruct_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 5.0], 3, 6)
+                .expect("required invariant")[8],
             5.0
         );
     }
@@ -1469,8 +1473,9 @@ pub(crate) mod tests {
     fn curve_versions_cross_archive_bands_and_consume_tag_gate() {
         for (archive, version) in [(ArchiveVersion::V5, 0x10), (ArchiveVersion::V8, 0x11)] {
             let bytes = curve_payload(version, false, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-            let curve = read_nurbs_curve(&mut reader, 1.0).unwrap();
+            let mut reader =
+                BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+            let curve = read_nurbs_curve(&mut reader, 1.0).expect("required invariant");
             assert_eq!(curve.control_points.len(), 6);
             assert_eq!(reader.remaining(), 0);
             assert!(matches!(archive, ArchiveVersion::V5 | ArchiveVersion::V8));
@@ -1480,25 +1485,25 @@ pub(crate) mod tests {
     #[test]
     fn curve_payload_validates_rational_weights_counts_and_domain() {
         let mut bytes = curve_payload(0x10, true, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-        let curve = read_nurbs_curve(&mut reader, 2.0).unwrap();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+        let curve = read_nurbs_curve(&mut reader, 2.0).expect("required invariant");
         assert_eq!(curve.control_points[0].x, 0.0);
-        assert_eq!(curve.weights.as_ref().unwrap()[0], 2.0);
+        assert_eq!(curve.weights.as_ref().expect("required invariant")[0], 2.0);
         let weight_offset = 1 + 28 + 48 + 4 + 7 * 8 + 4 + 24;
         bytes[weight_offset..weight_offset + 8].copy_from_slice(&0.0_f64.to_le_bytes());
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
         assert!(read_nurbs_curve(&mut reader, 1.0).is_err());
     }
 
     #[test]
     fn c2_nurbs_reads_two_dimensions_without_scaling_uv() {
         let bytes = curve_2d_payload(true);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-        let curve = read_nurbs_curve_2d(&mut reader).unwrap();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+        let curve = read_nurbs_curve_2d(&mut reader).expect("required invariant");
         assert_eq!(reader.remaining(), 0);
         assert_eq!(curve.control_points[1].x, 1.0);
         assert_eq!(curve.control_points[1].y, 2.0);
-        assert_eq!(curve.weights.as_ref().unwrap()[0], 2.0);
+        assert_eq!(curve.weights.as_ref().expect("required invariant")[0], 2.0);
         assert_eq!(
             curve.knots,
             vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0]
@@ -1513,8 +1518,12 @@ pub(crate) mod tests {
         for (index, knot) in knots.into_iter().enumerate() {
             bytes[start + index * 8..start + index * 8 + 8].copy_from_slice(&knot.to_le_bytes());
         }
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-        assert!(read_nurbs_curve_2d(&mut reader).unwrap().periodic);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+        assert!(
+            read_nurbs_curve_2d(&mut reader)
+                .expect("required invariant")
+                .periodic
+        );
     }
 
     #[test]
@@ -1533,8 +1542,8 @@ pub(crate) mod tests {
         let periodic = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let nonperiodic = [0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0];
         let bytes = surface_payload(3, 3, 6, 6, false, &periodic, &nonperiodic);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-        let surface = read_nurbs_surface(&mut reader, 1.0).unwrap();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+        let surface = read_nurbs_surface(&mut reader, 1.0).expect("required invariant");
         assert!(surface.u_periodic);
         assert!(!surface.v_periodic);
     }
@@ -1542,24 +1551,27 @@ pub(crate) mod tests {
     #[test]
     fn surface_bytes_preserve_asymmetric_u_major_rational_poles() {
         let bytes = surface_payload(2, 2, 2, 3, true, &[0.0, 1.0], &[0.0, 1.0, 2.0]);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-        let surface = read_nurbs_surface(&mut reader, 1.0).unwrap();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+        let surface = read_nurbs_surface(&mut reader, 1.0).expect("required invariant");
         assert_eq!(surface.control_points[1].y, 1.0 / 2.0);
         assert_eq!(surface.control_points[3].x, 1.0 / 2.0);
-        assert_eq!(surface.weights.as_ref().unwrap()[5], 4.0);
+        assert_eq!(
+            surface.weights.as_ref().expect("required invariant")[5],
+            4.0
+        );
     }
 
     #[test]
     fn surface_bytes_reconstruct_independent_knots_and_reject_count_mismatch() {
         let bytes = surface_payload(2, 2, 3, 2, false, &[0.0, 1.0, 2.0], &[0.0, 1.0]);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-        let surface = read_nurbs_surface(&mut reader, 1.0).unwrap();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+        let surface = read_nurbs_surface(&mut reader, 1.0).expect("required invariant");
         assert_eq!(surface.u_knots, vec![0.0, 0.0, 1.0, 2.0, 2.0]);
         assert_eq!(surface.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
         let mut bad = bytes;
         let count_offset = bad.len() - 6 * 24 - 4;
         bad[count_offset..count_offset + 4].copy_from_slice(&99_i32.to_le_bytes());
-        let mut reader = BoundedReader::new(&bad, 0, bad.len()).unwrap();
+        let mut reader = BoundedReader::new(&bad, 0, bad.len()).expect("required invariant");
         assert!(read_nurbs_surface(&mut reader, 1.0).is_err());
     }
 
@@ -1567,8 +1579,9 @@ pub(crate) mod tests {
     fn plane_versions_consume_defaults_and_explicit_extents() {
         for version in [0x10, 0x11] {
             let bytes = plane_payload(version, false, false);
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-            let plane = read_plane_surface(&mut reader, 1.0).unwrap();
+            let mut reader =
+                BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+            let plane = read_plane_surface(&mut reader, 1.0).expect("required invariant");
             assert_eq!(reader.remaining(), 0);
             assert!(matches!(
                 plane,
@@ -1577,7 +1590,8 @@ pub(crate) mod tests {
         }
         for (bad_frame, bad_range) in [(true, false), (false, true)] {
             let bytes = plane_payload(0x11, bad_frame, bad_range);
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+            let mut reader =
+                BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
             assert!(read_plane_surface(&mut reader, 1.0).is_err());
         }
     }
@@ -1600,7 +1614,8 @@ pub(crate) mod tests {
             weights: None,
             periodic: false,
         };
-        let surface = sum_nurbs(&first, &second, Vector3::new(0.5, 1.5, 2.5), 0).unwrap();
+        let surface =
+            sum_nurbs(&first, &second, Vector3::new(0.5, 1.5, 2.5), 0).expect("required invariant");
         assert_eq!((surface.u_count, surface.v_count), (2, 3));
         assert_eq!(surface.u_knots, first.knots);
         assert_eq!(surface.v_knots, second.knots);
@@ -1630,8 +1645,9 @@ pub(crate) mod tests {
                 second_weights,
                 [4.0, 8.0],
             );
-            let surface = sum_nurbs(&first, &second, Vector3::new(9.0, 8.0, 7.0), 0).unwrap();
-            assert_eq!(surface.weights.unwrap(), expected);
+            let surface = sum_nurbs(&first, &second, Vector3::new(9.0, 8.0, 7.0), 0)
+                .expect("required invariant");
+            assert_eq!(surface.weights.expect("required invariant"), expected);
             assert_eq!(surface.control_points[3], Point3::new(11.0, 12.0, 7.0));
         }
     }
@@ -1653,13 +1669,15 @@ pub(crate) mod tests {
         for point in &mut end.control_points {
             point.z = 7.0;
         }
-        let plain = super::extrusion_nurbs(&start, &end, [10.0, 20.0], false, 0).unwrap();
+        let plain = super::extrusion_nurbs(&start, &end, [10.0, 20.0], false, 0)
+            .expect("required invariant");
         assert_eq!((plain.u_degree, plain.v_degree), (2, 1));
         assert_eq!(plain.u_knots, start.knots);
         assert_eq!(plain.v_knots, vec![10.0, 10.0, 20.0, 20.0]);
         assert_eq!(plain.weights, Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]));
         assert_eq!(plain.control_points[3], end.control_points[1]);
-        let transposed = super::extrusion_nurbs(&start, &end, [10.0, 20.0], true, 0).unwrap();
+        let transposed = super::extrusion_nurbs(&start, &end, [10.0, 20.0], true, 0)
+            .expect("required invariant");
         assert_eq!((transposed.u_degree, transposed.v_degree), (1, 2));
         assert_eq!((transposed.u_count, transposed.v_count), (2, 3));
         assert_eq!(transposed.u_knots, vec![10.0, 10.0, 20.0, 20.0]);
@@ -1683,12 +1701,18 @@ pub(crate) mod tests {
             false,
             0,
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!((surface.u_count, surface.v_count), (3, 2));
         assert_eq!(surface.u_knots, vec![20.0, 20.0, 20.0, 30.0, 30.0, 30.0]);
         assert_eq!(surface.v_knots, profile.knots);
-        assert_eq!(surface.weights.as_ref().unwrap()[0], 2.0);
-        assert!((surface.weights.as_ref().unwrap()[2] - 2.0 / 2.0_f64.sqrt()).abs() < 1.0e-12);
+        assert_eq!(
+            surface.weights.as_ref().expect("required invariant")[0],
+            2.0
+        );
+        assert!(
+            (surface.weights.as_ref().expect("required invariant")[2] - 2.0 / 2.0_f64.sqrt()).abs()
+                < 1.0e-12
+        );
         assert_eq!(surface.control_points[0], profile.control_points[0]);
         assert!((surface.control_points[4].x - 1.0).abs() < 1.0e-12);
         assert!((surface.control_points[4].y - 2.0).abs() < 1.0e-12);
@@ -1710,7 +1734,7 @@ pub(crate) mod tests {
             false,
             0,
         )
-        .unwrap();
+        .expect("required invariant");
         let transposed = revolution_nurbs(
             &profile,
             Point3::new(0.0, 0.0, 0.0),
@@ -1720,7 +1744,7 @@ pub(crate) mod tests {
             true,
             0,
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!((transposed.u_count, transposed.v_count), (2, 3));
         assert_eq!((transposed.u_degree, transposed.v_degree), (1, 2));
         assert_eq!(transposed.u_knots, profile.knots);
@@ -1731,7 +1755,8 @@ pub(crate) mod tests {
     #[test]
     fn revolution_rejects_versions_axis_intervals_transpose_and_presence() {
         let bad_version = [0x30];
-        let mut reader = BoundedReader::new(&bad_version, 0, bad_version.len()).unwrap();
+        let mut reader =
+            BoundedReader::new(&bad_version, 0, bad_version.len()).expect("required invariant");
         assert!(
             super::read_revolution(&bad_version, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err()
         );
@@ -1743,7 +1768,7 @@ pub(crate) mod tests {
         let transpose_offset = valid.len() - 5;
         let mut cases = Vec::new();
         let mut zero_axis = valid.clone();
-        let start = zero_axis[1..1 + 24].to_vec();
+        let start = zero_axis[1..=24].to_vec();
         zero_axis[axis_end_offset..axis_end_offset + 24].copy_from_slice(&start);
         cases.push(zero_axis);
         let mut bad_angle = valid.clone();
@@ -1757,19 +1782,20 @@ pub(crate) mod tests {
         bad_transpose[transpose_offset..transpose_offset + 4].copy_from_slice(&2_i32.to_le_bytes());
         cases.push(bad_transpose);
         for bytes in cases {
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+            let mut reader =
+                BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
             assert!(
                 super::read_revolution(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err()
             );
         }
-        let mut reader = BoundedReader::new(&valid, 0, valid.len()).unwrap();
+        let mut reader = BoundedReader::new(&valid, 0, valid.len()).expect("required invariant");
         assert!(super::read_revolution(&valid, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err());
     }
 
     #[test]
     fn sum_surface_rejects_future_packed_version_before_children() {
         let bytes = [0x11];
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
         assert!(matches!(
             super::read_sum(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0),
             Err(crate::curves::GeometryError::UnsupportedVersion { .. })
@@ -1780,9 +1806,10 @@ pub(crate) mod tests {
     fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
         for version in [0x10, 0x20] {
             let bytes = valid_revolution_payload(version);
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-            let decoded =
-                super::read_revolution(&bytes, &mut reader, 25.4, ArchiveVersion::V5, 0).unwrap();
+            let mut reader =
+                BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+            let decoded = super::read_revolution(&bytes, &mut reader, 25.4, ArchiveVersion::V5, 0)
+                .expect("required invariant");
             let super::DecodedSurface::Procedural {
                 geometry,
                 definition,
@@ -1825,8 +1852,9 @@ pub(crate) mod tests {
     #[test]
     fn sum_surface_decodes_ordered_children_and_scales_once() {
         let bytes = valid_sum_payload();
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-        let decoded = super::read_sum(&bytes, &mut reader, 25.4, ArchiveVersion::V5, 0).unwrap();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+        let decoded = super::read_sum(&bytes, &mut reader, 25.4, ArchiveVersion::V5, 0)
+            .expect("required invariant");
         let super::DecodedSurface::Procedural {
             geometry,
             definition,

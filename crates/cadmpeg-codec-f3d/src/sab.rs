@@ -12,6 +12,7 @@
 //! record extents without requiring semantic decoding of each payload.
 
 use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_i, vec3_at as read_vec3};
+use std::sync::Arc;
 
 /// A decoded SAB token. Only the payload this codec consumes is retained with a
 /// typed value; all tokens are still framed so record boundaries stay exact.
@@ -62,7 +63,7 @@ pub struct Record {
     /// Leading name component used for dispatch, e.g. `cone`, `body`.
     pub head: String,
     /// Payload tokens following the name chain (subtype delimiters included).
-    pub tokens: Vec<Token>,
+    pub tokens: Arc<[Token]>,
     /// Byte offset of the record's first name-chain tag in the stream.
     pub offset: usize,
     /// Byte length of the record including its terminator.
@@ -405,6 +406,27 @@ pub fn frame(
     limit: usize,
     ref_width: usize,
 ) -> Result<Vec<Record>, FrameError> {
+    frame_impl(bytes, start, limit, ref_width, false)
+}
+
+/// Frame a history-section slice whose final record ends at the enclosing
+/// stream boundary without an explicit `0x11` terminator.
+pub(crate) fn frame_history(
+    bytes: &[u8],
+    start: usize,
+    limit: usize,
+    ref_width: usize,
+) -> Result<Vec<Record>, FrameError> {
+    frame_impl(bytes, start, limit, ref_width, true)
+}
+
+fn frame_impl(
+    bytes: &[u8],
+    start: usize,
+    limit: usize,
+    ref_width: usize,
+    eof_terminates_final_record: bool,
+) -> Result<Vec<Record>, FrameError> {
     let limit = limit.min(bytes.len());
     let mut records = Vec::new();
     let mut pos = start;
@@ -417,8 +439,13 @@ pub fn frame(
         let mut depth = 0i32;
         let mut name_done = false;
         let mut is_delta = false;
+        let mut embedded_history_entity = None;
+        let mut payload_start = true;
 
         loop {
+            if eof_terminates_final_record && pos == limit && depth == 0 && !name_parts.is_empty() {
+                break;
+            }
             let (lexed, next) = lex(bytes, pos, ref_width)?;
             pos = next;
             match lexed {
@@ -440,21 +467,34 @@ pub fn frame(
                         break;
                     }
                 }
-                Lexed::SubIdent(_) | Lexed::Ident(_) => {
+                Lexed::Ident(identifier) => {
                     // Identifier tokens after the name belong to the payload
-                    // (e.g. subtype names inside a spline). Ignore for framing;
-                    // they carry no value this codec reads positionally.
+                    // (e.g. subtype names inside a spline). An archived ASM
+                    // history record may wrap an edge record in the exact
+                    // End-of-ASM-History-Section marker chain; its following
+                    // identifier is the wrapped record's dispatch name.
+                    if payload_start
+                        && name_parts.join("-") == "End-of-ASM-History-Section"
+                        && identifier == "edge"
+                    {
+                        embedded_history_entity = Some(identifier);
+                    }
+                    payload_start = false;
                 }
+                Lexed::SubIdent(_) => payload_start = false,
                 Lexed::Value(Token::SubtypeOpen) => {
+                    payload_start = false;
                     depth += 1;
                     name_done = true;
                     tokens.push(Token::SubtypeOpen);
                 }
                 Lexed::Value(Token::SubtypeClose) => {
+                    payload_start = false;
                     depth -= 1;
                     tokens.push(Token::SubtypeClose);
                 }
                 Lexed::Value(v) => {
+                    payload_start = false;
                     name_done = true;
                     tokens.push(v);
                 }
@@ -464,14 +504,17 @@ pub fn frame(
         if is_delta {
             break;
         }
-        let name = name_parts.join("-");
-        let head = name_parts.first().cloned().unwrap_or_default();
+        let mut name = name_parts.join("-");
+        if let Some(embedded) = embedded_history_entity {
+            name = embedded;
+        }
+        let head = name.split('-').next().unwrap_or_default().to_owned();
 
         records.push(Record {
             index,
             name,
             head,
-            tokens,
+            tokens: tokens.into(),
             offset: rec_start,
             len: pos - rec_start,
         });
@@ -483,7 +526,52 @@ pub fn frame(
 
 #[cfg(test)]
 mod tests {
-    use super::{frame, payload_subtype_span, payload_token_offset};
+    use super::{frame, frame_history, payload_subtype_span, payload_token_offset};
+
+    #[test]
+    fn history_framer_accepts_only_the_final_record_at_eof() {
+        let bytes = [0x0d, 4, b'e', b'd', b'g', b'e'];
+        assert!(frame(&bytes, 0, bytes.len(), 8).is_err());
+        let records = frame_history(&bytes, 0, bytes.len(), 8).expect("history EOF record");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].name, "edge");
+        assert_eq!(records[0].len, bytes.len());
+    }
+
+    #[test]
+    fn history_marker_dispatches_its_embedded_edge_record() {
+        let mut bytes = Vec::new();
+        for part in ["End", "of", "ASM", "History"] {
+            bytes.extend_from_slice(&[0x0e, u8::try_from(part.len()).unwrap()]);
+            bytes.extend_from_slice(part.as_bytes());
+        }
+        bytes.extend_from_slice(&[0x0d, 7]);
+        bytes.extend_from_slice(b"Section");
+        bytes.extend_from_slice(&[0x0d, 4]);
+        bytes.extend_from_slice(b"edge");
+        for reference in [4i64, -1, 5, 6, 7, 8] {
+            bytes.push(0x0c);
+            bytes.extend_from_slice(&reference.to_le_bytes());
+        }
+        bytes.push(0x11);
+
+        let records = frame_history(&bytes, 0, bytes.len(), 8).expect("wrapped edge");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].name, "edge");
+        assert_eq!(records[0].head, "edge");
+        assert_eq!(records[0].ref_at(0), Some(4));
+        assert_eq!(records[0].ref_at(5), Some(8));
+
+        let embedded_offset = bytes
+            .windows(6)
+            .position(|window| window == [0x0d, 4, b'e', b'd', b'g', b'e'])
+            .unwrap();
+        let mut non_wrapper = bytes;
+        non_wrapper.splice(embedded_offset..embedded_offset, [0x02, 0]);
+        let records = frame_history(&non_wrapper, 0, non_wrapper.len(), 8)
+            .expect("marker with a later payload identifier");
+        assert_eq!(records[0].name, "End-of-ASM-History-Section");
+    }
 
     fn generated_pcurve_record(ref_width: usize) -> Vec<u8> {
         let mut bytes = vec![0x0d, 6];
@@ -720,6 +808,20 @@ mod tests {
         bytes
     }
 
+    fn generated_tedge_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = generated_edge_record(ref_width);
+        bytes.splice(1..6, [5, b't', b'e', b'd', b'g', b'e']);
+        bytes.pop();
+        bytes.push(0x06);
+        bytes.extend_from_slice(&0.0035f64.to_le_bytes());
+        for value in [22800i64, 0] {
+            bytes.push(0x04);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
     fn generated_tcoedge_record(ref_width: usize) -> Vec<u8> {
         let mut bytes = vec![0x0d, 7];
         bytes.extend_from_slice(b"tcoedge");
@@ -743,6 +845,10 @@ mod tests {
         for value in [-2.0f64, 3.0] {
             bytes.push(0x06);
             bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [-1i64, 0, 0] {
+            bytes.push(if value == -1 { 0x0c } else { 0x04 });
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
         }
         bytes.push(0x11);
         bytes
@@ -782,12 +888,14 @@ mod tests {
             bytes.push(tag);
             bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
         }
-        bytes.push(0x06);
-        bytes.extend_from_slice(&0.001f64.to_le_bytes());
-        for value in [2.0f32, 3.0] {
-            bytes.push(0x05);
+        // Three f64 tolerance slots — two unevaluated `-1` sentinels and the
+        // evaluated tolerance last — followed by an integer 0.
+        for value in [-1.0f64, -1.0, 0.001] {
+            bytes.push(0x06);
             bytes.extend_from_slice(&value.to_le_bytes());
         }
+        bytes.push(0x04);
+        bytes.extend_from_slice(&0i64.to_le_bytes()[..ref_width]);
         bytes.push(0x11);
         bytes
     }
@@ -893,11 +1001,13 @@ mod tests {
             assert!(payload_subtype_span(&bytes, record, 4, ref_width, "exp_par_cur").is_none());
             assert!(payload_subtype_span(&bytes, record, 5, ref_width, "bad_par_cur").is_none());
             assert_eq!(
-                bytes[payload_token_offset(&bytes, record, ref_width, 4).unwrap()],
+                bytes[payload_token_offset(&bytes, record, ref_width, 4)
+                    .expect("required invariant")],
                 0x0b
             );
             assert_eq!(
-                bytes[payload_token_offset(&bytes, record, ref_width, 5).unwrap()],
+                bytes[payload_token_offset(&bytes, record, ref_width, 5)
+                    .expect("required invariant")],
                 0x0f
             );
             assert!(payload_token_offset(&bytes, record, ref_width, 8).is_none());
@@ -915,7 +1025,11 @@ mod tests {
                     .expect("range field offset");
                 assert_eq!(bytes[offset], 0x06);
                 assert_eq!(
-                    f64::from_le_bytes(bytes[offset + 1..offset + 9].try_into().unwrap()),
+                    f64::from_le_bytes(
+                        bytes[offset + 1..offset + 9]
+                            .try_into()
+                            .expect("required invariant")
+                    ),
                     expected
                 );
             }
@@ -1050,6 +1164,17 @@ mod tests {
                 assert_eq!(edge[offset], 0x06);
             }
 
+            let edge = generated_tedge_record(ref_width);
+            let records = frame(&edge, 0, edge.len(), ref_width).expect("generated tolerant edge");
+            assert!(
+                matches!(records[0].chunk(11), Some(super::Token::Double(value)) if *value == 0.0035)
+            );
+            assert!(matches!(
+                records[0].chunk(12),
+                Some(super::Token::Long(22800))
+            ));
+            assert!(matches!(records[0].chunk(13), Some(super::Token::Long(0))));
+
             let coedge = generated_tcoedge_record(ref_width);
             let records =
                 frame(&coedge, 0, coedge.len(), ref_width).expect("generated tolerant coedge");
@@ -1058,6 +1183,9 @@ mod tests {
                     .expect("tolerant coedge parameter offset");
                 assert_eq!(coedge[offset], 0x06);
             }
+            assert!(matches!(records[0].chunk(13), Some(super::Token::Ref(-1))));
+            assert!(matches!(records[0].chunk(14), Some(super::Token::Long(0))));
+            assert!(matches!(records[0].chunk(15), Some(super::Token::Long(0))));
         }
     }
 
@@ -1102,8 +1230,9 @@ mod tests {
                 (4, 0x04),
                 (5, 0x0c),
                 (6, 0x06),
-                (7, 0x05),
-                (8, 0x05),
+                (7, 0x06),
+                (8, 0x06),
+                (9, 0x04),
             ] {
                 let offset = payload_token_offset(&bytes, record, ref_width, index)
                     .expect("tolerant vertex metadata field");

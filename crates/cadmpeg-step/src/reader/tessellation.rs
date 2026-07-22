@@ -211,6 +211,8 @@ pub(super) fn decode(
             }
         };
         ir.model.tessellations.push(Tessellation {
+            faces: Vec::new(),
+            chordal_deflection: None,
             id: format!("step:tessellation:mesh#{id}"),
             body: item_bodies.get(&id).cloned(),
             source_object: None,

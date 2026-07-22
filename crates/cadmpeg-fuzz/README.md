@@ -17,6 +17,8 @@ Bound a local check by placing libFuzzer options after `--`:
 ```sh
 cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_container -- -runs=1000
 cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_container -- -max_total_time=60
+cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_writer -- -runs=1000
+cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_roundtrip -- -runs=1000
 ```
 
 Pass one or more corpus directories between the target and `--`. The checked-in
@@ -46,10 +48,19 @@ Start with a container target when testing an end-to-end codec path. These
 harnesses call format detection, inspection, and decoding:
 
 - `f3d_container`
+- `fcstd_container`, `fcstd_decode`, `fcstd_write`
 - `sldprt_container`
 - `catia_container`
 - `creo_container`
 - `nx_container`
+- `iges_container`
+
+Use the F3D semantic targets for native writing and replay:
+
+- `f3d_writer` parses IR, generates a source-less archive, inspects it, and
+  decodes it.
+- `f3d_roundtrip` decodes an archive, replays it through the native writer, and
+  decodes the result.
 
 Use a parser target for focused binary-format coverage:
 
@@ -63,6 +74,12 @@ Use a parser target for focused binary-format coverage:
   `creo_container_scan`, `creo_surface_rows`, `creo_curve_prototypes`
 - NX: `nx_parasolid`, `nx_geometry_points`, `nx_geometry_surfaces`,
   `nx_geometry_curves`, `nx_nurbs_surfaces`, `nx_nurbs_curves`
+- FCStd: `fcstd_xml`, `fcstd_gui`, `fcstd_brep`, `fcstd_element_map`,
+  `fcstd_auxiliary`
+- IGES uses `iges_container` for bounded representation detection, physical-card parsing,
+  Global and Directory fields, Parameter tokens, reference graphs, semantic geometry, and
+  topology projection. Generate its valid 5.3 point and trimmed-sheet
+  seeds with `cargo run --bin generate_iges_seeds` from `crates/cadmpeg-fuzz`.
 
 Use an IR or STEP target when the input is JSON or the behavior under test is
 format-independent:
@@ -102,6 +119,7 @@ cd crates/cadmpeg-fuzz
 cargo +nightly run --bin generate_all_seeds
 cargo +nightly run --bin generate_submodule_seeds
 cargo +nightly run --bin generate_synthetic_fixtures
+cargo +nightly run --bin generate_fcstd_seeds
 ```
 
 `generate_all_seeds` writes container and IR seeds, then derives deterministic

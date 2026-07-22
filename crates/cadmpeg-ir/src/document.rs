@@ -6,18 +6,25 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::annotations::Annotations;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
-use crate::features::{DesignConfiguration, DesignParameter, Feature};
+use crate::drawings::Drawing;
+use crate::features::{DesignConfiguration, DesignParameter, Feature, FeatureInputTopology};
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
-use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
+use crate::presentation::{PresentationDocument, ViewPresentation};
+use crate::products::{AssemblyJoint, Component, Occurrence};
+use crate::semantic_annotations::SemanticAnnotation;
+use crate::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
+    SpatialSketchEntity,
+};
+use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{Tolerances, Units};
-use crate::unknown::UnknownRecord;
+use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 
 macro_rules! arena_registry {
     ($macro:ident) => {
@@ -38,17 +45,29 @@ macro_rules! arena_registry {
             procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [] => |e| e.id.0.clone();
             procedural_curves: ProceduralCurve, "Procedural curve arena.", [] => |e| e.id.0.clone();
             features: Feature, "Feature arena.", [] => |e| e.id.0.clone();
+            feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")] => |e| e.id.0.clone();
             configurations: DesignConfiguration, "Design configuration arena.", [serde(default)] => |e| e.id.0.clone();
             parameters: DesignParameter, "Design parameter arena.", [serde(default)] => |e| e.id.0.clone();
             sketches: Sketch, "Planar sketch arena.", [serde(default)] => |e| e.id.0.clone();
             sketch_entities: SketchEntity, "Solved sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
             sketch_constraints: SketchConstraint, "Sketch constraint arena.", [serde(default)] => |e| e.id.0.clone();
+            spatial_sketches: SpatialSketch, "Spatial sketch arena.", [serde(default)] => |e| e.id.0.clone();
+            spatial_sketch_entities: SpatialSketchEntity, "Solved spatial sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
+            spatial_sketch_constraints: SpatialSketchConstraint, "Spatial sketch constraint arena.", [serde(default, skip_serializing_if = "Vec::is_empty")] => |e| e.id.0.clone();
+            spreadsheets: Spreadsheet, "Spreadsheet arena.", [serde(default)] => |e| e.id.0.clone();
+            components: Component, "Product component arena.", [serde(default)] => |e| e.id.0.clone();
+            occurrences: Occurrence, "Product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
+            assembly_joints: AssemblyJoint, "Assembly joint arena.", [serde(default)] => |e| e.id.0.clone();
+            drawings: Drawing, "Drawing page, resource, view, and annotation arena.", [serde(default)] => |e| e.id.0.clone();
+            semantic_annotations: SemanticAnnotation, "Semantic dimension, note, symbol, and callout arena.", [serde(default)] => |e| e.id.0.clone();
+            presentation_documents: PresentationDocument, "Document presentation arena.", [serde(default)] => |e| e.id.0.clone();
+            view_presentations: ViewPresentation, "View-provider presentation arena.", [serde(default)] => |e| e.id.0.clone();
             tessellations: Tessellation, "Tessellation arena.", [] => |e| e.id.clone();
             appearances: Appearance, "Appearance arena.", [] => |e| e.id.0.clone();
             appearance_bindings: AppearanceBinding, "Appearance binding arena.", [] => |e| e.id.clone();
             attributes: SourceAttribute, "Attribute arena.", [] => |e| e.id.0.clone();
             products: crate::product::Product, "Product prototype arena.", [serde(default)] => |e| e.id.0.clone();
-            occurrences: crate::product::ProductOccurrence, "Placed product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
+            product_occurrences: crate::product::ProductOccurrence, "Placed product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
             pmi: crate::pmi::PmiAnnotation, "Product-manufacturing information arena.", [serde(default)] => |e| e.id.0.clone();
             presentation_layers: crate::presentation::PresentationLayer, "Presentation layer arena.", [serde(default)] => |e| e.id.0.clone();
         }
@@ -74,6 +93,29 @@ macro_rules! declare_model {
                 &[$(stringify!($field)),*]
             }
 
+            /// Whether any arena holds an entity whose identity equals `id`.
+            ///
+            /// Entity IDs are globally unique across arenas, so a single hit is
+            /// authoritative. Used by transfer accounting to confirm that a
+            /// `Typed` disposition names entities actually emitted into the IR.
+            pub fn contains_id(&self, id: &str) -> bool {
+                $({
+                    let key = ($key) as fn(&$ty) -> String;
+                    if self.$field.iter().any(|e| key(e) == id) { return true; }
+                })*
+                false
+            }
+
+            /// Every entity identity across all arenas, in canonical arena
+            /// order. Derived from the same `arena_registry!` declaration as
+            /// [`contains_id`](Self::contains_id), so a new arena is covered
+            /// without editing per-arena call sites.
+            pub fn entity_ids(&self) -> Vec<String> {
+                let mut ids = Vec::new();
+                $( ids.extend(self.$field.iter().map($key)); )*
+                ids
+            }
+
             /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self) {
                 $(self.$field.sort_by_key($key);)*
@@ -83,7 +125,10 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "3";
+pub const IR_VERSION: &str = "55";
+
+/// Immediately preceding IR version supported by the explicit JSON migration.
+pub const PREVIOUS_IR_VERSION: &str = "54";
 
 arena_registry!(declare_model);
 
@@ -109,8 +154,8 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 
 /// A versioned CAD document.
 ///
-/// `model` holds the format-neutral graph. `annotations`, `native`, and
-/// `unknowns` retain source fidelity without changing that graph's semantics.
+/// `model` holds the format-neutral graph. `native` retains typed
+/// format-specific product data without changing that graph's semantics.
 /// Entity IDs must be globally unique across all document arenas.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CadIr {
@@ -127,9 +172,6 @@ pub struct CadIr {
     pub tolerances: Tolerances,
     /// Format-neutral model.
     pub model: Model,
-    /// Sparse provenance and exactness tables.
-    #[serde(default)]
-    pub annotations: Annotations,
     /// Independently versioned native namespaces.
     #[serde(default)]
     pub native: Native,
@@ -140,7 +182,7 @@ impl CadIr {
     pub fn native_unknowns(
         &self,
         format: &str,
-    ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
+    ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
         self.native.namespace(format).map_or_else(
             || Ok(Vec::new()),
             |namespace| namespace.arena_as("unknowns"),
@@ -150,13 +192,13 @@ impl CadIr {
     /// Deserialize every reserved native `unknowns` arena.
     pub fn all_native_unknowns(
         &self,
-    ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
+    ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
         self.native
             .0
             .values()
             .filter(|namespace| namespace.arenas.contains_key("unknowns"))
             .try_fold(Vec::new(), |mut records, namespace| {
-                records.extend(namespace.arena_as::<UnknownRecord>("unknowns")?);
+                records.extend(namespace.arena_as::<NativeUnknownRecord>("unknowns")?);
                 Ok(records)
             })
     }
@@ -165,7 +207,7 @@ impl CadIr {
     pub fn set_native_unknowns(
         &mut self,
         format: &str,
-        records: &[UnknownRecord],
+        records: &[NativeUnknownRecord],
     ) -> Result<(), crate::native::NativeConvertError> {
         let namespace = self.native.namespace_mut(format);
         if namespace.version == 0 {
@@ -195,7 +237,7 @@ impl CadIr {
     pub fn push_native_unknown(
         &mut self,
         format: &str,
-        record: UnknownRecord,
+        record: NativeUnknownRecord,
     ) -> Result<(), crate::native::NativeConvertError> {
         let mut records = self.native_unknowns(format)?;
         records.retain(|existing| existing.id != record.id);
@@ -211,7 +253,6 @@ impl CadIr {
             units,
             tolerances: Tolerances::default(),
             model: Model::default(),
-            annotations: Annotations::default(),
             native: Native::default(),
         }
     }
@@ -235,11 +276,86 @@ impl CadIr {
         serde_json::from_value(value)
     }
 
+    /// Migrate JSON from the immediately preceding IR version and parse it.
+    ///
+    /// The immediately preceding version is upgraded, including structural
+    /// normalization required by the current schema. Older versions remain
+    /// unsupported.
+    pub fn migrate_json(s: &str) -> Result<Self, serde_json::Error> {
+        let mut value: serde_json::Value = serde_json::from_str(s)?;
+        let version = value.get("ir_version").and_then(serde_json::Value::as_str);
+        match version {
+            Some(IR_VERSION) => serde_json::from_value(value),
+            Some(PREVIOUS_IR_VERSION) => {
+                migrate_previous_sketch_spaces(&mut value);
+                value
+                    .as_object_mut()
+                    .expect("a versioned CADIR document is a JSON object")
+                    .insert("ir_version".into(), IR_VERSION.into());
+                serde_json::from_value(value)
+            }
+            _ => Err(<serde_json::Error as serde::de::Error>::custom(format!(
+                "cannot migrate ir_version {version:?}; expected {PREVIOUS_IR_VERSION} or {IR_VERSION}"
+            ))),
+        }
+    }
+
     /// Sort model, native, and unknown-record arenas by identity.
     pub fn finalize(&mut self) {
         self.model.finalize();
         self.native.finalize();
     }
+}
+
+fn migrate_previous_sketch_spaces(value: &mut serde_json::Value) {
+    let Some(model) = value
+        .get_mut("model")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    if let Some(features) = model
+        .get_mut("features")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for feature in features {
+            if let Some(definition) = feature.get_mut("definition") {
+                migrate_previous_sketch_definition(definition);
+            }
+        }
+    }
+    if let Some(configurations) = model
+        .get_mut("configurations")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for state in configurations
+            .iter_mut()
+            .filter_map(|configuration| configuration.get_mut("feature_states"))
+            .filter_map(serde_json::Value::as_object_mut)
+            .flat_map(|states| states.values_mut())
+        {
+            if let Some(definition) = state.get_mut("definition") {
+                migrate_previous_sketch_definition(definition);
+            }
+        }
+    }
+}
+
+fn migrate_previous_sketch_definition(definition: &mut serde_json::Value) {
+    let Some(definition) = definition.as_object_mut() else {
+        return;
+    };
+    if definition
+        .get("definition")
+        .and_then(serde_json::Value::as_str)
+        != Some("sketch")
+    {
+        return;
+    }
+    if definition.get("space").and_then(serde_json::Value::as_str) == Some("spatial") {
+        definition.insert("definition".into(), "spatial_sketch".into());
+    }
+    definition.remove("space");
 }
 
 /// Source-container metadata preserved for reporting.

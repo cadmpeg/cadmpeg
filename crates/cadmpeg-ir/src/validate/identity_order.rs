@@ -3,8 +3,16 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::features::{DesignConfiguration, DesignParameter};
-use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
+use crate::drawings::Drawing;
+use crate::features::{DesignConfiguration, DesignParameter, FeatureInputTopology};
+use crate::presentation::{PresentationDocument, ViewPresentation};
+use crate::products::{AssemblyJoint, Component, Occurrence};
+use crate::semantic_annotations::SemanticAnnotation;
+use crate::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
+    SpatialSketchEntity,
+};
+use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 
 pub(super) fn check_version(ir: &CadIr, findings: &mut Vec<Finding>) {

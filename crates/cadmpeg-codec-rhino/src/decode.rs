@@ -12,14 +12,14 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::LossProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -118,6 +118,10 @@ impl ArenaLengths {
     }
 }
 
+// Instance expansion re-enters `decode_geometry` per member, which reaches the mesh decoder's
+// `begin_expand` path; these caps bound reference, member, and entity
+// amplification from a hostile definition graph independently of the platform
+// budget, and are kept as defense in depth.
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
@@ -168,8 +172,10 @@ impl ExpansionBudget {
 /// Mutable decode state shared by metadata and geometry phases.
 #[derive(Clone)]
 pub(crate) struct DecodeContext<'a> {
-    scan: &'a Scan,
+    scan: &'a Scan<'a>,
+    expand: crate::mesh::MeshExpand<'a>,
     ir: CadIr,
+    annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     statuses: Vec<GeometryStatus>,
     outcomes: BTreeMap<String, ClassOutcome>,
@@ -178,6 +184,11 @@ pub(crate) struct DecodeContext<'a> {
     mesh_budget: crate::mesh::MeshBudget,
     geometry_transferred: bool,
     phase_warnings: Vec<String>,
+    /// Typed loss notes raised at semantic conversion boundaries. Distinct
+    /// from `phase_warnings`, which aggregate into
+    /// untyped `DecodeDiagnostic` notes; these carry the boundary's own loss
+    /// code and drain into the report's `losses` at finalization.
+    typed_losses: Vec<LossNote>,
     selected_object: Option<usize>,
     instance_key: Option<String>,
     instance_path: Vec<String>,
@@ -190,7 +201,7 @@ pub(crate) struct DecodeContext<'a> {
 
 impl<'a> DecodeContext<'a> {
     /// Starts a transaction from a completed Rhino scan.
-    pub(crate) fn new(scan: &'a Scan) -> Self {
+    pub(crate) fn new(scan: &'a Scan<'a>, expand: crate::mesh::MeshExpand<'a>) -> Self {
         let mut object_candidates = BTreeMap::new();
         for (source_order, object) in scan.objects.iter().enumerate() {
             if let Some(identity) = &object.identity {
@@ -202,7 +213,9 @@ impl<'a> DecodeContext<'a> {
         }
         let mut context = Self {
             scan,
+            expand,
             ir: build_ir(scan),
+            annotations: cadmpeg_ir::Annotations::default(),
             unknowns: Vec::with_capacity(scan.objects.len()),
             statuses: Vec::with_capacity(scan.objects.len()),
             outcomes: BTreeMap::new(),
@@ -211,6 +224,7 @@ impl<'a> DecodeContext<'a> {
             mesh_budget: crate::mesh::MeshBudget::new(),
             geometry_transferred: false,
             phase_warnings: Vec::new(),
+            typed_losses: Vec::new(),
             selected_object: None,
             instance_key: None,
             instance_path: Vec::new(),
@@ -244,6 +258,12 @@ impl<'a> DecodeContext<'a> {
         self.outcomes.clear();
         self.retained_bytes = 0;
         self.retain_object_records();
+    }
+
+    /// Returns the document mesh budget's retained-byte count.
+    #[cfg(test)]
+    pub(crate) fn mesh_budget_used(&self) -> usize {
+        self.mesh_budget.used()
     }
 
     /// Returns the source archive version.
@@ -305,40 +325,59 @@ impl<'a> DecodeContext<'a> {
         true
     }
 
-    fn validate_candidate(&mut self, apply: impl FnOnce(&mut CadIr)) -> Result<(), String> {
+    fn validate_candidate(
+        &mut self,
+        apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations),
+    ) -> Result<(), String> {
         let mut candidate = self.lightweight_candidate();
-        apply(&mut candidate);
-        self.commit_valid_candidate(candidate)
+        let mut annotations = self.annotations.clone();
+        apply(&mut candidate, &mut annotations);
+        self.commit_valid_candidate(candidate, annotations)
     }
 
     fn lightweight_candidate(&mut self) -> CadIr {
-        let payloads = detach_unknown_payloads(&mut self.unknowns);
         let mut candidate = self.ir.clone();
+        let unknowns = self
+            .unknowns
+            .iter()
+            .map(NativeUnknownRecord::from)
+            .collect::<Vec<_>>();
         candidate
-            .set_native_unknowns("rhino", &self.unknowns)
+            .set_native_unknowns("rhino", &unknowns)
             .expect("Rhino unknown records serialize");
-        restore_unknown_payloads(&mut self.unknowns, payloads);
         candidate
     }
 
-    fn commit_valid_candidate(&mut self, mut candidate: CadIr) -> Result<(), String> {
+    fn commit_valid_candidate(
+        &mut self,
+        mut candidate: CadIr,
+        annotations: cadmpeg_ir::Annotations,
+    ) -> Result<(), String> {
         candidate.model.finalize();
-        let validation = cadmpeg_ir::validate::validate(&candidate, Vec::new());
+        let source_fidelity = cadmpeg_ir::SourceFidelity {
+            annotations: annotations.clone(),
+            ..cadmpeg_ir::SourceFidelity::default()
+        };
+        let validation =
+            cadmpeg_ir::validate_with_source_fidelity(&candidate, &source_fidelity, Vec::new());
         if validation.is_ok() {
             let added = ArenaLengths::capture(&candidate)
                 .added_since(ArenaLengths::capture(&self.ir))
                 .ok_or_else(|| "candidate removed existing IR entities".to_string())?;
             self.expansion_budget.entities(added)?;
-            let payloads = detach_unknown_payloads(&mut self.unknowns);
-            let mut unknowns = candidate
+            let unknowns = candidate
                 .native_unknowns("rhino")
                 .map_err(|error| error.to_string())?;
-            restore_unknown_payloads(&mut unknowns, payloads);
-            candidate
-                .set_native_unknowns("rhino", &unknowns)
-                .map_err(|error| error.to_string())?;
-            self.unknowns = unknowns;
+            for reference in unknowns {
+                let record = self
+                    .unknowns
+                    .iter_mut()
+                    .find(|record| record.id == reference.id)
+                    .ok_or_else(|| format!("candidate introduced unknown {}", reference.id))?;
+                record.links = reference.links;
+            }
             self.ir = candidate;
+            self.annotations = annotations;
             Ok(())
         } else {
             Err(validation_findings(&validation))
@@ -366,13 +405,20 @@ impl<'a> DecodeContext<'a> {
     #[cfg(test)]
     pub(crate) fn reject_duplicate_unknown_candidate(&mut self) -> (bool, String) {
         let mut payloads_detached = false;
-        let result = self.validate_candidate(|candidate| {
-            let mut unknowns = candidate.native_unknowns("rhino").unwrap();
-            payloads_detached = unknowns.iter().all(|record| record.data.is_none());
+        let result = self.validate_candidate(|candidate, _annotations| {
+            let mut unknowns = candidate
+                .native_unknowns("rhino")
+                .expect("required invariant");
+            payloads_detached = unknowns.iter().all(|record| {
+                let value = serde_json::to_value(record).expect("required invariant");
+                value.get("data").is_none()
+            });
             if let Some(record) = unknowns.first().cloned() {
                 unknowns.push(record);
             }
-            candidate.set_native_unknowns("rhino", &unknowns).unwrap();
+            candidate
+                .set_native_unknowns("rhino", &unknowns)
+                .expect("required invariant");
         });
         (
             payloads_detached,
@@ -470,9 +516,9 @@ impl<'a> DecodeContext<'a> {
                     continue;
                 };
                 let key = self.object_key(identity, source_order);
-                let budget_checkpoint = self.mesh_budget;
                 let decoded = crate::mesh::decode(
-                    &self.scan.data,
+                    self.expand,
+                    self.scan.data,
                     object.class_data_range.clone(),
                     self.archive(),
                     crate::mesh::MeshDecodeOptions {
@@ -488,7 +534,6 @@ impl<'a> DecodeContext<'a> {
                         if self.commit_mesh(source_order, mesh) {
                             self.mark_decoded(source_order);
                         } else {
-                            self.mesh_budget = budget_checkpoint;
                             self.mark_failed(source_order);
                         }
                     }
@@ -512,7 +557,7 @@ impl<'a> DecodeContext<'a> {
                 continue;
             }
             let decoded = crate::curves::decode(
-                &self.scan.data,
+                self.scan.data,
                 object.class_uuid,
                 object.class_data_range.clone(),
                 scale,
@@ -597,7 +642,7 @@ impl<'a> DecodeContext<'a> {
             };
             let key = self.object_key(identity, source_order);
             match crate::dimensions::decode(
-                &self.scan.data,
+                self.scan.data,
                 object.class_uuid,
                 object.class_data_range.clone(),
                 scale,
@@ -605,7 +650,7 @@ impl<'a> DecodeContext<'a> {
             ) {
                 Ok(mut dimension) => {
                     if let Err(error) = crate::dimensions::apply_userdata(
-                        &self.scan.data,
+                        self.scan.data,
                         &object.userdata,
                         self.archive(),
                         &mut dimension,
@@ -624,7 +669,7 @@ impl<'a> DecodeContext<'a> {
                         native_ref,
                     );
                     let links = [feature.id.to_string(), parameter.id.0.clone()];
-                    let result = self.validate_candidate(|candidate| {
+                    let result = self.validate_candidate(|candidate, _annotations| {
                         candidate.model.features.push(feature);
                         candidate.model.parameters.push(parameter);
                     });
@@ -665,7 +710,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let mut hatch = match crate::hatch::decode(
-            &self.scan.data,
+            self.expand,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -742,7 +787,7 @@ impl<'a> DecodeContext<'a> {
             id: feature_id.clone(),
             ordinal: u64::try_from(hatch.source_range.start).expect("source offset fits u64"),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -758,10 +803,11 @@ impl<'a> DecodeContext<'a> {
             native_ref: Some(self.unknowns[source_order].id.to_string()),
         };
         let hatch_loops = hatch.loops;
-        let result = self.validate_candidate(|candidate| {
+        let result = self.validate_candidate(|candidate, candidate_annotations| {
             for (index, hatch_loop) in hatch_loops.into_iter().enumerate() {
                 commit_curve_tree(
                     candidate,
+                    candidate_annotations,
                     hatch_loop.curve,
                     &key,
                     &association,
@@ -800,7 +846,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let polyedge = match crate::polyedge::decode(
-            &self.scan.data,
+            self.expand,
             object.class_data_range.clone(),
             self.archive(),
         ) {
@@ -821,7 +867,7 @@ impl<'a> DecodeContext<'a> {
             id: id.clone(),
             ordinal: u64::try_from(source_order).expect("source order fits u64"),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -836,7 +882,9 @@ impl<'a> DecodeContext<'a> {
             },
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
         };
-        match self.validate_candidate(|candidate| candidate.model.features.push(feature)) {
+        match self
+            .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
+        {
             Ok(()) => {
                 self.append_link(source_order, id.to_string());
                 self.mark_decoded(source_order);
@@ -866,7 +914,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let detail = match crate::detail::decode(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -899,7 +947,7 @@ impl<'a> DecodeContext<'a> {
             id: feature_id.clone(),
             ordinal: u64::try_from(detail.source_range.start).expect("source offset fits u64"),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -923,9 +971,10 @@ impl<'a> DecodeContext<'a> {
             },
             native_ref: Some(self.unknowns[source_order].id.to_string()),
         };
-        let result = self.validate_candidate(|candidate| {
+        let result = self.validate_candidate(|candidate, candidate_annotations| {
             commit_curve_tree(
                 candidate,
+                candidate_annotations,
                 detail.boundary,
                 &key,
                 &association,
@@ -965,7 +1014,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let cage = match crate::cage::decode(
-            &self.scan.data,
+            self.expand,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -1033,7 +1082,7 @@ impl<'a> DecodeContext<'a> {
             id: feature_id.clone(),
             ordinal: u64::try_from(cage.source_range.start).expect("source offset fits u64"),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -1059,7 +1108,9 @@ impl<'a> DecodeContext<'a> {
             },
             native_ref: Some(self.unknowns[source_order].id.to_string()),
         };
-        match self.validate_candidate(|candidate| candidate.model.features.push(feature)) {
+        match self
+            .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
+        {
             Ok(()) => {
                 self.append_link(source_order, feature_id.to_string());
                 self.geometry_transferred = true;
@@ -1091,7 +1142,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let morph = match crate::morph::decode(
-            &self.scan.data,
+            self.expand,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -1123,7 +1174,9 @@ impl<'a> DecodeContext<'a> {
             self.unknowns[source_order].id.to_string(),
         );
         let feature_id = feature.id.to_string();
-        match self.validate_candidate(|candidate| candidate.model.features.push(feature)) {
+        match self
+            .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
+        {
             Ok(()) => {
                 self.append_link(source_order, feature_id);
                 self.geometry_transferred = true;
@@ -1154,7 +1207,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let construction = match crate::curve_on_surface::decode(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -1194,7 +1247,7 @@ impl<'a> DecodeContext<'a> {
             ordinal: u64::try_from(construction.source_range.start)
                 .expect("source offset fits u64"),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -1223,9 +1276,10 @@ impl<'a> DecodeContext<'a> {
                 (SurfaceGeometry::Nurbs(geometry), true)
             }
         };
-        let result = self.validate_candidate(|candidate| {
+        let result = self.validate_candidate(|candidate, candidate_annotations| {
             commit_curve_tree(
                 candidate,
+                candidate_annotations,
                 parameter_curve,
                 &key,
                 &association,
@@ -1235,6 +1289,7 @@ impl<'a> DecodeContext<'a> {
             if let Some(model_curve) = model_curve {
                 commit_curve_tree(
                     candidate,
+                    candidate_annotations,
                     model_curve,
                     &key,
                     &association,
@@ -1247,7 +1302,7 @@ impl<'a> DecodeContext<'a> {
                 geometry: surface_geometry,
                 source_object: Some(association),
             });
-            candidate.annotations.exactness.insert(
+            candidate_annotations.exactness.insert(
                 surface_id.to_string(),
                 ExactnessNote {
                     entity: if surface_derived {
@@ -1339,7 +1394,17 @@ impl<'a> DecodeContext<'a> {
         let mut stack = Vec::new();
         let mut path = self.instance_path.clone();
         let parent = Transform::identity();
-        match candidate.expand_reference_inner(source_order, parent, &mut path, &mut stack) {
+        let outcome = candidate.expand_reference_inner(source_order, parent, &mut path, &mut stack);
+        // Every member the candidate decoded inflated its mesh buffers into the
+        // shared session arena, which cannot reclaim them. Adopt the
+        // candidate's retained-byte count before any discard below, so a rejected
+        // expansion still charges the parent for the bytes it left in the arena. A
+        // refund here — dropping the charge with the candidate while the arena keeps
+        // the bytes — would let a hostile document ratchet arena memory past the cap
+        // by failing one reference after another while `used` returns to zero. On
+        // the commit path `*self = candidate` re-adopts the same count.
+        self.mesh_budget = candidate.mesh_budget.clone();
+        match outcome {
             Ok(links) => {
                 let validation = cadmpeg_ir::validate::validate(&candidate.ir, Vec::new());
                 if !validation.is_ok() {
@@ -1373,6 +1438,8 @@ impl<'a> DecodeContext<'a> {
         path: &mut Vec<String>,
         stack: &mut Vec<crate::wire::Uuid>,
     ) -> Result<Vec<String>, String> {
+        // Bounds instance recursion depth on the geometry-expansion path that
+        // reaches the mesh decoder, independently of the platform depth gauge.
         const MAX_INSTANCE_DEPTH: usize = 64;
         self.expansion_budget.reference()?;
         if stack.len() >= MAX_INSTANCE_DEPTH {
@@ -1388,7 +1455,7 @@ impl<'a> DecodeContext<'a> {
             .as_ref()
             .ok_or_else(|| "reference identity is unavailable".to_string())?;
         let reference =
-            crate::instances::parse_reference(&self.scan.data, object.class_data_range.clone())
+            crate::instances::parse_reference(self.scan.data, object.class_data_range.clone())
                 .map_err(|error| error.to_string())?;
         if self
             .scan
@@ -1569,8 +1636,8 @@ impl<'a> DecodeContext<'a> {
                 .procedural_surfaces
                 .truncate(before.procedural_surfaces);
             for id in omitted_ids {
-                self.ir.annotations.exactness.remove(&id);
-                self.ir.annotations.provenance.remove(&id);
+                self.annotations.exactness.remove(&id);
+                self.annotations.provenance.remove(&id);
             }
             self.phase_warnings.push(
                 "instance: transformed procedural definition omitted; exact solved carrier retained"
@@ -1578,7 +1645,7 @@ impl<'a> DecodeContext<'a> {
             );
         }
         for id in derived_ids {
-            annotate_derived(&mut self.ir, &id);
+            annotate_derived(&mut self.annotations, &id);
         }
         Ok(links)
     }
@@ -1601,7 +1668,7 @@ impl<'a> DecodeContext<'a> {
         let key = self.object_key(identity, source_order);
         let id: cadmpeg_ir::ids::SubdId = format!("rhino:object:subd#{key}").into();
         match crate::subd::decode(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             self.archive(),
             scale,
@@ -1664,9 +1731,9 @@ impl<'a> DecodeContext<'a> {
         };
         surface.source_object = Some(self.source_association(identity));
         let id = surface.id.to_string();
-        let result = self.validate_candidate(|candidate| {
+        let result = self.validate_candidate(|candidate, candidate_annotations| {
             candidate.model.subds.push(surface);
-            candidate.annotations.exactness.insert(
+            candidate_annotations.exactness.insert(
                 id.clone(),
                 ExactnessNote {
                     entity: if scaled {
@@ -1699,9 +1766,9 @@ impl<'a> DecodeContext<'a> {
             self.commit_unknown_surface(source_order);
             return;
         };
-        let budget_checkpoint = self.mesh_budget;
         let decoded = crate::extrusion::decode(
-            &self.scan.data,
+            self.expand,
+            self.scan.data,
             object.class_data_range.clone(),
             self.archive(),
             self.scan.metadata.properties.writer_version,
@@ -1716,7 +1783,6 @@ impl<'a> DecodeContext<'a> {
                 if self.commit_extrusion(source_order, extrusion) {
                     self.mark_decoded(source_order);
                 } else {
-                    self.mesh_budget = budget_checkpoint;
                     self.scan_warning(
                         source_order,
                         "extrusion candidate rejected atomically by IR validation",
@@ -1725,7 +1791,6 @@ impl<'a> DecodeContext<'a> {
                 }
             }
             Err(error) => {
-                self.mesh_budget = budget_checkpoint;
                 self.scan_warning(
                     source_order,
                     &format!("extrusion degraded and retained: {error}"),
@@ -1747,12 +1812,16 @@ impl<'a> DecodeContext<'a> {
         crate::presentation::install(self.scan, &mut self.ir);
         crate::product::install(self.scan, &mut self.ir);
         crate::views::install(self.scan, &mut self.ir);
-        crate::accounting::install(self.scan, &mut self.ir);
+        let unknown_refs = self
+            .unknowns
+            .iter()
+            .map(NativeUnknownRecord::from)
+            .collect::<Vec<_>>();
         self.ir
-            .set_native_unknowns("rhino", &self.unknowns)
+            .set_native_unknowns("rhino", &unknown_refs)
             .expect("Rhino unknown records serialize");
         self.ir.finalize();
-        let mut losses = Vec::new();
+        let mut losses: Vec<LossNote> = Vec::new();
         let decoded = self
             .outcomes
             .values()
@@ -1760,14 +1829,17 @@ impl<'a> DecodeContext<'a> {
             .sum::<usize>();
         let total = self.scan.objects.len();
         losses.push(LossNote {
+            code: LossCode::ObjectRecordsUntransferred,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!("decoded {decoded}/{total} Rhino object records"),
             provenance: None,
         });
+        let mut omissions: Vec<LossNote> = Vec::new();
         for (class, outcome) in &self.outcomes {
             if outcome.retained > 0 {
-                losses.push(LossNote {
+                omissions.push(LossNote {
+                    code: LossCode::UnsupportedObjectFamily,
                     category: LossCategory::Geometry,
                     severity: Severity::Warning,
                     message: format!(
@@ -1779,6 +1851,7 @@ impl<'a> DecodeContext<'a> {
             }
             if outcome.attribute_degraded > 0 {
                 losses.push(LossNote {
+                    code: LossCode::AttributesNotTransferred,
                     category: LossCategory::Attribute,
                     severity: Severity::Warning,
                     message: format!(
@@ -1790,6 +1863,7 @@ impl<'a> DecodeContext<'a> {
             }
             if outcome.failed_framed > 0 {
                 losses.push(LossNote {
+                    code: LossCode::DecodeDiagnostic,
                     category: LossCategory::Other,
                     severity: Severity::Error,
                     message: format!(
@@ -1800,8 +1874,10 @@ impl<'a> DecodeContext<'a> {
                 });
             }
         }
+        self.typed_losses.extend(omissions);
         if let Some(first) = self.scan.definitions.diagnostics.first() {
             losses.push(LossNote {
+                code: LossCode::DecodeDiagnostic,
                 category: LossCategory::Other,
                 severity: Severity::Warning,
                 message: format!(
@@ -1817,7 +1893,9 @@ impl<'a> DecodeContext<'a> {
                 }),
             });
         }
+        losses.append(&mut self.typed_losses);
         losses.extend(self.scan.warnings.iter().map(|warning| LossNote {
+            code: LossCode::DecodeDiagnostic,
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: warning.clone(),
@@ -1839,6 +1917,7 @@ impl<'a> DecodeContext<'a> {
             phase_families
                 .into_iter()
                 .map(|(family, (count, first))| LossNote {
+                    code: LossCode::DecodeDiagnostic,
                     category: LossCategory::Other,
                     severity: Severity::Warning,
                     message: if count == 1 {
@@ -1861,15 +1940,24 @@ impl<'a> DecodeContext<'a> {
             RETAINED_DOCUMENT_CAP,
             RETAINED_RECORD_CAP
         )];
-        DecodeResult::new(
+        let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+            annotations: self.annotations,
+            ..Default::default()
+        };
+        source_fidelity
+            .attach_native_unknown_records(&mut self.ir, "rhino", &self.unknowns)
+            .expect("Rhino source records separate from product identities");
+        DecodeResult::with_source_fidelity(
             self.ir,
             DecodeReport {
                 format: "rhino".to_string(),
                 container_only: false,
                 geometry_transferred: self.geometry_transferred,
+                coverage: std::collections::BTreeMap::new(),
                 losses,
                 notes,
             },
+            source_fidelity,
         )
     }
 
@@ -1985,6 +2073,7 @@ impl<'a> DecodeContext<'a> {
                 self.ir.model.points.push(Point {
                     id: point_id.clone(),
                     position,
+                    source_object: Some(association.clone()),
                 });
                 self.ir.model.vertices.push(Vertex {
                     id: vertex_id.clone(),
@@ -2040,6 +2129,7 @@ impl<'a> DecodeContext<'a> {
                     self.ir.model.points.push(Point {
                         id: point_id.clone(),
                         position,
+                        source_object: Some(association.clone()),
                     });
                     self.ir.model.vertices.push(Vertex {
                         id: vertex_id.clone(),
@@ -2080,7 +2170,7 @@ impl<'a> DecodeContext<'a> {
                     .map(|point| point.id.to_string())
                     .collect();
                 for point_id in point_ids {
-                    self.ir.annotations.exactness.insert(
+                    self.annotations.exactness.insert(
                         point_id,
                         ExactnessNote {
                             entity: if cloud.scaled {
@@ -2106,6 +2196,7 @@ impl<'a> DecodeContext<'a> {
                 );
                 let parent_id = commit_curve_tree(
                     &mut self.ir,
+                    &mut self.annotations,
                     curve,
                     &key,
                     &association,
@@ -2126,7 +2217,7 @@ impl<'a> DecodeContext<'a> {
                         geometry,
                         source_object: Some(association.clone()),
                     });
-                    self.ir.annotations.exactness.insert(
+                    self.annotations.exactness.insert(
                         surface_id.to_string(),
                         ExactnessNote {
                             entity: if derived {
@@ -2176,6 +2267,7 @@ impl<'a> DecodeContext<'a> {
             return false;
         }
         let mut candidate = self.lightweight_candidate();
+        let mut candidate_annotations = self.annotations.clone();
         let Some(unknown) = candidate
             .native_unknowns("rhino")
             .ok()
@@ -2194,6 +2286,7 @@ impl<'a> DecodeContext<'a> {
             };
             child_ids.push(commit_curve_tree(
                 &mut candidate,
+                &mut candidate_annotations,
                 child,
                 key,
                 &association,
@@ -2221,14 +2314,16 @@ impl<'a> DecodeContext<'a> {
                 axis_origin,
                 axis_direction,
                 angular_interval,
-                parameter_interval,
+                parameter_interval: Some(parameter_interval),
                 transposed,
+                revision_form: None,
             },
             crate::surfaces::DecodedProceduralSurface::Sum { basepoint } => {
                 ProceduralSurfaceDefinition::Sum {
                     first: child_ids.remove(0),
                     second: child_ids.remove(0),
                     basepoint,
+                    revision_form: None,
                 }
             }
         };
@@ -2237,9 +2332,10 @@ impl<'a> DecodeContext<'a> {
             surface: surface_id.clone(),
             definition: ir_definition,
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         for id in [surface_id.to_string(), procedural_id.to_string()] {
-            candidate.annotations.exactness.insert(
+            candidate_annotations.exactness.insert(
                 id,
                 ExactnessNote {
                     entity: Exactness::Derived,
@@ -2248,7 +2344,7 @@ impl<'a> DecodeContext<'a> {
             );
         }
         append_record_links_at(&mut candidate, source_order, &[surface_id.to_string()]);
-        if let Err(findings) = self.commit_valid_candidate(candidate) {
+        if let Err(findings) = self.commit_valid_candidate(candidate, candidate_annotations) {
             self.phase_warnings.push(format!(
                 "procedural-surface: candidate rejected by IR validation: {findings}"
             ));
@@ -2283,11 +2379,13 @@ impl<'a> DecodeContext<'a> {
         }
         let association = self.source_association(identity);
         let mut candidate = self.lightweight_candidate();
+        let mut candidate_annotations = self.annotations.clone();
         let mut links = Vec::new();
         let mut directrices = Vec::with_capacity(extrusion.boundaries.len());
         for (index, boundary) in extrusion.boundaries.iter().enumerate() {
             let id = commit_curve_tree(
                 &mut candidate,
+                &mut candidate_annotations,
                 boundary.start_curve.clone(),
                 &key,
                 &association,
@@ -2316,14 +2414,16 @@ impl<'a> DecodeContext<'a> {
                     native_position: None,
                 },
                 cache_fit_tolerance: None,
+                record_bounds: None,
             });
-            annotate_derived(&mut candidate, &surface_id.to_string());
-            annotate_derived(&mut candidate, &procedure_id.to_string());
+            annotate_derived(&mut candidate_annotations, &surface_id.to_string());
+            annotate_derived(&mut candidate_annotations, &procedure_id.to_string());
             links.push(surface_id.to_string());
         }
         if (extrusion.caps[0] || extrusion.caps[1])
             && !stage_extrusion_caps(
                 &mut candidate,
+                &mut candidate_annotations,
                 &key,
                 &association,
                 &extrusion,
@@ -2336,12 +2436,12 @@ impl<'a> DecodeContext<'a> {
         for (index, mut mesh) in extrusion.meshes.into_iter().enumerate() {
             mesh.tessellation.id = format!("rhino:object:tessellation#{key}.cache-{index}");
             mesh.tessellation.source_object = Some(association.clone());
-            annotate_derived(&mut candidate, &mesh.tessellation.id);
+            annotate_derived(&mut candidate_annotations, &mesh.tessellation.id);
             links.push(mesh.tessellation.id.clone());
             candidate.model.tessellations.push(mesh.tessellation);
         }
         append_record_links_at(&mut candidate, source_order, &links);
-        if let Err(findings) = self.commit_valid_candidate(candidate) {
+        if let Err(findings) = self.commit_valid_candidate(candidate, candidate_annotations) {
             self.scan_warning(
                 source_order,
                 &format!("extrusion candidate rejected by IR validation: {findings}"),
@@ -2369,7 +2469,7 @@ impl<'a> DecodeContext<'a> {
         let key = self.object_key(identity, source_order);
         let id: cadmpeg_ir::ids::SurfaceId = format!("rhino:object:surface#{key}").into();
         let association = self.source_association(identity);
-        if let Err(findings) = self.validate_candidate(|candidate| {
+        if let Err(findings) = self.validate_candidate(|candidate, candidate_annotations| {
             candidate.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: SurfaceGeometry::Unknown {
@@ -2377,7 +2477,7 @@ impl<'a> DecodeContext<'a> {
                 },
                 source_object: Some(association),
             });
-            candidate.annotations.exactness.insert(
+            candidate_annotations.exactness.insert(
                 id.to_string(),
                 ExactnessNote {
                     entity: Exactness::Unknown,
@@ -2407,7 +2507,7 @@ impl<'a> DecodeContext<'a> {
         } else {
             Exactness::ByteExact
         };
-        self.ir.annotations.exactness.insert(
+        self.annotations.exactness.insert(
             point.to_string(),
             ExactnessNote {
                 entity: point_exactness,
@@ -2420,7 +2520,7 @@ impl<'a> DecodeContext<'a> {
             region.to_string(),
             body.to_string(),
         ] {
-            self.ir.annotations.exactness.insert(
+            self.annotations.exactness.insert(
                 id,
                 ExactnessNote {
                     entity: Exactness::Derived,
@@ -2449,6 +2549,8 @@ impl<'a> DecodeContext<'a> {
         self.ir.model.tessellations.push(Tessellation {
             id: id.clone(),
             body: None,
+            faces: mesh.tessellation.faces,
+            chordal_deflection: mesh.tessellation.chordal_deflection,
             source_object: Some(self.source_association(identity)),
             vertices: mesh.tessellation.vertices,
             triangles: mesh.tessellation.triangles,
@@ -2456,7 +2558,7 @@ impl<'a> DecodeContext<'a> {
             normals: mesh.tessellation.normals,
             channels: mesh.tessellation.channels,
         });
-        self.ir.annotations.exactness.insert(
+        self.annotations.exactness.insert(
             id.clone(),
             ExactnessNote {
                 entity: if mesh.scaled {
@@ -2473,7 +2575,7 @@ impl<'a> DecodeContext<'a> {
 
     fn decode_brep(&mut self, source_order: usize, object: &ObjectDescriptor) {
         let parsed = crate::brep::parse(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             self.archive(),
             self.scan.metadata.properties.writer_version,
@@ -2526,9 +2628,9 @@ impl<'a> DecodeContext<'a> {
         let association = self.source_association(identity);
         let key = self.object_key(identity, source_order);
         let unknown = self.unknowns[source_order].id.clone();
-        let budget_checkpoint = self.mesh_budget;
         let transfer = BrepTransferInput {
-            data: &self.scan.data,
+            expand: self.expand,
+            data: self.scan.data,
             archive: self.archive(),
             writer_version: self.scan.metadata.properties.writer_version,
             raw: &raw,
@@ -2548,13 +2650,23 @@ impl<'a> DecodeContext<'a> {
                 let cache_only =
                     !full_topology && !emitted_geometry && !staged.tessellations.is_empty();
                 let fallback = staged.clone().free_carrier_fallback("IR validation");
-                let validation = self.validate_candidate(|candidate| {
-                    staged.apply(candidate);
+                let validation = self.validate_candidate(|candidate, candidate_annotations| {
+                    staged.apply(candidate, candidate_annotations);
                     append_record_links_at(candidate, source_order, &links);
                 });
                 if validation.is_ok() {
                     for warning in warnings {
-                        self.scan_warning(source_order, &warning);
+                        if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
+                            self.typed_losses.push(LossNote {
+                                code: LossCode::TopologyNotTransferred,
+                                category: LossCategory::Topology,
+                                severity: Severity::Warning,
+                                message: format!("Brep topology fallback: {cause}"),
+                                provenance: None,
+                            });
+                        } else {
+                            self.scan_warning(source_order, &warning);
+                        }
                     }
                     if cache_only {
                         self.scan_warning(
@@ -2580,10 +2692,11 @@ impl<'a> DecodeContext<'a> {
                         ),
                     );
                     let fallback_links = fallback.links.clone();
-                    let fallback_validation = self.validate_candidate(|candidate| {
-                        fallback.apply(candidate);
-                        append_record_links_at(candidate, source_order, &fallback_links);
-                    });
+                    let fallback_validation =
+                        self.validate_candidate(|candidate, candidate_annotations| {
+                            fallback.apply(candidate, candidate_annotations);
+                            append_record_links_at(candidate, source_order, &fallback_links);
+                        });
                     if fallback_validation.is_ok() {
                         self.geometry_transferred |= emitted_geometry;
                     } else {
@@ -2594,12 +2707,10 @@ impl<'a> DecodeContext<'a> {
                                 fallback_validation.expect_err("checked error")
                             ),
                         );
-                        self.mesh_budget = budget_checkpoint;
                     }
                 }
             }
             Err(error) => {
-                self.mesh_budget = budget_checkpoint;
                 self.scan_warning(
                     source_order,
                     &format!("Brep geometry/topology degraded: {error}"),
@@ -2640,7 +2751,7 @@ fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
     let Some(record) = unknowns.iter_mut().find(|record| record.id == *unknown) else {
         return;
     };
-    append_links_to_record(record, links);
+    append_links_to_native_record(record, links);
     let _ = ir.set_native_unknowns("rhino", &unknowns);
 }
 
@@ -2649,13 +2760,21 @@ fn append_record_links_at(ir: &mut CadIr, source_order: usize, links: &[String])
         return;
     };
     if let Some(record) = unknowns.get_mut(source_order) {
-        append_links_to_record(record, links);
+        append_links_to_native_record(record, links);
     }
     let _ = ir.set_native_unknowns("rhino", &unknowns);
 }
 
 fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {
-    let unknown = record.id.to_string();
+    append_links(&record.id, &mut record.links, links);
+}
+
+fn append_links_to_native_record(record: &mut NativeUnknownRecord, links: &[String]) {
+    append_links(&record.id, &mut record.links, links);
+}
+
+fn append_links(unknown_id: &UnknownId, record_links: &mut Vec<String>, links: &[String]) {
+    let unknown = unknown_id.to_string();
     let mut additions = links
         .iter()
         .filter(|link| *link != &unknown)
@@ -2666,7 +2785,7 @@ fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {
     if additions.is_empty() {
         return;
     }
-    let existing = std::mem::take(&mut record.links);
+    let existing = std::mem::take(record_links);
     let mut merged = Vec::with_capacity(existing.len().saturating_add(additions.len()));
     let (mut left, mut right) = (
         existing.into_iter().peekable(),
@@ -2684,7 +2803,7 @@ fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {
     }
     merged.extend(left);
     merged.extend(right);
-    record.links = merged;
+    *record_links = merged;
 }
 
 fn detach_unknown_payloads(records: &mut [UnknownRecord]) -> Vec<Option<Vec<u8>>> {
@@ -2716,8 +2835,8 @@ fn validation_findings(report: &cadmpeg_ir::report::ValidationReport) -> String 
         .join("; ")
 }
 
-fn annotate_derived(ir: &mut CadIr, id: &str) {
-    ir.annotations.exactness.insert(
+fn annotate_derived(annotations: &mut cadmpeg_ir::Annotations, id: &str) {
+    annotations.exactness.insert(
         id.to_string(),
         ExactnessNote {
             entity: Exactness::Derived,
@@ -2728,6 +2847,7 @@ fn annotate_derived(ir: &mut CadIr, id: &str) {
 
 fn stage_extrusion_caps(
     ir: &mut CadIr,
+    annotations: &mut cadmpeg_ir::Annotations,
     key: &str,
     association: &SourceObjectAssociation,
     extrusion: &crate::extrusion::DecodedExtrusion,
@@ -2738,13 +2858,15 @@ fn stage_extrusion_caps(
         return false;
     }
     let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}.caps").into();
-    let region_id: cadmpeg_ir::ids::RegionId = format!("rhino:object:region#{key}.caps").into();
-    let shell_id: cadmpeg_ir::ids::ShellId = format!("rhino:object:shell#{key}.caps").into();
-    let mut face_ids = Vec::new();
+    let mut region_ids = Vec::new();
     for cap in 0..2 {
         if !extrusion.caps[cap] {
             continue;
         }
+        let region_id: cadmpeg_ir::ids::RegionId =
+            format!("rhino:object:region#{key}.cap-{cap}").into();
+        let shell_id: cadmpeg_ir::ids::ShellId =
+            format!("rhino:object:shell#{key}.cap-{cap}").into();
         let surface_id: cadmpeg_ir::ids::SurfaceId =
             format!("rhino:object:surface#{key}.cap-{cap}").into();
         let face_id: cadmpeg_ir::ids::FaceId = format!("rhino:object:face#{key}.cap-{cap}").into();
@@ -2770,7 +2892,7 @@ fn stage_extrusion_caps(
                     geometry: CurveGeometry::Nurbs(boundary.end_nurbs.clone()),
                     source_object: Some(association.clone()),
                 });
-                annotate_derived(ir, &id.to_string());
+                annotate_derived(annotations, &id.to_string());
                 id
             };
             let endpoint = if cap == 0 {
@@ -2816,6 +2938,7 @@ fn stage_extrusion_caps(
             ir.model.points.push(Point {
                 id: point_id.clone(),
                 position: endpoint,
+                source_object: Some(association.clone()),
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),
@@ -2852,13 +2975,20 @@ fn stage_extrusion_caps(
                 previous: coedge_id.clone(),
                 radial_next: coedge_id.clone(),
                 sense: Sense::Forward,
-                pcurve: Some(pcurve_id.clone()),
+                pcurves: vec![cadmpeg_ir::topology::PcurveUse {
+                    pcurve: pcurve_id.clone(),
+                    isoparametric: None,
+                    parameter_range: None,
+                }],
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: vec![coedge_id.clone()],
-                vertex: None,
+                vertex_uses: Vec::new(),
             });
             loop_ids.push(loop_id.clone());
             for id in [
@@ -2869,7 +2999,7 @@ fn stage_extrusion_caps(
                 coedge_id.to_string(),
                 loop_id.to_string(),
             ] {
-                annotate_derived(ir, &id);
+                annotate_derived(annotations, &id);
             }
         }
         ir.model.faces.push(Face {
@@ -2886,41 +3016,37 @@ fn stage_extrusion_caps(
             color: association.color,
             tolerance: None,
         });
-        annotate_derived(ir, &surface_id.to_string());
-        annotate_derived(ir, &face_id.to_string());
-        face_ids.push(face_id);
+        annotate_derived(annotations, &surface_id.to_string());
+        annotate_derived(annotations, &face_id.to_string());
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id.clone(),
+            faces: vec![face_id],
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id.clone()],
+        });
+        annotate_derived(annotations, &shell_id.to_string());
+        annotate_derived(annotations, &region_id.to_string());
+        region_ids.push(region_id);
     }
-    if face_ids.is_empty() {
+    if region_ids.is_empty() {
         return false;
     }
-    ir.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id.clone(),
-        faces: face_ids,
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
-    ir.model.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id.clone()],
-    });
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Sheet,
-        regions: vec![region_id.clone()],
+        regions: region_ids,
         transform: None,
         name: association.name.clone(),
         color: association.color,
         visible: association.visible,
     });
-    for id in [
-        body_id.to_string(),
-        region_id.to_string(),
-        shell_id.to_string(),
-    ] {
-        annotate_derived(ir, &id);
-    }
+    annotate_derived(annotations, &body_id.to_string());
     links.push(body_id.to_string());
     true
 }
@@ -2956,6 +3082,7 @@ enum BrepTransferKind {
 }
 
 struct BrepTransferInput<'a> {
+    expand: crate::mesh::MeshExpand<'a>,
     data: &'a [u8],
     archive: ArchiveVersion,
     writer_version: Option<i64>,
@@ -2975,7 +3102,7 @@ struct BrepStageContext<'a> {
 }
 
 impl StagedBrep {
-    fn apply(self, ir: &mut CadIr) {
+    fn apply(self, ir: &mut CadIr, annotations: &mut cadmpeg_ir::Annotations) {
         ir.model.bodies.extend(self.bodies);
         ir.model.regions.extend(self.regions);
         ir.model.shells.extend(self.shells);
@@ -2994,7 +3121,7 @@ impl StagedBrep {
         ir.model.pcurves.extend(self.pcurves);
         ir.model.tessellations.extend(self.tessellations);
         for (id, exactness) in self.exactness {
-            ir.annotations.exactness.insert(
+            annotations.exactness.insert(
                 id,
                 ExactnessNote {
                     entity: exactness,
@@ -3038,6 +3165,7 @@ impl StagedBrep {
 
 fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves::GeometryError> {
     let BrepTransferInput {
+        expand,
         data,
         archive,
         writer_version,
@@ -3066,8 +3194,8 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                 continue;
             };
             let id = format!("rhino:object:tessellation#{key}.{kind}-{index}");
-            let budget_checkpoint = *mesh_budget;
             match crate::mesh::decode(
+                expand,
                 data,
                 child.class_data_range.clone(),
                 archive,
@@ -3093,7 +3221,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                     staged.tessellations.push(mesh.tessellation);
                 }
                 Err(error) => {
-                    *mesh_budget = budget_checkpoint;
                     staged
                         .warnings
                         .push(format!("invalid {kind} mesh cache slot {index}: {error}"));
@@ -3256,6 +3383,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                     crate::curves::error(0, "scaled Brep vertex coordinate is invalid")
                 })?,
             ),
+            source_object: Some(association.clone()),
         });
         staged.vertices.push(Vertex {
             id: vertex_id.clone(),
@@ -3351,7 +3479,16 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                 previous: coedge_id.clone(),
                 radial_next: coedge_id.clone(),
                 sense: coedge_sense(trim.reversed_3d != 0),
-                pcurve,
+                pcurves: pcurve
+                    .into_iter()
+                    .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
+                        pcurve,
+                        isoparametric: None,
+                        parameter_range: None,
+                    })
+                    .collect(),
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
             coedges.push(coedge_id);
         }
@@ -3364,8 +3501,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
         staged.loops.push(Loop {
             id: id.clone(),
             face: face_id.clone(),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             coedges,
-            vertex: None,
+            vertex_uses: Vec::new(),
         });
         staged.faces[loop_record.face as usize].loops.push(id);
     }
@@ -3469,6 +3607,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
 
 /// Projects one embedded Brep into a self-contained semantic topology value.
 pub(crate) fn embedded_brep_json(
+    expand: crate::mesh::MeshExpand<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     archive: ArchiveVersion,
@@ -3492,6 +3631,7 @@ pub(crate) fn embedded_brep_json(
     let unknown = UnknownId("rhino:history:embedded-brep".to_string());
     let mut mesh_budget = crate::mesh::MeshBudget::new();
     let staged = stage_brep(BrepTransferInput {
+        expand,
         data,
         archive,
         writer_version,
@@ -3559,7 +3699,7 @@ fn scale_plane_pcurves(staged: &mut StagedBrep, scale: f64) {
         .coedges
         .iter()
         .filter(|coedge| plane_loops.contains(coedge.owner_loop.0.as_str()))
-        .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.clone()))
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.clone()))
         .collect::<BTreeSet<_>>();
     for pcurve in &mut staged.pcurves {
         if !plane_pcurves.contains(&pcurve.id.0) {
@@ -3657,14 +3797,16 @@ fn stage_brep_procedural_surface(
             axis_origin,
             axis_direction,
             angular_interval,
-            parameter_interval,
+            parameter_interval: Some(parameter_interval),
             transposed,
+            revision_form: None,
         },
         crate::surfaces::DecodedProceduralSurface::Sum { basepoint } => {
             ProceduralSurfaceDefinition::Sum {
                 first: child_ids[0].clone(),
                 second: child_ids[1].clone(),
                 basepoint,
+                revision_form: None,
             }
         }
     };
@@ -3678,6 +3820,7 @@ fn stage_brep_procedural_surface(
         surface: surface_id.clone(),
         definition,
         cache_fit_tolerance: None,
+        record_bounds: None,
     });
     staged
         .exactness
@@ -4147,6 +4290,7 @@ fn curve_warnings(curve: &crate::curves::DecodedCurve) -> Vec<String> {
 
 fn commit_curve_tree(
     ir: &mut CadIr,
+    annotations: &mut cadmpeg_ir::Annotations,
     curve: crate::curves::DecodedCurve,
     key: &str,
     association: &SourceObjectAssociation,
@@ -4159,6 +4303,7 @@ fn commit_curve_tree(
             let child_path = format!("{path}.component-{index}");
             component_ids.push(commit_curve_tree(
                 ir,
+                annotations,
                 child,
                 key,
                 association,
@@ -4182,7 +4327,7 @@ fn commit_curve_tree(
         geometry,
         source_object: Some(association.clone()),
     });
-    ir.annotations.exactness.insert(
+    annotations.exactness.insert(
         id.to_string(),
         ExactnessNote {
             entity: Exactness::Derived,
@@ -4469,13 +4614,13 @@ fn loss_provenance(class: &str, outcome: &ClassOutcome) -> LossProvenance {
 }
 
 /// Builds the metadata-only Rhino decode transaction.
-pub(crate) fn decode(scan: &Scan) -> DecodeResult {
-    let mut context = DecodeContext::new(scan);
+pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> DecodeResult {
+    let mut context = DecodeContext::new(scan, expand);
     context.decode_geometry();
     context.decode_dimensions();
     let geometry_context = context.unit_scale().map(|scale| {
         (
-            scan.data.as_slice(),
+            expand,
             scan.archive,
             scan.metadata.properties.writer_version,
             scale,
@@ -4485,7 +4630,32 @@ pub(crate) fn decode(scan: &Scan) -> DecodeResult {
     context.commit()
 }
 
-fn build_ir(scan: &Scan) -> CadIr {
+#[cfg(test)]
+pub(crate) fn with_expand_bytes<R>(
+    data: &[u8],
+    f: impl FnOnce(crate::mesh::MeshExpand<'_>) -> R,
+) -> R {
+    let arena = cadmpeg_ir::decode::DecodeArena::new();
+    let policy = cadmpeg_ir::decode::DecodePolicy::default();
+    let (ctx, root) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("root view");
+    f(crate::mesh::MeshExpand::new(&ctx, root))
+}
+
+#[cfg(test)]
+pub(crate) fn with_expand<R>(
+    scan: &Scan<'_>,
+    f: impl FnOnce(crate::mesh::MeshExpand<'_>) -> R,
+) -> R {
+    with_expand_bytes(scan.data, f)
+}
+
+#[cfg(test)]
+pub(crate) fn decode_for_test(scan: &Scan<'_>) -> DecodeResult {
+    with_expand(scan, |expand| decode(scan, expand))
+}
+
+fn build_ir(scan: &Scan<'_>) -> CadIr {
     let units = Units::default();
     let mut ir = CadIr::empty(units);
     ir.source = Some(source_meta(scan));
@@ -4498,7 +4668,7 @@ fn build_ir(scan: &Scan) -> CadIr {
     ir
 }
 
-fn source_meta(scan: &Scan) -> SourceMeta {
+fn source_meta(scan: &Scan<'_>) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "archive_version".to_string(),
@@ -4650,7 +4820,8 @@ mod tests {
             equation: [0.0, 0.0, 1.0, -30.0],
         };
         let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
-        transform_decoded_curve(&mut curve, hatch_plane_transform(&plane, 10.0)).unwrap();
+        transform_decoded_curve(&mut curve, hatch_plane_transform(&plane, 10.0))
+            .expect("required invariant");
         let CurveGeometry::Nurbs(curve) = curve.geometry else {
             panic!("hatch loop must remain NURBS");
         };
@@ -4686,7 +4857,10 @@ mod tests {
         };
         compose_body_transform(&mut body, instance);
         assert_eq!(
-            crate::instances::point(body.transform.unwrap(), Point3::new(1.0, 0.0, 0.0)),
+            crate::instances::point(
+                body.transform.expect("required invariant"),
+                Point3::new(1.0, 0.0, 0.0)
+            ),
             Point3::new(12.0, 0.0, 0.0)
         );
     }
@@ -5011,16 +5185,12 @@ mod tests {
         candidate
             .set_native_unknowns(
                 "rhino",
-                &[UnknownRecord {
+                &[NativeUnknownRecord {
                     id: unknown.clone(),
-                    offset: 0,
-                    byte_len: 0,
-                    sha256: sha256_hex(&[]),
-                    data: Some(Vec::new()),
                     links: Vec::new(),
                 }],
             )
-            .unwrap();
+            .expect("required invariant");
         let staged = StagedBrep {
             kind: BrepTransferKind::FreeCarrierFallback,
             curves: vec![Curve {
@@ -5032,10 +5202,13 @@ mod tests {
             ..StagedBrep::default()
         };
         let links = staged.links.clone();
-        staged.apply(&mut candidate);
+        staged.apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
         append_record_links(&mut candidate, &unknown, &links);
         assert_eq!(
-            candidate.native_unknowns("rhino").unwrap()[0].links,
+            candidate
+                .native_unknowns("rhino")
+                .expect("required invariant")[0]
+                .links,
             vec![curve_id.to_string()]
         );
         let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
@@ -5057,7 +5230,7 @@ mod tests {
             curves: vec![curve],
             ..StagedBrep::default()
         }
-        .apply(&mut candidate);
+        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
         assert!(!cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok());
         assert_eq!(live.model.curves.len(), 1);
     }
@@ -5075,17 +5248,20 @@ mod tests {
             instance_path: Vec::new(),
         };
         let unknown: UnknownId = "rhino:object:record#plane".into();
-        let staged = stage_brep(BrepTransferInput {
-            data: &data,
-            archive: ArchiveVersion::V5,
-            writer_version: Some(200_206_180),
-            raw: &raw,
-            key: "plane",
-            association: &association,
-            unknown: &unknown,
-            scale: 25.4,
-            semantic_error: None,
-            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        let staged = with_expand_bytes(&data, |expand| {
+            stage_brep(BrepTransferInput {
+                expand,
+                data: &data,
+                archive: ArchiveVersion::V5,
+                writer_version: Some(200_206_180),
+                raw: &raw,
+                key: "plane",
+                association: &association,
+                unknown: &unknown,
+                scale: 25.4,
+                semantic_error: None,
+                mesh_budget: &mut crate::mesh::MeshBudget::new(),
+            })
         })
         .expect("stage plane Brep");
         assert_eq!(staged.kind, BrepTransferKind::FullTopology);
@@ -5121,17 +5297,13 @@ mod tests {
         candidate
             .set_native_unknowns(
                 "rhino",
-                &[UnknownRecord {
+                &[NativeUnknownRecord {
                     id: unknown.clone(),
-                    offset: 0,
-                    byte_len: 0,
-                    sha256: sha256_hex(&[]),
-                    data: Some(Vec::new()),
                     links: Vec::new(),
                 }],
             )
-            .unwrap();
-        staged.apply(&mut candidate);
+            .expect("required invariant");
+        staged.apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
         append_record_links(&mut candidate, &unknown, &links);
         let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
         assert!(report.is_ok(), "{report:?}");
@@ -5149,8 +5321,14 @@ mod tests {
 
     #[test]
     fn tolerance_scaling_maps_unset_and_zero_to_none() {
-        assert_eq!(scaled_tolerance(0.0, 25.4).unwrap(), None);
-        assert_eq!(scaled_tolerance(0.5, 25.4).unwrap(), Some(12.7));
+        assert_eq!(
+            scaled_tolerance(0.0, 25.4).expect("required invariant"),
+            None
+        );
+        assert_eq!(
+            scaled_tolerance(0.5, 25.4).expect("required invariant"),
+            Some(12.7)
+        );
         assert_eq!(finite_tolerance(0.5), Some(0.5));
         assert_eq!(finite_tolerance(-1.0), None);
     }
@@ -5337,12 +5515,12 @@ mod tests {
         assert!(c2_curve_to_nurbs(compound, 0).is_err());
     }
 
-    fn cap_boundary(points: Vec<Point3>) -> crate::extrusion::ExtrusionBoundary {
+    fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
         let knots = vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0];
         let start = NurbsCurve {
             degree: 1,
             knots: knots.clone(),
-            control_points: points.clone(),
+            control_points: points.to_vec(),
             weights: None,
             periodic: false,
         };
@@ -5378,14 +5556,14 @@ mod tests {
     }
 
     fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
-        let outer = cap_boundary(vec![
+        let outer = cap_boundary(&[
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(4.0, 0.0, 0.0),
             Point3::new(4.0, 4.0, 0.0),
             Point3::new(0.0, 4.0, 0.0),
             Point3::new(0.0, 0.0, 0.0),
         ]);
-        let inner = cap_boundary(vec![
+        let inner = cap_boundary(&[
             Point3::new(1.0, 1.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
             Point3::new(2.0, 2.0, 0.0),
@@ -5441,6 +5619,7 @@ mod tests {
             let mut links = Vec::new();
             assert!(stage_extrusion_caps(
                 &mut ir,
+                &mut cadmpeg_ir::Annotations::default(),
                 "caps",
                 &association,
                 &extrusion,
@@ -5448,6 +5627,8 @@ mod tests {
                 &mut links,
             ));
             assert_eq!(ir.model.faces.len(), expected_faces);
+            assert_eq!(ir.model.regions.len(), expected_faces);
+            assert_eq!(ir.model.shells.len(), expected_faces);
             assert_eq!(ir.model.loops.len(), expected_faces * 2);
             assert_eq!(ir.model.pcurves.len(), expected_faces * 2);
             if expected_faces == 2 {
@@ -5465,6 +5646,7 @@ mod tests {
         let mut links = Vec::new();
         assert!(!stage_extrusion_caps(
             &mut candidate,
+            &mut cadmpeg_ir::Annotations::default(),
             "failure",
             &test_association(),
             &cap_extrusion([true, true]),

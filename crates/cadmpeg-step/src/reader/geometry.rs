@@ -118,6 +118,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .points
         .extend(point_carriers.into_iter().filter_map(|id| {
             points.get(&id).copied().map(|position| Point {
+                source_object: None,
                 id: PointId(format!("step:data:point#{id}")),
                 position,
             })
@@ -576,6 +577,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             surface,
             definition,
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         typed.insert(id);
     }
@@ -745,6 +747,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 implicit_outer,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         typed.insert(id);
     }
@@ -792,6 +795,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 self_intersect,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         typed.insert(id);
     }
@@ -869,6 +873,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             surface,
             definition: ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
     }
 

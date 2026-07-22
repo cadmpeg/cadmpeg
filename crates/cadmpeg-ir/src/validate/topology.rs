@@ -4,9 +4,225 @@
 
 use super::*;
 use crate::features::{
-    ChamferSpec, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind,
-    RadiusSpec,
+    ChamferSpec, ExtrudeStart, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length,
+    PatternKind, PatternSeed, PatternStageCombination, PrimitiveSolid, RadiusSpec,
 };
+use crate::math::Point3;
+
+fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
+    match pattern {
+        PatternKind::Unresolved { .. } => true,
+        PatternKind::Linear {
+            direction,
+            spacing,
+            count,
+            second,
+        } => {
+            direction.is_none_or(valid_feature_direction)
+                && positive_feature_length(*spacing)
+                && *count > 0
+                && second.as_ref().is_none_or(|second| {
+                    valid_feature_direction(second.direction)
+                        && positive_feature_length(second.spacing)
+                        && second.count > 0
+                })
+        }
+        PatternKind::LinearOffsets { direction, offsets } => {
+            direction.is_none_or(valid_feature_direction)
+                && valid_increasing_locations(offsets.iter().map(|offset| offset.0))
+        }
+        PatternKind::Circular {
+            axis_origin,
+            axis_dir,
+            angle,
+            count,
+        } => {
+            axis_origin.x.is_finite()
+                && axis_origin.y.is_finite()
+                && axis_origin.z.is_finite()
+                && valid_feature_direction(*axis_dir)
+                && angle.0.is_finite()
+                && angle.0 > 0.0
+                && *count > 0
+        }
+        PatternKind::CircularAngles {
+            axis_origin,
+            axis_dir,
+            angles,
+        } => {
+            axis_origin.x.is_finite()
+                && axis_origin.y.is_finite()
+                && axis_origin.z.is_finite()
+                && valid_feature_direction(*axis_dir)
+                && valid_increasing_locations(angles.iter().map(|angle| angle.0))
+        }
+        PatternKind::CurveDriven { spacing, count, .. } => {
+            positive_feature_length(*spacing) && *count > 0
+        }
+        PatternKind::Mirror {
+            plane_origin,
+            plane_normal,
+        } => {
+            plane_origin.x.is_finite()
+                && plane_origin.y.is_finite()
+                && plane_origin.z.is_finite()
+                && valid_feature_direction(*plane_normal)
+        }
+        PatternKind::Scale {
+            center,
+            final_factor,
+            count,
+        } => {
+            let center_valid = match center {
+                crate::features::PatternScaleCenter::Point(point) => {
+                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+                }
+                crate::features::PatternScaleCenter::FirstSeedCentroid
+                | crate::features::PatternScaleCenter::Native(_) => true,
+            };
+            center_valid && final_factor.is_finite() && *final_factor > 0.0 && *count >= 2
+        }
+        PatternKind::Composite { stages } => {
+            let structure_valid = !nested
+                && !stages.is_empty()
+                && stages.iter().enumerate().all(|(index, stage)| {
+                    stage.combination
+                        == if index == 0 {
+                            PatternStageCombination::Initialize
+                        } else if matches!(*stage.pattern, PatternKind::Scale { .. }) {
+                            PatternStageCombination::AlignedSlices
+                        } else {
+                            PatternStageCombination::CartesianProduct
+                        }
+                        && pattern_is_valid(&stage.pattern, true)
+                        && !matches!(*stage.pattern, PatternKind::Composite { .. })
+                });
+            structure_valid && composite_composition_is_valid(stages)
+        }
+    }
+}
+
+fn composite_composition_is_valid(stages: &[crate::features::PatternStage]) -> bool {
+    let mut occurrences = None;
+    stages.iter().enumerate().all(|(index, stage)| {
+        let Some(stage_count) = pattern_occurrence_count(&stage.pattern) else {
+            return true;
+        };
+        if stage_count == 0 {
+            return false;
+        }
+        if index == 0 {
+            occurrences = Some(stage_count);
+            return true;
+        }
+        match stage.combination {
+            PatternStageCombination::CartesianProduct => {
+                if let Some(count) = occurrences {
+                    occurrences = count.checked_mul(stage_count);
+                    occurrences.is_some()
+                } else {
+                    true
+                }
+            }
+            PatternStageCombination::AlignedSlices => {
+                occurrences.is_none_or(|count| count % stage_count == 0)
+            }
+            PatternStageCombination::Initialize => false,
+        }
+    })
+}
+
+fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
+    match pattern {
+        PatternKind::Linear { count, .. }
+        | PatternKind::Circular { count, .. }
+        | PatternKind::CurveDriven { count, .. }
+        | PatternKind::Scale { count, .. } => usize::try_from(*count).ok(),
+        PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
+        PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
+        PatternKind::Mirror { .. } => Some(2),
+        PatternKind::Unresolved { .. } | PatternKind::Composite { .. } => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_count_composite_stage_is_compositionally_invalid() {
+        let stages = [
+            crate::features::PatternStage {
+                pattern: Box::new(PatternKind::Linear {
+                    direction: None,
+                    spacing: Length(1.0),
+                    count: 1,
+                    second: None,
+                }),
+                combination: PatternStageCombination::Initialize,
+            },
+            crate::features::PatternStage {
+                pattern: Box::new(PatternKind::Scale {
+                    center: crate::features::PatternScaleCenter::FirstSeedCentroid,
+                    final_factor: 2.0,
+                    count: 0,
+                }),
+                combination: PatternStageCombination::AlignedSlices,
+            },
+        ];
+        assert!(!composite_composition_is_valid(&stages));
+    }
+
+    #[test]
+    fn unresolved_composite_count_can_feed_a_cartesian_stage() {
+        let stages = [
+            crate::features::PatternStage {
+                pattern: Box::new(PatternKind::Unresolved { form: None }),
+                combination: PatternStageCombination::Initialize,
+            },
+            crate::features::PatternStage {
+                pattern: Box::new(PatternKind::Linear {
+                    direction: None,
+                    spacing: Length(1.0),
+                    count: 2,
+                    second: None,
+                }),
+                combination: PatternStageCombination::CartesianProduct,
+            },
+        ];
+        assert!(composite_composition_is_valid(&stages));
+    }
+}
+
+fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
+    let mut locations = locations;
+    let Some(first) = locations.next() else {
+        return false;
+    };
+    first == 0.0
+        && locations
+            .try_fold(first, |previous, location| {
+                (location.is_finite() && location > previous).then_some(location)
+            })
+            .is_some()
+}
+
+fn collect_pattern_paths<'a>(
+    pattern: &'a PatternKind,
+    paths: &mut Vec<&'a crate::features::PathRef>,
+) {
+    match pattern {
+        PatternKind::CurveDriven {
+            path: Some(path), ..
+        } => paths.push(path),
+        PatternKind::Composite { stages } => {
+            for stage in stages {
+                collect_pattern_paths(&stage.pattern, paths);
+            }
+        }
+        _ => {}
+    }
+}
 use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
 /// Presence sets for every arena, keyed by the string id.
@@ -21,8 +237,11 @@ pub(super) struct IdSets {
     vertices: HashSet<String>,
     points: HashSet<String>,
     surfaces: HashSet<String>,
+    procedural_surfaces: HashSet<String>,
     curves: HashSet<String>,
+    procedural_curves: HashSet<String>,
     pcurves: HashSet<String>,
+    subds: HashSet<String>,
     appearances: HashSet<String>,
     tessellations: HashSet<String>,
     unknowns: HashSet<String>,
@@ -41,8 +260,21 @@ impl IdSets {
             vertices: ir.model.vertices.iter().map(|e| e.id.0.clone()).collect(),
             points: ir.model.points.iter().map(|e| e.id.0.clone()).collect(),
             surfaces: ir.model.surfaces.iter().map(|e| e.id.0.clone()).collect(),
+            procedural_surfaces: ir
+                .model
+                .procedural_surfaces
+                .iter()
+                .map(|e| e.id.0.clone())
+                .collect(),
             curves: ir.model.curves.iter().map(|e| e.id.0.clone()).collect(),
+            procedural_curves: ir
+                .model
+                .procedural_curves
+                .iter()
+                .map(|e| e.id.0.clone())
+                .collect(),
             pcurves: ir.model.pcurves.iter().map(|e| e.id.0.clone()).collect(),
+            subds: ir.model.subds.iter().map(|e| e.id.0.clone()).collect(),
             appearances: ir
                 .model
                 .appearances
@@ -172,9 +404,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 ref_error(findings, &lp.id.0, "coedge", &ce.0);
             }
         }
-        if let Some(vertex) = &lp.vertex {
-            if !ids.vertices.contains(&vertex.0) {
-                ref_error(findings, &lp.id.0, "vertex", &vertex.0);
+        for use_ in &lp.vertex_uses {
+            if !ids.vertices.contains(&use_.vertex.0) {
+                ref_error(findings, &lp.id.0, "vertex", &use_.vertex.0);
+            }
+            if let Some(after) = &use_.after {
+                if !ids.coedges.contains(&after.0) {
+                    ref_error(findings, &lp.id.0, "coedge(vertex-use after)", &after.0);
+                }
+            }
+            for pcurve in &use_.pcurves {
+                if !ids.pcurves.contains(&pcurve.pcurve.0) {
+                    ref_error(findings, &lp.id.0, "pcurve(vertex use)", &pcurve.pcurve.0);
+                }
             }
         }
     }
@@ -194,9 +436,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         if !ids.coedges.contains(&ce.radial_next.0) {
             ref_error(findings, &ce.id.0, "coedge(radial_next)", &ce.radial_next.0);
         }
-        if let Some(pc) = &ce.pcurve {
-            if !ids.pcurves.contains(&pc.0) {
-                ref_error(findings, &ce.id.0, "pcurve", &pc.0);
+        for use_ in &ce.pcurves {
+            if !ids.pcurves.contains(&use_.pcurve.0) {
+                ref_error(findings, &ce.id.0, "pcurve", &use_.pcurve.0);
+            }
+        }
+        if let Some(curve) = &ce.use_curve {
+            if !ids.curves.contains(&curve.0) {
+                ref_error(findings, &ce.id.0, "coedge use curve", &curve.0);
             }
         }
     }
@@ -233,6 +480,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             AppearanceTarget::Edge(edge) if !ids.edges.contains(&edge.0) => {
                 ref_error(findings, &owner, "edge", &edge.0);
+            }
+            AppearanceTarget::Vertex(vertex) if !ids.vertices.contains(&vertex.0) => {
+                ref_error(findings, &owner, "vertex", &vertex.0);
             }
             AppearanceTarget::Surface(surface) if !ids.surfaces.contains(&surface.0) => {
                 ref_error(findings, &owner, "surface", &surface.0);
@@ -276,14 +526,82 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         }
     }
     for s in &ir.model.surfaces {
-        if let SurfaceGeometry::Unknown { record: Some(u) } = &s.geometry {
-            if !ids.unknowns.contains(&u.0) {
+        match &s.geometry {
+            SurfaceGeometry::Procedural { construction } => {
+                if !ids.procedural_surfaces.contains(&construction.0) {
+                    ref_error(
+                        findings,
+                        &s.id.0,
+                        "procedural surface construction",
+                        &construction.0,
+                    );
+                } else if !ir
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .any(|procedural| procedural.id == *construction && procedural.surface == s.id)
+                {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "procedural surface construction `{construction}` does not produce surface `{}`",
+                            s.id
+                        ),
+                        entity: Some(s.id.0.clone()),
+                    });
+                } else if ir.model.procedural_surfaces.iter().any(|procedural| {
+                    procedural.id == *construction && procedural.cache_fit_tolerance.is_some()
+                }) {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: "construction-backed surface cannot carry a cache-fit tolerance"
+                            .into(),
+                        entity: Some(s.id.0.clone()),
+                    });
+                }
+            }
+            SurfaceGeometry::Unknown { record: Some(u) } if !ids.unknowns.contains(&u.0) => {
                 ref_error(findings, &s.id.0, "unknown record", &u.0);
             }
+            _ => {}
         }
     }
     for curve in &ir.model.curves {
         match &curve.geometry {
+            CurveGeometry::Procedural { construction } => {
+                if !ids.procedural_curves.contains(&construction.0) {
+                    ref_error(
+                        findings,
+                        &curve.id.0,
+                        "procedural curve construction",
+                        &construction.0,
+                    );
+                } else if !ir.model.procedural_curves.iter().any(|procedural| {
+                    procedural.id == *construction && procedural.curve == curve.id
+                }) {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "procedural curve construction `{construction}` does not produce curve `{}`",
+                            curve.id
+                        ),
+                        entity: Some(curve.id.0.clone()),
+                    });
+                } else if ir.model.procedural_curves.iter().any(|procedural| {
+                    procedural.id == *construction && procedural.cache_fit_tolerance.is_some()
+                }) {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: "construction-backed curve cannot carry a cache-fit tolerance"
+                            .into(),
+                        entity: Some(curve.id.0.clone()),
+                    });
+                }
+            }
             CurveGeometry::Unknown {
                 record: Some(unknown),
             } => {
@@ -345,6 +663,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralSurfaceDefinition::SubSurface { support, .. } => {
+                if !ids.surfaces.contains(&support.0) {
+                    ref_error(findings, &procedural.id.0, "surface", &support.0);
+                }
+            }
             ProceduralSurfaceDefinition::Taper {
                 support, reference, ..
             } => {
@@ -357,7 +680,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             ProceduralSurfaceDefinition::Loft { sections, .. } => {
                 for entry in sections.iter().flat_map(|section| &section.entries) {
-                    for curve in std::iter::once(&entry.path.curve)
+                    for curve in entry
+                        .path
+                        .curve
+                        .iter()
                         .chain(entry.path.auxiliaries.iter())
                         .chain(entry.profile.iter().map(|member| &member.curve))
                     {
@@ -366,13 +692,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         }
                     }
                     for member in &entry.profile {
-                        if !ids.surfaces.contains(&member.data.surface.0) {
-                            ref_error(
-                                findings,
-                                &procedural.id.0,
-                                "surface",
-                                &member.data.surface.0,
-                            );
+                        if let Some(surface) = &member.data.surface {
+                            if !ids.surfaces.contains(&surface.0) {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                            }
                         }
                     }
                 }
@@ -411,13 +734,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                     for member in &scale.members {
                         check_curve(&member.curve, findings);
-                        if !ids.surfaces.contains(&member.data.surface.0) {
-                            ref_error(
-                                findings,
-                                &procedural.id.0,
-                                "surface",
-                                &member.data.surface.0,
-                            );
+                        if let Some(surface) = &member.data.surface {
+                            if !ids.surfaces.contains(&surface.0) {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                            }
                         }
                     }
                 }
@@ -460,13 +780,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                     for member in &scale.members {
                         check_curve(&member.curve, findings);
-                        if !ids.surfaces.contains(&member.data.surface.0) {
-                            ref_error(
-                                findings,
-                                &procedural.id.0,
-                                "surface",
-                                &member.data.surface.0,
-                            );
+                        if let Some(surface) = &member.data.surface {
+                            if !ids.surfaces.contains(&surface.0) {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                            }
                         }
                     }
                 }
@@ -502,13 +819,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         check_curve(path, findings);
                         for profile in profiles {
                             check_curve(&profile.curve, findings);
-                            if !ids.surfaces.contains(&profile.data.surface.0) {
-                                ref_error(
-                                    findings,
-                                    &procedural.id.0,
-                                    "surface",
-                                    &profile.data.surface.0,
-                                );
+                            if let Some(surface) = &profile.data.surface {
+                                if !ids.surfaces.contains(&surface.0) {
+                                    ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                                }
                             }
                         }
                     }
@@ -524,6 +838,35 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 check_curve(&construction.parameter_curve, findings);
                 for variable in &construction.formula.variables {
                     check_law_curves(variable, ids, procedural, findings);
+                }
+            }
+            ProceduralSurfaceDefinition::Law { construction } => {
+                fn check_law_curves(
+                    expression: &crate::geometry::LawExpression,
+                    ids: &IdSets,
+                    procedural: &crate::geometry::ProceduralSurface,
+                    findings: &mut Vec<Finding>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            if !ids.curves.contains(&curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            }
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                check_law_curves(operand, ids, procedural, findings);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for formula in
+                    std::iter::once(&construction.primary).chain(&construction.additional)
+                {
+                    for variable in &formula.variables {
+                        check_law_curves(variable, ids, procedural, findings);
+                    }
                 }
             }
             ProceduralSurfaceDefinition::Net { construction } => {
@@ -552,7 +895,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     .iter()
                     .flat_map(|section| &section.entries)
                 {
-                    for curve in std::iter::once(&entry.path.curve)
+                    for curve in entry
+                        .path
+                        .curve
+                        .iter()
                         .chain(entry.path.auxiliaries.iter())
                         .chain(entry.profile.iter().map(|member| &member.curve))
                     {
@@ -561,13 +907,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         }
                     }
                     for member in &entry.profile {
-                        if !ids.surfaces.contains(&member.data.surface.0) {
-                            ref_error(
-                                findings,
-                                &procedural.id.0,
-                                "surface",
-                                &member.data.surface.0,
-                            );
+                        if let Some(surface) = &member.data.surface {
+                            if !ids.surfaces.contains(&surface.0) {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                            }
                         }
                     }
                 }
@@ -607,21 +950,71 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             ProceduralSurfaceDefinition::VariableBlend { construction } => {
                 for side in construction.sides.iter() {
-                    if !ids.surfaces.contains(&side.surface.0) {
-                        ref_error(findings, &procedural.id.0, "surface", &side.surface.0);
+                    if let Some(surface) = &side.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
                     }
-                    if !ids.curves.contains(&side.curve.0) {
-                        ref_error(findings, &procedural.id.0, "curve", &side.curve.0);
+                    if let Some(curve) = &side.curve {
+                        if !ids.curves.contains(&curve.0) {
+                            ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                        }
                     }
                 }
                 for curve in [
-                    &construction.primary_curve,
-                    &construction.secondary_curve,
-                    &construction.post_curve,
-                ] {
+                    Some(&construction.slice),
+                    construction.secondary_curve.as_ref(),
+                    construction.post_curve.as_ref(),
+                ]
+                .into_iter()
+                .flatten()
+                {
                     if !ids.curves.contains(&curve.0) {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
                     }
+                }
+            }
+            ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
+                for member in construction
+                    .base_profile
+                    .iter()
+                    .chain(construction.entries.iter().flat_map(|entry| &entry.profile))
+                {
+                    if !ids.curves.contains(&member.curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &member.curve.0);
+                    }
+                    if let Some(surface) = &member.data.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
+                    }
+                }
+                for curve in std::iter::once(&construction.base_path)
+                    .chain(construction.entries.iter().map(|entry| &entry.path))
+                    .flat_map(|path| path.curve.iter().chain(path.auxiliaries.iter()))
+                    .chain(construction.direction_curve.iter())
+                    .chain(construction.trailing_curve.iter())
+                {
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                }
+            }
+            ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
+                for side in construction.sides.iter() {
+                    if let Some(surface) = &side.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
+                    }
+                    if let Some(curve) = &side.curve {
+                        if !ids.curves.contains(&curve.0) {
+                            ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                        }
+                    }
+                }
+                if !ids.curves.contains(&construction.center.0) {
+                    ref_error(findings, &procedural.id.0, "curve", &construction.center.0);
                 }
             }
             ProceduralSurfaceDefinition::VertexBlend { construction } => {
@@ -743,7 +1136,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ref_error(findings, &procedural.id.0, "surface", &support.0);
                 }
             }
-            ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
+            ProceduralSurfaceDefinition::Subset { support, .. }
+            | ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
                 if !ids.surfaces.contains(&support.0) {
                     ref_error(findings, &procedural.id.0, "surface", &support.0);
                 }
@@ -792,11 +1186,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         };
                     check_curve(&native.slice, findings);
                     for side in native.sides.iter() {
-                        check_curve(&side.curve, findings);
-                        if let Some(surface) = &side.surface {
-                            check_surface(surface, findings);
+                        if let Some(curve) = &side.curve {
+                            check_curve(curve, findings);
                         }
-                        if let Some(surface) = &side.exact_support {
+                        if let Some(surface) = &side.surface {
                             check_surface(surface, findings);
                         }
                     }
@@ -813,7 +1206,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ref_error(findings, &procedural.id.0, "unknown record", &record.0);
                 }
             }
-            ProceduralSurfaceDefinition::Helix { .. }
+            ProceduralSurfaceDefinition::RollingBallJet { .. }
+            | ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
             | ProceduralSurfaceDefinition::DegenerateTorus { .. }
             | ProceduralSurfaceDefinition::Unknown { record: None } => {}
@@ -997,7 +1391,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
             }
             ProceduralCurveDefinition::Offset {
-                source, support, ..
+                source,
+                support,
+                distance_law,
+                ..
             } => {
                 if !ids.curves.contains(&source.0) {
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
@@ -1005,6 +1402,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 if let Some(support) = support {
                     if !ids.surfaces.contains(&support.0) {
                         ref_error(findings, &procedural.id.0, "surface", &support.0);
+                    }
+                }
+                if let Some(crate::geometry::CurveOffsetDistanceLaw::Coordinate {
+                    function, ..
+                }) = distance_law
+                {
+                    if !ids.curves.contains(&function.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &function.0);
                     }
                 }
             }
@@ -1040,13 +1445,17 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
             }
             ProceduralCurveDefinition::Unknown {
+                native_kind: _,
                 record: Some(record),
             } => {
                 if !ids.unknowns.contains(&record.0) {
                     ref_error(findings, &procedural.id.0, "unknown record", &record.0);
                 }
             }
-            ProceduralCurveDefinition::Unknown { record: None } => {}
+            ProceduralCurveDefinition::Unknown {
+                native_kind: _,
+                record: None,
+            } => {}
         }
     }
     let features = ir
@@ -1065,20 +1474,22 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         .model
         .parameters
         .iter()
-        .map(|parameter| (&parameter.id, (&parameter.owner, parameter.ordinal)))
+        .map(|parameter| (&parameter.id, (parameter.owner.as_ref(), parameter.ordinal)))
         .collect::<HashMap<_, _>>();
     let mut parameter_names = HashSet::new();
     let mut parameter_ordinals = HashSet::new();
     for parameter in &ir.model.parameters {
-        if !features.contains(parameter.owner.0.as_str()) {
-            ref_error(findings, &parameter.id.0, "feature", &parameter.owner.0);
+        if let Some(owner) = &parameter.owner {
+            if !features.contains(owner.0.as_str()) {
+                ref_error(findings, &parameter.id.0, "feature", &owner.0);
+            }
         }
         if !parameter_names.insert((&parameter.owner, parameter.name.as_str())) {
             findings.push(Finding {
                 check: Check::Counts,
                 severity: Severity::Error,
                 message: format!(
-                    "feature {} repeats parameter name `{}`",
+                    "parameter scope {:?} repeats parameter name `{}`",
                     parameter.owner, parameter.name
                 ),
                 entity: Some(parameter.id.0.clone()),
@@ -1089,7 +1500,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 check: Check::Counts,
                 severity: Severity::Error,
                 message: format!(
-                    "feature {} repeats parameter ordinal {}",
+                    "parameter scope {:?} repeats parameter ordinal {}",
                     parameter.owner, parameter.ordinal
                 ),
                 entity: Some(parameter.id.0.clone()),
@@ -1118,15 +1529,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 );
                 continue;
             };
-            let precedes = if *owner == &parameter.owner {
+            let precedes = if *owner == parameter.owner.as_ref() {
                 *ordinal < parameter.ordinal
             } else {
-                feature_ordinals
-                    .get(*owner)
-                    .zip(feature_ordinals.get(&parameter.owner))
-                    .is_some_and(|(dependency_owner, parameter_owner)| {
-                        dependency_owner < parameter_owner
-                    })
+                match (*owner, parameter.owner.as_ref()) {
+                    (None, Some(_)) => true,
+                    (Some(dependency_owner), Some(parameter_owner)) => feature_ordinals
+                        .get(dependency_owner)
+                        .zip(feature_ordinals.get(parameter_owner))
+                        .is_some_and(|(dependency_owner, parameter_owner)| {
+                            dependency_owner < parameter_owner
+                        }),
+                    (Some(_) | None, None) => false,
+                }
             };
             if !precedes {
                 findings.push(Finding {
@@ -1187,7 +1602,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ref_error(findings, &constraint.id.0, "sketch", &constraint.sketch.0);
         }
         let (entities, parameter) = match &constraint.definition {
+            Definition::Disabled => (Vec::new(), None),
             Definition::Coincident { entities }
+            | Definition::Polygon { entities }
+            | Definition::SplineGroup { entities }
             | Definition::Distance {
                 entities,
                 parameter: _,
@@ -1197,6 +1615,32 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 parameter: None,
                 ..
             } => (entities.clone(), None),
+            Definition::RectangularPattern { instances, .. } => (
+                instances
+                    .iter()
+                    .flat_map(|instance| instance.entities.iter().cloned())
+                    .collect(),
+                None,
+            ),
+            Definition::CircularPattern {
+                center, instances, ..
+            } => (
+                std::iter::once(center.clone())
+                    .chain(
+                        instances
+                            .iter()
+                            .flat_map(|instance| instance.entities.iter().cloned()),
+                    )
+                    .collect(),
+                None,
+            ),
+            Definition::TextFrame { text, frame } => (
+                std::iter::once(text.clone())
+                    .chain(frame.iter().cloned())
+                    .collect(),
+                None,
+            ),
+            Definition::TextPath { text, path, .. } => (vec![text.clone(), path.clone()], None),
             Definition::Native {
                 entities,
                 parameter: Some(parameter),
@@ -1204,19 +1648,71 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             } => (entities.clone(), Some(parameter.0.as_str())),
             Definition::Horizontal { entity }
             | Definition::Vertical { entity }
-            | Definition::Fixed { entity } => (vec![entity.clone()], None),
+            | Definition::Fixed { entity }
+            | Definition::ArcAngle { entity, .. }
+            | Definition::EllipseAngle { entity, .. } => (vec![entity.clone()], None),
             Definition::Parallel { first, second }
             | Definition::Perpendicular { first, second }
             | Definition::Tangent { first, second }
+            | Definition::Curvature { first, second }
             | Definition::Equal { first, second }
             | Definition::Concentric { first, second }
+            | Definition::Coradial { first, second }
             | Definition::Collinear { first, second } => {
                 (vec![first.clone(), second.clone()], None)
+            }
+            Definition::InternalAlignment { helper, parent, .. } => {
+                (vec![helper.clone(), parent.clone()], None)
+            }
+            Definition::Group { elements } | Definition::Text { elements, .. } => {
+                (elements.iter().map(locus_entity).cloned().collect(), None)
             }
             Definition::CoincidentLoci { loci } => {
                 (loci.iter().map(locus_entity).cloned().collect(), None)
             }
+            Definition::SameCoordinate { first, second, .. }
+            | Definition::TangentLoci { first, second } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                None,
+            ),
+            Definition::PointSymmetric {
+                first,
+                second,
+                center,
+            } => (
+                vec![
+                    locus_entity(first).clone(),
+                    locus_entity(second).clone(),
+                    locus_entity(center).clone(),
+                ],
+                None,
+            ),
+            Definition::HorizontalPoints { first, second }
+            | Definition::VerticalPoints { first, second } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                None,
+            ),
             Definition::Midpoint { point, entity } => {
+                (vec![locus_entity(point).clone(), entity.clone()], None)
+            }
+            Definition::AtIntersection {
+                point,
+                first,
+                second,
+            } => (
+                vec![locus_entity(point).clone(), first.clone(), second.clone()],
+                None,
+            ),
+            Definition::Offset {
+                pairs, parameter, ..
+            } => (
+                pairs
+                    .iter()
+                    .flat_map(|pair| [pair.source.clone(), pair.result.clone()])
+                    .collect(),
+                parameter.as_ref().map(|parameter| parameter.0.as_str()),
+            ),
+            Definition::PointOnObject { point, entity } => {
                 (vec![locus_entity(point).clone(), entity.clone()], None)
             }
             Definition::Symmetric {
@@ -1229,6 +1725,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     locus_entity(second).clone(),
                     axis.clone(),
                 ],
+                None,
+            ),
+            Definition::HorizontalLoci { first, second }
+            | Definition::VerticalLoci { first, second } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 None,
             ),
             Definition::DistanceLoci {
@@ -1249,6 +1750,24 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 Some(parameter.0.as_str()),
             ),
+            Definition::RepeatedDistance {
+                measurements,
+                parameter,
+            } => (
+                measurements
+                    .iter()
+                    .flat_map(|measurement| {
+                        use crate::sketches::SketchDistanceMeasurement as Measurement;
+                        let (first, second) = match measurement {
+                            Measurement::Distance { first, second }
+                            | Measurement::Horizontal { first, second }
+                            | Measurement::Vertical { first, second } => (first, second),
+                        };
+                        [locus_entity(first).clone(), locus_entity(second).clone()]
+                    })
+                    .collect(),
+                Some(parameter.0.as_str()),
+            ),
             Definition::Angle {
                 first,
                 second,
@@ -1257,15 +1776,55 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 vec![first.clone(), second.clone()],
                 Some(parameter.0.as_str()),
             ),
+            Definition::AngleToAxis {
+                entity, parameter, ..
+            } => (vec![entity.clone()], Some(parameter.0.as_str())),
             Definition::Radius { entity, parameter }
-            | Definition::Diameter { entity, parameter } => {
+            | Definition::Diameter { entity, parameter }
+            | Definition::Weight { entity, parameter } => {
                 (vec![entity.clone()], Some(parameter.0.as_str()))
             }
+            Definition::SnellsLaw {
+                incident,
+                refracted,
+                interface,
+                parameter,
+            } => (
+                vec![
+                    locus_entity(incident).clone(),
+                    locus_entity(refracted).clone(),
+                    interface.clone(),
+                ],
+                Some(parameter.0.as_str()),
+            ),
         };
         let parameter = parameter.or(match &constraint.definition {
             Definition::Distance { parameter, .. } => Some(parameter.0.as_str()),
             _ => None,
         });
+        if let Definition::Polygon { entities } = &constraint.definition {
+            let distinct = entities.iter().collect::<HashSet<_>>();
+            if entities.len() < 3 || distinct.len() != entities.len() {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: "polygon constraint requires at least three distinct members".into(),
+                    entity: Some(constraint.id.0.clone()),
+                });
+            }
+        }
+        if let Definition::HorizontalLoci { first, second }
+        | Definition::VerticalLoci { first, second } = &constraint.definition
+        {
+            if first == second {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: "axis-alignment constraint requires two distinct loci".into(),
+                    entity: Some(constraint.id.0.clone()),
+                });
+            }
+        }
         for entity in entities {
             if !sketch_entities.contains(entity.0.as_str()) {
                 ref_error(findings, &constraint.id.0, "sketch entity", &entity.0);
@@ -1285,6 +1844,45 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 ref_error(findings, &constraint.id.0, "parameter", parameter);
             }
         }
+        if let Definition::RectangularPattern { directions, .. } = &constraint.definition {
+            for parameter in directions.iter().flat_map(|direction| {
+                [
+                    direction.span_parameter.as_ref(),
+                    direction.count_parameter.as_ref(),
+                ]
+                .into_iter()
+                .flatten()
+            }) {
+                if !parameters.contains(parameter.0.as_str()) {
+                    ref_error(
+                        findings,
+                        &constraint.id.0,
+                        "parameter",
+                        parameter.0.as_str(),
+                    );
+                }
+            }
+        }
+        if let Definition::CircularPattern {
+            angle_parameter,
+            count_parameter,
+            ..
+        } = &constraint.definition
+        {
+            for parameter in [angle_parameter.as_ref(), count_parameter.as_ref()]
+                .into_iter()
+                .flatten()
+            {
+                if !parameters.contains(parameter.0.as_str()) {
+                    ref_error(
+                        findings,
+                        &constraint.id.0,
+                        "parameter",
+                        parameter.0.as_str(),
+                    );
+                }
+            }
+        }
     }
     check_feature_sketch_references(ir, &sketches, findings);
     check_feature_references(ir, ids, findings);
@@ -1299,6 +1897,18 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
     let mut configuration_ordinals = HashSet::new();
     let mut configuration_source_indices = HashSet::new();
     let mut active_configurations = 0;
+    let parameter_ids = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let feature_ids = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.0.as_str())
+        .collect::<HashSet<_>>();
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {
@@ -1336,6 +1946,26 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 });
             }
         }
+        for parameter in configuration.parameter_overrides.keys() {
+            if !parameter_ids.contains(parameter.0.as_str()) {
+                ref_error(
+                    findings,
+                    &configuration.id.0,
+                    "configuration parameter override",
+                    &parameter.0,
+                );
+            }
+        }
+        for feature in &configuration.suppressed_features {
+            if !feature_ids.contains(feature.0.as_str()) {
+                ref_error(
+                    findings,
+                    &configuration.id.0,
+                    "configuration suppressed feature",
+                    &feature.0,
+                );
+            }
+        }
     }
     if active_configurations > 1 {
         findings.push(Finding {
@@ -1355,8 +1985,71 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .model
         .parameters
         .iter()
-        .map(|parameter| (&parameter.id, &parameter.owner))
+        .map(|parameter| (&parameter.id, parameter.owner.as_ref()))
         .collect::<HashMap<_, _>>();
+    let input_topologies = ir
+        .model
+        .feature_input_topologies
+        .iter()
+        .map(|state| (state.id.as_str(), state))
+        .collect::<HashMap<_, _>>();
+    let mut topology_owners = HashSet::new();
+    for state in &ir.model.feature_input_topologies {
+        if !features.contains_key(state.input_of.as_str()) {
+            ref_error(
+                findings,
+                state.id.as_str(),
+                "input feature",
+                state.input_of.as_str(),
+            );
+        }
+        if !topology_owners.insert(state.input_of.as_str()) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: "feature has multiple input topology states".into(),
+                entity: Some(state.input_of.0.clone()),
+            });
+        }
+        for (kind, members) in [
+            (
+                "historical body",
+                state
+                    .bodies
+                    .iter()
+                    .map(crate::ids::HistoricalBodyId::as_str)
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "historical face",
+                state
+                    .faces
+                    .iter()
+                    .map(crate::ids::HistoricalFaceId::as_str)
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "historical edge",
+                state
+                    .edges
+                    .iter()
+                    .map(crate::ids::HistoricalEdgeId::as_str)
+                    .collect::<Vec<_>>(),
+            ),
+        ] {
+            let mut seen = HashSet::new();
+            for member in members {
+                if member.is_empty() || !seen.insert(member) {
+                    findings.push(Finding {
+                        check: Check::Counts,
+                        severity: Severity::Error,
+                        message: format!("input topology has empty or repeated {kind} `{member}`"),
+                        entity: Some(state.id.0.clone()),
+                    });
+                }
+            }
+        }
+    }
     let mut feature_ordinals = HashSet::new();
     for feature in &ir.model.features {
         if !feature_ordinals.insert(feature.ordinal) {
@@ -1422,7 +2115,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         None => {
                             ref_error(findings, &feature.id.0, "content parameter", &parameter.0);
                         }
-                        Some(owner) if *owner != &feature.id => findings.push(Finding {
+                        Some(owner) if *owner != Some(&feature.id) => findings.push(Finding {
                             check: Check::ReferentialIntegrity,
                             severity: Severity::Error,
                             message: format!(
@@ -1471,16 +2164,300 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         let mut edge_selections = Vec::new();
         let mut face_selections = Vec::new();
         let mut body_selections = Vec::new();
-        match &feature.definition {
+        let definition = match &feature.definition {
+            FeatureDefinition::PostProcess {
+                operation,
+                fuzzy_tolerance,
+                ..
+            } => {
+                if matches!(fuzzy_tolerance, crate::features::FuzzyTolerance::Explicit(value) if !value.is_finite() || *value <= 0.0)
+                {
+                    feature_geometry_error(findings, feature, "feature fuzzy tolerance is invalid");
+                }
+                operation.as_ref()
+            }
+            definition => definition,
+        };
+        match definition {
+            FeatureDefinition::DatumPointUnresolved
+            | FeatureDefinition::DatumCoordinateSystemUnresolved
+            | FeatureDefinition::LoftUnresolved
+            | FeatureDefinition::FreeformSurfaceUnresolved
+            | FeatureDefinition::BoundarySurfaceUnresolved => {}
+            FeatureDefinition::Block { dimensions, .. } => {
+                if dimensions.is_some_and(|values| {
+                    values
+                        .into_iter()
+                        .any(|value| !positive_feature_length(value))
+                }) {
+                    feature_geometry_error(findings, feature, "block dimensions are invalid");
+                }
+            }
+            FeatureDefinition::ExtractBody { source } => body_selections.push(source),
+            FeatureDefinition::FaceBlend {
+                first_faces,
+                second_faces,
+                radius,
+            } => {
+                face_selections.push(first_faces);
+                face_selections.push(second_faces);
+                if !radius_spec_is_valid(radius) {
+                    feature_geometry_error(findings, feature, "face blend radius is invalid");
+                }
+            }
+            FeatureDefinition::SewBodies {
+                bodies,
+                gap_tolerance,
+            } => {
+                body_selections.push(bodies);
+                if gap_tolerance.is_some_and(|value| !positive_feature_length(value)) {
+                    feature_geometry_error(findings, feature, "sew tolerance is invalid");
+                }
+            }
+            FeatureDefinition::BaseFeature { bodies } => body_selections.push(bodies),
+            FeatureDefinition::InsertBodies { bodies } => {
+                body_selections.push(bodies);
+                if let BodySelection::Resolved { bodies, .. } = bodies {
+                    if feature.outputs != *bodies {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "inserted bodies do not match feature outputs",
+                        );
+                    }
+                }
+            }
+            FeatureDefinition::Form { cages } => {
+                if cages.is_empty() {
+                    feature_geometry_error(findings, feature, "Form operation has no control cage");
+                }
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "Form control cage",
+                    cages.iter().map(|cage| cage.0.as_str()),
+                    &ids.subds,
+                );
+            }
+            FeatureDefinition::CosmeticThread {
+                face,
+                diameter,
+                extent,
+            } => {
+                face_selections.push(face);
+                let extent_valid = extent.as_ref().is_none_or(|extent| match extent {
+                    crate::features::CosmeticThreadExtent::Blind { length } => {
+                        positive_feature_length(*length)
+                    }
+                    crate::features::CosmeticThreadExtent::Through => true,
+                });
+                if diameter.is_some_and(|value| !positive_feature_length(value)) || !extent_valid {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "cosmetic-thread geometry is invalid",
+                    );
+                }
+            }
+            FeatureDefinition::Primitive { solid, .. } => {
+                let positive = |value: Length| value.0.is_finite() && value.0 > 0.0;
+                let finite_angle = |value: crate::features::Angle| value.0.is_finite();
+                let valid = match solid {
+                    PrimitiveSolid::Box {
+                        length,
+                        width,
+                        height,
+                    } => positive(*length) && positive(*width) && positive(*height),
+                    PrimitiveSolid::Cylinder {
+                        radius,
+                        height,
+                        angle,
+                    } => positive(*radius) && positive(*height) && finite_angle(*angle),
+                    PrimitiveSolid::Cone {
+                        radius1,
+                        radius2,
+                        height,
+                        angle,
+                    } => {
+                        radius1.0.is_finite()
+                            && radius1.0 >= 0.0
+                            && radius2.0.is_finite()
+                            && radius2.0 >= 0.0
+                            && (radius1.0 > 0.0 || radius2.0 > 0.0)
+                            && positive(*height)
+                            && finite_angle(*angle)
+                    }
+                    PrimitiveSolid::Sphere {
+                        radius,
+                        latitude1,
+                        latitude2,
+                        longitude,
+                    } => {
+                        positive(*radius)
+                            && finite_angle(*latitude1)
+                            && finite_angle(*latitude2)
+                            && latitude1.0 < latitude2.0
+                            && finite_angle(*longitude)
+                    }
+                    PrimitiveSolid::Ellipsoid {
+                        x_radius,
+                        y_radius,
+                        z_radius,
+                        latitude1,
+                        latitude2,
+                        longitude,
+                    } => {
+                        positive(*x_radius)
+                            && positive(*y_radius)
+                            && positive(*z_radius)
+                            && finite_angle(*latitude1)
+                            && finite_angle(*latitude2)
+                            && latitude1.0 < latitude2.0
+                            && finite_angle(*longitude)
+                    }
+                    PrimitiveSolid::Torus {
+                        major_radius,
+                        minor_radius,
+                        latitude1,
+                        latitude2,
+                        longitude,
+                    } => {
+                        positive(*major_radius)
+                            && positive(*minor_radius)
+                            && finite_angle(*latitude1)
+                            && finite_angle(*latitude2)
+                            && latitude1.0 < latitude2.0
+                            && finite_angle(*longitude)
+                    }
+                    PrimitiveSolid::Prism {
+                        sides,
+                        circumradius,
+                        height,
+                    } => *sides >= 3 && positive(*circumradius) && positive(*height),
+                    PrimitiveSolid::Wedge {
+                        xmin,
+                        ymin,
+                        zmin,
+                        x2min,
+                        z2min,
+                        xmax,
+                        ymax,
+                        zmax,
+                        x2max,
+                        z2max,
+                    } => {
+                        [
+                            xmin, ymin, zmin, x2min, z2min, xmax, ymax, zmax, x2max, z2max,
+                        ]
+                        .into_iter()
+                        .all(|value| value.0.is_finite())
+                            && xmax.0 > xmin.0
+                            && ymax.0 > ymin.0
+                            && zmax.0 > zmin.0
+                            && x2max.0 >= x2min.0
+                            && z2max.0 >= z2min.0
+                    }
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "primitive dimensions are invalid");
+                }
+            }
             FeatureDefinition::Extrude {
-                profile, extent, ..
+                profile,
+                direction,
+                start,
+                extent,
+                draft,
+                second_draft,
+                direction_source,
+                face_maker,
+                first_offset,
+                second_offset,
+                ..
             } => {
                 profiles.push(profile);
                 extents.push(extent);
+                if let crate::features::ExtrudeDirection::Explicit(vector) = direction {
+                    if !valid_feature_direction(*vector) {
+                        feature_geometry_error(findings, feature, "extrusion direction is invalid");
+                    }
+                }
+                if let Some(crate::features::ExtrusionDirectionSource::Edge { reference }) =
+                    direction_source
+                {
+                    paths.push(reference);
+                }
+                if [draft, second_draft].into_iter().flatten().any(|angle| {
+                    !angle.0.is_finite() || angle.0.abs() >= std::f64::consts::FRAC_PI_2
+                }) {
+                    feature_geometry_error(findings, feature, "extrusion draft is invalid");
+                }
+                if second_draft.is_some()
+                    && !matches!(
+                        extent,
+                        Extent::TwoSided { .. }
+                            | Extent::TwoSidedExtents { .. }
+                            | Extent::TwoSidedAngles { .. }
+                            | Extent::Symmetric { .. }
+                            | Extent::SymmetricExtent { .. }
+                            | Extent::SymmetricAngle { .. }
+                    )
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "opposite-side extrusion draft requires a two-sided extent",
+                    );
+                }
+                if [first_offset, second_offset]
+                    .into_iter()
+                    .flatten()
+                    .any(|offset| !offset.0.is_finite())
+                    || face_maker
+                        .as_ref()
+                        .is_some_and(|maker| maker.class.is_empty())
+                {
+                    feature_geometry_error(findings, feature, "extrusion construction is invalid");
+                }
+                match start {
+                    ExtrudeStart::ProfilePlane => {}
+                    ExtrudeStart::OffsetProfilePlane { offset } => {
+                        if !offset.0.is_finite() {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "extrusion start offset is invalid",
+                            );
+                        }
+                    }
+                    ExtrudeStart::FromFace { face, offset } => {
+                        face_selections.push(face);
+                        if offset.is_some_and(|offset| !offset.0.is_finite()) {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "extrusion start offset is invalid",
+                            );
+                        }
+                    }
+                }
+            }
+            FeatureDefinition::SheetMetalBaseFlange {
+                profile, thickness, ..
+            } => {
+                profiles.push(profile);
+                if !positive_feature_length(*thickness) {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "sheet-metal base-flange thickness is invalid",
+                    );
+                }
             }
             FeatureDefinition::Revolve { construction, .. } => {
                 profiles.extend(&construction.profile);
                 extents.extend(&construction.extent);
+                paths.extend(&construction.axis_reference);
                 if construction.axis.as_ref().is_some_and(|axis| {
                     !axis.origin.x.is_finite()
                         || !axis.origin.y.is_finite()
@@ -1492,26 +2469,83 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             FeatureDefinition::Sweep {
                 profile,
+                sections,
                 path,
+                orientation,
                 twist,
                 scale,
                 ..
             } => {
                 profiles.extend(profile);
+                profiles.extend(sections);
                 paths.extend(path);
+                if let Some(crate::features::SweepOrientation::Auxiliary { path, .. }) = orientation
+                {
+                    paths.push(path);
+                }
                 if twist.is_some_and(|value| !value.0.is_finite())
                     || scale.is_some_and(|value| !value.is_finite() || value <= 0.0)
+                    || matches!(orientation, Some(crate::features::SweepOrientation::Binormal { direction }) if !valid_feature_direction(*direction))
                 {
                     feature_geometry_error(findings, feature, "sweep magnitude is invalid");
                 }
             }
             FeatureDefinition::Loft {
-                profiles: values,
+                sections,
                 guides,
+                centerline,
+                max_degree,
                 ..
             } => {
-                profiles.extend(values);
+                for section in sections {
+                    match section {
+                        crate::features::LoftSection::Profile(profile) => profiles.push(profile),
+                        crate::features::LoftSection::Point(
+                            crate::features::LoftPointSection::Native(native),
+                        ) if native.is_empty() => {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "loft point section has an empty native reference",
+                            );
+                        }
+                        crate::features::LoftSection::Point(
+                            crate::features::LoftPointSection::Native(_),
+                        ) => {}
+                        crate::features::LoftSection::Point(
+                            crate::features::LoftPointSection::Point(point),
+                        ) if !point.x.is_finite()
+                            || !point.y.is_finite()
+                            || !point.z.is_finite() =>
+                        {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "loft point section is invalid",
+                            );
+                        }
+                        crate::features::LoftSection::Point(
+                            crate::features::LoftPointSection::Point(_),
+                        ) => {}
+                        crate::features::LoftSection::Point(
+                            crate::features::LoftPointSection::Vertex(vertex),
+                        ) => check_ids(
+                            findings,
+                            &feature.id.0,
+                            "loft section vertex",
+                            std::iter::once(vertex.0.as_str()),
+                            &ids.vertices,
+                        ),
+                    }
+                }
                 paths.extend(guides);
+                paths.extend(centerline);
+                if centerline.is_some() && !guides.is_empty() {
+                    feature_geometry_error(findings, feature, "loft construction is invalid");
+                }
+                if max_degree.is_some_and(|value| value == 0) {
+                    feature_geometry_error(findings, feature, "loft maximum degree is invalid");
+                }
             }
             FeatureDefinition::Rib { construction, .. } => {
                 profiles.extend(&construction.profile);
@@ -1526,42 +2560,54 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "rib geometry is invalid");
                 }
             }
-            FeatureDefinition::Fillet { edges, radius } => {
-                edge_selections.push(edges);
-                let valid = match radius {
-                    RadiusSpec::Unresolved { .. } => true,
-                    RadiusSpec::Constant { radius } => positive_feature_length(*radius),
-                    RadiusSpec::Variable { points } => {
-                        points.len() >= 2
-                            && points.iter().all(|point| {
-                                point.parameter.is_finite()
-                                    && (0.0..=1.0).contains(&point.parameter)
-                                    && positive_feature_length(point.radius)
-                            })
-                            && points
-                                .windows(2)
-                                .all(|pair| pair[0].parameter < pair[1].parameter)
-                    }
-                };
+            FeatureDefinition::Fillet { groups } => {
+                let valid = !groups.is_empty()
+                    && groups.iter().all(|group| {
+                        edge_selections.push(&group.edges);
+                        group.tangency_weight.is_none_or(f64::is_finite)
+                            && match &group.radius {
+                                RadiusSpec::Unresolved { .. } => true,
+                                RadiusSpec::Constant { radius } => positive_feature_length(*radius),
+                                RadiusSpec::Chordal { chord_length } => {
+                                    positive_feature_length(*chord_length)
+                                }
+                                RadiusSpec::Variable { points } => {
+                                    points.len() >= 2
+                                        && points.iter().all(|point| {
+                                            point.parameter.is_finite()
+                                                && (0.0..=1.0).contains(&point.parameter)
+                                                && point.radius.0.is_finite()
+                                                && point.radius.0 >= 0.0
+                                        })
+                                        && points.iter().any(|point| point.radius.0 > 0.0)
+                                        && points
+                                            .windows(2)
+                                            .all(|pair| pair[0].parameter < pair[1].parameter)
+                                }
+                            }
+                    });
                 if !valid {
                     feature_geometry_error(findings, feature, "fillet radius is invalid");
                 }
             }
-            FeatureDefinition::Chamfer { edges, spec } => {
-                edge_selections.push(edges);
-                let valid = match spec {
-                    ChamferSpec::Unresolved { .. } => true,
-                    ChamferSpec::Distance { distance } => positive_feature_length(*distance),
-                    ChamferSpec::TwoDistances { first, second } => {
-                        positive_feature_length(*first) && positive_feature_length(*second)
-                    }
-                    ChamferSpec::DistanceAngle { distance, angle } => {
-                        positive_feature_length(*distance)
-                            && angle.0.is_finite()
-                            && angle.0 > 0.0
-                            && angle.0 < std::f64::consts::PI
-                    }
-                };
+            FeatureDefinition::Chamfer { groups, .. } => {
+                let valid = !groups.is_empty()
+                    && groups.iter().all(|group| {
+                        edge_selections.push(&group.edges);
+                        match group.spec {
+                            ChamferSpec::Unresolved { .. } => true,
+                            ChamferSpec::Distance { distance } => positive_feature_length(distance),
+                            ChamferSpec::TwoDistances { first, second } => {
+                                positive_feature_length(first) && positive_feature_length(second)
+                            }
+                            ChamferSpec::DistanceAngle { distance, angle } => {
+                                positive_feature_length(distance)
+                                    && angle.0.is_finite()
+                                    && angle.0 > 0.0
+                                    && angle.0 < std::f64::consts::PI
+                            }
+                        }
+                    });
                 if !valid {
                     feature_geometry_error(findings, feature, "chamfer dimensions are invalid");
                 }
@@ -1576,6 +2622,41 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "shell thickness is invalid");
                 }
             }
+            FeatureDefinition::OffsetShape {
+                source, distance, ..
+            } => {
+                body_selections.push(source);
+                if !distance.0.is_finite() || distance.0 == 0.0 {
+                    feature_geometry_error(findings, feature, "shape offset is invalid");
+                }
+            }
+            FeatureDefinition::Compound { members } => body_selections.push(members),
+            FeatureDefinition::RefineShape { source }
+            | FeatureDefinition::ReverseShape { source } => body_selections.push(source),
+            FeatureDefinition::RuledBetweenCurves { first, second, .. } => {
+                paths.push(first);
+                paths.push(second);
+            }
+            FeatureDefinition::SectionShape { first, second, .. } => {
+                body_selections.push(first);
+                body_selections.push(second);
+            }
+            FeatureDefinition::MirrorShape {
+                source,
+                plane_origin,
+                plane_normal,
+                plane_reference,
+            } => {
+                body_selections.push(source);
+                face_selections.extend(plane_reference);
+                if ![plane_origin.x, plane_origin.y, plane_origin.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    || !valid_feature_direction(*plane_normal)
+                {
+                    feature_geometry_error(findings, feature, "mirror plane is invalid");
+                }
+            }
             FeatureDefinition::Thicken {
                 faces, thickness, ..
             } => {
@@ -1586,7 +2667,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             FeatureDefinition::OffsetSurface { faces, distance } => {
                 face_selections.push(faces);
-                if !distance.0.is_finite() {
+                if distance.is_some_and(|value| !value.0.is_finite()) {
                     feature_geometry_error(findings, feature, "surface offset is invalid");
                 }
             }
@@ -1605,7 +2686,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 support_faces,
                 ..
             } => {
-                edge_selections.push(boundary);
+                match boundary {
+                    crate::features::SurfaceBoundary::Edges(edges) => {
+                        edge_selections.push(edges);
+                    }
+                    crate::features::SurfaceBoundary::Path(path) => paths.push(path),
+                }
                 face_selections.push(support_faces);
             }
             FeatureDefinition::TrimSurface { faces, tool, .. } => {
@@ -1616,7 +2702,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 faces, distance, ..
             } => {
                 face_selections.push(faces);
-                if !positive_feature_length(*distance) {
+                if distance.is_some_and(|value| !positive_feature_length(value)) {
                     feature_geometry_error(findings, feature, "surface extension is invalid");
                 }
             }
@@ -1650,9 +2736,27 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 face_selections.push(faces);
                 face_selections.push(neutral_plane);
-                if !valid_feature_direction(*pull_direction) || !angle.0.is_finite() {
+                if pull_direction.is_some_and(|value| !valid_feature_direction(value))
+                    || angle.is_some_and(|value| !value.0.is_finite())
+                {
                     feature_geometry_error(findings, feature, "draft geometry is invalid");
                 }
+            }
+            FeatureDefinition::DraftUnresolved => {}
+            FeatureDefinition::BoundaryFill { tools, cells } => {
+                body_selections.push(tools);
+                body_selections.extend(cells);
+                if cells.is_empty() {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "boundary fill has no selected cells",
+                    );
+                }
+            }
+            FeatureDefinition::SplitBody { targets, tools } => {
+                body_selections.push(targets);
+                face_selections.push(tools);
             }
             FeatureDefinition::DeleteFace { faces, .. } => {
                 face_selections.push(faces);
@@ -1784,17 +2888,29 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 body_selections.push(targets);
                 face_selections.push(tools);
             }
+            FeatureDefinition::TrimBodies { targets, tools, .. } => {
+                body_selections.push(targets);
+                body_selections.push(tools);
+            }
             FeatureDefinition::DeleteBody { bodies, .. } => {
                 body_selections.push(bodies);
             }
             FeatureDefinition::Hole {
+                profile,
+                profile_filter,
                 face,
                 kind,
                 diameter,
                 extent,
                 direction,
                 position,
+                bottom,
+                taper_angle,
+                specification,
+                placements,
+                ..
             } => {
+                profiles.extend(profile);
                 face_selections.extend(face);
                 extents.extend(extent);
                 let kind_valid = match kind {
@@ -1815,11 +2931,58 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             })
                     }
                     HoleKind::Simple => true,
+                    HoleKind::Chamfer { diameter, angle } => {
+                        positive_feature_length(*diameter)
+                            && angle.0.is_finite()
+                            && angle.0 > 0.0
+                            && angle.0 < std::f64::consts::PI
+                    }
+                    HoleKind::SimpleDrilled { drill_point_angle } => {
+                        drill_point_angle.0.is_finite()
+                            && drill_point_angle.0 > 0.0
+                            && drill_point_angle.0 < std::f64::consts::PI
+                    }
                     HoleKind::Counterbore { diameter, depth } => {
                         positive_feature_length(*diameter) && positive_feature_length(*depth)
                     }
+                    HoleKind::CounterboreDrilled {
+                        diameter,
+                        depth,
+                        drill_point_angle,
+                    } => {
+                        positive_feature_length(*diameter)
+                            && positive_feature_length(*depth)
+                            && drill_point_angle.0.is_finite()
+                            && drill_point_angle.0 > 0.0
+                            && drill_point_angle.0 < std::f64::consts::PI
+                    }
                     HoleKind::Countersink { diameter, angle } => {
                         positive_feature_length(*diameter)
+                            && angle.0.is_finite()
+                            && angle.0 > 0.0
+                            && angle.0 < std::f64::consts::PI
+                    }
+                    HoleKind::Threaded {
+                        major_diameter,
+                        thread_depth,
+                        pitch,
+                        drill_point_angle,
+                    } => {
+                        positive_feature_length(*major_diameter)
+                            && positive_feature_length(*thread_depth)
+                            && pitch.is_none_or(positive_feature_length)
+                            && drill_point_angle.0.is_finite()
+                            && drill_point_angle.0 > 0.0
+                            && drill_point_angle.0 < std::f64::consts::PI
+                            && diameter.is_some_and(|diameter| major_diameter.0 > diameter.0)
+                    }
+                    HoleKind::Counterdrill {
+                        diameter,
+                        depth,
+                        angle,
+                    } => {
+                        positive_feature_length(*diameter)
+                            && positive_feature_length(*depth)
                             && angle.0.is_finite()
                             && angle.0 > 0.0
                             && angle.0 < std::f64::consts::PI
@@ -1828,89 +2991,103 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 let position_valid = position.is_none_or(|point| {
                     point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
                 });
+                let placements_valid = placements.iter().all(|placement| {
+                    let (point, direction) = match placement {
+                        crate::features::HolePlacement::Directed {
+                            position,
+                            direction,
+                        } => (position, direction),
+                        crate::features::HolePlacement::Axis { origin, axis } => (origin, axis),
+                    };
+                    finite_feature_point(*point) && valid_feature_direction(*direction)
+                });
+                let filter_valid = profile_filter
+                    .is_none_or(|filter| filter.points || filter.circles || filter.arcs);
+                let bottom_valid = bottom.is_none_or(|bottom| match bottom {
+                    crate::features::HoleBottom::Flat => true,
+                    crate::features::HoleBottom::Angled { included_angle, .. } => {
+                        included_angle.0.is_finite()
+                            && included_angle.0 > 0.0
+                            && included_angle.0 < std::f64::consts::PI
+                    }
+                });
+                let taper_valid = taper_angle.is_none_or(|angle| {
+                    angle.0.is_finite() && angle.0 > 0.0 && angle.0 < std::f64::consts::PI
+                });
+                let specification_valid = specification.as_deref().is_none_or(|specification| {
+                    !specification.standard.is_empty()
+                        && specification.pitch.is_none_or(positive_feature_length)
+                        && specification
+                            .major_diameter
+                            .is_none_or(positive_feature_length)
+                        && specification
+                            .clearance
+                            .is_none_or(|value| value.0.is_finite())
+                        && match specification.depth {
+                            crate::features::HoleThreadDepth::Blind { depth } => {
+                                positive_feature_length(depth)
+                            }
+                            crate::features::HoleThreadDepth::HoleDepth
+                            | crate::features::HoleThreadDepth::TappedStandard => true,
+                        }
+                });
                 if diameter.is_some_and(|value| !positive_feature_length(value))
                     || !kind_valid
                     || !position_valid
+                    || !placements_valid
+                    || !filter_valid
+                    || !bottom_valid
+                    || !taper_valid
+                    || !specification_valid
                     || direction.is_some_and(|value| !valid_feature_direction(value))
                 {
                     feature_geometry_error(findings, feature, "hole geometry is invalid");
                 }
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
-                if let PatternKind::CurveDriven {
-                    path: Some(path), ..
-                } = pattern
-                {
-                    paths.push(path);
-                }
+                collect_pattern_paths(pattern, &mut paths);
                 for seed in seeds {
-                    match features.get(seed.0.as_str()) {
-                        None => ref_error(findings, &feature.id.0, "seed feature", &seed.0),
-                        Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
-                                "seed feature `{}` does not precede its pattern",
-                                seed.0
-                            ),
-                            entity: Some(feature.id.0.clone()),
-                        }),
-                        Some(_) => {}
+                    match seed {
+                        PatternSeed::Feature(seed) => match features.get(seed.0.as_str()) {
+                            None => ref_error(findings, &feature.id.0, "seed feature", &seed.0),
+                            Some(ordinal) if *ordinal >= feature.ordinal => {
+                                findings.push(Finding {
+                                    check: Check::ReferentialIntegrity,
+                                    severity: Severity::Error,
+                                    message: format!(
+                                        "seed feature `{}` does not precede its pattern",
+                                        seed.0
+                                    ),
+                                    entity: Some(feature.id.0.clone()),
+                                });
+                            }
+                            Some(_) => {}
+                        },
+                        PatternSeed::Faces(selection) => face_selections.push(selection),
+                        PatternSeed::Bodies(selection) => body_selections.push(selection),
                     }
                 }
-                let valid = match pattern {
-                    PatternKind::Unresolved { .. } => true,
-                    PatternKind::Linear {
-                        direction,
-                        spacing,
-                        count,
-                    } => {
-                        direction.is_none_or(valid_feature_direction)
-                            && positive_feature_length(*spacing)
-                            && *count > 0
-                    }
-                    PatternKind::Circular {
-                        axis_origin,
-                        axis_dir,
-                        angle,
-                        count,
-                    } => {
-                        axis_origin.x.is_finite()
-                            && axis_origin.y.is_finite()
-                            && axis_origin.z.is_finite()
-                            && valid_feature_direction(*axis_dir)
-                            && angle.0.is_finite()
-                            && angle.0 > 0.0
-                            && *count > 0
-                    }
-                    PatternKind::CurveDriven { spacing, count, .. } => {
-                        positive_feature_length(*spacing) && *count > 0
-                    }
-                    PatternKind::Mirror {
-                        plane_origin,
-                        plane_normal,
-                    } => {
-                        plane_origin.x.is_finite()
-                            && plane_origin.y.is_finite()
-                            && plane_origin.z.is_finite()
-                            && valid_feature_direction(*plane_normal)
-                    }
-                };
+                let valid = pattern_is_valid(pattern, false);
                 if !valid {
                     feature_geometry_error(findings, feature, "pattern geometry is invalid");
                 }
             }
-            FeatureDefinition::Sketch { space, sketch } => {
-                if matches!(space, crate::features::SketchSpace::Spatial) && sketch.is_some() {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "spatial sketch owns planar sketch geometry",
-                    );
-                }
+            FeatureDefinition::Sketch { sketch, .. } => {
                 if let Some(sketch) = sketch {
                     if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
                         ref_error(findings, &feature.id.0, "owned sketch", &sketch.0);
+                    }
+                }
+            }
+            FeatureDefinition::SpatialSketch { sketch } => {
+                if let Some(sketch) = sketch {
+                    if !ir
+                        .model
+                        .spatial_sketches
+                        .iter()
+                        .any(|value| value.id == *sketch)
+                    {
+                        ref_error(findings, &feature.id.0, "owned spatial sketch", &sketch.0);
                     }
                 }
             }
@@ -1969,8 +3146,31 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 paths.push(source);
                 face_selections.push(target_faces);
-                if direction.is_some_and(|value| !valid_feature_direction(value)) {
+                if matches!(direction, crate::features::CurveProjectionDirection::Vector(value) if !valid_feature_direction(*value))
+                {
                     feature_geometry_error(findings, feature, "projection direction is invalid");
+                }
+            }
+            FeatureDefinition::ProjectOnSurface {
+                sources,
+                support_face,
+                direction,
+                height,
+                offset,
+                ..
+            } => {
+                paths.push(sources);
+                face_selections.push(support_face);
+                if !valid_feature_direction(*direction)
+                    || !height.0.is_finite()
+                    || height.0 < 0.0
+                    || !offset.0.is_finite()
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "projection-on-surface construction is invalid",
+                    );
                 }
             }
             FeatureDefinition::CompositeCurve { segments, .. } => {
@@ -1985,6 +3185,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 radius,
                 pitch,
                 revolutions,
+                radial_growth,
+                cone_angle,
+                segment_turns,
                 ..
             } => {
                 let valid = [axis_origin.x, axis_origin.y, axis_origin.z, pitch.0]
@@ -1994,28 +3197,198 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     && radius.0.is_finite()
                     && radius.0 > 0.0
                     && revolutions.is_finite()
-                    && *revolutions > 0.0;
+                    && *revolutions > 0.0
+                    && radial_growth.is_none_or(|value| value.0.is_finite())
+                    && cone_angle.is_none_or(|value| {
+                        value.0.is_finite() && value.0.abs() < std::f64::consts::FRAC_PI_2
+                    })
+                    && segment_turns.is_none_or(|value| value.is_finite() && value > 0.0)
+                    && !(radial_growth.is_some() && cone_angle.is_some());
                 if !valid {
                     feature_geometry_error(findings, feature, "helix geometry is invalid");
                 }
             }
             FeatureDefinition::HelixNativeAxis {
                 axis_native_ref,
-                radius,
-                height,
+                axial_rise,
+                pitch,
                 revolutions,
                 start_angle,
                 ..
             } => {
                 let valid = !axis_native_ref.is_empty()
-                    && radius.0.is_finite()
-                    && radius.0 > 0.0
-                    && height.0.is_finite()
+                    && axial_rise.0.is_finite()
+                    && pitch.0.is_finite()
                     && revolutions.is_finite()
                     && *revolutions > 0.0
                     && start_angle.0.is_finite();
                 if !valid {
                     feature_geometry_error(findings, feature, "native-axis helix is invalid");
+                }
+            }
+            FeatureDefinition::Coil {
+                construction,
+                result,
+            } => {
+                use crate::features::{CoilExtent, CoilPlacement, CoilResult, CoilSection};
+
+                let placement_valid = match &construction.placement {
+                    CoilPlacement::Explicit {
+                        origin,
+                        axis,
+                        radial,
+                    } => {
+                        let dot = axis.x * radial.x + axis.y * radial.y + axis.z * radial.z;
+                        [origin.x, origin.y, origin.z]
+                            .into_iter()
+                            .all(f64::is_finite)
+                            && (axis.norm() - 1.0).abs() <= 1.0e-9
+                            && (radial.norm() - 1.0).abs() <= 1.0e-9
+                            && dot.abs() <= 1.0e-9
+                    }
+                    CoilPlacement::Native { native_ref } => !native_ref.trim().is_empty(),
+                };
+                let extent_valid = match construction.extent {
+                    CoilExtent::RevolutionsHeight {
+                        revolutions,
+                        height,
+                    } => revolutions.is_finite() && revolutions > 0.0 && height.0.is_finite(),
+                    CoilExtent::RevolutionsPitch { revolutions, pitch } => {
+                        revolutions.is_finite()
+                            && revolutions > 0.0
+                            && pitch.0.is_finite()
+                            && pitch.0 != 0.0
+                    }
+                    CoilExtent::HeightPitch { height, pitch } => {
+                        height.0.is_finite()
+                            && height.0 != 0.0
+                            && pitch.0.is_finite()
+                            && pitch.0 != 0.0
+                    }
+                    CoilExtent::Spiral {
+                        revolutions,
+                        radial_pitch,
+                    } => {
+                        revolutions.is_finite()
+                            && revolutions > 0.0
+                            && radial_pitch.0.is_finite()
+                            && radial_pitch.0 != 0.0
+                    }
+                };
+                let section_size = match construction.section {
+                    CoilSection::Circular { diameter } => diameter,
+                    CoilSection::Square { size }
+                    | CoilSection::ExternalTriangle { size }
+                    | CoilSection::InternalTriangle { size } => size,
+                };
+                if !placement_valid
+                    || !positive_feature_length(construction.diameter)
+                    || !extent_valid
+                    || !positive_feature_length(section_size)
+                    || !construction.taper.0.is_finite()
+                {
+                    feature_geometry_error(findings, feature, "coil geometry is invalid");
+                }
+                if let CoilResult::Boolean { operation, targets } = result {
+                    if matches!(
+                        operation,
+                        crate::features::BooleanOp::Unresolved
+                            | crate::features::BooleanOp::NewBody
+                    ) {
+                        feature_geometry_error(findings, feature, "coil Boolean result is invalid");
+                    }
+                    body_selections.push(targets);
+                }
+            }
+            FeatureDefinition::HelicalSweep { construction, .. } => {
+                profiles.push(&construction.profile);
+                let valid = [
+                    construction.axis_origin.x,
+                    construction.axis_origin.y,
+                    construction.axis_origin.z,
+                    construction.pitch.0,
+                    construction.height.0,
+                    construction.radial_growth.0,
+                    construction.cone_angle.0,
+                    construction.tolerance,
+                ]
+                .into_iter()
+                .all(f64::is_finite)
+                    && valid_feature_direction(construction.axis_direction)
+                    && construction.pitch.0 >= 0.0
+                    && construction.turns.is_finite()
+                    && construction.turns > 0.0
+                    && construction.tolerance > 0.0
+                    && (construction.height.0 != 0.0 || construction.radial_growth.0 != 0.0);
+                if !valid {
+                    feature_geometry_error(findings, feature, "helical sweep is invalid");
+                }
+            }
+            FeatureDefinition::Binder {
+                sources,
+                construction,
+            } => {
+                let target_valid = |target: &crate::features::BinderTarget| match target {
+                    crate::features::BinderTarget::Feature { .. } => true,
+                    crate::features::BinderTarget::External { document, object } => {
+                        !document.is_empty() && !object.is_empty()
+                    }
+                    crate::features::BinderTarget::Native { reference } => !reference.is_empty(),
+                };
+                let sources_valid = sources.iter().all(|source| {
+                    target_valid(&source.target)
+                        && source
+                            .subelements
+                            .iter()
+                            .all(|selector| !selector.is_empty())
+                });
+                for target in
+                    sources
+                        .iter()
+                        .map(|source| &source.target)
+                        .chain(match construction {
+                            crate::features::BinderConstruction::SubShape { context, .. } => {
+                                context.as_ref()
+                            }
+                            crate::features::BinderConstruction::Shape { .. } => None,
+                        })
+                {
+                    if let crate::features::BinderTarget::Feature { feature: target } = target {
+                        match features.get(target.0.as_str()) {
+                            None => ref_error(
+                                findings,
+                                &feature.id.0,
+                                "binder target feature",
+                                &target.0,
+                            ),
+                            Some(ordinal) if *ordinal >= feature.ordinal => {
+                                findings.push(Finding {
+                                    check: Check::ReferentialIntegrity,
+                                    severity: Severity::Error,
+                                    message: format!(
+                                        "binder target feature `{}` does not precede its binder",
+                                        target.0
+                                    ),
+                                    entity: Some(feature.id.0.clone()),
+                                });
+                            }
+                            Some(_) => {}
+                        }
+                    }
+                }
+                let construction_valid = match construction {
+                    crate::features::BinderConstruction::Shape { .. } => true,
+                    crate::features::BinderConstruction::SubShape {
+                        offset, context, ..
+                    } => {
+                        context.as_ref().is_none_or(target_valid)
+                            && offset.is_none_or(|offset| {
+                                offset.distance.0.is_finite() && offset.distance.0 != 0.0
+                            })
+                    }
+                };
+                if !sources_valid || !construction_valid {
+                    feature_geometry_error(findings, feature, "binder construction is invalid");
                 }
             }
             FeatureDefinition::Wrap {
@@ -2036,12 +3409,243 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "wrap depth is invalid");
                 }
             }
-            FeatureDefinition::TreeNode { .. }
-            | FeatureDefinition::DatumPrincipalPlane { .. }
+            FeatureDefinition::Sphere { center, radius, .. } => {
+                if ![center.x, center.y, center.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    || !positive_feature_length(*radius)
+                {
+                    feature_geometry_error(findings, feature, "sphere primitive is invalid");
+                }
+            }
+            FeatureDefinition::Torus {
+                center,
+                axis,
+                major_radius,
+                minor_radius,
+                ..
+            } => {
+                if ![center.x, center.y, center.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    || !valid_feature_direction(*axis)
+                    || !positive_feature_length(*major_radius)
+                    || !positive_feature_length(*minor_radius)
+                {
+                    feature_geometry_error(findings, feature, "torus primitive is invalid");
+                }
+            }
+            FeatureDefinition::PointGeometry { position } => {
+                if !finite_feature_point(*position) {
+                    feature_geometry_error(findings, feature, "point geometry is invalid");
+                }
+            }
+            FeatureDefinition::LineSegment { start, end } => {
+                if !finite_feature_point(*start) || !finite_feature_point(*end) || *start == *end {
+                    feature_geometry_error(findings, feature, "line segment is invalid");
+                }
+            }
+            FeatureDefinition::CircularArc {
+                center,
+                normal,
+                radius,
+                start_angle,
+                end_angle,
+            } => {
+                if !finite_feature_point(*center)
+                    || !valid_feature_direction(*normal)
+                    || !positive_feature_length(*radius)
+                    || !start_angle.0.is_finite()
+                    || !end_angle.0.is_finite()
+                    || start_angle == end_angle
+                {
+                    feature_geometry_error(findings, feature, "circular arc is invalid");
+                }
+            }
+            FeatureDefinition::EllipticArc {
+                center,
+                normal,
+                major_axis,
+                major_radius,
+                minor_radius,
+                start_angle,
+                end_angle,
+            } => {
+                if !finite_feature_point(*center)
+                    || !valid_feature_direction(*normal)
+                    || !valid_feature_direction(*major_axis)
+                    || (normal.x * major_axis.x + normal.y * major_axis.y + normal.z * major_axis.z)
+                        .abs()
+                        > 1e-9
+                    || !positive_feature_length(*major_radius)
+                    || !positive_feature_length(*minor_radius)
+                    || minor_radius.0 > major_radius.0
+                    || !start_angle.0.is_finite()
+                    || !end_angle.0.is_finite()
+                    || start_angle == end_angle
+                {
+                    feature_geometry_error(findings, feature, "elliptic arc is invalid");
+                }
+            }
+            FeatureDefinition::Polyline { points, closed } => {
+                if points.len() < 2
+                    || (*closed && points.len() < 3)
+                    || points.iter().any(|point| !finite_feature_point(*point))
+                    || points.windows(2).any(|pair| pair[0] == pair[1])
+                {
+                    feature_geometry_error(findings, feature, "polyline is invalid");
+                }
+            }
+            FeatureDefinition::RegularPolygonCurve {
+                sides,
+                circumradius,
+            } => {
+                if *sides < 3 || !positive_feature_length(*circumradius) {
+                    feature_geometry_error(findings, feature, "regular polygon is invalid");
+                }
+            }
+            FeatureDefinition::PlanarPatch { length, width } => {
+                if !positive_feature_length(*length) || !positive_feature_length(*width) {
+                    feature_geometry_error(findings, feature, "planar patch is invalid");
+                }
+            }
+            FeatureDefinition::FaceFromShapes {
+                sources,
+                face_maker_class,
+            } => {
+                body_selections.push(sources);
+                if face_maker_class.is_empty() {
+                    feature_geometry_error(findings, feature, "face construction is invalid");
+                }
+            }
+            FeatureDefinition::TreeNode {
+                children,
+                active_child,
+                ..
+            } => {
+                let mut seen = HashSet::new();
+                for child in children {
+                    let child_record = ir
+                        .model
+                        .features
+                        .iter()
+                        .find(|candidate| candidate.id == *child);
+                    match child_record {
+                        None => ref_error(findings, &feature.id.0, "tree child", &child.0),
+                        Some(_) if !seen.insert(child) => findings.push(Finding {
+                            check: Check::Counts,
+                            severity: Severity::Error,
+                            message: format!("tree node repeats child `{}`", child.0),
+                            entity: Some(feature.id.0.clone()),
+                        }),
+                        Some(child_record) if child_record.parent.as_ref() != Some(&feature.id) => {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: format!(
+                                    "tree child `{}` does not name its owning parent",
+                                    child.0
+                                ),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                        }
+                        Some(_) => {}
+                    }
+                }
+                if let Some(active_child) = active_child {
+                    if !children.contains(active_child) {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "active tree child `{}` is not an owned child",
+                                active_child.0
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
+                }
+            }
+            FeatureDefinition::DatumPrincipalPlane { .. }
+            | FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }
+            | FeatureDefinition::SketchBlockDefinition { .. }
+            | FeatureDefinition::StoredGeometry
             | FeatureDefinition::Native { .. } => {}
+            FeatureDefinition::SketchBlockInstance { block, placement } => {
+                if let Some(block) = block {
+                    match features.get(block.0.as_str()) {
+                        None => ref_error(findings, &feature.id.0, "sketch block", &block.0),
+                        Some(ordinal) if *ordinal >= feature.ordinal => feature_geometry_error(
+                            findings,
+                            feature,
+                            "sketch block does not precede its instance",
+                        ),
+                        Some(_)
+                            if !ir.model.features.iter().any(|candidate| {
+                                candidate.id == *block
+                                    && matches!(
+                                        candidate.definition,
+                                        FeatureDefinition::SketchBlockDefinition { .. }
+                                    )
+                            }) =>
+                        {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "sketch block target is not a block definition",
+                            );
+                        }
+                        Some(_) => {}
+                    }
+                }
+                if placement.is_some_and(|placement| {
+                    !placement
+                        .rows
+                        .iter()
+                        .flatten()
+                        .all(|value| value.is_finite())
+                        || placement.rows[3] != [0.0, 0.0, 0.0, 1.0]
+                }) {
+                    feature_geometry_error(findings, feature, "sketch block placement is invalid");
+                }
+            }
+            FeatureDefinition::DerivedGeometry { source } => {
+                match features.get(source.0.as_str()) {
+                    None => ref_error(findings, &feature.id.0, "source feature", &source.0),
+                    Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "source feature `{}` does not precede its derived geometry",
+                            source.0
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    }),
+                    Some(_) if !feature.dependencies.contains(source) => findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "derived geometry omits source feature `{}` from its dependencies",
+                            source.0
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    }),
+                    Some(_) => {}
+                }
+            }
+            FeatureDefinition::ImportedGeometry { path, .. } => {
+                if path.is_empty() || path.contains('\0') {
+                    feature_geometry_error(findings, feature, "geometry import path is invalid");
+                }
+            }
+            FeatureDefinition::PostProcess { .. } => feature_geometry_error(
+                findings,
+                feature,
+                "nested feature post-processing is invalid",
+            ),
             FeatureDefinition::DatumOffsetPlane {
                 reference,
                 distance,
@@ -2067,14 +3671,77 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for profile in profiles {
-            if let ProfileRef::Faces(faces) = profile {
-                check_ids(
+            match profile {
+                ProfileRef::Faces(faces) => check_ids(
                     findings,
                     &feature.id.0,
                     "profile face",
                     faces.iter().map(|id| id.0.as_str()),
                     &ids.faces,
-                );
+                ),
+                ProfileRef::HistoricalFaces {
+                    state,
+                    faces,
+                    native,
+                } => {
+                    if native.is_empty()
+                        || native.iter().any(String::is_empty)
+                        || native.iter().collect::<HashSet<_>>().len() != native.len()
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "historical profile source groups are empty or repeated",
+                        );
+                    }
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            faces.iter().map(crate::ids::HistoricalFaceId::as_str),
+                            native.first().map_or("", String::as_str),
+                        ),
+                        "profile face",
+                        false,
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .faces
+                                .iter()
+                                .map(crate::ids::HistoricalFaceId::as_str)
+                                .collect()
+                        },
+                    );
+                }
+                ProfileRef::Feature(producer) => match features.get(producer.0.as_str()) {
+                    None => ref_error(findings, &feature.id.0, "profile feature", &producer.0),
+                    Some(ordinal)
+                        if *ordinal >= feature.ordinal
+                            || !feature.dependencies.contains(producer) =>
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "profile feature is not a preceding dependency",
+                        );
+                    }
+                    Some(_) => {}
+                },
+                ProfileRef::Generated { curves, native }
+                    if curves.is_empty()
+                        || native.trim().is_empty()
+                        || curves.iter().any(|curve| {
+                            curve.local_id.trim().is_empty()
+                                || features
+                                    .get(curve.feature.0.as_str())
+                                    .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                                || !feature.dependencies.contains(&curve.feature)
+                        }) =>
+                {
+                    feature_geometry_error(findings, feature, "generated profile curve is invalid");
+                }
+                _ => {}
             }
         }
         for path in paths {
@@ -2093,86 +3760,481 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     curves.iter().map(|id| id.0.as_str()),
                     &ids.curves,
                 ),
-                PathRef::Native(_) | PathRef::Sketch(_) => {}
+                PathRef::HistoricalEdges {
+                    state,
+                    edges,
+                    native,
+                } => check_historical_selection(
+                    findings,
+                    &feature.id,
+                    (
+                        state,
+                        edges.iter().map(crate::ids::HistoricalEdgeId::as_str),
+                        native,
+                    ),
+                    "path edge",
+                    false,
+                    &input_topologies,
+                    |topology| {
+                        topology
+                            .edges
+                            .iter()
+                            .map(crate::ids::HistoricalEdgeId::as_str)
+                            .collect()
+                    },
+                ),
+                PathRef::Unresolved(_)
+                | PathRef::Native(_)
+                | PathRef::Sketch(_)
+                | PathRef::SpatialSketchSelection { .. } => {}
             }
         }
         for extent in extents {
-            let valid_magnitude = match extent {
-                Extent::Blind { length } | Extent::Symmetric { length } => {
-                    length.0.is_finite() && length.0 > 0.0
+            let mut pending = vec![extent];
+            while let Some(extent) = pending.pop() {
+                match extent {
+                    Extent::TwoSidedExtents { first, second } => {
+                        pending.push(first);
+                        pending.push(second);
+                        continue;
+                    }
+                    Extent::SymmetricExtent { extent } => {
+                        pending.push(extent);
+                        continue;
+                    }
+                    _ => {}
                 }
-                Extent::TwoSided { first, second } => {
-                    first.0.is_finite() && first.0 > 0.0 && second.0.is_finite() && second.0 > 0.0
+                let valid_magnitude = match extent {
+                    Extent::Blind { length } | Extent::Symmetric { length } => {
+                        length.0.is_finite() && length.0 != 0.0
+                    }
+                    Extent::TwoSided { first, second } => {
+                        first.0.is_finite()
+                            && first.0 != 0.0
+                            && second.0.is_finite()
+                            && second.0 != 0.0
+                    }
+                    Extent::Angle { angle } | Extent::SymmetricAngle { angle } => {
+                        angle.0.is_finite() && angle.0 > 0.0
+                    }
+                    Extent::TwoSidedAngles { first, second } => {
+                        first.0.is_finite()
+                            && first.0 > 0.0
+                            && second.0.is_finite()
+                            && second.0 > 0.0
+                    }
+                    Extent::ThroughAll
+                    | Extent::ThroughAllBoth
+                    | Extent::ThroughNext
+                    | Extent::ToFirst
+                    | Extent::ToLast
+                    | Extent::ToVertex { .. }
+                    | Extent::ToShape { .. } => true,
+                    Extent::OffsetFromFace { offset, .. } => offset.0.is_finite() && offset.0 > 0.0,
+                    Extent::Unresolved => true,
+                    Extent::ToFace { offset, .. } => {
+                        offset.is_none_or(|offset| offset.0.is_finite())
+                    }
+                    Extent::TwoSidedExtents { .. } | Extent::SymmetricExtent { .. } => {
+                        unreachable!("composite extents are expanded above")
+                    }
+                };
+                if !valid_magnitude {
+                    findings.push(Finding {
+                        check: Check::GeometricConsistency,
+                        severity: Severity::Error,
+                        message: "feature extent magnitude is invalid".into(),
+                        entity: Some(feature.id.0.clone()),
+                    });
                 }
-                Extent::Angle { angle } | Extent::SymmetricAngle { angle } => {
-                    angle.0.is_finite() && angle.0 > 0.0
+                if let Extent::ToFace {
+                    face: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
+                    ..
+                } = extent
+                {
+                    check_ids(
+                        findings,
+                        &feature.id.0,
+                        "termination face",
+                        faces.iter().map(|id| id.0.as_str()),
+                        &ids.faces,
+                    );
                 }
-                Extent::TwoSidedAngles { first, second } => {
-                    first.0.is_finite() && first.0 > 0.0 && second.0.is_finite() && second.0 > 0.0
+                if let Extent::ToShape {
+                    target: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
+                } = extent
+                {
+                    check_ids(
+                        findings,
+                        &feature.id.0,
+                        "termination shape face",
+                        faces.iter().map(|id| id.0.as_str()),
+                        &ids.faces,
+                    );
                 }
-                Extent::ThroughAll | Extent::ToFace { .. } => true,
-            };
-            if !valid_magnitude {
-                findings.push(Finding {
-                    check: Check::GeometricConsistency,
-                    severity: Severity::Error,
-                    message: "feature extent magnitude is invalid".into(),
-                    entity: Some(feature.id.0.clone()),
-                });
-            }
-            if let Extent::ToFace {
-                face: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
-            } = extent
-            {
-                check_ids(
-                    findings,
-                    &feature.id.0,
-                    "termination face",
-                    faces.iter().map(|id| id.0.as_str()),
-                    &ids.faces,
-                );
             }
         }
         for selection in edge_selections {
-            if let EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } = selection {
-                check_ids(
+            let allow_empty = matches!(selection, EdgeSelection::HistoricalPartial { .. });
+            match selection {
+                EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => check_ids(
                     findings,
                     &feature.id.0,
                     "selected edge",
                     edges.iter().map(|id| id.0.as_str()),
                     &ids.edges,
-                );
+                ),
+                EdgeSelection::Historical {
+                    state,
+                    edges,
+                    native,
+                }
+                | EdgeSelection::HistoricalPartial {
+                    state,
+                    edges,
+                    native,
+                    ..
+                } => {
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            edges.iter().map(crate::ids::HistoricalEdgeId::as_str),
+                            native,
+                        ),
+                        "edge",
+                        allow_empty,
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .edges
+                                .iter()
+                                .map(crate::ids::HistoricalEdgeId::as_str)
+                                .collect()
+                        },
+                    );
+                    if let EdgeSelection::HistoricalPartial { unresolved, .. } = selection {
+                        let mut identities = HashSet::new();
+                        for identity in unresolved {
+                            if identity.trim().is_empty() {
+                                findings.push(Finding {
+                                    check: Check::ReferentialIntegrity,
+                                    severity: Severity::Error,
+                                    message: "partial historical edge selection has an empty unresolved operand identity".into(),
+                                    entity: Some(feature.id.0.clone()),
+                                });
+                            } else if !identities.insert(identity) {
+                                findings.push(Finding {
+                                    check: Check::ReferentialIntegrity,
+                                    severity: Severity::Error,
+                                    message: format!(
+                                        "partial historical edge selection repeats unresolved operand `{identity}`"
+                                    ),
+                                    entity: Some(feature.id.0.clone()),
+                                });
+                            }
+                        }
+                        if unresolved.is_empty() {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message:
+                                    "partial historical edge selection has no unresolved operands"
+                                        .into(),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                        }
+                    }
+                }
+                EdgeSelection::Generated { edges, native } => {
+                    if edges.is_empty()
+                        || native.trim().is_empty()
+                        || edges.iter().any(|edge| {
+                            edge.local_id.trim().is_empty()
+                                || !feature.dependencies.contains(&edge.feature)
+                        })
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "generated edge selection is invalid",
+                        );
+                    }
+                }
+                EdgeSelection::All | EdgeSelection::Unresolved | EdgeSelection::Native(_) => {}
             }
         }
         for selection in face_selections {
-            if let FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } = selection {
-                check_ids(
+            match selection {
+                FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => check_ids(
                     findings,
                     &feature.id.0,
                     "selected face",
                     faces.iter().map(|id| id.0.as_str()),
                     &ids.faces,
-                );
+                ),
+                FaceSelection::Historical {
+                    state,
+                    faces,
+                    native,
+                } => {
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            faces.iter().map(crate::ids::HistoricalFaceId::as_str),
+                            native,
+                        ),
+                        "face",
+                        false,
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .faces
+                                .iter()
+                                .map(crate::ids::HistoricalFaceId::as_str)
+                                .collect()
+                        },
+                    );
+                }
+                FaceSelection::HistoricalPartial {
+                    state,
+                    faces,
+                    unresolved,
+                    native,
+                } => {
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            faces.iter().map(crate::ids::HistoricalFaceId::as_str),
+                            native,
+                        ),
+                        "face",
+                        true,
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .faces
+                                .iter()
+                                .map(crate::ids::HistoricalFaceId::as_str)
+                                .collect()
+                        },
+                    );
+                    let mut identities = HashSet::new();
+                    for identity in unresolved {
+                        if identity.trim().is_empty() {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: "partial historical face selection has an empty unresolved operand identity".into(),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                        } else if !identities.insert(identity) {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: format!("partial historical face selection repeats unresolved operand `{identity}`"),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                        }
+                    }
+                    if unresolved.is_empty() {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: "partial historical face selection has no unresolved operands"
+                                .into(),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
+                }
+                FaceSelection::Generated { faces, native } => {
+                    if faces.is_empty()
+                        || native.trim().is_empty()
+                        || faces.iter().any(|face| {
+                            face.local_id.trim().is_empty()
+                                || !feature.dependencies.contains(&face.feature)
+                        })
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "generated face selection is invalid",
+                        );
+                    }
+                }
+                FaceSelection::Unresolved | FaceSelection::Native(_) => {}
             }
         }
         for selection in body_selections {
-            if let BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } =
-                selection
-            {
-                check_ids(
-                    findings,
-                    &feature.id.0,
-                    "selected body",
-                    bodies.iter().map(|id| id.0.as_str()),
-                    &ids.bodies,
-                );
+            match selection {
+                BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                    check_ids(
+                        findings,
+                        &feature.id.0,
+                        "selected body",
+                        bodies.iter().map(|id| id.0.as_str()),
+                        &ids.bodies,
+                    );
+                }
+                BodySelection::Historical {
+                    state,
+                    bodies,
+                    native,
+                } => {
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            bodies.iter().map(crate::ids::HistoricalBodyId::as_str),
+                            native,
+                        ),
+                        "body",
+                        false,
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .bodies
+                                .iter()
+                                .map(crate::ids::HistoricalBodyId::as_str)
+                                .collect()
+                        },
+                    );
+                }
+                BodySelection::Generated { bodies, native } => {
+                    if bodies.is_empty()
+                        || native.trim().is_empty()
+                        || bodies.iter().any(|body| {
+                            body.local_id.trim().is_empty()
+                                || !feature.dependencies.contains(&body.feature)
+                        })
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "generated body selection is invalid",
+                        );
+                    }
+                }
+                BodySelection::Local { bodies, native } => {
+                    if bodies.is_empty()
+                        || native.trim().is_empty()
+                        || bodies.iter().any(|body| body.trim().is_empty())
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "local body selection is invalid",
+                        );
+                    }
+                }
+                BodySelection::Unresolved | BodySelection::Native(_) => {}
             }
+        }
+    }
+}
+
+fn check_historical_selection<'a, I, F>(
+    findings: &mut Vec<Finding>,
+    feature: &crate::features::FeatureId,
+    selection: (&crate::ids::FeatureInputTopologyId, I, &str),
+    kind: &str,
+    allow_empty: bool,
+    states: &HashMap<&str, &crate::features::FeatureInputTopology>,
+    members: F,
+) where
+    I: IntoIterator<Item = &'a str>,
+    F: FnOnce(&crate::features::FeatureInputTopology) -> Vec<&str>,
+{
+    let (state_id, selected, native) = selection;
+    let Some(state) = states.get(state_id.as_str()) else {
+        ref_error(
+            findings,
+            feature.as_str(),
+            "feature input topology",
+            state_id.as_str(),
+        );
+        return;
+    };
+    if state.input_of != *feature {
+        findings.push(Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: format!("historical {kind} selection uses another feature's input topology"),
+            entity: Some(feature.0.clone()),
+        });
+    }
+    if native.is_empty() {
+        findings.push(Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: format!("historical {kind} selection has an empty native reference"),
+            entity: Some(feature.0.clone()),
+        });
+    }
+    let available = members(state).into_iter().collect::<HashSet<_>>();
+    let selected = selected.into_iter().collect::<Vec<_>>();
+    if selected.is_empty() && !allow_empty {
+        findings.push(Finding {
+            check: Check::Counts,
+            severity: Severity::Error,
+            message: format!("historical {kind} selection is empty"),
+            entity: Some(feature.0.clone()),
+        });
+    }
+    let mut seen = HashSet::new();
+    for id in selected {
+        if !seen.insert(id) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: format!("historical {kind} selection repeats `{id}`"),
+                entity: Some(feature.0.clone()),
+            });
+        }
+        if !available.contains(id) {
+            ref_error(
+                findings,
+                feature.as_str(),
+                &format!("historical {kind}"),
+                id,
+            );
         }
     }
 }
 
 fn positive_feature_length(value: Length) -> bool {
     value.0.is_finite() && value.0 > 0.0
+}
+
+fn radius_spec_is_valid(radius: &RadiusSpec) -> bool {
+    match radius {
+        RadiusSpec::Unresolved { .. } => true,
+        RadiusSpec::Constant { radius } => positive_feature_length(*radius),
+        RadiusSpec::Chordal { chord_length } => positive_feature_length(*chord_length),
+        RadiusSpec::Variable { points } => {
+            points.len() >= 2
+                && points.iter().all(|point| {
+                    point.parameter.is_finite()
+                        && (0.0..=1.0).contains(&point.parameter)
+                        && point.radius.0.is_finite()
+                        && point.radius.0 >= 0.0
+                })
+                && points.iter().any(|point| point.radius.0 > 0.0)
+                && points
+                    .windows(2)
+                    .all(|pair| pair[0].parameter < pair[1].parameter)
+        }
+    }
+}
+
+fn finite_feature_point(value: Point3) -> bool {
+    [value.x, value.y, value.z].into_iter().all(f64::is_finite)
 }
 
 fn valid_feature_direction(value: Vector3) -> bool {
@@ -2209,32 +4271,49 @@ fn check_feature_sketch_references(
 ) {
     use crate::features::{FeatureDefinition, PathRef, ProfileRef};
 
+    let spatial_sketches = ir
+        .model
+        .spatial_sketches
+        .iter()
+        .map(|sketch| sketch.id.0.as_str())
+        .collect::<HashSet<_>>();
     let mut owners = HashMap::new();
     for feature in &ir.model.features {
-        if let FeatureDefinition::Sketch {
-            sketch: Some(sketch),
-            ..
-        } = &feature.definition
+        let sketch = match &feature.definition {
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } => sketch.0.as_str(),
+            FeatureDefinition::SpatialSketch {
+                sketch: Some(sketch),
+            } => sketch.0.as_str(),
+            _ => continue,
+        };
+        if owners
+            .insert(sketch, (feature.id.0.as_str(), feature.ordinal))
+            .is_some()
         {
-            if owners
-                .insert(sketch.0.as_str(), (feature.id.0.as_str(), feature.ordinal))
-                .is_some()
-            {
-                findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: format!("sketch `{}` has multiple owning features", sketch.0),
-                    entity: Some(feature.id.0.clone()),
-                });
-            }
+            findings.push(Finding {
+                check: Check::ReferentialIntegrity,
+                severity: Severity::Error,
+                message: format!("sketch `{sketch}` has multiple owning features"),
+                entity: Some(feature.id.0.clone()),
+            });
         }
     }
 
     for feature in &ir.model.features {
         let mut profiles = Vec::new();
         let mut paths = Vec::new();
-        match &feature.definition {
+        let definition = match &feature.definition {
+            FeatureDefinition::PostProcess { operation, .. } => operation.as_ref(),
+            definition => definition,
+        };
+        match definition {
             FeatureDefinition::Extrude { profile, .. } => {
+                profiles.push(profile);
+            }
+            FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
                 profiles.push(profile);
             }
             FeatureDefinition::Rib { construction, .. } => {
@@ -2242,62 +4321,263 @@ fn check_feature_sketch_references(
             }
             FeatureDefinition::Revolve { construction, .. } => {
                 profiles.extend(&construction.profile);
+                paths.extend(&construction.axis_reference);
             }
             FeatureDefinition::Sweep { profile, path, .. } => {
                 profiles.extend(profile);
                 paths.extend(path);
             }
+            FeatureDefinition::HelicalSweep { construction, .. } => {
+                profiles.push(&construction.profile);
+            }
             FeatureDefinition::Loft {
-                profiles: sections,
+                sections,
                 guides,
+                centerline,
                 ..
             } => {
-                profiles.extend(sections);
+                profiles.extend(sections.iter().filter_map(|section| match section {
+                    crate::features::LoftSection::Profile(profile) => Some(profile),
+                    crate::features::LoftSection::Point(_) => None,
+                }));
                 paths.extend(guides);
+                paths.extend(centerline);
             }
-            FeatureDefinition::Pattern {
-                pattern:
-                    PatternKind::CurveDriven {
-                        path: Some(path), ..
-                    },
-                ..
-            } => paths.push(path),
+            FeatureDefinition::Pattern { pattern, .. } => {
+                collect_pattern_paths(pattern, &mut paths);
+            }
             _ => {}
         }
         for profile in profiles {
-            if let ProfileRef::Sketch(sketch) = profile {
-                if !sketches.contains(sketch.0.as_str()) {
-                    ref_error(findings, &feature.id.0, "sketch profile", &sketch.0);
+            if let ProfileRef::SpatialSketchProfiles { sketch, .. }
+            | ProfileRef::SpatialSketchSelection { sketch, .. } = profile
+            {
+                if !matches!(
+                    feature.definition,
+                    FeatureDefinition::Extrude { .. } | FeatureDefinition::Loft { .. }
+                ) {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "spatial sketch profiles are only supported by extrude and loft features",
+                    );
+                }
+                if !spatial_sketches.contains(sketch.0.as_str()) {
+                    ref_error(findings, &feature.id.0, "spatial sketch profile", &sketch.0);
                 } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
                     if *ordinal >= feature.ordinal {
                         findings.push(Finding {
                             check: Check::ReferentialIntegrity,
                             severity: Severity::Error,
                             message: format!(
-                                "sketch owner `{owner}` does not precede its profile consumer"
+                                "spatial sketch owner `{owner}` does not precede its profile consumer"
                             ),
                             entity: Some(feature.id.0.clone()),
                         });
                     }
                 }
+                match profile {
+                    ProfileRef::SpatialSketchProfiles { profiles, .. } => {
+                        let profile_count = ir
+                            .model
+                            .spatial_sketches
+                            .iter()
+                            .find(|candidate| candidate.id == *sketch)
+                            .map_or(0, |sketch| sketch.profiles.len());
+                        let unique = profiles.iter().copied().collect::<HashSet<_>>();
+                        if profiles.is_empty()
+                            || unique.len() != profiles.len()
+                            || profiles
+                                .iter()
+                                .any(|index| *index as usize >= profile_count)
+                        {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "spatial sketch profile indices are empty, repeated, or out of range",
+                            );
+                        }
+                    }
+                    ProfileRef::SpatialSketchSelection { selections, .. }
+                        if selections.is_empty()
+                            || selections.iter().any(String::is_empty)
+                            || selections.iter().collect::<HashSet<_>>().len()
+                                != selections.len() =>
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "native spatial sketch profile selections are empty or repeated",
+                        );
+                    }
+                    ProfileRef::SpatialSketchSelection { .. } => {}
+                    _ => unreachable!(),
+                }
+                continue;
+            }
+            let sketch = match profile {
+                ProfileRef::Sketch(sketch)
+                | ProfileRef::SketchProfiles { sketch, .. }
+                | ProfileRef::SketchRegions { sketch, .. }
+                | ProfileRef::SketchSelection { sketch, .. } => sketch,
+                ProfileRef::Native(_)
+                | ProfileRef::Unresolved(_)
+                | ProfileRef::Feature(_)
+                | ProfileRef::Generated { .. }
+                | ProfileRef::SpatialSketchProfiles { .. }
+                | ProfileRef::SpatialSketchSelection { .. }
+                | ProfileRef::HistoricalFaces { .. }
+                | ProfileRef::Faces(_) => continue,
+            };
+            if !sketches.contains(sketch.0.as_str()) {
+                ref_error(findings, &feature.id.0, "sketch profile", &sketch.0);
+            } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
+                if *ordinal >= feature.ordinal {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "sketch owner `{owner}` does not precede its profile consumer"
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    });
+                }
+            }
+            match profile {
+                ProfileRef::SketchProfiles { profiles, .. } => {
+                    let sketch_profile_count = ir
+                        .model
+                        .sketches
+                        .iter()
+                        .find(|candidate| candidate.id == *sketch)
+                        .map_or(0, |sketch| sketch.profiles.len());
+                    let unique = profiles.iter().copied().collect::<HashSet<_>>();
+                    if profiles.is_empty()
+                        || unique.len() != profiles.len()
+                        || profiles
+                            .iter()
+                            .any(|index| *index as usize >= sketch_profile_count)
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "sketch profile indices are empty, repeated, or out of range",
+                        );
+                    }
+                }
+                ProfileRef::SketchRegions { regions, .. } => {
+                    let selected_sketch = ir
+                        .model
+                        .sketches
+                        .iter()
+                        .find(|candidate| candidate.id == *sketch);
+                    let sketch_profile_count =
+                        selected_sketch.map_or(0, |sketch| sketch.profiles.len());
+                    let duplicate_regions = regions.iter().enumerate().any(|(index, region)| {
+                        regions.iter().skip(index + 1).any(|other| other == region)
+                    });
+                    let invalid = regions.is_empty()
+                        || duplicate_regions
+                        || regions.iter().any(|region| match region {
+                            crate::features::SketchProfileRegion::Loops { outer, holes } => {
+                                let unique_holes = holes.iter().copied().collect::<HashSet<_>>();
+                                *outer as usize >= sketch_profile_count
+                                    || unique_holes.len() != holes.len()
+                                    || unique_holes.contains(outer)
+                                    || unique_holes
+                                        .iter()
+                                        .any(|index| *index as usize >= sketch_profile_count)
+                            }
+                            crate::features::SketchProfileRegion::Trimmed {
+                                outer_boundary,
+                                hole_boundaries,
+                            } => {
+                                let valid_ring =
+                                    |ring: &[crate::features::SketchProfileBoundaryUse]| {
+                                        !ring.is_empty()
+                                            && ring.iter().all(|use_| {
+                                                use_.parameter_range[0].is_finite()
+                                                    && use_.parameter_range[1].is_finite()
+                                                    && use_.parameter_range[0]
+                                                        != use_.parameter_range[1]
+                                                    && ir.model.sketch_entities.iter().any(
+                                                        |entity| {
+                                                            entity.id == use_.entity
+                                                                && entity.sketch == *sketch
+                                                        },
+                                                    )
+                                            })
+                                    };
+                                !valid_ring(outer_boundary)
+                                    || hole_boundaries.iter().any(|ring| !valid_ring(ring))
+                            }
+                        });
+                    if invalid {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "sketch regions have empty, repeated, invalid, or out-of-range boundaries",
+                        );
+                    }
+                }
+                ProfileRef::SketchSelection { selections, .. }
+                    if selections.is_empty()
+                        || selections.iter().any(String::is_empty)
+                        || selections.iter().collect::<HashSet<_>>().len() != selections.len() =>
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "native sketch profile selections are empty or repeated",
+                    );
+                }
+                ProfileRef::Native(_)
+                | ProfileRef::Unresolved(_)
+                | ProfileRef::Feature(_)
+                | ProfileRef::Generated { .. }
+                | ProfileRef::Sketch(_)
+                | ProfileRef::SketchSelection { .. }
+                | ProfileRef::SpatialSketchProfiles { .. }
+                | ProfileRef::SpatialSketchSelection { .. }
+                | ProfileRef::HistoricalFaces { .. }
+                | ProfileRef::Faces(_) => {}
             }
         }
         for path in paths {
-            if let PathRef::Sketch(sketch) = path {
-                if !sketches.contains(sketch.0.as_str()) {
-                    ref_error(findings, &feature.id.0, "sketch path", &sketch.0);
-                } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
-                    if *ordinal >= feature.ordinal {
-                        findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
-                                "sketch owner `{owner}` does not precede its path consumer"
-                            ),
-                            entity: Some(feature.id.0.clone()),
-                        });
-                    }
+            let (sketch, known_sketches, description, selections) = match path {
+                PathRef::Sketch(sketch) => (sketch.0.as_str(), sketches, "sketch path", None),
+                PathRef::SpatialSketchSelection { sketch, selections } => (
+                    sketch.0.as_str(),
+                    &spatial_sketches,
+                    "spatial sketch path",
+                    Some(selections),
+                ),
+                _ => continue,
+            };
+            if !known_sketches.contains(sketch) {
+                ref_error(findings, &feature.id.0, description, sketch);
+            } else if let Some((owner, ordinal)) = owners.get(sketch) {
+                if *ordinal >= feature.ordinal {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "sketch owner `{owner}` does not precede its path consumer"
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    });
                 }
+            }
+            if selections.is_some_and(|selections| {
+                selections.is_empty()
+                    || selections.iter().any(String::is_empty)
+                    || selections.iter().collect::<HashSet<_>>().len() != selections.len()
+            }) {
+                feature_geometry_error(
+                    findings,
+                    feature,
+                    "native spatial sketch path selections are empty or repeated",
+                );
             }
         }
     }
@@ -2320,26 +4600,42 @@ pub(super) fn check_loops(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|c| (c.id.0.as_str(), c))
         .collect();
 
+    for face in &ir.model.faces {
+        let outer_count = face
+            .loops
+            .iter()
+            .filter_map(|id| ir.model.loops.iter().find(|loop_| loop_.id == *id))
+            .filter(|loop_| loop_.boundary_role == crate::topology::LoopBoundaryRole::Outer)
+            .count();
+        if outer_count > 1 {
+            findings.push(Finding {
+                check: Check::LoopClosure,
+                severity: Severity::Error,
+                message: "face has more than one explicit outer loop".into(),
+                entity: Some(face.id.0.clone()),
+            });
+        }
+    }
+
     for lp in &ir.model.loops {
-        if lp.coedges.is_empty() && lp.vertex.is_none() {
+        let vertex_only =
+            lp.coedges.is_empty() && lp.vertex_uses.len() == 1 && lp.vertex_uses[0].after.is_none();
+        let edge_loop = !lp.coedges.is_empty()
+            && lp.vertex_uses.iter().all(|use_| {
+                use_.after
+                    .as_ref()
+                    .is_some_and(|after| lp.coedges.contains(after))
+            });
+        if !vertex_only && !edge_loop {
             findings.push(Finding {
                 check: Check::LoopClosure,
                 severity: Severity::Error,
-                message: "loop has neither coedges nor a singular vertex".into(),
+                message: "loop must contain a coedge ring with anchored vertex uses or one unanchored vertex use".into(),
                 entity: Some(lp.id.0.clone()),
             });
             continue;
         }
-        if !lp.coedges.is_empty() && lp.vertex.is_some() {
-            findings.push(Finding {
-                check: Check::LoopClosure,
-                severity: Severity::Error,
-                message: "loop has both coedges and a singular vertex".into(),
-                entity: Some(lp.id.0.clone()),
-            });
-            continue;
-        }
-        if lp.vertex.is_some() {
+        if lp.coedges.is_empty() {
             continue;
         }
         // Walk the `next` chain from the first listed coedge and confirm it is a
@@ -2448,7 +4744,7 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .loops
         .iter()
-        .filter_map(|loop_| loop_.vertex.as_ref().map(|vertex| vertex.0.as_str()))
+        .flat_map(|loop_| loop_.vertex_uses.iter().map(|use_| use_.vertex.0.as_str()))
         .collect::<HashSet<_>>();
     let mut wire_owners = HashMap::<&str, usize>::new();
     let mut free_owners = HashMap::<&str, usize>::new();
@@ -2540,6 +4836,74 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
             })
         {
             wire_error(findings, &body.id.0, "wire body contains faces");
+        }
+    }
+}
+
+pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let faces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.0.as_str(), face))
+        .collect::<HashMap<_, _>>();
+    let loop_faces = ir
+        .model
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.0.as_str(), loop_.face.0.as_str()))
+        .collect::<HashMap<_, _>>();
+    let mut faces_by_edge = HashMap::<&str, HashSet<&str>>::new();
+    for coedge in &ir.model.coedges {
+        let Some(face) = loop_faces.get(coedge.owner_loop.0.as_str()) else {
+            continue;
+        };
+        faces_by_edge
+            .entry(coedge.edge.0.as_str())
+            .or_default()
+            .insert(*face);
+    }
+    let mut neighbors = HashMap::<&str, HashSet<&str>>::new();
+    for edge_faces in faces_by_edge.values() {
+        for &face in edge_faces {
+            neighbors
+                .entry(face)
+                .or_default()
+                .extend(edge_faces.iter().copied().filter(|other| *other != face));
+        }
+    }
+
+    for shell in &ir.model.shells {
+        if shell.faces.len() < 2
+            || shell.faces.iter().any(|face| {
+                faces
+                    .get(face.0.as_str())
+                    .is_none_or(|face| face.loops.is_empty())
+            })
+        {
+            continue;
+        }
+        let owned = shell
+            .faces
+            .iter()
+            .map(|face| face.0.as_str())
+            .collect::<HashSet<_>>();
+        let mut reached = HashSet::from([shell.faces[0].0.as_str()]);
+        let mut pending = vec![shell.faces[0].0.as_str()];
+        while let Some(face) = pending.pop() {
+            for &neighbor in neighbors.get(face).into_iter().flatten() {
+                if owned.contains(neighbor) && reached.insert(neighbor) {
+                    pending.push(neighbor);
+                }
+            }
+        }
+        if reached.len() != owned.len() {
+            findings.push(Finding {
+                check: Check::ShellTopology,
+                severity: Severity::Error,
+                message: "shell faces are disconnected through shared edges".into(),
+                entity: Some(shell.id.0.clone()),
+            });
         }
     }
 }

@@ -1,14 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent polyedge-reference construction decoding.
+#![deny(clippy::disallowed_methods)]
 
 use std::ops::Range;
 
-use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::View;
+
+use crate::mesh::MeshExpand;
+
+use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::objects::parse_class_wrapper;
-use crate::wire::Uuid;
+use crate::wire::{ExactVec, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const ITEM_CAP: usize = 1 << 20;
+
+/// Minimum on-disk footprint of one polyedge segment, in bytes, used as the
+/// `counted` element width so `segment_count` is proved against a floor that
+/// reflects a segment's real size rather than a one-byte element. Each segment
+/// body reads a fixed 97-byte field layout (two `i32` + `uuid` + two `i32` +
+/// five 16-byte intervals + one `bool`, see [`segment`]) and is additionally
+/// wrapped in an anonymous chunk header, so 97 is a strict lower bound on the
+/// bytes each segment consumes from the record body.
+const MIN_SEGMENT_BYTES: usize = 97;
 pub(crate) const CURVE_CLASS: Uuid = Uuid::from_canonical([
     0x39, 0xff, 0x3d, 0xd3, 0xfe, 0x0f, 0x48, 0x07, 0x9d, 0x59, 0x18, 0x5f, 0x0d, 0x73, 0xc0, 0xe4,
 ]);
@@ -40,26 +55,81 @@ fn malformed(offset: usize, message: impl Into<String>) -> FramingError {
     }
 }
 
-fn count(reader: &mut BoundedReader<'_>, width: usize) -> Result<usize, FramingError> {
-    let offset = reader.position();
-    let count = reader.i32()?;
-    checked_count_bytes(count, width, reader.remaining(), ITEM_CAP, offset)?;
-    usize::try_from(count).map_err(|_| FramingError::Overflow { offset })
+fn refused(offset: usize, error: &CodecError) -> FramingError {
+    malformed(offset, format!("polyedge allocation refused: {error}"))
 }
 
-fn interval(reader: &mut BoundedReader<'_>) -> Result<[f64; 2], FramingError> {
-    let value = [reader.f64()?, reader.f64()?];
+fn req_u8(view: &mut View<'_>) -> Result<u8, FramingError> {
+    let offset = view.position();
+    view.req_u8()
+        .map_err(|_| malformed(offset, "polyedge record truncated"))
+}
+
+fn req_i32(view: &mut View<'_>) -> Result<i32, FramingError> {
+    let offset = view.position();
+    view.req_i32_le()
+        .map_err(|_| malformed(offset, "polyedge record truncated"))
+}
+
+fn req_f64(view: &mut View<'_>) -> Result<f64, FramingError> {
+    let offset = view.position();
+    view.req_f64_le()
+        .map_err(|_| malformed(offset, "polyedge record truncated"))
+}
+
+fn req_uuid(view: &mut View<'_>) -> Result<Uuid, FramingError> {
+    let offset = view.position();
+    let bytes = view
+        .req_take(16)
+        .map_err(|_| malformed(offset, "polyedge record truncated"))?;
+    Ok(Uuid::from_wire(bytes.try_into().expect("length checked")))
+}
+
+fn req_bool(view: &mut View<'_>) -> Result<bool, FramingError> {
+    let offset = view.position();
+    match req_u8(view)? {
+        0 => Ok(false),
+        1 => Ok(true),
+        value => Err(malformed(
+            offset,
+            format!("boolean value {value} is not 0 or 1"),
+        )),
+    }
+}
+
+/// Reads a committed 32-bit count and proves it against the remaining window as
+/// a [`BoundedCount`] over `width`-byte elements under the codec-local
+/// `ITEM_CAP`.
+///
+/// [`BoundedCount`]: cadmpeg_ir::decode::BoundedCount
+fn counted(
+    view: &mut View<'_>,
+    width: usize,
+) -> Result<(usize, cadmpeg_ir::decode::BoundedCount), FramingError> {
+    let offset = view.position();
+    let value = req_i32(view)?;
+    let count = usize::try_from(value).map_err(|_| FramingError::Overflow { offset })?;
+    if count > ITEM_CAP {
+        return Err(malformed(offset, "polyedge count exceeds cap"));
+    }
+    let bound = view
+        .counted(count as u64, width)
+        .ok_or_else(|| malformed(offset, "polyedge count exceeds remaining window"))?;
+    Ok((count, bound))
+}
+
+fn interval(view: &mut View<'_>) -> Result<[f64; 2], FramingError> {
+    let offset = view.position();
+    let value = [req_f64(view)?, req_f64(view)?];
     if value.iter().all(|value| value.is_finite()) {
         Ok(value)
     } else {
-        Err(malformed(
-            reader.position() - 16,
-            "polyedge interval is not finite",
-        ))
+        Err(malformed(offset, "polyedge interval is not finite"))
     }
 }
 
 fn segment(
+    root: View<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -68,23 +138,25 @@ fn segment(
     if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != range.end {
         return Err(malformed(range.start, "invalid polyedge-segment framing"));
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-    if reader.i32()? != 1 || reader.i32()? != 0 {
+    let mut body = root
+        .child(chunk.body.start, chunk.body.end)
+        .ok_or_else(|| malformed(chunk.body.start, "polyedge segment body out of range"))?;
+    if req_i32(&mut body)? != 1 || req_i32(&mut body)? != 0 {
         return Err(malformed(
             chunk.body.start,
             "unsupported polyedge-segment version",
         ));
     }
-    let object_id = Uuid::from_wire(reader.array()?);
-    let component = [reader.i32()?, reader.i32()?];
-    let edge_domain = interval(&mut reader)?;
-    let trim_domain = interval(&mut reader)?;
-    let reversed = reader.bool()?;
-    let domain = interval(&mut reader)?;
-    let proxy_domain = interval(&mut reader)?;
-    if reader.remaining() != 0 {
+    let object_id = req_uuid(&mut body)?;
+    let component = [req_i32(&mut body)?, req_i32(&mut body)?];
+    let edge_domain = interval(&mut body)?;
+    let trim_domain = interval(&mut body)?;
+    let reversed = req_bool(&mut body)?;
+    let domain = interval(&mut body)?;
+    let proxy_domain = interval(&mut body)?;
+    if body.remaining() != 0 {
         return Err(malformed(
-            reader.position(),
+            body.position(),
             "polyedge segment has trailing bytes",
         ));
     }
@@ -100,47 +172,59 @@ fn segment(
 }
 
 pub(crate) fn decode(
-    data: &[u8],
+    expand: MeshExpand<'_>,
     range: Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<PolyEdge, FramingError> {
-    let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    let version = reader.u8()?;
+    let data = expand.data();
+    let mut body = expand
+        .root()
+        .child(range.start, range.end)
+        .ok_or_else(|| malformed(range.start, "polyedge body out of range"))?;
+
+    let version = req_u8(&mut body)?;
     if version >> 4 != 1 {
         return Err(malformed(range.start, "unsupported polyedge-curve version"));
     }
-    let segment_count = count(&mut reader, 1)?;
+    let (segment_count, segment_bound) = counted(&mut body, MIN_SEGMENT_BYTES)?;
     if segment_count == 0 {
-        return Err(malformed(
-            reader.position(),
-            "polyedge curve has no segments",
-        ));
+        return Err(malformed(body.position(), "polyedge curve has no segments"));
     }
-    reader.i32()?;
-    reader.i32()?;
-    reader.take(48)?;
-    let parameter_count = count(&mut reader, 8)?;
+    req_i32(&mut body)?;
+    req_i32(&mut body)?;
+    body.skip(48)
+        .ok_or_else(|| malformed(body.position(), "polyedge record truncated"))?;
+    let (parameter_count, parameter_bound) = counted(&mut body, 8)?;
     if parameter_count != segment_count + 1 {
         return Err(malformed(
-            reader.position(),
+            body.position(),
             "polyedge parameter count mismatch",
         ));
     }
-    let mut parameters = Vec::with_capacity(parameter_count);
+
+    let mut reserved =
+        ExactVec::<f64>::new(parameter_bound).map_err(|error| refused(body.position(), &error))?;
+    let mut previous: Option<f64> = None;
     for _ in 0..parameter_count {
-        let value = reader.f64()?;
-        if !value.is_finite() || parameters.last().is_some_and(|previous| value <= *previous) {
-            return Err(malformed(
-                reader.position() - 8,
-                "invalid polyedge parameter",
-            ));
+        let offset = body.position();
+        let value = req_f64(&mut body)?;
+        if !value.is_finite() || previous.is_some_and(|last| value <= last) {
+            return Err(malformed(offset, "invalid polyedge parameter"));
         }
-        parameters.push(value);
+        previous = Some(value);
+        reserved
+            .push(value)
+            .map_err(|error| refused(body.position(), &error))?;
     }
-    let mut segments = Vec::new();
+    let parameters = reserved
+        .finish()
+        .map_err(|error| refused(body.position(), &error))?;
+
+    let mut segments = ExactVec::<Segment>::new(segment_bound)
+        .map_err(|error| refused(body.position(), &error))?;
     for _ in 0..segment_count {
-        let start = reader.position();
-        let wrapper = chunk_at(data, start, reader.end(), archive, false)?;
+        let start = body.position();
+        let wrapper = chunk_at(data, start, range.end, archive, false)?;
         let class =
             parse_class_wrapper(data, start..wrapper.next_offset, archive, &mut Vec::new())?;
         if class.class_uuid != SEGMENT_CLASS {
@@ -149,15 +233,26 @@ pub(crate) fn decode(
                 "polyedge child is not a persistent segment",
             ));
         }
-        segments.push(segment(data, class.class_data_range, archive)?);
-        reader.skip(wrapper.next_offset - start)?;
+        segments
+            .push(segment(
+                expand.root(),
+                data,
+                class.class_data_range,
+                archive,
+            )?)
+            .map_err(|error| refused(body.position(), &error))?;
+        body.skip(wrapper.next_offset - start)
+            .ok_or_else(|| malformed(body.position(), "polyedge segment overruns body"))?;
     }
-    if reader.remaining() != 0 {
+    if body.remaining() != 0 {
         return Err(malformed(
-            reader.position(),
+            body.position(),
             "polyedge curve has trailing bytes",
         ));
     }
+    let segments = segments
+        .finish()
+        .map_err(|error| refused(body.position(), &error))?;
     Ok(PolyEdge {
         parameters,
         segments,
@@ -193,8 +288,7 @@ mod tests {
     use super::*;
     use crate::archive_test_support::{class_wrapper, crc_chunk};
 
-    #[test]
-    fn decodes_persistent_polyedge_segment_construction() {
+    fn polyedge_payload() -> Vec<u8> {
         let mut segment = 1_i32.to_le_bytes().to_vec();
         segment.extend(0_i32.to_le_bytes());
         segment.extend([0_u8; 15]);
@@ -223,8 +317,16 @@ mod tests {
         payload.extend(0.0_f64.to_le_bytes());
         payload.extend(10.0_f64.to_le_bytes());
         payload.extend(class_wrapper(segment_class, &segment));
+        payload
+    }
 
-        let decoded = decode(&payload, 0..payload.len(), ArchiveVersion::V8).unwrap();
+    #[test]
+    fn decodes_persistent_polyedge_segment_construction() {
+        let payload = polyedge_payload();
+        let decoded = crate::decode::with_expand_bytes(&payload, |expand| {
+            decode(expand, 0..payload.len(), ArchiveVersion::V8)
+        })
+        .expect("required invariant");
         assert_eq!(decoded.parameters, [0.0, 10.0]);
         assert_eq!(decoded.segments[0].component, [2, 17]);
         assert_eq!(decoded.segments[0].edge_domain, [0.0, 4.0]);
@@ -232,5 +334,19 @@ mod tests {
         assert!(decoded.segments[0].reversed);
         assert_eq!(decoded.segments[0].domain, [10.0, 20.0]);
         assert_eq!(decoded.segments[0].proxy_domain, [2.0, 6.0]);
+    }
+
+    #[test]
+    fn truncating_the_segment_child_is_rejected_at_the_record_boundary() {
+        // Drop the trailing bytes of the child segment record so the
+        // count-framed segment loop runs past the body's proven window.
+        let mut payload = polyedge_payload();
+        payload.truncate(payload.len() - 16);
+        assert!(crate::decode::with_expand_bytes(&payload, |expand| decode(
+            expand,
+            0..payload.len(),
+            ArchiveVersion::V8
+        ))
+        .is_err());
     }
 }

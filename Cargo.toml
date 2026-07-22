@@ -5,11 +5,13 @@ members = [
   "crates/cadmpeg",
   "crates/cadmpeg-ir",
   "crates/cadmpeg-codec-f3d",
+  "crates/cadmpeg-codec-freecad",
   "crates/cadmpeg-codec-sldprt",
   "crates/cadmpeg-codec-catia",
   "crates/cadmpeg-codec-creo",
   "crates/cadmpeg-codec-nx",
   "crates/cadmpeg-codec-rhino",
+  "crates/cadmpeg-codec-iges",
   "crates/cadmpeg-step",
 ]
 # cadmpeg-fuzz is intentionally excluded: cargo-fuzz targets link libFuzzer and
@@ -29,18 +31,22 @@ rust-version = "1.88"
 [workspace.dependencies]
 cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.2.0" }
 cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.2.0" }
+cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.2.0" }
 cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.2.0" }
 cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.2.0" }
 cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.2.0" }
 cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.2.0" }
 cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.2.0" }
+cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.2.0" }
 cadmpeg-step = { path = "crates/cadmpeg-step", version = "0.2.0" }
 
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
+serde-value = "0.7"
 schemars = "1.2"
 thiserror = "2"
 sha2 = "0.11"
+memchr = "2"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
@@ -48,6 +54,7 @@ zip = { version = "8", default-features = false, features = ["deflate", "zstd"] 
 flate2 = "1"
 crc32fast = "1"
 roxmltree = "0.21"
+regex = "1.13"
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
@@ -99,6 +106,14 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"
 
+# `clippy.toml` lists growth methods
+# (`Vec::with_capacity`, `reserve`, `resize`, `repeat_n`, ...) that a decoder
+# must not call on an unfloored, attacker-controlled count. The workspace
+# workspace setting stays `allow` because some encoders and decoders use
+# these methods with trusted counts. Hardened decoder modules re-enable the
+# lint with `#![deny(clippy::disallowed_methods)]`.
+disallowed_methods = "allow"
+
 # Restriction picks: fail loudly instead of silently panicking or shipping
 # debug scaffolding. Use `expect` with a message where infallibility is a
 # real invariant; `unwrap` is reserved for tests.
@@ -107,15 +122,6 @@ dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"
 
-# Decoder hardening: raw slice indexing and unchecked offset arithmetic on
-# untrusted payloads are the recurring panic/DoS class across codecs. The
-# end state is these lints denied workspace-wide, with every decoder
-# reading through `cadmpeg_ir::cursor::Cursor` / `cadmpeg_ir::{le, be}`
-# and every declared element count passing
-# `cadmpeg_ir::cursor::bounded_len` (or `Cursor::counted`) before any
-# allocation. Existing decoders are still wall-to-wall indexing, so the
-# workspace cannot deny the lints yet; until that migration lands, every
-# new decoder module carries
-# `#![warn(clippy::indexing_slicing, clippy::arithmetic_side_effects)]`,
-# and work touching an existing decoder should convert the code it
-# touches rather than extend the raw-indexing style.
+# Decoder modules deny these allocation methods where counts originate in
+# untrusted payloads. Call sites must prove a physical byte floor before
+# reserving or growing storage from a declared count.

@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::le::u32_at as u32_le;
 
@@ -33,6 +33,8 @@ pub mod role {
     pub const DIRECTORY_ENTRY: &str = "directory-entry";
     /// A cache-cell section-index grid entry (not a compressed payload).
     pub const CACHE_CELL: &str = "cache-cell";
+    /// A named stream in a Compound File Binary container.
+    pub const COMPOUND_STREAM: &str = "compound-stream";
 }
 
 /// Classify a decompressed block payload by signature.
@@ -155,6 +157,25 @@ pub struct CacheCell {
     pub name: String,
 }
 
+/// One named stream in a Compound File Binary container.
+#[derive(Debug, Clone)]
+pub struct CompoundStream {
+    /// Storage-qualified stream path.
+    pub path: String,
+    /// Unique directory entry identifier.
+    pub directory_id: u32,
+    /// First regular or mini sector identifier.
+    pub start_sector: u32,
+    /// Exact stream bytes.
+    pub payload: Vec<u8>,
+    /// Inflated semantic bytes when the stream uses the `__ZLB` wrapper.
+    pub decoded_payload: Option<Vec<u8>>,
+    /// Every Parasolid stream carried by this compound stream.
+    pub ps_streams: Vec<Vec<u8>>,
+    /// Raw compound-stream offset of each entry in `ps_streams`.
+    pub ps_stream_offsets: Vec<usize>,
+}
+
 /// Complete result of an outer-container scan.
 pub struct ContainerScan {
     /// Complete source image for exact passthrough writing.
@@ -167,15 +188,94 @@ pub struct ContainerScan {
     pub directory: Vec<DirectoryEntry>,
     /// Cache-cell grid entries, in file order.
     pub cache_cells: Vec<CacheCell>,
+    /// Named streams when the source uses the Compound File Binary envelope.
+    pub compound_streams: Vec<CompoundStream>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Section<'a> {
+    Block(&'a Block),
+    Compound(&'a CompoundStream),
+}
+
+impl<'a> Section<'a> {
+    pub(crate) fn name(self) -> Option<&'a str> {
+        match self {
+            Self::Block(block) => block.section.as_deref(),
+            Self::Compound(stream) => Some(&stream.path),
+        }
+    }
+
+    pub(crate) fn display_name(self) -> String {
+        self.name().map_or_else(
+            || match self {
+                Self::Block(block) => format!("block@{}", block.offset),
+                Self::Compound(_) => unreachable!("compound streams are named"),
+            },
+            str::to_string,
+        )
+    }
+
+    pub(crate) fn ordinal(self) -> usize {
+        match self {
+            Self::Block(block) => block.offset,
+            Self::Compound(stream) => stream.directory_id as usize,
+        }
+    }
+
+    pub(crate) fn native_id(self) -> String {
+        match self {
+            Self::Block(block) => format!("sldprt:file:block#{}", block.offset),
+            Self::Compound(stream) => {
+                format!("sldprt:file:compound-stream#{}", stream.directory_id)
+            }
+        }
+    }
+
+    pub(crate) fn payload(self) -> &'a [u8] {
+        match self {
+            Self::Block(block) => &block.payload,
+            Self::Compound(stream) => stream.decoded_payload.as_deref().unwrap_or(&stream.payload),
+        }
+    }
+
+    pub(crate) fn ps_streams(self) -> &'a [Vec<u8>] {
+        match self {
+            Self::Block(block) => &block.ps_streams,
+            Self::Compound(stream) => &stream.ps_streams,
+        }
+    }
+
+    pub(crate) fn ps_stream_offsets(self) -> &'a [usize] {
+        match self {
+            Self::Block(block) => &block.ps_stream_offsets,
+            Self::Compound(stream) => &stream.ps_stream_offsets,
+        }
+    }
+}
+
+impl ContainerScan {
+    pub(crate) fn sections(&self) -> impl Iterator<Item = Section<'_>> {
+        self.blocks
+            .iter()
+            .map(Section::Block)
+            .chain(self.compound_streams.iter().map(Section::Compound))
+    }
 }
 
 /// The outer header magic length (`file_id` + `version`).
 const OUTER_HEADER_LEN: usize = 8;
+const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 
 /// Test whether a prefix contains the container marker after its outer header.
 ///
 /// This structural check does not validate block framing or CRC-32.
 pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
+    if prefix.starts_with(&COMPOUND_FILE_MAGIC)
+        && contains_utf16le_ascii(prefix, b"ISolidWorksInformation")
+    {
+        return true;
+    }
     if prefix.len() < OUTER_HEADER_LEN + MARKER.len() {
         return false;
     }
@@ -184,18 +284,12 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
         .any(|w| w == MARKER)
 }
 
-/// Read and scan a complete `.sldprt` stream.
-///
-/// Block candidates must inflate to their declared size and match their stored
-/// CRC-32. Cache cells and directory entries must satisfy their framing
-/// invariants. Unclassified marker occurrences are ignored.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
-    reader
-        .seek(std::io::SeekFrom::Start(0))
-        .map_err(CodecError::Io)?;
-    let mut bytes = Vec::new();
-    reader.read_to_end(&mut bytes).map_err(CodecError::Io)?;
-    Ok(scan_bytes(&bytes))
+fn contains_utf16le_ascii(haystack: &[u8], text: &[u8]) -> bool {
+    let mut encoded = Vec::with_capacity(text.len() * 2);
+    for byte in text {
+        encoded.extend_from_slice(&[*byte, 0]);
+    }
+    contains(haystack, &encoded)
 }
 
 /// Scan an in-memory `.sldprt` image.
@@ -203,6 +297,37 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
 /// Truncated input produces a scan containing every structure that could be
 /// validated; missing outer-header bytes yield version zero.
 pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
+    if bytes.starts_with(&COMPOUND_FILE_MAGIC) {
+        let compound_streams = crate::compound::streams(bytes)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|stream| {
+                let located_streams = crate::parasolid::extract_streams_with_offsets(&stream.bytes);
+                let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
+                let ps_streams = located_streams
+                    .into_iter()
+                    .map(|(_, payload)| payload)
+                    .collect();
+                CompoundStream {
+                    path: stream.path,
+                    directory_id: stream.directory_id,
+                    start_sector: stream.start_sector,
+                    payload: stream.bytes,
+                    decoded_payload: stream.decoded_bytes,
+                    ps_streams,
+                    ps_stream_offsets,
+                }
+            })
+            .collect();
+        return ContainerScan {
+            source_image: bytes.to_vec(),
+            version: 0,
+            blocks: Vec::new(),
+            directory: Vec::new(),
+            cache_cells: Vec::new(),
+            compound_streams,
+        };
+    }
     let version = cadmpeg_ir::be::u32_at(bytes, 4).unwrap_or(0);
 
     let mut blocks = Vec::new();
@@ -236,6 +361,7 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
         blocks,
         directory,
         cache_cells,
+        compound_streams: Vec::new(),
     }
 }
 
@@ -457,22 +583,37 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         });
     }
 
+    for stream in &scan.compound_streams {
+        let mut attributes = BTreeMap::new();
+        attributes.insert("start_sector".to_string(), stream.start_sector.to_string());
+        attributes.insert("sha256".to_string(), sha256_hex(&stream.payload));
+        attributes.insert(
+            "family".to_string(),
+            payload_family(&stream.payload).to_string(),
+        );
+        entries.push(ContainerEntry {
+            name: stream.path.clone(),
+            role: role::COMPOUND_STREAM.to_string(),
+            compression: "compound-file".to_string(),
+            compressed_size: stream.payload.len() as u64,
+            uncompressed_size: stream.payload.len() as u64,
+            attributes,
+        });
+    }
+
     let mut notes = vec![format!(
         "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \
-         entry/entries, {} cache-cell(s)",
+         entry/entries, {} cache-cell(s), {} compound stream(s)",
         scan.version,
         scan.blocks.len(),
         scan.directory.len(),
-        scan.cache_cells.len()
+        scan.cache_cells.len(),
+        scan.compound_streams.len()
     )];
-    match select_active_parasolid(scan) {
-        Some((b, sch)) => notes.push(format!(
+    match active_parasolid_summary(scan) {
+        Some((name, size, sch)) => notes.push(format!(
             "active Parasolid B-rep candidate: {} ({} bytes, schema {})",
-            b.section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", b.offset)),
-            b.uncomp_sz,
-            sch.schema
+            name, size, sch.schema
         )),
         None => notes.push(
             "no Parasolid partition/deltas stream located; B-rep decode will be container-only"
@@ -480,17 +621,71 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         ),
     }
     notes.push(
-        "container-level enumeration; run `decode` to locate the Parasolid stream and build the \
-         B-rep graph from its typed topology and analytic carriers"
+        "Parasolid body streams supply the typed topology and analytic carriers used by decode"
             .to_string(),
     );
 
     ContainerSummary {
         format: "sldprt".to_string(),
-        container_kind: "sldprt-blocks".to_string(),
+        container_kind: if scan.compound_streams.is_empty() {
+            "sldprt-blocks"
+        } else {
+            "compound-file-binary"
+        }
+        .to_string(),
         entries,
         notes,
     }
+}
+
+fn active_parasolid_summary(
+    scan: &ContainerScan,
+) -> Option<(String, usize, crate::parasolid::StreamHeader)> {
+    if let Some((block, header)) = select_active_parasolid(scan) {
+        return Some((
+            block
+                .section
+                .clone()
+                .unwrap_or_else(|| format!("block@{}", block.offset)),
+            block.ps_stream.as_ref()?.len(),
+            header,
+        ));
+    }
+    scan.compound_streams
+        .iter()
+        .flat_map(|stream| {
+            stream.ps_streams.iter().filter_map(move |payload| {
+                let header = crate::parasolid::stream_header(payload)?;
+                crate::parasolid::is_body_stream(&header).then_some((
+                    stream.path.clone(),
+                    payload.len(),
+                    header,
+                ))
+            })
+        })
+        .max_by_key(|(_, size, _)| *size)
+}
+
+/// Modeller generation carried by the active Parasolid stream schema.
+pub(crate) fn active_parasolid_modeler_generation(scan: &ContainerScan) -> Option<u32> {
+    let (_, _, header) = active_parasolid_summary(scan)?;
+    parasolid_modeler_generation(&header.schema)
+}
+
+pub(crate) fn parasolid_modeler_generation(schema: &str) -> Option<u32> {
+    let body = schema.strip_prefix("SCH_")?;
+    body.strip_prefix("SW_")
+        .unwrap_or(body)
+        .split('_')
+        .next()?
+        .get(..2)?
+        .parse()
+        .ok()
+}
+
+/// Test whether either outer envelope carries a framed Parasolid body stream.
+pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
+    active_parasolid_summary(scan).is_some()
 }
 
 /// Select the highest-ranked Parasolid B-rep block.
@@ -596,4 +791,22 @@ pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> 
         return partitions.get(position).copied();
     }
     partitions.contains(&position).then_some(position)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parasolid_modeler_generation;
+
+    #[test]
+    fn parasolid_schema_starts_with_the_modeller_generation() {
+        assert_eq!(
+            parasolid_modeler_generation("SCH_3000310_30000_13006"),
+            Some(30)
+        );
+        assert_eq!(
+            parasolid_modeler_generation("SCH_3101284_31100_13006"),
+            Some(31)
+        );
+        assert_eq!(parasolid_modeler_generation("SCH_SW_33103_11000"), Some(33));
+    }
 }

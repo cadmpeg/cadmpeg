@@ -112,7 +112,7 @@ pub(super) fn decode(
             continue;
         }
         let id = OccurrenceId(format!("step:product:occurrence#definition-{definition}"));
-        ir.model.occurrences.push(ProductOccurrence {
+        ir.model.product_occurrences.push(ProductOccurrence {
             id: id.clone(),
             product: product_ir_id(product),
             parent: OccurrenceParent::Root,
@@ -170,13 +170,13 @@ pub(super) fn decode(
                 format!("-instance-{instance}")
             };
             let id = OccurrenceId(format!("step:product:occurrence#{usage_id}{suffix}"));
-            if ir.model.occurrences.len() >= MAX_OCCURRENCES {
+            if ir.model.product_occurrences.len() >= MAX_OCCURRENCES {
                 warnings.push(format!(
                     "assembly occurrence expansion exceeds the {MAX_OCCURRENCES}-occurrence limit"
                 ));
                 break 'expansion;
             }
-            ir.model.occurrences.push(ProductOccurrence {
+            ir.model.product_occurrences.push(ProductOccurrence {
                 id: id.clone(),
                 product: product_ir_id(product),
                 parent: OccurrenceParent::Occurrence {

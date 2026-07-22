@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Retained source records without a typed IR interpretation.
+#![deny(clippy::disallowed_methods)]
 
 use crate::ids::UnknownId;
 use crate::native::NativeRecord;
@@ -7,6 +8,25 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
+
+/// A format-specific product record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NativeUnknownRecord {
+    /// Arena id.
+    pub id: UnknownId,
+    /// Related entity IDs from any document arena.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<String>,
+}
+
+impl From<&UnknownRecord> for NativeUnknownRecord {
+    fn from(record: &UnknownRecord) -> Self {
+        Self {
+            id: record.id.clone(),
+            links: record.links.clone(),
+        }
+    }
+}
 
 /// A recognized source record represented by location, digest, links, and
 /// optional retained bytes.

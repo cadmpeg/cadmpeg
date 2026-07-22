@@ -5,6 +5,8 @@
 use super::*;
 use std::collections::VecDeque;
 
+use crate::geometry::PcurveGeometry;
+
 pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut surfaces = ir
         .model
@@ -18,6 +20,12 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .iter()
         .filter_map(|edge| edge.curve.as_ref().map(|id| id.0.as_str()))
         .collect::<HashSet<_>>();
+    curves.extend(
+        ir.model
+            .coedges
+            .iter()
+            .filter_map(|coedge| coedge.use_curve.as_ref().map(|id| id.0.as_str())),
+    );
     surfaces.extend(
         ir.model
             .surfaces
@@ -36,7 +44,13 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .model
         .coedges
         .iter()
-        .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.as_str()))
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.as_str()))
+        .chain(ir.model.loops.iter().flat_map(|loop_| {
+            loop_
+                .vertex_uses
+                .iter()
+                .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.as_str()))
+        }))
         .collect::<HashSet<_>>();
     let mut points = ir
         .model
@@ -44,6 +58,13 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .iter()
         .map(|vertex| vertex.point.0.as_str())
         .collect::<HashSet<_>>();
+    points.extend(
+        ir.model
+            .points
+            .iter()
+            .filter(|point| point.source_object.is_some())
+            .map(|point| point.id.0.as_str()),
+    );
     for binding in &ir.model.appearance_bindings {
         match &binding.target {
             crate::appearance::AppearanceTarget::Surface(id) => {
@@ -85,6 +106,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::Compound { components, .. } => {
                 surfaces.extend(components.iter().map(|component| component.0.as_str()));
             }
+            ProceduralSurfaceDefinition::SubSurface { support, .. } => {
+                surfaces.insert(&support.0);
+            }
             ProceduralSurfaceDefinition::Taper {
                 support, reference, ..
             } => {
@@ -93,11 +117,15 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             }
             ProceduralSurfaceDefinition::Loft { sections, .. } => {
                 for entry in sections.iter().flat_map(|section| &section.entries) {
-                    curves.insert(&entry.path.curve.0);
+                    if let Some(curve) = &entry.path.curve {
+                        curves.insert(&curve.0);
+                    }
                     curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.0.as_str()));
                     for member in &entry.profile {
                         curves.insert(&member.curve.0);
-                        surfaces.insert(&member.data.surface.0);
+                        if let Some(surface) = &member.data.surface {
+                            surfaces.insert(&surface.0);
+                        }
                     }
                 }
             }
@@ -128,7 +156,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     curves.extend(scale.auxiliaries.iter().map(|curve| curve.0.as_str()));
                     for member in &scale.members {
                         curves.insert(&member.curve.0);
-                        surfaces.insert(&member.data.surface.0);
+                        if let Some(surface) = &member.data.surface {
+                            surfaces.insert(&surface.0);
+                        }
                     }
                 }
             }
@@ -163,7 +193,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     curves.extend(scale.auxiliaries.iter().map(|curve| curve.0.as_str()));
                     for member in &scale.members {
                         curves.insert(&member.curve.0);
-                        surfaces.insert(&member.data.surface.0);
+                        if let Some(surface) = &member.data.surface {
+                            surfaces.insert(&surface.0);
+                        }
                     }
                 }
             }
@@ -189,7 +221,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         curves.insert(&path.0);
                         for profile in profiles {
                             curves.insert(&profile.curve.0);
-                            surfaces.insert(&profile.data.surface.0);
+                            if let Some(surface) = &profile.data.surface {
+                                surfaces.insert(&surface.0);
+                            }
                         }
                     }
                     crate::geometry::SkinSurfaceLayout::Compact {
@@ -204,6 +238,31 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 curves.insert(&construction.parameter_curve.0);
                 for variable in &construction.formula.variables {
                     collect_law_curves(variable, &mut curves);
+                }
+            }
+            ProceduralSurfaceDefinition::Law { construction } => {
+                fn collect_law_curves<'a>(
+                    expression: &'a crate::geometry::LawExpression,
+                    curves: &mut HashSet<&'a str>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            curves.insert(&curve.0);
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                collect_law_curves(operand, curves);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for formula in
+                    std::iter::once(&construction.primary).chain(&construction.additional)
+                {
+                    for variable in &formula.variables {
+                        collect_law_curves(variable, &mut curves);
+                    }
                 }
             }
             ProceduralSurfaceDefinition::Net { construction } => {
@@ -228,11 +287,15 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     .iter()
                     .flat_map(|section| &section.entries)
                 {
-                    curves.insert(&entry.path.curve.0);
+                    if let Some(curve) = &entry.path.curve {
+                        curves.insert(&curve.0);
+                    }
                     curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.0.as_str()));
                     for member in &entry.profile {
                         curves.insert(&member.curve.0);
-                        surfaces.insert(&member.data.surface.0);
+                        if let Some(surface) = &member.data.surface {
+                            surfaces.insert(&surface.0);
+                        }
                     }
                 }
                 for formula in construction.formulas.iter() {
@@ -258,14 +321,63 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             }
             ProceduralSurfaceDefinition::VariableBlend { construction } => {
                 for side in construction.sides.iter() {
-                    surfaces.insert(&side.surface.0);
-                    curves.insert(&side.curve.0);
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                    if let Some(curve) = &side.curve {
+                        curves.insert(&curve.0);
+                    }
                 }
-                curves.extend([
-                    construction.primary_curve.0.as_str(),
-                    construction.secondary_curve.0.as_str(),
-                    construction.post_curve.0.as_str(),
-                ]);
+                curves.insert(construction.slice.0.as_str());
+                curves.extend(
+                    [
+                        construction.secondary_curve.as_ref(),
+                        construction.post_curve.as_ref(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .map(|curve| curve.0.as_str()),
+                );
+            }
+            ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
+                for member in construction
+                    .base_profile
+                    .iter()
+                    .chain(construction.entries.iter().flat_map(|entry| &entry.profile))
+                {
+                    curves.insert(&member.curve.0);
+                    if let Some(surface) = &member.data.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                }
+                for path in std::iter::once(&construction.base_path)
+                    .chain(construction.entries.iter().map(|entry| &entry.path))
+                {
+                    if let Some(curve) = &path.curve {
+                        curves.insert(&curve.0);
+                    }
+                    curves.extend(path.auxiliaries.iter().map(|curve| curve.0.as_str()));
+                }
+                curves.extend(
+                    [
+                        construction.direction_curve.as_ref(),
+                        construction.trailing_curve.as_ref(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .map(|curve| curve.0.as_str()),
+                );
+            }
+            ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
+                for side in construction.sides.iter() {
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                    if let Some(curve) = &side.curve {
+                        curves.insert(&curve.0);
+                    }
+                }
+                curves.insert(construction.center.0.as_str());
             }
             ProceduralSurfaceDefinition::VertexBlend { construction } => {
                 for boundary in &construction.boundaries {
@@ -359,7 +471,8 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::Offset { support, .. } => {
                 surfaces.insert(&support.0);
             }
-            ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
+            ProceduralSurfaceDefinition::Subset { support, .. }
+            | ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
                 surfaces.insert(&support.0);
             }
             ProceduralSurfaceDefinition::Ruled { first, second } => {
@@ -383,11 +496,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 if let Some(native) = native {
                     curves.insert(&native.slice.0);
                     for side in native.sides.iter() {
-                        curves.insert(&side.curve.0);
-                        if let Some(surface) = &side.surface {
-                            surfaces.insert(&surface.0);
+                        if let Some(curve) = &side.curve {
+                            curves.insert(&curve.0);
                         }
-                        if let Some(surface) = &side.exact_support {
+                        if let Some(surface) = &side.surface {
                             surfaces.insert(&surface.0);
                         }
                     }
@@ -397,7 +509,8 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralSurfaceDefinition::Helix { .. }
+            ProceduralSurfaceDefinition::RollingBallJet { .. }
+            | ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
             | ProceduralSurfaceDefinition::DegenerateTorus { .. }
             | ProceduralSurfaceDefinition::Unknown { .. } => {}
@@ -528,11 +641,20 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralCurveDefinition::Offset {
-                source, support, ..
+                source,
+                support,
+                distance_law,
+                ..
             } => {
                 curves.insert(&source.0);
                 if let Some(support) = support {
                     surfaces.insert(&support.0);
+                }
+                if let Some(crate::geometry::CurveOffsetDistanceLaw::Coordinate {
+                    function, ..
+                }) = distance_law
+                {
+                    curves.insert(&function.0);
                 }
             }
             ProceduralCurveDefinition::SpatialOffset { source, .. } => {
@@ -643,13 +765,25 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                 CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
                     // Canonical periodic domain: the start angle wrapped into
                     // one turn, the sweep at most a full turn. An arc crossing
-                    // the seam ends past `τ`.
-                    valid &= (0.0..tau).contains(&start) && end - start <= tau;
+                    // the seam ends past `τ`. A full-period edge retains
+                    // its serialized phase, which may use any equivalent
+                    // angular branch.
+                    let sweep = end - start;
+                    let full_period = (sweep - tau).abs() < 1.0e-9;
+                    valid &= sweep <= tau + 1.0e-9 && (full_period || (0.0..tau).contains(&start));
                 }
                 CurveGeometry::Nurbs(nurbs) => {
-                    if let (Some(first), Some(last)) = (nurbs.knots.first(), nurbs.knots.last()) {
-                        valid &= start >= *first && end <= *last;
-                    }
+                    valid &= crate::eval::nurbs_curve_parameter_domain(nurbs).is_some_and(
+                        |[lower, upper]| {
+                            if nurbs.periodic {
+                                let period = upper - lower;
+                                let tolerance = 1.0e-9_f64.max(period.abs() * 1.0e-9);
+                                end - start <= period + tolerance
+                            } else {
+                                start >= lower && end <= upper
+                            }
+                        },
+                    );
                 }
                 _ => {}
             }
@@ -661,6 +795,66 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                 message: "edge parameter range is outside its canonical carrier domain".into(),
                 entity: Some(edge.id.0.clone()),
             });
+        }
+    }
+    let pcurves = ir
+        .model
+        .pcurves
+        .iter()
+        .map(|pcurve| (pcurve.id.0.as_str(), &pcurve.geometry))
+        .collect::<HashMap<_, _>>();
+    for coedge in &ir.model.coedges {
+        if coedge.use_curve.is_some() != coedge.use_curve_parameter_range.is_some() {
+            findings.push(Finding {
+                check: Check::ParameterDomain,
+                severity: Severity::Error,
+                message: "coedge use curve and parameter range must occur together".into(),
+                entity: Some(coedge.id.0.clone()),
+            });
+        }
+        if let Some([start, end]) = coedge.use_curve_parameter_range {
+            let geometry = coedge
+                .use_curve
+                .as_ref()
+                .and_then(|id| curves.get(id.0.as_str()));
+            let mut valid =
+                start.is_finite() && end.is_finite() && start <= end && geometry.is_some();
+            if let Some(CurveGeometry::Nurbs(nurbs)) = geometry {
+                if let (Some(first), Some(last)) = (nurbs.knots.first(), nurbs.knots.last()) {
+                    valid &= start >= *first && end <= *last;
+                }
+            }
+            if !valid {
+                findings.push(Finding {
+                    check: Check::ParameterDomain,
+                    severity: Severity::Error,
+                    message: "coedge use-curve range is outside its carrier domain".into(),
+                    entity: Some(coedge.id.0.clone()),
+                });
+            }
+        }
+        for use_ in &coedge.pcurves {
+            let Some([start, end]) = use_.parameter_range else {
+                continue;
+            };
+            let geometry = pcurves.get(use_.pcurve.0.as_str());
+            let mut valid =
+                start.is_finite() && end.is_finite() && start != end && geometry.is_some();
+            if let Some(PcurveGeometry::Nurbs { knots, .. }) = geometry {
+                if let (Some(first), Some(last)) = (knots.first(), knots.last()) {
+                    valid &= [start, end]
+                        .into_iter()
+                        .all(|value| value >= *first && value <= *last);
+                }
+            }
+            if !valid {
+                findings.push(Finding {
+                    check: Check::ParameterDomain,
+                    severity: Severity::Error,
+                    message: "coedge pcurve range is outside its carrier domain".into(),
+                    entity: Some(coedge.id.0.clone()),
+                });
+            }
         }
     }
 }

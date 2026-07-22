@@ -6,11 +6,14 @@ use std::io::Read;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
-use cadmpeg_ir::codec::{Confidence, DecodeOptions};
-use cadmpeg_ir::{CadIr, DecodeReport};
+use cadmpeg_ir::codec::{CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
 
 use crate::registry::Registry;
 use crate::ForcedInput;
+
+/// Leading byte window available to content-based codec detection.
+pub const DETECTION_PREFIX_LEN: usize = 128 * 1024;
 
 /// CADIR loaded from an input path, with native-decoder diagnostics when used.
 pub struct LoadedIr {
@@ -18,6 +21,8 @@ pub struct LoadedIr {
     pub ir: CadIr,
     /// Native decode result, or `None` when the input was CADIR JSON.
     pub decode_report: Option<DecodeReport>,
+    /// Decode-time source accounting, absent for neutral CADIR input.
+    pub source_fidelity: Option<SourceFidelity>,
 }
 
 /// Read at most `n` leading bytes for content-based format detection.
@@ -39,7 +44,7 @@ pub fn load_ir(
     options: DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedIr> {
-    let prefix = read_prefix(path, 512)?;
+    let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
     let detected = match forced {
         Some(ForcedInput::Codec(id)) => Some((
             registry
@@ -66,12 +71,13 @@ pub fn load_ir(
         return Ok(LoadedIr {
             ir: result.ir,
             decode_report: Some(result.report),
+            source_fidelity: Some(result.source_fidelity),
         });
     }
 
     if forced.is_none() && prefix.iter().find(|byte| !byte.is_ascii_whitespace()) != Some(&b'{') {
         return Err(anyhow!(
-            "unrecognized format for {}; supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, .cadir.json; use --input-format to override detection",
+            "unrecognized format for {}; supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, .cadir.json; use --input-format to override detection",
             path.display()
         ));
     }
@@ -87,5 +93,6 @@ pub fn load_ir(
     Ok(LoadedIr {
         ir,
         decode_report: None,
+        source_fidelity: None,
     })
 }

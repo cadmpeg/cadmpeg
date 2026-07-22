@@ -3,7 +3,7 @@
 //!
 //! The CLI detects supported native CAD containers, decodes model data through
 //! CADIR, validates and compares CADIR models, and writes CADIR, STEP AP214,
-//! `.f3d`, or `.sldprt` output. See the package README for workflows, format
+//! `.FCStd`, `.f3d`, or `.sldprt` output. See the package README for workflows, format
 //! limits, loss reporting, and exit-status semantics.
 
 mod commands;
@@ -85,6 +85,8 @@ enum Format {
     Cadir,
     /// ISO 10303-21 STEP AP214.
     Step,
+    /// `FreeCAD` `.FCStd`.
+    Fcstd,
     /// Autodesk Fusion `.f3d`.
     F3d,
     /// `SolidWorks` `.sldprt`.
@@ -126,6 +128,7 @@ impl Format {
         match extension.to_ascii_lowercase().as_str() {
             "cadir" | "json" => Some(Self::Cadir),
             "step" | "stp" => Some(Self::Step),
+            "fcstd" => Some(Self::Fcstd),
             "f3d" => Some(Self::F3d),
             "sldprt" => Some(Self::Sldprt),
             "3dm" => Some(Self::Rhino),
@@ -134,7 +137,10 @@ impl Format {
     }
 
     fn is_geometry_export(self) -> bool {
-        matches!(self, Self::Step | Self::F3d | Self::Sldprt | Self::Rhino)
+        matches!(
+            self,
+            Self::Step | Self::Fcstd | Self::F3d | Self::Sldprt | Self::Rhino
+        )
     }
 
     fn from_path(path: Option<&std::path::Path>) -> Option<Self> {
@@ -147,6 +153,7 @@ impl Format {
         match self {
             Self::Cadir => "cadir",
             Self::Step => "step",
+            Self::Fcstd => "fcstd",
             Self::F3d => "f3d",
             Self::Sldprt => "sldprt",
             Self::Rhino => "rhino",
@@ -156,6 +163,8 @@ impl Format {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum InputFormat {
+    /// `FreeCAD` `.FCStd`.
+    Fcstd,
     /// Autodesk Fusion `.f3d`.
     F3d,
     /// `SolidWorks` `.sldprt`.
@@ -170,6 +179,9 @@ enum InputFormat {
     /// Rhino `.3dm`.
     #[value(alias = "3dm")]
     Rhino,
+    /// IGES `.igs` or `.iges`.
+    #[value(alias = "igs")]
+    Iges,
     /// Canonical CADIR JSON.
     Cadir,
 }
@@ -183,12 +195,14 @@ enum ForcedInput {
 impl InputFormat {
     fn resolution(self) -> ForcedInput {
         match self {
+            Self::Fcstd => ForcedInput::Codec("fcstd"),
             Self::F3d => ForcedInput::Codec("f3d"),
             Self::Sldprt => ForcedInput::Codec("sldprt"),
             Self::Catpart => ForcedInput::Codec("catia"),
             Self::Nx => ForcedInput::Codec("nx"),
             Self::Creo => ForcedInput::Codec("creo"),
             Self::Rhino => ForcedInput::Codec("rhino"),
+            Self::Iges => ForcedInput::Codec("iges"),
             Self::Cadir => ForcedInput::Cadir,
         }
     }
@@ -212,12 +226,38 @@ struct DecodeArgs {
     /// Stop after the native container layer without transferring geometry.
     #[arg(long)]
     container_only: bool,
+    /// Reject a decode that reports a mandatory transfer loss.
+    #[arg(long)]
+    strict: bool,
+    /// Resource-limit profile: `desktop` (generous, the default) or `service`
+    /// (tight ceilings for unattended use).
+    #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
+    limits: LimitProfile,
+}
+
+/// Which caller-owned resource-limit profile a decode runs under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum LimitProfile {
+    /// Generous ceilings for interactive desktop use.
+    Desktop,
+    /// Tight ceilings for unattended service use.
+    Service,
 }
 
 impl DecodeArgs {
     fn options(&self) -> cadmpeg_ir::DecodeOptions {
+        let limits = match self.limits {
+            LimitProfile::Desktop => cadmpeg_ir::decode::ResourceLimits::desktop(),
+            LimitProfile::Service => cadmpeg_ir::decode::ResourceLimits::service(),
+        };
+        let mode = if self.strict {
+            cadmpeg_ir::decode::DecodeMode::Strict
+        } else {
+            cadmpeg_ir::decode::DecodeMode::Salvage
+        };
         cadmpeg_ir::DecodeOptions {
             container_only: self.container_only,
+            policy: cadmpeg_ir::decode::DecodePolicy { mode, limits },
         }
     }
 }
@@ -283,6 +323,9 @@ enum Command {
         /// Write geometry output even when decoding transferred no geometry.
         #[arg(long)]
         allow_empty: bool,
+        /// Refuse to write output when decoding reported any loss (exit 1).
+        #[arg(long)]
+        reject_lossy: bool,
         /// Target Rhino archive version; valid only for Rhino output.
         #[arg(long, value_enum)]
         rhino_version: Option<RhinoVersion>,
@@ -327,6 +370,9 @@ enum Command {
         /// Write geometry output even when decoding transferred no geometry.
         #[arg(long)]
         allow_empty: bool,
+        /// Refuse to write output when decoding reported any loss (exit 1).
+        #[arg(long)]
+        reject_lossy: bool,
         /// Target Rhino archive version; valid only for Rhino output.
         #[arg(long, value_enum)]
         rhino_version: Option<RhinoVersion>,
@@ -386,6 +432,7 @@ fn main() -> ExitCode {
             force,
             report,
             allow_empty,
+            reject_lossy,
             rhino_version,
             input_args,
             decode,
@@ -399,6 +446,7 @@ fn main() -> ExitCode {
                 force,
                 report,
                 allow_empty,
+                reject_lossy,
                 rhino_version: rhino_version.map(RhinoVersion::codec),
                 forced_input: input_args.forced(),
             },
@@ -414,6 +462,7 @@ fn main() -> ExitCode {
             report,
             allow_invalid,
             allow_empty,
+            reject_lossy,
             rhino_version,
             input_args,
             decode,
@@ -428,6 +477,7 @@ fn main() -> ExitCode {
                 report,
                 allow_invalid,
                 allow_empty,
+                reject_lossy,
                 rhino_version: rhino_version.map(RhinoVersion::codec),
                 forced_input: input_args.forced(),
             },

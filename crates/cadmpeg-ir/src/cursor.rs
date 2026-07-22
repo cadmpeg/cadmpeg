@@ -188,7 +188,7 @@ mod tests {
         let payload = [0u8; 8];
         assert!(Cursor::with_bounds(&payload, 6, 5).is_none());
         assert!(Cursor::with_bounds(&payload, 2, 9).is_none());
-        let mut cursor = Cursor::with_bounds(&payload, 2, 6).unwrap();
+        let mut cursor = Cursor::with_bounds(&payload, 2, 6).expect("valid fixture bounds");
         assert_eq!(cursor.remaining(), 4);
         assert_eq!(cursor.take(5), None);
         assert_eq!(cursor.take(4), Some(&payload[2..6]));
@@ -209,7 +209,9 @@ mod tests {
     fn read_counted_allocates_only_plausible_lengths() {
         let payload = [1u8, 0, 0, 0, 2, 0, 0, 0];
         let mut cursor = Cursor::new(&payload);
-        let values = cursor.read_counted(2, 4, Cursor::u32_le).unwrap();
+        let values = cursor
+            .read_counted(2, 4, Cursor::u32_le)
+            .expect("two fixture values");
         assert_eq!(values, [1, 2]);
         let mut cursor = Cursor::new(&payload);
         assert_eq!(

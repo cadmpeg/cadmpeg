@@ -5,6 +5,7 @@
 //! delimiters, and record-family markers determine which decoder applies.
 //! [`Variant::Unknown`] represents layouts that satisfy no recognized
 //! structural pattern.
+#![deny(clippy::disallowed_methods)]
 
 /// Recognized `CATPart` storage families and fallback classifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

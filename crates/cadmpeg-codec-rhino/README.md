@@ -2,7 +2,7 @@
 
 `cadmpeg-codec-rhino` is the Rhino `.3dm` codec for cadmpeg. It detects 3DM
 input, inspects chunk and table structure, transfers supported model data into
-CADIR version 3, and writes selected neutral model families as native 3DM.
+CADIR version 6, and writes selected neutral model families as native 3DM.
 
 Support level: [L9](../../docs/format-support.md#support-ladder) for archive
 versions 50, 60, 70, and 80.
@@ -33,8 +33,8 @@ general annotations, document render and drafting settings, saved views,
 cameras, construction planes, page settings, wallpaper, trace images, notes,
 revisions, previews, and application identity transfer into typed native
 arenas. Third-party classes and userdata remain named exact records with their
-class, item, or record identity. A complete byte ledger classifies every source
-byte as typed header data, structural framing, or part of a named opaque
+class, item, or record identity. The source-fidelity sidecar classifies every
+source byte as typed header data, structural framing, or part of a named opaque
 record. Complete record bytes are retained within bounded limits; larger
 records retain exact length and SHA-256 identity.
 

@@ -872,12 +872,16 @@ mod tests {
     fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
         let body = [1_i32.to_le_bytes(), 0_i32.to_le_bytes()].concat();
         let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
-        bytes.extend_from_slice(&i64::try_from(body.len() + 4).unwrap().to_le_bytes());
+        bytes.extend_from_slice(
+            &i64::try_from(body.len() + 4)
+                .expect("required invariant")
+                .to_le_bytes(),
+        );
         bytes.extend_from_slice(&body);
         bytes.extend_from_slice(&crc32fast::hash(&body).to_le_bytes());
         let crc = bytes.len() - 1;
         bytes[crc] ^= 1;
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
         let mut warnings = Vec::new();
         let (_, payload) = anonymous(
             &bytes,
@@ -931,7 +935,7 @@ mod tests {
     #[test]
     fn instance_reference_requires_exact_finite_invertible_affine_payload() {
         let valid = reference_bytes(Transform::identity());
-        let parsed = parse_reference(&valid, 0..valid.len()).unwrap();
+        let parsed = parse_reference(&valid, 0..valid.len()).expect("required invariant");
         assert_eq!(
             parsed.definition_id.to_string(),
             "00112233-4455-6677-8899-aabbccddeeff"

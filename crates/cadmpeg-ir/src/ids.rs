@@ -43,6 +43,22 @@ id_type!(
     BodyId
 );
 id_type!(
+    /// Identifies one feature-input topology state.
+    FeatureInputTopologyId
+);
+id_type!(
+    /// Identifies a body within one feature-input topology state.
+    HistoricalBodyId
+);
+id_type!(
+    /// Identifies a face within one feature-input topology state.
+    HistoricalFaceId
+);
+id_type!(
+    /// Identifies an edge within one feature-input topology state.
+    HistoricalEdgeId
+);
+id_type!(
     /// Identifies a [`crate::topology::Region`].
     RegionId
 );

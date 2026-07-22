@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked byte-slice readers shared by endian-specific modules.
+#![deny(clippy::disallowed_methods)]
 
 /// Returns `count` bytes at `offset` without advancing external state.
 pub fn bytes_at(bytes: &[u8], offset: usize, count: usize) -> Option<&[u8]> {

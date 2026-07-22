@@ -1236,7 +1236,7 @@ pub(crate) fn project(
         id: feature_id.clone(),
         ordinal: u64::try_from(dimension.source_range.start).expect("source offset fits u64"),
         name,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
@@ -1255,7 +1255,7 @@ pub(crate) fn project(
     };
     let parameter = DesignParameter {
         id: parameter_id,
-        owner: feature_id,
+        owner: Some(feature_id),
         ordinal: 0,
         name: "measurement".to_string(),
         expression: if dimension.user_text.is_empty() {
@@ -1411,11 +1411,13 @@ mod tests {
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         let linear_bytes = payload(1, &linear_family);
-        let linear = decode(&linear_bytes, LINEAR, 0..linear_bytes.len(), 10.0, archive).unwrap();
+        let linear = decode(&linear_bytes, LINEAR, 0..linear_bytes.len(), 10.0, archive)
+            .expect("required invariant");
         assert_eq!(linear.measurement, 60.0);
         assert_eq!(linear.horizontal_direction, [1.0, 0.0]);
         let semantic: serde_json::Value =
-            serde_json::from_str(&semantic_json(&linear).unwrap()).unwrap();
+            serde_json::from_str(&semantic_json(&linear).expect("required invariant"))
+                .expect("required invariant");
         assert_eq!(semantic["kind"], "dimension");
         assert_eq!(semantic["definition"]["kind"], "linear_dimension");
 
@@ -1424,7 +1426,8 @@ mod tests {
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         let radial_bytes = payload(3, &radial_family);
-        let radial = decode(&radial_bytes, RADIAL, 0..radial_bytes.len(), 1.0, archive).unwrap();
+        let radial = decode(&radial_bytes, RADIAL, 0..radial_bytes.len(), 1.0, archive)
+            .expect("required invariant");
         assert_eq!(radial.measurement, 20.0);
 
         let angular_family = [
@@ -1443,7 +1446,7 @@ mod tests {
             1.0,
             archive,
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(angular.measurement, std::f64::consts::FRAC_PI_2);
 
         let mut ordinate_family = 1_i32.to_le_bytes().to_vec();
@@ -1464,7 +1467,7 @@ mod tests {
             10.0,
             archive,
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(ordinate.measurement, 60.0);
         assert!(matches!(
             ordinate.definition,
@@ -1492,7 +1495,7 @@ mod tests {
             10.0,
             archive,
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(linear.measurement, 30.0);
         assert_eq!(linear.dimstyle_index, Some(17));
         assert_eq!(linear.user_text, "formula");
@@ -1513,7 +1516,7 @@ mod tests {
             10.0,
             archive,
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(radial.measurement, 100.0);
         assert!(matches!(
             radial.definition,
@@ -1536,7 +1539,7 @@ mod tests {
             10.0,
             archive,
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(angular.measurement, std::f64::consts::FRAC_PI_2);
         assert!(matches!(
             angular.definition,
@@ -1557,7 +1560,7 @@ mod tests {
             10.0,
             archive,
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(center.measurement, 0.0);
         assert!(matches!(
             center.definition,
@@ -1577,7 +1580,7 @@ mod tests {
             10.0,
             archive,
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(ordinate.measurement, 40.0);
         assert!(matches!(
             ordinate.definition,
@@ -1611,7 +1614,8 @@ mod tests {
             unknown_version: false,
         };
         let mut radial = radial;
-        apply_userdata(&extension, &[descriptor], archive, &mut radial).unwrap();
+        apply_userdata(&extension, &[descriptor], archive, &mut radial)
+            .expect("required invariant");
         assert_eq!(radial.measurement, 200.0);
         assert_eq!(radial.distance_scale, 2.0);
         assert_eq!(radial.arrow_position, -1);

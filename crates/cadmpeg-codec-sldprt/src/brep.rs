@@ -15,21 +15,24 @@
 //! directly. Untyped carriers use opaque IR geometry while resolvable topology
 //! remains available.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::be::{f64_at as f64_be, f64s_at as f64_run, u16_at as u16_be, u32_at as u32_be};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 mod entity;
+mod intersection;
 mod spline;
+mod subset;
+mod sweep;
 mod topology;
 
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
 pub(crate) const LEN_TO_MM: f64 = 1000.0;
 
 pub use self::graph::{decode, decode_bodies, Brep, Stats};
-pub(crate) use self::spline::{patch_nurbs_curve, patch_nurbs_surface};
+pub(crate) use self::spline::{infer_surface_shape, patch_nurbs_curve, patch_nurbs_surface};
 pub(crate) use self::topology::patch_point;
 
 mod graph;
@@ -84,20 +87,42 @@ fn analytic_value_count(tt: u8) -> Option<usize> {
     })
 }
 
-fn valid_direction(values: &[f64]) -> bool {
-    norm3(values) > f64::EPSILON
+fn unit_length(values: &[f64]) -> bool {
+    (norm3(values) - 1.0).abs() <= 1.0e-9
+}
+
+fn orthonormal(left: &[f64], right: &[f64]) -> bool {
+    unit_length(left)
+        && unit_length(right)
+        && (left[0] * right[0] + left[1] * right[1] + left[2] * right[2]).abs() <= 1.0e-9
 }
 
 fn valid_carrier_frame(tt: u8, values: &[f64]) -> bool {
     match tt {
-        tag::LINE => valid_direction(&values[3..6]),
-        tag::CIRCLE | tag::ELLIPSE | tag::PLANE => {
-            valid_direction(&values[3..6]) && valid_direction(&values[6..9])
+        tag::LINE => unit_length(&values[3..6]),
+        tag::CIRCLE | tag::ELLIPSE | tag::PLANE => orthonormal(&values[3..6], &values[6..9]),
+        tag::CYLINDER => orthonormal(&values[3..6], &values[7..10]),
+        tag::CONE => orthonormal(&values[3..6], &values[9..12]),
+        tag::SPHERE => orthonormal(&values[4..7], &values[7..10]),
+        tag::TORUS => orthonormal(&values[3..6], &values[8..11]),
+        _ => false,
+    }
+}
+
+fn valid_carrier_scalars(tt: u8, values: &[f64]) -> bool {
+    match tt {
+        tag::LINE | tag::PLANE => true,
+        tag::CIRCLE => values[9] > 0.0,
+        tag::ELLIPSE => values[9] >= values[10] && values[10] > 0.0,
+        tag::CYLINDER => values[6] > 0.0,
+        tag::CONE => {
+            values[6] >= 0.0
+                && values[7].abs() > f64::EPSILON
+                && values[8] > 0.0
+                && (values[7] * values[7] + values[8] * values[8] - 1.0).abs() <= 1.0e-9
         }
-        tag::CYLINDER => valid_direction(&values[3..6]) && valid_direction(&values[7..10]),
-        tag::CONE => valid_direction(&values[3..6]) && valid_direction(&values[9..12]),
-        tag::SPHERE => valid_direction(&values[4..7]) && valid_direction(&values[7..10]),
-        tag::TORUS => valid_direction(&values[3..6]) && valid_direction(&values[8..11]),
+        tag::SPHERE => values[3] > 0.0,
+        tag::TORUS => values[6] > 0.0 && values[7] > 0.0,
         _ => false,
     }
 }
@@ -123,6 +148,10 @@ pub(crate) enum CarrierGeometry {
 pub(crate) struct CarrierIndex {
     curves: HashMap<u16, Carrier>,
     surfaces: HashMap<u16, Carrier>,
+    /// Swept/spun surface constructions, resolved to a patch at face binding.
+    sweeps: HashMap<u16, sweep::SweepCarrier>,
+    /// Curve attrs whose geometry is a derived cache, not an exact carrier.
+    derived_curves: HashSet<u16>,
 }
 
 impl CarrierIndex {
@@ -145,12 +174,31 @@ impl CarrierIndex {
         self.surfaces.get(&attr)
     }
 
+    /// Swept/spun surface construction carried by one attribute.
+    pub(crate) fn sweep(&self, attr: u16) -> Option<&sweep::SweepCarrier> {
+        self.sweeps.get(&attr)
+    }
+
+    /// Whether a curve attr holds a derived solved cache rather than an
+    /// exact carrier.
+    pub(crate) fn curve_is_derived(&self, attr: u16) -> bool {
+        self.derived_curves.contains(&attr)
+    }
+
     pub(crate) fn merge_missing(&mut self, other: Self) {
         for (attr, carrier) in other.curves {
-            self.curves.entry(attr).or_insert(carrier);
+            if let std::collections::hash_map::Entry::Vacant(entry) = self.curves.entry(attr) {
+                if other.derived_curves.contains(&attr) {
+                    self.derived_curves.insert(attr);
+                }
+                entry.insert(carrier);
+            }
         }
         for (attr, carrier) in other.surfaces {
             self.surfaces.entry(attr).or_insert(carrier);
+        }
+        for (attr, carrier) in other.sweeps {
+            self.sweeps.entry(attr).or_insert(carrier);
         }
     }
 }
@@ -191,7 +239,7 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
     if vals.iter().any(|v| !v.is_finite() || v.abs() > 1e6) {
         return None;
     }
-    if !valid_carrier_frame(tt, &vals) {
+    if !valid_carrier_frame(tt, &vals) || !valid_carrier_scalars(tt, &vals) {
         return None;
     }
     let end = values_at + n * 8;
@@ -323,6 +371,17 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
         debug_assert_eq!(attr, carrier.attr);
         out.insert(carrier);
     }
+    for carrier in subset::scan(body, &out) {
+        out.insert(carrier);
+    }
+    out.sweeps = sweep::scan_sweep_carriers(body);
+    for (attr, carrier) in intersection::scan_intersection_carriers(body) {
+        debug_assert_eq!(attr, carrier.attr);
+        if let std::collections::hash_map::Entry::Vacant(entry) = out.curves.entry(attr) {
+            entry.insert(carrier);
+            out.derived_curves.insert(attr);
+        }
+    }
     out
 }
 
@@ -385,7 +444,7 @@ mod tests {
 
     #[test]
     fn scan_does_not_skip_overlapping_carrier_starts() {
-        let mut bytes = compact_carrier(tag::LINE, 7, &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        let mut bytes = compact_carrier(tag::LINE, 7, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
         bytes.truncate(60);
         bytes.extend(compact_carrier(
             tag::LINE,
@@ -409,7 +468,7 @@ mod tests {
                 0.0, 0.0, 0.0067, 0.0, 0.0, -1.0, 0.0015, root_half, root_half, -1.0, 0.0, 0.0,
             ],
         );
-        let carrier = parse_carrier(&bytes, 0).unwrap();
+        let carrier = parse_carrier(&bytes, 0).expect("required invariant");
         let CarrierGeometry::Surface(SurfaceGeometry::Cone {
             origin,
             axis,
@@ -438,7 +497,7 @@ mod tests {
                 0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, 0.0022, 0.0002, -1.0, 0.0, 0.0,
             ],
         );
-        let carrier = parse_carrier(&bytes, 0).unwrap();
+        let carrier = parse_carrier(&bytes, 0).expect("required invariant");
         let CarrierGeometry::Surface(SurfaceGeometry::Torus {
             center,
             axis,
@@ -454,5 +513,122 @@ mod tests {
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
         assert!((major_radius - 2.2).abs() < 1e-12);
         assert!((minor_radius - 0.2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn rejects_nonorthogonal_analytic_frame() {
+        let bytes = compact_carrier(
+            tag::CIRCLE,
+            8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.002],
+        );
+
+        assert!(parse_carrier(&bytes, 0).is_none());
+    }
+
+    #[test]
+    fn rejects_invalid_analytic_radii() {
+        let ellipse = compact_carrier(
+            tag::ELLIPSE,
+            8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.001, 0.002],
+        );
+        let torus = compact_carrier(
+            tag::TORUS,
+            9,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 0.0, 1.0, 0.0, 0.0],
+        );
+
+        assert!(parse_carrier(&ellipse, 0).is_none());
+        assert!(parse_carrier(&torus, 0).is_none());
+    }
+
+    #[test]
+    fn parses_spindle_torus_with_minor_radius_over_major() {
+        let bytes = compact_carrier(
+            tag::TORUS,
+            8,
+            &[
+                0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, 0.0022, 0.0044, -1.0, 0.0, 0.0,
+            ],
+        );
+        let carrier = parse_carrier(&bytes, 0).expect("spindle torus");
+        let CarrierGeometry::Surface(SurfaceGeometry::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        }) = carrier.geometry
+        else {
+            panic!("expected torus");
+        };
+        assert!((major_radius - 2.2).abs() < 1e-12);
+        assert!((minor_radius - 4.4).abs() < 1e-12);
+    }
+
+    #[test]
+    fn rejects_nonunit_analytic_frames() {
+        let cases = [
+            (tag::LINE, vec![0.0, 0.0, 0.0, 0.0, 0.0, 2.0]),
+            (
+                tag::CIRCLE,
+                vec![0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 1.0, 0.0, 0.0, 0.002],
+            ),
+            (
+                tag::ELLIPSE,
+                vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 0.002, 0.001],
+            ),
+            (
+                tag::PLANE,
+                vec![0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 1.0, 0.0, 0.0],
+            ),
+            (
+                tag::CYLINDER,
+                vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.002, 2.0, 0.0, 0.0],
+            ),
+            (
+                tag::CONE,
+                vec![
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.001,
+                    std::f64::consts::FRAC_1_SQRT_2,
+                    std::f64::consts::FRAC_1_SQRT_2,
+                    2.0,
+                    0.0,
+                    0.0,
+                ],
+            ),
+            (
+                tag::SPHERE,
+                vec![0.0, 0.0, 0.0, 0.002, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0],
+            ),
+            (
+                tag::TORUS,
+                vec![0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.002, 0.001, 1.0, 0.0, 0.0],
+            ),
+        ];
+
+        for (tag, values) in cases {
+            let bytes = compact_carrier(tag, 9, &values);
+            assert!(
+                parse_carrier(&bytes, 0).is_none(),
+                "accepted tag {tag:#04x}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_cone_angle_pair() {
+        let bytes = compact_carrier(
+            tag::CONE,
+            8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 0.5, 0.5, 1.0, 0.0, 0.0],
+        );
+
+        assert!(parse_carrier(&bytes, 0).is_none());
     }
 }

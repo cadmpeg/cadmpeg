@@ -1,0 +1,221 @@
+{
+  "ir_version": "54",
+  "units": {
+    "length": "millimeter"
+  },
+  "tolerances": {
+    "linear": 1e-6,
+    "angular": 1e-10
+  },
+  "model": {
+    "bodies": [],
+    "regions": [],
+    "shells": [],
+    "faces": [],
+    "loops": [],
+    "coedges": [],
+    "edges": [],
+    "vertices": [],
+    "points": [],
+    "surfaces": [
+      {
+        "id": "synthetic:v2:surface#sum-cache",
+        "geometry": {
+          "kind": "plane",
+          "origin": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "normal": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 1.0
+          },
+          "u_axis": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      }
+    ],
+    "curves": [
+      {
+        "id": "synthetic:v2:curve#u",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "direction": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      },
+      {
+        "id": "synthetic:v2:curve#v",
+        "geometry": {
+          "kind": "line",
+          "origin": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "direction": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        }
+      }
+    ],
+    "subds": [
+      {
+        "id": "synthetic:v2:subd#directed",
+        "scheme": "catmull_clark",
+        "vertices": [
+          {
+            "point": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "tag": "crease"
+          },
+          {
+            "point": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "tag": "smooth"
+          },
+          {
+            "point": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "tag": "corner"
+          }
+        ],
+        "edges": [
+          {
+            "vertices": [
+              0,
+              1
+            ],
+            "sharpness": [
+              0.25,
+              0.75
+            ],
+            "tag": "crease",
+            "sector_coeffic–ents": [
+              0.125,
+              0.875
+            ]
+          },
+          {
+            "vertices": [
+              1,
+              2
+            ],
+            "sharpness": [
+              0.0,
+              0.5
+            ],
+            "tag": "smooth_x",
+            "sector_coefficients": [
+              0.25,
+              0.75
+            ]
+          },
+          {
+            "vertices": [
+              2,
+              0
+            ],
+            "sharpness": [
+              1.0,
+              0.0
+            ],
+            "tag": "smooth",
+            "sector_coefficients": [
+              0.5,
+              0.5
+            ]
+          }
+        ],
+        "faces": [
+          {
+            "edges": [
+              {
+                "edge": 0,
+                "reversed": false
+              },
+              {
+                "edge": 1,
+                "reversed": false
+              },
+              {
+                "edge": 2,
+                "reversed": false
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "pcurves": [],
+    "procedural_surfaces": [
+      {
+        "id": "synthetic:v2:procedural-surface#sum",
+        "surface": "synthetic:v2:surface#sum-cache",
+        "definition": {
+          "kind": "sum",
+          "first": "synthetic:v2:curve#u",
+          "second": "synthetic:v2:curve#v",
+          "basepoint": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "cache_fit_tolerance": 1e-9
+      }
+    ],
+    "procedural_curves": [],
+    "features": [],
+    "feature_input_topologies": [],
+    "configurations": [],
+    "parameters": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
+    "spreadsheets": [],
+    "components": [],
+    "occurrences": [],
+    "assembly_joints": [],
+    "drawings": [],
+    "semantic_annotations": [],
+    "presentation_documents": [],
+    "view_presentations": [],
+    "tessellations": [],
+    "appearances": [],
+    "appearance_bindings": [],
+    "attributes": [],
+    "products": [],
+    "product_occurrences": [],
+    "pmi": [],
+    "presentation_layers": []
+  },
+  "native": {}
+}

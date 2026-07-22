@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![deny(clippy::disallowed_methods)]
 //! Scan and classify the ZIP container inside a `.f3d` file.
 //!
 //! [`scan`] retains the source archive, enumerates each entry, reads ASM headers
@@ -8,13 +9,21 @@
 //! [`crate::decode`] passes the selected stream to the SAB and B-rep layers.
 
 use std::collections::BTreeMap;
-use std::io::{Cursor, Read, SeekFrom};
+use std::io::{Cursor, Read};
 
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_ir::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_ir::hash::sha256_hex;
 use zip::CompressionMethod;
 
 use crate::asm_header;
+
+/// Maximum `.f3d` archive accepted by the container scanner.
+const INPUT_CAP: u64 = 256 * 1024 * 1024;
+pub(crate) const MAX_ARCHIVE_BYTES: u64 = INPUT_CAP;
+pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
+
+const EXPAND_CHUNK: usize = 16 * 1024;
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
 pub mod role {
@@ -54,6 +63,28 @@ pub const DETECT_MARKERS: &[&[u8]] = &[
     b"FusionDocType",
     b".smbh",
 ];
+/// Marker names that distinguish a multi-document F3Z archive from a generic ZIP.
+pub const F3Z_DETECT_MARKERS: &[&[u8]] = &[b"Manifest.json", b"DesignDescription.json", b".f3d"];
+
+pub(crate) fn read_entry_bounded(
+    entry: &mut impl Read,
+    declared_size: u64,
+    name: &str,
+) -> Result<Vec<u8>, CodecError> {
+    if declared_size > MAX_INFLATED_ENTRY_BYTES {
+        return Err(CodecError::Malformed(format!(
+            "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
+        )));
+    }
+    let mut bytes = Vec::new();
+    Read::take(entry, MAX_INFLATED_ENTRY_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_INFLATED_ENTRY_BYTES {
+        return Err(CodecError::Malformed(format!(
+            "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
+        )));
+    }
+    Ok(bytes)
+}
 
 /// Classify an entry by its name using the spec's naming families ([§1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#1-container-layer), [§7](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#7-geometry-carriers)).
 pub fn classify(name: &str) -> &'static str {
@@ -123,42 +154,110 @@ pub struct BrepFacts {
 
 /// The full result of reading a `.f3d` container: the entry list plus decoded
 /// BREP facts. Shared by `inspect` and `decode`.
-pub struct ContainerScan {
+///
+/// The `'a` lifetime is the session's root address space: stored entries are
+/// views borrowing the root without copying, and compressed entries are arena-backed views the
+/// platform expander produced, so both live for the decode's duration.
+pub struct ContainerScan<'a> {
     /// Complete source archive retained for byte-exact native replay.
-    pub source_image: Vec<u8>,
+    pub source_image: &'a [u8],
     /// Enumerated entries with classification.
     pub entries: Vec<ContainerEntry>,
     /// Decoded BREP stream facts, in archive order.
     pub breps: Vec<BrepFacts>,
     /// The asset-folder prefix observed from BREP entry paths, if any.
     pub asset_folder: Option<String>,
-    /// Decompressed entry payloads, keyed by archive path.
-    inflated_entries: BTreeMap<String, Vec<u8>>,
+    /// Entry payload views, keyed by archive path.
+    inflated_entries: BTreeMap<String, View<'a>>,
 }
 
-impl ContainerScan {
-    /// Returns a decompressed entry retained during the single archive scan.
-    pub fn entry_bytes(&self, name: &str) -> Result<&[u8], CodecError> {
-        self.inflated_entries
-            .get(name)
-            .map(Vec::as_slice)
+impl<'a> ContainerScan<'a> {
+    /// Returns an entry payload retained during the single archive scan.
+    pub fn entry_bytes(&self, name: &str) -> Result<&'a [u8], CodecError> {
+        self.entry_view(name)
+            .map(View::window)
             .ok_or_else(|| CodecError::Malformed(format!("entry {name} not found")))
+    }
+
+    /// Returns an entry's payload view.
+    pub(crate) fn entry_view(&self, name: &str) -> Option<View<'a>> {
+        self.inflated_entries.get(name).copied()
     }
 }
 
+/// Admit one archive entry and enforce its declared uncompressed size.
+pub(crate) fn admit_entry<'a>(
+    ctx: &DecodeContext<'a>,
+    parent: View<'a>,
+    file: &mut zip::read::ZipFile<'_, Cursor<&'a [u8]>>,
+    name: &str,
+) -> Result<View<'a>, CodecError> {
+    let compression = file.compression();
+    let compressed_size = file.compressed_size();
+    let uncompressed_size = file.size();
+    let data_start = file
+        .data_start()
+        .ok_or_else(|| CodecError::Malformed(format!("entry {name} has no local data offset")))?;
+    let data_end = data_start
+        .checked_add(compressed_size)
+        .ok_or_else(|| CodecError::Malformed(format!("entry {name} data range overflows")))?;
+
+    if compression == CompressionMethod::Stored {
+        let view = ctx.register_slice(
+            parent,
+            ByteRange {
+                start: data_start,
+                end: data_end,
+            },
+        )?;
+        return Ok(view);
+    }
+
+    let source = child_range(parent, data_start, data_end).ok_or_else(|| {
+        CodecError::Malformed(format!("entry {name} data range escapes its parent space"))
+    })?;
+    let mut writer = ctx.begin_expand(source, ExpandSpec::Exact(uncompressed_size))?;
+    let mut chunk = [0u8; EXPAND_CHUNK];
+    loop {
+        let read = file
+            .read(&mut chunk)
+            .map_err(|e| CodecError::Malformed(format!("cannot inflate {name}: {e}")))?;
+        if read == 0 {
+            break;
+        }
+        writer.write(&chunk[..read])?;
+    }
+    writer.finalize()
+}
+
+/// Build a child view over an absolute `[start, end)` root range, refusing a
+/// range that escapes the root window or overflows the address space.
+fn child_range(root: View<'_>, start: u64, end: u64) -> Option<View<'_>> {
+    let start = usize::try_from(start).ok()?;
+    let end = usize::try_from(end).ok()?;
+    root.child(start, end)
+}
+
 /// Read and classify every entry, decoding ASM headers for BREP streams.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
-    reader.seek(SeekFrom::Start(0))?;
-    let mut source_image = Vec::new();
-    reader.read_to_end(&mut source_image)?;
-    reader.seek(SeekFrom::Start(0))?;
-    let mut archive = zip::ZipArchive::new(Cursor::new(&source_image))
+///
+/// Every entry is registered as a slice when stored or a decompressed space
+/// when compressed.
+pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan<'a>, CodecError> {
+    let source_image = root.window();
+    if source_image.len() as u64 > INPUT_CAP {
+        return Err(CodecError::Malformed(format!(
+            "input exceeds f3d size cap of {INPUT_CAP} bytes"
+        )));
+    }
+
+    let mut archive = zip::ZipArchive::new(Cursor::new(source_image))
         .map_err(|e| CodecError::Malformed(format!("not a readable ZIP: {e}")))?;
 
-    let mut entries = Vec::with_capacity(archive.len());
+    let mut entries = Vec::new();
     let mut breps = Vec::new();
     let mut asset_folder = None;
     let mut inflated_entries = BTreeMap::new();
+    let mut total_declared_inflated = 0_u64;
 
     for i in 0..archive.len() {
         let mut file = archive
@@ -166,24 +265,42 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
             .map_err(|e| CodecError::Malformed(format!("bad ZIP entry {i}: {e}")))?;
         let name = file.name().to_string();
         let role = classify(&name);
+        let method = file.compression();
+        let compression = compression_label(method);
+        let compressed_size = file.compressed_size();
+        let uncompressed_size = file.size();
+        if uncompressed_size > MAX_INFLATED_ENTRY_BYTES {
+            return Err(CodecError::Malformed(format!(
+                "ZIP entry {name} declares {uncompressed_size} inflated bytes, exceeding the \
+                 {MAX_INFLATED_ENTRY_BYTES}-byte entry limit"
+            )));
+        }
+        total_declared_inflated = total_declared_inflated
+            .checked_add(uncompressed_size)
+            .ok_or_else(|| CodecError::Malformed("F3D total inflated size overflows u64".into()))?;
+        if total_declared_inflated > MAX_ARCHIVE_BYTES {
+            return Err(CodecError::Malformed(format!(
+                "F3D entries declare {total_declared_inflated} inflated bytes, exceeding the \
+                 {MAX_ARCHIVE_BYTES}-byte archive limit"
+            )));
+        }
         let mut attributes = BTreeMap::new();
 
         let is_brep = role == role::BREP_SMBH || role == role::BREP_SMB;
-        let mut buf = Vec::with_capacity(file.size() as usize);
-        file.read_to_end(&mut buf)
-            .map_err(|e| CodecError::Malformed(format!("cannot read {name}: {e}")))?;
+        let view = admit_entry(ctx, root, &mut file, &name)?;
+        drop(file);
+        let buf = view.window();
         if is_brep {
             if asset_folder.is_none() {
                 if let Some((folder, _)) = name.split_once("/Breps.BlobParts") {
                     asset_folder = Some(folder.to_string());
                 }
             }
-            // Decompress and read the header fields.
-            let header = asm_header::parse(&buf);
-            let delta = asm_header::first_delta_state_offset(&buf);
-            let sha = sha256_hex(&buf);
+            let header = asm_header::parse(buf);
+            let delta = asm_header::first_delta_state_offset(buf);
+            let sha = sha256_hex(buf);
 
-            attributes.insert("asm_magic".to_string(), asm_magic_label(&buf));
+            attributes.insert("asm_magic".to_string(), asm_magic_label(buf));
             if let Some(h) = &header {
                 attributes.insert("asm_width".to_string(), h.width.to_string());
                 if let Some(v) = h.release {
@@ -231,7 +348,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
             breps.push(BrepFacts {
                 name: name.clone(),
                 is_smbh: role == role::BREP_SMBH,
-                uncompressed_len: file.size(),
+                uncompressed_len: uncompressed_size,
                 header,
                 delta_state_offset: delta,
                 sha256: sha,
@@ -241,12 +358,12 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
         entries.push(ContainerEntry {
             name: name.clone(),
             role: role.to_string(),
-            compression: compression_label(file.compression()),
-            compressed_size: file.compressed_size(),
-            uncompressed_size: file.size(),
+            compression,
+            compressed_size,
+            uncompressed_size,
             attributes,
         });
-        inflated_entries.insert(name, buf);
+        inflated_entries.insert(name, view);
     }
 
     Ok(ContainerScan {
@@ -259,7 +376,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
 }
 
 /// Build a [`ContainerSummary`] with the active B-rep selection.
-pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
+pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
     let mut notes = Vec::new();
     if let Some(folder) = &scan.asset_folder {
         notes.push(format!("asset folder (from entry paths): {folder}"));
@@ -270,7 +387,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             b.name,
             b.uncompressed_len,
             if b.is_smbh {
-                "authoritative .smbh"
+                "authoritative .smbh history stream"
             } else {
                 "no .smbh present; .smb is a construction snapshot"
             }
@@ -292,7 +409,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 }
 
 /// Select the first `.smbh` B-rep, falling back to the first `.smb`.
-pub fn select_active_brep(scan: &ContainerScan) -> Option<&BrepFacts> {
+pub fn select_active_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFacts> {
     scan.breps
         .iter()
         .find(|b| b.is_smbh)

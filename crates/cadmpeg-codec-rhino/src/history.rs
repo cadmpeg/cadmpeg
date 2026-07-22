@@ -17,21 +17,18 @@ const HISTORY_CLASS: Uuid = Uuid::from_canonical([
 ]);
 const VALUE_CAP: usize = 1 << 20;
 
-/// Semantic role of a history record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecordType {
     HistoryParameters,
     FeatureParameters,
 }
 
-/// One bounded history parameter value.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryValue {
     pub(crate) id: i32,
     pub(crate) value: Value,
 }
 
-/// Built-in history parameter families.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Value {
     None,
@@ -51,7 +48,6 @@ pub(crate) enum Value {
     Opaque { type_code: i32, range: Range<usize> },
 }
 
-/// One polymorphic geometry object embedded in a history parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EmbeddedGeometry {
     pub(crate) class_id: Uuid,
@@ -59,7 +55,6 @@ pub(crate) struct EmbeddedGeometry {
     pub(crate) userdata: Vec<UserdataDescriptor>,
 }
 
-/// Persistent construction data for one polyedge.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PolyEdge {
     pub(crate) segments: Vec<CurveProxy>,
@@ -67,7 +62,6 @@ pub(crate) struct PolyEdge {
     pub(crate) evaluation_mode: i32,
 }
 
-/// Persistent construction data for one curve-proxy segment.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CurveProxy {
     pub(crate) curve: ObjectReference,
@@ -79,7 +73,6 @@ pub(crate) struct CurveProxy {
     pub(crate) trim_domain: Option<[f64; 2]>,
 }
 
-/// Persistent edge sequence on a `SubD` object.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SubdEdgeChain {
     pub(crate) subd_id: Uuid,
@@ -87,7 +80,6 @@ pub(crate) struct SubdEdgeChain {
     pub(crate) orientations: Vec<u8>,
 }
 
-/// Persistent object selection stored in a history value.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ObjectReference {
     pub(crate) object_id: Uuid,
@@ -99,7 +91,6 @@ pub(crate) struct ObjectReference {
     pub(crate) osnap_mode: i32,
 }
 
-/// Evaluation location attached to a persistent object selection.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EvaluationParameter {
     pub(crate) parameter_type: i32,
@@ -108,7 +99,6 @@ pub(crate) struct EvaluationParameter {
     pub(crate) intervals: [[f64; 2]; 3],
 }
 
-/// One nested instance-definition step in an object selection.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct InstanceReference {
     pub(crate) reference_id: Uuid,
@@ -119,7 +109,6 @@ pub(crate) struct InstanceReference {
     pub(crate) evaluation: Option<EvaluationParameter>,
 }
 
-/// A complete built-in history record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryRecord {
     pub(crate) source_range: Range<usize>,
@@ -940,15 +929,17 @@ fn cage_json(cage: &crate::cage::Cage) -> serde_json::Value {
 }
 
 fn extended_geometry_json(
-    data: &[u8],
+    expand: crate::mesh::MeshExpand<'_>,
     value: &EmbeddedGeometry,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     scale: f64,
 ) -> Option<String> {
+    let data = expand.data();
     let semantic = if crate::mesh::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
         let mesh = crate::mesh::decode(
+            expand,
             data,
             value.class_data_range.clone(),
             archive,
@@ -996,6 +987,7 @@ fn extended_geometry_json(
     } else if crate::extrusion::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
         let extrusion = crate::extrusion::decode(
+            expand,
             data,
             value.class_data_range.clone(),
             archive,
@@ -1040,10 +1032,12 @@ fn extended_geometry_json(
             "caps": extrusion.caps,
         })
     } else if value.class_id == crate::cage::CLASS {
-        cage_json(&crate::cage::decode(data, value.class_data_range.clone(), scale, archive).ok()?)
+        cage_json(
+            &crate::cage::decode(expand, value.class_data_range.clone(), scale, archive).ok()?,
+        )
     } else if value.class_id == crate::morph::CLASS {
         let morph =
-            crate::morph::decode(data, value.class_data_range.clone(), scale, archive).ok()?;
+            crate::morph::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
         let control = match &morph.control {
             crate::morph::Control::Curve { start, end } => serde_json::json!({
                 "kind": "curve",
@@ -1089,6 +1083,7 @@ fn extended_geometry_json(
         })
     } else if crate::brep::supported_class(value.class_id) {
         return crate::decode::embedded_brep_json(
+            expand,
             data,
             value.class_data_range.clone(),
             archive,
@@ -1097,7 +1092,7 @@ fn extended_geometry_json(
         );
     } else if value.class_id == crate::hatch::CLASS {
         let hatch =
-            crate::hatch::decode(data, value.class_data_range.clone(), scale, archive).ok()?;
+            crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
         let mut plane = hatch.plane;
         for coordinate in &mut plane.origin.0 {
             *coordinate *= scale;
@@ -1153,7 +1148,7 @@ fn extended_geometry_json(
         return crate::dimensions::semantic_json(&dimension);
     } else if value.class_id == crate::polyedge::CURVE_CLASS {
         let polyedge =
-            crate::polyedge::decode(data, value.class_data_range.clone(), archive).ok()?;
+            crate::polyedge::decode(expand, value.class_data_range.clone(), archive).ok()?;
         return crate::polyedge::semantic_json(&polyedge);
     } else {
         return None;
@@ -1164,7 +1159,12 @@ fn extended_geometry_json(
 fn structured_value_properties(
     key: &str,
     value: &Value,
-    geometry_context: Option<(&[u8], ArchiveVersion, Option<i64>, f64)>,
+    geometry_context: Option<(
+        crate::mesh::MeshExpand<'_>,
+        ArchiveVersion,
+        Option<i64>,
+        f64,
+    )>,
     properties: &mut BTreeMap<String, String>,
 ) {
     match value {
@@ -1181,7 +1181,8 @@ fn structured_value_properties(
                     format!("{key}.{index}.class_id"),
                     value.class_id.to_string(),
                 );
-                if let Some((data, archive, writer_version, scale)) = geometry_context {
+                if let Some((expand, archive, writer_version, scale)) = geometry_context {
+                    let data = expand.data();
                     if let Ok(decoded) = crate::curves::decode(
                         data,
                         value.class_id,
@@ -1212,7 +1213,7 @@ fn structured_value_properties(
                             properties.insert(format!("{key}.{index}.geometry"), semantic);
                         }
                     } else if let Some(semantic) =
-                        extended_geometry_json(data, value, archive, writer_version, scale)
+                        extended_geometry_json(expand, value, archive, writer_version, scale)
                     {
                         properties.insert(format!("{key}.{index}.geometry"), semantic);
                     }
@@ -1283,7 +1284,12 @@ fn structured_value_properties(
 /// Projects source history into ordered neutral native operations.
 pub(crate) fn project(
     records: &[HistoryRecord],
-    geometry_context: Option<(&[u8], ArchiveVersion, Option<i64>, f64)>,
+    geometry_context: Option<(
+        crate::mesh::MeshExpand<'_>,
+        ArchiveVersion,
+        Option<i64>,
+        f64,
+    )>,
     ir: &mut cadmpeg_ir::document::CadIr,
 ) {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
@@ -1383,7 +1389,7 @@ pub(crate) fn project(
             id: ids[index].clone(),
             ordinal: u64::try_from(index).expect("history source order fits u64"),
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies,
             source_properties: BTreeMap::new(),
@@ -1534,12 +1540,14 @@ mod tests {
             if values.len() == 1
                 && values[0].class_id == Uuid::from_wire(crate::archive_test_support::POINT_CLASS)));
         let mut properties = BTreeMap::new();
-        structured_value_properties(
-            "value_7",
-            &parsed.value,
-            Some((&geometry_value, ArchiveVersion::V8, None, 2.0)),
-            &mut properties,
-        );
+        crate::decode::with_expand_bytes(&geometry_value, |expand| {
+            structured_value_properties(
+                "value_7",
+                &parsed.value,
+                Some((expand, ArchiveVersion::V8, None, 2.0)),
+                &mut properties,
+            );
+        });
         assert_eq!(
             properties["value_7.0.geometry"],
             r#"{"x":2.0,"y":4.0,"z":6.0}"#
@@ -1606,9 +1614,12 @@ mod tests {
             class_data_range: 0..bytes.len(),
             userdata: Vec::new(),
         };
-        let semantic = extended_geometry_json(&bytes, &geometry, ArchiveVersion::V8, None, 10.0)
-            .expect("cage semantics");
-        let semantic: serde_json::Value = serde_json::from_str(&semantic).unwrap();
+        let semantic = crate::decode::with_expand_bytes(&bytes, |expand| {
+            extended_geometry_json(expand, &geometry, ArchiveVersion::V8, None, 10.0)
+        })
+        .expect("cage semantics");
+        let semantic: serde_json::Value =
+            serde_json::from_str(&semantic).expect("required invariant");
         assert_eq!(semantic["kind"], "nurbs_cage");
         assert_eq!(semantic["orders"], serde_json::json!([2, 2, 2]));
         assert_eq!(
@@ -1622,11 +1633,12 @@ mod tests {
             class_data_range: 0..1,
             userdata: Vec::new(),
         };
-        let semantic =
-            extended_geometry_json(&empty_subd, &geometry, ArchiveVersion::V8, None, 1.0)
-                .expect("empty SubD semantics");
+        let semantic = crate::decode::with_expand_bytes(&empty_subd, |expand| {
+            extended_geometry_json(expand, &geometry, ArchiveVersion::V8, None, 1.0)
+        })
+        .expect("empty SubD semantics");
         assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&semantic).unwrap(),
+            serde_json::from_str::<serde_json::Value>(&semantic).expect("required invariant"),
             serde_json::json!({"kind": "subd", "empty": true})
         );
 
@@ -1636,12 +1648,33 @@ mod tests {
             class_data_range: 0..brep.len(),
             userdata: Vec::new(),
         };
-        let semantic = extended_geometry_json(&brep, &geometry, ArchiveVersion::V8, None, 10.0)
-            .expect("Brep topology semantics");
-        let semantic: serde_json::Value = serde_json::from_str(&semantic).unwrap();
+        let semantic = crate::decode::with_expand_bytes(&brep, |expand| {
+            extended_geometry_json(expand, &geometry, ArchiveVersion::V8, None, 10.0)
+        })
+        .expect("Brep topology semantics");
+        let semantic: serde_json::Value =
+            serde_json::from_str(&semantic).expect("required invariant");
         assert_eq!(semantic["kind"], "brep");
-        assert_eq!(semantic["bodies"].as_array().unwrap().len(), 1);
-        assert_eq!(semantic["faces"].as_array().unwrap().len(), 1);
-        assert_eq!(semantic["vertices"].as_array().unwrap().len(), 3);
+        assert_eq!(
+            semantic["bodies"]
+                .as_array()
+                .expect("required invariant")
+                .len(),
+            1
+        );
+        assert_eq!(
+            semantic["faces"]
+                .as_array()
+                .expect("required invariant")
+                .len(),
+            1
+        );
+        assert_eq!(
+            semantic["vertices"]
+                .as_array()
+                .expect("required invariant")
+                .len(),
+            3
+        );
     }
 }

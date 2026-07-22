@@ -9,7 +9,8 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Region, Sense, Shell,
+    Vertex, VertexUse,
 };
 
 use crate::parse::{Exchange, RawRecord, Value};
@@ -574,8 +575,17 @@ fn build(
                     built.loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
+                        boundary_role: if br.simple_name() == Some("FACE_OUTER_BOUND") {
+                            LoopBoundaryRole::Outer
+                        } else {
+                            LoopBoundaryRole::Inner
+                        },
                         coedges: Vec::new(),
-                        vertex: Some(VertexId(format!("step:data:vertex#{vertex_step}"))),
+                        vertex_uses: vec![VertexUse {
+                            vertex: VertexId(format!("step:data:vertex#{vertex_step}")),
+                            after: None,
+                            pcurves: Vec::new(),
+                        }],
                     });
                     loop_ids.push((br.simple_name() == Some("FACE_OUTER_BOUND"), lid));
                     used_v.insert(vertex_step);
@@ -611,7 +621,16 @@ fn build(
                         } else {
                             Sense::Reversed
                         },
-                        pcurve: associated_pcurve(edge.curve, surface_step, exchange),
+                        pcurves: associated_pcurve(edge.curve, surface_step, exchange)
+                            .map(|pcurve| PcurveUse {
+                                pcurve,
+                                isoparametric: None,
+                                parameter_range: None,
+                            })
+                            .into_iter()
+                            .collect(),
+                        use_curve: None,
+                        use_curve_parameter_range: None,
                     });
                     radial
                         .entry(o.edge)
@@ -630,8 +649,13 @@ fn build(
                 built.loops.push(Loop {
                     id: lid.clone(),
                     face: fid.clone(),
+                    boundary_role: if br.simple_name() == Some("FACE_OUTER_BOUND") {
+                        LoopBoundaryRole::Outer
+                    } else {
+                        LoopBoundaryRole::Inner
+                    },
                     coedges: coedge_ids,
-                    vertex: None,
+                    vertex_uses: Vec::new(),
                 });
                 loop_ids.push((br.simple_name() == Some("FACE_OUTER_BOUND"), lid));
                 built.typed.extend([bound_step, loop_step]);

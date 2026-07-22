@@ -137,13 +137,27 @@ fn curve_descriptor<'a>(
         .find_map(|reference| descriptors.get(&reference))
 }
 
-fn expanded_knots(values: &[f64], multiplicities: &[u16]) -> Vec<f64> {
-    values
-        .iter()
-        .zip(multiplicities)
-        .filter(|(_, multiplicity)| **multiplicity > 0)
-        .flat_map(|(value, multiplicity)| std::iter::repeat_n(*value, *multiplicity as usize))
-        .collect()
+/// Expand a compressed knot vector by its per-value multiplicities, refusing
+/// the expansion when the running length exceeds `expected`.
+///
+/// A NURBS knot vector must have exactly `control_count + degree + 1` entries,
+/// so `expected` is a hard upper bound. Charging the multiplicities against it
+/// incrementally stops an untrusted `u16` multiplicity array (each entry up to
+/// `65535`, over a million-entry table) from reserving a multi-hundred-gigabyte
+/// `Vec` before the post-hoc length check would discard it. Returns `None` the
+/// moment the accumulated length would exceed `expected`.
+fn expanded_knots(values: &[f64], multiplicities: &[u16], expected: usize) -> Option<Vec<f64>> {
+    let mut out = Vec::new();
+    for (value, &multiplicity) in values.iter().zip(multiplicities) {
+        if multiplicity == 0 {
+            continue;
+        }
+        if out.len() + multiplicity as usize > expected {
+            return None;
+        }
+        out.extend(std::iter::repeat_n(*value, multiplicity as usize));
+    }
+    Some(out)
 }
 
 fn unique_knots(knots: &[f64]) -> (Vec<f64>, Vec<u16>) {
@@ -345,8 +359,11 @@ pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         if points.len() != descriptor.control_count {
             continue;
         }
-        let knots = expanded_knots(unique_knots, multiplicities);
-        if knots.len() != points.len() + descriptor.degree as usize + 1 {
+        let expected = points.len() + descriptor.degree as usize + 1;
+        let Some(knots) = expanded_knots(unique_knots, multiplicities, expected) else {
+            continue;
+        };
+        if knots.len() != expected {
             continue;
         }
         out.entry(attr).or_insert(Carrier {
@@ -401,7 +418,7 @@ fn surface_refs(bytes: &[u8], arrays: &Arrays) -> HashMap<u16, [u16; 5]> {
 }
 
 #[allow(clippy::manual_is_multiple_of)] // `is_multiple_of` exceeds the workspace MSRV.
-fn surface_shape(
+pub(crate) fn infer_surface_shape(
     control_len: usize,
     u_mult: &[u16],
     v_mult: &[u16],
@@ -421,7 +438,10 @@ fn surface_shape(
                 let Some(v_count) = v_sum.checked_sub(v_degree + 1) else {
                     continue;
                 };
-                if u_count > 0 && v_count > 0 && u_count * v_count == poles {
+                // `checked_mul` bounds the pole count: `u_count`/`v_count` derive from
+                // multiplicity sums and their product can exceed `usize`, so an overflowing
+                // shape never matches `poles` (and never reaches the `with_capacity` below).
+                if u_count > 0 && v_count > 0 && u_count.checked_mul(v_count) == Some(poles) {
                     return Some((
                         u_count,
                         v_count,
@@ -473,7 +493,7 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
             continue;
         };
         let Some((u_count, v_count, u_degree, v_degree, dimension)) =
-            surface_shape(control.len(), u_mult, v_mult)
+            infer_surface_shape(control.len(), u_mult, v_mult)
         else {
             continue;
         };
@@ -497,11 +517,15 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         if points.len() != u_count * v_count {
             continue;
         }
-        let u_knots = expanded_knots(u_unique, u_mult);
-        let v_knots = expanded_knots(v_unique, v_mult);
-        if u_knots.len() != u_count + u_degree as usize + 1
-            || v_knots.len() != v_count + v_degree as usize + 1
-        {
+        let u_expected = u_count + u_degree as usize + 1;
+        let v_expected = v_count + v_degree as usize + 1;
+        let (Some(u_knots), Some(v_knots)) = (
+            expanded_knots(u_unique, u_mult, u_expected),
+            expanded_knots(v_unique, v_mult, v_expected),
+        ) else {
+            continue;
+        };
+        if u_knots.len() != u_expected || v_knots.len() != v_expected {
             continue;
         }
         out.entry(attr).or_insert(Carrier {

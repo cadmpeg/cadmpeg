@@ -54,7 +54,7 @@ use std::io::Write;
 use cadmpeg_ir::appearance::Appearance;
 use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions, DecodeResult,
-    Encoder, ReadSeek,
+    Encoder,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -62,8 +62,10 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{OccurrenceId, ProductId};
 use cadmpeg_ir::product::OccurrenceParent;
-use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
-use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Point, Sense, Shell, Vertex};
+use cadmpeg_ir::report::{ExportReport, LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::CadIr;
 
 use writer::{real, refs, string, Emitter, Ref};
@@ -296,7 +298,6 @@ struct ColorSpec<'a> {
     binding_id: Option<&'a str>,
 }
 
-/// Builds the DATA instance graph and accumulates export losses.
 struct Builder<'a> {
     ir: &'a CadIr,
     schema: StepSchema,
@@ -304,7 +305,6 @@ struct Builder<'a> {
     losses: Vec<LossNote>,
     notes: Vec<String>,
 
-    // Lookup indices from the flat IR arenas.
     points: HashMap<&'a str, &'a Point>,
     bodies: HashMap<&'a str, &'a Body>,
     shells: HashMap<&'a str, &'a Shell>,
@@ -320,7 +320,6 @@ struct Builder<'a> {
     procedural_curves: HashMap<&'a str, &'a ProceduralCurve>,
     edge_coedges: HashMap<&'a str, Vec<(&'a str, &'a str)>>,
 
-    // Emitted-instance caches keyed by IR id, so shared carriers emit once.
     surface_refs: HashMap<String, Ref>,
     curve_refs: HashMap<String, Ref>,
     edge_refs: HashMap<String, Ref>,
@@ -342,18 +341,14 @@ struct Builder<'a> {
     /// is reached once per shell) and aggregated into a single counted loss.
     unknown_surface_faces: BTreeSet<String>,
 
-    /// Emitted `ADVANCED_FACE` instances keyed by IR face id, for presentation
-    /// styling.
     face_step_refs: HashMap<String, Ref>,
     /// First emitted exact solid or shell for each body, used by AP242 tessellation links.
     body_step_refs: HashMap<String, Ref>,
     default_product_definition_shape: Option<Ref>,
-    /// Emitted representation item for each body.
     body_shape_refs: HashMap<String, Ref>,
     body_item_refs: HashMap<String, Vec<Ref>>,
     tessellation_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<String>,
-    /// Display colors that could not be attached to an emitted STEP item.
     unstyled_colors: usize,
     unsupported_standalone_geometry: usize,
     written_pmi: usize,
@@ -393,16 +388,15 @@ impl<'a> Builder<'a> {
             .collect();
         let mut edge_coedges = HashMap::<&str, Vec<(&str, &str)>>::new();
         for coedge in &ir.model.coedges {
-            let Some(pcurve) = coedge.pcurve.as_ref() else {
-                continue;
-            };
             let Some(surface) = coedge_surfaces.get(coedge.id.as_str()) else {
                 continue;
             };
-            edge_coedges
-                .entry(coedge.edge.as_str())
-                .or_default()
-                .push((pcurve.as_str(), *surface));
+            for pcurve in &coedge.pcurves {
+                edge_coedges
+                    .entry(coedge.edge.as_str())
+                    .or_default()
+                    .push((pcurve.pcurve.as_str(), *surface));
+            }
         }
         Builder {
             ir,
@@ -503,8 +497,31 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn loss(&mut self, category: LossCategory, severity: Severity, message: String) {
+    fn loss(
+        &mut self,
+        code: LossCode,
+        category: LossCategory,
+        severity: Severity,
+        message: String,
+    ) {
         self.losses.push(LossNote {
+            code,
+            category,
+            severity,
+            message,
+            provenance: None,
+        });
+    }
+
+    fn omit(
+        &mut self,
+        code: LossCode,
+        category: LossCategory,
+        severity: Severity,
+        message: String,
+    ) {
+        self.losses.push(LossNote {
+            code,
             category,
             severity,
             message,
@@ -518,14 +535,21 @@ impl<'a> Builder<'a> {
         let shape_items = self.emit_shape_items(context);
         let mut standalone_items = self.emit_standalone_geometry();
         let has_standalone_geometry = !standalone_items.is_empty();
-        if shape_items.is_empty() && standalone_items.is_empty() {
-            self.notes
-                .push("STEP representation contains no shape items".to_string());
+        let mut emitted_items = shape_items;
+        emitted_items.extend(standalone_items.iter().copied());
+        if emitted_items.is_empty() && !self.ir.model.bodies.is_empty() {
+            self.losses.push(LossNote {
+                code: LossCode::NoExportableSolids,
+                category: LossCategory::Topology,
+                severity: Severity::Warning,
+                message: "no exportable solids: the IR document contains no body/region/shell \
+                          geometry, so the STEP representation is empty"
+                    .to_string(),
+                provenance: None,
+            });
+            emitted_items.clear();
         }
-
-        let mut items = shape_items;
-        items.extend(standalone_items.iter().copied());
-        // A representation-space origin placement is conventional and harmless.
+        let mut items = emitted_items;
         let origin = geometry::placement(
             &mut self.emitter,
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -585,16 +609,6 @@ impl<'a> Builder<'a> {
         self.note_unrepresented();
     }
 
-    /// Emit a per-face `STYLED_ITEM` surface color for every colored face.
-    ///
-    /// A face's color is its own `color` field or face appearance binding when
-    /// present; otherwise it inherits the color of the body that owns it. Body
-    /// colors are pushed down onto each face rather than styled on the solid,
-    /// because common OCCT/VTK-based viewers read surface colors only from
-    /// `ADVANCED_FACE` and ignore `MANIFOLD_SOLID_BREP`. Each distinct color
-    /// shares one `PRESENTATION_STYLE_ASSIGNMENT`; the styled items are gathered
-    /// into one `MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION` in the
-    /// geometric context.
     fn emit_presentation(&mut self, context: Ref) {
         use cadmpeg_ir::appearance::AppearanceTarget;
 
@@ -630,6 +644,7 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Curve(_)
                 | AppearanceTarget::Point(_)
                 | AppearanceTarget::Edge(_)
+                | AppearanceTarget::Vertex(_)
                 | AppearanceTarget::Tessellation(_)
                 | AppearanceTarget::Source { .. } => {}
             }
@@ -653,8 +668,6 @@ impl<'a> Builder<'a> {
             }
         }
 
-        // Map each face to the body that owns it, so a body-level color can be
-        // pushed down onto the body's individual faces.
         let mut face_body: HashMap<&str, &str> = HashMap::new();
         for region in &ir.model.regions {
             let body = region.body.0.as_str();
@@ -682,8 +695,6 @@ impl<'a> Builder<'a> {
             .map(|(id, r)| (id.clone(), *r))
             .collect();
         faces.sort_by(|a, b| a.0.cmp(&b.0));
-        // Bodies whose color actually reached at least one face, for loss
-        // accounting.
         let mut styled_bodies: BTreeSet<&str> = BTreeSet::new();
         for (face_id, face) in &faces {
             let own = face_colors.get(face_id.as_str()).copied();
@@ -737,7 +748,9 @@ impl<'a> Builder<'a> {
                 AppearanceTarget::Tessellation(id) => {
                     (self.tessellation_step_refs.get(id).copied(), "surface")
                 }
-                AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
+                AppearanceTarget::Body(_)
+                | AppearanceTarget::Vertex(_)
+                | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
                 let target_id = match &binding.target {
@@ -747,7 +760,9 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Edge(id) => id.0.clone(),
                     AppearanceTarget::Point(id) => id.0.clone(),
                     AppearanceTarget::Tessellation(id) => id.clone(),
-                    AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
+                    AppearanceTarget::Body(_)
+                    | AppearanceTarget::Vertex(_)
+                    | AppearanceTarget::Source { .. } => continue,
                 };
                 direct_unstyled.insert(target_id);
                 continue;
@@ -767,7 +782,7 @@ impl<'a> Builder<'a> {
         }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
         // a face override whose face was skipped, or a body whose faces were all
-        // skipped (hidden bodies or faces on unknown surfaces).
+        // skipped (hidden bodies or faces without an explicit STEP surface).
         let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
         let mut unstyled_targets = face_colors
             .keys()
@@ -791,8 +806,6 @@ impl<'a> Builder<'a> {
         );
     }
 
-    /// Emit (or reuse) the `PRESENTATION_STYLE_ASSIGNMENT` chain for one
-    /// surface color.
     fn surface_style(
         &mut self,
         color: cadmpeg_ir::topology::Color,
@@ -936,6 +949,7 @@ impl<'a> Builder<'a> {
             }
             if unsupported > 0 {
                 self.loss(
+                    LossCode::AttributesNotTransferred,
                     LossCategory::Attribute,
                     Severity::Warning,
                     format!(
@@ -958,8 +972,6 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Emit the `PRODUCT` → `PRODUCT_DEFINITION_SHAPE` chain, returning the
-    /// `PRODUCT_DEFINITION_SHAPE` reference.
     fn emit_product_structure(&mut self) -> Ref {
         let name = self
             .ir
@@ -1036,7 +1048,7 @@ impl<'a> Builder<'a> {
 
         let ir = self.ir;
         let products = &ir.model.products;
-        let occurrences = &ir.model.occurrences;
+        let occurrences = &ir.model.product_occurrences;
         let occurrence_products = occurrences
             .iter()
             .map(|occurrence| (occurrence.id.clone(), occurrence.product.clone()))
@@ -1141,6 +1153,7 @@ impl<'a> Builder<'a> {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
                 if !is_identity(&occurrence.transform.rows) {
                     self.loss(
+                        LossCode::BodyTransformNotApplied,
                         LossCategory::Topology,
                         Severity::Warning,
                         format!(
@@ -1153,6 +1166,7 @@ impl<'a> Builder<'a> {
             };
             let Some(parent_product) = occurrence_products.get(parent) else {
                 self.loss(
+                    LossCode::TopologyNotTransferred,
                     LossCategory::Topology,
                     Severity::Warning,
                     format!("occurrence '{}' has an unresolved parent", occurrence.id),
@@ -1175,6 +1189,7 @@ impl<'a> Builder<'a> {
             };
             if !is_rigid_transform(&occurrence.transform.rows) {
                 self.loss(
+                    LossCode::BodyTransformNotApplied,
                     LossCategory::Topology,
                     Severity::Warning,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
@@ -1212,8 +1227,6 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Emit the units and the geometric representation context, returning the
-    /// context reference.
     fn emit_context(&mut self) -> Ref {
         let len = self.emit_length_unit();
         let angle = self.emit_angle_unit();
@@ -1241,9 +1254,6 @@ impl<'a> Builder<'a> {
         )
     }
 
-    /// Emit the millimetre length unit used by the representation context.
-    ///
-    /// Coordinate values are written unchanged.
     fn emit_length_unit(&mut self) -> Ref {
         if let Some(unit) = self.length_unit {
             return unit;
@@ -1283,8 +1293,6 @@ impl<'a> Builder<'a> {
     /// when the target application protocol supports `INVISIBILITY`.
     fn emit_shape_items(&mut self, context: Ref) -> Vec<Ref> {
         let mut items = Vec::new();
-        // `ir` is a shared `&CadIr`; binding it locally lets us read the arenas
-        // while still calling `&mut self` helpers (loss/emit).
         let ir = self.ir;
         for region in &ir.model.regions {
             let body_kind = self
@@ -1314,6 +1322,7 @@ impl<'a> Builder<'a> {
             };
             let Some(outer) = self.emit_shell(outer_id.as_str(), closed) else {
                 self.loss(
+                    LossCode::TopologyNotTransferred,
                     LossCategory::Topology,
                     Severity::Error,
                     format!("region {} has no writable outer shell", region.id),
@@ -1379,6 +1388,7 @@ impl<'a> Builder<'a> {
         };
         if !is_rigid_transform(&transform.rows) {
             self.loss(
+                LossCode::BodyTransformNotApplied,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!("body '{body_id}' carries a non-rigid transform"),
@@ -1422,6 +1432,7 @@ impl<'a> Builder<'a> {
                 .count();
             if hidden != 0 {
                 self.loss(
+                    LossCode::AttributesNotTransferred,
                     LossCategory::Metadata,
                     Severity::Warning,
                     format!(
@@ -1455,6 +1466,7 @@ impl<'a> Builder<'a> {
         for shell in shells {
             if !shell.free_vertices.is_empty() {
                 self.loss(
+                    LossCode::TopologyNotTransferred,
                     LossCategory::Topology,
                     Severity::Warning,
                     format!(
@@ -1559,6 +1571,7 @@ impl<'a> Builder<'a> {
         }
         if !self.schema.supports_tessellation() {
             self.loss(
+                LossCode::TessellationOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
@@ -1582,6 +1595,7 @@ impl<'a> Builder<'a> {
                 || (!mesh.normals.is_empty() && mesh.normals.len() != mesh.vertices.len())
             {
                 self.loss(
+                    LossCode::TessellationOmitted,
                     LossCategory::Geometry,
                     Severity::Warning,
                     format!(
@@ -1716,6 +1730,15 @@ impl<'a> Builder<'a> {
     fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
         let face = self.faces.get(face_id).copied()?;
         let surface_id = face.surface.0.clone();
+        // A face resting on an unknown (opaque) surface cannot become an
+        // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
+        // loss rather than fabricate placeholder geometry.
+        if let Some(surf) = self.surfaces.get(surface_id.as_str()) {
+            if !geometry::surface_is_supported(&surf.geometry) {
+                self.unknown_surface_faces.insert(face_id.to_string());
+                return None;
+            }
+        }
         let loop_ids: Vec<String> = face.loops.iter().map(|l| l.0.clone()).collect();
         let same_sense = matches!(face.sense, Sense::Forward);
 
@@ -1727,8 +1750,17 @@ impl<'a> Builder<'a> {
         let mut bound_refs = Vec::new();
         for (i, lid) in loop_ids.iter().enumerate() {
             if let Some(loop_ref) = self.emit_loop(lid) {
-                // The first loop is the outer bound by IR convention.
-                let kind = if i == 0 {
+                let kind = if matches!(
+                    self.loops
+                        .get(lid.as_str())
+                        .map(|loop_| loop_.boundary_role),
+                    Some(LoopBoundaryRole::Outer)
+                ) || (i == 0
+                    && !loop_ids.iter().any(|id| {
+                        self.loops
+                            .get(id.as_str())
+                            .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
+                    })) {
                     "FACE_OUTER_BOUND"
                 } else {
                     "FACE_BOUND"
@@ -1752,8 +1784,8 @@ impl<'a> Builder<'a> {
 
     fn emit_loop(&mut self, loop_id: &str) -> Option<Ref> {
         let lp = self.loops.get(loop_id).copied()?;
-        if let Some(vertex) = &lp.vertex {
-            let vertex = self.emit_vertex(vertex.as_str())?;
+        if lp.coedges.is_empty() && lp.vertex_uses.len() == 1 {
+            let vertex = self.emit_vertex(lp.vertex_uses[0].vertex.as_str())?;
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
         }
         let coedge_ids: Vec<String> = lp.coedges.iter().map(|c| c.0.clone()).collect();
@@ -1763,7 +1795,6 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let orientation = matches!(coedge.sense, Sense::Forward);
-            // The edge carrier emits the coedge pcurve through SURFACE_CURVE.
             let Some(edge_ref) = self.emit_edge(coedge.edge.as_str()) else {
                 continue;
             };
@@ -1796,7 +1827,7 @@ impl<'a> Builder<'a> {
         if self
             .curves
             .get(curve_id.as_str())
-            .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+            .is_some_and(|curve| !geometry::curve_is_supported(&curve.geometry))
         {
             self.curveless_edges.insert(edge_id.to_string());
             return None;
@@ -1829,7 +1860,7 @@ impl<'a> Builder<'a> {
     fn emit_pcurve(&mut self, pcurve_id: &str, surface_id: &str) -> Option<Ref> {
         let pcurve = self.pcurves.get(pcurve_id).copied()?;
         let surface = self.emit_surface(surface_id)?;
-        let curve = geometry::pcurve(&mut self.emitter, &pcurve.geometry);
+        let curve = geometry::pcurve(&mut self.emitter, &pcurve.geometry)?;
         let context = if let Some(context) = self.pcurve_context {
             context
         } else {
@@ -1886,7 +1917,7 @@ impl<'a> Builder<'a> {
             let r = if let Some((id, reference)) = emitted {
                 self.written_procedural_surfaces.insert(id);
                 reference
-            } else if matches!(surf.geometry, SurfaceGeometry::Unknown { .. }) {
+            } else if !geometry::surface_is_supported(&surf.geometry) {
                 return None;
             } else {
                 geometry::surface(&mut self.emitter, &surf.geometry)
@@ -2046,7 +2077,7 @@ impl<'a> Builder<'a> {
                         }
                     ),
                 )
-            } else if matches!(geometry, CurveGeometry::Unknown { .. }) {
+            } else if !geometry::curve_is_supported(&geometry) {
                 return None;
             } else {
                 geometry::curve(&mut self.emitter, &geometry)
@@ -2487,7 +2518,6 @@ impl<'a> Builder<'a> {
         )
     }
 
-    /// Record aggregate loss notes for IR content the writer does not carry.
     fn note_unrepresented(&mut self) {
         let nonstandard_analytic_surfaces = self
             .ir
@@ -2518,6 +2548,7 @@ impl<'a> Builder<'a> {
             .count();
         if nonstandard_analytic_surfaces > 0 {
             self.loss(
+                LossCode::AnalyticSurfaceNormalized,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
@@ -2540,6 +2571,7 @@ impl<'a> Builder<'a> {
             .count();
         if elliptical_cones > 0 {
             self.loss(
+                LossCode::EllipticalConeReduced,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
@@ -2548,22 +2580,24 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.curveless_edges.is_empty() {
-            self.loss(
+            self.omit(
+                LossCode::CurvelessEdgeOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
-                    "{} edge(s) have no typed 3D curve and were omitted from \
+                    "{} edge(s) have no typed 3D curve or carry a STEP-unsupported transform and were omitted from \
                      their edge loops (STEP EDGE_CURVE requires a 3D curve)",
                     self.curveless_edges.len()
                 ),
             );
         }
         if !self.unknown_surface_faces.is_empty() {
-            self.loss(
+            self.omit(
+                LossCode::UnknownSurfaceFaceOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
-                    "{} face(s) rest on an unknown (undecoded) surface and were omitted \
+                    "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
                      from the STEP shell (an ADVANCED_FACE requires a surface); their \
                      topology remains in the IR",
                     self.unknown_surface_faces.len()
@@ -2572,6 +2606,7 @@ impl<'a> Builder<'a> {
         }
         if self.unsupported_standalone_geometry > 0 {
             self.loss(
+                LossCode::GeometryNotTransferred,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
@@ -2585,11 +2620,12 @@ impl<'a> Builder<'a> {
             .model
             .coedges
             .iter()
-            .filter_map(|coedge| coedge.pcurve.as_ref())
-            .filter(|id| !self.pcurves.contains_key(id.as_str()))
+            .flat_map(|coedge| &coedge.pcurves)
+            .filter(|use_| !self.pcurves.contains_key(use_.pcurve.as_str()))
             .count();
         if missing_pcurve_count > 0 {
-            self.loss(
+            self.omit(
+                LossCode::PcurveOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
@@ -2602,8 +2638,8 @@ impl<'a> Builder<'a> {
             .model
             .coedges
             .iter()
-            .filter_map(|coedge| coedge.pcurve.as_ref())
-            .filter_map(|id| self.pcurves.get(id.as_str()))
+            .flat_map(|coedge| &coedge.pcurves)
+            .filter_map(|use_| self.pcurves.get(use_.pcurve.as_str()))
             .filter(|pcurve| {
                 pcurve.wrapper_reversed.is_some()
                     || pcurve.native_tail_flags.is_some()
@@ -2612,8 +2648,9 @@ impl<'a> Builder<'a> {
             })
             .count();
         if reduced_pcurve_count > 0 {
-            self.loss(
-                LossCategory::Metadata,
+            self.omit(
+                LossCode::PcurveOmitted,
+                LossCategory::Geometry,
                 Severity::Info,
                 format!(
                     "{reduced_pcurve_count} emitted coedge pcurve(s) carry native-only metadata not represented in STEP"
@@ -2621,7 +2658,8 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.model.subds.is_empty() {
-            self.loss(
+            self.omit(
+                LossCode::SubdOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
@@ -2633,7 +2671,8 @@ impl<'a> Builder<'a> {
         }
         let unwritten_pmi = self.ir.model.pmi.len().saturating_sub(self.written_pmi);
         if unwritten_pmi > 0 {
-            self.loss(
+            self.omit(
+                LossCode::PmiOmitted,
                 LossCategory::Attribute,
                 Severity::Warning,
                 format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
@@ -2669,6 +2708,7 @@ impl<'a> Builder<'a> {
                 .count();
         if source_object_count > 0 {
             self.loss(
+                LossCode::SourceAssociationOmitted,
                 LossCategory::Metadata,
                 Severity::Info,
                 format!(
@@ -2686,6 +2726,7 @@ impl<'a> Builder<'a> {
             .sum::<usize>();
         if unknown_count > 0 {
             self.loss(
+                LossCode::PassthroughRecordOmitted,
                 LossCategory::Metadata,
                 Severity::Info,
                 format!("{unknown_count} uninterpreted passthrough record(s) were not represented in STEP"),
@@ -2693,6 +2734,7 @@ impl<'a> Builder<'a> {
         }
         if self.unstyled_colors > 0 {
             self.loss(
+                LossCode::AttributesNotTransferred,
                 LossCategory::Attribute,
                 Severity::Info,
                 format!(
@@ -2733,6 +2775,7 @@ impl<'a> Builder<'a> {
             .count();
         if lossy_appearances > 0 {
             self.loss(
+                LossCode::AppearanceReduced,
                 LossCategory::Material,
                 Severity::Info,
                 format!(
@@ -2750,6 +2793,7 @@ impl<'a> Builder<'a> {
             .count();
         if lossy_binding_metadata > 0 {
             self.loss(
+                LossCode::AppearanceReduced,
                 LossCategory::Metadata,
                 Severity::Info,
                 format!(
@@ -2759,6 +2803,7 @@ impl<'a> Builder<'a> {
         }
         if !self.ir.model.attributes.is_empty() {
             self.loss(
+                LossCode::AttributesNotTransferred,
                 LossCategory::Attribute,
                 Severity::Info,
                 format!(
@@ -2773,35 +2818,6 @@ impl<'a> Builder<'a> {
             .procedural_surfaces
             .iter()
             .filter(|procedural| !self.written_procedural_surfaces.contains(&procedural.id.0))
-            .filter(|procedural| match &procedural.definition {
-                ProceduralSurfaceDefinition::Exact { .. }
-                | ProceduralSurfaceDefinition::Compound { .. }
-                | ProceduralSurfaceDefinition::Taper { .. }
-                | ProceduralSurfaceDefinition::Loft { .. }
-                | ProceduralSurfaceDefinition::CompoundLoft { .. }
-                | ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
-                | ProceduralSurfaceDefinition::Skin { .. }
-                | ProceduralSurfaceDefinition::Net { .. }
-                | ProceduralSurfaceDefinition::G2Blend { .. }
-                | ProceduralSurfaceDefinition::VariableBlend { .. }
-                | ProceduralSurfaceDefinition::VertexBlend { .. }
-                | ProceduralSurfaceDefinition::Extrusion { .. }
-                | ProceduralSurfaceDefinition::LinearSweep { .. }
-                | ProceduralSurfaceDefinition::Revolution { .. }
-                | ProceduralSurfaceDefinition::AxisRevolution { .. }
-                | ProceduralSurfaceDefinition::Sum { .. }
-                | ProceduralSurfaceDefinition::Sweep { .. }
-                | ProceduralSurfaceDefinition::Helix { .. }
-                | ProceduralSurfaceDefinition::Deformable { .. }
-                | ProceduralSurfaceDefinition::TSpline { .. }
-                | ProceduralSurfaceDefinition::Offset { .. }
-                | ProceduralSurfaceDefinition::ParallelOffset { .. }
-                | ProceduralSurfaceDefinition::DegenerateTorus { .. }
-                | ProceduralSurfaceDefinition::CurveBounded { .. }
-                | ProceduralSurfaceDefinition::Ruled { .. }
-                | ProceduralSurfaceDefinition::Blend { .. }
-                | ProceduralSurfaceDefinition::Unknown { .. } => true,
-            })
             .count();
         let procedural_curve_count = self
             .ir
@@ -2812,6 +2828,7 @@ impl<'a> Builder<'a> {
             .count();
         if procedural_surface_count > 0 || procedural_curve_count > 0 {
             self.loss(
+                LossCode::ProceduralReduced,
                 LossCategory::Geometry,
                 Severity::Info,
                 format!(
@@ -2829,6 +2846,7 @@ impl<'a> Builder<'a> {
             .sum();
         if source_native_records > 0 {
             self.loss(
+                LossCode::ParametricRecordOmitted,
                 LossCategory::Metadata,
                 Severity::Info,
                 format!(
@@ -2881,16 +2899,19 @@ impl Codec for StepCodec {
         }
     }
 
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        let mut bytes = Vec::new();
-        reader.read_to_end(&mut bytes)?;
-        refuse_alternate_encoding(&bytes)?;
-        if self.detect(&bytes) == Confidence::No {
+    fn inspect_impl(
+        &self,
+        _ctx: &cadmpeg_ir::decode::DecodeContext<'_>,
+        root: cadmpeg_ir::decode::View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        let bytes = root.window();
+        refuse_alternate_encoding(bytes)?;
+        if self.detect(bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
         let exchange =
-            parse::parse(&bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
-        let (decoded, opaque_offsets) = reader::inspect_exchange(&bytes, &exchange);
+            parse::parse(bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
+        let (decoded, opaque_offsets) = reader::inspect_exchange(bytes, &exchange);
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
             role: "metadata".into(),
@@ -3045,18 +3066,23 @@ impl Codec for StepCodec {
         })
     }
 
-    fn decode(
+    fn decode_impl(
         &self,
-        reader: &mut dyn ReadSeek,
-        options: &DecodeOptions,
+        ctx: &cadmpeg_ir::decode::DecodeContext<'_>,
+        root: cadmpeg_ir::decode::View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        let mut bytes = Vec::new();
-        reader.read_to_end(&mut bytes)?;
-        refuse_alternate_encoding(&bytes)?;
-        if self.detect(&bytes) == Confidence::No {
+        let bytes = root.window();
+        refuse_alternate_encoding(bytes)?;
+        if self.detect(bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        reader::decode(&bytes, *options)
+        reader::decode(
+            bytes,
+            DecodeOptions {
+                container_only: ctx.container_only(),
+                policy: *ctx.policy(),
+            },
+        )
     }
 }
 
@@ -3116,7 +3142,6 @@ impl From<StepError> for CodecError {
     }
 }
 
-/// Whether a 4×4 row-major matrix is (numerically) the identity.
 fn is_identity(rows: &[[f64; 4]; 4]) -> bool {
     for (i, row) in rows.iter().enumerate() {
         for (j, &v) in row.iter().enumerate() {
