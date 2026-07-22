@@ -1889,16 +1889,22 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                 | "end_tangts"
         )
         .then(|| named_spline_scalar_slots(name, &body[values_start..], slot_count, cache));
+        let values = if let Some(slots) = &spline_slots {
+            slots.iter().map(|slot| slot.0).collect()
+        } else if name == "local_sys" {
+            let Some(values) =
+                sequential_named_local_system_slots(&body[values_start..], slot_count, cache)
+            else {
+                return SurfaceNamedValue::Opaque(body.to_vec());
+            };
+            values
+        } else {
+            scalar_slots(&body[values_start..], slot_count, cache)
+        };
         return SurfaceNamedValue::ScalarArray {
             dimensions,
             count,
-            values: if let Some(slots) = &spline_slots {
-                slots.iter().map(|slot| slot.0).collect()
-            } else if name == "local_sys" {
-                row_scalar_slots(&body[values_start..], slot_count, cache)
-            } else {
-                scalar_slots(&body[values_start..], slot_count, cache)
-            },
+            values,
             tokens: if let Some(slots) = spline_slots {
                 slots.into_iter().map(|slot| slot.1).collect()
             } else {
@@ -4516,7 +4522,11 @@ fn slot_equality(first: &(Option<f64>, Vec<u8>), second: &(Option<f64>, Vec<u8>)
     }
 }
 
-fn row_scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<Option<f64>> {
+fn sequential_named_local_system_slots(
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<Option<f64>>> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
@@ -4526,6 +4536,7 @@ fn row_scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> V
             continue;
         }
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
+            (slots.len() + 3 <= count).then_some(())?;
             slots.extend([Some(0.0), Some(1.0), Some(0.0)]);
             cursor += 2;
             continue;
@@ -4550,11 +4561,12 @@ fn row_scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> V
             slots.push(Some(value));
             cursor = next;
         } else {
-            cursor += 1;
+            return None;
         }
     }
+    (cursor == body.len()).then_some(())?;
     slots.resize(count, None);
-    slots
+    Some(slots)
 }
 
 struct PlaneFrame {
@@ -7484,6 +7496,21 @@ mod tests {
                 ],
                 tokens: Vec::new(),
             })
+        );
+    }
+
+    #[test]
+    fn named_local_system_rejects_an_unknown_byte_before_complete_slots() {
+        let payload = b"srf_prim_ptr(cylinder)\0\
+            \xe0\x02local_sys\0\xf9\x04\x03\xfb\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18\
+            \xe0\x01radius\0\xe4";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(
+            records[0].field("local_sys").map(|field| &field.value),
+            Some(&SurfaceNamedValue::Opaque(
+                b"\xf9\x04\x03\xfb\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18".to_vec()
+            ))
         );
     }
 
