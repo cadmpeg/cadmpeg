@@ -15701,24 +15701,6 @@ fn decode_accepts_exact_loop_and_rejects_incomplete_fin_deltas() {
 }
 
 #[test]
-fn deltas_point_exposes_typed_position_in_model_units() {
-    let points = crate::deltas::points(&status_framed_deltas_point_stream());
-    assert_eq!(points.len(), 1);
-    assert_eq!(points[0].xmt, 50);
-    assert_eq!(points[0].node_id, 900);
-    assert_eq!(points[0].position.x, 12.5);
-    assert_eq!(points[0].position.y, -2.0);
-    assert_eq!(points[0].position.z, 4.0);
-}
-
-#[test]
-fn deltas_point_rejects_nonfinite_millimeter_position() {
-    let mut stream = status_framed_deltas_point_stream();
-    put_f64(&mut stream, 20, f64::MAX);
-    assert!(crate::deltas::points(&stream).is_empty());
-}
-
-#[test]
 fn deltas_point_normalizes_to_partition_record_framing() {
     let record = crate::deltas::walk(&status_framed_deltas_point_stream())
         .records

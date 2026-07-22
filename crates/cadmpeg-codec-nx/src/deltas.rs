@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::be;
-use cadmpeg_ir::math::Point3;
 
 /// One complete status-framed topology record.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,19 +24,6 @@ pub struct Record {
     pub offset: usize,
     /// First byte following the record.
     pub end: usize,
-}
-
-/// One typed POINT addition or replacement from a deltas stream.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Point {
-    /// Stream-local XMT identifier.
-    pub xmt: u32,
-    /// Kernel node identifier.
-    pub node_id: u32,
-    /// Position converted from Parasolid metres to model millimeters.
-    pub position: Point3,
-    /// Record start offset in the inflated stream.
-    pub offset: usize,
 }
 
 /// One compact deletion carrying an explicit Parasolid type and XMT identity.
@@ -349,28 +335,6 @@ pub fn walk(stream: &[u8]) -> Census {
         offset += 1;
     }
     census
-}
-
-/// Decode complete status-framed POINT records in source order.
-pub fn points(stream: &[u8]) -> Vec<Point> {
-    walk(stream)
-        .records
-        .into_iter()
-        .filter_map(|record| {
-            let [x, y, z] = record.position?;
-            let position = Point3::new(x * 1000.0, y * 1000.0, z * 1000.0);
-            [position.x, position.y, position.z]
-                .into_iter()
-                .all(f64::is_finite)
-                .then_some(())?;
-            Some(Point {
-                xmt: record.xmt,
-                node_id: record.node_id?,
-                position,
-                offset: record.offset,
-            })
-        })
-        .collect()
 }
 
 /// Overlay supported complete deltas records onto one paired partition stream.
