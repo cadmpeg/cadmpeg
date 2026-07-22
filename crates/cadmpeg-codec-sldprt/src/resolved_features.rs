@@ -836,10 +836,11 @@ mod marker_tests {
         coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, cosmetic_thread_component_face_reference_at,
         cosmetic_thread_cylinder_reference_at, current_coordinate_linked_line_endpoints,
-        current_indexed_arc_reverses_center_sweep, enrich_history_revolution_inputs,
-        explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
-        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
-        inline_surface_reference_at, legacy_coordinate_roster_selected_axis_endpoint_indices,
+        current_indexed_arc_reverses_center_sweep, direct_indexed_curve_endpoint_indices,
+        enrich_history_revolution_inputs, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, fixed_reference_plane_frame, generated_surface_identities,
+        indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
+        legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
         legacy_feature_input_section, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
@@ -3600,6 +3601,32 @@ mod marker_tests {
         );
         payload[27..29].copy_from_slice(&2u16.to_le_bytes());
         assert_eq!(compact_indexed_curve_endpoint_indices(&payload, 0), None);
+    }
+
+    #[test]
+    fn direct_indexed_curve_stores_feature_local_point_ids() {
+        let mut payload = vec![0; 84 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&6u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&15u16.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(
+            direct_indexed_curve_endpoint_indices(&payload, 0),
+            Some([6, 15])
+        );
+        assert_eq!(compact_indexed_curve_endpoint_indices(&payload, 0), None);
+        payload[58..60].copy_from_slice(&6u16.to_le_bytes());
+        assert_eq!(direct_indexed_curve_endpoint_indices(&payload, 0), None);
+        payload[58..60].copy_from_slice(&15u16.to_le_bytes());
+        payload[35..39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
+        assert_eq!(direct_indexed_curve_endpoint_indices(&payload, 0), None);
     }
 
     #[test]
@@ -21260,6 +21287,7 @@ fn roster_curve_endpoint_markers<'a>(
     }
     if let Some(indices) = wide_indexed_curve_endpoint_indices(payload, offset)
         .or_else(|| compact_indexed_curve_endpoint_indices(payload, offset))
+        .or_else(|| direct_indexed_curve_endpoint_indices(payload, offset))
         .or_else(|| extended_compact_indexed_curve_endpoint_indices(payload, offset))
         .or_else(|| compact_legacy_curve_endpoint_indices(payload, offset))
         .or_else(|| alternate_current_indexed_curve_endpoint_indices(payload, offset))
@@ -21927,6 +21955,36 @@ fn compact_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Opti
         offset,
         &[SKETCH_MARKER, LEGACY_SKETCH_MARKER],
     )
+}
+
+fn direct_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(0)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 60..offset + 64) != Some(&[0; 4])
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || !sketch_marker_prefix_at(payload, offset.checked_add(84)?)
+    {
+        return None;
+    }
+    let endpoint = |relative: usize| {
+        let id = u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        );
+        (id != 0).then_some(u32::from(id))
+    };
+    let endpoints = [endpoint(56)?, endpoint(58)?];
+    (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
 fn extended_compact_indexed_curve_endpoint_indices(
