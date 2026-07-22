@@ -21530,28 +21530,33 @@ fn typed_marker_relation_definition_in_sketch(
                 }
             };
             if let [entity] = entities.as_slice() {
-                let invalid_axis_entity = !sketch_entities.is_empty()
-                    && sketch_entities
-                        .iter()
-                        .find(|candidate| candidate.id == *entity)
-                        .is_none_or(|candidate| {
-                            let SketchGeometry::Line { start, end } = &candidate.geometry else {
-                                return true;
-                            };
-                            if kind == Horizontal {
-                                !same_dimension_length(start.v, end.v)
-                            } else {
-                                !same_dimension_length(start.u, end.u)
-                            }
-                        });
+                let projected_kind = if matches!(kind, Horizontal | Vertical)
+                    && !sketch_entities.is_empty()
+                {
+                    let Some(SketchEntity {
+                        geometry: SketchGeometry::Line { start, end },
+                        ..
+                    }) = sketch_entities.iter().find(|candidate| candidate.id == *entity)
+                    else {
+                        return Some(native());
+                    };
+                    let horizontal = same_dimension_length(start.v, end.v);
+                    let vertical = same_dimension_length(start.u, end.u);
+                    match (horizontal, vertical) {
+                        (true, false) => Horizontal,
+                        (false, true) => Vertical,
+                        _ => return Some(native()),
+                    }
+                } else {
+                    kind
+                };
                 if matches!(kind, Horizontal | Vertical)
-                    && (invalid_axis_entity
-                        || (sketch_entities.is_empty()
-                            && entity.0.contains("sketch-entity#relation-point:")))
+                    && sketch_entities.is_empty()
+                    && entity.0.contains("sketch-entity#relation-point:")
                 {
                     return Some(native());
                 }
-                match kind {
+                match projected_kind {
                     Horizontal => SketchConstraintDefinition::Horizontal {
                         entity: entity.clone(),
                     },
@@ -27355,8 +27360,47 @@ mod profile_join_tests {
 
         assert_eq!(
             typed_marker_relation_definition(&relation, &markers, &loci),
-            Some(SketchConstraintDefinition::Horizontal { entity: line })
+            Some(SketchConstraintDefinition::Horizontal {
+                entity: line.clone(),
+            })
         );
+        let sketch = SketchId("sketch".into());
+        let mut projected = SketchEntity {
+            id: line,
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(0.0, 2.0),
+            },
+        };
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &relation,
+                &sketch,
+                std::slice::from_ref(&projected),
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Vertical { .. })
+        ));
+        projected.geometry = SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 2.0),
+        };
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &relation,
+                &sketch,
+                &[projected],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Native { .. })
+        ));
     }
 
     #[test]
