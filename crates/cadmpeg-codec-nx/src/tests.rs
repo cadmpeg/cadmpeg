@@ -10762,6 +10762,127 @@ fn partition_stream() -> Vec<u8> {
     s
 }
 
+/// Raw bytes for a `/Root/UG_PART/DisplayJT` container entry: a one-row outer
+/// index pointing at a single embedded JT 9.4 document whose table of contents
+/// declares one compressed segment. Decoding walks
+/// `display_jt_indices -> display_jt_documents -> display_jt_segments ->
+/// display_jt_compressed_element_sequences`, populating those arenas plus
+/// `display_jt_compressed_elements`. The byte layout mirrors the
+/// `display_jt_index_requires_every_declared_header` white-box test.
+fn display_jt_basic_stream() -> Vec<u8> {
+    let mut inflated = Vec::new();
+    inflated.extend_from_slice(&24_u32.to_le_bytes());
+    inflated.extend_from_slice(&[3; 16]);
+    inflated.push(1);
+    inflated.extend_from_slice(&5_u32.to_le_bytes());
+    inflated.extend_from_slice(&[9, 8, 7]);
+    inflated.extend_from_slice(&16_u32.to_le_bytes());
+    inflated.extend_from_slice(&[0xff; 16]);
+    inflated.extend_from_slice(&[6, 5]);
+    let compressed = zlib_compress_at_level(&inflated, 1);
+    let segment_byte_len = 24 + 9 + compressed.len() as u32;
+
+    let mut data = Vec::new();
+    // Outer index: version 9, one row.
+    data.extend_from_slice(&9_u32.to_le_bytes());
+    data.extend_from_slice(&1_u32.to_le_bytes());
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&100_u32.to_le_bytes()); // word-swapped value
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&28_u32.to_le_bytes()); // header offset
+    data.extend_from_slice(&[0; 4]);
+    // Embedded JT document header at offset 28.
+    let mut version = [b' '; 80];
+    version[..14].copy_from_slice(b"Version 9.4 JT");
+    data.extend_from_slice(&version);
+    data.push(0); // byte order
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&105_u32.to_le_bytes()); // toc offset
+    data.extend_from_slice(&[1; 16]); // lsg segment id
+                                      // Table of contents at offset 105: one entry.
+    data.extend_from_slice(&1_u32.to_le_bytes());
+    data.extend_from_slice(&[2; 16]); // segment id
+    data.extend_from_slice(&137_u32.to_le_bytes()); // segment offset
+    data.extend_from_slice(&segment_byte_len.to_le_bytes());
+    data.extend_from_slice(&1_u32.to_be_bytes()); // attribute (segment type 1)
+                                                  // Segment at offset 137.
+    data.extend_from_slice(&[2; 16]); // segment id
+    data.extend_from_slice(&1_u32.to_le_bytes()); // segment type
+    data.extend_from_slice(&segment_byte_len.to_le_bytes()); // header byte len
+    data.extend_from_slice(&2_u32.to_le_bytes()); // compression flag
+    data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
+    data.push(2); // algorithm
+    data.extend_from_slice(&compressed);
+    data
+}
+
+/// A Parasolid `(partition)` stream carrying the neutral-binary attribute and
+/// typed-entity records (`00 4f`/`00 50` class declaration, `00 51` framed
+/// entity, `00 52`/`00 53` counted value records, `00 54` string record) whose
+/// extractors are exercised by the `parasolid_entity_*`, `parasolid_attribute_*`
+/// white-box tests. The `00 51` entity's references resolve to the value and
+/// string records, and its discriminator selects the class declaration, so the
+/// join arenas (`parasolid_entity_51_numeric_uses`, `parasolid_entity_51_string_uses`,
+/// `parasolid_attribute_class_uses`) are populated as well.
+fn parasolid_entity_records_stream() -> Vec<u8> {
+    let mut s = Vec::new();
+    s.extend_from_slice(b"PS\x00\x00");
+    s.extend_from_slice(
+        b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
+    );
+
+    // `00 4f` attribute-class declaration with identity xmt 201, followed by its
+    // `00 50` field record (one field). A `00 51` entity with discriminator 200
+    // resolves to this class through `definition_xmt = discriminator + 1`.
+    s.extend_from_slice(&[0x00, 0x4f]);
+    s.extend_from_slice(&10u32.to_be_bytes()); // name length
+    s.extend_from_slice(&201u16.to_be_bytes()); // class identity xmt
+    s.extend_from_slice(b"ATTR_CLASS");
+    s.extend_from_slice(&[0x00, 0x50]); // field-record tag
+    s.extend_from_slice(&1u32.to_be_bytes()); // field count
+    s.extend_from_slice(&202u16.to_be_bytes()); // field-record xmt
+    s.extend_from_slice(&0u16.to_be_bytes()); // reference 0
+    s.extend_from_slice(&0u16.to_be_bytes()); // reference 1
+    s.extend_from_slice(&0u16.to_be_bytes()); // header word 0
+    s.extend_from_slice(&0u16.to_be_bytes()); // header word 1
+    s.extend_from_slice(&[0xaa; 26]); // 26-byte descriptor prefix
+    s.push(0x01); // one field code
+
+    // `00 52` counted unsigned-integer record, identity xmt 101, one value.
+    s.extend_from_slice(&[0x00, 0x52]);
+    s.extend_from_slice(&1u32.to_be_bytes()); // count
+    s.extend_from_slice(&101u16.to_be_bytes()); // identity xmt
+    s.extend_from_slice(&7u32.to_be_bytes()); // value
+
+    // `00 53` counted binary64 record, identity xmt 102, one finite value.
+    s.extend_from_slice(&[0x00, 0x53]);
+    s.extend_from_slice(&1u32.to_be_bytes()); // count
+    s.extend_from_slice(&102u16.to_be_bytes()); // identity xmt
+    s.extend_from_slice(&1.5f64.to_be_bytes()); // value
+
+    // `00 54` printable string record, identity xmt 100.
+    s.extend_from_slice(&[0x00, 0x54]);
+    s.extend_from_slice(&10u32.to_be_bytes()); // length
+    s.extend_from_slice(&100u16.to_be_bytes()); // identity xmt
+    s.extend_from_slice(b"ATTR_LABEL");
+    s.push(0x00); // terminator
+
+    // `00 51` framed entity: flags 1 (low_flag 1 -> six references), identity
+    // xmt 50, sequence 2, discriminator 200. Its references resolve to the
+    // string (100), integer (101), and double (102) records above.
+    s.extend_from_slice(&[0x00, 0x51]);
+    s.extend_from_slice(&1u32.to_be_bytes()); // flags
+    s.extend_from_slice(&50u16.to_be_bytes()); // identity xmt
+    s.extend_from_slice(&2u32.to_be_bytes()); // sequence
+    s.extend_from_slice(&200u16.to_be_bytes()); // discriminator
+    for reference in [100u16, 101, 102, 150, 151, 152] {
+        s.extend_from_slice(&reference.to_be_bytes());
+    }
+    s.extend_from_slice(&[0xaa, 0xaa]); // trailing padding
+
+    s
+}
+
 /// A complete one-face Parasolid topology. Every ownership and geometry link is
 /// a small XMT reference, so this generated fixture exercises the codec's
 /// connected-B-rep path without depending on an external CAD file.
@@ -19534,7 +19655,7 @@ mod golden {
     /// Frozen from the generated snapshots; if a refactor drops an arena from
     /// every fixture, `arena_coverage_meets_floor` fails. Raise it (never lower
     /// it) when new covering fixtures are added.
-    const ARENA_COVERAGE_FLOOR: usize = 42;
+    const ARENA_COVERAGE_FLOOR: usize = 55;
 
     /// Build the covering fixture set: `(golden name, full `.prt` bytes)`. Each
     /// stream builder is wrapped exactly as its originating white-box test wraps
@@ -19578,6 +19699,21 @@ mod golden {
         f.push((
             "prt_with_weak_rmfastload_overlap",
             prt_with_weak_rmfastload_overlap(),
+        ));
+
+        // Parasolid neutral-binary attribute/entity records in a partition stream.
+        f.push((
+            "parasolid_entity_records",
+            prt_with_partition(&parasolid_entity_records_stream()),
+        ));
+
+        // Embedded DisplayJT stream: outer index, one JT document, one segment.
+        f.push((
+            "display_jt_basic",
+            prt_with_named_payloads(&[
+                ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+                ("/Root/UG_PART/DisplayJT", display_jt_basic_stream()),
+            ]),
         ));
 
         // OM record areas / feature history, wrapped as a named UG_PART payload.
