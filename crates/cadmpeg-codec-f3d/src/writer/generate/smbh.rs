@@ -1150,11 +1150,13 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     encode_source_less_edges_vertices_points(
         &mut records,
         target,
-        curve_start,
-        edge_start,
-        vertex_start,
-        point_start,
-        attribute_start,
+        SourceLessRecordStarts {
+            curve: curve_start,
+            edge: edge_start,
+            vertex: vertex_start,
+            point: point_start,
+            attribute: attribute_start,
+        },
         Some(&wire_edge_owners),
         Some(&free_vertex_owners),
     )?;
@@ -2060,11 +2062,13 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     encode_source_less_edges_vertices_points(
         &mut records,
         target,
-        curve_start,
-        edge_start,
-        vertex_start,
-        point_start,
-        attribute_start,
+        SourceLessRecordStarts {
+            curve: curve_start,
+            edge: edge_start,
+            vertex: vertex_start,
+            point: point_start,
+            attribute: attribute_start,
+        },
         Some(&wire_edge_owners),
         Some(&free_vertex_owners),
     )?;
@@ -2081,18 +2085,31 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     Ok(bytes)
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Base record indices for the source-less stream sections that
+/// `encode_source_less_edges_vertices_points` cross-references.
+#[derive(Clone, Copy)]
+struct SourceLessRecordStarts {
+    curve: i64,
+    edge: i64,
+    vertex: i64,
+    point: i64,
+    attribute: i64,
+}
+
 fn encode_source_less_edges_vertices_points(
     records: &mut Vec<u8>,
     target: &CadIr,
-    curve_start: i64,
-    edge_start: i64,
-    vertex_start: i64,
-    point_start: i64,
-    attribute_start: i64,
+    starts: SourceLessRecordStarts,
     edge_owners: Option<&BTreeMap<cadmpeg_ir::ids::EdgeId, i64>>,
     free_vertex_owners: Option<&BTreeMap<VertexId, i64>>,
 ) -> Result<(), CodecError> {
+    let SourceLessRecordStarts {
+        curve: curve_start,
+        edge: edge_start,
+        vertex: vertex_start,
+        point: point_start,
+        attribute: attribute_start,
+    } = starts;
     let model = &target.model;
     let vertex_ordinals: HashMap<_, _> = model
         .vertices

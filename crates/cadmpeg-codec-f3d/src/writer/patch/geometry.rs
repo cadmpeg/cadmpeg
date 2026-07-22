@@ -49,35 +49,42 @@ pub(crate) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
         && (first.x * second.x + first.y * second.y + first.z * second.z).abs() <= 1e-9
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn patch_geometry(
-    bytes: &mut [u8],
-    positions: &BTreeMap<String, Point3>,
-    lines: &BTreeMap<String, (Point3, Vector3)>,
-    conics: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    degenerate_curves: &BTreeMap<String, Point3>,
-    planes: &BTreeMap<String, (Point3, Vector3, Vector3)>,
-    spheres: &BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
-    tori: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64, f64)>,
-    body_transforms: &BTreeMap<String, Transform>,
-    entity_colors: &BTreeMap<String, Color>,
-    edge_ranges: &BTreeMap<String, [f64; 2]>,
-    face_senses: &BTreeMap<String, Sense>,
-    coedge_senses: &BTreeMap<String, Sense>,
-    procedural_surface_edits: &BTreeMap<String, ProceduralSurfaceEdit>,
-    nurbs_surfaces: &BTreeMap<String, NurbsSurfaceEdit>,
-    nurbs_curves: &BTreeMap<String, NurbsCurveEdit>,
-    pcurves: &BTreeMap<String, NurbsPcurveEdit>,
-    procedural_curve_edits: &BTreeMap<String, ProceduralCurveEdit>,
-    procedural_surface_fits: &BTreeMap<String, f64>,
-    creation_timestamps: &BTreeMap<usize, f64>,
-    edge_continuities: &BTreeMap<usize, (Sense, String)>,
-    vertex_ownerships: &BTreeMap<usize, (i64, u8)>,
-    face_sidedness: &BTreeMap<usize, crate::records::FaceContainment>,
-    tolerant_edges: &BTreeMap<usize, f64>,
-    tolerant_vertices: &BTreeMap<usize, (f64, [f64; 2])>,
-) -> Result<(), CodecError> {
+/// The per-entity BREP edit maps that the geometry patchers apply as a unit.
+///
+/// Every field is keyed by BREP entity id (or record index) and carries the
+/// edited value for one geometry aspect. The maps travel together from
+/// validation through `patch_geometry` into `patch_framed_geometry`, so they
+/// are bundled rather than threaded positionally.
+#[derive(Clone, Copy)]
+pub(crate) struct GeometryEdits<'a> {
+    pub(crate) positions: &'a BTreeMap<String, Point3>,
+    pub(crate) lines: &'a BTreeMap<String, (Point3, Vector3)>,
+    pub(crate) conics: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
+    pub(crate) degenerate_curves: &'a BTreeMap<String, Point3>,
+    pub(crate) planes: &'a BTreeMap<String, (Point3, Vector3, Vector3)>,
+    pub(crate) spheres: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
+    pub(crate) tori: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
+    pub(crate) cones: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64, f64)>,
+    pub(crate) body_transforms: &'a BTreeMap<String, Transform>,
+    pub(crate) entity_colors: &'a BTreeMap<String, Color>,
+    pub(crate) edge_ranges: &'a BTreeMap<String, [f64; 2]>,
+    pub(crate) face_senses: &'a BTreeMap<String, Sense>,
+    pub(crate) coedge_senses: &'a BTreeMap<String, Sense>,
+    pub(crate) procedural_surface_edits: &'a BTreeMap<String, ProceduralSurfaceEdit>,
+    pub(crate) nurbs_surfaces: &'a BTreeMap<String, NurbsSurfaceEdit>,
+    pub(crate) nurbs_curves: &'a BTreeMap<String, NurbsCurveEdit>,
+    pub(crate) pcurves: &'a BTreeMap<String, NurbsPcurveEdit>,
+    pub(crate) procedural_curve_edits: &'a BTreeMap<String, ProceduralCurveEdit>,
+    pub(crate) procedural_surface_fits: &'a BTreeMap<String, f64>,
+    pub(crate) creation_timestamps: &'a BTreeMap<usize, f64>,
+    pub(crate) edge_continuities: &'a BTreeMap<usize, (Sense, String)>,
+    pub(crate) vertex_ownerships: &'a BTreeMap<usize, (i64, u8)>,
+    pub(crate) face_sidedness: &'a BTreeMap<usize, crate::records::FaceContainment>,
+    pub(crate) tolerant_edges: &'a BTreeMap<usize, f64>,
+    pub(crate) tolerant_vertices: &'a BTreeMap<usize, (f64, [f64; 2])>,
+}
+
+pub(crate) fn patch_geometry(bytes: &mut [u8], edits: &GeometryEdits) -> Result<(), CodecError> {
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
@@ -87,9 +94,16 @@ pub(crate) fn patch_geometry(
     let header_scale = asm_header::parse(bytes)
         .and_then(|header| header.scale)
         .unwrap_or(1.0);
-    patch_framed_geometry(
-        bytes,
-        &records,
+    patch_framed_geometry(bytes, &records, edits, header_scale)
+}
+
+pub(crate) fn patch_framed_geometry(
+    bytes: &mut [u8],
+    records: &[sab::Record],
+    edits: &GeometryEdits,
+    header_scale: f64,
+) -> Result<(), CodecError> {
+    let GeometryEdits {
         positions,
         lines,
         conics,
@@ -115,41 +129,7 @@ pub(crate) fn patch_geometry(
         face_sidedness,
         tolerant_edges,
         tolerant_vertices,
-        header_scale,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn patch_framed_geometry(
-    bytes: &mut [u8],
-    records: &[sab::Record],
-    positions: &BTreeMap<String, Point3>,
-    lines: &BTreeMap<String, (Point3, Vector3)>,
-    conics: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    degenerate_curves: &BTreeMap<String, Point3>,
-    planes: &BTreeMap<String, (Point3, Vector3, Vector3)>,
-    spheres: &BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
-    tori: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    cones: &BTreeMap<String, (Point3, Vector3, Vector3, f64, f64, f64)>,
-    body_transforms: &BTreeMap<String, Transform>,
-    entity_colors: &BTreeMap<String, Color>,
-    edge_ranges: &BTreeMap<String, [f64; 2]>,
-    face_senses: &BTreeMap<String, Sense>,
-    coedge_senses: &BTreeMap<String, Sense>,
-    procedural_surface_edits: &BTreeMap<String, ProceduralSurfaceEdit>,
-    nurbs_surfaces: &BTreeMap<String, NurbsSurfaceEdit>,
-    nurbs_curves: &BTreeMap<String, NurbsCurveEdit>,
-    pcurves: &BTreeMap<String, NurbsPcurveEdit>,
-    procedural_curve_edits: &BTreeMap<String, ProceduralCurveEdit>,
-    procedural_surface_fits: &BTreeMap<String, f64>,
-    creation_timestamps: &BTreeMap<usize, f64>,
-    edge_continuities: &BTreeMap<usize, (Sense, String)>,
-    vertex_ownerships: &BTreeMap<usize, (i64, u8)>,
-    face_sidedness: &BTreeMap<usize, crate::records::FaceContainment>,
-    tolerant_edges: &BTreeMap<usize, f64>,
-    tolerant_vertices: &BTreeMap<usize, (f64, [f64; 2])>,
-    header_scale: f64,
-) -> Result<(), CodecError> {
+    } = *edits;
     let records_by_index = records
         .iter()
         .map(|record| (record.index, record))
