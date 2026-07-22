@@ -1344,10 +1344,43 @@ pub fn positional_frame_planes(
                 && record.opaque_spans[0].length == 3
                 && record.opaque_spans[1].offset == 10
                 && record.opaque_spans[1].length == 8)
-                .then_some((corners[0].offset, corners))
+                .then(|| (corners[0].offset, corners))
+        })();
+        let trailed_auxiliary_frame = (|| {
+            let [leading, middle, terminal] = record.scalar_frames.as_slice() else {
+                return None;
+            };
+            let [_, corners @ ..] = terminal.slots.as_slice() else {
+                return None;
+            };
+            let contiguous_end = |frame: &SurfaceParameterScalarFrame| {
+                frame.slots.iter().try_fold(frame.offset, |cursor, slot| {
+                    (slot.offset == cursor).then(|| cursor + slot.length)
+                })
+            };
+            let frame_end = record.body.len().checked_sub(2)?;
+            (leading.offset == 1
+                && leading.slots.len() == 2
+                && contiguous_end(leading) == Some(11)
+                && middle.offset == 15
+                && middle.slots.len() == 1
+                && contiguous_end(middle) == Some(16)
+                && terminal.offset == 18
+                && corners.len() == 6
+                && contiguous_end(terminal) == Some(frame_end)
+                && record.opaque_spans.len() == 4
+                && record.opaque_spans[0].offset == 0
+                && record.opaque_spans[0].length == 1
+                && record.opaque_spans[1].offset == 11
+                && record.opaque_spans[1].length == 4
+                && record.opaque_spans[2].offset == 16
+                && record.opaque_spans[2].length == 2
+                && record.body.ends_with(&[0xf7, 0x0c]))
+            .then(|| (corners[0].offset, corners))
         })();
         let mut candidates = marked_frames
             .chain(auxiliary_frame)
+            .chain(trailed_auxiliary_frame)
             .filter_map(|(offset, slots)| {
                 let values = slots
                     .iter()
@@ -6012,9 +6045,74 @@ mod tests {
             }]
         );
 
+        let mut trailed = record.clone();
+        trailed.body = vec![0; 65];
+        trailed.body[63..].copy_from_slice(&[0xf7, 0x0c]);
+        trailed.opaque_spans = vec![
+            SurfaceParameterOpaqueSpan {
+                raw: vec![0],
+                offset: 0,
+                length: 1,
+            },
+            SurfaceParameterOpaqueSpan {
+                raw: vec![0; 4],
+                offset: 11,
+                length: 4,
+            },
+            SurfaceParameterOpaqueSpan {
+                raw: vec![0; 2],
+                offset: 16,
+                length: 2,
+            },
+            SurfaceParameterOpaqueSpan {
+                raw: vec![0xf7, 0x0c],
+                offset: 63,
+                length: 2,
+            },
+        ];
+        trailed.scalar_frames = vec![
+            SurfaceParameterScalarFrame {
+                offset: 1,
+                slots: vec![slot(0.001, 1, 7), slot(0.2, 8, 3)],
+            },
+            SurfaceParameterScalarFrame {
+                offset: 15,
+                slots: vec![slot(-1.0, 15, 1)],
+            },
+            SurfaceParameterScalarFrame {
+                offset: 18,
+                slots: vec![
+                    slot(-59.8, 18, 8),
+                    slot(-29.8, 26, 3),
+                    slot(4.1, 29, 7),
+                    slot(7.5, 36, 8),
+                    slot(29.8, 44, 3),
+                    slot(3.9, 47, 8),
+                    slot(7.5, 55, 8),
+                ],
+            },
+        ];
+        assert_eq!(
+            positional_frame_planes(&[trailed], &[row.clone()]),
+            vec![OutlinePlane {
+                surface_id: 41,
+                origin: [0.0, 0.0, 7.5],
+                normal: [0.0, 0.0, 1.0],
+                u_axis: [1.0, 0.0, 0.0],
+                offset: 37,
+            }]
+        );
+
         let mut incomplete = record;
         incomplete.opaque_spans[1].length = 7;
-        assert!(positional_frame_planes(&[incomplete], &[row]).is_empty());
+        assert!(positional_frame_planes(&[incomplete.clone()], &[row.clone()]).is_empty());
+
+        let mut short = incomplete;
+        short.scalar_frames.push(SurfaceParameterScalarFrame {
+            offset: 18,
+            slots: vec![slot(1.0, 18, 1)],
+        });
+        assert!(positional_frame_planes(&[short], &[row]).is_empty());
     }
 
     #[test]

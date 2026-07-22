@@ -836,6 +836,9 @@ An auxiliary-corner positional plane body has a three-byte prefix, one
 seven-byte scalar, an eight-byte control payload, and a terminal frame of seven
 contiguous scalars. The first terminal scalar is auxiliary. The remaining six
 are two XYZ corners and use the same unique-held-coordinate plane rule.
+A second auxiliary-corner form begins with one control byte and two contiguous
+scalars, carries a four-byte control payload, one scalar, and a two-byte control
+payload, then stores the seven-scalar frame followed by `f7 0c`.
 
 For a generated section plane selected through the parent-datum rule, multiple
 held envelope coordinates are filtered against the orientation plane. The
