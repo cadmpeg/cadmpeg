@@ -12908,9 +12908,13 @@ fn deltas_intersection_curve_stream() -> Vec<u8> {
     stream
 }
 
+/// Shared `PS`-signatured deltas-stream transmit preamble used by the deltas
+/// fixture builders.
+const DELTAS_PREAMBLE: &[u8] =
+    b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00";
+
 fn status_framed_deltas_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     let mut face = Vec::new();
     face.extend_from_slice(&14u16.to_be_bytes());
     face.extend_from_slice(&100u16.to_be_bytes());
@@ -12936,8 +12940,7 @@ fn status_framed_deltas_stream() -> Vec<u8> {
 }
 
 fn variable_status_framed_deltas_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&15u16.to_be_bytes());
     stream.extend_from_slice(&(-100i16).to_be_bytes());
     stream.extend_from_slice(&0u16.to_be_bytes());
@@ -12989,15 +12992,13 @@ fn status_framed_deltas_intersection_stream() -> Vec<u8> {
 }
 
 fn deltas_point_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend(status_framed_deltas_point_stream());
     stream
 }
 
 fn deltas_edge_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&16u16.to_be_bytes());
     stream.extend_from_slice(&8u16.to_be_bytes());
     stream.extend_from_slice(&901u32.to_be_bytes());
@@ -13012,8 +13013,7 @@ fn deltas_edge_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_face_vertex_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&14u16.to_be_bytes());
     stream.extend_from_slice(&4u16.to_be_bytes());
     stream.extend_from_slice(&902u32.to_be_bytes());
@@ -13044,8 +13044,7 @@ fn deltas_face_vertex_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_loop_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&15u16.to_be_bytes());
     stream.extend_from_slice(&5u16.to_be_bytes());
     stream.extend_from_slice(&904u32.to_be_bytes());
@@ -13057,8 +13056,7 @@ fn deltas_loop_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_shell_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&13u16.to_be_bytes());
     stream.extend_from_slice(&3u16.to_be_bytes());
     stream.extend_from_slice(&905u32.to_be_bytes());
@@ -13070,8 +13068,7 @@ fn deltas_shell_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_fin_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&17u16.to_be_bytes());
     stream.extend_from_slice(&7u16.to_be_bytes());
     for reference in [1u16, 5, 7, 7, 10, 1, 8, 9, 1] {
@@ -13083,8 +13080,7 @@ fn deltas_fin_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_line_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&30u16.to_be_bytes());
     stream.extend_from_slice(&9u16.to_be_bytes());
     stream.extend_from_slice(&906u32.to_be_bytes());
@@ -13100,8 +13096,7 @@ fn deltas_line_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_plane_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&50u16.to_be_bytes());
     stream.extend_from_slice(&6u16.to_be_bytes());
     stream.extend_from_slice(&907u32.to_be_bytes());
@@ -13117,8 +13112,7 @@ fn deltas_plane_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_offset_surface_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&60u16.to_be_bytes());
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&907u32.to_be_bytes());
@@ -13143,8 +13137,7 @@ fn status_frame_compact_references(mut record: Vec<u8>, reference_offsets: &[usi
 }
 
 fn deltas_stream_with_record(record: Vec<u8>) -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend(record);
     stream
 }
@@ -13230,8 +13223,7 @@ fn circle_topology_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_circle_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&31u16.to_be_bytes());
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&908u32.to_be_bytes());
@@ -13268,8 +13260,7 @@ fn ellipse_topology_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_ellipse_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&32u16.to_be_bytes());
     stream.extend_from_slice(&13u16.to_be_bytes());
     stream.extend_from_slice(&909u32.to_be_bytes());
@@ -13305,8 +13296,7 @@ fn cylinder_topology_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_cylinder_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&51u16.to_be_bytes());
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&910u32.to_be_bytes());
@@ -13342,8 +13332,7 @@ fn cone_topology_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_cone_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&52u16.to_be_bytes());
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&911u32.to_be_bytes());
@@ -13390,8 +13379,7 @@ fn sphere_topology_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_sphere_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&53u16.to_be_bytes());
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&912u32.to_be_bytes());
@@ -13426,8 +13414,7 @@ fn torus_topology_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_torus_partition_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&54u16.to_be_bytes());
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&913u32.to_be_bytes());
@@ -13667,8 +13654,7 @@ fn bspline_surface_replacement_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_bspline_surface_wrapper_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&124u16.to_be_bytes());
     stream.extend_from_slice(&10u16.to_be_bytes());
     stream.extend_from_slice(&914u32.to_be_bytes());
@@ -13708,8 +13694,7 @@ fn bspline_curve_replacement_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_bspline_curve_wrapper_stream() -> Vec<u8> {
-    let mut stream =
-        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(&134u16.to_be_bytes());
     stream.extend_from_slice(&50u16.to_be_bytes());
     stream.extend_from_slice(&915u32.to_be_bytes());
