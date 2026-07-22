@@ -38,6 +38,16 @@ pub(crate) struct CatalogueRow {
     /// Serializes this family into its arena when non-empty.
     pub(crate) emit:
         fn(&NativeModel, &CatalogueRow, &mut NativeNamespace) -> Result<(), NativeConvertError>,
+    /// Record count for this family, feeding the catalogue-derived emptiness
+    /// fold ([`NativeModel::is_empty`]) and inspect counts.
+    pub(crate) len: fn(&NativeModel) -> usize,
+    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 133 of
+    /// the 179 families count; the 46 that do not are transcribed verbatim from
+    /// the legacy hand-written all-empty guard, which omitted them. The
+    /// exclusions look like oversights (25 of the 26 `display_jt` families are
+    /// excluded, for instance) but are frozen observable behavior: flipping any
+    /// one changes whether a part is treated as empty and therefore its output.
+    pub(crate) counts_toward_emptiness: bool,
 }
 
 /// Index one past the last group-A note row. [`super::attach`] emits notes for
@@ -3592,6 +3602,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_indices),
         emit: emit_display_jt_display_jt_indices,
+        len: |m| m.display_jt.display_jt_indices.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "display_jt_documents",
@@ -3599,6 +3611,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_documents),
         emit: emit_display_jt_display_jt_documents,
+        len: |m| m.display_jt.display_jt_documents.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_segments",
@@ -3606,6 +3620,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_segments),
         emit: emit_display_jt_display_jt_segments,
+        len: |m| m.display_jt.display_jt_segments.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_shape_lod_elements",
@@ -3613,6 +3629,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_shape_lod_elements),
         emit: emit_display_jt_display_jt_shape_lod_elements,
+        len: |m| m.display_jt.display_jt_shape_lod_elements.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_tri_strip_lod_headers",
@@ -3620,6 +3638,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_tri_strip_lod_headers),
         emit: emit_display_jt_display_jt_tri_strip_lod_headers,
+        len: |m| m.display_jt.display_jt_tri_strip_lod_headers.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_initial_face_degree_symbols",
@@ -3627,6 +3647,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_initial_face_degree_symbols),
         emit: emit_display_jt_display_jt_initial_face_degree_symbols,
+        len: |m| m.display_jt.display_jt_initial_face_degree_symbols.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_topology_packet_sequences",
@@ -3634,6 +3656,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_topology_packet_sequences),
         emit: emit_display_jt_display_jt_topology_packet_sequences,
+        len: |m| m.display_jt.display_jt_topology_packet_sequences.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_vertex_records_headers",
@@ -3641,6 +3665,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_vertex_records_headers),
         emit: emit_display_jt_display_jt_vertex_records_headers,
+        len: |m| m.display_jt.display_jt_vertex_records_headers.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_coordinate_array_headers",
@@ -3648,6 +3674,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_coordinate_array_headers),
         emit: emit_display_jt_display_jt_coordinate_array_headers,
+        len: |m| m.display_jt.display_jt_coordinate_array_headers.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_vertex_coordinates",
@@ -3655,6 +3683,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_display_jt_display_jt_vertex_coordinates),
         emit: emit_display_jt_display_jt_vertex_coordinates,
+        len: |m| m.display_jt.display_jt_vertex_coordinates.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_vertex_normals",
@@ -3662,6 +3692,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_display_jt_display_jt_vertex_normals),
         emit: emit_display_jt_display_jt_vertex_normals,
+        len: |m| m.display_jt.display_jt_vertex_normals.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_vertex_colors",
@@ -3669,6 +3701,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_display_jt_display_jt_vertex_colors),
         emit: emit_display_jt_display_jt_vertex_colors,
+        len: |m| m.display_jt.display_jt_vertex_colors.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_vertex_texture_coordinates",
@@ -3676,6 +3710,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_display_jt_display_jt_vertex_texture_coordinates),
         emit: emit_display_jt_display_jt_vertex_texture_coordinates,
+        len: |m| m.display_jt.display_jt_vertex_texture_coordinates.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_vertex_flags",
@@ -3683,6 +3719,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_display_jt_display_jt_vertex_flags),
         emit: emit_display_jt_display_jt_vertex_flags,
+        len: |m| m.display_jt.display_jt_vertex_flags.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_geometric_transform_attributes",
@@ -3690,6 +3728,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_display_jt_display_jt_geometric_transform_attributes),
         emit: emit_display_jt_display_jt_geometric_transform_attributes,
+        len: |m| m.display_jt.display_jt_geometric_transform_attributes.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_polygon_meshes",
@@ -3697,6 +3737,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_display_jt_display_jt_polygon_meshes),
         emit: emit_display_jt_display_jt_polygon_meshes,
+        len: |m| m.display_jt.display_jt_polygon_meshes.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_compressed_element_sequences",
@@ -3704,6 +3746,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_compressed_element_sequences),
         emit: emit_display_jt_display_jt_compressed_element_sequences,
+        len: |m| m.display_jt.display_jt_compressed_element_sequences.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_compressed_elements",
@@ -3711,6 +3755,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_compressed_elements),
         emit: emit_display_jt_display_jt_compressed_elements,
+        len: |m| m.display_jt.display_jt_compressed_elements.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_string_property_atoms",
@@ -3718,6 +3764,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_string_property_atoms),
         emit: emit_display_jt_display_jt_string_property_atoms,
+        len: |m| m.display_jt.display_jt_string_property_atoms.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_shape_lod_bindings",
@@ -3725,6 +3773,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_shape_lod_bindings),
         emit: emit_display_jt_display_jt_shape_lod_bindings,
+        len: |m| m.display_jt.display_jt_shape_lod_bindings.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_base_node_data",
@@ -3732,6 +3782,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_base_node_data),
         emit: emit_display_jt_display_jt_base_node_data,
+        len: |m| m.display_jt.display_jt_base_node_data.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_group_node_data",
@@ -3739,6 +3791,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_group_node_data),
         emit: emit_display_jt_display_jt_group_node_data,
+        len: |m| m.display_jt.display_jt_group_node_data.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_instance_nodes",
@@ -3746,6 +3800,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_instance_nodes),
         emit: emit_display_jt_display_jt_instance_nodes,
+        len: |m| m.display_jt.display_jt_instance_nodes.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_partition_nodes",
@@ -3753,6 +3809,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_partition_nodes),
         emit: emit_display_jt_display_jt_partition_nodes,
+        len: |m| m.display_jt.display_jt_partition_nodes.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_range_lod_nodes",
@@ -3760,6 +3818,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_range_lod_nodes),
         emit: emit_display_jt_display_jt_range_lod_nodes,
+        len: |m| m.display_jt.display_jt_range_lod_nodes.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "display_jt_tri_strip_shape_nodes",
@@ -3767,6 +3827,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_display_jt_display_jt_tri_strip_shape_nodes),
         emit: emit_display_jt_display_jt_tri_strip_shape_nodes,
+        len: |m| m.display_jt.display_jt_tri_strip_shape_nodes.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "segment_index_rows",
@@ -3774,6 +3836,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_segments_segment_index_rows),
         emit: emit_segments_segment_index_rows,
+        len: |m| m.segments.segment_index_rows.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "segment_stream_links",
@@ -3781,6 +3845,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_segments_segment_stream_links),
         emit: emit_segments_segment_stream_links,
+        len: |m| m.segments.segment_stream_links.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "segment_body_bindings",
@@ -3788,6 +3854,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_segments_segment_body_bindings),
         emit: emit_segments_segment_body_bindings,
+        len: |m| m.segments.segment_body_bindings.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "segment_body_lineage_statuses",
@@ -3795,6 +3863,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_segments_segment_body_lineage_statuses),
         emit: emit_segments_segment_body_lineage_statuses,
+        len: |m| m.segments.segment_body_lineage_statuses.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_blend_surface_records",
@@ -3802,6 +3872,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_blend_surface_records),
         emit: emit_parasolid_parasolid_blend_surface_records,
+        len: |m| m.parasolid.parasolid_blend_surface_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_blend_bound_records",
@@ -3809,6 +3881,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_blend_bound_records),
         emit: emit_parasolid_parasolid_blend_bound_records,
+        len: |m| m.parasolid.parasolid_blend_bound_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_offset_surface_records",
@@ -3816,6 +3890,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_offset_surface_records),
         emit: emit_parasolid_parasolid_offset_surface_records,
+        len: |m| m.parasolid.parasolid_offset_surface_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_trimmed_curve_records",
@@ -3823,6 +3899,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_trimmed_curve_records),
         emit: emit_parasolid_parasolid_trimmed_curve_records,
+        len: |m| m.parasolid.parasolid_trimmed_curve_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_surface_curve_records",
@@ -3830,6 +3908,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_surface_curve_records),
         emit: emit_parasolid_parasolid_surface_curve_records,
+        len: |m| m.parasolid.parasolid_surface_curve_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_intersection_records",
@@ -3837,6 +3917,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_intersection_records),
         emit: emit_parasolid_parasolid_intersection_records,
+        len: |m| m.parasolid.parasolid_intersection_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_term_use_records",
@@ -3844,6 +3926,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_term_use_records),
         emit: emit_parasolid_parasolid_term_use_records,
+        len: |m| m.parasolid.parasolid_term_use_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_support_uv_records",
@@ -3851,6 +3935,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_support_uv_records),
         emit: emit_parasolid_parasolid_support_uv_records,
+        len: |m| m.parasolid.parasolid_support_uv_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_chart_records",
@@ -3858,6 +3944,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_chart_records),
         emit: emit_parasolid_parasolid_chart_records,
+        len: |m| m.parasolid.parasolid_chart_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_attribute_definitions",
@@ -3865,6 +3953,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_attribute_definitions),
         emit: emit_parasolid_parasolid_attribute_definitions,
+        len: |m| m.parasolid.parasolid_attribute_definitions.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_entity_51_records",
@@ -3872,6 +3962,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_entity_51_records),
         emit: emit_parasolid_parasolid_entity_51_records,
+        len: |m| m.parasolid.parasolid_entity_51_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_entity_52_integer_records",
@@ -3879,6 +3971,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_entity_52_integer_records),
         emit: emit_parasolid_parasolid_entity_52_integer_records,
+        len: |m| m.parasolid.parasolid_entity_52_integer_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_entity_53_double_records",
@@ -3886,6 +3980,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_entity_53_double_records),
         emit: emit_parasolid_parasolid_entity_53_double_records,
+        len: |m| m.parasolid.parasolid_entity_53_double_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_entity_54_string_records",
@@ -3893,6 +3989,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_entity_54_string_records),
         emit: emit_parasolid_parasolid_entity_54_string_records,
+        len: |m| m.parasolid.parasolid_entity_54_string_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_entity_51_string_uses",
@@ -3900,6 +3998,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_entity_51_string_uses),
         emit: emit_parasolid_parasolid_entity_51_string_uses,
+        len: |m| m.parasolid.parasolid_entity_51_string_uses.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_entity_51_numeric_uses",
@@ -3907,6 +4007,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_entity_51_numeric_uses),
         emit: emit_parasolid_parasolid_entity_51_numeric_uses,
+        len: |m| m.parasolid.parasolid_entity_51_numeric_uses.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_attribute_class_uses",
@@ -3914,6 +4016,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_parasolid_parasolid_attribute_class_uses),
         emit: emit_parasolid_parasolid_attribute_class_uses,
+        len: |m| m.parasolid.parasolid_attribute_class_uses.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_topology_attribute_list_references",
@@ -3921,6 +4025,12 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_parasolid_parasolid_topology_attribute_list_references),
         emit: emit_parasolid_parasolid_topology_attribute_list_references,
+        len: |m| {
+            m.parasolid
+                .parasolid_topology_attribute_list_references
+                .len()
+        },
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "parasolid_topology_attribute_class_uses",
@@ -3928,6 +4038,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_parasolid_parasolid_topology_attribute_class_uses),
         emit: emit_parasolid_parasolid_topology_attribute_class_uses,
+        len: |m| m.parasolid.parasolid_topology_attribute_class_uses.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "data_block_object_frames",
@@ -3935,6 +4047,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_data_block_object_frames),
         emit: emit_features_data_block_object_frames,
+        len: |m| m.features.data_block_object_frames.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "offset_store_named_points",
@@ -3942,6 +4056,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_offset_store_named_points),
         emit: emit_features_offset_store_named_points,
+        len: |m| m.features.offset_store_named_points.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_sketch_named_point_block_uses",
@@ -3949,6 +4065,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_feature_sketch_named_point_block_uses),
         emit: emit_features_feature_sketch_named_point_block_uses,
+        len: |m| m.features.feature_sketch_named_point_block_uses.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_sketch_preceding_named_point_uses",
@@ -3956,6 +4074,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_feature_sketch_preceding_named_point_uses),
         emit: emit_features_feature_sketch_preceding_named_point_uses,
+        len: |m| m.features.feature_sketch_preceding_named_point_uses.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_sketch_point_uses",
@@ -3963,6 +4083,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_features_feature_sketch_point_uses),
         emit: emit_features_feature_sketch_point_uses,
+        len: |m| m.features.feature_sketch_point_uses.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_sketch_datum_csys_dependencies",
@@ -3970,6 +4092,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_features_feature_sketch_datum_csys_dependencies),
         emit: emit_features_feature_sketch_datum_csys_dependencies,
+        len: |m| m.features.feature_sketch_datum_csys_dependencies.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_input_block_identity_groups",
@@ -3977,6 +4101,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_feature_input_block_identity_groups),
         emit: emit_features_feature_input_block_identity_groups,
+        len: |m| m.features.feature_input_block_identity_groups.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "data_block_abr_reference_lanes",
@@ -3984,6 +4110,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_data_block_abr_reference_lanes),
         emit: emit_om_data_block_abr_reference_lanes,
+        len: |m| m.om.data_block_abr_reference_lanes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "segment_om_links",
@@ -3991,6 +4119,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_segments_segment_om_links),
         emit: emit_segments_segment_om_links,
+        len: |m| m.segments.segment_om_links.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "om_record_areas",
@@ -3998,6 +4128,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_om_record_areas),
         emit: emit_om_om_record_areas,
+        len: |m| m.om.om_record_areas.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_operation_labels",
@@ -4005,6 +4137,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_feature_operation_labels),
         emit: emit_features_feature_operation_labels,
+        len: |m| m.features.feature_operation_labels.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_sketch_records",
@@ -4012,6 +4146,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_features_feature_sketch_records),
         emit: emit_features_feature_sketch_records,
+        len: |m| m.features.feature_sketch_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_sketch_payload_fixed_pairs",
@@ -4019,6 +4155,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_feature_sketch_payload_fixed_pairs),
         emit: emit_features_feature_sketch_payload_fixed_pairs,
+        len: |m| m.features.feature_sketch_payload_fixed_pairs.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_sketch_fixed_points",
@@ -4026,6 +4164,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_features_feature_sketch_fixed_points),
         emit: emit_features_feature_sketch_fixed_points,
+        len: |m| m.features.feature_sketch_fixed_points.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_operation_records",
@@ -4033,6 +4173,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_feature_operation_records),
         emit: emit_features_feature_operation_records,
+        len: |m| m.features.feature_operation_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_payload_strings",
@@ -4040,6 +4182,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_feature_payload_strings),
         emit: emit_features_feature_payload_strings,
+        len: |m| m.features.feature_payload_strings.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_body_references",
@@ -4047,6 +4191,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_feature_body_references),
         emit: emit_features_feature_body_references,
+        len: |m| m.features.feature_body_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_body_reference_occurrences",
@@ -4054,6 +4200,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_feature_body_reference_occurrences),
         emit: emit_features_feature_body_reference_occurrences,
+        len: |m| m.features.feature_body_reference_occurrences.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_input_blocks",
@@ -4061,6 +4209,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_feature_input_blocks),
         emit: emit_features_feature_input_blocks,
+        len: |m| m.features.feature_input_blocks.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_boolean_operations",
@@ -4068,6 +4218,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_features_feature_boolean_operations),
         emit: emit_features_feature_boolean_operations,
+        len: |m| m.features.feature_boolean_operations.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "expression_declarations",
@@ -4075,6 +4227,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_expression_declarations),
         emit: emit_om_expression_declarations,
+        len: |m| m.om.expression_declarations.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "data_block_control_values",
@@ -4082,6 +4236,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_data_block_control_values),
         emit: emit_om_data_block_control_values,
+        len: |m| m.om.data_block_control_values.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "data_block_control_class_references",
@@ -4089,6 +4245,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_data_block_control_class_references),
         emit: emit_om_data_block_control_class_references,
+        len: |m| m.om.data_block_control_class_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "data_block_control_index_values",
@@ -4096,6 +4254,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_data_block_control_index_values),
         emit: emit_om_data_block_control_index_values,
+        len: |m| m.om.data_block_control_index_values.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "data_block_control_references",
@@ -4103,6 +4263,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_data_block_control_references),
         emit: emit_om_data_block_control_references,
+        len: |m| m.om.data_block_control_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "data_block_control_handle_pairs",
@@ -4110,6 +4272,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_data_block_control_handle_pairs),
         emit: emit_om_data_block_control_handle_pairs,
+        len: |m| m.om.data_block_control_handle_pairs.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "data_block_references",
@@ -4117,6 +4281,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_data_block_references),
         emit: emit_om_data_block_references,
+        len: |m| m.om.data_block_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_parameter_bindings",
@@ -4124,6 +4290,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_features_feature_parameter_bindings),
         emit: emit_features_feature_parameter_bindings,
+        len: |m| m.features.feature_parameter_bindings.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_parameter_uses",
@@ -4131,6 +4299,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_features_feature_parameter_uses),
         emit: emit_features_feature_parameter_uses,
+        len: |m| m.features.feature_parameter_uses.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "store_headers",
@@ -4138,6 +4308,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_store_headers),
         emit: emit_om_store_headers,
+        len: |m| m.om.store_headers.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "external_references",
@@ -4145,6 +4317,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_external_references),
         emit: emit_om_external_references,
+        len: |m| m.om.external_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "external_reference_records",
@@ -4152,6 +4326,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_external_reference_records),
         emit: emit_om_external_reference_records,
+        len: |m| m.om.external_reference_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "material_texture_assets",
@@ -4159,6 +4335,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: Some(note_om_material_texture_assets),
         emit: emit_om_material_texture_assets,
+        len: |m| m.om.material_texture_assets.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "material_texture_catalog_entries",
@@ -4166,6 +4344,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::Derived,
         note: Some(note_om_material_texture_catalog_entries),
         emit: emit_om_material_texture_catalog_entries,
+        len: |m| m.om.material_texture_catalog_entries.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_body_segment_uses",
@@ -4173,6 +4353,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_body_segment_uses,
+        len: |m| m.features.feature_body_segment_uses.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_simple_hole_templates",
@@ -4180,6 +4362,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_simple_hole_templates,
+        len: |m| m.features.feature_simple_hole_templates.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_simple_hole_repeated_scalar_lanes",
@@ -4187,6 +4371,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_simple_hole_repeated_scalar_lanes,
+        len: |m| m.features.feature_simple_hole_repeated_scalar_lanes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_simple_hole_repeated_scalar_lane_block_references",
@@ -4194,6 +4380,12 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_simple_hole_repeated_scalar_lane_block_references,
+        len: |m| {
+            m.features
+                .feature_simple_hole_repeated_scalar_lane_block_references
+                .len()
+        },
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_simple_hole_construction_groups",
@@ -4201,6 +4393,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_simple_hole_construction_groups,
+        len: |m| m.features.feature_simple_hole_construction_groups.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_datum_csys_constructions",
@@ -4208,6 +4402,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_csys_constructions,
+        len: |m| m.features.feature_datum_csys_constructions.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_datum_csys_payloads",
@@ -4215,6 +4411,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_csys_payloads,
+        len: |m| m.features.feature_datum_csys_payloads.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_datum_csys_payload_scalar_pairs",
@@ -4222,6 +4420,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_csys_payload_scalar_pairs,
+        len: |m| m.features.feature_datum_csys_payload_scalar_pairs.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_datum_csys_payload_fixed_pairs",
@@ -4229,6 +4429,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_csys_payload_fixed_pairs,
+        len: |m| m.features.feature_datum_csys_payload_fixed_pairs.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_datum_csys_payload_scalars",
@@ -4236,6 +4438,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_csys_payload_scalars,
+        len: |m| m.features.feature_datum_csys_payload_scalars.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_datum_csys_descriptors",
@@ -4243,6 +4447,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_csys_descriptors,
+        len: |m| m.features.feature_datum_csys_descriptors.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_datum_csys_block_uses",
@@ -4250,6 +4456,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_csys_block_uses,
+        len: |m| m.features.feature_datum_csys_block_uses.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_datum_plane_headers",
@@ -4257,6 +4465,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_plane_headers,
+        len: |m| m.features.feature_datum_plane_headers.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_datum_plane_block_uses",
@@ -4264,6 +4474,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_plane_block_uses,
+        len: |m| m.features.feature_datum_plane_block_uses.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_datum_plane_payloads",
@@ -4271,6 +4483,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_plane_payloads,
+        len: |m| m.features.feature_datum_plane_payloads.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_datum_plane_payload_scalar_pairs",
@@ -4278,6 +4492,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_plane_payload_scalar_pairs,
+        len: |m| m.features.feature_datum_plane_payload_scalar_pairs.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_datum_plane_descriptors",
@@ -4285,6 +4501,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_plane_descriptors,
+        len: |m| m.features.feature_datum_plane_descriptors.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_datum_plane_csys_identity_uses",
@@ -4292,6 +4510,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_datum_plane_csys_identity_uses,
+        len: |m| m.features.feature_datum_plane_csys_identity_uses.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_sketch_references",
@@ -4299,6 +4519,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_sketch_references,
+        len: |m| m.features.feature_sketch_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_projected_curve_references",
@@ -4306,6 +4528,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_projected_curve_references,
+        len: |m| m.features.feature_projected_curve_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_projected_curve_construction_payloads",
@@ -4313,6 +4537,12 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_projected_curve_construction_payloads,
+        len: |m| {
+            m.features
+                .feature_projected_curve_construction_payloads
+                .len()
+        },
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_projected_curve_construction_strings",
@@ -4320,6 +4550,12 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_projected_curve_construction_strings,
+        len: |m| {
+            m.features
+                .feature_projected_curve_construction_strings
+                .len()
+        },
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_pattern_references",
@@ -4327,6 +4563,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_pattern_references,
+        len: |m| m.features.feature_pattern_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_pattern_construction_payloads",
@@ -4334,6 +4572,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_pattern_construction_payloads,
+        len: |m| m.features.feature_pattern_construction_payloads.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_pattern_construction_strings",
@@ -4341,6 +4581,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_pattern_construction_strings,
+        len: |m| m.features.feature_pattern_construction_strings.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_pattern_construction_fixed_lanes",
@@ -4348,6 +4590,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_pattern_construction_fixed_lanes,
+        len: |m| m.features.feature_pattern_construction_fixed_lanes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_pattern_transform_lanes",
@@ -4355,6 +4599,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_pattern_transform_lanes,
+        len: |m| m.features.feature_pattern_transform_lanes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_point_construction_headers",
@@ -4362,6 +4608,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_point_construction_headers,
+        len: |m| m.features.feature_point_construction_headers.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_point_construction_scalar_lanes",
@@ -4369,6 +4617,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_point_construction_scalar_lanes,
+        len: |m| m.features.feature_point_construction_scalar_lanes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_draft_construction_references",
@@ -4376,6 +4626,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_draft_construction_references,
+        len: |m| m.features.feature_draft_construction_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_draft_construction_index_lanes",
@@ -4383,6 +4635,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_draft_construction_index_lanes,
+        len: |m| m.features.feature_draft_construction_index_lanes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_draft_construction_payloads",
@@ -4390,6 +4644,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_draft_construction_payloads,
+        len: |m| m.features.feature_draft_construction_payloads.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_draft_construction_graph_payloads",
@@ -4397,6 +4653,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_draft_construction_graph_payloads,
+        len: |m| m.features.feature_draft_construction_graph_payloads.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_draft_construction_fixed_lanes",
@@ -4404,6 +4662,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_draft_construction_fixed_lanes,
+        len: |m| m.features.feature_draft_construction_fixed_lanes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_draft_construction_binary32_lanes",
@@ -4411,6 +4671,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_draft_construction_binary32_lanes,
+        len: |m| m.features.feature_draft_construction_binary32_lanes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_draft_construction_graph_strings",
@@ -4418,6 +4680,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_draft_construction_graph_strings,
+        len: |m| m.features.feature_draft_construction_graph_strings.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_draft_construction_identity_frames",
@@ -4425,6 +4689,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_draft_construction_identity_frames,
+        len: |m| m.features.feature_draft_construction_identity_frames.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_draft_construction_terminal_lanes",
@@ -4432,6 +4698,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_draft_construction_terminal_lanes,
+        len: |m| m.features.feature_draft_construction_terminal_lanes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_surface_construction_references",
@@ -4439,6 +4707,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_surface_construction_references,
+        len: |m| m.features.feature_surface_construction_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_surface_construction_payloads",
@@ -4446,6 +4716,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_surface_construction_payloads,
+        len: |m| m.features.feature_surface_construction_payloads.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_surface_construction_scalar_pairs",
@@ -4453,6 +4725,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_surface_construction_scalar_pairs,
+        len: |m| m.features.feature_surface_construction_scalar_pairs.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_surface_construction_strings",
@@ -4460,6 +4734,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_surface_construction_strings,
+        len: |m| m.features.feature_surface_construction_strings.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_surface_construction_branches",
@@ -4467,6 +4743,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_surface_construction_branches,
+        len: |m| m.features.feature_surface_construction_branches.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_extrude_profile_references",
@@ -4474,6 +4752,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_extrude_profile_references,
+        len: |m| m.features.feature_extrude_profile_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_extrude_payload_headers",
@@ -4481,6 +4761,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_extrude_payload_headers,
+        len: |m| m.features.feature_extrude_payload_headers.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_extrude_payload_footers",
@@ -4488,6 +4770,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_extrude_payload_footers,
+        len: |m| m.features.feature_extrude_payload_footers.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_operation_body_scalar_triples",
@@ -4495,6 +4779,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_operation_body_scalar_triples,
+        len: |m| m.features.feature_operation_body_scalar_triples.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_operation_body_members",
@@ -4502,6 +4788,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_operation_body_members,
+        len: |m| m.features.feature_operation_body_members.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_operation_body_operands",
@@ -4509,6 +4797,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_operation_body_operands,
+        len: |m| m.features.feature_operation_body_operands.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_operation_body_11_continuations",
@@ -4516,6 +4806,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_operation_body_11_continuations,
+        len: |m| m.features.feature_operation_body_11_continuations.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_operation_body_reference_lanes",
@@ -4523,6 +4815,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_operation_body_reference_lanes,
+        len: |m| m.features.feature_operation_body_reference_lanes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_extrude_construction_profiles",
@@ -4530,6 +4824,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_extrude_construction_profiles,
+        len: |m| m.features.feature_extrude_construction_profiles.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_extrude_payload_32_branches",
@@ -4537,6 +4833,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_extrude_payload_32_branches,
+        len: |m| m.features.feature_extrude_payload_32_branches.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_extrude_32_constructions",
@@ -4544,6 +4842,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_extrude_32_constructions,
+        len: |m| m.features.feature_extrude_32_constructions.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_block_construction_references",
@@ -4551,6 +4851,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_block_construction_references,
+        len: |m| m.features.feature_block_construction_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_block_constructions",
@@ -4558,6 +4860,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_block_constructions,
+        len: |m| m.features.feature_block_constructions.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_block_construction_payloads",
@@ -4565,6 +4869,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_block_construction_payloads,
+        len: |m| m.features.feature_block_construction_payloads.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_block_payload_scalars",
@@ -4572,6 +4878,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_block_payload_scalars,
+        len: |m| m.features.feature_block_payload_scalars.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_block_payload_names",
@@ -4579,6 +4887,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_block_payload_names,
+        len: |m| m.features.feature_block_payload_names.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_block_payload_named_records",
@@ -4586,6 +4896,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_block_payload_named_records,
+        len: |m| m.features.feature_block_payload_named_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_block_payload_points",
@@ -4593,6 +4905,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_block_payload_points,
+        len: |m| m.features.feature_block_payload_points.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_block_payload_point_groups",
@@ -4600,6 +4914,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_block_payload_point_groups,
+        len: |m| m.features.feature_block_payload_point_groups.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_block_dimensions",
@@ -4607,6 +4923,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_block_dimensions,
+        len: |m| m.features.feature_block_dimensions.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_sketch_construction_inputs",
@@ -4614,6 +4932,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_sketch_construction_inputs,
+        len: |m| m.features.feature_sketch_construction_inputs.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_sketch_construction_payloads",
@@ -4621,6 +4941,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_sketch_construction_payloads,
+        len: |m| m.features.feature_sketch_construction_payloads.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_sketch_payload_coordinate_pairs",
@@ -4628,6 +4950,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_sketch_payload_coordinate_pairs,
+        len: |m| m.features.feature_sketch_payload_coordinate_pairs.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_sketch_payload_scalars",
@@ -4635,6 +4959,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_sketch_payload_scalars,
+        len: |m| m.features.feature_sketch_payload_scalars.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_sketch_payload_names",
@@ -4642,6 +4968,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_sketch_payload_names,
+        len: |m| m.features.feature_sketch_payload_names.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_sketch_payload_named_records",
@@ -4649,6 +4977,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_sketch_payload_named_records,
+        len: |m| m.features.feature_sketch_payload_named_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_sketch_points",
@@ -4656,6 +4986,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_sketch_points,
+        len: |m| m.features.feature_sketch_points.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_sketch_point_groups",
@@ -4663,6 +4995,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_sketch_point_groups,
+        len: |m| m.features.feature_sketch_point_groups.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "expressions",
@@ -4670,6 +5004,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_expressions,
+        len: |m| m.om.expressions.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "class_definitions",
@@ -4677,6 +5013,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_classes,
+        len: |m| m.om.classes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "field_definitions",
@@ -4684,6 +5022,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_fields,
+        len: |m| m.om.fields.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "object_records",
@@ -4691,6 +5031,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_object_records,
+        len: |m| m.om.object_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "rmfastload_object_id_tables",
@@ -4698,6 +5040,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_rmfastload_object_id_tables,
+        len: |m| m.om.rmfastload_object_id_tables.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "rmfastload_object_ids",
@@ -4705,6 +5049,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_rmfastload_object_ids,
+        len: |m| m.om.rmfastload_object_ids.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "data_blocks",
@@ -4712,6 +5058,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_data_blocks,
+        len: |m| m.om.data_blocks.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "data_block_counted_index_lanes",
@@ -4719,6 +5067,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_data_block_counted_index_lanes,
+        len: |m| m.om.data_block_counted_index_lanes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "data_block_index_rows",
@@ -4726,6 +5076,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_data_block_index_rows,
+        len: |m| m.om.data_block_index_rows.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "data_block_linked_index_rows",
@@ -4733,6 +5085,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_data_block_linked_index_rows,
+        len: |m| m.om.data_block_linked_index_rows.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "data_block_target_index_rows",
@@ -4740,6 +5094,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_data_block_target_index_rows,
+        len: |m| m.om.data_block_target_index_rows.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "data_block_column_index_tables",
@@ -4747,6 +5103,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_data_block_column_index_tables,
+        len: |m| m.om.data_block_column_index_tables.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_input_column_row_uses",
@@ -4754,6 +5112,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_input_column_row_uses,
+        len: |m| m.features.feature_input_column_row_uses.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "feature_input_column_targets",
@@ -4761,6 +5121,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_features_feature_input_column_targets,
+        len: |m| m.features.feature_input_column_targets.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "string_values",
@@ -4768,6 +5130,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_string_values,
+        len: |m| m.om.string_values.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "object_references",
@@ -4775,6 +5139,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_object_references,
+        len: |m| m.om.object_references.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "persistent_handles",
@@ -4782,6 +5148,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_persistent_handles,
+        len: |m| m.om.persistent_handles.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "configurations",
@@ -4789,6 +5157,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_configurations,
+        len: |m| m.om.configurations.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "configuration_attribute_uses",
@@ -4796,6 +5166,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_configuration_attribute_uses,
+        len: |m| m.om.configuration_attribute_uses.len(),
+        counts_toward_emptiness: false,
     },
     CatalogueRow {
         arena: "part_attributes",
@@ -4803,6 +5175,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_part_attributes,
+        len: |m| m.om.part_attributes.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "external_reference_indexed_records",
@@ -4810,6 +5184,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_external_reference_indexed_records,
+        len: |m| m.om.external_reference_indexed_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "external_reference_empty_records",
@@ -4817,6 +5193,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_external_reference_empty_records,
+        len: |m| m.om.external_reference_empty_records.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "external_reference_tail_reference_pairs",
@@ -4824,6 +5202,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_external_reference_tail_reference_pairs,
+        len: |m| m.om.external_reference_tail_reference_pairs.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "external_reference_record_string_uses",
@@ -4831,6 +5211,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_external_reference_record_string_uses,
+        len: |m| m.om.external_reference_record_string_uses.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "external_reference_record_children",
@@ -4838,5 +5220,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         note: None,
         emit: emit_om_external_reference_record_children,
+        len: |m| m.om.external_reference_record_children.len(),
+        counts_toward_emptiness: true,
     },
 ];
