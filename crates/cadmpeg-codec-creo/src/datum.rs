@@ -130,52 +130,74 @@ fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {
         .map(|relative| from + relative)
 }
 
+/// Decode one named-outline slot token at `offset`, given the number of slots
+/// already filled. Returns the slot value and the offset past the token;
+/// `None` aborts the walk.
+///
+/// - `18`: an in-lane scalar, or a one-byte zero marker when the following
+///   byte opens a slot or exactly five slots are already filled.
+/// - `0f`/`e6`: a one-byte zero marker.
+/// - `41`: a seven-byte tail forming the IEEE double `3f XX..`.
+/// - `46`/`2d`: a world-coordinate scalar.
+/// - `40..=bf`/`d3`/`d7`/`df`: a seven-byte in-lane scalar whose value is kept
+///   only when the scalar decode consumes exactly seven bytes, otherwise a
+///   valueless seven-byte token.
+fn decode_outline_slot(
+    data: &[u8],
+    offset: usize,
+    cache: &scalar::ScalarCache,
+    filled: usize,
+) -> Option<(Option<f64>, usize)> {
+    let head = *data.get(offset)?;
+    match head {
+        0x18 => {
+            let next_is_slot = matches!(
+                data.get(offset + 1),
+                Some(0x0f | 0x18 | 0x2d | 0x40..=0xbf | 0xd3 | 0xd7 | 0xdf)
+            );
+            let (value, next) = scalar::decode_in_lane(data, offset, cache)
+                .or_else(|| next_is_slot.then_some((0.0, offset + 1)))
+                .or_else(|| (filled == 5).then_some((0.0, offset + 1)))?;
+            Some((Some(value), next))
+        }
+        0x0f | 0xe6 => Some((Some(0.0), offset + 1)),
+        0x41 => {
+            let tail = data.get(offset + 1..offset + 8)?;
+            let mut raw = [0; 8];
+            raw[0] = 0x3f;
+            raw[1..].copy_from_slice(tail);
+            Some((Some(f64::from_be_bytes(raw)), offset + 8))
+        }
+        0x46 | 0x2d => {
+            let (value, next) = scalar::decode(data, offset)?;
+            Some((Some(value), next))
+        }
+        0x40..=0xbf | 0xd3 | 0xd7 | 0xdf => {
+            let next = offset + 7;
+            data.get(offset..next)?;
+            let value = scalar::decode(data, offset)
+                .filter(|(_, decoded_end)| *decoded_end == next)
+                .map(|(value, _)| value);
+            Some((value, next))
+        }
+        _ => None,
+    }
+}
+
 fn named_outline_slots(
     data: &[u8],
-    mut offset: usize,
+    offset: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<Vec<DatumSlot>> {
     let mut slots = Vec::with_capacity(6);
+    let mut cursor = crate::psb::Cursor::at(data, offset);
     while slots.len() < 6 {
-        let start = offset;
-        let head = *data.get(offset)?;
-        let (value, next) = match head {
-            0x18 => {
-                let next_is_slot = matches!(
-                    data.get(offset + 1),
-                    Some(0x0f | 0x18 | 0x2d | 0x40..=0xbf | 0xd3 | 0xd7 | 0xdf)
-                );
-                let decoded = scalar::decode_in_lane(data, offset, cache)
-                    .or_else(|| next_is_slot.then_some((0.0, offset + 1)))
-                    .or_else(|| (slots.len() == 5).then_some((0.0, offset + 1)))?;
-                (Some(decoded.0), decoded.1)
-            }
-            0x0f | 0xe6 => (Some(0.0), offset + 1),
-            0x41 => {
-                let tail = data.get(offset + 1..offset + 8)?;
-                let mut raw = [0; 8];
-                raw[0] = 0x3f;
-                raw[1..].copy_from_slice(tail);
-                (Some(f64::from_be_bytes(raw)), offset + 8)
-            }
-            0x46 | 0x2d => {
-                let (value, next) = scalar::decode(data, offset)?;
-                (Some(value), next)
-            }
-            0x40..=0xbf | 0xd3 | 0xd7 | 0xdf => {
-                let next = offset + 7;
-                data.get(offset..next)?;
-                let value = scalar::decode(data, offset)
-                    .filter(|(_, decoded_end)| *decoded_end == next)
-                    .map(|(value, _)| value);
-                (value, next)
-            }
-            _ => return None,
-        };
-        offset = next;
+        let start = cursor.pos();
+        let filled = slots.len();
+        let value = cursor.take_with(|data, pos| decode_outline_slot(data, pos, cache, filled))?;
         slots.push(DatumSlot {
             value,
-            token: data[start..offset].to_vec(),
+            token: data[start..cursor.pos()].to_vec(),
         });
     }
     Some(slots)
@@ -187,38 +209,46 @@ struct DatumSlot {
     token: Vec<u8>,
 }
 
-fn datum_slots(data: &[u8], mut offset: usize, count: usize) -> Option<Vec<DatumSlot>> {
+/// Decode one datum-slot token at `offset`, returning its value (`None` for
+/// the seven-byte valueless sentinels) and the offset past the token; a `None`
+/// return aborts the walk.
+///
+/// - `18`/`0f`/`e6`: a one-byte zero marker.
+/// - `41`: a seven-byte tail forming the IEEE double `3f XX..`.
+/// - `73`/`9f`/`a5`/`bb`: a seven-byte valueless sentinel.
+/// - otherwise: a generic scalar in the datum lane.
+fn decode_datum_slot(data: &[u8], offset: usize) -> Option<(Option<f64>, usize)> {
+    let head = *data.get(offset)?;
+    match head {
+        0x18 | 0x0f | 0xe6 => Some((Some(0.0), offset + 1)),
+        0x41 => {
+            let tail = data.get(offset + 1..offset + 8)?;
+            let mut raw = [0; 8];
+            raw[0] = 0x3f;
+            raw[1..].copy_from_slice(tail);
+            Some((Some(f64::from_be_bytes(raw)), offset + 8))
+        }
+        0x73 | 0x9f | 0xa5 | 0xbb => {
+            let next = offset + 7;
+            data.get(offset..next)?;
+            Some((None, next))
+        }
+        _ => {
+            let (value, next) = scalar::decode(data, offset)?;
+            Some((Some(value), next))
+        }
+    }
+}
+
+fn datum_slots(data: &[u8], offset: usize, count: usize) -> Option<Vec<DatumSlot>> {
     let mut slots = Vec::with_capacity(count);
+    let mut cursor = crate::psb::Cursor::at(data, offset);
     while slots.len() < count {
-        let start = offset;
-        let head = *data.get(offset)?;
-        let value = match head {
-            0x18 | 0x0f | 0xe6 => {
-                offset += 1;
-                Some(0.0)
-            }
-            0x41 => {
-                let tail = data.get(offset + 1..offset + 8)?;
-                let mut raw = [0; 8];
-                raw[0] = 0x3f;
-                raw[1..].copy_from_slice(tail);
-                offset += 8;
-                Some(f64::from_be_bytes(raw))
-            }
-            0x73 | 0x9f | 0xa5 | 0xbb => {
-                offset += 7;
-                data.get(start..offset)?;
-                None
-            }
-            _ => {
-                let (value, next) = scalar::decode(data, offset)?;
-                offset = next;
-                Some(value)
-            }
-        };
+        let start = cursor.pos();
+        let value = cursor.take_with(decode_datum_slot)?;
         slots.push(DatumSlot {
             value,
-            token: data.get(start..offset)?.to_vec(),
+            token: data.get(start..cursor.pos())?.to_vec(),
         });
     }
     Some(slots)
