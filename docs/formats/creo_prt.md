@@ -701,6 +701,10 @@ coordinate slot. Its negative positional-row meaning does not apply.
 In the named prototype local-system coordinate lane, `5d <tail6>` reconstructs
 the negative IEEE-754 image `BF D2 <tail6>`.
 
+In a named prototype local-system body, `18` immediately before a defined
+coordinate-lane opener occupies one zero slot. The coordinate token begins the
+next slot.
+
 Within a `geom_type = 26` positional row, `2d b1 b2 b3 b4 b5 b6` immediately
 before a structural control byte or the bounded body end is a seven-byte
 negative coordinate token. Its value is the big-endian IEEE-754 binary64 image

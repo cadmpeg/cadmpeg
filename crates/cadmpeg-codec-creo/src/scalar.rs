@@ -423,6 +423,15 @@ pub fn decode_named_local_system_coordinate(
     decode_tabulated_cylinder_second_coordinate(data, offset, cache)
 }
 
+/// Whether a byte opens a dedicated coordinate form in the named-local-system
+/// lane rather than a generic compact scalar or cache reference.
+pub(crate) fn is_named_local_system_coordinate_opener(byte: u8) -> bool {
+    matches!(
+        byte,
+        0x0e | 0x28 | 0x2c | 0x41 | 0x45 | 0x4c..=0x4d | 0x50 | 0x54 | 0x5c..=0xdf
+    )
+}
+
 /// Decode one coordinate in a model-reference entity row.
 ///
 /// The `0xed` form stores a complete big-endian IEEE-754 value in the eight

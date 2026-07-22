@@ -4723,9 +4723,19 @@ fn sequential_named_local_system_slots(
             continue;
         }
         if body.get(cursor) == Some(&0x18)
-            && body
+            && (body
                 .get(cursor + 1)
                 .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
+                || (body
+                    .get(cursor + 1)
+                    .is_some_and(|byte| scalar::is_named_local_system_coordinate_opener(*byte))
+                    && scalar::decode_named_local_system_coordinate(
+                        body,
+                        cursor + 1,
+                        slots.len() + 1,
+                        cache,
+                    )
+                    .is_some()))
         {
             slots.push(Some(0.0));
             cursor += 1;
@@ -8053,6 +8063,23 @@ mod tests {
                 tokens: Vec::new(),
             }
         );
+    }
+
+    #[test]
+    fn named_local_system_splits_zero_before_coordinate_token() {
+        let body = [
+            0x41, 0xd2, 0x3c, 0xfc, 0xe9, 0x9e, 0x37, 0xb2, 0x79, 0xac, 0x53, 0x1a, 0x28, 0x66,
+            0x9d, 0x18, 0x79, 0xac, 0x53, 0x1a, 0x28, 0x66, 0x9d, 0x5d, 0x3c, 0xfc, 0xe9, 0x9e,
+            0x37, 0xb2, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+        ];
+
+        let slots = sequential_named_local_system_slots(&body, 12, &scalar::ScalarCache::default())
+            .expect("complete local system");
+
+        assert_eq!(slots[2], Some(0.0));
+        assert_eq!(slots[3], slots[1]);
+        assert_eq!(slots[4], slots[0].map(|value| -value));
+        assert_eq!(slots[5..], [Some(0.0); 7]);
     }
 
     #[test]
