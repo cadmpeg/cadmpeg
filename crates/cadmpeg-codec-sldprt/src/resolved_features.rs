@@ -675,6 +675,9 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     if payload.get(offset + 5..offset + 17)? != GEOMETRY_PREFIX {
         return None;
     }
+    if let Some(coordinates) = legacy_linked_coordinates(payload, offset) {
+        return Some(coordinates);
+    }
     let indexed_endpoint_body = wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         || extended_wide_horizontal_relation_endpoint_indices(payload, offset).is_some();
     let coordinate_offset =
@@ -702,6 +705,39 @@ fn finite_coordinate_pair(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
     let first = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
     let second = f64::from_le_bytes(payload.get(offset + 8..offset + 16)?.try_into().ok()?);
     (first.is_finite() && second.is_finite()).then_some([first, second])
+}
+
+fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+    let next = offset.checked_add(154)?;
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(0)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 58) != Some(&[0x1a, 0x00])
+        || payload.get(offset + 74..offset + 76) != Some(&[0; 2])
+        || payload.get(offset + 76..offset + 78) != Some(&2u16.to_le_bytes())
+        || payload.get(offset + 102..offset + 108)
+            != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        || payload.get(offset + 108..offset + 150) != Some(&[0; 42])
+        || !sketch_marker_prefix_at(payload, next)
+    {
+        return None;
+    }
+    let first = &payload[offset + 78..offset + 90];
+    let second = &payload[offset + 90..offset + 102];
+    (first[..2] == second[..2]
+        && first[2..4] != [0; 2]
+        && second[2..4] != [0; 2]
+        && first[2..4] != second[2..4]
+        && first[4..8] == [0xff; 4]
+        && second[4..8] == [0xff; 4]
+        && first[8..12] == [0; 4]
+        && second[8..12] == [0; 4])
+        .then(|| finite_coordinate_pair(payload, offset + 58))?
 }
 
 fn indexed_profile_coordinate_candidate(payload: &[u8], offset: usize) -> bool {
@@ -851,7 +887,7 @@ mod marker_tests {
         indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
-        legacy_feature_input_section, legacy_reference_axis_triads,
+        legacy_feature_input_section, legacy_linked_coordinates, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
         marker_coordinates, marker_is_geometry_locus, marker_is_selected_construction_line,
         marker_local_id, marker_local_links, marker_object_index, marker_spatial_coordinates,
@@ -3949,6 +3985,35 @@ mod marker_tests {
         entities[6].coordinates_m = Some([3.0, 5.0]);
         let markers = entities.iter().collect::<Vec<_>>();
         assert_eq!(coordinate_circle_radius(&payload, &center, &markers), None);
+    }
+
+    #[test]
+    fn compact_legacy_linked_coordinate_uses_the_1a_pair() {
+        let mut payload = vec![0; 154 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&[0x1a, 0x00]);
+        payload[58..66].copy_from_slice(&0.0025f64.to_le_bytes());
+        payload[66..74].copy_from_slice(&0.01f64.to_le_bytes());
+        payload[76..78].copy_from_slice(&2u16.to_le_bytes());
+        for (start, local_id) in [(78, 2u16), (90, 5u16)] {
+            payload[start..start + 2].copy_from_slice(&[0x2b, 0x82]);
+            payload[start + 2..start + 4].copy_from_slice(&local_id.to_le_bytes());
+            payload[start + 4..start + 8].fill(0xff);
+        }
+        payload[102..108].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        payload[150..154].copy_from_slice(&29u32.to_le_bytes());
+        payload[154..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(legacy_linked_coordinates(&payload, 0), Some([0.0025, 0.01]));
+        assert_eq!(marker_coordinates(&payload, 0), Some([0.0025, 0.01]));
+        payload[90] ^= 1;
+        assert_eq!(legacy_linked_coordinates(&payload, 0), None);
+        assert_eq!(marker_coordinates(&payload, 0), None);
     }
 
     #[test]
