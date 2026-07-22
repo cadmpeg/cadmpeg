@@ -2129,6 +2129,10 @@ A unique orbit point selects the opposite endpoint of every incident
 pcurve-backed edge and propagates through the connected endpoint component.
 A candidate point must also lie on every independently placed analytic curve
 carrier incident to that vertex orbit.
+A pair of nonparallel incident model-space line carriers also defines a vertex
+candidate when their closest points coincide. Every intersecting line pair in
+the orbit must produce that same point, and the point must lie on every other
+incident analytic carrier.
 A carrier-derived point for the same orbit must agree with that point. An
 empty endpoint domain withholds every dependent point in the component.
 An edge transfers independently when both endpoint vertex orbits are solved;

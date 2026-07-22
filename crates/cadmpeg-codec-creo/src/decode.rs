@@ -27852,6 +27852,83 @@ fn model_points_agree(first: [f64; 3], second: [f64; 3]) -> bool {
         .all(|(first, second)| (first - second).abs() <= 1e-9 * scale)
 }
 
+fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Option<[f64; 3]> {
+    let (
+        CurveGeometry::Line {
+            origin: first_origin,
+            direction: first_direction,
+        },
+        CurveGeometry::Line {
+            origin: second_origin,
+            direction: second_direction,
+        },
+    ) = (first, second)
+    else {
+        return None;
+    };
+    let first_origin = [first_origin.x, first_origin.y, first_origin.z];
+    let second_origin = [second_origin.x, second_origin.y, second_origin.z];
+    let first_direction = [first_direction.x, first_direction.y, first_direction.z];
+    let second_direction = [second_direction.x, second_direction.y, second_direction.z];
+    let relative = std::array::from_fn(|axis| first_origin[axis] - second_origin[axis]);
+    let first_squared = dot(first_direction, first_direction);
+    let second_squared = dot(second_direction, second_direction);
+    let product = dot(first_direction, second_direction);
+    let first_relative = dot(first_direction, relative);
+    let second_relative = dot(second_direction, relative);
+    let denominator = first_squared.mul_add(second_squared, -(product * product));
+    if !denominator.is_finite()
+        || denominator <= 1e-12 * first_squared * second_squared
+        || first_squared <= 0.0
+        || second_squared <= 0.0
+    {
+        return None;
+    }
+    let first_parameter =
+        product.mul_add(second_relative, -(second_squared * first_relative)) / denominator;
+    let second_parameter =
+        first_squared.mul_add(second_relative, -(product * first_relative)) / denominator;
+    let first_point = std::array::from_fn(|axis| {
+        first_direction[axis].mul_add(first_parameter, first_origin[axis])
+    });
+    let second_point = std::array::from_fn(|axis| {
+        second_direction[axis].mul_add(second_parameter, second_origin[axis])
+    });
+    (first_point
+        .iter()
+        .chain(second_point.iter())
+        .all(|value| value.is_finite())
+        && model_points_agree(first_point, second_point))
+    .then(|| std::array::from_fn(|axis| f64::midpoint(first_point[axis], second_point[axis])))
+}
+
+fn incident_line_vertex_point(curves: &[&CurveGeometry]) -> Option<[f64; 3]> {
+    let lines = curves
+        .iter()
+        .copied()
+        .filter(|curve| matches!(curve, CurveGeometry::Line { .. }))
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for first in 0..lines.len() {
+        for second in first + 1..lines.len() {
+            let Some(point) = line_line_intersection(lines[first], lines[second]) else {
+                continue;
+            };
+            if curves
+                .iter()
+                .all(|curve| curve_contains_points(curve, [point, point]))
+            {
+                candidates.push(point);
+            }
+        }
+    }
+    let first = *candidates.first()?;
+    candidates
+        .iter()
+        .all(|candidate| model_points_agree(first, *candidate))
+        .then_some(first)
+}
+
 fn mapped_pcurve_endpoints(
     ir: &CadIr,
     faces: [u32; 2],
@@ -28229,7 +28306,65 @@ fn solved_topological_vertices(
             (!curves.is_empty()).then_some((vertex.id, curves))
         })
         .collect::<BTreeMap<_, _>>();
+    for (vertex, curves) in &incident_curves {
+        let Some(point) = incident_line_vertex_point(curves) else {
+            continue;
+        };
+        match fixed_points.entry(*vertex) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(Some(point));
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                if entry
+                    .get()
+                    .is_none_or(|known| !model_points_agree(known, point))
+                {
+                    entry.insert(None);
+                }
+            }
+        }
+    }
     solve_pcurve_vertex_domains(&constraints, &fixed_points, &incident_curves)
+}
+
+#[cfg(test)]
+mod topological_vertex_tests {
+    use super::*;
+
+    fn line(origin: [f64; 3], direction: [f64; 3]) -> CurveGeometry {
+        CurveGeometry::Line {
+            origin: Point3::new(origin[0], origin[1], origin[2]),
+            direction: Vector3::new(direction[0], direction[1], direction[2]),
+        }
+    }
+
+    #[test]
+    fn incident_lines_define_one_validated_vertex() {
+        let first = line([1.0, 2.0, 3.0], [2.0, 0.0, 0.0]);
+        let second = line([1.0, -4.0, 3.0], [0.0, 3.0, 0.0]);
+        let third = line([1.0, 2.0, -5.0], [0.0, 0.0, 4.0]);
+
+        assert_eq!(
+            incident_line_vertex_point(&[&first, &second, &third]),
+            Some([1.0, 2.0, 3.0])
+        );
+    }
+
+    #[test]
+    fn incident_lines_reject_skew_parallel_and_disagreeing_candidates() {
+        let x = line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+        let skew_y = line([0.0, 0.0, 1.0], [0.0, 1.0, 0.0]);
+        let parallel = line([0.0, 1.0, 0.0], [2.0, 0.0, 0.0]);
+        let crossing_y = line([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+        let displaced_z = line([1.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
+
+        assert_eq!(line_line_intersection(&x, &skew_y), None);
+        assert_eq!(line_line_intersection(&x, &parallel), None);
+        assert_eq!(
+            incident_line_vertex_point(&[&x, &crossing_y, &displaced_z]),
+            None
+        );
+    }
 }
 
 fn orient_line_edge_carrier(
