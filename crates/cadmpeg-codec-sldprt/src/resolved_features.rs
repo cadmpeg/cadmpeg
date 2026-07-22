@@ -8781,9 +8781,7 @@ fn point_axis_distance_squared(point: Point3, origin: Point3, axis: Vector3) -> 
     across.x * across.x + across.y * across.y + across.z * across.z
 }
 
-/// Bind Hole output identities to solved cylindrical axes only when the
-/// producer's output cardinality uniquely accounts for every matching bore
-/// cylinder in the decoded B-rep.
+/// Bind Hole placements to uniquely owned or position-constrained bore axes.
 pub(crate) fn project_hole_axes(
     model_features: &mut [cadmpeg_ir::features::Feature],
     surfaces: &[Surface],
@@ -8798,6 +8796,31 @@ pub(crate) fn project_hole_axes(
                 feature.id.as_str(),
                 feature.source_id.as_deref()?.parse::<u32>().ok()?,
             ))
+        })
+        .collect::<HashMap<_, _>>();
+    let native_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let position_features = native_features
+        .values()
+        .filter(|feature| classify(feature) == Some(FeatureClass::Hole))
+        .filter_map(|feature| hole_position_feature(feature, histories, lanes))
+        .map(|feature| feature.id.as_str())
+        .collect::<HashSet<_>>();
+    let feature_frames = lanes
+        .iter()
+        .flat_map(|lane| {
+            native_features
+                .values()
+                .filter(|feature| position_features.contains(feature.id.as_str()))
+                .filter_map(|feature| {
+                    Some((
+                        (lane.id.as_str(), feature.id.as_str()),
+                        marker_backed_feature_frame(model_features, histories, lane, feature)?,
+                    ))
+                })
         })
         .collect::<HashMap<_, _>>();
     let mut counts_by_source = HashMap::<u32, HashSet<usize>>::new();
@@ -8829,22 +8852,16 @@ pub(crate) fn project_hole_axes(
         if !placements.is_empty() || !diameter.is_finite() || *diameter <= 0.0 {
             continue;
         }
-        let Some(source) = feature
+        let expected = feature
             .native_ref
             .as_deref()
             .and_then(|native| native_sources.get(native))
-        else {
-            continue;
-        };
-        let Some(counts) = counts_by_source.get(source) else {
-            continue;
-        };
-        if counts.len() != 1 {
-            continue;
-        }
-        let Some(expected) = counts.iter().next().copied() else {
-            continue;
-        };
+            .and_then(|source| counts_by_source.get(source))
+            .and_then(|counts| {
+                (counts.len() == 1)
+                    .then(|| counts.iter().next().copied())
+                    .flatten()
+            });
         let radius = *diameter / 2.0;
         let tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
         let candidates = surfaces
@@ -8859,13 +8876,353 @@ pub(crate) fn project_hole_axes(
                 _ => None,
             })
             .collect::<Vec<_>>();
-        if candidates.len() != expected || candidates.is_empty() {
+        if expected == Some(candidates.len()) && !candidates.is_empty() {
+            *placements = candidates
+                .into_iter()
+                .map(|(origin, axis)| HolePlacement::Axis { origin, axis })
+                .collect();
             continue;
         }
-        *placements = candidates
+        let Some(native_feature) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| native_features.get(native).copied())
+        else {
+            continue;
+        };
+        let Some(position_feature) = hole_position_feature(native_feature, histories, lanes) else {
+            continue;
+        };
+        let mut solutions = Vec::new();
+        for lane in lanes {
+            let Some(&frame) =
+                feature_frames.get(&(lane.id.as_str(), position_feature.id.as_str()))
+            else {
+                continue;
+            };
+            let relations = compact_position_relations(lane, position_feature.id.as_str());
+            if relations.is_empty() {
+                continue;
+            }
+            if let Some(solution) = constrained_bore_axes(frame, radius, surfaces, &relations) {
+                solutions.push(solution);
+            }
+        }
+        solutions.sort_by_key(|placements| {
+            placements
+                .iter()
+                .map(|placement| match placement {
+                    HolePlacement::Axis { origin, axis } => [
+                        origin.x.to_bits(),
+                        origin.y.to_bits(),
+                        origin.z.to_bits(),
+                        axis.x.to_bits(),
+                        axis.y.to_bits(),
+                        axis.z.to_bits(),
+                    ],
+                    _ => [0; 6],
+                })
+                .collect::<Vec<_>>()
+        });
+        solutions.dedup();
+        if let [solution] = solutions.as_slice() {
+            *placements = solution.clone();
+        }
+    }
+}
+
+fn marker_backed_feature_frame(
+    model_features: &[cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lane: &FeatureInputLane,
+    native_feature: &crate::records::Feature,
+) -> Option<(Point3, Vector3, Vector3)> {
+    let mut objects = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
+        .collect::<Vec<_>>();
+    objects.sort_by_key(|(offset, _)| *offset);
+    let index = objects
+        .iter()
+        .position(|(_, feature)| feature.id == native_feature.id)?;
+    let start = usize::try_from(objects[index].0).ok()?;
+    let context_start = index
+        .checked_sub(1)
+        .and_then(|index| objects.get(index))
+        .and_then(|(offset, _)| usize::try_from(*offset).ok())
+        .unwrap_or(0);
+    let end = objects
+        .get(index + 1)
+        .and_then(|(offset, _)| usize::try_from(*offset).ok())
+        .unwrap_or(lane.native_payload.len());
+    let plane_frames = lane_sketch_plane_frames(model_features, histories, lane);
+    feature_input_sketch_frame(
+        &lane.native_payload,
+        &plane_frames,
+        context_start,
+        start,
+        end,
+    )
+}
+
+fn feature_input_sketch_frame(
+    payload: &[u8],
+    plane_frames: &HashMap<u32, (Point3, Vector3, Vector3)>,
+    context_start: usize,
+    start: usize,
+    end: usize,
+) -> Option<(Point3, Vector3, Vector3)> {
+    compact_profile_reference_plane_source(payload, context_start, start, end)
+        .and_then(|source| plane_frames.get(&source).copied())
+        .or_else(|| compact_profile_component_plane_frame(payload, context_start, start, end))
+        .or_else(|| {
+            let (origin, normal, u_axis) = payload
+                .get(start..end)
+                .and_then(|object| explicit_reference_plane_frame(object).ok().flatten())?;
+            let finite_zero = |value: f64| {
+                if value.abs() <= 1.0e-12 { 0.0 } else { value }
+            };
+            Some((
+                Point3::new(
+                    finite_zero(origin.x),
+                    finite_zero(origin.y),
+                    finite_zero(origin.z),
+                ),
+                Vector3::new(
+                    finite_zero(normal.x),
+                    finite_zero(normal.y),
+                    finite_zero(normal.z),
+                ),
+                Vector3::new(
+                    finite_zero(u_axis.x),
+                    finite_zero(u_axis.y),
+                    finite_zero(u_axis.z),
+                ),
+            ))
+        })
+}
+
+fn compact_position_relations(
+    lane: &FeatureInputLane,
+    feature: &str,
+) -> Vec<(FeatureInputRelationFamily, u16, u16, f64)> {
+    let scalars = lane
+        .scalars
+        .iter()
+        .map(|scalar| (scalar.id.as_str(), scalar))
+        .collect::<HashMap<_, _>>();
+    lane.relation_instances
+        .iter()
+        .filter(|relation| relation.feature_ref == feature)
+        .filter_map(|relation| {
+            let [first, second] = relation.operands.as_slice() else {
+                return None;
+            };
+            if first.kind != FeatureInputOperandKind::Native(0x8152)
+                || second.kind != FeatureInputOperandKind::Native(0x8152)
+            {
+                return None;
+            }
+            let scalar = relation
+                .parameter_scalar_ref
+                .as_deref()
+                .and_then(|id| scalars.get(id))?;
+            (scalar.role == FeatureInputScalarRole::Driving
+                && scalar.value.is_finite()
+                && scalar.value >= 0.0)
+                .then_some((
+                    relation.family,
+                    first.entity_index,
+                    second.entity_index,
+                    scalar.value * 1000.0,
+                ))
+        })
+        .collect()
+}
+
+fn constrained_bore_axes(
+    (origin, normal, u_axis): (Point3, Vector3, Vector3),
+    radius: f64,
+    surfaces: &[Surface],
+    relations: &[(FeatureInputRelationFamily, u16, u16, f64)],
+) -> Option<Vec<HolePlacement>> {
+    const QUANTUM: f64 = 1.0e-8;
+    let v_axis = cross(normal, u_axis);
+    let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+    let mut axes = surfaces
+        .iter()
+        .filter_map(|surface| match surface.geometry {
+            SurfaceGeometry::Cylinder {
+                origin: candidate,
+                axis,
+                radius: candidate_radius,
+                ..
+            } if (candidate_radius - radius).abs() <= radius_tolerance
+                && dot(axis, normal).abs() >= 1.0 - 1.0e-9 =>
+            {
+                let delta = Vector3::new(
+                    candidate.x - origin.x,
+                    candidate.y - origin.y,
+                    candidate.z - origin.z,
+                );
+                Some(quantize(
+                    Point2::new(dot(delta, u_axis), dot(delta, v_axis)),
+                    QUANTUM,
+                ))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    axes.sort_unstable();
+    axes.dedup();
+    if axes.is_empty() {
+        return None;
+    }
+    let mut loci = Vec::with_capacity(axes.len() + 1);
+    loci.push(Point2::new(0.0, 0.0));
+    let mut bore_loci = HashSet::new();
+    for (u, v) in axes {
+        let point = Point2::new(u as f64 * QUANTUM, v as f64 * QUANTUM);
+        let index = loci
+            .iter()
+            .position(|candidate| *candidate == point)
+            .unwrap_or_else(|| {
+                loci.push(point);
+                loci.len() - 1
+            });
+        bore_loci.insert(index);
+    }
+    let indices = compact_position_loci(&loci, &bore_loci, relations)?;
+    Some(
+        indices
             .into_iter()
-            .map(|(origin, axis)| HolePlacement::Axis { origin, axis })
-            .collect();
+            .map(|index| {
+                let point = loci[index];
+                HolePlacement::Axis {
+                    origin: Point3::new(
+                        origin.x + point.u * u_axis.x + point.v * v_axis.x,
+                        origin.y + point.u * u_axis.y + point.v * v_axis.y,
+                        origin.z + point.u * u_axis.z + point.v * v_axis.z,
+                    ),
+                    axis: normal,
+                }
+            })
+            .collect(),
+    )
+}
+
+fn compact_position_loci(
+    loci: &[Point2],
+    placement_loci: &HashSet<usize>,
+    relations: &[(FeatureInputRelationFamily, u16, u16, f64)],
+) -> Option<Vec<usize>> {
+    let mut nodes = relations
+        .iter()
+        .flat_map(|(_, first, second, _)| [*first, *second])
+        .collect::<Vec<_>>();
+    nodes.sort_unstable();
+    nodes.dedup();
+    if nodes.is_empty() || nodes.len() > loci.len() {
+        return None;
+    }
+    let mut solution_sets = HashSet::<Vec<usize>>::new();
+    for swap_axes in [false, true] {
+        compact_position_assignments(
+            0,
+            &nodes,
+            loci,
+            relations,
+            placement_loci,
+            swap_axes,
+            &mut HashMap::new(),
+            &mut HashSet::new(),
+            &mut solution_sets,
+        );
+    }
+    let solution_sets = solution_sets.into_iter().collect::<Vec<_>>();
+    let [solution] = solution_sets.as_slice() else {
+        return None;
+    };
+    Some(solution.clone())
+}
+
+fn compact_position_assignments(
+    node_index: usize,
+    nodes: &[u16],
+    loci: &[Point2],
+    relations: &[(FeatureInputRelationFamily, u16, u16, f64)],
+    placement_loci: &HashSet<usize>,
+    swap_axes: bool,
+    assigned: &mut HashMap<u16, usize>,
+    used: &mut HashSet<usize>,
+    solutions: &mut HashSet<Vec<usize>>,
+) {
+    if solutions.len() > 1 {
+        return;
+    }
+    if node_index == nodes.len() {
+        let mut solution = used
+            .iter()
+            .copied()
+            .filter(|index| placement_loci.contains(index))
+            .collect::<Vec<_>>();
+        if solution.is_empty() {
+            return;
+        }
+        solution.sort_unstable();
+        solutions.insert(solution);
+        return;
+    }
+    let node = nodes[node_index];
+    for locus_index in 0..loci.len() {
+        if !used.insert(locus_index) {
+            continue;
+        }
+        assigned.insert(node, locus_index);
+        let valid = relations.iter().all(|(family, first, second, distance)| {
+            let (Some(&first), Some(&second)) = (assigned.get(first), assigned.get(second)) else {
+                return true;
+            };
+            let first = loci[first];
+            let second = loci[second];
+            let measured = match family {
+                FeatureInputRelationFamily::PointPointDistance => {
+                    (second.u - first.u).hypot(second.v - first.v)
+                }
+                FeatureInputRelationFamily::PointPointHorizontalDistance => {
+                    if swap_axes {
+                        (second.v - first.v).abs()
+                    } else {
+                        (second.u - first.u).abs()
+                    }
+                }
+                FeatureInputRelationFamily::PointPointVerticalDistance => {
+                    if swap_axes {
+                        (second.u - first.u).abs()
+                    } else {
+                        (second.v - first.v).abs()
+                    }
+                }
+                _ => return false,
+            };
+            same_dimension_length(measured, *distance)
+        });
+        if valid {
+            compact_position_assignments(
+                node_index + 1,
+                nodes,
+                loci,
+                relations,
+                placement_loci,
+                swap_axes,
+                assigned,
+                used,
+                solutions,
+            );
+        }
+        assigned.remove(&node);
+        used.remove(&locus_index);
     }
 }
 
@@ -8881,12 +9238,14 @@ mod hole_axis_tests {
     };
 
     use super::{
-        enrich_history_hole_constructions, enrich_history_parameters, hole_position_sketch_source,
-        project_hole_axes, project_hole_position_sketches, project_spatial_hole_position_sketches,
+        compact_position_loci, enrich_history_hole_constructions, enrich_history_parameters,
+        hole_position_sketch_source, project_hole_axes, project_hole_position_sketches,
+        project_spatial_hole_position_sketches,
     };
     use crate::records::{
         FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
-        FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
+        FeatureInputRelationFamily, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
+        SketchInputKind,
     };
 
     fn model_hole() -> cadmpeg_ir::features::Feature {
@@ -9001,6 +9360,36 @@ mod hole_axis_tests {
             },
             source_object: None,
         }
+    }
+
+    #[test]
+    fn compact_position_graph_selects_the_unique_bore_loci() {
+        use FeatureInputRelationFamily::{
+            PointPointDistance, PointPointHorizontalDistance, PointPointVerticalDistance,
+        };
+
+        let loci = [
+            Point2::new(0.0, 0.0),
+            Point2::new(0.0, 16.0),
+            Point2::new(0.0, 41.0),
+        ];
+        let relations = [
+            (PointPointDistance, 0, 2, 25.0),
+            (PointPointVerticalDistance, 0, 5, 0.0),
+            (PointPointHorizontalDistance, 0, 5, 16.0),
+        ];
+        let placement_loci = [1, 2].into_iter().collect();
+        assert_eq!(
+            compact_position_loci(&loci, &placement_loci, &relations),
+            Some(vec![1, 2])
+        );
+
+        let ambiguous = [loci[0], loci[1], loci[2], Point2::new(0.0, -9.0)];
+        let ambiguous_placements = [1, 2, 3].into_iter().collect();
+        assert_eq!(
+            compact_position_loci(&ambiguous, &ambiguous_placements, &relations),
+            None
+        );
     }
 
     #[test]
@@ -15315,48 +15704,13 @@ pub(crate) fn project_marker_backed_sketches(
             ) else {
                 continue;
             };
-            let frame = compact_profile_reference_plane_source(
+            let frame = feature_input_sketch_frame(
                 &lane.native_payload,
+                &plane_frames,
                 context_start,
                 start,
                 end,
-            )
-            .and_then(|source| plane_frames.get(&source).copied())
-            .or_else(|| {
-                compact_profile_component_plane_frame(
-                    &lane.native_payload,
-                    context_start,
-                    start,
-                    end,
-                )
-            })
-            .or_else(|| {
-                lane.native_payload
-                    .get(start..end)
-                    .and_then(|object| explicit_reference_plane_frame(object).ok().flatten())
-                    .map(|(origin, normal, u_axis)| {
-                        let finite_zero = |value: f64| {
-                            if value.abs() <= 1.0e-12 { 0.0 } else { value }
-                        };
-                        (
-                            Point3::new(
-                                finite_zero(origin.x),
-                                finite_zero(origin.y),
-                                finite_zero(origin.z),
-                            ),
-                            Vector3::new(
-                                finite_zero(normal.x),
-                                finite_zero(normal.y),
-                                finite_zero(normal.z),
-                            ),
-                            Vector3::new(
-                                finite_zero(u_axis.x),
-                                finite_zero(u_axis.y),
-                                finite_zero(u_axis.z),
-                            ),
-                        )
-                    })
-            });
+            );
             let Some((origin, normal, u_axis)) = frame else {
                 continue;
             };
