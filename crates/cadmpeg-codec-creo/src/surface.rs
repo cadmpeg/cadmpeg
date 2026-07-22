@@ -712,6 +712,24 @@ impl SurfaceParameterRecord {
                 self.type24_held_coordinate_round_frame()
                     .map(|frame| frame.radius)
             })
+            .or_else(|| self.type24_terminal_round_radius())
+    }
+
+    fn type24_terminal_round_radius(&self) -> Option<f64> {
+        let terminal_end = self
+            .body
+            .strip_suffix(&[0xf7, 0x17])
+            .map_or(self.body.len(), <[u8]>::len);
+        let terminal = self.scalar_tokens.last()?;
+        (terminal.offset.checked_add(terminal.length)? == terminal_end).then_some(())?;
+        (terminal.length == 7
+            && terminal
+                .raw
+                .first()
+                .is_some_and(|prefix| matches!(prefix, 0x53..=0xa3)))
+        .then_some(())?;
+        let radius = terminal.value?;
+        (radius.is_finite() && radius > 0.0).then_some(radius)
     }
 
     /// Decode the diameter and extent envelope of a scalar-frame type-24 row.
@@ -5900,6 +5918,48 @@ mod tests {
         let mut wrong_control = body;
         wrong_control[25] = 0x25;
         assert!(record(&wrong_control).positional_cylinder_frame.is_none());
+    }
+
+    #[test]
+    fn decodes_terminal_type24_round_radius() {
+        let record = |body: &[u8]| {
+            let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+            payload.extend_from_slice(body);
+            payload.push(0xe3);
+            parameter_records(&payload).remove(0)
+        };
+        let terminal = [
+            0x18, 0x2d, 0x45, 0x30, 0x89, 0xa0, 0x27, 0x52, 0x54, 0x12, 0x2d, 0x45, 0x7d, 0x56,
+            0x6c, 0xf4, 0x1f, 0x22, 0x2d, 0x45, 0x26, 0x66, 0x66, 0x66, 0x66, 0x66, 0x2a, 0xf4,
+            0x00, 0xa7, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80, 0x2e, 0x45, 0x66, 0x2a, 0xfc, 0x00,
+            0x5e, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80,
+        ];
+        assert!((record(&terminal).type24_round_radius(0x24).unwrap() - 0.3).abs() < 1.0e-12);
+
+        let mut replay_terminated = terminal.to_vec();
+        replay_terminated.extend_from_slice(&[0xf7, 0x17]);
+        assert!(
+            (record(&replay_terminated)
+                .type24_round_radius(0x24)
+                .unwrap()
+                - 0.3)
+                .abs()
+                < 1.0e-12
+        );
+
+        let mut trailing_payload = terminal.to_vec();
+        trailing_payload.push(0x18);
+        assert!(record(&trailing_payload)
+            .type24_round_radius(0x24)
+            .is_none());
+        let coordinate_terminal = [
+            0x18, 0x2d, 0x45, 0x30, 0x89, 0xa0, 0x27, 0x52, 0x54, 0x12, 0x46, 0x16, 0xd9, 0xc0,
+            0xeb, 0x43, 0x76, 0xac,
+        ];
+        assert!(record(&coordinate_terminal)
+            .type24_round_radius(0x24)
+            .is_none());
+        assert!(record(&terminal).type24_round_radius(0x22).is_none());
     }
 
     #[test]

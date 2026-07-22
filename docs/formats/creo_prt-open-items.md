@@ -39,7 +39,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   outside the defined support-apex suffix and planar-envelope bodies.
 - The three-byte station token between a positional cone's model-reference
   token and half-angle has unspecified scalar semantics.
-- Round and fillet byte semantics are unspecified, including non-prismatic radii, flank geometry, and generated face bindings.
+- Remaining round and fillet byte semantics are unspecified, including
+  non-prismatic radii, flank geometry, and generated face bindings.
 - The negative DICT prefix lattice for scalar lanes that block geometry records is unspecified.
 
 ## Topology and coordinates
