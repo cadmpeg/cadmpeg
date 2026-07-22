@@ -19642,10 +19642,6 @@ mod golden {
         // Self-contained `.prt` images.
         f.push(("single_part_prt", single_part_prt()));
         f.push(("topology_part_prt", topology_part_prt()));
-        f.push((
-            "topology_with_missing_tolerances",
-            topology_with_missing_tolerances(),
-        ));
         f.push(("prt_with_arrangements", prt_with_arrangements()));
         f.push((
             "prt_with_arrangement_attribute_none",
@@ -19749,6 +19745,10 @@ mod golden {
         // Lone partition streams, each wrapped with `prt_with_partition`.
         let partitions: Vec<(&'static str, Vec<u8>)> = vec![
             ("topology_partition_stream", topology_partition_stream()),
+            (
+                "topology_with_missing_tolerances",
+                topology_with_missing_tolerances(),
+            ),
             ("partition_stream", partition_stream()),
             (
                 "offset_surface_topology_partition_stream",
