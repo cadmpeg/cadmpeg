@@ -1291,12 +1291,25 @@ fn resolved_features_payload_with_names_relation_and_scalar(
     }
     for (ordinal, code) in codes.iter().enumerate() {
         payload.extend_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
-        let mut record = [0x5a; 87];
-        record[..12].fill(0);
+        let mut record = [0u8; 87];
+        // o+5..13: shared-geometry header (eight 0xff bytes).
+        record[..8].fill(0xff);
+        // o+13..17: -1.0f32 geometry sentinel.
+        record[8..12].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        // o+17..21: native sketch-entity type code.
         record[12..16].copy_from_slice(&code.to_le_bytes());
+        // o+21..27: profile-curve locus descriptor.
+        record[16..22].copy_from_slice(&[0x00, 0x00, 0x04, 0x00, 0x02, 0x00]);
+        // o+27..29: profile-curve role.
+        record[22..24].copy_from_slice(&1u16.to_le_bytes());
+        // o+31..39: -1.0f32 sentinel followed by the marker state descriptor.
+        record[26..34].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        // o+48..56: state value.
         record[43..51].copy_from_slice(&(ordinal as f64 + 1.0).to_le_bytes());
-        record[65..67].fill(0);
+        // o+70..80: local-link sentinel (zero selector padding, -1.0f64 marker).
+        record[65..67].copy_from_slice(&[0, 0]);
         record[67..75].copy_from_slice(&(-1.0f64).to_le_bytes());
+        // o+88..92: trailing local id.
         record[83..87].copy_from_slice(&((ordinal + 1) as u32).to_le_bytes());
         payload.extend_from_slice(&record);
     }
