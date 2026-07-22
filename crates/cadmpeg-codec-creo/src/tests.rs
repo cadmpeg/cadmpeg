@@ -5453,7 +5453,8 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
 fn decode_withholds_unplaced_cylinder_prototype_frame() {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
-    push_named_analytic_prototype(&mut payload, "cylinder", &[("radius", 1.0)]);
+    payload.extend_from_slice(b"srf_prim_ptr(cylinder)\0\xe0\x01radius\0");
+    push_generated_scalar(&mut payload, 1.0);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let result = decode::decode(
@@ -5467,6 +5468,59 @@ fn decode_withholds_unplaced_cylinder_prototype_frame() {
         .surfaces
         .iter()
         .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
+}
+
+#[test]
+fn decode_places_first_cylinder_instance_from_complete_named_prototype() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
+    push_named_analytic_prototype(&mut payload, "cylinder", &[("radius", 1.0)]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+    let cylinder = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+        .expect("first cylinder instance");
+
+    assert_eq!(
+        cylinder.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            radius: 1.0,
+        }
+    );
+}
+
+#[test]
+fn decode_withholds_complete_cylinder_prototype_without_positive_radius() {
+    for fields in [Vec::new(), vec![("radius", -1.0)]] {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
+        push_named_analytic_prototype(&mut payload, "cylinder", &fields);
+        payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+        let result = decode::decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
+        assert!(result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
+    }
 }
 
 #[test]

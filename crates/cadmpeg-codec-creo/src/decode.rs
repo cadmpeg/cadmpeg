@@ -31246,6 +31246,9 @@ fn unique_surface_prototype_associations(
     for record in &scan.surface_prototype_records {
         let row_kind = match record.family {
             crate::surface::SurfacePrototypeFamily::Plane => crate::surface::SurfaceKind::Plane,
+            crate::surface::SurfacePrototypeFamily::Cylinder => {
+                crate::surface::SurfaceKind::Cylinder
+            }
             crate::surface::SurfacePrototypeFamily::Torus => {
                 crate::surface::SurfaceKind::TorusOrSphere
             }
@@ -31311,6 +31314,22 @@ fn transfer_first_instance_prototype_surfaces(
                     origin: Point3::new(origin[0], origin[1], origin[2]),
                     normal: Vector3::new(axis[0], axis[1], axis[2]),
                     u_axis: Vector3::new(reference[0], reference[1], reference[2]),
+                }
+            }
+            crate::surface::SurfacePrototypeFamily::Cylinder => {
+                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+                    continue;
+                };
+                let Some(radius) = prototype_scalar(record, "radius")
+                    .filter(|radius| radius.is_finite() && *radius > 0.0)
+                else {
+                    continue;
+                };
+                SurfaceGeometry::Cylinder {
+                    origin: Point3::new(origin[0], origin[1], origin[2]),
+                    axis: Vector3::new(axis[0], axis[1], axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius,
                 }
             }
             crate::surface::SurfacePrototypeFamily::Torus => {
