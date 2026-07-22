@@ -8908,6 +8908,15 @@ pub(crate) fn project_hole_axes(
                 solutions.push(solution);
             }
         }
+        if solutions.is_empty() {
+            for lane in lanes {
+                if let Some(solution) =
+                    marker_pattern_bore_axes(lane, position_feature.id.as_str(), radius, surfaces)
+                {
+                    solutions.push(solution);
+                }
+            }
+        }
         solutions.sort_by_key(|placements| {
             placements
                 .iter()
@@ -8928,6 +8937,226 @@ pub(crate) fn project_hole_axes(
         if let [solution] = solutions.as_slice() {
             *placements = solution.clone();
         }
+    }
+}
+
+fn marker_pattern_bore_axes(
+    lane: &FeatureInputLane,
+    feature: &str,
+    radius: f64,
+    surfaces: &[Surface],
+) -> Option<Vec<HolePlacement>> {
+    const QUANTUM: f64 = 1.0e-8;
+    let mut marker_loci = lane
+        .sketch_entities
+        .iter()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
+        .filter(|marker| marker.object_index.is_some())
+        .filter(|marker| marker.kind == SketchInputKind::LineOrCircle)
+        .filter_map(|marker| {
+            let [u, v] = marker.coordinates_m?;
+            Some(Point2::new(u * 1000.0, v * 1000.0))
+        })
+        .collect::<Vec<_>>();
+    marker_loci.sort_by(|left, right| {
+        left.u
+            .total_cmp(&right.u)
+            .then_with(|| left.v.total_cmp(&right.v))
+    });
+    marker_loci.dedup_by(|left, right| {
+        same_dimension_length(left.u, right.u) && same_dimension_length(left.v, right.v)
+    });
+    if marker_loci.is_empty() {
+        return None;
+    }
+
+    let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+    let quantize_scalar = |value: f64| (value / QUANTUM).round() as i64;
+    let mut grouped = HashMap::<[i64; 3], HashMap<[i64; 3], Vec<(Point3, Vector3)>>>::new();
+    for surface in surfaces {
+        let SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            radius: candidate,
+            ..
+        } = surface.geometry
+        else {
+            continue;
+        };
+        if (candidate - radius).abs() > radius_tolerance {
+            continue;
+        }
+        let canonical = canonical_axis(axis);
+        let closest_distance = dot(Vector3::new(origin.x, origin.y, origin.z), canonical);
+        let closest = Point3::new(
+            origin.x - closest_distance * canonical.x,
+            origin.y - closest_distance * canonical.y,
+            origin.z - closest_distance * canonical.z,
+        );
+        grouped
+            .entry([
+                quantize_scalar(canonical.x),
+                quantize_scalar(canonical.y),
+                quantize_scalar(canonical.z),
+            ])
+            .or_default()
+            .entry([
+                quantize_scalar(closest.x),
+                quantize_scalar(closest.y),
+                quantize_scalar(closest.z),
+            ])
+            .or_default()
+            .push((origin, axis));
+    }
+
+    let mut solutions = HashMap::<Vec<[i64; 6]>, Vec<HolePlacement>>::new();
+    for lines in grouped.into_values() {
+        let mut candidates = lines
+            .into_iter()
+            .filter_map(|(point, surfaces)| {
+                let (origin, direction) = surfaces.first().copied()?;
+                surfaces
+                    .iter()
+                    .all(|(_, axis)| dot(*axis, direction) >= 1.0 - 1.0e-9)
+                    .then_some((point, origin, direction))
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_unstable_by_key(|(point, _, _)| *point);
+        if candidates.len() < marker_loci.len() {
+            continue;
+        }
+        let mut combinations = Vec::new();
+        bore_axis_combinations(
+            0,
+            marker_loci.len(),
+            &candidates,
+            &mut Vec::new(),
+            &mut combinations,
+        );
+        for combination in combinations {
+            let points = combination
+                .iter()
+                .map(|index| candidates[*index].0)
+                .map(|[x, y, z]| {
+                    Point3::new(x as f64 * QUANTUM, y as f64 * QUANTUM, z as f64 * QUANTUM)
+                })
+                .collect::<Vec<_>>();
+            if !point_sets_are_congruent(&marker_loci, &points) {
+                continue;
+            }
+            let placements = combination
+                .iter()
+                .map(|index| HolePlacement::Axis {
+                    origin: candidates[*index].1,
+                    axis: candidates[*index].2,
+                })
+                .collect::<Vec<_>>();
+            let key = placements
+                .iter()
+                .map(|placement| match placement {
+                    HolePlacement::Axis { origin, axis } => [
+                        quantize_scalar(origin.x),
+                        quantize_scalar(origin.y),
+                        quantize_scalar(origin.z),
+                        quantize_scalar(axis.x),
+                        quantize_scalar(axis.y),
+                        quantize_scalar(axis.z),
+                    ],
+                    _ => [0; 6],
+                })
+                .collect::<Vec<_>>();
+            solutions.insert(key, placements);
+            if solutions.len() > 1 {
+                return None;
+            }
+        }
+    }
+    let solutions = solutions.into_values().collect::<Vec<_>>();
+    let [solution] = solutions.as_slice() else {
+        return None;
+    };
+    Some(solution.clone())
+}
+
+fn canonical_axis(axis: Vector3) -> Vector3 {
+    let sign = [axis.x, axis.y, axis.z]
+        .into_iter()
+        .find(|component| component.abs() > 1.0e-12)
+        .map_or(1.0, |component| component.signum());
+    Vector3::new(axis.x * sign, axis.y * sign, axis.z * sign)
+}
+
+fn point_sets_are_congruent(marker_loci: &[Point2], bore_loci: &[Point3]) -> bool {
+    marker_loci.len() == bore_loci.len()
+        && congruent_point_assignment(
+            0,
+            marker_loci,
+            bore_loci,
+            &mut Vec::new(),
+            &mut HashSet::new(),
+        )
+}
+
+fn congruent_point_assignment(
+    marker_index: usize,
+    marker_loci: &[Point2],
+    bore_loci: &[Point3],
+    assigned: &mut Vec<usize>,
+    used: &mut HashSet<usize>,
+) -> bool {
+    if marker_index == marker_loci.len() {
+        return true;
+    }
+    for bore_index in 0..bore_loci.len() {
+        if !used.insert(bore_index) {
+            continue;
+        }
+        let valid = assigned
+            .iter()
+            .copied()
+            .enumerate()
+            .all(|(previous_marker, previous_bore)| {
+                let marker_distance = (marker_loci[marker_index].u
+                    - marker_loci[previous_marker].u)
+                    .hypot(marker_loci[marker_index].v - marker_loci[previous_marker].v);
+                let delta = Vector3::new(
+                    bore_loci[bore_index].x - bore_loci[previous_bore].x,
+                    bore_loci[bore_index].y - bore_loci[previous_bore].y,
+                    bore_loci[bore_index].z - bore_loci[previous_bore].z,
+                );
+                same_dimension_length(marker_distance, dot(delta, delta).sqrt())
+            });
+        if valid {
+            assigned.push(bore_index);
+            if congruent_point_assignment(marker_index + 1, marker_loci, bore_loci, assigned, used)
+            {
+                return true;
+            }
+            assigned.pop();
+        }
+        used.remove(&bore_index);
+    }
+    false
+}
+
+fn bore_axis_combinations(
+    start: usize,
+    remaining: usize,
+    candidates: &[([i64; 3], Point3, Vector3)],
+    current: &mut Vec<usize>,
+    result: &mut Vec<Vec<usize>>,
+) {
+    if remaining == 0 {
+        result.push(current.clone());
+        return;
+    }
+    if candidates.len().saturating_sub(start) < remaining {
+        return;
+    }
+    for index in start..=candidates.len() - remaining {
+        current.push(index);
+        bore_axis_combinations(index + 1, remaining - 1, candidates, current, result);
+        current.pop();
     }
 }
 
@@ -9239,8 +9468,8 @@ mod hole_axis_tests {
 
     use super::{
         compact_position_loci, enrich_history_hole_constructions, enrich_history_parameters,
-        hole_position_sketch_source, project_hole_axes, project_hole_position_sketches,
-        project_spatial_hole_position_sketches,
+        hole_position_sketch_source, marker_pattern_bore_axes, project_hole_axes,
+        project_hole_position_sketches, project_spatial_hole_position_sketches,
     };
     use crate::records::{
         FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
@@ -9390,6 +9619,63 @@ mod hole_axis_tests {
             compact_position_loci(&ambiguous, &ambiguous_placements, &relations),
             None
         );
+    }
+
+    #[test]
+    fn object_indexed_line_handles_select_a_congruent_bore_pattern() {
+        let mut lane = lane();
+        lane.sketch_entities = [(1, [0.013, 0.007]), (2, [-0.009, 0.007])]
+            .into_iter()
+            .enumerate()
+            .map(
+                |(ordinal, (object_index, coordinates_m))| SketchInputEntity {
+                    id: format!("marker-{ordinal}"),
+                    parent: "lane".into(),
+                    feature_ref: Some("position".into()),
+                    ordinal: ordinal as u32,
+                    offset: ordinal as u64,
+                    object_index: Some(object_index),
+                    local_id: None,
+                    kind: SketchInputKind::LineOrCircle,
+                    state_value: Some(1.0),
+                    coordinates_m: Some(coordinates_m),
+                    links: Vec::new(),
+                    link_selector: None,
+                },
+            )
+            .collect();
+        let surface = |id, x| Surface {
+            id: SurfaceId(format!("surface-{id}")),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(x, 7.0, 10.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.1,
+            },
+            source_object: None,
+        };
+        let mut surfaces = vec![surface(0, -9.0), surface(1, 13.0), surface(2, 100.0)];
+
+        let placements = marker_pattern_bore_axes(&lane, "position", 2.1, &surfaces).unwrap();
+        assert_eq!(placements.len(), 2);
+        assert!(placements.iter().any(|placement| matches!(
+            placement,
+            cadmpeg_ir::features::HolePlacement::Axis { origin, .. }
+                if origin.x == -9.0 && origin.y == 7.0 && origin.z == 10.0
+        )));
+        assert!(placements.iter().any(|placement| matches!(
+            placement,
+            cadmpeg_ir::features::HolePlacement::Axis { origin, .. }
+                if origin.x == 13.0 && origin.y == 7.0 && origin.z == 10.0
+        )));
+
+        let mut opposite = surface(3, -9.0);
+        let SurfaceGeometry::Cylinder { axis, .. } = &mut opposite.geometry else {
+            unreachable!();
+        };
+        *axis = Vector3::new(0.0, 0.0, -1.0);
+        surfaces.push(opposite);
+        assert!(marker_pattern_bore_axes(&lane, "position", 2.1, &surfaces).is_none());
     }
 
     #[test]
