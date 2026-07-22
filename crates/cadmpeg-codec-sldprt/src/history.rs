@@ -1373,7 +1373,6 @@ fn project_extrude(
         op,
         draft,
         second_draft: None,
-        reverse_draft: None,
         direction_source: None,
         solid: Some(true),
         face_maker: None,
@@ -4707,7 +4706,6 @@ pub fn sync_neutral_features(
                 op,
                 draft,
                 second_draft,
-                reverse_draft,
                 direction_source,
                 solid,
                 face_maker,
@@ -4717,8 +4715,7 @@ pub fn sync_neutral_features(
                 length_along_profile_normal,
                 allow_multi_profile_faces,
             } => {
-                if reverse_draft.is_some()
-                    || direction_source.is_some()
+                if direction_source.is_some()
                     || *solid == Some(false)
                     || face_maker.is_some()
                     || inner_wire_taper.is_some()

@@ -2325,7 +2325,7 @@ fn extrusion_definition(
         }
         let forward_draft = scalar_named(properties, "TaperAngle").unwrap_or(0.0);
         let reverse_draft = scalar_named(properties, "TaperAngleRev").unwrap_or(0.0);
-        let (draft, reverse_draft) = match (symmetric, forward > 0.0, reverse > 0.0) {
+        let (draft, second_draft) = match (symmetric, forward > 0.0, reverse > 0.0) {
             (true, _, _) => (forward_draft, forward_draft),
             (false, false, true) => (reverse_draft, 0.0),
             (false, true, true) => (forward_draft, reverse_draft),
@@ -2374,9 +2374,8 @@ fn extrusion_definition(
             extent,
             op: BooleanOp::NewBody,
             draft: (draft != 0.0).then_some(cadmpeg_ir::features::Angle(draft.to_radians())),
-            second_draft: None,
-            reverse_draft: (reverse_draft != 0.0)
-                .then_some(cadmpeg_ir::features::Angle(reverse_draft.to_radians())),
+            second_draft: (second_draft != 0.0)
+                .then_some(cadmpeg_ir::features::Angle(second_draft.to_radians())),
             direction_source: Some(direction_source),
             solid: Some(bool_property(properties, "Solid").unwrap_or(false)),
             face_maker,
@@ -2494,8 +2493,18 @@ fn extrusion_definition(
     let draft = scalar_named(properties, "TaperAngle")
         .filter(|angle| *angle != 0.0)
         .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()));
-    let reverse_draft = scalar_named(properties, "TaperAngle2")
+    // FreeCAD applies `TaperAngle2` only when the pad extends on a second
+    // side; a retained value alongside a one-sided extent has no effect.
+    let second_draft = scalar_named(properties, "TaperAngle2")
         .filter(|angle| *angle != 0.0)
+        .filter(|_| {
+            matches!(
+                extent,
+                Extent::TwoSidedExtents { .. }
+                    | Extent::Symmetric { .. }
+                    | Extent::SymmetricExtent { .. }
+            )
+        })
         .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()));
     let first_offset = if property(properties, "Offset").is_some() {
         Some(Length(scalar_named(properties, "Offset")?))
@@ -2528,8 +2537,7 @@ fn extrusion_definition(
             BooleanOp::Join
         },
         draft,
-        second_draft: None,
-        reverse_draft,
+        second_draft,
         direction_source: Some(direction_source),
         solid: Some(true),
         face_maker: None,

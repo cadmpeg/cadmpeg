@@ -4284,7 +4284,7 @@ fn transfers_non_default_extrusion_termination_branches() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
             extent: Extent::TwoSided { first, second },
             draft: Some(Angle(draft)),
-            reverse_draft: Some(Angle(reverse_draft)),
+            second_draft: Some(Angle(reverse_draft)),
             direction_source: Some(ExtrusionDirectionSource::Edge { reference: PathRef::Native(reference) }),
             solid: Some(true),
             face_maker: Some(face_maker),
@@ -4340,7 +4340,7 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
             direction_source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal),
             solid: Some(false),
             draft: Some(cadmpeg_ir::features::Angle(draft)),
-            reverse_draft: Some(cadmpeg_ir::features::Angle(reverse_draft)),
+            second_draft: Some(cadmpeg_ir::features::Angle(reverse_draft)),
             ..
         } if length.0 == 12.0
             && (*draft - 3_f64.to_radians()).abs() < 1e-12
@@ -4418,7 +4418,7 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
             direction_source: Some(ExtrusionDirectionSource::Edge { reference: PathRef::Native(reference) }),
             draft: Some(Angle(first_draft)),
-            reverse_draft: Some(Angle(second_draft)),
+            second_draft: Some(Angle(second_draft)),
             first_offset: Some(Length(1.0)),
             second_offset: Some(Length(-2.0)),
             length_along_profile_normal: Some(false),

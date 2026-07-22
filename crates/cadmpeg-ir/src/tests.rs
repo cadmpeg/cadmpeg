@@ -859,7 +859,6 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             op: BooleanOp::NewBody,
             draft: None,
             second_draft: None,
-            reverse_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
@@ -959,7 +958,6 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
             op: BooleanOp::NewBody,
             draft: None,
             second_draft: None,
-            reverse_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
@@ -2968,7 +2966,6 @@ fn feature_extent_magnitudes_are_validated() {
                 op: BooleanOp::NewBody,
                 draft: None,
                 second_draft: None,
-                reverse_draft: None,
                 direction_source: None,
                 solid: None,
                 face_maker: None,
@@ -3016,7 +3013,6 @@ fn explicit_extrusion_direction_must_be_nonzero() {
             op: BooleanOp::NewBody,
             draft: None,
             second_draft: None,
-            reverse_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
@@ -3116,7 +3112,6 @@ fn opposite_side_extrusion_draft_requires_a_valid_two_sided_extent() {
                 op: BooleanOp::NewBody,
                 draft: None,
                 second_draft,
-                reverse_draft: None,
                 direction_source: None,
                 solid: None,
                 face_maker: None,
@@ -3143,6 +3138,40 @@ fn opposite_side_extrusion_draft_requires_a_valid_two_sided_extent() {
                 .any(|finding| finding.message == expected_message));
         }
     }
+}
+
+#[test]
+fn extrude_second_draft_reads_the_reverse_draft_alias() {
+    use crate::features::{
+        Angle, BooleanOp, Extent, ExtrudeStart, FeatureDefinition, Length, ProfileRef,
+    };
+
+    let definition = FeatureDefinition::Extrude {
+        profile: ProfileRef::Native("profile".into()),
+        direction: ExtrudeDirection::ProfileNormal,
+        start: ExtrudeStart::ProfilePlane,
+        extent: Extent::TwoSided {
+            first: Length(1.0),
+            second: Length(2.0),
+        },
+        op: BooleanOp::NewBody,
+        draft: None,
+        second_draft: Some(Angle(0.25)),
+        direction_source: None,
+        solid: None,
+        face_maker: None,
+        inner_wire_taper: None,
+        first_offset: None,
+        second_offset: None,
+        length_along_profile_normal: None,
+        allow_multi_profile_faces: None,
+    };
+    let mut encoded = serde_json::to_value(&definition).unwrap();
+    let object = encoded.as_object_mut().unwrap();
+    let angle = object.remove("second_draft").unwrap();
+    object.insert("reverse_draft".into(), angle);
+    let decoded: FeatureDefinition = serde_json::from_value(encoded).expect("alias deserializes");
+    assert_eq!(decoded, definition);
 }
 
 #[test]
@@ -3186,7 +3215,6 @@ fn sketch_feature_ownership_and_order_are_validated() {
             op: BooleanOp::NewBody,
             draft: None,
             second_draft: None,
-            reverse_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
@@ -3268,7 +3296,6 @@ fn sketch_profile_subselections_are_bounds_checked() {
             op: BooleanOp::NewBody,
             draft: None,
             second_draft: None,
-            reverse_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,

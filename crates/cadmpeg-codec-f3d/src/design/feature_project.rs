@@ -2744,7 +2744,6 @@ pub(crate) fn project_extrude(
         op,
         draft,
         second_draft,
-        reverse_draft: None,
         direction_source: None,
         solid: None,
         face_maker: None,

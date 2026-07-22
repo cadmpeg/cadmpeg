@@ -2272,7 +2272,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 extent,
                 draft,
                 second_draft,
-                reverse_draft,
                 direction_source,
                 face_maker,
                 first_offset,
@@ -2291,21 +2290,29 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 {
                     paths.push(reference);
                 }
-                if draft.is_some_and(|angle| !angle.0.is_finite())
-                    || second_draft.is_some_and(|angle| !angle.0.is_finite())
-                {
+                if [draft, second_draft].into_iter().flatten().any(|angle| {
+                    !angle.0.is_finite() || angle.0.abs() >= std::f64::consts::FRAC_PI_2
+                }) {
                     feature_geometry_error(findings, feature, "extrusion draft is invalid");
                 }
-                if second_draft.is_some() && !matches!(extent, Extent::TwoSided { .. }) {
+                if second_draft.is_some()
+                    && !matches!(
+                        extent,
+                        Extent::TwoSided { .. }
+                            | Extent::TwoSidedExtents { .. }
+                            | Extent::TwoSidedAngles { .. }
+                            | Extent::Symmetric { .. }
+                            | Extent::SymmetricExtent { .. }
+                            | Extent::SymmetricAngle { .. }
+                    )
+                {
                     feature_geometry_error(
                         findings,
                         feature,
                         "opposite-side extrusion draft requires a two-sided extent",
                     );
                 }
-                if [draft, reverse_draft].into_iter().flatten().any(|angle| {
-                    !angle.0.is_finite() || angle.0.abs() >= std::f64::consts::FRAC_PI_2
-                }) || [first_offset, second_offset]
+                if [first_offset, second_offset]
                     .into_iter()
                     .flatten()
                     .any(|offset| !offset.0.is_finite())

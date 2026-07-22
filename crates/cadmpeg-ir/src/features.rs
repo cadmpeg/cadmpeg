@@ -597,13 +597,14 @@ pub enum FeatureDefinition {
         /// Draft angle applied to the extruded side walls, when present.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         draft: Option<Angle>,
-        /// Independent draft angle applied to the opposite side of a two-sided
-        /// extrusion, when present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// Independent draft angle applied to the second side of an extrusion
+        /// whose extent has two sides, when present.
+        #[serde(
+            default,
+            alias = "reverse_draft",
+            skip_serializing_if = "Option::is_none"
+        )]
         second_draft: Option<Angle>,
-        /// Draft angle on the opposite side of a two-sided extrusion.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        reverse_draft: Option<Angle>,
         /// Persisted source used to resolve the extrusion direction.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         direction_source: Option<ExtrusionDirectionSource>,
