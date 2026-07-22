@@ -766,6 +766,46 @@ pub(crate) fn required_payload_field(
     Ok(offset)
 }
 
+/// Borrow a framed record's byte span, rejecting extent overflow and truncation
+/// with `{label}`-tagged diagnostics. Shared by the geometry-cache patchers.
+fn record_slice<'a>(
+    bytes: &'a [u8],
+    record: &sab::Record,
+    label: &str,
+) -> Result<&'a [u8], CodecError> {
+    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+        CodecError::Malformed(format!("{label} record extent overflows address space"))
+    })?;
+    bytes
+        .get(record.offset..end)
+        .ok_or_else(|| CodecError::Malformed(format!("{label} record is truncated")))
+}
+
+/// Write each patch's little-endian `f64` payload at `record_offset + offset`.
+fn apply_f64_patches(
+    bytes: &mut [u8],
+    record_offset: usize,
+    patches: impl IntoIterator<Item = (usize, f64)>,
+) {
+    for (offset, value) in patches {
+        let at = record_offset + offset;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+/// Write a vector's three little-endian `f64` payloads at consecutive 8-byte
+/// slots starting from `base_at`.
+fn apply_vector_payload(bytes: &mut [u8], base_at: usize, components: [f64; 3]) {
+    apply_f64_patches(
+        bytes,
+        base_at,
+        components
+            .into_iter()
+            .enumerate()
+            .map(|(component, value)| (component * 8, value)),
+    );
+}
+
 fn patch_extrusion_definition(
     bytes: &mut [u8],
     record: &sab::Record,
@@ -773,12 +813,7 @@ fn patch_extrusion_definition(
     direction: Vector3,
     native_position: cadmpeg_ir::math::Point3,
 ) -> Result<(), CodecError> {
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("extrusion record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("extrusion record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "extrusion")?;
     let layout =
         crate::nurbs::proc_curve::extrusion_patch_layout(record_bytes, active_ref_width(bytes))
             .ok_or_else(|| {
@@ -787,14 +822,14 @@ fn patch_extrusion_definition(
                     record.index
                 ))
             })?;
-    for (offset, value) in layout
-        .parameter_interval
-        .into_iter()
-        .zip(parameter_interval)
-    {
-        let at = record.offset + offset;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_f64_patches(
+        bytes,
+        record.offset,
+        layout
+            .parameter_interval
+            .into_iter()
+            .zip(parameter_interval),
+    );
     for (base, values) in [
         (
             layout.direction,
@@ -809,10 +844,7 @@ fn patch_extrusion_definition(
             ],
         ),
     ] {
-        for (component, value) in values.into_iter().enumerate() {
-            let at = record.offset + base + component * 8;
-            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-        }
+        apply_vector_payload(bytes, record.offset + base, values);
     }
     Ok(())
 }
@@ -939,12 +971,7 @@ fn patch_blend_radius_tokens(
     record: &sab::Record,
     radii: [f64; 2],
 ) -> Result<(), CodecError> {
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("rolling-ball record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("rolling-ball record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "rolling-ball")?;
     let layout =
         crate::nurbs::proc_curve::rolling_ball_patch_layout(record_bytes, active_ref_width(bytes))
             .ok_or_else(|| {
@@ -953,10 +980,15 @@ fn patch_blend_radius_tokens(
                     record.index
                 ))
             })?;
-    for (offset, radius) in layout.radii.into_iter().zip(radii) {
-        let payload = record.offset + offset;
-        bytes[payload..payload + 8].copy_from_slice(&(radius / 10.0).to_le_bytes());
-    }
+    apply_f64_patches(
+        bytes,
+        record.offset,
+        layout
+            .radii
+            .into_iter()
+            .zip(radii)
+            .map(|(offset, radius)| (offset, radius / 10.0)),
+    );
     Ok(())
 }
 
@@ -967,12 +999,7 @@ fn patch_nurbs_surface_record(
     surface_ordinal: Option<usize>,
 ) -> Result<(), CodecError> {
     let surface = &edit.surface;
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("NURBS surface record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("NURBS surface record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "NURBS surface")?;
     let layout = surface_ordinal
         .map_or_else(
             || crate::nurbs::core::final_surface_patch_layout(record_bytes),
@@ -1060,12 +1087,7 @@ fn patch_procedural_surface_fit(
     record: &sab::Record,
     tolerance: f64,
 ) -> Result<(), CodecError> {
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("procedural-surface record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("procedural-surface record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "procedural-surface")?;
     let layout = crate::nurbs::core::final_surface_patch_layout(record_bytes).ok_or_else(|| {
         CodecError::Malformed(format!(
             "spline record {} has no solved surface cache",
@@ -1090,12 +1112,7 @@ fn patch_nurbs_curve_record(
     final_cache: bool,
 ) -> Result<(), CodecError> {
     let curve = &edit.curve;
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("NURBS curve record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("NURBS curve record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "NURBS curve")?;
     let layout = if final_cache {
         crate::nurbs::core::final_curve_patch_layout(record_bytes)
     } else {
@@ -1159,12 +1176,7 @@ fn patch_procedural_curve_fit(
     record: &sab::Record,
     tolerance: f64,
 ) -> Result<(), CodecError> {
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("procedural-curve record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("procedural-curve record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "procedural-curve")?;
     let layout = crate::nurbs::core::final_curve_patch_layout(record_bytes).ok_or_else(|| {
         CodecError::Malformed(format!(
             "intcurve record {} has no solved curve cache",
@@ -1201,12 +1213,7 @@ fn patch_helix_definition(
             "helix patch received a non-helix definition".into(),
         ));
     };
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("helix record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("helix record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "helix")?;
     let layout =
         crate::nurbs::proc_curve::helix_patch_layout(record_bytes, active_ref_width(bytes))
             .ok_or_else(|| {
@@ -1215,27 +1222,22 @@ fn patch_helix_definition(
                     record.index
                 ))
             })?;
-    for (offset, value) in layout.angle_range.into_iter().zip(*angle_range) {
-        let at = record.offset + offset;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_f64_patches(
+        bytes,
+        record.offset,
+        layout.angle_range.into_iter().zip(*angle_range),
+    );
     for (offset, value) in layout.frame_vectors.into_iter().zip([
         [center.x / 10.0, center.y / 10.0, center.z / 10.0],
         [major.x / 10.0, major.y / 10.0, major.z / 10.0],
         [minor.x / 10.0, minor.y / 10.0, minor.z / 10.0],
         [pitch.x / 10.0, pitch.y / 10.0, pitch.z / 10.0],
     ]) {
-        for (component, value) in value.into_iter().enumerate() {
-            let at = record.offset + offset + component * 8;
-            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-        }
+        apply_vector_payload(bytes, record.offset + offset, value);
     }
     let apex_at = record.offset + layout.apex_factor;
     bytes[apex_at..apex_at + 8].copy_from_slice(&apex_factor.to_le_bytes());
-    for (component, value) in [axis.x, axis.y, axis.z].into_iter().enumerate() {
-        let at = record.offset + layout.axis + component * 8;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_vector_payload(bytes, record.offset + layout.axis, [axis.x, axis.y, axis.z]);
     Ok(())
 }
 
@@ -1254,10 +1256,7 @@ fn patch_vector_offset_definition(
             "vector-offset patch received another definition".into(),
         ));
     };
-    let end = record.offset + record.len;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("vector-offset record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "vector-offset")?;
     let layout =
         crate::nurbs::proc_curve::vector_offset_patch_layout(record_bytes, active_ref_width(bytes))
             .ok_or_else(|| {
@@ -1266,17 +1265,16 @@ fn patch_vector_offset_definition(
                     record.index
                 ))
             })?;
-    for (offset, value) in layout.parameter_range.into_iter().zip(*parameter_range) {
-        let at = record.offset + offset;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
-    for (component, value) in [offset.x / 10.0, offset.y / 10.0, offset.z / 10.0]
-        .into_iter()
-        .enumerate()
-    {
-        let at = record.offset + layout.offset + component * 8;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_f64_patches(
+        bytes,
+        record.offset,
+        layout.parameter_range.into_iter().zip(*parameter_range),
+    );
+    apply_vector_payload(
+        bytes,
+        record.offset + layout.offset,
+        [offset.x / 10.0, offset.y / 10.0, offset.z / 10.0],
+    );
     Ok(())
 }
 
@@ -1293,10 +1291,7 @@ fn patch_subset_definition(
             "subset patch received another definition".into(),
         ));
     };
-    let end = record.offset + record.len;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("subset record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "subset")?;
     let layout =
         crate::nurbs::proc_curve::subset_patch_layout(record_bytes, active_ref_width(bytes))
             .ok_or_else(|| {
@@ -1305,10 +1300,11 @@ fn patch_subset_definition(
                     record.index
                 ))
             })?;
-    for (offset, value) in layout.parameter_range.into_iter().zip(*parameter_range) {
-        let at = record.offset + offset;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_f64_patches(
+        bytes,
+        record.offset,
+        layout.parameter_range.into_iter().zip(*parameter_range),
+    );
     Ok(())
 }
 
@@ -1327,12 +1323,7 @@ fn patch_compound_definition(
             "compound patch received another definition".into(),
         ));
     };
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("compound record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("compound record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "compound")?;
     let layout =
         crate::nurbs::proc_curve::compound_patch_layout(record_bytes, active_ref_width(bytes))
             .ok_or_else(|| {
@@ -1348,15 +1339,15 @@ fn patch_compound_definition(
             "compound edit changes native parameter cardinality".into(),
         ));
     }
-    for (offset, value) in layout
-        .parameters
-        .into_iter()
-        .chain(layout.component_parameters)
-        .zip(parameters.iter().chain(component_parameters))
-    {
-        let at = record.offset + offset;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_f64_patches(
+        bytes,
+        record.offset,
+        layout
+            .parameters
+            .into_iter()
+            .chain(layout.component_parameters)
+            .zip(parameters.iter().chain(component_parameters).copied()),
+    );
     Ok(())
 }
 
@@ -1375,9 +1366,7 @@ fn patch_two_sided_offset_definition(
             "two-sided offset patch received another definition".into(),
         ));
     };
-    let record_bytes = bytes
-        .get(record.offset..record.offset + record.len)
-        .ok_or_else(|| CodecError::Malformed("two-sided offset record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "two-sided offset")?;
     let layout = [8usize, 4]
         .into_iter()
         .filter_map(|width| {
@@ -1463,12 +1452,7 @@ fn patch_surface_offset_definition(
             "surface-offset context values must be finite".into(),
         ));
     }
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("surface-offset record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("surface-offset record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "surface-offset")?;
     let layout = crate::nurbs::proc_curve::surface_offset_patch_layout(
         record_bytes,
         active_ref_width(bytes),
@@ -1484,32 +1468,32 @@ fn patch_surface_offset_definition(
             "surface-offset context is incomplete".into(),
         ));
     }
-    for (offset, value) in layout
-        .parameter_range
-        .into_iter()
-        .chain(layout.discontinuities.into_iter().flatten())
-        .chain(layout.base_u_range)
-        .chain(layout.base_v_range)
-        .chain(layout.base_range)
-        .chain([layout.distance, layout.shift, layout.scale])
-        .zip(
-            context
-                .parameter_range
-                .into_iter()
-                .chain(context.discontinuities.iter().flatten().copied())
-                .chain(base_u_range.iter().copied())
-                .chain(base_v_range.iter().copied())
-                .chain(
-                    base_range
-                        .iter()
-                        .copied()
-                        .chain([distance / 10.0, *shift, *scale]),
-                ),
-        )
-    {
-        let offset = record.offset + offset;
-        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_f64_patches(
+        bytes,
+        record.offset,
+        layout
+            .parameter_range
+            .into_iter()
+            .chain(layout.discontinuities.into_iter().flatten())
+            .chain(layout.base_u_range)
+            .chain(layout.base_v_range)
+            .chain(layout.base_range)
+            .chain([layout.distance, layout.shift, layout.scale])
+            .zip(
+                context
+                    .parameter_range
+                    .into_iter()
+                    .chain(context.discontinuities.iter().flatten().copied())
+                    .chain(base_u_range.iter().copied())
+                    .chain(base_v_range.iter().copied())
+                    .chain(
+                        base_range
+                            .iter()
+                            .copied()
+                            .chain([distance / 10.0, *shift, *scale]),
+                    ),
+            ),
+    );
     bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
     Ok(())
 }
@@ -1540,12 +1524,7 @@ fn patch_spring_definition(
             "spring context values must be finite".into(),
         ));
     }
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("spring record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("spring record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "spring")?;
     let int_width = active_ref_width(bytes);
     let layout = crate::nurbs::proc_curve::spring_patch_layout(record_bytes, int_width)
         .ok_or_else(|| CodecError::Malformed("spring construction is malformed".into()))?;
@@ -1557,20 +1536,20 @@ fn patch_spring_definition(
     {
         return Err(CodecError::Malformed("spring context is incomplete".into()));
     }
-    for (offset, value) in layout
-        .parameter_range
-        .into_iter()
-        .chain(layout.discontinuities.into_iter().flatten())
-        .zip(
-            context
-                .parameter_range
-                .into_iter()
-                .chain(context.discontinuities.iter().flatten().copied()),
-        )
-    {
-        let offset = record.offset + offset;
-        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_f64_patches(
+        bytes,
+        record.offset,
+        layout
+            .parameter_range
+            .into_iter()
+            .chain(layout.discontinuities.into_iter().flatten())
+            .zip(
+                context
+                    .parameter_range
+                    .into_iter()
+                    .chain(context.discontinuities.iter().flatten().copied()),
+            ),
+    );
     bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
     patch_tagged_integer_at(
         bytes,
@@ -1607,12 +1586,7 @@ fn patch_projection_definition(
             "projection context values must be finite".into(),
         ));
     }
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("projection record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("projection record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "projection")?;
     let layout =
         crate::nurbs::proc_curve::projection_patch_layout(record_bytes, active_ref_width(bytes))
             .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
@@ -1654,10 +1628,14 @@ fn patch_projection_definition(
                 ));
             }
             bytes[record.offset + flag_offset] = native_bool(*flag);
-            for (offset, value) in range_offsets.iter().zip(parameter_range) {
-                let offset = record.offset + offset;
-                bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-            }
+            apply_f64_patches(
+                bytes,
+                record.offset,
+                range_offsets
+                    .iter()
+                    .zip(parameter_range)
+                    .map(|(offset, value)| (*offset, *value)),
+            );
             let role_target = record.offset + role_range.start..record.offset + role_range.end;
             bytes[role_target].copy_from_slice(role.as_bytes());
         }
@@ -1667,20 +1645,20 @@ fn patch_projection_definition(
             ))
         }
     }
-    for (offset, value) in layout
-        .parameter_range
-        .into_iter()
-        .chain(layout.discontinuities.into_iter().flatten())
-        .zip(
-            context
-                .parameter_range
-                .into_iter()
-                .chain(context.discontinuities.iter().flatten().copied()),
-        )
-    {
-        let offset = record.offset + offset;
-        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_f64_patches(
+        bytes,
+        record.offset,
+        layout
+            .parameter_range
+            .into_iter()
+            .chain(layout.discontinuities.into_iter().flatten())
+            .zip(
+                context
+                    .parameter_range
+                    .into_iter()
+                    .chain(context.discontinuities.iter().flatten().copied()),
+            ),
+    );
     bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
     Ok(())
 }
@@ -1709,12 +1687,7 @@ fn patch_intersection_definition(
             "intersection context values must be finite".into(),
         ));
     }
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("intersection record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("intersection record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "intersection")?;
     let layout =
         crate::nurbs::proc_curve::intersection_patch_layout(record_bytes, active_ref_width(bytes))
             .ok_or_else(|| {
@@ -1730,20 +1703,20 @@ fn patch_intersection_definition(
             "intersection context is incomplete".into(),
         ));
     }
-    for (offset, value) in layout
-        .parameter_range
-        .into_iter()
-        .chain(layout.discontinuities.into_iter().flatten())
-        .zip(
-            context
-                .parameter_range
-                .into_iter()
-                .chain(context.discontinuities.iter().flatten().copied()),
-        )
-    {
-        let offset = record.offset + offset;
-        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_f64_patches(
+        bytes,
+        record.offset,
+        layout
+            .parameter_range
+            .into_iter()
+            .chain(layout.discontinuities.into_iter().flatten())
+            .zip(
+                context
+                    .parameter_range
+                    .into_iter()
+                    .chain(context.discontinuities.iter().flatten().copied()),
+            ),
+    );
     bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
     Ok(())
 }
@@ -1773,14 +1746,7 @@ fn patch_three_surface_intersection_definition(
             "three-surface intersection context values must be finite".into(),
         ));
     }
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed(
-            "three-surface intersection record extent overflows address space".into(),
-        )
-    })?;
-    let record_bytes = bytes.get(record.offset..end).ok_or_else(|| {
-        CodecError::Malformed("three-surface intersection record is truncated".into())
-    })?;
+    let record_bytes = record_slice(bytes, record, "three-surface intersection")?;
     let int_width = active_ref_width(bytes);
     let layout = crate::nurbs::proc_curve::three_surface_patch_layout(record_bytes, int_width)
         .ok_or_else(|| CodecError::Malformed("three-surface construction is malformed".into()))?;
@@ -1794,20 +1760,20 @@ fn patch_three_surface_intersection_definition(
             "three-surface intersection context is incomplete".into(),
         ));
     }
-    for (offset, value) in layout
-        .parameter_range
-        .into_iter()
-        .chain(layout.discontinuities.into_iter().flatten())
-        .zip(
-            context
-                .parameter_range
-                .into_iter()
-                .chain(context.discontinuities.iter().flatten().copied()),
-        )
-    {
-        let offset = record.offset + offset;
-        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_f64_patches(
+        bytes,
+        record.offset,
+        layout
+            .parameter_range
+            .into_iter()
+            .chain(layout.discontinuities.into_iter().flatten())
+            .zip(
+                context
+                    .parameter_range
+                    .into_iter()
+                    .chain(context.discontinuities.iter().flatten().copied()),
+            ),
+    );
     patch_tagged_integer_at(bytes, record.offset + layout.selector, int_width, *selector)?;
     Ok(())
 }
@@ -1835,12 +1801,7 @@ fn patch_surface_curve_definition(
             "surface-curve context values must be finite".into(),
         ));
     }
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("surface-curve record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("surface-curve record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "surface-curve")?;
     let layout = crate::nurbs::proc_curve::surface_curve_patch_layout(
         record_bytes,
         active_ref_width(bytes),
@@ -1857,20 +1818,20 @@ fn patch_surface_curve_definition(
             "surface-curve context is incomplete".into(),
         ));
     }
-    for (offset, value) in layout
-        .parameter_range
-        .into_iter()
-        .chain(layout.discontinuities.into_iter().flatten())
-        .zip(
-            context
-                .parameter_range
-                .into_iter()
-                .chain(context.discontinuities.iter().flatten().copied()),
-        )
-    {
-        let offset = record.offset + offset;
-        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_f64_patches(
+        bytes,
+        record.offset,
+        layout
+            .parameter_range
+            .into_iter()
+            .chain(layout.discontinuities.into_iter().flatten())
+            .zip(
+                context
+                    .parameter_range
+                    .into_iter()
+                    .chain(context.discontinuities.iter().flatten().copied()),
+            ),
+    );
     Ok(())
 }
 
@@ -1906,25 +1867,18 @@ fn patch_silhouette_definition(
             Some(*draft_factor)
         }
     };
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("silhouette record extent overflows address space".into())
-    })?;
-    let record_bytes = bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed("silhouette record is truncated".into()))?;
+    let record_bytes = record_slice(bytes, record, "silhouette")?;
     let layout = crate::nurbs::proc_curve::silhouette_patch_layout(
         record_bytes,
         active_ref_width(bytes),
         silhouette,
     )
     .ok_or_else(|| CodecError::Malformed("silhouette construction is malformed".into()))?;
-    for (component, value) in [light_direction.x, light_direction.y, light_direction.z]
-        .into_iter()
-        .enumerate()
-    {
-        let start = record.offset + layout.light_direction + component * 8;
-        bytes[start..start + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    apply_vector_payload(
+        bytes,
+        record.offset + layout.light_direction,
+        [light_direction.x, light_direction.y, light_direction.z],
+    );
     if let Some(draft_factor) = draft_factor {
         let draft_offset = layout
             .draft_factor
