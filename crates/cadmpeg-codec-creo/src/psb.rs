@@ -253,6 +253,63 @@ pub fn short_form_float(data: &[u8], offset: usize) -> Option<(f64, usize)> {
     Some((f64::from_be_bytes(ieee), offset + 3))
 }
 
+/// A forward-only byte cursor over a PSB body.
+///
+/// The cursor owns a borrowed slice and a read position. Typed takes delegate
+/// to the module's free decoders ([`compact_int`], [`short_form_float`],
+/// [`reference_id`]) and to any caller-supplied decoder of the same
+/// `fn(&[u8], usize) -> Option<(T, usize)>` shape, advancing the position only
+/// when the decode succeeds. A failed take leaves the position unchanged: the
+/// wrapped decoders are pure and report their consumed extent through the
+/// returned offset, so the cursor never advances partially. This lets a
+/// best-effort walker thread a single `Cursor` instead of hand-carrying a
+/// `(value, next)` tuple through every field, while preserving the exact
+/// truncation behavior (`break`/`continue` on a `None` take).
+pub(crate) struct Cursor<'a> {
+    data: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Cursor<'a> {
+    /// Start a cursor at an explicit byte position within `data`.
+    pub(crate) fn at(data: &'a [u8], pos: usize) -> Self {
+        Self { data, pos }
+    }
+
+    /// Decode one value at the current position with `decode`, advancing to the
+    /// decoder's reported offset on success.
+    ///
+    /// Returns `None` — leaving the position unchanged — exactly when `decode`
+    /// returns `None`. Because `decode` reports its consumed extent through the
+    /// returned offset rather than by mutating state, the cursor never advances
+    /// on failure and never advances partially.
+    pub(crate) fn take_with<T>(
+        &mut self,
+        decode: impl FnOnce(&'a [u8], usize) -> Option<(T, usize)>,
+    ) -> Option<T> {
+        let (value, next) = decode(self.data, self.pos)?;
+        self.pos = next;
+        Some(value)
+    }
+
+    /// Advance past `prefix` when the bytes at the current position match it.
+    ///
+    /// Returns `true` and consumes exactly `prefix.len()` bytes on a match;
+    /// returns `false` and leaves the position unchanged otherwise.
+    pub(crate) fn take_slice_if(&mut self, prefix: &[u8]) -> bool {
+        if self
+            .data
+            .get(self.pos..)
+            .is_some_and(|tail| tail.starts_with(prefix))
+        {
+            self.pos += prefix.len();
+            true
+        } else {
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -143,27 +143,24 @@ pub fn scalar_arrays(data: &[u8]) -> Vec<PrimitiveScalarArray> {
             if data.get(opener) != Some(&psb::token::ARRAY_OPEN) {
                 continue;
             }
-            let (count, mut cursor) = psb::compact_int(data, opener + 1);
-            if cursor == opener + 1 {
+            let (count, start) = psb::compact_int(data, opener + 1);
+            if start == opener + 1 {
                 continue;
             }
             let Ok(capacity) = usize::try_from(count) else {
                 continue;
             };
             let mut values = Vec::with_capacity(capacity);
+            let mut cursor = psb::Cursor::at(data, start);
             while values.len() < capacity {
-                if capacity - values.len() >= 3
-                    && data.get(cursor..cursor + 3) == Some(&[0x00, 0x28, 0x00])
-                {
+                if capacity - values.len() >= 3 && cursor.take_slice_if(&[0x00, 0x28, 0x00]) {
                     values.extend([0.0, 1.0, 0.0]);
-                    cursor += 3;
                     continue;
                 }
-                let Some((value, next)) = primitive_scalar(data, cursor) else {
+                let Some(value) = cursor.take_with(primitive_scalar) else {
                     break;
                 };
                 values.push(value);
-                cursor = next;
             }
             if values.len() == capacity && values.iter().all(|value| value.is_finite()) {
                 arrays.push(PrimitiveScalarArray {
