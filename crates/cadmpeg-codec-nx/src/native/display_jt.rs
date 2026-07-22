@@ -1,0 +1,3221 @@
+// SPDX-License-Identifier: Apache-2.0
+//! JT display-model record extractors and their record types.
+
+use std::io::Read as _;
+
+#[allow(clippy::wildcard_imports)]
+use super::*;
+
+/// Outer index of the embedded JT display-model stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtIndex {
+    /// Globally unique index identity.
+    pub id: String,
+    /// Serialized index version.
+    pub version: u32,
+    /// Declared number of indexed JT documents.
+    pub declared_count: u32,
+    /// Indexed document rows in serialized order.
+    pub rows: Vec<DisplayJtIndexRow>,
+    /// Absolute source offset of the `DisplayJT` payload.
+    pub source_offset: u64,
+}
+
+/// One physical-header offset and associated value in a `DisplayJT` index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtIndexRow {
+    /// Globally unique row identity.
+    pub id: String,
+    /// Zero-based row index.
+    pub ordinal: u32,
+    /// Payload-relative physical JT-header offset.
+    pub header_offset: u32,
+    /// Nonzero serialized row value whose semantic role is unassigned.
+    pub value: u64,
+    /// Absolute source offset of the row.
+    pub source_offset: u64,
+}
+
+/// One bounded embedded JT document and its table of contents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtDocument {
+    /// Globally unique document identity.
+    pub id: String,
+    /// Owning outer-index row.
+    pub index_row: String,
+    /// Exact 80-byte UTF-8 version field.
+    pub version_field: String,
+    /// JT format major version parsed from the version field.
+    pub format_major: u16,
+    /// JT format minor version parsed from the version field.
+    pub format_minor: u16,
+    /// Serialized JT byte-order flag.
+    pub byte_order: u8,
+    /// Payload-relative table-of-contents offset.
+    pub toc_offset: u32,
+    /// Exact 16-byte logical scene-graph segment identifier.
+    pub lsg_segment_id: Vec<u8>,
+    /// Ordered table-of-contents entries.
+    pub toc_entries: Vec<DisplayJtTocEntry>,
+    /// Physical byte length ending at the next indexed header or stream boundary.
+    pub physical_byte_len: u64,
+    /// Absolute source offset of the JT version field.
+    pub source_offset: u64,
+}
+
+/// One fixed-width entry in an embedded JT document table of contents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtTocEntry {
+    /// Globally unique TOC-entry identity.
+    pub id: String,
+    /// Zero-based serialized entry order.
+    pub ordinal: u32,
+    /// Exact 16-byte segment identifier.
+    pub segment_id: Vec<u8>,
+    /// Document-relative segment offset.
+    pub segment_offset: u32,
+    /// Physical segment byte length.
+    pub segment_byte_len: u32,
+    /// Exact four-byte segment attribute field.
+    pub attributes: Vec<u8>,
+    /// Absolute source offset of the TOC entry.
+    pub source_offset: u64,
+}
+
+/// One physically bounded segment in an embedded JT document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtSegment {
+    /// Globally unique segment identity.
+    pub id: String,
+    /// Owning JT document.
+    pub document: String,
+    /// Owning table-of-contents entry.
+    pub toc_entry: String,
+    /// Exact 16-byte segment identifier.
+    pub segment_id: Vec<u8>,
+    /// Segment type repeated by the table-of-contents attribute word.
+    pub segment_type: u32,
+    /// Physical segment byte length, including its 24-byte header.
+    pub segment_byte_len: u32,
+    /// SHA-256 of the bytes following the segment header.
+    pub payload_sha256: String,
+    /// Complete compressed-data envelope when the payload is compressed.
+    pub compression: Option<DisplayJtCompression>,
+    /// Absolute source offset of the segment header.
+    pub source_offset: u64,
+}
+
+/// Validated compressed-data envelope following a JT segment header.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtCompression {
+    /// Serialized compression flag.
+    pub flag: u32,
+    /// Declared byte length of the algorithm byte and compressed member.
+    pub compressed_data_byte_len: u32,
+    /// Serialized compression algorithm identifier.
+    pub algorithm: u8,
+    /// Physical zlib-member byte length.
+    pub compressed_byte_len: u32,
+    /// SHA-256 of the completely inflated payload.
+    pub inflated_sha256: String,
+}
+
+/// One length-bounded object element in a JT shape-LOD segment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtShapeLodElement {
+    /// Globally unique element identity.
+    pub id: String,
+    /// Owning type-7 segment.
+    pub segment: String,
+    /// Zero-based serialized element order.
+    pub ordinal: u32,
+    /// Exact 16-byte object-type identifier.
+    pub object_type_id: Vec<u8>,
+    /// Serialized object-base-type discriminator.
+    pub object_base_type: u8,
+    /// Serialized object identifier.
+    pub object_id: u32,
+    /// Bytes following the common element header.
+    pub body_byte_len: u32,
+    /// SHA-256 of the bytes following the common element header.
+    pub body_sha256: String,
+    /// Absolute source offset of the element length.
+    pub source_offset: u64,
+}
+
+/// Fixed version and binding header of a JT 9 tri-strip shape-LOD element.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtTriStripLodHeader {
+    /// Globally unique header identity.
+    pub id: String,
+    /// Owning shape-LOD element.
+    pub element: String,
+    /// Base shape-LOD data version.
+    pub base_version: u16,
+    /// Vertex shape-LOD data version.
+    pub vertex_version: u16,
+    /// Packed vertex-channel binding mask.
+    pub vertex_bindings: u64,
+    /// Topological mesh LOD data version.
+    pub topological_mesh_version: u16,
+    /// Serialized object identifier shared by the vertex records.
+    pub vertex_records_object_id: u32,
+    /// Compressed topological-mesh representation version.
+    pub compressed_lod_version: u16,
+    /// Bytes following the fixed header.
+    pub compressed_representation_byte_len: u32,
+    /// SHA-256 of the bytes following the fixed header.
+    pub compressed_representation_sha256: String,
+    /// Absolute source offset of the fixed header.
+    pub source_offset: u64,
+}
+
+/// Decoded context-zero face-degree symbols from a JT topological mesh.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtInitialFaceDegreeSymbols {
+    /// Globally unique symbol-vector identity.
+    pub id: String,
+    /// Owning tri-strip shape-LOD element.
+    pub element: String,
+    /// Decoded symbols in topology-coder visit order.
+    pub degrees: Vec<i32>,
+    /// Complete compressed-packet byte length.
+    pub packet_byte_len: u32,
+    /// SHA-256 of the complete compressed packet.
+    pub packet_sha256: String,
+    /// Absolute source offset of the compressed packet.
+    pub source_offset: u64,
+}
+
+/// One structurally bounded compressed topology vector in a JT 9 mesh.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtTopologyPacket {
+    /// Stable semantic lane name.
+    pub role: String,
+    /// Number of values represented by the packet.
+    pub value_count: u32,
+    /// Serialized compression codec identifier; zero denotes an empty vector.
+    pub codec: u8,
+    /// Complete packet length in bytes.
+    pub byte_len: u32,
+    /// Digest of the complete packet bytes.
+    pub sha256: String,
+    /// Mesh-representation-relative packet offset.
+    pub representation_offset: u32,
+    /// Reconstructed primal values when the packet codec is decoded.
+    pub values: Option<Vec<i32>>,
+}
+
+/// Complete compressed-topology envelope preceding JT 9 vertex records.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtTopologyPacketSequence {
+    /// Globally unique sequence identity.
+    pub id: String,
+    /// Owning tri-strip shape-LOD element.
+    pub element: String,
+    /// Ordered topology vectors.
+    pub packets: Vec<DisplayJtTopologyPacket>,
+    /// Integrity hash serialized after the topology vectors.
+    pub composite_hash: u32,
+    /// Total topology-envelope length including the hash.
+    pub topology_byte_len: u32,
+    /// Absolute source offset of the compressed representation.
+    pub source_offset: u64,
+}
+
+/// Polygon connectivity reconstructed from one JT topological dual mesh.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtPolygonMesh {
+    /// Globally unique polygon-mesh identity.
+    pub id: String,
+    /// Owning topology packet sequence.
+    pub topology: String,
+    /// Coordinate-array header indexed by the polygons.
+    pub coordinate_header: String,
+    /// Ordered polygon vertex indices.
+    pub polygons: Vec<Vec<u32>>,
+    /// Per-corner vertex-attribute indices parallel to `polygons`.
+    pub vertex_attribute_indices: Vec<Vec<Option<u32>>>,
+    /// Per-polygon group identifiers.
+    pub polygon_groups: Vec<i32>,
+    /// Per-polygon flag words.
+    pub polygon_flags: Vec<u16>,
+    /// Absolute source offset of the topology packet sequence.
+    pub source_offset: u64,
+}
+
+/// Fixed header of the vertex records following a JT 9 topology envelope.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtCompressedVertexRecordsHeader {
+    /// Globally unique header identity.
+    pub id: String,
+    /// Owning tri-strip shape-LOD element.
+    pub element: String,
+    /// Packed vertex-channel binding mask.
+    pub vertex_bindings: u64,
+    /// Quantization bits per vertex coordinate component.
+    pub vertex_quantization_bits: u8,
+    /// Normal quantization factor.
+    pub normal_quantization_factor: u8,
+    /// Quantization bits per texture-coordinate component.
+    pub texture_quantization_bits: u8,
+    /// Quantization bits per color component.
+    pub color_quantization_bits: u8,
+    /// Number of unique topological vertices.
+    pub topological_vertex_count: u32,
+    /// Number of vertex-attribute records.
+    pub vertex_attribute_count: u32,
+    /// Remaining compressed vertex-array length.
+    pub compressed_arrays_byte_len: u32,
+    /// Digest of the remaining compressed vertex arrays.
+    pub compressed_arrays_sha256: String,
+    /// Absolute source offset of this header.
+    pub source_offset: u64,
+}
+
+/// Fixed quantization envelope of a JT 9 compressed coordinate array.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtVertexCoordinateArrayHeader {
+    /// Globally unique header identity.
+    pub id: String,
+    /// Owning tri-strip shape-LOD element.
+    pub element: String,
+    /// Number of unique coordinate records.
+    pub unique_vertex_count: u32,
+    /// Number of coordinate components per record.
+    pub component_count: u8,
+    /// Inclusive component ranges as minimum and maximum pairs for X, Y, and Z.
+    pub component_ranges: [[f32; 2]; 3],
+    /// Quantization bits for X, Y, and Z.
+    pub component_quantization_bits: [u8; 3],
+    /// Remaining compressed component-data length.
+    pub compressed_components_byte_len: u32,
+    /// Digest of the remaining compressed component data.
+    pub compressed_components_sha256: String,
+    /// Absolute source offset of this header.
+    pub source_offset: u64,
+}
+
+/// Model-space coordinates decoded from one JT 9 vertex array.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtVertexCoordinates {
+    /// Globally unique coordinate-array identity.
+    pub id: String,
+    /// Owning coordinate-array header.
+    pub header: String,
+    /// XYZ coordinates in the JT model's serialized metre unit.
+    pub points_m: Vec<[f32; 3]>,
+    /// Combined hash serialized after the component vectors.
+    pub coordinate_hash: u32,
+    /// Complete byte length of the component packets and hash.
+    pub byte_len: u32,
+    /// Absolute source offset of the first component packet.
+    pub source_offset: u64,
+}
+
+/// Normal vectors decoded from one JT 9 vertex-attribute array.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtVertexNormals {
+    /// Globally unique normal-array identity.
+    pub id: String,
+    /// Owning compressed vertex-record header.
+    pub vertex_records_header: String,
+    /// Ordered unit normal vectors in attribute-record order.
+    pub normals: Vec<[f32; 3]>,
+    /// Combined hash serialized after the component vectors.
+    pub normal_hash: u32,
+    /// Complete byte length of the normal-array header, packets, and hash.
+    pub byte_len: u32,
+    /// Absolute source offset of the normal-array count.
+    pub source_offset: u64,
+}
+
+/// Colors decoded from one JT 9 vertex-attribute array.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtVertexColors {
+    /// Globally unique color-array identity.
+    pub id: String,
+    /// Owning compressed vertex-record header.
+    pub vertex_records_header: String,
+    /// Ordered RGBA colors in vertex-attribute record order.
+    pub colors: Vec<[f32; 4]>,
+    /// Combined hash serialized after the component vectors.
+    pub color_hash: u32,
+    /// Complete byte length of the color-array header, packets, and hash.
+    pub byte_len: u32,
+    /// Absolute source offset of the color-array count.
+    pub source_offset: u64,
+}
+
+/// One decoded JT 9 vertex texture-coordinate channel.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtVertexTextureCoordinates {
+    /// Globally unique channel identity.
+    pub id: String,
+    /// Owning compressed vertex-record header.
+    pub vertex_records_header: String,
+    /// Zero-based texture-coordinate channel selected by the binding nibble.
+    pub channel: u8,
+    /// Ordered component vectors in vertex-attribute record order.
+    pub values: Vec<Vec<f32>>,
+    /// Combined hash serialized after the component vectors.
+    pub texture_coordinate_hash: u32,
+    /// Complete byte length of the array header, packets, and hash.
+    pub byte_len: u32,
+    /// Absolute source offset of the texture-coordinate count.
+    pub source_offset: u64,
+}
+
+/// One decoded JT 9 vertex-flag array.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtVertexFlags {
+    /// Globally unique flag-array identity.
+    pub id: String,
+    /// Owning compressed vertex-record header.
+    pub vertex_records_header: String,
+    /// Ordered zero-or-one flag values in vertex-attribute record order.
+    pub values: Vec<u32>,
+    /// Complete byte length of the count and compressed packet.
+    pub byte_len: u32,
+    /// Absolute source offset of the vertex-flag count.
+    pub source_offset: u64,
+}
+
+/// Complete JT 9 tri-strip shape node controlling one late-loaded mesh.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtTriStripShapeNode {
+    /// Globally unique shape-node identity.
+    pub id: String,
+    /// Owning common node-data record.
+    pub base_node: String,
+    /// Serialized node object identifier.
+    pub object_id: u32,
+    /// Reserved model-coordinate bounds.
+    pub reserved_bounds: [[f32; 3]; 2],
+    /// Untransformed model-coordinate bounds.
+    pub untransformed_bounds: [[f32; 3]; 2],
+    /// Surface area in normalized coordinate space.
+    pub area: f32,
+    /// Minimum and maximum vertex counts.
+    pub vertex_count_range: [i32; 2],
+    /// Minimum and maximum scene-node counts.
+    pub node_count_range: [i32; 2],
+    /// Minimum and maximum polygon counts.
+    pub polygon_count_range: [i32; 2],
+    /// Expected in-memory byte size of the late-loaded LOD.
+    pub memory_byte_len: u32,
+    /// Qualitative compression level in the inclusive range zero through one.
+    pub compression_level: f32,
+    /// Vertex-shape data version.
+    pub vertex_version: u16,
+    /// Packed vertex-channel binding mask.
+    pub vertex_bindings: u64,
+    /// Quantization bits per vertex coordinate component.
+    pub vertex_quantization_bits: u8,
+    /// Normal quantization factor.
+    pub normal_quantization_factor: u8,
+    /// Quantization bits per texture-coordinate component.
+    pub texture_quantization_bits: u8,
+    /// Quantization bits per color component.
+    pub color_quantization_bits: u8,
+    /// Version-2 repeated vertex-channel binding mask.
+    pub version_2_vertex_bindings: Option<u64>,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+/// One object element decoded from a compressed JT segment payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtCompressedElement {
+    /// Globally unique element identity.
+    pub id: String,
+    /// Owning compressed segment.
+    pub segment: String,
+    /// Owning segment type.
+    pub segment_type: u32,
+    /// Zero-based serialized element order.
+    pub ordinal: u32,
+    /// Exact 16-byte object-type identifier.
+    pub object_type_id: Vec<u8>,
+    /// Serialized object-base-type discriminator.
+    pub object_base_type: u8,
+    /// Serialized object identifier.
+    pub object_id: u32,
+    /// Bytes following the common element header.
+    pub body_byte_len: u32,
+    /// SHA-256 of the bytes following the common element header.
+    pub body_sha256: String,
+    /// Offset of the element length in the inflated payload.
+    pub inflated_offset: u32,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+/// Complete element sequence and post-marker tail of one compressed JT segment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtCompressedElementSequence {
+    /// Globally unique sequence identity.
+    pub id: String,
+    /// Owning compressed segment.
+    pub segment: String,
+    /// Owning segment type.
+    pub segment_type: u32,
+    /// Ordered decoded element identities.
+    pub elements: Vec<String>,
+    /// Inflated byte length through the end-object marker.
+    pub framed_byte_len: u32,
+    /// Exact bytes following the end-object marker.
+    pub tail: Vec<u8>,
+    /// SHA-256 of the exact post-marker tail.
+    pub tail_sha256: String,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+/// One UTF-16 string property atom in a type-31 JT segment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtStringPropertyAtom {
+    /// Globally unique property-atom identity.
+    pub id: String,
+    /// Owning compressed element.
+    pub element: String,
+    /// Serialized object identifier.
+    pub object_id: u32,
+    /// Exact serialized UTF-16 code units.
+    pub code_units: Vec<u16>,
+    /// Decoded string value.
+    pub value: String,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+/// Property-table link from a logical shape node to a late-loaded LOD segment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtShapeLodBinding {
+    /// Globally unique binding identity.
+    pub id: String,
+    /// Owning type-1 logical scene-graph segment.
+    pub scene_segment: String,
+    /// Serialized property-table version.
+    pub table_version: u16,
+    /// Shape-node object identifier owning the property pair.
+    pub shape_node_object_id: u32,
+    /// String-property object identifier used as the key.
+    pub key_object_id: u32,
+    /// Exact decoded property key.
+    pub key: String,
+    /// Late-loaded-property object identifier used as the value.
+    pub value_object_id: u32,
+    /// Base-property state flags.
+    pub state_flags: u32,
+    /// Late-loaded-property version.
+    pub property_version: u16,
+    /// Resolved type-7 shape-LOD segment.
+    pub shape_segment: String,
+    /// Serialized payload object identifier within the shape-LOD segment.
+    pub payload_object_id: u32,
+    /// Serialized positive late-loaded-property reserved value.
+    pub reserved_value: u32,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+/// Common node-data header carried by one type-1 JT element.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtBaseNodeData {
+    /// Globally unique node-data identity.
+    pub id: String,
+    /// Owning compressed element.
+    pub element: String,
+    /// Exact 16-byte object-type identifier of the owning element.
+    pub object_type_id: Vec<u8>,
+    /// Serialized node object identifier.
+    pub object_id: u32,
+    /// Common node-data version.
+    pub version: u16,
+    /// Serialized node flags.
+    pub flags: u32,
+    /// Ordered attribute object identifiers.
+    pub attribute_object_ids: Vec<u32>,
+    /// Byte length after the common node-data header.
+    pub family_data_byte_len: u32,
+    /// SHA-256 of the bytes after the common node-data header.
+    pub family_data_sha256: String,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+/// Complete JT 9 instance node referencing one shared logical scene node.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtInstanceNode {
+    /// Globally unique instance-node identity.
+    pub id: String,
+    /// Owning common node-data record.
+    pub base_node: String,
+    /// Serialized instance-node object identifier.
+    pub object_id: u32,
+    /// Instance-node data version.
+    pub version: u16,
+    /// Referenced child node object identifier.
+    pub child_object_id: u32,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+/// Common JT 9 group-node data carried by every group-derived scene node.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtGroupNodeData {
+    /// Globally unique group-data identity.
+    pub id: String,
+    /// Owning common node-data record.
+    pub base_node: String,
+    /// Serialized group-derived node object identifier.
+    pub object_id: u32,
+    /// Group-node data version.
+    pub version: u16,
+    /// Ordered child node object identifiers.
+    pub child_object_ids: Vec<u32>,
+    /// Byte length after the common group-node data.
+    pub family_data_byte_len: u32,
+    /// SHA-256 of the bytes after the common group-node data.
+    pub family_data_sha256: String,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+/// One JT geometric-transform attribute attached to logical scene nodes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtGeometricTransformAttribute {
+    /// Globally unique transform-attribute identity.
+    pub id: String,
+    /// Owning compressed logical scene-graph element.
+    pub element: String,
+    /// Serialized attribute object identifier referenced by nodes.
+    pub object_id: u32,
+    /// Base-attribute state flags.
+    pub state_flags: u8,
+    /// Base-attribute field-inhibit flags.
+    pub field_inhibit_flags: u32,
+    /// Sparse-matrix stored-values mask in row-major bit order.
+    pub stored_values_mask: u16,
+    /// Complete row-major local-to-parent homogeneous matrix.
+    pub matrix: [[f32; 4]; 4],
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+/// Complete JT 9 partition node linking an LSG branch to a partition file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtPartitionNode {
+    /// Globally unique partition-node identity.
+    pub id: String,
+    /// Owning common node-data record.
+    pub base_node: String,
+    /// Serialized node object identifier.
+    pub object_id: u32,
+    /// Group-node data version.
+    pub group_version: u16,
+    /// Ordered child node object identifiers.
+    pub child_object_ids: Vec<u32>,
+    /// Serialized partition flags.
+    pub partition_flags: u32,
+    /// Exact partition filename UTF-16 code units.
+    pub file_name_code_units: Vec<u16>,
+    /// Decoded partition filename.
+    pub file_name: String,
+    /// Transformed axis-aligned bounds as minimum and maximum XYZ corners.
+    pub transformed_bounds: [[f32; 3]; 2],
+    /// Total descendant surface area in normalized coordinate space.
+    pub area: f32,
+    /// Minimum and maximum descendant vertex counts.
+    pub vertex_count_range: [i32; 2],
+    /// Minimum and maximum descendant node counts.
+    pub node_count_range: [i32; 2],
+    /// Minimum and maximum descendant polygon counts.
+    pub polygon_count_range: [i32; 2],
+    /// Untransformed bounds when partition flag bit zero is set.
+    pub untransformed_bounds: Option<[[f32; 3]; 2]>,
+    /// Reserved bounds when partition flag bit zero is clear.
+    pub reserved_bounds: Option<[[f32; 3]; 2]>,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+/// Complete JT 9 range-LOD node selecting among ordered child nodes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtRangeLodNode {
+    /// Globally unique range-LOD-node identity.
+    pub id: String,
+    /// Owning common node-data record.
+    pub base_node: String,
+    /// Serialized node object identifier.
+    pub object_id: u32,
+    /// Group-node data version.
+    pub group_version: u16,
+    /// Ordered alternate-representation child identifiers.
+    pub child_object_ids: Vec<u32>,
+    /// LOD-node data version.
+    pub lod_version: u16,
+    /// Reserved finite floating-point vector.
+    pub reserved_values: Vec<f32>,
+    /// Reserved signed integer.
+    pub reserved_value: i32,
+    /// Range-LOD data version.
+    pub range_version: u16,
+    /// Strictly increasing nonnegative eye-distance limits.
+    pub range_limits: Vec<f32>,
+    /// Model-coordinate centre for range selection.
+    pub center: [f32; 3],
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+struct ParsedJtElement<'a> {
+    offset: usize,
+    object_type_id: &'a [u8],
+    object_id: u32,
+    object_base_type: u8,
+    body: &'a [u8],
+}
+
+fn parse_jt_element_sequence(payload: &[u8]) -> Option<(Vec<ParsedJtElement<'_>>, usize)> {
+    const END_OBJECT_TYPE: [u8; 16] = [0xff; 16];
+    let mut elements = Vec::new();
+    let mut cursor = 0usize;
+    loop {
+        let element_byte_len = payload
+            .get(cursor..cursor.checked_add(4)?)
+            .and_then(|value| value.try_into().ok())
+            .map(u32::from_le_bytes)?;
+        let element_end = cursor
+            .checked_add(4)?
+            .checked_add(usize::try_from(element_byte_len).ok()?)?;
+        let element = payload.get(cursor + 4..element_end)?;
+        if element_byte_len == 16 && element == END_OBJECT_TYPE {
+            return Some((elements, element_end));
+        }
+        let object_type_id = element.get(..16)?;
+        let &object_base_type = element.get(16)?;
+        let object_id = element
+            .get(17..21)
+            .and_then(|value| value.try_into().ok())
+            .map(u32::from_le_bytes)?;
+        elements.push(ParsedJtElement {
+            offset: cursor,
+            object_type_id,
+            object_id,
+            object_base_type,
+            body: &element[21..],
+        });
+        cursor = element_end;
+    }
+}
+
+pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<(Vec<u16>, String)> {
+    const PREFIX: [u8; 8] = [1, 0, 0, 0, 0, 0x40, 1, 0];
+    if body.get(..8) != Some(PREFIX.as_slice()) {
+        return None;
+    }
+    let count = body
+        .get(8..12)
+        .and_then(|value| value.try_into().ok())
+        .map(u32::from_le_bytes)?;
+    let count = usize::try_from(count).ok()?;
+    if body.len() != 12usize.checked_add(count.checked_mul(2)?)? {
+        return None;
+    }
+    let code_units = body[12..]
+        .chunks_exact(2)
+        .map(|unit| u16::from_le_bytes([unit[0], unit[1]]))
+        .collect::<Vec<_>>();
+    let value = String::from_utf16(&code_units).ok()?;
+    Some((code_units, value))
+}
+
+pub(crate) fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[u8])> {
+    if body.len() < 20 {
+        return None;
+    }
+    let base_version = u16::from_le_bytes(body[0..2].try_into().ok()?);
+    let vertex_version = u16::from_le_bytes(body[2..4].try_into().ok()?);
+    let vertex_bindings = u64::from_le_bytes(body[4..12].try_into().ok()?);
+    let topological_mesh_version = u16::from_le_bytes(body[12..14].try_into().ok()?);
+    let vertex_records_object_id = u32::from_le_bytes(body[14..18].try_into().ok()?);
+    let compressed_lod_version = u16::from_le_bytes(body[18..20].try_into().ok()?);
+    if base_version != 1 || vertex_version != 1 || !matches!(topological_mesh_version, 1 | 2) {
+        return None;
+    }
+    if !matches!(compressed_lod_version, 1 | 2) {
+        return None;
+    }
+    Some((
+        vertex_bindings,
+        topological_mesh_version,
+        vertex_records_object_id,
+        compressed_lod_version,
+        &body[20..],
+    ))
+}
+
+pub(crate) fn jt9_topology_high_degree_lane_count(
+    representation: &[u8],
+    expected_vertex_bindings: u64,
+) -> Option<usize> {
+    const PREFIX_PACKET_COUNT: usize = 21;
+    let mut prefix_end = 0usize;
+    for _ in 0..PREFIX_PACKET_COUNT {
+        let (_, _, byte_len) = crate::jt::frame_int32_cdp2(representation.get(prefix_end..)?, 0)?;
+        prefix_end = prefix_end.checked_add(byte_len)?;
+    }
+    let mut match_count = 0usize;
+    let mut matched_lane_count = 0usize;
+    let mut cursor = prefix_end;
+    for lane_count in 1..=64 {
+        let Some((_, _, byte_len)) = representation
+            .get(cursor..)
+            .and_then(|bytes| crate::jt::frame_int32_cdp2(bytes, 0))
+        else {
+            break;
+        };
+        cursor = cursor.checked_add(byte_len)?;
+        let mut candidate_end = cursor;
+        let mut split_packets_valid = true;
+        for _ in 0..2 {
+            let Some((_, _, byte_len)) = representation
+                .get(candidate_end..)
+                .and_then(|bytes| crate::jt::frame_int32_cdp2(bytes, 0))
+            else {
+                split_packets_valid = false;
+                break;
+            };
+            candidate_end = candidate_end.checked_add(byte_len)?;
+        }
+        if !split_packets_valid {
+            continue;
+        }
+        let Some(header_end) = candidate_end.checked_add(20) else {
+            continue;
+        };
+        let Some(envelope) = representation.get(candidate_end..header_end) else {
+            continue;
+        };
+        let bindings = u64::from_le_bytes(envelope[4..12].try_into().ok()?);
+        let quantization = &envelope[12..16];
+        let topological_vertex_count = u32::from_le_bytes(envelope[16..20].try_into().ok()?);
+        let vertex_attribute_count = if topological_vertex_count == 0 {
+            0
+        } else {
+            let attribute_end = header_end.checked_add(4)?;
+            let Some(bytes) = representation.get(header_end..attribute_end) else {
+                continue;
+            };
+            u32::from_le_bytes(bytes.try_into().ok()?)
+        };
+        if bindings == expected_vertex_bindings
+            && quantization[0] <= 24
+            && quantization[1] <= 13
+            && quantization[2] <= 24
+            && quantization[3] <= 24
+            && i32::try_from(topological_vertex_count).is_ok()
+            && i32::try_from(vertex_attribute_count).is_ok()
+        {
+            match_count += 1;
+            matched_lane_count = lane_count;
+        }
+    }
+    (match_count == 1).then_some(matched_lane_count)
+}
+
+pub(crate) fn parse_jt_base_node_body(
+    body: &[u8],
+    format_major: u16,
+) -> Option<(u16, u32, Vec<u32>, &[u8])> {
+    let (version, flags_offset, count_offset, attributes_offset): (u16, usize, usize, usize) =
+        if format_major < 10 {
+            (
+                u16::from_le_bytes(body.get(..2)?.try_into().ok()?),
+                2,
+                6,
+                10,
+            )
+        } else {
+            (u16::from(*body.first()?), 1, 5, 9)
+        };
+    let flags = u32::from_le_bytes(body.get(flags_offset..flags_offset + 4)?.try_into().ok()?);
+    let attribute_count =
+        u32::from_le_bytes(body.get(count_offset..count_offset + 4)?.try_into().ok()?);
+    let attribute_count = usize::try_from(attribute_count).ok()?;
+    let header_end = attributes_offset.checked_add(attribute_count.checked_mul(4)?)?;
+    let attributes = body.get(attributes_offset..header_end)?;
+    let attribute_object_ids = attributes
+        .chunks_exact(4)
+        .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
+        .collect();
+    Some((version, flags, attribute_object_ids, &body[header_end..]))
+}
+
+pub(crate) fn parse_jt9_instance_node_body(body: &[u8]) -> Option<(u16, u32)> {
+    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+    let version = u16::from_le_bytes(family.get(..2)?.try_into().ok()?);
+    let child_object_id = u32::from_le_bytes(family.get(2..6)?.try_into().ok()?);
+    (version == 1 && family.len() == 6).then_some((version, child_object_id))
+}
+
+pub(crate) struct ParsedJtTriStripShapeNode {
+    pub(crate) reserved_bounds: [[f32; 3]; 2],
+    pub(crate) untransformed_bounds: [[f32; 3]; 2],
+    pub(crate) area: f32,
+    pub(crate) vertex_count_range: [i32; 2],
+    pub(crate) node_count_range: [i32; 2],
+    pub(crate) polygon_count_range: [i32; 2],
+    pub(crate) memory_byte_len: u32,
+    pub(crate) compression_level: f32,
+    pub(crate) vertex_version: u16,
+    pub(crate) vertex_bindings: u64,
+    pub(crate) vertex_quantization_bits: u8,
+    pub(crate) normal_quantization_factor: u8,
+    pub(crate) texture_quantization_bits: u8,
+    pub(crate) color_quantization_bits: u8,
+    pub(crate) version_2_vertex_bindings: Option<u64>,
+}
+
+pub(crate) fn parse_jt9_tri_strip_shape_node_body(
+    body: &[u8],
+) -> Option<ParsedJtTriStripShapeNode> {
+    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+    if family.len() < 100 || u16::from_le_bytes(family[..2].try_into().ok()?) != 1 {
+        return None;
+    }
+    let f32_at = |offset: usize| {
+        family
+            .get(offset..offset + 4)
+            .and_then(|value| value.try_into().ok())
+            .map(f32::from_le_bytes)
+            .filter(|value| value.is_finite())
+    };
+    let bounds_at = |offset: usize| {
+        let bounds = [
+            [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
+            [
+                f32_at(offset + 12)?,
+                f32_at(offset + 16)?,
+                f32_at(offset + 20)?,
+            ],
+        ];
+        bounds[0]
+            .iter()
+            .zip(bounds[1])
+            .all(|(minimum, maximum)| minimum <= &maximum)
+            .then_some(bounds)
+    };
+    let range_at = |offset: usize| {
+        let range = [
+            i32::from_le_bytes(family.get(offset..offset + 4)?.try_into().ok()?),
+            i32::from_le_bytes(family.get(offset + 4..offset + 8)?.try_into().ok()?),
+        ];
+        (range[0] >= 0 && range[0] <= range[1]).then_some(range)
+    };
+    let compression_level = f32_at(82).filter(|value| (0.0..=1.0).contains(value))?;
+    let area = f32_at(50).filter(|value| *value >= 0.0)?;
+    let vertex_version = u16::from_le_bytes(family[86..88].try_into().ok()?);
+    if !matches!(vertex_version, 1 | 2) {
+        return None;
+    }
+    let expected_len = if vertex_version == 1 { 100 } else { 108 };
+    if family.len() != expected_len {
+        return None;
+    }
+    let vertex_bindings = u64::from_le_bytes(family[88..96].try_into().ok()?);
+    let vertex_quantization_bits = family[96];
+    let normal_quantization_factor = family[97];
+    let texture_quantization_bits = family[98];
+    let color_quantization_bits = family[99];
+    let version_2_vertex_bindings = (vertex_version == 2).then(|| {
+        u64::from_le_bytes(
+            family[100..108]
+                .try_into()
+                .expect("version-2 binding lane is fixed-width"),
+        )
+    });
+    if vertex_quantization_bits > 24
+        || normal_quantization_factor > 13
+        || texture_quantization_bits > 24
+        || color_quantization_bits > 24
+    {
+        return None;
+    }
+    Some(ParsedJtTriStripShapeNode {
+        reserved_bounds: bounds_at(2)?,
+        untransformed_bounds: bounds_at(26)?,
+        area,
+        vertex_count_range: range_at(54)?,
+        node_count_range: range_at(62)?,
+        polygon_count_range: range_at(70)?,
+        memory_byte_len: u32::from_le_bytes(family[78..82].try_into().ok()?),
+        compression_level,
+        vertex_version,
+        vertex_bindings,
+        vertex_quantization_bits,
+        normal_quantization_factor,
+        texture_quantization_bits,
+        color_quantization_bits,
+        version_2_vertex_bindings,
+    })
+}
+
+pub(crate) struct ParsedJtPartitionNode {
+    pub(crate) group_version: u16,
+    pub(crate) child_object_ids: Vec<u32>,
+    pub(crate) partition_flags: u32,
+    pub(crate) file_name_code_units: Vec<u16>,
+    pub(crate) file_name: String,
+    pub(crate) transformed_bounds: [[f32; 3]; 2],
+    pub(crate) area: f32,
+    pub(crate) vertex_count_range: [i32; 2],
+    pub(crate) node_count_range: [i32; 2],
+    pub(crate) polygon_count_range: [i32; 2],
+    pub(crate) untransformed_bounds: Option<[[f32; 3]; 2]>,
+    pub(crate) reserved_bounds: Option<[[f32; 3]; 2]>,
+}
+
+fn parse_jt9_group_data(bytes: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
+    let version = u16::from_le_bytes(bytes.get(..2)?.try_into().ok()?);
+    let count = u32::from_le_bytes(bytes.get(2..6)?.try_into().ok()?);
+    let count = usize::try_from(count).ok()?;
+    let end = 6usize.checked_add(count.checked_mul(4)?)?;
+    let children = bytes
+        .get(6..end)?
+        .chunks_exact(4)
+        .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
+        .collect();
+    Some((version, children, &bytes[end..]))
+}
+
+pub(crate) fn parse_jt9_group_node_body(body: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
+    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+    parse_jt9_group_data(family)
+}
+
+pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtPartitionNode> {
+    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+    let (group_version, child_object_ids, family) = parse_jt9_group_data(family)?;
+    let partition_flags = u32::from_le_bytes(family.get(..4)?.try_into().ok()?);
+    if partition_flags & !1 != 0 {
+        return None;
+    }
+    let name_count_offset = 4usize;
+    let name_count = u32::from_le_bytes(
+        family
+            .get(name_count_offset..name_count_offset.checked_add(4)?)?
+            .try_into()
+            .ok()?,
+    );
+    let name_count = usize::try_from(name_count).ok()?;
+    let name_start = name_count_offset.checked_add(4)?;
+    let name_end = name_start.checked_add(name_count.checked_mul(2)?)?;
+    let file_name_code_units = family
+        .get(name_start..name_end)?
+        .chunks_exact(2)
+        .map(|value| u16::from_le_bytes(value.try_into().expect("two-byte chunk")))
+        .collect::<Vec<_>>();
+    let file_name = String::from_utf16(&file_name_code_units).ok()?;
+    if file_name.is_empty() || file_name.chars().any(char::is_control) {
+        return None;
+    }
+    let f32_at = |offset: usize| {
+        family
+            .get(offset..offset.checked_add(4)?)
+            .and_then(|value| value.try_into().ok())
+            .map(f32::from_le_bytes)
+            .filter(|value| value.is_finite())
+    };
+    let bounds_at = |offset: usize| {
+        let bounds = [
+            [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
+            [
+                f32_at(offset + 12)?,
+                f32_at(offset + 16)?,
+                f32_at(offset + 20)?,
+            ],
+        ];
+        bounds[0]
+            .iter()
+            .zip(bounds[1])
+            .all(|(minimum, maximum)| *minimum <= maximum)
+            .then_some(bounds)
+    };
+    let first_bounds = bounds_at(name_end)?;
+    let mut cursor = name_end.checked_add(24)?;
+    let (reserved_bounds, transformed_bounds) = if partition_flags & 1 == 0 {
+        let transformed = bounds_at(cursor)?;
+        cursor = cursor.checked_add(24)?;
+        (Some(first_bounds), transformed)
+    } else {
+        (None, first_bounds)
+    };
+    let area = f32_at(cursor)?;
+    if area < 0.0 {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let count_range = |offset: usize| {
+        let minimum = i32::from_le_bytes(
+            family
+                .get(offset..offset.checked_add(4)?)?
+                .try_into()
+                .ok()?,
+        );
+        let maximum = i32::from_le_bytes(
+            family
+                .get(offset + 4..offset.checked_add(8)?)?
+                .try_into()
+                .ok()?,
+        );
+        (minimum >= 0 && (maximum == -1 || maximum >= minimum)).then_some([minimum, maximum])
+    };
+    let vertex_count_range = count_range(cursor)?;
+    let node_count_range = count_range(cursor + 8)?;
+    let polygon_count_range = count_range(cursor + 16)?;
+    cursor = cursor.checked_add(24)?;
+    let untransformed_bounds = if partition_flags & 1 != 0 {
+        let bounds = bounds_at(cursor)?;
+        cursor = cursor.checked_add(24)?;
+        Some(bounds)
+    } else {
+        None
+    };
+    (cursor == family.len()).then_some(ParsedJtPartitionNode {
+        group_version,
+        child_object_ids,
+        partition_flags,
+        file_name_code_units,
+        file_name,
+        transformed_bounds,
+        area,
+        vertex_count_range,
+        node_count_range,
+        polygon_count_range,
+        untransformed_bounds,
+        reserved_bounds,
+    })
+}
+
+pub(crate) struct ParsedJtRangeLodNode {
+    pub(crate) group_version: u16,
+    pub(crate) child_object_ids: Vec<u32>,
+    pub(crate) lod_version: u16,
+    pub(crate) reserved_values: Vec<f32>,
+    pub(crate) reserved_value: i32,
+    pub(crate) range_version: u16,
+    pub(crate) range_limits: Vec<f32>,
+    pub(crate) center: [f32; 3],
+}
+
+fn parse_jt_f32_vector(bytes: &[u8]) -> Option<(Vec<f32>, &[u8])> {
+    let count = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+    let count = usize::try_from(count).ok()?;
+    let end = 4usize.checked_add(count.checked_mul(4)?)?;
+    let values = bytes
+        .get(4..end)?
+        .chunks_exact(4)
+        .map(|value| f32::from_le_bytes(value.try_into().expect("four-byte chunk")))
+        .collect::<Vec<_>>();
+    values
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some((values, &bytes[end..]))
+}
+
+pub(crate) fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRangeLodNode> {
+    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+    let (group_version, child_object_ids, mut family) = parse_jt9_group_data(family)?;
+    let lod_version = u16::from_le_bytes(family.get(..2)?.try_into().ok()?);
+    family = &family[2..];
+    let (reserved_values, remaining) = parse_jt_f32_vector(family)?;
+    family = remaining;
+    let reserved_value = i32::from_le_bytes(family.get(..4)?.try_into().ok()?);
+    let range_version = u16::from_le_bytes(family.get(4..6)?.try_into().ok()?);
+    let (range_limits, remaining) = parse_jt_f32_vector(&family[6..])?;
+    if range_limits.iter().any(|value| *value < 0.0)
+        || range_limits.windows(2).any(|pair| pair[0] >= pair[1])
+    {
+        return None;
+    }
+    let center = [
+        f32::from_le_bytes(remaining.get(0..4)?.try_into().ok()?),
+        f32::from_le_bytes(remaining.get(4..8)?.try_into().ok()?),
+        f32::from_le_bytes(remaining.get(8..12)?.try_into().ok()?),
+    ];
+    if remaining.len() != 12 || center.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
+    Some(ParsedJtRangeLodNode {
+        group_version,
+        child_object_ids,
+        lod_version,
+        reserved_values,
+        reserved_value,
+        range_version,
+        range_limits,
+        center,
+    })
+}
+
+pub(crate) fn parse_jt9_geometric_transform_body(
+    body: &[u8],
+) -> Option<(u8, u32, u16, [[f32; 4]; 4])> {
+    let base_version = u16::from_le_bytes(body.get(0..2)?.try_into().ok()?);
+    let state_flags = *body.get(2)?;
+    let field_inhibit_flags = u32::from_le_bytes(body.get(3..7)?.try_into().ok()?);
+    let version = u16::from_le_bytes(body.get(7..9)?.try_into().ok()?);
+    let stored_values_mask = u16::from_le_bytes(body.get(9..11)?.try_into().ok()?);
+    if base_version != 1 || version != 1 || state_flags & !0x0f != 0 || field_inhibit_flags != 0 {
+        return None;
+    }
+    let mut matrix = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut cursor = 11usize;
+    for index in 0..16 {
+        if stored_values_mask & (0x8000 >> index) == 0 {
+            continue;
+        }
+        let end = cursor.checked_add(4)?;
+        let value = f32::from_le_bytes(body.get(cursor..end)?.try_into().ok()?);
+        if !value.is_finite() {
+            return None;
+        }
+        matrix[index / 4][index % 4] = value;
+        cursor = cursor.checked_add(4)?;
+    }
+    if cursor != body.len()
+        || matrix[0][3] != 0.0
+        || matrix[1][3] != 0.0
+        || matrix[2][3] != 0.0
+        || matrix[3][3] != 1.0
+    {
+        return None;
+    }
+    let rows = [&matrix[0][..3], &matrix[1][..3], &matrix[2][..3]];
+    let lengths = rows.map(|row| row.iter().map(|value| value * value).sum::<f32>().sqrt());
+    if lengths
+        .iter()
+        .any(|length| !length.is_finite() || *length == 0.0)
+    {
+        return None;
+    }
+    for first in 0..3 {
+        for second in first + 1..3 {
+            let dot = rows[first]
+                .iter()
+                .zip(rows[second])
+                .map(|(left, right)| left * right)
+                .sum::<f32>();
+            if dot.abs() > 1.0e-5 * lengths[first] * lengths[second] {
+                return None;
+            }
+        }
+    }
+    Some((state_flags, field_inhibit_flags, stored_values_mask, matrix))
+}
+
+/// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
+pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
+    const JT_HEADER: &[u8] = b"Version ";
+    let word_swapped_u64 = |bytes: &[u8]| -> Option<u64> {
+        let high = u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?);
+        let low = u32::from_le_bytes(bytes.get(4..8)?.try_into().ok()?);
+        Some((u64::from(high) << 32) | u64::from(low))
+    };
+    container
+        .entries
+        .iter()
+        .filter(|entry| entry.name == "/Root/UG_PART/DisplayJT")
+        .enumerate()
+        .filter_map(|(index_ordinal, entry)| {
+            let (source_offset, byte_len) = entry.file_span?;
+            let start = usize::try_from(source_offset).ok()?;
+            let byte_len = usize::try_from(byte_len).ok()?;
+            let payload = container.data.get(start..start.checked_add(byte_len)?)?;
+            let version = u32::from_le_bytes(payload.get(0..4)?.try_into().ok()?);
+            let declared_count = u32::from_le_bytes(payload.get(4..8)?.try_into().ok()?);
+            let row_count = usize::try_from(declared_count).ok()?;
+            (row_count > 0).then_some(())?;
+            let table_end = 8usize.checked_add(row_count.checked_mul(16)?)?;
+            (table_end <= payload.len()).then_some(())?;
+            let mut rows = Vec::with_capacity(row_count);
+            let mut previous_header_offset = None;
+            for ordinal in 0..row_count {
+                let row_offset = 8 + ordinal * 16;
+                let value = word_swapped_u64(payload.get(row_offset..row_offset + 8)?)?;
+                let header_offset =
+                    word_swapped_u64(payload.get(row_offset + 8..row_offset + 16)?)?;
+                if value == 0 || header_offset > u64::from(u32::MAX) {
+                    return None;
+                }
+                let header_offset_usize = usize::try_from(header_offset).ok()?;
+                if header_offset_usize < table_end
+                    || !payload
+                        .get(header_offset_usize..)
+                        .is_some_and(|tail| tail.starts_with(JT_HEADER))
+                    || previous_header_offset.is_some_and(|previous| header_offset <= previous)
+                {
+                    return None;
+                }
+                previous_header_offset = Some(header_offset);
+                rows.push(DisplayJtIndexRow {
+                    id: format!("nx:display-jt:index#{index_ordinal}-row-{ordinal}"),
+                    ordinal: ordinal as u32,
+                    header_offset: header_offset as u32,
+                    value,
+                    source_offset: source_offset + row_offset as u64,
+                });
+            }
+            Some(DisplayJtIndex {
+                id: format!("nx:display-jt:index#{index_ordinal}"),
+                version,
+                declared_count,
+                rows,
+                source_offset,
+            })
+        })
+        .collect()
+}
+
+/// Decode complete standard JT headers and tables of contents from an outer index.
+pub fn display_jt_documents(
+    container: &Container,
+    indices: &[DisplayJtIndex],
+) -> Vec<DisplayJtDocument> {
+    const VERSION_FIELD_LEN: usize = 80;
+    let entries = container
+        .entries
+        .iter()
+        .filter(|entry| entry.name == "/Root/UG_PART/DisplayJT")
+        .collect::<Vec<_>>();
+    let [entry] = entries.as_slice() else {
+        return Vec::new();
+    };
+    let Some((stream_source_offset, stream_byte_len)) = entry.file_span else {
+        return Vec::new();
+    };
+    let (Ok(stream_start), Ok(stream_byte_len)) = (
+        usize::try_from(stream_source_offset),
+        usize::try_from(stream_byte_len),
+    ) else {
+        return Vec::new();
+    };
+    let Some(stream) = container
+        .data
+        .get(stream_start..stream_start.saturating_add(stream_byte_len))
+    else {
+        return Vec::new();
+    };
+    let [index] = indices else {
+        return Vec::new();
+    };
+    let mut documents = Vec::new();
+    for (row_ordinal, row) in index.rows.iter().enumerate() {
+        let Ok(document_start) = usize::try_from(row.header_offset) else {
+            return Vec::new();
+        };
+        let document_end = index
+            .rows
+            .get(row_ordinal + 1)
+            .map_or(stream.len(), |next| next.header_offset as usize);
+        let Some(document) = stream.get(document_start..document_end) else {
+            return Vec::new();
+        };
+        let Some(version_bytes) = document.get(..VERSION_FIELD_LEN) else {
+            return Vec::new();
+        };
+        if !version_bytes.starts_with(b"Version ")
+            || !version_bytes
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() || byte.is_ascii_whitespace())
+        {
+            return Vec::new();
+        }
+        let Some(version_field) = std::str::from_utf8(version_bytes).ok() else {
+            return Vec::new();
+        };
+        let Some(version_token) = version_field
+            .strip_prefix("Version ")
+            .and_then(|value| value.split_ascii_whitespace().next())
+        else {
+            return Vec::new();
+        };
+        let Some((format_major, format_minor)) = version_token.split_once('.') else {
+            return Vec::new();
+        };
+        let (Ok(format_major), Ok(format_minor)) =
+            (format_major.parse::<u16>(), format_minor.parse::<u16>())
+        else {
+            return Vec::new();
+        };
+        let Some(&byte_order) = document.get(80) else {
+            return Vec::new();
+        };
+        if byte_order != 0 || document.get(81..85) != Some(&[0; 4]) {
+            return Vec::new();
+        }
+        let Some(toc_offset) = document
+            .get(85..89)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+        else {
+            return Vec::new();
+        };
+        let Some(lsg_segment_id) = document.get(89..105) else {
+            return Vec::new();
+        };
+        let Ok(toc_start) = usize::try_from(toc_offset) else {
+            return Vec::new();
+        };
+        let Some(toc_count) = document
+            .get(toc_start..toc_start.saturating_add(4))
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+        else {
+            return Vec::new();
+        };
+        let Ok(toc_count_usize) = usize::try_from(toc_count) else {
+            return Vec::new();
+        };
+        if toc_count_usize == 0 {
+            return Vec::new();
+        }
+        let Some(toc_end) = toc_start
+            .checked_add(4)
+            .and_then(|start| start.checked_add(toc_count_usize.checked_mul(28)?))
+        else {
+            return Vec::new();
+        };
+        if toc_end > document.len() {
+            return Vec::new();
+        }
+        let document_key = row
+            .id
+            .rsplit_once('#')
+            .map_or(row.id.as_str(), |(_, key)| key);
+        let mut toc_entries = Vec::with_capacity(toc_count_usize);
+        for ordinal in 0..toc_count_usize {
+            let offset = toc_start + 4 + ordinal * 28;
+            let bytes = &document[offset..offset + 28];
+            let segment_offset = u32::from_le_bytes(bytes[16..20].try_into().expect("fixed row"));
+            let segment_byte_len = u32::from_le_bytes(bytes[20..24].try_into().expect("fixed row"));
+            let Some(segment_end) = usize::try_from(segment_offset)
+                .ok()
+                .and_then(|start| start.checked_add(segment_byte_len as usize))
+            else {
+                return Vec::new();
+            };
+            if segment_byte_len == 0
+                || (segment_offset as usize) < toc_end
+                || segment_end > document.len()
+            {
+                return Vec::new();
+            }
+            toc_entries.push(DisplayJtTocEntry {
+                id: format!("nx:display-jt:toc-entry#{document_key}-{ordinal}"),
+                ordinal: ordinal as u32,
+                segment_id: bytes[..16].to_vec(),
+                segment_offset,
+                segment_byte_len,
+                attributes: bytes[24..28].to_vec(),
+                source_offset: stream_source_offset + document_start as u64 + offset as u64,
+            });
+        }
+        documents.push(DisplayJtDocument {
+            id: format!("nx:display-jt:document#{document_key}"),
+            index_row: row.id.clone(),
+            version_field: version_field.to_string(),
+            format_major,
+            format_minor,
+            byte_order,
+            toc_offset,
+            lsg_segment_id: lsg_segment_id.to_vec(),
+            toc_entries,
+            physical_byte_len: document.len() as u64,
+            source_offset: stream_source_offset + document_start as u64,
+        });
+    }
+    documents
+}
+
+/// Decode every segment declared by complete embedded JT documents.
+pub fn display_jt_segments(
+    container: &Container,
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtSegment> {
+    let mut segments = Vec::new();
+    for document in documents {
+        let document_key = document
+            .id
+            .split_once('#')
+            .map_or(document.id.as_str(), |(_, key)| key);
+        let (Ok(start), Ok(byte_len)) = (
+            usize::try_from(document.source_offset),
+            usize::try_from(document.physical_byte_len),
+        ) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container.data.get(start..start.saturating_add(byte_len)) else {
+            return Vec::new();
+        };
+        for entry in &document.toc_entries {
+            let (Ok(segment_start), Ok(segment_len)) = (
+                usize::try_from(entry.segment_offset),
+                usize::try_from(entry.segment_byte_len),
+            ) else {
+                return Vec::new();
+            };
+            let Some(segment) = bytes.get(segment_start..segment_start.saturating_add(segment_len))
+            else {
+                return Vec::new();
+            };
+            let Some(segment_id) = segment.get(..16) else {
+                return Vec::new();
+            };
+            let Some(segment_type) = segment
+                .get(16..20)
+                .and_then(|value| value.try_into().ok())
+                .map(u32::from_le_bytes)
+            else {
+                return Vec::new();
+            };
+            let Some(header_byte_len) = segment
+                .get(20..24)
+                .and_then(|value| value.try_into().ok())
+                .map(u32::from_le_bytes)
+            else {
+                return Vec::new();
+            };
+            let Some(attribute_type) = entry
+                .attributes
+                .as_slice()
+                .try_into()
+                .ok()
+                .map(u32::from_be_bytes)
+            else {
+                return Vec::new();
+            };
+            if segment_id != entry.segment_id
+                || segment_type != attribute_type
+                || header_byte_len != entry.segment_byte_len
+            {
+                return Vec::new();
+            }
+            let payload = &segment[24..];
+            let compression = if payload.get(..4) == Some(2_u32.to_le_bytes().as_slice()) {
+                let Some(compressed_data_byte_len) = payload
+                    .get(4..8)
+                    .and_then(|value| value.try_into().ok())
+                    .map(u32::from_le_bytes)
+                else {
+                    return Vec::new();
+                };
+                let Some(&algorithm) = payload.get(8) else {
+                    return Vec::new();
+                };
+                if algorithm != 2 {
+                    return Vec::new();
+                }
+                let compressed = &payload[9..];
+                if compressed_data_byte_len as usize != compressed.len() + 1 {
+                    return Vec::new();
+                }
+                let mut decoder = ZlibDecoder::new(compressed);
+                let mut inflated = Vec::new();
+                if decoder.read_to_end(&mut inflated).is_err()
+                    || decoder.total_in() != compressed.len() as u64
+                {
+                    return Vec::new();
+                }
+                let Ok(compressed_byte_len) = u32::try_from(compressed.len()) else {
+                    return Vec::new();
+                };
+                Some(DisplayJtCompression {
+                    flag: 2,
+                    compressed_data_byte_len,
+                    algorithm,
+                    compressed_byte_len,
+                    inflated_sha256: sha256_hex(&inflated),
+                })
+            } else {
+                None
+            };
+            segments.push(DisplayJtSegment {
+                id: format!("nx:display-jt:segment#{document_key}-{}", entry.ordinal),
+                document: document.id.clone(),
+                toc_entry: entry.id.clone(),
+                segment_id: segment_id.to_vec(),
+                segment_type,
+                segment_byte_len: header_byte_len,
+                payload_sha256: sha256_hex(payload),
+                compression,
+                source_offset: document.source_offset + u64::from(entry.segment_offset),
+            });
+        }
+    }
+    segments
+}
+
+/// Decode complete object-element sequences from type-7 shape-LOD segments.
+pub fn display_jt_shape_lod_elements(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+) -> Vec<DisplayJtShapeLodElement> {
+    const SEGMENT_TAIL: [u8; 6] = [1, 0, 0, 0, 0, 0];
+    let mut elements = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 7) {
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let payload = &bytes[24..];
+        let Some((parsed, framed_end)) = parse_jt_element_sequence(payload) else {
+            return Vec::new();
+        };
+        if payload.get(framed_end..) != Some(SEGMENT_TAIL.as_slice()) {
+            return Vec::new();
+        }
+        for (ordinal, element) in parsed.into_iter().enumerate() {
+            if element.object_base_type != 4 {
+                return Vec::new();
+            }
+            elements.push(DisplayJtShapeLodElement {
+                id: format!("{}-element-{ordinal}", segment.id),
+                segment: segment.id.clone(),
+                ordinal: ordinal as u32,
+                object_type_id: element.object_type_id.to_vec(),
+                object_id: element.object_id,
+                object_base_type: element.object_base_type,
+                body_byte_len: element.body.len() as u32,
+                body_sha256: sha256_hex(element.body),
+                source_offset: segment.source_offset + 24 + element.offset as u64,
+            });
+        }
+    }
+    elements
+}
+
+/// Decode fixed headers from JT 9 tri-strip shape-LOD elements.
+pub fn display_jt_tri_strip_lod_headers(
+    container: &Container,
+    elements: &[DisplayJtShapeLodElement],
+) -> Vec<DisplayJtTriStripLodHeader> {
+    const TRI_STRIP_LOD_TYPE: [u8; 16] = [
+        0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut headers = Vec::new();
+    for element in elements
+        .iter()
+        .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
+    {
+        let Ok(body_start) = usize::try_from(element.source_offset + 25) else {
+            return Vec::new();
+        };
+        let Some(body) = container
+            .data
+            .get(body_start..body_start.saturating_add(element.body_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some((
+            vertex_bindings,
+            topological_mesh_version,
+            vertex_records_object_id,
+            compressed_lod_version,
+            compressed_representation,
+        )) = parse_jt9_tri_strip_lod_header(body)
+        else {
+            return Vec::new();
+        };
+        headers.push(DisplayJtTriStripLodHeader {
+            id: format!("{}-tri-strip-header", element.id),
+            element: element.id.clone(),
+            base_version: 1,
+            vertex_version: 1,
+            vertex_bindings,
+            topological_mesh_version,
+            vertex_records_object_id,
+            compressed_lod_version,
+            compressed_representation_byte_len: compressed_representation.len() as u32,
+            compressed_representation_sha256: sha256_hex(compressed_representation),
+            source_offset: element.source_offset + 25,
+        });
+    }
+    headers
+}
+
+/// Decode the initial face-degree packet from each JT 9 topological mesh.
+pub fn display_jt_initial_face_degree_symbols(
+    container: &Container,
+    elements: &[DisplayJtShapeLodElement],
+) -> Vec<DisplayJtInitialFaceDegreeSymbols> {
+    const TRI_STRIP_LOD_TYPE: [u8; 16] = [
+        0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut vectors = Vec::new();
+    for element in elements
+        .iter()
+        .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
+    {
+        let Ok(body_start) = usize::try_from(element.source_offset + 25) else {
+            return Vec::new();
+        };
+        let Some(body) = container
+            .data
+            .get(body_start..body_start.saturating_add(element.body_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some((_, _, _, _, representation)) = parse_jt9_tri_strip_lod_header(body) else {
+            return Vec::new();
+        };
+        let Some((residuals, packet_byte_len)) = crate::jt::decode_int32_cdp2(representation, 0)
+        else {
+            return Vec::new();
+        };
+        let degrees = crate::jt::unpack_predictor_residuals(&residuals, crate::jt::Predictor::Null);
+        let Some(packet) = representation.get(..packet_byte_len) else {
+            return Vec::new();
+        };
+        vectors.push(DisplayJtInitialFaceDegreeSymbols {
+            id: format!("{}-initial-face-degrees", element.id),
+            element: element.id.clone(),
+            degrees,
+            packet_byte_len: packet_byte_len as u32,
+            packet_sha256: sha256_hex(packet),
+            source_offset: element.source_offset + 45,
+        });
+    }
+    vectors
+}
+
+/// Bound every JT 9 topology vector and decode the following vertex-record header.
+pub fn display_jt_topology_packet_sequences(
+    container: &Container,
+    elements: &[DisplayJtShapeLodElement],
+) -> (
+    Vec<DisplayJtTopologyPacketSequence>,
+    Vec<DisplayJtCompressedVertexRecordsHeader>,
+    Vec<DisplayJtVertexCoordinateArrayHeader>,
+) {
+    const TRI_STRIP_LOD_TYPE: [u8; 16] = [
+        0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    const PREFIX_ROLES: [&str; 21] = [
+        "face_degrees_0",
+        "face_degrees_1",
+        "face_degrees_2",
+        "face_degrees_3",
+        "face_degrees_4",
+        "face_degrees_5",
+        "face_degrees_6",
+        "face_degrees_7",
+        "vertex_valences",
+        "vertex_groups",
+        "vertex_flags",
+        "face_attribute_masks_0",
+        "face_attribute_masks_1",
+        "face_attribute_masks_2",
+        "face_attribute_masks_3",
+        "face_attribute_masks_4",
+        "face_attribute_masks_5",
+        "face_attribute_masks_6",
+        "face_attribute_masks_7",
+        "face_attribute_masks_7_next_30",
+        "face_attribute_masks_7_upper_4",
+    ];
+    const SPLIT_ROLES: [&str; 2] = ["split_face_symbols", "split_face_positions"];
+    let mut sequences = Vec::new();
+    let mut headers = Vec::new();
+    let mut coordinate_headers = Vec::new();
+    for element in elements
+        .iter()
+        .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
+    {
+        let Ok(body_start) = usize::try_from(element.source_offset + 25) else {
+            return (Vec::new(), Vec::new(), Vec::new());
+        };
+        let Some(body) = container
+            .data
+            .get(body_start..body_start.saturating_add(element.body_byte_len as usize))
+        else {
+            return (Vec::new(), Vec::new(), Vec::new());
+        };
+        let Some((lod_vertex_bindings, _, _, _, representation)) =
+            parse_jt9_tri_strip_lod_header(body)
+        else {
+            return (Vec::new(), Vec::new(), Vec::new());
+        };
+        let mut cursor = 0usize;
+        let Some(high_degree_lane_count) =
+            jt9_topology_high_degree_lane_count(representation, lod_vertex_bindings)
+        else {
+            return (Vec::new(), Vec::new(), Vec::new());
+        };
+        let mut roles = Vec::with_capacity(23 + high_degree_lane_count);
+        roles.extend(PREFIX_ROLES.map(str::to_string));
+        roles.extend(
+            (0..high_degree_lane_count)
+                .map(|ordinal| format!("high_degree_face_attribute_masks_{ordinal}")),
+        );
+        roles.extend(SPLIT_ROLES.map(str::to_string));
+        let mut packets = Vec::with_capacity(roles.len());
+        for role in roles {
+            let Some(remaining) = representation.get(cursor..) else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            let Some((value_count, codec, byte_len)) = crate::jt::frame_int32_cdp2(remaining, 0)
+            else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            let Some(packet_end) = cursor.checked_add(byte_len) else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            let Some(packet) = representation.get(cursor..packet_end) else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            let (Ok(byte_len), Ok(representation_offset)) =
+                (u32::try_from(byte_len), u32::try_from(cursor))
+            else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            let values = crate::jt::decode_int32_cdp2(packet, 0).and_then(
+                |(residuals, decoded_byte_len)| {
+                    (decoded_byte_len == packet.len()).then(|| {
+                        let predictor = match role.as_str() {
+                            "vertex_flags" | "split_face_symbols" => crate::jt::Predictor::Lag1,
+                            _ => crate::jt::Predictor::Null,
+                        };
+                        crate::jt::unpack_predictor_residuals(&residuals, predictor)
+                    })
+                },
+            );
+            packets.push(DisplayJtTopologyPacket {
+                role,
+                value_count,
+                codec,
+                byte_len,
+                sha256: sha256_hex(packet),
+                representation_offset,
+                values,
+            });
+            cursor += byte_len as usize;
+        }
+        let Some(hash_end) = cursor.checked_add(4) else {
+            return (Vec::new(), Vec::new(), Vec::new());
+        };
+        let Some(composite_hash) = representation
+            .get(cursor..hash_end)
+            .and_then(|value| value.try_into().ok())
+            .map(u32::from_le_bytes)
+        else {
+            return (Vec::new(), Vec::new(), Vec::new());
+        };
+        cursor += 4;
+        let Some(required_header_end) = cursor.checked_add(16) else {
+            return (Vec::new(), Vec::new(), Vec::new());
+        };
+        let Some(required_header) = representation.get(cursor..required_header_end) else {
+            return (Vec::new(), Vec::new(), Vec::new());
+        };
+        let vertex_bindings = u64::from_le_bytes(required_header[..8].try_into().expect("fixed"));
+        let quantization = &required_header[8..12];
+        if quantization[0] > 24
+            || quantization[1] > 13
+            || quantization[2] > 24
+            || quantization[3] > 24
+        {
+            return (Vec::new(), Vec::new(), Vec::new());
+        }
+        if vertex_bindings != lod_vertex_bindings {
+            return (Vec::new(), Vec::new(), Vec::new());
+        }
+        let topological_vertex_count =
+            u32::from_le_bytes(required_header[12..16].try_into().expect("fixed"));
+        let (vertex_attribute_count, vertex_header_byte_len) = if topological_vertex_count == 0 {
+            (0, 16)
+        } else {
+            let Some(attribute_end) = cursor.checked_add(20) else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            let Some(attribute_bytes) = representation.get(cursor + 16..attribute_end) else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            (
+                u32::from_le_bytes(attribute_bytes.try_into().expect("fixed")),
+                20,
+            )
+        };
+        if i32::try_from(topological_vertex_count).is_err()
+            || i32::try_from(vertex_attribute_count).is_err()
+        {
+            return (Vec::new(), Vec::new(), Vec::new());
+        }
+        let arrays = &representation[cursor + vertex_header_byte_len..];
+        let (Ok(topology_byte_len), Ok(compressed_arrays_byte_len)) =
+            (u32::try_from(cursor), u32::try_from(arrays.len()))
+        else {
+            return (Vec::new(), Vec::new(), Vec::new());
+        };
+        let representation_source_offset = element.source_offset + 45;
+        if topological_vertex_count != 0 {
+            let Some(coordinate_header) = arrays.get(..32) else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            let unique_vertex_count =
+                u32::from_le_bytes(coordinate_header[..4].try_into().expect("fixed"));
+            let component_count = coordinate_header[4];
+            if unique_vertex_count != topological_vertex_count || component_count != 3 {
+                return (Vec::new(), Vec::new(), Vec::new());
+            }
+            let mut component_ranges = [[0.0; 2]; 3];
+            let mut component_quantization_bits = [0; 3];
+            for component in 0..3 {
+                let offset = 5 + component * 9;
+                let minimum = f32::from_le_bytes(
+                    coordinate_header[offset..offset + 4]
+                        .try_into()
+                        .expect("fixed"),
+                );
+                let maximum = f32::from_le_bytes(
+                    coordinate_header[offset + 4..offset + 8]
+                        .try_into()
+                        .expect("fixed"),
+                );
+                let bits = coordinate_header[offset + 8];
+                if !minimum.is_finite()
+                    || !maximum.is_finite()
+                    || minimum > maximum
+                    || bits > 32
+                    || bits != quantization[0]
+                {
+                    return (Vec::new(), Vec::new(), Vec::new());
+                }
+                component_ranges[component] = [minimum, maximum];
+                component_quantization_bits[component] = bits;
+            }
+            let compressed_components = &arrays[32..];
+            let Ok(compressed_components_byte_len) = u32::try_from(compressed_components.len())
+            else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            let Ok(vertex_header_byte_len_u64) = u64::try_from(vertex_header_byte_len) else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            coordinate_headers.push(DisplayJtVertexCoordinateArrayHeader {
+                id: format!("{}-coordinate-array-header", element.id),
+                element: element.id.clone(),
+                unique_vertex_count,
+                component_count,
+                component_ranges,
+                component_quantization_bits,
+                compressed_components_byte_len,
+                compressed_components_sha256: sha256_hex(compressed_components),
+                source_offset: representation_source_offset
+                    + u64::from(topology_byte_len)
+                    + vertex_header_byte_len_u64,
+            });
+        }
+        sequences.push(DisplayJtTopologyPacketSequence {
+            id: format!("{}-topology-packets", element.id),
+            element: element.id.clone(),
+            packets,
+            composite_hash,
+            topology_byte_len,
+            source_offset: representation_source_offset,
+        });
+        headers.push(DisplayJtCompressedVertexRecordsHeader {
+            id: format!("{}-vertex-records-header", element.id),
+            element: element.id.clone(),
+            vertex_bindings,
+            vertex_quantization_bits: quantization[0],
+            normal_quantization_factor: quantization[1],
+            texture_quantization_bits: quantization[2],
+            color_quantization_bits: quantization[3],
+            topological_vertex_count,
+            vertex_attribute_count,
+            compressed_arrays_byte_len,
+            compressed_arrays_sha256: sha256_hex(arrays),
+            source_offset: representation_source_offset + u64::from(topology_byte_len),
+        });
+    }
+    (sequences, headers, coordinate_headers)
+}
+
+/// Decode every complete JT 9 coordinate array.
+pub fn display_jt_vertex_coordinates(
+    container: &Container,
+    headers: &[DisplayJtVertexCoordinateArrayHeader],
+) -> Vec<DisplayJtVertexCoordinates> {
+    let mut arrays = Vec::new();
+    for header in headers {
+        let Ok(start) = usize::try_from(header.source_offset + 32) else {
+            return Vec::new();
+        };
+        let Ok(byte_len) = usize::try_from(header.compressed_components_byte_len) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container.data.get(start..start.saturating_add(byte_len)) else {
+            return Vec::new();
+        };
+        let Some((points_m, coordinate_hash, consumed)) = crate::jt::decode_vertex_coordinates(
+            bytes,
+            header.unique_vertex_count as usize,
+            header.component_ranges,
+            header.component_quantization_bits,
+        ) else {
+            return Vec::new();
+        };
+        let Ok(consumed) = u32::try_from(consumed) else {
+            return Vec::new();
+        };
+        arrays.push(DisplayJtVertexCoordinates {
+            id: header
+                .id
+                .replacen("coordinate-array-header", "vertex-coordinates", 1),
+            header: header.id.clone(),
+            points_m,
+            coordinate_hash,
+            byte_len: consumed,
+            source_offset: header.source_offset + 32,
+        });
+    }
+    arrays
+}
+
+/// Reconstruct every complete JT 9 polygon mesh from its dual-mesh lanes.
+pub fn display_jt_polygon_meshes(
+    sequences: &[DisplayJtTopologyPacketSequence],
+    coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
+) -> Vec<DisplayJtPolygonMesh> {
+    let mut meshes = Vec::new();
+    for sequence in sequences {
+        let values = |role: &str| {
+            sequence
+                .packets
+                .iter()
+                .find(|packet| packet.role == role)?
+                .values
+                .as_deref()
+        };
+        let Some(valences) = values("vertex_valences") else {
+            return Vec::new();
+        };
+        if valences.is_empty() {
+            continue;
+        }
+        let Some(coordinate_header) = coordinate_headers
+            .iter()
+            .find(|header| header.element == sequence.element)
+        else {
+            return Vec::new();
+        };
+        let Some(degrees) = (0..8)
+            .map(|context| values(&format!("face_degrees_{context}")))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Vec::new();
+        };
+        let Some(attribute_masks) = (0..8)
+            .map(|context| values(&format!("face_attribute_masks_{context}")))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Vec::new();
+        };
+        let Some(context_7_next_30) = values("face_attribute_masks_7_next_30") else {
+            return Vec::new();
+        };
+        let Some(context_7_upper_4) = values("face_attribute_masks_7_upper_4") else {
+            return Vec::new();
+        };
+        let Some(large_lanes) = sequence
+            .packets
+            .iter()
+            .filter(|packet| packet.role.starts_with("high_degree_face_attribute_masks_"))
+            .map(|packet| packet.values.as_deref())
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Vec::new();
+        };
+        let large_words = large_lanes
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+        let Some(polygons) = crate::jt_topology::decode(
+            degrees.try_into().expect("eight degree contexts"),
+            valences,
+            values("vertex_groups").unwrap_or_default(),
+            values("vertex_flags").unwrap_or_default(),
+            values("split_face_symbols").unwrap_or_default(),
+            values("split_face_positions").unwrap_or_default(),
+            crate::jt_topology::AttributeMaskLanes {
+                small: attribute_masks
+                    .try_into()
+                    .expect("eight attribute-mask contexts"),
+                context_7_next_30,
+                context_7_upper_4,
+                large_words: &large_words,
+            },
+        ) else {
+            return Vec::new();
+        };
+        if polygons.iter().any(|polygon| {
+            polygon
+                .vertex_indices
+                .iter()
+                .any(|&index| index >= coordinate_header.unique_vertex_count)
+        }) {
+            return Vec::new();
+        }
+        meshes.push(DisplayJtPolygonMesh {
+            id: sequence.id.replacen("topology-packets", "polygon-mesh", 1),
+            topology: sequence.id.clone(),
+            coordinate_header: coordinate_header.id.clone(),
+            polygon_groups: polygons.iter().map(|polygon| polygon.group).collect(),
+            polygon_flags: polygons.iter().map(|polygon| polygon.flags).collect(),
+            vertex_attribute_indices: polygons
+                .iter()
+                .map(|polygon| polygon.attribute_indices.clone())
+                .collect(),
+            polygons: polygons
+                .into_iter()
+                .map(|polygon| polygon.vertex_indices)
+                .collect(),
+            source_offset: sequence.source_offset,
+        });
+    }
+    meshes
+}
+
+/// Decode every complete JT 9 normal array following a coordinate array.
+pub fn display_jt_vertex_normals(
+    container: &Container,
+    vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
+    coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
+    coordinates: &[DisplayJtVertexCoordinates],
+) -> Vec<DisplayJtVertexNormals> {
+    let mut arrays = Vec::new();
+    for vertex_header in vertex_headers {
+        if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x8 == 0 {
+            continue;
+        }
+        let Some(coordinate_header) = coordinate_headers
+            .iter()
+            .find(|header| header.element == vertex_header.element)
+        else {
+            return Vec::new();
+        };
+        let Some(coordinates) = coordinates
+            .iter()
+            .find(|coordinates| coordinates.header == coordinate_header.id)
+        else {
+            return Vec::new();
+        };
+        let Some(source_offset) = coordinates
+            .source_offset
+            .checked_add(u64::from(coordinates.byte_len))
+        else {
+            return Vec::new();
+        };
+        let Ok(start) = usize::try_from(source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container.data.get(start..) else {
+            return Vec::new();
+        };
+        let Some((normals, normal_hash, byte_len)) = crate::jt::decode_vertex_normals(
+            bytes,
+            vertex_header.vertex_attribute_count as usize,
+            vertex_header.normal_quantization_factor,
+        ) else {
+            return Vec::new();
+        };
+        let Ok(byte_len) = u32::try_from(byte_len) else {
+            return Vec::new();
+        };
+        arrays.push(DisplayJtVertexNormals {
+            id: format!("{}-vertex-normals", vertex_header.element),
+            vertex_records_header: vertex_header.id.clone(),
+            normals,
+            normal_hash,
+            byte_len,
+            source_offset,
+        });
+    }
+    arrays
+}
+
+/// Decode every complete JT 9 color array after coordinates and optional normals.
+pub fn display_jt_vertex_colors(
+    container: &Container,
+    vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
+    coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
+    coordinates: &[DisplayJtVertexCoordinates],
+    normals: &[DisplayJtVertexNormals],
+) -> Vec<DisplayJtVertexColors> {
+    let mut arrays = Vec::new();
+    for vertex_header in vertex_headers {
+        if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x30 == 0 {
+            continue;
+        }
+        let Some(coordinate_header) = coordinate_headers
+            .iter()
+            .find(|header| header.element == vertex_header.element)
+        else {
+            return Vec::new();
+        };
+        let Some(coordinates) = coordinates
+            .iter()
+            .find(|coordinates| coordinates.header == coordinate_header.id)
+        else {
+            return Vec::new();
+        };
+        let Some(mut source_offset) = coordinates
+            .source_offset
+            .checked_add(u64::from(coordinates.byte_len))
+        else {
+            return Vec::new();
+        };
+        if vertex_header.vertex_bindings & 0x8 != 0 {
+            let Some(normal_array) = normals
+                .iter()
+                .find(|normal| normal.vertex_records_header == vertex_header.id)
+            else {
+                return Vec::new();
+            };
+            let Some(next) = source_offset.checked_add(u64::from(normal_array.byte_len)) else {
+                return Vec::new();
+            };
+            source_offset = next;
+        }
+        let Ok(start) = usize::try_from(source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container.data.get(start..) else {
+            return Vec::new();
+        };
+        let Some((colors, color_hash, byte_len)) = crate::jt::decode_vertex_colors(
+            bytes,
+            vertex_header.vertex_attribute_count as usize,
+            vertex_header.color_quantization_bits,
+        ) else {
+            return Vec::new();
+        };
+        let Ok(byte_len) = u32::try_from(byte_len) else {
+            return Vec::new();
+        };
+        arrays.push(DisplayJtVertexColors {
+            id: format!("{}-vertex-colors", vertex_header.element),
+            vertex_records_header: vertex_header.id.clone(),
+            colors,
+            color_hash,
+            byte_len,
+            source_offset,
+        });
+    }
+    arrays
+}
+
+/// Decode texture-coordinate channels after preceding coordinate, normal, and color arrays.
+pub fn display_jt_vertex_texture_coordinates(
+    container: &Container,
+    vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
+    coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
+    coordinates: &[DisplayJtVertexCoordinates],
+    normals: &[DisplayJtVertexNormals],
+    colors: &[DisplayJtVertexColors],
+) -> Vec<DisplayJtVertexTextureCoordinates> {
+    let mut arrays = Vec::new();
+    for vertex_header in vertex_headers {
+        let texture_channels = (0..8)
+            .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
+            .collect::<Vec<_>>();
+        if texture_channels.is_empty() {
+            continue;
+        }
+        if vertex_header.vertex_attribute_count == 0 {
+            return Vec::new();
+        }
+        let Some(coordinate_header) = coordinate_headers
+            .iter()
+            .find(|header| header.element == vertex_header.element)
+        else {
+            return Vec::new();
+        };
+        let Some(coordinates) = coordinates
+            .iter()
+            .find(|coordinates| coordinates.header == coordinate_header.id)
+        else {
+            return Vec::new();
+        };
+        let Some(mut source_offset) = coordinates
+            .source_offset
+            .checked_add(u64::from(coordinates.byte_len))
+        else {
+            return Vec::new();
+        };
+        if vertex_header.vertex_bindings & 0x8 != 0 {
+            let Some(normal_array) = normals
+                .iter()
+                .find(|normal| normal.vertex_records_header == vertex_header.id)
+            else {
+                return Vec::new();
+            };
+            let Some(next) = source_offset.checked_add(u64::from(normal_array.byte_len)) else {
+                return Vec::new();
+            };
+            source_offset = next;
+        }
+        if vertex_header.vertex_bindings & 0x30 != 0 {
+            let Some(color_array) = colors
+                .iter()
+                .find(|color| color.vertex_records_header == vertex_header.id)
+            else {
+                return Vec::new();
+            };
+            let Some(next) = source_offset.checked_add(u64::from(color_array.byte_len)) else {
+                return Vec::new();
+            };
+            source_offset = next;
+        }
+        for channel in texture_channels {
+            let Ok(start) = usize::try_from(source_offset) else {
+                return Vec::new();
+            };
+            let Some(bytes) = container.data.get(start..) else {
+                return Vec::new();
+            };
+            let Some((values, texture_coordinate_hash, byte_len)) =
+                crate::jt::decode_vertex_texture_coordinates(
+                    bytes,
+                    vertex_header.vertex_attribute_count as usize,
+                    vertex_header.texture_quantization_bits,
+                )
+            else {
+                return Vec::new();
+            };
+            let Ok(byte_len) = u32::try_from(byte_len) else {
+                return Vec::new();
+            };
+            arrays.push(DisplayJtVertexTextureCoordinates {
+                id: format!("{}-texture-coordinates-{channel}", vertex_header.element),
+                vertex_records_header: vertex_header.id.clone(),
+                channel: channel as u8,
+                values,
+                texture_coordinate_hash,
+                byte_len,
+                source_offset,
+            });
+            let Some(next) = source_offset.checked_add(u64::from(byte_len)) else {
+                return Vec::new();
+            };
+            source_offset = next;
+        }
+    }
+    arrays
+}
+
+/// Decode every complete JT 9 vertex-flag array after all preceding vertex arrays.
+pub fn display_jt_vertex_flags(
+    container: &Container,
+    vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
+    coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
+    coordinates: &[DisplayJtVertexCoordinates],
+    normals: &[DisplayJtVertexNormals],
+    colors: &[DisplayJtVertexColors],
+    texture_coordinates: &[DisplayJtVertexTextureCoordinates],
+) -> Vec<DisplayJtVertexFlags> {
+    let mut arrays = Vec::new();
+    for vertex_header in vertex_headers {
+        if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x40 == 0 {
+            continue;
+        }
+        let Some(coordinate_header) = coordinate_headers
+            .iter()
+            .find(|header| header.element == vertex_header.element)
+        else {
+            return Vec::new();
+        };
+        let Some(coordinates) = coordinates
+            .iter()
+            .find(|coordinates| coordinates.header == coordinate_header.id)
+        else {
+            return Vec::new();
+        };
+        let Some(mut source_offset) = coordinates
+            .source_offset
+            .checked_add(u64::from(coordinates.byte_len))
+        else {
+            return Vec::new();
+        };
+        if vertex_header.vertex_bindings & 0x8 != 0 {
+            let Some(array) = normals
+                .iter()
+                .find(|array| array.vertex_records_header == vertex_header.id)
+            else {
+                return Vec::new();
+            };
+            let Some(next) = source_offset.checked_add(u64::from(array.byte_len)) else {
+                return Vec::new();
+            };
+            source_offset = next;
+        }
+        if vertex_header.vertex_bindings & 0x30 != 0 {
+            let Some(array) = colors
+                .iter()
+                .find(|array| array.vertex_records_header == vertex_header.id)
+            else {
+                return Vec::new();
+            };
+            let Some(next) = source_offset.checked_add(u64::from(array.byte_len)) else {
+                return Vec::new();
+            };
+            source_offset = next;
+        }
+        for channel in (0..8)
+            .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
+        {
+            let Some(array) = texture_coordinates.iter().find(|array| {
+                array.vertex_records_header == vertex_header.id
+                    && usize::from(array.channel) == channel
+            }) else {
+                return Vec::new();
+            };
+            let Some(next) = source_offset.checked_add(u64::from(array.byte_len)) else {
+                return Vec::new();
+            };
+            source_offset = next;
+        }
+        let Ok(start) = usize::try_from(source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container.data.get(start..) else {
+            return Vec::new();
+        };
+        let Some((values, byte_len)) =
+            crate::jt::decode_vertex_flags(bytes, vertex_header.vertex_attribute_count as usize)
+        else {
+            return Vec::new();
+        };
+        let Ok(byte_len) = u32::try_from(byte_len) else {
+            return Vec::new();
+        };
+        arrays.push(DisplayJtVertexFlags {
+            id: format!("{}-vertex-flags", vertex_header.element),
+            vertex_records_header: vertex_header.id.clone(),
+            values,
+            byte_len,
+            source_offset,
+        });
+    }
+    arrays
+}
+
+/// Decode element framing and exact post-marker tails from compressed segments.
+pub fn display_jt_compressed_element_sequences(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+) -> (
+    Vec<DisplayJtCompressedElement>,
+    Vec<DisplayJtCompressedElementSequence>,
+) {
+    let mut elements = Vec::new();
+    let mut sequences = Vec::new();
+    for segment in segments
+        .iter()
+        .filter(|segment| segment.compression.is_some())
+    {
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return (Vec::new(), Vec::new());
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return (Vec::new(), Vec::new());
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return (Vec::new(), Vec::new());
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return (Vec::new(), Vec::new());
+        }
+        let Some((parsed, framed_end)) = parse_jt_element_sequence(&inflated) else {
+            return (Vec::new(), Vec::new());
+        };
+        let mut element_ids = Vec::with_capacity(parsed.len());
+        for (ordinal, element) in parsed.into_iter().enumerate() {
+            let id = format!("{}-inflated-element-{ordinal}", segment.id);
+            element_ids.push(id.clone());
+            elements.push(DisplayJtCompressedElement {
+                id,
+                segment: segment.id.clone(),
+                segment_type: segment.segment_type,
+                ordinal: ordinal as u32,
+                object_type_id: element.object_type_id.to_vec(),
+                object_id: element.object_id,
+                object_base_type: element.object_base_type,
+                body_byte_len: element.body.len() as u32,
+                body_sha256: sha256_hex(element.body),
+                inflated_offset: element.offset as u32,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+        let tail = &inflated[framed_end..];
+        sequences.push(DisplayJtCompressedElementSequence {
+            id: format!("{}-inflated-sequence", segment.id),
+            segment: segment.id.clone(),
+            segment_type: segment.segment_type,
+            elements: element_ids,
+            framed_byte_len: framed_end as u32,
+            tail: tail.to_vec(),
+            tail_sha256: sha256_hex(tail),
+            source_offset: segment.source_offset + 24,
+        });
+    }
+    (elements, sequences)
+}
+
+/// Decode all string property atoms from complete type-31 segment sequences.
+pub fn display_jt_string_property_atoms(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+) -> Vec<DisplayJtStringPropertyAtom> {
+    const STRING_PROPERTY_ATOM_TYPE: [u8; 16] = [
+        0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut atoms = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 31) {
+        if segment.compression.is_none() {
+            return Vec::new();
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != STRING_PROPERTY_ATOM_TYPE || element.object_base_type != 5
+            {
+                return Vec::new();
+            }
+            let Some((code_units, value)) = parse_jt_string_property_atom_body(element.body) else {
+                return Vec::new();
+            };
+            atoms.push(DisplayJtStringPropertyAtom {
+                id: format!("{}-string-property-atom-{ordinal}", segment.id),
+                element: format!("{}-inflated-element-{ordinal}", segment.id),
+                object_id: element.object_id,
+                code_units,
+                value,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    atoms
+}
+
+/// Resolve JT 9 logical shape nodes to their late-loaded type-7 LOD segments.
+pub fn display_jt_shape_lod_bindings(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+) -> Vec<DisplayJtShapeLodBinding> {
+    const STRING_PROPERTY_ATOM_TYPE: [u8; 16] = [
+        0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    const LATE_LOADED_PROPERTY_ATOM_TYPE: [u8; 16] = [
+        0xe5, 0x5b, 0xb0, 0xe0, 0xbd, 0xfb, 0xd1, 0x11, 0xa3, 0xa7, 0x00, 0xaa, 0x00, 0xd1, 0x09,
+        0x54,
+    ];
+    const SHAPE_IMPLEMENTATION_KEY: &str = "JT_LLPROP_SHAPEIMPL";
+    let read_u16 = |bytes: &[u8], offset: usize| {
+        bytes
+            .get(offset..offset + 2)
+            .and_then(|value| value.try_into().ok())
+            .map(u16::from_le_bytes)
+    };
+    let read_u32 = |bytes: &[u8], offset: usize| {
+        bytes
+            .get(offset..offset + 4)
+            .and_then(|value| value.try_into().ok())
+            .map(u32::from_le_bytes)
+    };
+    let mut bindings = Vec::new();
+    for scene_segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Ok(start) = usize::try_from(scene_segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(scene_segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((_, scene_end)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        let tail = &inflated[scene_end..];
+        let Some((property_atoms, property_table_offset)) = parse_jt_element_sequence(tail) else {
+            return Vec::new();
+        };
+        let mut strings = BTreeMap::new();
+        let mut late_loaded = BTreeMap::new();
+        for atom in property_atoms {
+            if atom.object_type_id == STRING_PROPERTY_ATOM_TYPE && atom.object_base_type == 5 {
+                let Some((_, value)) = parse_jt_string_property_atom_body(atom.body) else {
+                    return Vec::new();
+                };
+                strings.insert(atom.object_id, value);
+            } else if atom.object_type_id == LATE_LOADED_PROPERTY_ATOM_TYPE
+                && atom.object_base_type == 8
+            {
+                if atom.body.len() != 36 || read_u16(atom.body, 0) != Some(1) {
+                    return Vec::new();
+                }
+                let Some(state_flags) = read_u32(atom.body, 2) else {
+                    return Vec::new();
+                };
+                let Some(property_version) = read_u16(atom.body, 6) else {
+                    return Vec::new();
+                };
+                let segment_id = atom.body[8..24].to_vec();
+                let Some(segment_type) = read_u32(atom.body, 24) else {
+                    return Vec::new();
+                };
+                let Some(payload_object_id) = read_u32(atom.body, 28) else {
+                    return Vec::new();
+                };
+                let Some(reserved_value) = read_u32(atom.body, 32).filter(|value| *value != 0)
+                else {
+                    return Vec::new();
+                };
+                late_loaded.insert(
+                    atom.object_id,
+                    (
+                        state_flags,
+                        property_version,
+                        segment_id,
+                        segment_type,
+                        payload_object_id,
+                        reserved_value,
+                    ),
+                );
+            }
+        }
+        let table = &tail[property_table_offset..];
+        let Some(table_version) = read_u16(table, 0) else {
+            return Vec::new();
+        };
+        let Some(table_count) = read_u32(table, 2) else {
+            return Vec::new();
+        };
+        let mut cursor = 6usize;
+        for table_ordinal in 0..table_count {
+            let Some(shape_node_object_id) = read_u32(table, cursor) else {
+                return Vec::new();
+            };
+            cursor += 4;
+            let mut pair_ordinal = 0u32;
+            loop {
+                let Some(key_object_id) = read_u32(table, cursor) else {
+                    return Vec::new();
+                };
+                cursor += 4;
+                if key_object_id == 0 {
+                    break;
+                }
+                let Some(value_object_id) = read_u32(table, cursor) else {
+                    return Vec::new();
+                };
+                cursor += 4;
+                if strings.get(&key_object_id).map(String::as_str) == Some(SHAPE_IMPLEMENTATION_KEY)
+                {
+                    let Some((
+                        state_flags,
+                        property_version,
+                        segment_id,
+                        segment_type,
+                        payload_object_id,
+                        reserved_value,
+                    )) = late_loaded.get(&value_object_id)
+                    else {
+                        return Vec::new();
+                    };
+                    let mut targets = segments.iter().filter(|segment| {
+                        segment.document == scene_segment.document
+                            && segment.segment_id == *segment_id
+                            && segment.segment_type == *segment_type
+                    });
+                    let Some(target) = targets.next() else {
+                        return Vec::new();
+                    };
+                    if targets.next().is_some() || target.segment_type != 7 {
+                        return Vec::new();
+                    }
+                    bindings.push(DisplayJtShapeLodBinding {
+                        id: format!(
+                            "{}-shape-lod-binding-{table_ordinal}-{pair_ordinal}",
+                            scene_segment.id
+                        ),
+                        scene_segment: scene_segment.id.clone(),
+                        table_version,
+                        shape_node_object_id,
+                        key_object_id,
+                        key: SHAPE_IMPLEMENTATION_KEY.to_string(),
+                        value_object_id,
+                        state_flags: *state_flags,
+                        property_version: *property_version,
+                        shape_segment: target.id.clone(),
+                        payload_object_id: *payload_object_id,
+                        reserved_value: *reserved_value,
+                        source_offset: scene_segment.source_offset + 24,
+                    });
+                }
+                pair_ordinal += 1;
+            }
+        }
+        if cursor != table.len() {
+            return Vec::new();
+        }
+    }
+    bindings
+}
+
+/// Decode the common node-data header from every type-1 segment element.
+pub fn display_jt_base_node_data(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtBaseNodeData> {
+    let mut nodes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if segment.compression.is_none() {
+            return Vec::new();
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_base_type > 2 {
+                continue;
+            }
+            let Some((version, flags, attribute_object_ids, family_data)) =
+                parse_jt_base_node_body(element.body, document.format_major)
+            else {
+                return Vec::new();
+            };
+            nodes.push(DisplayJtBaseNodeData {
+                id: format!("{}-base-node-{ordinal}", segment.id),
+                element: format!("{}-inflated-element-{ordinal}", segment.id),
+                object_type_id: element.object_type_id.to_vec(),
+                object_id: element.object_id,
+                version,
+                flags,
+                attribute_object_ids,
+                family_data_byte_len: family_data.len() as u32,
+                family_data_sha256: sha256_hex(family_data),
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    nodes
+}
+
+/// Decode common group-node data from every JT 9 group-derived scene node.
+pub fn display_jt_group_node_data(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtGroupNodeData> {
+    let mut nodes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major != 9 || segment.compression.is_none() {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_base_type != 1 {
+                continue;
+            }
+            let Some((version, child_object_ids, family_data)) =
+                parse_jt9_group_node_body(element.body)
+            else {
+                return Vec::new();
+            };
+            if version != 1 {
+                return Vec::new();
+            }
+            nodes.push(DisplayJtGroupNodeData {
+                id: format!("{}-group-node-data-{ordinal}", segment.id),
+                base_node: format!("{}-base-node-{ordinal}", segment.id),
+                object_id: element.object_id,
+                version,
+                child_object_ids,
+                family_data_byte_len: family_data.len() as u32,
+                family_data_sha256: sha256_hex(family_data),
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    nodes
+}
+
+/// Decode complete JT 9 instance nodes from logical scene-graph segments.
+pub fn display_jt_instance_nodes(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtInstanceNode> {
+    const INSTANCE_NODE_TYPE: [u8; 16] = [
+        0x2a, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut nodes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major != 9 || segment.compression.is_none() {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != INSTANCE_NODE_TYPE {
+                continue;
+            }
+            if element.object_base_type != 0 {
+                return Vec::new();
+            }
+            let Some((version, child_object_id)) = parse_jt9_instance_node_body(element.body)
+            else {
+                return Vec::new();
+            };
+            nodes.push(DisplayJtInstanceNode {
+                id: format!("{}-instance-node-{ordinal}", segment.id),
+                base_node: format!("{}-base-node-{ordinal}", segment.id),
+                object_id: element.object_id,
+                version,
+                child_object_id,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    nodes
+}
+
+/// Decode JT 9 geometric-transform attributes from logical scene-graph segments.
+pub fn display_jt_geometric_transform_attributes(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtGeometricTransformAttribute> {
+    const GEOMETRIC_TRANSFORM_TYPE: [u8; 16] = [
+        0x83, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut attributes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major != 9 || segment.compression.is_none() {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != GEOMETRIC_TRANSFORM_TYPE {
+                continue;
+            }
+            if element.object_base_type != 3 {
+                return Vec::new();
+            }
+            let Some((state_flags, field_inhibit_flags, stored_values_mask, matrix)) =
+                parse_jt9_geometric_transform_body(element.body)
+            else {
+                return Vec::new();
+            };
+            attributes.push(DisplayJtGeometricTransformAttribute {
+                id: format!("{}-geometric-transform-{ordinal}", segment.id),
+                element: format!("{}-inflated-element-{ordinal}", segment.id),
+                object_id: element.object_id,
+                state_flags,
+                field_inhibit_flags,
+                stored_values_mask,
+                matrix,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    attributes
+}
+
+/// Decode complete JT 9 partition nodes from logical scene-graph segments.
+pub fn display_jt_partition_nodes(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtPartitionNode> {
+    const PARTITION_NODE_TYPE: [u8; 16] = [
+        0x3e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut nodes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major >= 10 {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != PARTITION_NODE_TYPE {
+                continue;
+            }
+            let Some(node) = parse_jt9_partition_node_body(element.body) else {
+                return Vec::new();
+            };
+            nodes.push(DisplayJtPartitionNode {
+                id: format!("{}-partition-node-{ordinal}", segment.id),
+                base_node: format!("{}-base-node-{ordinal}", segment.id),
+                object_id: element.object_id,
+                group_version: node.group_version,
+                child_object_ids: node.child_object_ids,
+                partition_flags: node.partition_flags,
+                file_name_code_units: node.file_name_code_units,
+                file_name: node.file_name,
+                transformed_bounds: node.transformed_bounds,
+                area: node.area,
+                vertex_count_range: node.vertex_count_range,
+                node_count_range: node.node_count_range,
+                polygon_count_range: node.polygon_count_range,
+                untransformed_bounds: node.untransformed_bounds,
+                reserved_bounds: node.reserved_bounds,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    nodes
+}
+
+/// Decode complete JT 9 range-LOD nodes from logical scene-graph segments.
+pub fn display_jt_range_lod_nodes(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtRangeLodNode> {
+    const RANGE_LOD_NODE_TYPE: [u8; 16] = [
+        0x4c, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut nodes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major >= 10 {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != RANGE_LOD_NODE_TYPE {
+                continue;
+            }
+            let Some(node) = parse_jt9_range_lod_node_body(element.body) else {
+                return Vec::new();
+            };
+            nodes.push(DisplayJtRangeLodNode {
+                id: format!("{}-range-lod-node-{ordinal}", segment.id),
+                base_node: format!("{}-base-node-{ordinal}", segment.id),
+                object_id: element.object_id,
+                group_version: node.group_version,
+                child_object_ids: node.child_object_ids,
+                lod_version: node.lod_version,
+                reserved_values: node.reserved_values,
+                reserved_value: node.reserved_value,
+                range_version: node.range_version,
+                range_limits: node.range_limits,
+                center: node.center,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    nodes
+}
+
+/// Decode complete JT 9 tri-strip shape nodes from logical scene-graph segments.
+pub fn display_jt_tri_strip_shape_nodes(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtTriStripShapeNode> {
+    const TRI_STRIP_SHAPE_NODE_TYPE: [u8; 16] = [
+        0x77, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut nodes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major != 9 || segment.compression.is_none() {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != TRI_STRIP_SHAPE_NODE_TYPE {
+                continue;
+            }
+            if element.object_base_type != 2 {
+                return Vec::new();
+            }
+            let Some(node) = parse_jt9_tri_strip_shape_node_body(element.body) else {
+                return Vec::new();
+            };
+            nodes.push(DisplayJtTriStripShapeNode {
+                id: format!("{}-tri-strip-shape-node-{ordinal}", segment.id),
+                base_node: format!("{}-base-node-{ordinal}", segment.id),
+                object_id: element.object_id,
+                reserved_bounds: node.reserved_bounds,
+                untransformed_bounds: node.untransformed_bounds,
+                area: node.area,
+                vertex_count_range: node.vertex_count_range,
+                node_count_range: node.node_count_range,
+                polygon_count_range: node.polygon_count_range,
+                memory_byte_len: node.memory_byte_len,
+                compression_level: node.compression_level,
+                vertex_version: node.vertex_version,
+                vertex_bindings: node.vertex_bindings,
+                vertex_quantization_bits: node.vertex_quantization_bits,
+                normal_quantization_factor: node.normal_quantization_factor,
+                texture_quantization_bits: node.texture_quantization_bits,
+                color_quantization_bits: node.color_quantization_bits,
+                version_2_vertex_bindings: node.version_2_vertex_bindings,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    nodes
+}
