@@ -2819,6 +2819,10 @@ mod marker_tests {
             Some(BooleanOp::Cut)
         );
         assert_eq!(
+            extrusion_operation(Some("moICE_c"), 14),
+            Some(BooleanOp::Cut)
+        );
+        assert_eq!(
             extrusion_operation(Some("moICE_c"), u32::MAX),
             Some(BooleanOp::Cut)
         );
@@ -15483,7 +15487,7 @@ fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
 fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     match (class, code) {
         (Some("moExtrusion_c"), 1 | 82) | (_, 3) => Some(BooleanOp::Join),
-        (Some("moICE_c"), 1 | 2 | 10 | u32::MAX) | (_, 11) => Some(BooleanOp::Cut),
+        (Some("moICE_c"), 1 | 2 | 10 | 14 | u32::MAX) | (_, 11) => Some(BooleanOp::Cut),
         _ => None,
     }
 }
