@@ -7148,6 +7148,7 @@ pub(crate) fn project_configuration_sketch_states(
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
+        let surfaces = configuration_surface_carriers(ir, configuration_index);
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
         let mut features = ir
@@ -7239,6 +7240,27 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
             scoped_lanes,
         );
+        crate::resolved_features::project_hole_position_sketches(
+            &mut features,
+            &ir.model.sketches,
+            &ir.model.sketch_entities,
+            histories,
+            scoped_lanes,
+        );
+        crate::resolved_features::project_spatial_hole_position_sketches(
+            &mut features,
+            &ir.model.spatial_sketches,
+            &ir.model.spatial_sketch_entities,
+            &surfaces,
+            histories,
+            scoped_lanes,
+        );
+        crate::resolved_features::project_hole_axes(
+            &mut features,
+            &surfaces,
+            histories,
+            scoped_lanes,
+        );
         for feature in features {
             let Some(state) = ir.model.configurations[configuration_index]
                 .feature_states
@@ -7252,6 +7274,50 @@ pub(crate) fn project_configuration_sketch_states(
             state.definition = feature.definition;
         }
     }
+}
+
+fn configuration_surface_carriers(
+    ir: &cadmpeg_ir::CadIr,
+    configuration_index: usize,
+) -> Vec<cadmpeg_ir::geometry::Surface> {
+    let body_ids = ir.model.configurations[configuration_index]
+        .bodies
+        .iter()
+        .collect::<HashSet<_>>();
+    let region_ids = ir
+        .model
+        .bodies
+        .iter()
+        .filter(|body| body_ids.contains(&body.id))
+        .flat_map(|body| &body.regions)
+        .collect::<HashSet<_>>();
+    let shell_ids = ir
+        .model
+        .regions
+        .iter()
+        .filter(|region| region_ids.contains(&region.id))
+        .flat_map(|region| &region.shells)
+        .collect::<HashSet<_>>();
+    let face_ids = ir
+        .model
+        .shells
+        .iter()
+        .filter(|shell| shell_ids.contains(&shell.id))
+        .flat_map(|shell| &shell.faces)
+        .collect::<HashSet<_>>();
+    let surface_ids = ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| face_ids.contains(&face.id))
+        .map(|face| &face.surface)
+        .collect::<HashSet<_>>();
+    ir.model
+        .surfaces
+        .iter()
+        .filter(|surface| surface_ids.contains(&surface.id))
+        .cloned()
+        .collect()
 }
 
 /// Give configuration-local numeric overrides the dimensional kind established
