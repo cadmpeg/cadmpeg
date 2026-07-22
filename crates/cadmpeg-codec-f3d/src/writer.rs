@@ -17093,13 +17093,14 @@ fn patch_extrusion_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("extrusion record is truncated".into()))?;
-    let layout = crate::nurbs::extrusion_patch_layout(record_bytes, active_ref_width(bytes))
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "spline record {} lacks writable extrusion fields",
-                record.index
-            ))
-        })?;
+    let layout =
+        crate::nurbs::proc_curve::extrusion_patch_layout(record_bytes, active_ref_width(bytes))
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "spline record {} lacks writable extrusion fields",
+                    record.index
+                ))
+            })?;
     for (offset, value) in layout
         .parameter_interval
         .into_iter()
@@ -17258,13 +17259,14 @@ fn patch_blend_radius_tokens(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("rolling-ball record is truncated".into()))?;
-    let layout = crate::nurbs::rolling_ball_patch_layout(record_bytes, active_ref_width(bytes))
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "spline record {} lacks a writable rolling-ball radius pair",
-                record.index
-            ))
-        })?;
+    let layout =
+        crate::nurbs::proc_curve::rolling_ball_patch_layout(record_bytes, active_ref_width(bytes))
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "spline record {} lacks a writable rolling-ball radius pair",
+                    record.index
+                ))
+            })?;
     for (offset, radius) in layout.radii.into_iter().zip(radii) {
         let payload = record.offset + offset;
         bytes[payload..payload + 8].copy_from_slice(&(radius / 10.0).to_le_bytes());
@@ -17287,8 +17289,8 @@ fn patch_nurbs_surface_record(
         .ok_or_else(|| CodecError::Malformed("NURBS surface record is truncated".into()))?;
     let layout = surface_ordinal
         .map_or_else(
-            || crate::nurbs::final_surface_patch_layout(record_bytes),
-            |ordinal| crate::nurbs::surface_patch_layout_at(record_bytes, ordinal),
+            || crate::nurbs::core::final_surface_patch_layout(record_bytes),
+            |ordinal| crate::nurbs::core::surface_patch_layout_at(record_bytes, ordinal),
         )
         .ok_or_else(|| {
             CodecError::Malformed(format!(
@@ -17378,7 +17380,7 @@ fn patch_procedural_surface_fit(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("procedural-surface record is truncated".into()))?;
-    let layout = crate::nurbs::final_surface_patch_layout(record_bytes).ok_or_else(|| {
+    let layout = crate::nurbs::core::final_surface_patch_layout(record_bytes).ok_or_else(|| {
         CodecError::Malformed(format!(
             "spline record {} has no solved surface cache",
             record.index
@@ -17409,9 +17411,9 @@ fn patch_nurbs_curve_record(
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("NURBS curve record is truncated".into()))?;
     let layout = if final_cache {
-        crate::nurbs::final_curve_patch_layout(record_bytes)
+        crate::nurbs::core::final_curve_patch_layout(record_bytes)
     } else {
-        crate::nurbs::first_curve_patch_layout(record_bytes)
+        crate::nurbs::core::first_curve_patch_layout(record_bytes)
     }
     .ok_or_else(|| {
         CodecError::Malformed(format!(
@@ -17477,7 +17479,7 @@ fn patch_procedural_curve_fit(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("procedural-curve record is truncated".into()))?;
-    let layout = crate::nurbs::final_curve_patch_layout(record_bytes).ok_or_else(|| {
+    let layout = crate::nurbs::core::final_curve_patch_layout(record_bytes).ok_or_else(|| {
         CodecError::Malformed(format!(
             "intcurve record {} has no solved curve cache",
             record.index
@@ -17519,13 +17521,14 @@ fn patch_helix_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("helix record is truncated".into()))?;
-    let layout = crate::nurbs::helix_patch_layout(record_bytes, active_ref_width(bytes))
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "procedural curve record {} lacks writable helix fields",
-                record.index
-            ))
-        })?;
+    let layout =
+        crate::nurbs::proc_curve::helix_patch_layout(record_bytes, active_ref_width(bytes))
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "procedural curve record {} lacks writable helix fields",
+                    record.index
+                ))
+            })?;
     for (offset, value) in layout.angle_range.into_iter().zip(*angle_range) {
         let at = record.offset + offset;
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -17569,13 +17572,14 @@ fn patch_vector_offset_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("vector-offset record is truncated".into()))?;
-    let layout = crate::nurbs::vector_offset_patch_layout(record_bytes, active_ref_width(bytes))
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "vector-offset record {} lacks writable construction fields",
-                record.index
-            ))
-        })?;
+    let layout =
+        crate::nurbs::proc_curve::vector_offset_patch_layout(record_bytes, active_ref_width(bytes))
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "vector-offset record {} lacks writable construction fields",
+                    record.index
+                ))
+            })?;
     for (offset, value) in layout.parameter_range.into_iter().zip(*parameter_range) {
         let at = record.offset + offset;
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -17607,13 +17611,14 @@ fn patch_subset_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("subset record is truncated".into()))?;
-    let layout = crate::nurbs::subset_patch_layout(record_bytes, active_ref_width(bytes))
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "subset record {} lacks writable construction fields",
-                record.index
-            ))
-        })?;
+    let layout =
+        crate::nurbs::proc_curve::subset_patch_layout(record_bytes, active_ref_width(bytes))
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "subset record {} lacks writable construction fields",
+                    record.index
+                ))
+            })?;
     for (offset, value) in layout.parameter_range.into_iter().zip(*parameter_range) {
         let at = record.offset + offset;
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -17642,13 +17647,14 @@ fn patch_compound_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("compound record is truncated".into()))?;
-    let layout = crate::nurbs::compound_patch_layout(record_bytes, active_ref_width(bytes))
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "compound record {} lacks writable parameter arrays",
-                record.index
-            ))
-        })?;
+    let layout =
+        crate::nurbs::proc_curve::compound_patch_layout(record_bytes, active_ref_width(bytes))
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "compound record {} lacks writable parameter arrays",
+                    record.index
+                ))
+            })?;
     if layout.parameters.len() != parameters.len()
         || layout.component_parameters.len() != component_parameters.len()
     {
@@ -17688,7 +17694,9 @@ fn patch_two_sided_offset_definition(
         .ok_or_else(|| CodecError::Malformed("two-sided offset record is truncated".into()))?;
     let layout = [8usize, 4]
         .into_iter()
-        .filter_map(|width| crate::nurbs::two_sided_offset_patch_layout(record_bytes, width))
+        .filter_map(|width| {
+            crate::nurbs::proc_curve::two_sided_offset_patch_layout(record_bytes, width)
+        })
         .find(|layout| {
             layout
                 .discontinuities
@@ -17775,10 +17783,11 @@ fn patch_surface_offset_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("surface-offset record is truncated".into()))?;
-    let layout = crate::nurbs::surface_offset_patch_layout(record_bytes, active_ref_width(bytes))
-        .ok_or_else(|| {
-        CodecError::Malformed("surface-offset construction is malformed".into())
-    })?;
+    let layout = crate::nurbs::proc_curve::surface_offset_patch_layout(
+        record_bytes,
+        active_ref_width(bytes),
+    )
+    .ok_or_else(|| CodecError::Malformed("surface-offset construction is malformed".into()))?;
     if layout
         .discontinuities
         .iter()
@@ -17852,7 +17861,7 @@ fn patch_spring_definition(
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("spring record is truncated".into()))?;
     let int_width = active_ref_width(bytes);
-    let layout = crate::nurbs::spring_patch_layout(record_bytes, int_width)
+    let layout = crate::nurbs::proc_curve::spring_patch_layout(record_bytes, int_width)
         .ok_or_else(|| CodecError::Malformed("spring construction is malformed".into()))?;
     if layout
         .discontinuities
@@ -17918,8 +17927,9 @@ fn patch_projection_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("projection record is truncated".into()))?;
-    let layout = crate::nurbs::projection_patch_layout(record_bytes, active_ref_width(bytes))
-        .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
+    let layout =
+        crate::nurbs::proc_curve::projection_patch_layout(record_bytes, active_ref_width(bytes))
+            .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
     if layout
         .discontinuities
         .iter()
@@ -17932,11 +17942,11 @@ fn patch_projection_definition(
     }
     match (&layout.tail, tail) {
         (
-            crate::nurbs::ProjectionTailPatchLayout::EarlyClose { flag: offset },
+            crate::nurbs::proc_curve::ProjectionTailPatchLayout::EarlyClose { flag: offset },
             cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag },
         ) => bytes[record.offset + offset] = native_bool(*flag),
         (
-            crate::nurbs::ProjectionTailPatchLayout::Ranged {
+            crate::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged {
                 flag: flag_offset,
                 parameter_range: range_offsets,
                 role: role_range,
@@ -18019,8 +18029,11 @@ fn patch_intersection_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("intersection record is truncated".into()))?;
-    let layout = crate::nurbs::intersection_patch_layout(record_bytes, active_ref_width(bytes))
-        .ok_or_else(|| CodecError::Malformed("intersection construction is malformed".into()))?;
+    let layout =
+        crate::nurbs::proc_curve::intersection_patch_layout(record_bytes, active_ref_width(bytes))
+            .ok_or_else(|| {
+                CodecError::Malformed("intersection construction is malformed".into())
+            })?;
     if layout
         .discontinuities
         .iter()
@@ -18083,7 +18096,7 @@ fn patch_three_surface_intersection_definition(
         CodecError::Malformed("three-surface intersection record is truncated".into())
     })?;
     let int_width = active_ref_width(bytes);
-    let layout = crate::nurbs::three_surface_patch_layout(record_bytes, int_width)
+    let layout = crate::nurbs::proc_curve::three_surface_patch_layout(record_bytes, int_width)
         .ok_or_else(|| CodecError::Malformed("three-surface construction is malformed".into()))?;
     if layout
         .discontinuities
@@ -18142,11 +18155,12 @@ fn patch_surface_curve_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("surface-curve record is truncated".into()))?;
-    let layout =
-        crate::nurbs::surface_curve_patch_layout(record_bytes, active_ref_width(bytes), family)
-            .ok_or_else(|| {
-                CodecError::Malformed("surface-curve construction is malformed".into())
-            })?;
+    let layout = crate::nurbs::proc_curve::surface_curve_patch_layout(
+        record_bytes,
+        active_ref_width(bytes),
+        family,
+    )
+    .ok_or_else(|| CodecError::Malformed("surface-curve construction is malformed".into()))?;
     if layout
         .discontinuities
         .iter()
@@ -18212,9 +18226,12 @@ fn patch_silhouette_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("silhouette record is truncated".into()))?;
-    let layout =
-        crate::nurbs::silhouette_patch_layout(record_bytes, active_ref_width(bytes), silhouette)
-            .ok_or_else(|| CodecError::Malformed("silhouette construction is malformed".into()))?;
+    let layout = crate::nurbs::proc_curve::silhouette_patch_layout(
+        record_bytes,
+        active_ref_width(bytes),
+        silhouette,
+    )
+    .ok_or_else(|| CodecError::Malformed("silhouette construction is malformed".into()))?;
     for (component, value) in [light_direction.x, light_direction.y, light_direction.z]
         .into_iter()
         .enumerate()
@@ -18269,9 +18286,9 @@ fn patch_nurbs_pcurve_record(
         )));
     };
     let layout =
-        crate::nurbs::final_pcurve_patch_layout(bytes.get(scope.clone()).ok_or_else(|| {
-            CodecError::Malformed("NURBS pcurve subtype extent is truncated".into())
-        })?)
+        crate::nurbs::pcurve::final_pcurve_patch_layout(bytes.get(scope.clone()).ok_or_else(
+            || CodecError::Malformed("NURBS pcurve subtype extent is truncated".into()),
+        )?)
         .ok_or_else(|| {
             CodecError::Malformed(format!(
                 "pcurve record {} has no writable UV cache",
@@ -18437,7 +18454,7 @@ fn patch_ref_pcurve_contract(
 fn patch_knot_structure(
     bytes: &mut [u8],
     record_offset: usize,
-    layout: &crate::nurbs::KnotPatchLayout,
+    layout: &crate::nurbs::core::KnotPatchLayout,
     knots: &[f64],
     int_width: usize,
 ) -> Result<(), CodecError> {

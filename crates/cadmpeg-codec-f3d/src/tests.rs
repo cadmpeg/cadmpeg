@@ -3595,7 +3595,7 @@ fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
         8,
     )
     .unwrap();
-    let tables = crate::nurbs::SubtypeTables::from_records(&records, &bytes);
+    let tables = crate::nurbs::subtypes::SubtypeTables::from_records(&records, &bytes);
     let index = tables
         .index_of_offset(8, old_offset + shared_offset)
         .expect("shared T-spline subtype index");
@@ -12586,7 +12586,7 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
 
 #[test]
 fn nurbs_surface_block_decodes_to_carrier() {
-    use crate::nurbs::decode_surface_cache;
+    use crate::nurbs::core::decode_surface_cache;
 
     // A degree-1 × degree-1 nubs surface with a 2×2 control grid. Endpoint
     // multiplicities are stored as `degree` (=1); the clamped knot vector adds
@@ -17262,7 +17262,7 @@ fn decode_reports_generated_partial_rolling_ball_supports() {
 
 #[test]
 fn subtype_reference_resolves_surface_cache() {
-    use crate::nurbs::decode_surface_cache_resolving_refs;
+    use crate::nurbs::core::decode_surface_cache_resolving_refs;
 
     let mut target = Vec::new();
     target.extend_from_slice(b"\x0f\x0d\x07surface");
@@ -17282,7 +17282,7 @@ fn subtype_reference_resolves_surface_cache() {
     let decoded = decode_surface_cache_resolving_refs(
         &source,
         &active,
-        &crate::nurbs::SubtypeTables::from_stream(&active),
+        &crate::nurbs::subtypes::SubtypeTables::from_stream(&active),
     )
     .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count, decoded.v_count), (2, 2));
@@ -17439,7 +17439,7 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
 
 #[test]
 fn nurbs_curve_block_decodes_to_carrier() {
-    use crate::nurbs::decode_curve_cache;
+    use crate::nurbs::core::decode_curve_cache;
 
     // A degree-2 nubs curve with two unique knots at stored multiplicity 2:
     // sum(mults) 4, n_poles = 4 - (degree - 1) = 3.
@@ -19658,7 +19658,7 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
 
 #[test]
 fn nurbs_pcurve_block_decodes_without_length_scaling() {
-    use crate::nurbs::decode_pcurve_cache;
+    use crate::nurbs::pcurve::decode_pcurve_cache;
 
     // A degree-1 2D pcurve. Unlike model-space NURBS control points, these
     // are UV parameters and therefore must not be converted from cm to mm.
@@ -19676,10 +19676,10 @@ fn ref_pcurve_collects_intcurve_uv_candidates() {
     let mut intcurve = generated_curve_block();
     intcurve.extend_from_slice(&generated_pcurve_block());
 
-    let candidates = crate::nurbs::decode_pcurve_cache_candidates_resolving_refs(
+    let candidates = crate::nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
         &intcurve,
         &intcurve,
-        &crate::nurbs::SubtypeTables::from_stream(&intcurve),
+        &crate::nurbs::subtypes::SubtypeTables::from_stream(&intcurve),
     );
     let pcurve = candidates
         .first()
@@ -19701,10 +19701,10 @@ fn ref_pcurve_resolves_intcurve_subtype_candidates() {
     let mut active = target;
     active.extend_from_slice(&source);
 
-    let candidates = crate::nurbs::decode_pcurve_cache_candidates_resolving_refs(
+    let candidates = crate::nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
         &source,
         &active,
-        &crate::nurbs::SubtypeTables::from_stream(&active),
+        &crate::nurbs::subtypes::SubtypeTables::from_stream(&active),
     );
     let pcurve = candidates
         .first()

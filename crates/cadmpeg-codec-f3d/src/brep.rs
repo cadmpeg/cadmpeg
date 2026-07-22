@@ -55,7 +55,7 @@ use crate::sab::{Record, Token};
 /// Millimetres per ASM model-space length unit (centimetres).
 const LEN_TO_MM: f64 = 10.0;
 
-fn embedded_pcurve_geometry(pcurve: nurbs::NurbsPcurve) -> PcurveGeometry {
+fn embedded_pcurve_geometry(pcurve: nurbs::pcurve::NurbsPcurve) -> PcurveGeometry {
     PcurveGeometry::Nurbs {
         degree: pcurve.degree,
         knots: pcurve.knots,
@@ -852,7 +852,7 @@ fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2]> {
 /// Edge sense orders the two signs, but it cannot move a NURBS use outside the
 /// carrier's knot domain. The full knot domain is the final fallback.
 fn pcurve_ranges_on_domain(
-    candidate: &nurbs::NurbsPcurve,
+    candidate: &nurbs::pcurve::NurbsPcurve,
     edge: Option<&Record>,
 ) -> Option<Vec<[f64; 2]>> {
     let (&first, &last) = (candidate.knots.first()?, candidate.knots.last()?);
@@ -891,12 +891,12 @@ fn pcurve_ranges_on_domain(
 /// vertex positions cannot be read, the first candidate passes unverified. An
 /// empty result means no candidate is the surface's image of this edge.
 fn select_face_pcurve(
-    candidates: Vec<nurbs::NurbsPcurve>,
+    candidates: Vec<nurbs::pcurve::NurbsPcurve>,
     surface: Option<&SurfaceGeometry>,
     exact_procedural_parameterization: bool,
     edge: Option<&Record>,
     by_index: &HashMap<i64, &Record>,
-) -> Option<(nurbs::NurbsPcurve, [f64; 2])> {
+) -> Option<(nurbs::pcurve::NurbsPcurve, [f64; 2])> {
     // Procedural surfaces retain an evaluated NURBS cache, but their pcurves
     // are expressed on the exact construction's parameterization. Evaluating
     // those UVs on the cache can drift between knots and is not a valid
@@ -924,7 +924,7 @@ fn select_face_pcurve(
         let range = pcurve_ranges_on_domain(&candidate, edge)?[0];
         return Some((candidate, range));
     };
-    let mut best: Option<(f64, nurbs::NurbsPcurve, [f64; 2])> = None;
+    let mut best: Option<(f64, nurbs::pcurve::NurbsPcurve, [f64; 2])> = None;
     for candidate in candidates {
         let uv_at = |t: f64| {
             eval::nurbs_pcurve_uv(
@@ -1121,7 +1121,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
     // Index records by RecordTable index (== position for a framed slice).
     let by_index: HashMap<i64, &Record> = records.iter().map(|r| (r.index as i64, r)).collect();
     // Subtype-definition positions, built once for every carrier resolution.
-    let subtype_tables = nurbs::SubtypeTables::from_records(records, bytes);
+    let subtype_tables = nurbs::subtypes::SubtypeTables::from_records(records, bytes);
     let header = asm_header::parse(bytes);
     let ref_width = header
         .as_ref()
@@ -1201,7 +1201,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
             continue;
         };
         kept_faces.insert(r.index as i64);
-        if let Some(procedural) = nurbs::decode_procedural_surface_resolving_refs(
+        if let Some(procedural) = nurbs::proc_surface::decode_procedural_surface_resolving_refs(
             record_slice(surf_rec, bytes),
             bytes,
             &subtype_tables,
@@ -1226,7 +1226,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         // as supports, not as evaluated face caches.
         if !exact_cacheless_construction {
             if let std::collections::hash_map::Entry::Vacant(e) = surface_geo.entry(surf_ref) {
-                if let Some(ns) = nurbs::decode_surface_cache_resolving_refs(
+                if let Some(ns) = nurbs::core::decode_surface_cache_resolving_refs(
                     record_slice(surf_rec, bytes),
                     bytes,
                     &subtype_tables,
@@ -1350,7 +1350,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         ref_width,
                                         "exp_par_cur",
                                     ) {
-                                        nurbs::decode_pcurve_cache_candidates_resolving_refs(
+                                        nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
                                             span,
                                             bytes,
                                             &subtype_tables,
@@ -1362,7 +1362,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                     {
                                         // The resolver needs the `ref N` opener and name,
                                         // not only the scope interior returned above.
-                                        nurbs::decode_pcurve_cache_candidates_resolving_refs(
+                                        nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
                                             record_slice(prec, bytes),
                                             bytes,
                                             &subtype_tables,
@@ -1378,7 +1378,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                     .get(reference)
                                     .filter(|record| record.head == "intcurve")
                                     .map(|intcurve| {
-                                        nurbs::decode_pcurve_cache_candidates_resolving_refs(
+                                        nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
                                             record_slice(intcurve, bytes),
                                             bytes,
                                             &subtype_tables,
@@ -1472,7 +1472,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                             // A procedural curve carries an inline
                                             // 3D B-spline cache in most subtypes.
                                             if let Some(decoded) =
-                                                nurbs::decode_procedural_curve_resolving_refs(
+                                                nurbs::proc_curve::decode_procedural_curve_resolving_refs(
                                                     record_slice(crec, bytes),
                                                     bytes,
                                                     &subtype_tables,
@@ -1511,7 +1511,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                                 out.stats.nurbs_curves += 1;
                                                 kept_curves.insert(cv);
                                             } else if let Some((native_kind, mut definition)) =
-                                                nurbs::decode_cacheless_procedural_curve_resolving_refs(
+                                                nurbs::proc_curve::decode_cacheless_procedural_curve_resolving_refs(
                                                     record_slice(crec, bytes),
                                                     bytes,
                                                     &subtype_tables,
@@ -1629,7 +1629,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                                     by_index.get(&curve_index)
                                                 {
                                                     if let Some(decoded) =
-                                                        nurbs::decode_procedural_curve_resolving_refs(
+                                                        nurbs::proc_curve::decode_procedural_curve_resolving_refs(
                                                             record_slice(curve_record, bytes),
                                                             bytes,
                                                             &subtype_tables,
@@ -1664,7 +1664,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                                     kept_curves.insert(curve_index);
                                                     out.stats.nurbs_curves += 1;
                                                 } else if let Some((native_kind, mut definition)) =
-                                                    nurbs::decode_cacheless_procedural_curve_resolving_refs(
+                                                    nurbs::proc_curve::decode_cacheless_procedural_curve_resolving_refs(
                                                         record_slice(curve_record, bytes),
                                                         bytes,
                                                         &subtype_tables,
@@ -1797,7 +1797,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                 });
                 if let Some(procedural) = procedural_surface_defs.remove(&i) {
                     let definition = match procedural.definition {
-                        nurbs::DecodedProceduralSurfaceDefinition::Deformable(embedded) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Deformable(embedded) => {
                             let embedded = *embedded;
                             let support = SurfaceId(format!(
                                 "f3d:brep:procedural_surface#{i}:deformable:support"
@@ -1808,8 +1808,8 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 source_object: None,
                             });
                             let data = match embedded.data {
-                                nurbs::EmbeddedDeformableSurfaceData::Resolved(data) => data,
-                                nurbs::EmbeddedDeformableSurfaceData::SurfaceCurve {
+                                nurbs::proc_surface::EmbeddedDeformableSurfaceData::Resolved(data) => data,
+                                nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve {
                                     surface,
                                     native_id,
                                     flag,
@@ -1852,7 +1852,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         parameter_triples,
                                     }
                                 }
-                                nurbs::EmbeddedDeformableSurfaceData::Full {
+                                nurbs::proc_surface::EmbeddedDeformableSurfaceData::Full {
                                     leading_vectors,
                                     leading_parameter,
                                     leading_flags,
@@ -1911,13 +1911,13 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 ),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Helix(construction) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Helix(construction) => {
                             ProceduralSurfaceDefinition::Helix { construction }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::TSpline(construction) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::TSpline(construction) => {
                             ProceduralSurfaceDefinition::TSpline { construction }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Exact {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Exact {
                             parameters,
                             extension,
                             revision_form,
@@ -1926,7 +1926,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                             extension,
                             revision_form,
                         },
-                        nurbs::DecodedProceduralSurfaceDefinition::Compound {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Compound {
                             parameters,
                             components,
                         } => {
@@ -1950,7 +1950,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 components: component_ids,
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::SubSurface {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::SubSurface {
                             support,
                             parameter_ranges,
                         } => {
@@ -1967,7 +1967,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 parameter_ranges,
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Taper {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Taper {
                             support,
                             reference,
                             pcurve,
@@ -2005,7 +2005,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 revision_form,
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Loft(embedded) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Loft(embedded) => {
                             let sections = embedded.sections.into_iter().enumerate().map(
                                 |(section_index, entries)| {
                                     let entries = entries.into_iter().enumerate().map(
@@ -2103,11 +2103,11 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 bridge: embedded.bridge,
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::CompoundLoft(embedded) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::CompoundLoft(embedded) => {
                             let embedded = *embedded;
                             let map_scale = |out: &mut Brep,
                                              name: &str,
-                                             scale: nurbs::EmbeddedCompoundLoftScale| {
+                                             scale: nurbs::proc_surface::EmbeddedCompoundLoftScale| {
                                     let members = scale
                                     .members
                                     .into_iter()
@@ -2197,7 +2197,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 .fifth_scale
                                 .map(|scale| Box::new(map_scale(&mut out, "fifth", *scale)));
                             let tail = match embedded.tail {
-                                nurbs::EmbeddedCompoundLoftTail::Six {
+                                nurbs::proc_surface::EmbeddedCompoundLoftTail::Six {
                                     flags,
                                     scale,
                                     selector,
@@ -2222,7 +2222,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         curve: curve_id,
                                     }
                                 }
-                                nurbs::EmbeddedCompoundLoftTail::Seven {
+                                nurbs::proc_surface::EmbeddedCompoundLoftTail::Seven {
                                     first_flag,
                                     first_scale,
                                     second_flag,
@@ -2245,19 +2245,19 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                     direction,
                                     trailing_flags,
                                 },
-                                nurbs::EmbeddedCompoundLoftTail::Zero {
+                                nurbs::proc_surface::EmbeddedCompoundLoftTail::Zero {
                                     flags,
                                     selector,
                                     direction,
                                     trailing_flags,
                                 } => {
                                     let direction = match direction {
-                                        nurbs::EmbeddedCompoundLoftDirection::Vector(value) => {
+                                        nurbs::proc_surface::EmbeddedCompoundLoftDirection::Vector(value) => {
                                             cadmpeg_ir::geometry::CompoundLoftDirection::Vector {
                                                 value,
                                             }
                                         }
-                                        nurbs::EmbeddedCompoundLoftDirection::Curve(curve) => {
+                                        nurbs::proc_surface::EmbeddedCompoundLoftDirection::Curve(curve) => {
                                             let id = CurveId(format!(
                                                 "f3d:brep:procedural_surface#{i}:cloft:tail0:direction"
                                             ));
@@ -2290,11 +2290,11 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 ),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(embedded) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(embedded) => {
                             let embedded = *embedded;
                             let map_scale = |out: &mut Brep,
                                              name: &str,
-                                             scale: nurbs::EmbeddedCompoundLoftScale| {
+                                             scale: nurbs::proc_surface::EmbeddedCompoundLoftScale| {
                                 let members = scale
                                     .members
                                     .into_iter()
@@ -2382,12 +2382,12 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 .expect("three scaled compound-loft scales");
                             let map_direction =
                                 |out: &mut Brep, name: &str, direction| match direction {
-                                    nurbs::EmbeddedCompoundLoftDirection::Vector(value) => {
+                                    nurbs::proc_surface::EmbeddedCompoundLoftDirection::Vector(value) => {
                                         cadmpeg_ir::geometry::CompoundLoftDirection::Vector {
                                             value,
                                         }
                                     }
-                                    nurbs::EmbeddedCompoundLoftDirection::Curve(curve) => {
+                                    nurbs::proc_surface::EmbeddedCompoundLoftDirection::Curve(curve) => {
                                         let id = CurveId(format!(
                                             "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}"
                                         ));
@@ -2402,7 +2402,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                     }
                                 };
                             let branch = match embedded.branch {
-                                nurbs::EmbeddedScaledCompoundLoftBranch::ExtendedVector {
+                                nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::ExtendedVector {
                                     first_scale,
                                     second_scale,
                                     selector,
@@ -2421,7 +2421,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         direction,
                                     }
                                 }
-                                nurbs::EmbeddedScaledCompoundLoftBranch::ExtendedCurve {
+                                nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::ExtendedCurve {
                                     scale,
                                     flag,
                                     singularity,
@@ -2444,7 +2444,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         curve: id,
                                     }
                                 }
-                                nurbs::EmbeddedScaledCompoundLoftBranch::Direct {
+                                nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::Direct {
                                     flag,
                                     selector,
                                     direction,
@@ -2467,10 +2467,10 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 source_object: None,
                             });
                             let shape = match embedded.shape {
-                                nurbs::EmbeddedScaledCompoundLoftShape::Full => {
+                                nurbs::proc_surface::EmbeddedScaledCompoundLoftShape::Full => {
                                     cadmpeg_ir::geometry::ScaledCompoundLoftShape::Full
                                 }
-                                nurbs::EmbeddedScaledCompoundLoftShape::None {
+                                nurbs::proc_surface::EmbeddedScaledCompoundLoftShape::None {
                                     parameter_ranges,
                                     parameters,
                                 } => cadmpeg_ir::geometry::ScaledCompoundLoftShape::None {
@@ -2498,36 +2498,36 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 ),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Law(embedded) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Law(embedded) => {
                             fn map_law_expression(
                                 out: &mut Brep,
                                 owner: i64,
                                 path: &str,
-                                expression: nurbs::EmbeddedLawExpression,
+                                expression: nurbs::proc_surface::EmbeddedLawExpression,
                             ) -> cadmpeg_ir::geometry::LawExpression {
                                 match expression {
-                                    nurbs::EmbeddedLawExpression::Null => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Null => {
                                         cadmpeg_ir::geometry::LawExpression::Null
                                     }
-                                    nurbs::EmbeddedLawExpression::Integer(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Integer(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Integer { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Double(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Double(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Double { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Point(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Point(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Point { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Vector(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Vector(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Vector { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Transform { scalars, enums } => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Transform { scalars, enums } => {
                                         cadmpeg_ir::geometry::LawExpression::Transform {
                                             scalars,
                                             enums,
                                         }
                                     }
-                                    nurbs::EmbeddedLawExpression::Edge {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Edge {
                                         curve,
                                         endpoints,
                                         parameters,
@@ -2546,7 +2546,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                             parameters,
                                         }
                                     }
-                                    nurbs::EmbeddedLawExpression::Spline {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Spline {
                                         native_id,
                                         knots,
                                         controls,
@@ -2557,7 +2557,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         controls,
                                         point,
                                     },
-                                    nurbs::EmbeddedLawExpression::Algebraic {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Algebraic {
                                         operator,
                                         operands,
                                     } => cadmpeg_ir::geometry::LawExpression::Algebraic {
@@ -2578,7 +2578,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 }
                             }
                             let map_formula =
-                                |out: &mut Brep, path: &str, formula: nurbs::EmbeddedLawFormula| {
+                                |out: &mut Brep, path: &str, formula: nurbs::proc_surface::EmbeddedLawFormula| {
                                     cadmpeg_ir::geometry::LawFormula {
                                         name: formula.name,
                                         variables: formula
@@ -2618,36 +2618,36 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 ),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Skin(embedded) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Skin(embedded) => {
                             fn map_law_expression(
                                 out: &mut Brep,
                                 owner: i64,
                                 path: &str,
-                                expression: nurbs::EmbeddedLawExpression,
+                                expression: nurbs::proc_surface::EmbeddedLawExpression,
                             ) -> cadmpeg_ir::geometry::LawExpression {
                                 match expression {
-                                    nurbs::EmbeddedLawExpression::Null => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Null => {
                                         cadmpeg_ir::geometry::LawExpression::Null
                                     }
-                                    nurbs::EmbeddedLawExpression::Integer(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Integer(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Integer { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Double(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Double(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Double { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Point(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Point(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Point { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Vector(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Vector(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Vector { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Transform { scalars, enums } => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Transform { scalars, enums } => {
                                         cadmpeg_ir::geometry::LawExpression::Transform {
                                             scalars,
                                             enums,
                                         }
                                     }
-                                    nurbs::EmbeddedLawExpression::Edge {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Edge {
                                         curve,
                                         endpoints,
                                         parameters,
@@ -2666,7 +2666,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                             parameters,
                                         }
                                     }
-                                    nurbs::EmbeddedLawExpression::Spline {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Spline {
                                         native_id,
                                         knots,
                                         controls,
@@ -2677,7 +2677,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         controls,
                                         point,
                                     },
-                                    nurbs::EmbeddedLawExpression::Algebraic {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Algebraic {
                                         operator,
                                         operands,
                                     } => cadmpeg_ir::geometry::LawExpression::Algebraic {
@@ -2699,7 +2699,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                             }
                             let embedded = *embedded;
                             let layout = match embedded.layout {
-                                nurbs::EmbeddedSkinSurfaceLayout::Compact {
+                                nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Compact {
                                     curve,
                                     subdata,
                                     first_tail,
@@ -2730,7 +2730,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         second_tail,
                                     }
                                 }
-                                nurbs::EmbeddedSkinSurfaceLayout::Profiles {
+                                nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Profiles {
                                     profiles,
                                     path,
                                     tail,
@@ -2836,36 +2836,36 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 ),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Net(embedded) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Net(embedded) => {
                             fn map_net_law(
                                 out: &mut Brep,
                                 owner: i64,
                                 path: &str,
-                                expression: nurbs::EmbeddedLawExpression,
+                                expression: nurbs::proc_surface::EmbeddedLawExpression,
                             ) -> cadmpeg_ir::geometry::LawExpression {
                                 match expression {
-                                    nurbs::EmbeddedLawExpression::Null => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Null => {
                                         cadmpeg_ir::geometry::LawExpression::Null
                                     }
-                                    nurbs::EmbeddedLawExpression::Integer(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Integer(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Integer { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Double(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Double(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Double { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Point(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Point(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Point { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Vector(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Vector(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Vector { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Transform { scalars, enums } => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Transform { scalars, enums } => {
                                         cadmpeg_ir::geometry::LawExpression::Transform {
                                             scalars,
                                             enums,
                                         }
                                     }
-                                    nurbs::EmbeddedLawExpression::Edge {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Edge {
                                         curve,
                                         endpoints,
                                         parameters,
@@ -2884,7 +2884,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                             parameters,
                                         }
                                     }
-                                    nurbs::EmbeddedLawExpression::Spline {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Spline {
                                         native_id,
                                         knots,
                                         controls,
@@ -2895,7 +2895,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         controls,
                                         point,
                                     },
-                                    nurbs::EmbeddedLawExpression::Algebraic {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Algebraic {
                                         operator,
                                         operands,
                                     } => cadmpeg_ir::geometry::LawExpression::Algebraic {
@@ -3053,36 +3053,36 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 ),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Sweep(embedded) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Sweep(embedded) => {
                             fn map_sweep_law(
                                 out: &mut Brep,
                                 owner: i64,
                                 path: &str,
-                                expression: nurbs::EmbeddedLawExpression,
+                                expression: nurbs::proc_surface::EmbeddedLawExpression,
                             ) -> cadmpeg_ir::geometry::LawExpression {
                                 match expression {
-                                    nurbs::EmbeddedLawExpression::Null => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Null => {
                                         cadmpeg_ir::geometry::LawExpression::Null
                                     }
-                                    nurbs::EmbeddedLawExpression::Integer(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Integer(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Integer { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Double(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Double(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Double { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Point(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Point(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Point { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Vector(value) => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Vector(value) => {
                                         cadmpeg_ir::geometry::LawExpression::Vector { value }
                                     }
-                                    nurbs::EmbeddedLawExpression::Transform { scalars, enums } => {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Transform { scalars, enums } => {
                                         cadmpeg_ir::geometry::LawExpression::Transform {
                                             scalars,
                                             enums,
                                         }
                                     }
-                                    nurbs::EmbeddedLawExpression::Edge {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Edge {
                                         curve,
                                         endpoints,
                                         parameters,
@@ -3101,7 +3101,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                             parameters,
                                         }
                                     }
-                                    nurbs::EmbeddedLawExpression::Spline {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Spline {
                                         native_id,
                                         knots,
                                         controls,
@@ -3112,7 +3112,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         controls,
                                         point,
                                     },
-                                    nurbs::EmbeddedLawExpression::Algebraic {
+                                    nurbs::proc_surface::EmbeddedLawExpression::Algebraic {
                                         operator,
                                         operands,
                                     } => cadmpeg_ir::geometry::LawExpression::Algebraic {
@@ -3134,7 +3134,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                             }
                             let embedded = *embedded;
                             let (profile_geometry, spine_geometry, layout) = match embedded.layout {
-                                nurbs::EmbeddedSweepSurfaceLayout::ProfileFirst {
+                                nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst {
                                     profile,
                                     spine,
                                     secondary_kind,
@@ -3179,7 +3179,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         },
                                     )
                                 }
-                                nurbs::EmbeddedSweepSurfaceLayout::ExplicitFormula {
+                                nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ExplicitFormula {
                                     profile,
                                     mode,
                                     profile_range,
@@ -3228,7 +3228,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         },
                                     )
                                 }
-                                nurbs::EmbeddedSweepSurfaceLayout::ExplicitGuide {
+                                nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ExplicitGuide {
                                     profile,
                                     mode,
                                     profile_range,
@@ -3275,7 +3275,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         },
                                     )
                                 }
-                                nurbs::EmbeddedSweepSurfaceLayout::ExplicitSurface {
+                                nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ExplicitSurface {
                                     profile,
                                     mode,
                                     profile_range,
@@ -3331,7 +3331,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         },
                                     )
                                 }
-                                nurbs::EmbeddedSweepSurfaceLayout::LawDriven {
+                                nurbs::proc_surface::EmbeddedSweepSurfaceLayout::LawDriven {
                                     profile,
                                     mode,
                                     profile_range,
@@ -3427,9 +3427,9 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 )),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::G2Blend(embedded) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::G2Blend(embedded) => {
                             let embedded = *embedded;
-                            let mut add_side = |name: &str, side: nurbs::EmbeddedG2Side| {
+                            let mut add_side = |name: &str, side: nurbs::proc_surface::EmbeddedG2Side| {
                                 let surface = SurfaceId(format!(
                                     "f3d:brep:procedural_surface#{i}:g2:{name}:surface"
                                 ));
@@ -3466,7 +3466,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                             let first = add_side("first", embedded.first);
                             let second = add_side("second", embedded.second);
                             let first_shape = match embedded.first_shape {
-                                nurbs::EmbeddedG2FirstShape::Full { surface, tolerance } => {
+                                nurbs::proc_surface::EmbeddedG2FirstShape::Full { surface, tolerance } => {
                                     let surface = surface.map(|geometry| {
                                         let id = SurfaceId(format!(
                                             "f3d:brep:procedural_surface#{i}:g2:first_exact"
@@ -3483,7 +3483,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         tolerance,
                                     }
                                 }
-                                nurbs::EmbeddedG2FirstShape::None {
+                                nurbs::proc_surface::EmbeddedG2FirstShape::None {
                                     coefficients,
                                     tolerance,
                                     extension,
@@ -3532,7 +3532,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 }),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Ruled { first, second } => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Ruled { first, second } => {
                             let first_id =
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:profile0"));
                             let second_id =
@@ -3552,7 +3552,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 second: second_id,
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Sum {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Sum {
                             first,
                             second,
                             basepoint,
@@ -3579,7 +3579,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 revision_form,
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Revolution {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Revolution {
                             directrix,
                             axis_origin,
                             axis_direction,
@@ -3604,7 +3604,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 revision_form,
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Offset {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Offset {
                             support,
                             distance,
                             u_sense,
@@ -3628,7 +3628,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 revision_form,
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
                             directrix,
                             parameter_interval,
                             direction,
@@ -3648,7 +3648,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 native_position: Some(native_position),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
                             let mut sides = Vec::with_capacity(2);
                             for (side_index, side) in construction.sides.into_iter().enumerate() {
                                 let prefix = format!(
@@ -3746,12 +3746,12 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 }),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(
                             construction,
                         ) => {
                             let convert_profile = |scope: String,
                                                    profile: Vec<
-                                nurbs::EmbeddedLoftProfileMember,
+                                nurbs::proc_surface::EmbeddedLoftProfileMember,
                             >,
                                                    out: &mut Brep|
                              -> Vec<
@@ -3801,7 +3801,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                             };
                             let convert_path =
                                 |scope: String,
-                                 path: nurbs::EmbeddedLoftPath,
+                                 path: nurbs::proc_surface::EmbeddedLoftPath,
                                  out: &mut Brep|
                                  -> cadmpeg_ir::geometry::LoftPath {
                                     let curve = path.curve.map(|geometry| {
@@ -3903,7 +3903,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 ),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::RevisionG2Blend(
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::RevisionG2Blend(
                             construction,
                         ) => {
                             let mut sides = Vec::with_capacity(2);
@@ -3979,7 +3979,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 ),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::VertexBlend(construction) => {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::VertexBlend(construction) => {
                             let mut boundaries = Vec::with_capacity(construction.boundaries.len());
                             for (boundary_index, boundary) in
                                 construction.boundaries.into_iter().enumerate()
@@ -3988,7 +3988,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                     "f3d:brep:procedural_surface#{i}:vertex_boundary{boundary_index}"
                                 );
                                 let geometry = match boundary.geometry {
-                                    nurbs::EmbeddedVertexBlendBoundaryGeometry::Circle {
+                                    nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Circle {
                                         curve,
                                         curve_endpoints,
                                         form,
@@ -4011,14 +4011,14 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                             sense,
                                         }
                                     }
-                                    nurbs::EmbeddedVertexBlendBoundaryGeometry::Degenerate {
+                                    nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Degenerate {
                                         location,
                                         normals,
                                     } => VertexBlendBoundaryGeometry::Degenerate {
                                         location,
                                         normals,
                                     },
-                                    nurbs::EmbeddedVertexBlendBoundaryGeometry::Pcurve {
+                                    nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Pcurve {
                                         surface,
                                         support_bounds,
                                         pcurve,
@@ -4039,7 +4039,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                             fit_tolerance,
                                         }
                                     }
-                                    nurbs::EmbeddedVertexBlendBoundaryGeometry::Plane {
+                                    nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Plane {
                                         normal,
                                         parameters,
                                         curve,
@@ -4077,7 +4077,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 }),
                             }
                         }
-                        nurbs::DecodedProceduralSurfaceDefinition::Blend {
+                        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
                             supports,
                             spine,
                             radius,
@@ -4207,10 +4207,10 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                     slice_range: native.slice_range,
                                     offsets: native.offsets,
                                     radius_selector: match native.radius_selector {
-                                        nurbs::EmbeddedRollingBallRadiusSelector::None => {
+                                        nurbs::proc_surface::EmbeddedRollingBallRadiusSelector::None => {
                                             RollingBallRadiusSelector::None
                                         }
-                                        nurbs::EmbeddedRollingBallRadiusSelector::Value(value) => {
+                                        nurbs::proc_surface::EmbeddedRollingBallRadiusSelector::Value(value) => {
                                             RollingBallRadiusSelector::Value { value }
                                         }
                                     },
@@ -4247,9 +4247,9 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                         surface: SurfaceId(id(i)),
                         definition,
                         cache_fit_tolerance: procedural.cache_fit_tolerance,
-                        record_bounds: nurbs::record_trailing_surface_bounds(record_slice(
-                            r, bytes,
-                        )),
+                        record_bounds: nurbs::proc_curve::record_trailing_surface_bounds(
+                            record_slice(r, bytes),
+                        ),
                     });
                 } else if cached_unknown_procedural_surfaces.contains(&i) {
                     out.procedural_surfaces.push(ProceduralSurface {
@@ -4660,14 +4660,14 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                             source_object: None,
                         });
                         let data = match embedded.data {
-                            nurbs::EmbeddedDeformableData::VectorField {
+                            nurbs::proc_curve::EmbeddedDeformableData::VectorField {
                                 vectors,
                                 parameter_pairs,
                             } => cadmpeg_ir::geometry::DeformableCurveData::VectorField {
                                 vectors,
                                 parameter_pairs,
                             },
-                            nurbs::EmbeddedDeformableData::Surface(geometry) => {
+                            nurbs::proc_curve::EmbeddedDeformableData::Surface(geometry) => {
                                 let surface = SurfaceId(format!(
                                     "f3d:brep:procedural_curve#{i}:deformation_surface"
                                 ));
@@ -4738,31 +4738,32 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                             out: &mut Brep,
                             owner: i64,
                             path: &str,
-                            expression: nurbs::EmbeddedLawExpression,
+                            expression: nurbs::proc_surface::EmbeddedLawExpression,
                         ) -> cadmpeg_ir::geometry::LawExpression {
                             match expression {
-                                nurbs::EmbeddedLawExpression::Null => {
+                                nurbs::proc_surface::EmbeddedLawExpression::Null => {
                                     cadmpeg_ir::geometry::LawExpression::Null
                                 }
-                                nurbs::EmbeddedLawExpression::Integer(value) => {
+                                nurbs::proc_surface::EmbeddedLawExpression::Integer(value) => {
                                     cadmpeg_ir::geometry::LawExpression::Integer { value }
                                 }
-                                nurbs::EmbeddedLawExpression::Double(value) => {
+                                nurbs::proc_surface::EmbeddedLawExpression::Double(value) => {
                                     cadmpeg_ir::geometry::LawExpression::Double { value }
                                 }
-                                nurbs::EmbeddedLawExpression::Point(value) => {
+                                nurbs::proc_surface::EmbeddedLawExpression::Point(value) => {
                                     cadmpeg_ir::geometry::LawExpression::Point { value }
                                 }
-                                nurbs::EmbeddedLawExpression::Vector(value) => {
+                                nurbs::proc_surface::EmbeddedLawExpression::Vector(value) => {
                                     cadmpeg_ir::geometry::LawExpression::Vector { value }
                                 }
-                                nurbs::EmbeddedLawExpression::Transform { scalars, enums } => {
-                                    cadmpeg_ir::geometry::LawExpression::Transform {
-                                        scalars,
-                                        enums,
-                                    }
-                                }
-                                nurbs::EmbeddedLawExpression::Edge {
+                                nurbs::proc_surface::EmbeddedLawExpression::Transform {
+                                    scalars,
+                                    enums,
+                                } => cadmpeg_ir::geometry::LawExpression::Transform {
+                                    scalars,
+                                    enums,
+                                },
+                                nurbs::proc_surface::EmbeddedLawExpression::Edge {
                                     curve,
                                     endpoints,
                                     parameters,
@@ -4781,7 +4782,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                         parameters,
                                     }
                                 }
-                                nurbs::EmbeddedLawExpression::Spline {
+                                nurbs::proc_surface::EmbeddedLawExpression::Spline {
                                     native_id,
                                     knots,
                                     controls,
@@ -4792,23 +4793,24 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                     controls,
                                     point,
                                 },
-                                nurbs::EmbeddedLawExpression::Algebraic { operator, operands } => {
-                                    cadmpeg_ir::geometry::LawExpression::Algebraic {
-                                        operator,
-                                        operands: operands
-                                            .into_iter()
-                                            .enumerate()
-                                            .map(|(index, operand)| {
-                                                map_law_curve(
-                                                    out,
-                                                    owner,
-                                                    &format!("{path}:{index}"),
-                                                    operand,
-                                                )
-                                            })
-                                            .collect(),
-                                    }
-                                }
+                                nurbs::proc_surface::EmbeddedLawExpression::Algebraic {
+                                    operator,
+                                    operands,
+                                } => cadmpeg_ir::geometry::LawExpression::Algebraic {
+                                    operator,
+                                    operands: operands
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(|(index, operand)| {
+                                            map_law_curve(
+                                                out,
+                                                owner,
+                                                &format!("{path}:{index}"),
+                                                operand,
+                                            )
+                                        })
+                                        .collect(),
+                                },
                             }
                         }
                         let surfaces: [Option<SurfaceId>; 2] = embedded
@@ -4840,24 +4842,25 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                                 periodic: pcurve.periodic,
                             })
                         });
-                        let mut map_formula = |path: &str, formula: nurbs::EmbeddedLawFormula| {
-                            cadmpeg_ir::geometry::LawFormula {
-                                name: formula.name,
-                                variables: formula
-                                    .variables
-                                    .into_iter()
-                                    .enumerate()
-                                    .map(|(index, expression)| {
-                                        map_law_curve(
-                                            &mut out,
-                                            i,
-                                            &format!("{path}:{index}"),
-                                            expression,
-                                        )
-                                    })
-                                    .collect(),
-                            }
-                        };
+                        let mut map_formula =
+                            |path: &str, formula: nurbs::proc_surface::EmbeddedLawFormula| {
+                                cadmpeg_ir::geometry::LawFormula {
+                                    name: formula.name,
+                                    variables: formula
+                                        .variables
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(|(index, expression)| {
+                                            map_law_curve(
+                                                &mut out,
+                                                i,
+                                                &format!("{path}:{index}"),
+                                                expression,
+                                            )
+                                        })
+                                        .collect(),
+                                }
+                            };
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
                             context: cadmpeg_ir::geometry::IntcurveSupportContext {
                                 sides: std::array::from_fn(|side| {
@@ -4953,7 +4956,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                     fit_tolerance: match (r.chunk(3), r.chunk(4)) {
                         (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                             crate::sab::payload_subtype_span(bytes, r, 5, ref_width, "exp_par_cur")
-                                .and_then(nurbs::decode_pcurve_fit_tolerance)
+                                .and_then(nurbs::pcurve::decode_pcurve_fit_tolerance)
                         }
                         _ => None,
                     },
@@ -5176,8 +5179,11 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
                     return None;
                 };
                 let record_bytes = bytes.get(r.offset..r.offset.checked_add(r.len)?)?;
-                let mut curve =
-                    nurbs::decode_curve_cache_resolving_refs(record_bytes, bytes, &subtype_tables)?;
+                let mut curve = nurbs::core::decode_curve_cache_resolving_refs(
+                    record_bytes,
+                    bytes,
+                    &subtype_tables,
+                )?;
                 if *curve_reversed {
                     reverse_nurbs_curve(&mut curve);
                 }
@@ -5689,32 +5695,34 @@ fn inherited_attribute_target(
 }
 
 fn procedural_surface_definition_is_exact_carrier(
-    definition: &nurbs::DecodedProceduralSurfaceDefinition,
+    definition: &nurbs::proc_surface::DecodedProceduralSurfaceDefinition,
 ) -> bool {
     match definition {
-        nurbs::DecodedProceduralSurfaceDefinition::Extrusion { .. }
-        | nurbs::DecodedProceduralSurfaceDefinition::Helix(_)
-        | nurbs::DecodedProceduralSurfaceDefinition::Ruled { .. }
-        | nurbs::DecodedProceduralSurfaceDefinition::Sum { .. }
-        | nurbs::DecodedProceduralSurfaceDefinition::VertexBlend(_)
-        | nurbs::DecodedProceduralSurfaceDefinition::SubSurface { .. } => true,
-        nurbs::DecodedProceduralSurfaceDefinition::Law(construction) => !matches!(
+        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion { .. }
+        | nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Helix(_)
+        | nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Ruled { .. }
+        | nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Sum { .. }
+        | nurbs::proc_surface::DecodedProceduralSurfaceDefinition::VertexBlend(_)
+        | nurbs::proc_surface::DecodedProceduralSurfaceDefinition::SubSurface { .. } => true,
+        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Law(construction) => !matches!(
             construction.tail,
             cadmpeg_ir::geometry::LawSurfaceTail::Full
         ),
-        nurbs::DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(construction) => matches!(
+        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(
+            construction,
+        ) => matches!(
             construction.shape,
-            nurbs::EmbeddedScaledCompoundLoftShape::None { .. }
+            nurbs::proc_surface::EmbeddedScaledCompoundLoftShape::None { .. }
         ),
         _ => false,
     }
 }
 
 fn analytic_procedural_surface(
-    definition: &nurbs::DecodedProceduralSurfaceDefinition,
+    definition: &nurbs::proc_surface::DecodedProceduralSurfaceDefinition,
 ) -> Option<SurfaceGeometry> {
     match definition {
-        nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
+        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
             directrix,
             direction,
             ..
@@ -5731,7 +5739,7 @@ fn analytic_procedural_surface(
                 radius,
             })
         }
-        nurbs::DecodedProceduralSurfaceDefinition::Blend {
+        nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
             supports,
             spine: Some(spine),
             radius: cadmpeg_ir::geometry::BlendRadiusLaw::Constant { signed_radius },
@@ -5744,7 +5752,7 @@ fn analytic_procedural_surface(
 
 fn analytic_rolling_ball_surface(
     supports: &[Option<SurfaceGeometry>; 2],
-    native: Option<&nurbs::EmbeddedRollingBall>,
+    native: Option<&nurbs::proc_surface::EmbeddedRollingBall>,
     spine: &cadmpeg_ir::geometry::NurbsCurve,
     signed_radius: f64,
 ) -> Option<SurfaceGeometry> {
@@ -6899,12 +6907,13 @@ mod topology_tests {
 
     #[test]
     fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
-        let definition = |direction| nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
-            directrix: exact_circle_directrix(),
-            parameter_interval: [0.0, 4.0],
-            direction,
-            native_position: Point3::new(0.0, 0.0, 0.0),
-        };
+        let definition =
+            |direction| nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
+                directrix: exact_circle_directrix(),
+                parameter_interval: [0.0, 4.0],
+                direction,
+                native_position: Point3::new(0.0, 0.0, 0.0),
+            };
         let Some(SurfaceGeometry::Cylinder {
             origin,
             axis,
@@ -6993,12 +7002,14 @@ mod topology_tests {
         let mut elevated = degree_elevated_circle();
         assert!(rational_four_arc_circle(&elevated).is_some());
         assert!(matches!(
-            analytic_procedural_surface(&nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
-                directrix: elevated.clone(),
-                parameter_interval: [0.0, 4.0],
-                direction: Vector3::new(0.0, 0.0, 3.0),
-                native_position: Point3::new(0.0, 0.0, 0.0),
-            }),
+            analytic_procedural_surface(
+                &nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
+                    directrix: elevated.clone(),
+                    parameter_interval: [0.0, 4.0],
+                    direction: Vector3::new(0.0, 0.0, 3.0),
+                    native_position: Point3::new(0.0, 0.0, 0.0),
+                }
+            ),
             Some(SurfaceGeometry::Cylinder { .. })
         ));
         elevated.control_points[5].x += 1.0e-5;
@@ -7034,7 +7045,7 @@ mod topology_tests {
 
     #[test]
     fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
-        let mut definition = nurbs::DecodedProceduralSurfaceDefinition::Blend {
+        let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([
                 Some(plane(
                     Point3::new(0.0, 0.0, 0.0),
@@ -7070,8 +7081,9 @@ mod topology_tests {
                 && radius == 2.0
         ));
 
-        let nurbs::DecodedProceduralSurfaceDefinition::Blend {
-            spine: Some(spine), ..
+        let nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
+            spine: Some(spine),
+            ..
         } = &mut definition
         else {
             unreachable!()
@@ -7088,7 +7100,7 @@ mod topology_tests {
             point.y -= 3.0;
             point.z -= 3.0;
         }
-        let mut definition = nurbs::DecodedProceduralSurfaceDefinition::Blend {
+        let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([
                 Some(plane(
                     Point3::new(0.0, 0.0, -1.0),
@@ -7123,7 +7135,8 @@ mod topology_tests {
                 && minor_radius == -2.0
         ));
 
-        let nurbs::DecodedProceduralSurfaceDefinition::Blend { supports, .. } = &mut definition
+        let nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend { supports, .. } =
+            &mut definition
         else {
             unreachable!()
         };
@@ -7488,7 +7501,7 @@ mod topology_tests {
             u_periodic: false,
             v_periodic: false,
         });
-        let candidate = || nurbs::NurbsPcurve {
+        let candidate = || nurbs::pcurve::NurbsPcurve {
             degree: 1,
             knots: vec![0.0, 0.0, 1.0, 1.0],
             control_points: vec![
@@ -7544,7 +7557,7 @@ mod topology_tests {
             edge_pcurve_parameter_ranges(&edge),
             Some([[-0.55, -0.60], [0.55, 0.60]])
         );
-        let candidate = nurbs::NurbsPcurve {
+        let candidate = nurbs::pcurve::NurbsPcurve {
             degree: 1,
             knots: vec![0.0, 0.0, 1.0, 1.0],
             control_points: vec![
