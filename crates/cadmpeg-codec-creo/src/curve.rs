@@ -2232,11 +2232,28 @@ fn evaluate_creo_relation_function(
             Number(position as f64)
         }
         (CreoMathFunction::Extract, [String(value), Number(position), Number(length)]) => {
-            let (position, length) = integer_pair(*position, *length)?;
-            if position == 0 {
+            if !position.is_finite()
+                || !length.is_finite()
+                || position.fract() != 0.0
+                || length.fract() != 0.0
+                || *position <= 0.0
+                || *length < 0.0
+            {
                 return None;
             }
-            String(value.chars().skip(position - 1).take(length).collect())
+            let character_count = value.chars().count();
+            if *position > character_count as f64 {
+                String(std::string::String::new())
+            } else {
+                let start = *position as usize - 1;
+                let remaining = character_count - start;
+                let length = if *length >= remaining as f64 {
+                    remaining
+                } else {
+                    *length as usize
+                };
+                String(value.chars().skip(start).take(length).collect())
+            }
         }
         (CreoMathFunction::StringLength, [String(value)]) => Number(value.chars().count() as f64),
         (CreoMathFunction::StringStarts, [String(value), String(prefix)]) => {
@@ -2435,18 +2452,6 @@ fn format_relation_real(value: f64, decimals: Option<usize>, scientific: bool) -
         if exponent < 0 { "-" } else { "" },
         magnitude = exponent.unsigned_abs()
     ))
-}
-
-fn integer_pair(first: f64, second: f64) -> Option<(usize, usize)> {
-    (first.is_finite()
-        && second.is_finite()
-        && first.fract() == 0.0
-        && second.fract() == 0.0
-        && first >= 0.0
-        && second >= 0.0
-        && first <= usize::MAX as f64
-        && second <= usize::MAX as f64)
-        .then_some((first as usize, second as usize))
 }
 
 fn evaluate_relation_expression(
@@ -3949,6 +3954,23 @@ mod tests {
         );
         assert_eq!(assignments[12].value, None);
         assert_eq!(assignments[13].value, None);
+
+        assert_eq!(
+            evaluate_relation_expression(
+                "extract('abc',1e308,1)",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            ),
+            Some(CurveExpressionValue::String(String::new()))
+        );
+        assert_eq!(
+            evaluate_relation_expression(
+                "extract('abc',2,1e308)",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            ),
+            Some(CurveExpressionValue::String("bc".into()))
+        );
     }
 
     #[test]
