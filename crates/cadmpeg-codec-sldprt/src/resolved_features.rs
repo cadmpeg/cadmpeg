@@ -4108,7 +4108,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn current_coordinate_line_uses_its_centered_endpoint_pair() {
+    fn coordinate_lines_use_their_centered_endpoint_pairs() {
         let mut payload = vec![0; 147];
         payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         payload[5..13].copy_from_slice(&[0xff; 8]);
@@ -4119,6 +4119,8 @@ mod marker_tests {
         payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
         payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
         payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+        payload[66..74].copy_from_slice(&2.0f64.to_le_bytes());
+        payload[74..82].copy_from_slice(&3.0f64.to_le_bytes());
         payload[82..86].copy_from_slice(&1u32.to_le_bytes());
         payload[92..96].copy_from_slice(&(-2i32).to_le_bytes());
         payload[142..].copy_from_slice(SKETCH_MARKER);
@@ -4143,6 +4145,38 @@ mod marker_tests {
         assert_eq!(
             coordinate_centered_line_endpoints(&payload, &line, &markers),
             Some([&first, &second])
+        );
+
+        let mut extended = vec![0; 139];
+        extended[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        extended[5..13].fill(0xff);
+        extended[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        extended[17..21].copy_from_slice(&2u32.to_le_bytes());
+        extended[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        extended[27..29].copy_from_slice(&1u16.to_le_bytes());
+        extended[31..39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        extended[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        extended[56..58].copy_from_slice(&[0x1e, 0x00]);
+        extended[58..66].copy_from_slice(&2.0f64.to_le_bytes());
+        extended[66..74].copy_from_slice(&3.0f64.to_le_bytes());
+        extended[76..78].copy_from_slice(&1u16.to_le_bytes());
+        extended[82..84].copy_from_slice(&1u16.to_le_bytes());
+        extended[84..88].copy_from_slice(&(-2i32).to_le_bytes());
+        extended[130..134].copy_from_slice(&7u32.to_le_bytes());
+        extended[134..].copy_from_slice(SKETCH_MARKER);
+        let mut extended_line = line.clone();
+        extended_line.coordinates_m = None;
+        let markers = [&extended_line, &first, &second];
+        assert_eq!(
+            coordinate_centered_line_endpoints(&extended, &extended_line, &markers),
+            Some([&first, &second])
+        );
+        extended[84] ^= 1;
+        assert_eq!(
+            coordinate_centered_line_endpoints(&extended, &extended_line, &markers),
+            None
         );
     }
 
@@ -22597,26 +22631,7 @@ fn coordinate_centered_line_endpoints<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let offset = usize::try_from(line.offset).ok()?;
-    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
-        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
-        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
-        || marker_native_code(payload, offset) != Some(2)
-        || !marker_is_geometry_locus(payload, offset)
-        || marker_profile_curve_role(payload, offset) != Some(1)
-        || payload.get(offset + 29..offset + 31) != Some(&0u16.to_le_bytes())
-        || payload.get(offset + 31..offset + 39)
-            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
-        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || payload.get(offset + 64..offset + 66) != Some(&[0x1e, 0x00])
-        || payload.get(offset + 82..offset + 86) != Some(&1u32.to_le_bytes())
-        || payload.get(offset + 86..offset + 92) != Some(&[0; 6])
-        || payload.get(offset + 92..offset + 96) != Some(&(-2i32).to_le_bytes())
-        || payload.get(offset + 96..offset + 138) != Some(&[0; 42])
-        || !sketch_marker_prefix_at(payload, offset.checked_add(142)?)
-    {
-        return None;
-    }
-    let [center_u, center_v] = line.coordinates_m?;
+    let [center_u, center_v] = coordinate_centered_line_center(payload, offset)?;
     let mut coordinates = markers
         .iter()
         .copied()
@@ -22635,6 +22650,63 @@ fn coordinate_centered_line_endpoints<'a>(
     let centered = same_dimension_length((first_u + second_u) * 0.5, center_u)
         && same_dimension_length((first_v + second_v) * 0.5, center_v);
     (centered && (first_u != second_u || first_v != second_v)).then_some([first, second])
+}
+
+fn coordinate_centered_line_center(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+    if payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(2)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&0u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+    {
+        return None;
+    }
+    if payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        && marker_is_geometry_locus(payload, offset)
+        && payload.get(offset + 64..offset + 66) == Some(&[0x1e, 0x00])
+        && payload.get(offset + 82..offset + 86) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 86..offset + 92) == Some(&[0; 6])
+        && payload.get(offset + 92..offset + 96) == Some(&(-2i32).to_le_bytes())
+        && payload.get(offset + 96..offset + 138) == Some(&[0; 42])
+        && sketch_marker_prefix_at(payload, offset.checked_add(142)?)
+    {
+        return finite_coordinate_pair(payload, offset + 66);
+    }
+    let direct = u16::from_le_bytes(
+        payload
+            .get(offset + 74..offset + 76)?
+            .try_into()
+            .ok()?,
+    );
+    let count = u16::from_le_bytes(
+        payload
+            .get(offset + 76..offset + 78)?
+            .try_into()
+            .ok()?,
+    );
+    let tagged = u16::from_le_bytes(
+        payload
+            .get(offset + 82..offset + 84)?
+            .try_into()
+            .ok()?,
+    );
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && payload.get(offset + 56..offset + 58) == Some(&[0x1e, 0x00])
+        && ((direct == 1 && count == 0 && tagged == 0)
+            || (direct == 0 && (1..=3).contains(&count) && tagged <= 1))
+        && payload.get(offset + 78..offset + 82) == Some(&[0; 4])
+        && payload.get(offset + 84..offset + 88) == Some(&(-2i32).to_le_bytes())
+        && payload.get(offset + 88..offset + 130) == Some(&[0; 42])
+        && sketch_marker_prefix_at(payload, offset.checked_add(134)?)
+    {
+        return finite_coordinate_pair(payload, offset + 58);
+    }
+    None
 }
 
 fn consecutive_legacy_profile_line_endpoints<'a>(
