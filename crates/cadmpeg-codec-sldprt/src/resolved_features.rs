@@ -848,19 +848,20 @@ mod marker_tests {
         matrix_reference_plane_frame, minimal_reference_plane_frame,
         mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
         native_scalar_matches_discrete_parameter, object_names,
-        offset_plane_reference_frame_matches, ordered_compact_line_profile,
-        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
-        plane_intersection_axis_sources, principal_sketch_frame, profile_roster_construction_axis,
-        reconcile_reference_plane_frame, resolve_operand_marker, resolve_operand_marker_excluding,
-        resolve_scalar_operand_markers, revolution_line_reference_inputs, revolution_operation,
-        revolution_temporary_axis, roster_curve_endpoint_markers,
-        sketch_block_identity_normalization_origin, sketch_block_record_origin,
-        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
-        tangent_bounded_curve, unique_arc_center_marker, unique_dimensioned_rectangle_markers,
-        unique_locus, unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle,
-        BooleanOp, CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
-        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
-        NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
+        offset_plane_reference_frame_matches, offset_plane_reference_source,
+        ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
+        plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
+        profile_roster_construction_axis, reconcile_reference_plane_frame, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
+        roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
+        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
+        spatial_vertex_coordinates, tangent_bounded_curve, unique_arc_center_marker,
+        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
+        wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind, Length,
+        CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
+        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
+        SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -1913,6 +1914,50 @@ mod marker_tests {
         assert_eq!(compact_offset_plane_source(&payload), Some(3));
         payload[19] ^= 1;
         assert_eq!(compact_offset_plane_source(&payload), None);
+    }
+
+    #[test]
+    fn typed_offset_plane_reference_accepts_principal_and_feature_targets() {
+        let record = |source: u32, signature: [u8; 4], selector: u32| {
+            let mut bytes = Vec::new();
+            bytes.extend(source.to_le_bytes());
+            bytes.extend(signature);
+            bytes.extend([0; 2]);
+            bytes.extend(selector.to_le_bytes());
+            bytes.extend(1u32.to_le_bytes());
+            bytes.extend([0; 4]);
+            bytes.extend(247u32.to_le_bytes());
+            bytes.extend([0; 12]);
+            bytes.extend([0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+            bytes
+        };
+        let known = HashSet::from([3, 225]);
+        let principal = record(3, [0x79, 0x2a, 0xe1, 0x3b], 2);
+        assert_eq!(
+            offset_plane_reference_source(&principal, &known, None),
+            Some(3)
+        );
+        let feature = record(225, [0x30, 0x92, 0xab, 0x53], 0);
+        assert_eq!(
+            offset_plane_reference_source(&feature, &known, None),
+            Some(225)
+        );
+        assert_eq!(
+            offset_plane_reference_source(&feature, &known, Some(225)),
+            None
+        );
+
+        let mut ambiguous = principal;
+        ambiguous.extend(feature);
+        assert_eq!(
+            offset_plane_reference_source(&ambiguous, &known, None),
+            None
+        );
+        ambiguous[38] ^= 1;
+        assert_eq!(
+            offset_plane_reference_source(&ambiguous, &known, None),
+            Some(225)
+        );
     }
 
     #[test]
@@ -11915,14 +11960,12 @@ pub(crate) fn enrich_history_reference_planes(
             let Some(bytes) = lane.native_payload.get(start..end) else {
                 continue;
             };
-            if let Some(source) = compact_offset_plane_source(bytes).filter(|source| {
-                known_sources.contains(source)
-                    && feature
-                        .source_id
-                        .as_deref()
-                        .and_then(|value| value.parse::<u32>().ok())
-                        != Some(*source)
-            }) {
+            let self_source = feature
+                .source_id
+                .as_deref()
+                .and_then(|value| value.parse::<u32>().ok());
+            if let Some(source) = offset_plane_reference_source(bytes, &known_sources, self_source)
+            {
                 reference_candidates
                     .entry((history_index, feature_index))
                     .or_default()
@@ -12761,6 +12804,51 @@ fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
     let mut matches = matches.into_iter();
     let source = matches.next()?;
     matches.next().is_none().then_some(source)
+}
+
+fn offset_plane_reference_source(
+    payload: &[u8],
+    known_sources: &HashSet<u32>,
+    self_source: Option<u32>,
+) -> Option<u32> {
+    const RECORD_LEN: usize = 46;
+    const PRINCIPAL_SIGNATURE: &[u8] = &[0x79, 0x2a, 0xe1, 0x3b];
+    const FEATURE_SIGNATURE: &[u8] = &[0x30, 0x92, 0xab, 0x53];
+    const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+    let mut sources = payload
+        .windows(RECORD_LEN)
+        .filter_map(|bytes| {
+            let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+            let signature = bytes.get(4..8)?;
+            let typed_prefix = if signature == PRINCIPAL_SIGNATURE {
+                bytes.get(8..10) == Some(&[0, 0])
+                    && matches!(
+                        u32::from_le_bytes(bytes.get(10..14)?.try_into().ok()?),
+                        1 | 2
+                    )
+            } else {
+                signature == FEATURE_SIGNATURE && bytes.get(8..14) == Some(&[0; 6])
+            };
+            (known_sources.contains(&source)
+                && Some(source) != self_source
+                && typed_prefix
+                && bytes.get(14..18) == Some(&1u32.to_le_bytes())
+                && bytes.get(18..22) == Some(&[0; 4])
+                && bytes.get(26..38) == Some(&[0; 12])
+                && bytes.get(38..46) == Some(TERMINATOR))
+            .then_some(source)
+        })
+        .collect::<Vec<_>>();
+    sources.extend(
+        compact_offset_plane_source(payload)
+            .filter(|source| Some(*source) != self_source && known_sources.contains(source)),
+    );
+    sources.sort_unstable();
+    sources.dedup();
+    let [source] = sources.as_slice() else {
+        return None;
+    };
+    Some(*source)
 }
 
 const FIXED_REFERENCE_PLANE_FRAME_LEN: usize = 97;
