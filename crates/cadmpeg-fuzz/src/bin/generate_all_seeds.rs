@@ -1173,11 +1173,10 @@ fn generate_ir_seeds() {
         .to_canonical_json()
         .unwrap();
     let canonical = [
-        ("minimal_v13.json", minimal.as_bytes()),
-        ("unit_cube_v13.json", cube.as_bytes()),
-        ("directed_subd_sum_v13.json", directed_subd_sum.as_bytes()),
+        ("minimal.json", minimal.as_bytes()),
+        ("unit_cube.json", cube.as_bytes()),
+        ("directed_subd_sum.json", directed_subd_sum.as_bytes()),
     ];
-    let valid_v0 = minimal.replacen(r#""ir_version": "54""#, r#""ir_version": "0""#, 1);
     let current_version_field = format!(r#""ir_version": "{}""#, cadmpeg_ir::IR_VERSION);
     let valid_v0 = minimal.replacen(&current_version_field, r#""ir_version": "0""#, 1);
     assert_ne!(valid_v0, minimal, "current ir_version field must match");
@@ -1189,19 +1188,6 @@ fn generate_ir_seeds() {
         println!("  ir/{name} ({} bytes)", data.len());
     }
     fs::write(from_json.join("valid_v0_rejected.json"), valid_v0).unwrap();
-
-    let migrate = Path::new("seeds/ir_migrate_json");
-    replace_seed_directory(migrate);
-    for (name, data) in &canonical {
-        let current = std::str::from_utf8(data).unwrap();
-        let legacy = current.replacen(
-            &current_version_field,
-            &format!(r#""ir_version": "{}""#, cadmpeg_ir::PREVIOUS_IR_VERSION),
-            1,
-        );
-        assert_ne!(legacy, current, "current ir_version field must match");
-        fs::write(migrate.join(name.replace("_v13.json", "_v12.json")), legacy).unwrap();
-    }
 
     for target in ["ir_validate", "ir_canonical_roundtrip", "step_writer"] {
         let dir = Path::new("seeds").join(target);

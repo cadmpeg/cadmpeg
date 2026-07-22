@@ -9,12 +9,13 @@ All files in both trees are synthesized by generator code in [`crates/cadmpeg-fu
 
 ## Generators
 
-The fuzz crate declares four generator binaries in [`crates/cadmpeg-fuzz/Cargo.toml`](../crates/cadmpeg-fuzz/Cargo.toml):
+The fuzz crate's seed generator binaries include:
 
-- `generate_submodule_seeds` writes minimal inputs for F3D, SolidWorks, CATIA, Creo, NX, IR, and STEP submodule targets.
+- `generate_submodule_seeds` writes minimal inputs for focused F3D, SolidWorks, CATIA, Creo, and NX parser targets.
 - `generate_all_seeds` writes the main container and `ir_from_json` seeds, then creates deterministic mutations of eligible seeds.
 - `generate_seeds` writes the focused `f3d_container` set, including pcurve and BinaryFile4 inputs.
 - `generate_comprehensive_seeds` writes the expanded SolidWorks, CATIA, Creo, and NX container sets. It does not regenerate F3D seeds.
+- `generate_fcstd_seeds`, `generate_rhino_seeds`, and `generate_iges_seeds` write their format-specific seed sets.
 
 Generator output paths are relative to the current working directory. Use the required working directories below.
 
@@ -33,7 +34,7 @@ cargo run --bin generate_seeds
 cargo run --bin generate_comprehensive_seeds
 ```
 
-These generators overlap. Later commands can replace base files written by earlier commands, while target-specific files remain. `generate_all_seeds` creates mutations only from the base files present when that binary runs. It appends:
+The fuzz-crate generators overlap for some container targets. Later commands can replace base files written by earlier commands, while target-specific files remain. `generate_all_seeds` owns the IR seeds and creates mutations only from the base files present when that binary runs. It appends:
 
 - `.mut_trunc` for a 50 percent truncation.
 - `.mut_flip` for one inverted byte at the midpoint.

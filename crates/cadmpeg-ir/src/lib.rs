@@ -75,7 +75,7 @@ pub use codec::{
     DecodeOptions, DecodeResult, Encoder, ReadSeek,
 };
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
-pub use document::{CadIr, SourceMeta, IR_VERSION, PREVIOUS_IR_VERSION};
+pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,
     CoilResult, CoilSection, CoilSectionPlacement, ConfigurationBodies, ConfigurationId,

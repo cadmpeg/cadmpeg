@@ -36,7 +36,7 @@ Procedural geometry keeps both the native construction and its solved carrier wh
 
 Units and tolerances are part of the fidelity contract. cadmpeg preserves source tolerances, records target tolerances, and reports every widening, healing operation, or topology change required by the target kernel. Conversion must not silently replace a model with a looser approximation.
 
-Format and IR versions follow the same rule. Different source-format revisions decode into a common semantic model. IR migrations preserve meaning across schema versions. Native writers state which target versions they emit and reject constructs those versions cannot represent.
+Format and IR versions follow the same rule. Different source-format revisions decode into a common semantic model. IR readers accept the schema version they implement and reject other versions. Native writers state which target versions they emit and reject constructs those versions cannot represent.
 
 ## Reference format: SolidWorks `.sldprt`
 

@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "56",
+      "ir_version": "4",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -208,7 +208,7 @@
           "deltas.0.grammar": "status_byte_framed_topology",
           "deltas_streams": "1",
           "directory_entries": "1",
-          "file_size": "496",
+          "file_size": "481",
           "footer_offset": "0",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -323,7 +323,7 @@
             "tag": "partition"
           },
           "nx:container:parasolid#1": {
-            "offset": 352,
+            "offset": 356,
             "stream": 1,
             "tag": "deltas"
           },
@@ -407,7 +407,7 @@
           "byte_len": 171,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAzAAwAAAOOAAEBAAEBAAEBAAEBAAEBKz9QYk3S8an8P2BiTdLxqfw/aJN0vGp++gAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAD+ZmZmZmZmaP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
           "id": "nx:container:parasolid#1",
-          "offset": 352,
+          "offset": 356,
           "sha256": "5dc898e282c1231f9bdb77fd024dd7dc8fc26d5ec106db078cdda4c98c54a41c",
           "stream": "nx:container"
         }
@@ -423,11 +423,11 @@
           "file_offset": "72",
           "region": "HEADER"
         },
-        "compressed_size": 424,
+        "compressed_size": 409,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "stream",
-        "uncompressed_size": 424
+        "uncompressed_size": 409
       },
       {
         "attributes": {
@@ -459,7 +459,7 @@
       },
       {
         "attributes": {
-          "file_offset": "352",
+          "file_offset": "356",
           "kind": "deltas",
           "records.body": "0",
           "records.delta.full.cylinder": "1",

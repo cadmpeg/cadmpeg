@@ -111,21 +111,27 @@ contract is robustness, not input acceptance.
 
 ## Seed maintenance
 
-Run seed generators from this crate so their relative `seeds/` paths resolve
-correctly:
+Run the submodule generator from the repository root so it writes the root
+`seeds/` tree:
+
+```sh
+cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_submodule_seeds
+```
+
+Run the remaining generators from the fuzz crate so they write its `seeds/`
+tree:
 
 ```sh
 cd crates/cadmpeg-fuzz
 cargo +nightly run --bin generate_all_seeds
-cargo +nightly run --bin generate_submodule_seeds
-cargo +nightly run --bin generate_synthetic_fixtures
 cargo +nightly run --bin generate_fcstd_seeds
+cargo +nightly run --bin generate_rhino_seeds
+cargo +nightly run --bin generate_iges_seeds
 ```
 
 `generate_all_seeds` writes container and IR seeds, then derives deterministic
 truncation, byte-flip, and oversized-length mutants. `generate_submodule_seeds`
-writes focused parser inputs. `generate_synthetic_fixtures` writes deterministic
-IR JSON fixtures for IR and STEP targets.
+writes focused parser inputs.
 
 Two older generators remain available for narrower maintenance:
 

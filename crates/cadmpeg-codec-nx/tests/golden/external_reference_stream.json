@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "56",
+      "ir_version": "4",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -161,7 +161,7 @@
                 "record_id": 6,
                 "sha256": "19c498cde8ddcfdc9f593e4f532ff5653aa0b5c77187203390a33de4ec092292",
                 "source_entry": "/Root/ExternalReferences",
-                "source_offset": 378
+                "source_offset": 358
               },
               {
                 "byte_len": 6,
@@ -169,7 +169,7 @@
                 "record_id": 7,
                 "sha256": "11635df4532364e5fa01ac9540563d9a833f881994f4d2f3ae2a2e9c87680163",
                 "source_entry": "/Root/ExternalReferences",
-                "source_offset": 372
+                "source_offset": 352
               }
             ],
             "external_reference_record_children": [
@@ -186,7 +186,7 @@
                 "external_reference": "nx:external-reference:/Root/ExternalReferences#0",
                 "id": "nx:external-reference:record-string-use#6-0",
                 "slot": 0,
-                "source_offset": 385,
+                "source_offset": 365,
                 "string_index": 0
               },
               {
@@ -194,7 +194,7 @@
                 "external_reference": "nx:external-reference:/Root/ExternalReferences#1",
                 "id": "nx:external-reference:record-string-use#6-1",
                 "slot": 1,
-                "source_offset": 389,
+                "source_offset": 369,
                 "string_index": 1
               },
               {
@@ -202,7 +202,7 @@
                 "external_reference": "nx:external-reference:/Root/ExternalReferences#2",
                 "id": "nx:external-reference:record-string-use#6-2",
                 "slot": 2,
-                "source_offset": 393,
+                "source_offset": 373,
                 "string_index": 2
               },
               {
@@ -210,7 +210,7 @@
                 "external_reference": "nx:external-reference:/Root/ExternalReferences#3",
                 "id": "nx:external-reference:record-string-use#6-3",
                 "slot": 3,
-                "source_offset": 397,
+                "source_offset": 377,
                 "string_index": 3
               }
             ],
@@ -232,7 +232,7 @@
                 "prefix_byte_len": 36,
                 "record_id": 6,
                 "source_entry": "/Root/ExternalReferences",
-                "source_offset": 378,
+                "source_offset": 358,
                 "tail_byte_len": 9
               }
             ],
@@ -242,7 +242,7 @@
                 "id": "nx:external-reference:tail-reference-pair#6-0",
                 "ordinal": 0,
                 "persistent_handle": 5,
-                "source_offset": 414,
+                "source_offset": 394,
                 "tagged_reference": 1
               }
             ],
@@ -252,28 +252,28 @@
                 "ordinal": 0,
                 "path": "child.prt",
                 "source_entry": "/Root/ExternalReferences",
-                "source_offset": 430
+                "source_offset": 410
               },
               {
                 "id": "nx:external-reference:/Root/ExternalReferences#1",
                 "ordinal": 1,
                 "path": "dirA",
                 "source_entry": "/Root/ExternalReferences",
-                "source_offset": 441
+                "source_offset": 421
               },
               {
                 "id": "nx:external-reference:/Root/ExternalReferences#2",
                 "ordinal": 2,
                 "path": "dirB",
                 "source_entry": "/Root/ExternalReferences",
-                "source_offset": 447
+                "source_offset": 427
               },
               {
                 "id": "nx:external-reference:/Root/ExternalReferences#3",
                 "ordinal": 3,
                 "path": "extra",
                 "source_entry": "/Root/ExternalReferences",
-                "source_offset": 453
+                "source_offset": 433
               }
             ],
             "persistent_handles": [
@@ -330,7 +330,7 @@
           "external_reference.1": "dirA",
           "external_reference.2": "dirB",
           "external_reference.3": "extra",
-          "file_size": "458",
+          "file_size": "438",
           "footer_offset": "0",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -496,15 +496,15 @@
           "file_offset": "116",
           "region": "HEADER"
         },
-        "compressed_size": 211,
+        "compressed_size": 191,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "stream",
-        "uncompressed_size": 211
+        "uncompressed_size": 191
       },
       {
         "attributes": {
-          "file_offset": "327",
+          "file_offset": "307",
           "region": "HEADER"
         },
         "compressed_size": 131,

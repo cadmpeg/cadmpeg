@@ -10,7 +10,6 @@ fn main() {
     generate_catia_submodule_seeds();
     generate_creo_submodule_seeds();
     generate_nx_submodule_seeds();
-    generate_ir_submodule_seeds();
     println!("All sub-module seeds generated.");
 }
 
@@ -283,55 +282,4 @@ fn generate_nx_submodule_seeds() {
         0x03, 0x00, 0x00, 0x00, // degree
     ];
     write_seed("seeds/nx_nurbs_curves", "minimal", &nurbs_curves);
-}
-
-// ============================================================================
-// IR sub-module seeds
-// ============================================================================
-
-fn generate_ir_submodule_seeds() {
-    for directory in [
-        "seeds/ir_diff",
-        "seeds/ir_canonical_roundtrip",
-        "seeds/step_writer_custom",
-    ] {
-        clear_seed_directory(directory);
-    }
-
-    let empty = cadmpeg_ir::CadIr::empty(Default::default())
-        .to_canonical_json()
-        .expect("required invariant");
-    let cube = cadmpeg_ir::examples::unit_cube()
-        .to_canonical_json()
-        .expect("required invariant");
-
-    for (name, right) in [("empty_vs_cube", &cube), ("empty_vs_empty", &empty)] {
-        let mut input = vec![0];
-        input.extend_from_slice(empty.as_bytes());
-        input.push(0);
-        input.extend_from_slice(right.as_bytes());
-        write_seed("seeds/ir_diff", name, &input);
-    }
-
-    for (name, data) in [("empty_v13.json", &empty), ("unit_cube_v13.json", &cube)] {
-        write_seed("seeds/ir_canonical_roundtrip", name, data.as_bytes());
-
-        let mut custom = vec![0; 8];
-        custom.extend_from_slice(data.as_bytes());
-        write_seed("seeds/step_writer_custom", name, &custom);
-    }
-}
-
-fn clear_seed_directory(directory: &str) {
-    let path = Path::new(directory);
-    fs::create_dir_all(path).expect("required invariant");
-    for entry in fs::read_dir(path).expect("required invariant") {
-        let entry = entry.expect("required invariant");
-        let entry_path = entry.path();
-        if entry_path.is_dir() {
-            fs::remove_dir_all(entry_path).expect("required invariant");
-        } else {
-            fs::remove_file(entry_path).expect("required invariant");
-        }
-    }
 }

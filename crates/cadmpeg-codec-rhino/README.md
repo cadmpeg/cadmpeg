@@ -2,7 +2,7 @@
 
 `cadmpeg-codec-rhino` is the Rhino `.3dm` codec for cadmpeg. It detects 3DM
 input, inspects chunk and table structure, transfers supported model data into
-CADIR version 6, and writes selected neutral model families as native 3DM.
+CADIR version 4, and writes selected neutral model families as native 3DM.
 
 Support level: [L9](../../docs/format-support.md#support-ladder) for archive
 versions 50, 60, 70, and 80.

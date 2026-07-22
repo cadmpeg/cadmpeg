@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "56",
+      "ir_version": "4",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -55,7 +55,7 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "217",
+          "file_size": "220",
           "footer_offset": "0",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -107,11 +107,11 @@
           "file_offset": "72",
           "region": "HEADER"
         },
-        "compressed_size": 145,
+        "compressed_size": 148,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "stream",
-        "uncompressed_size": 145
+        "uncompressed_size": 148
       },
       {
         "attributes": {

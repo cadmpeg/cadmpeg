@@ -260,7 +260,7 @@ does not inherit a format-wide placeholder loss.
 
 ## Presentation and application records
 
-CADIR version 50 adds format-neutral document and view presentation arenas. A GUI archive produces
+Format-neutral document and view presentation arenas represent GUI state. A GUI archive produces
 one document presentation record; a headless archive produces none. The neutral document record
 contains the schema version, active view, finite camera position and nonzero orientation quaternion,
 ordered document state, and resolved display-asset references. Each view-provider record contains
@@ -329,7 +329,7 @@ assets. Drawing records independently retain every link-valued relationship, inc
 and section parents rather than only page membership and model sources. Validation requires exact
 annotation-object coverage and resolves both annotation and drawing relationships.
 
-CADIR version 51 promotes the drawing graph into a format-neutral arena. Pages, templates, model
+The format-neutral drawing arena contains pages, templates, model
 views, projection groups, sections, details, dimensions, annotations, balloons, symbols, leaders,
 images, and extension drawing objects retain their runtime classification and source order. Local
 drawing relationships resolve to neutral drawing identities, model sources resolve to their local
@@ -337,7 +337,7 @@ object identities, and external document/object pairs remain explicit without be
 local references. View position, positive scale, nonzero projection direction, rotation, exact
 fallback parameters, and resolved template or image assets are independently validated.
 
-CADIR version 52 adds a separate format-neutral semantic-annotation arena. Dimensions, notes,
+The format-neutral semantic-annotation arena contains dimensions, notes,
 geometric tolerances, datums, balloons, leaders, symbols, and extension annotations retain source
 order, visible text, exact runtime classification, role-grouped model or drawing references,
 subelement selectors, explicit numeric measurements, formatting expressions, positions, fallback
@@ -345,7 +345,7 @@ parameters, and resolved assets. Local drawing targets resolve to neutral drawin
 external document/object pairs remain explicit. Referential and finite-numeric validation is
 independent of drawing presentation and of provenance annotations.
 
-CADIR version 53 makes persisted empty drawing and annotation links explicit. A target whose
+Persisted empty drawing and annotation links are explicit. A target whose
 native link record is present but names no document object has `is_null: true`; it is distinct
 from an absent target and from an unresolved nonempty reference. Local referential validation
 therefore accepts only explicitly null empty targets and continues to reject every nonempty

@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "56",
+      "ir_version": "4",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -212,14 +212,14 @@
                 "is_default": true,
                 "name": "Model",
                 "source_entry": "/Root/part/arrangements",
-                "source_offset": 429
+                "source_offset": 427
               },
               {
                 "id": "nx:arrangements-1:configuration#1",
                 "is_default": false,
                 "name": "Exploded",
                 "source_entry": "/Root/part/arrangements",
-                "source_offset": 470
+                "source_offset": 468
               }
             ],
             "part_attributes": [
@@ -228,7 +228,7 @@
                 "owner": "part",
                 "pdm_based": false,
                 "source_entry": "/Root/part/attrs",
-                "source_offset": 555,
+                "source_offset": 553,
                 "title": "NX_Arrangement",
                 "value": "Model",
                 "value_type": "StringAttributeType",
@@ -252,7 +252,7 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "3",
-          "file_size": "697",
+          "file_size": "695",
           "footer_offset": "0",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -439,15 +439,15 @@
           "file_offset": "151",
           "region": "HEADER"
         },
-        "compressed_size": 264,
+        "compressed_size": 262,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "stream",
-        "uncompressed_size": 264
+        "uncompressed_size": 262
       },
       {
         "attributes": {
-          "file_offset": "415",
+          "file_offset": "413",
           "region": "HEADER"
         },
         "compressed_size": 114,
@@ -458,7 +458,7 @@
       },
       {
         "attributes": {
-          "file_offset": "529",
+          "file_offset": "527",
           "region": "HEADER"
         },
         "compressed_size": 168,

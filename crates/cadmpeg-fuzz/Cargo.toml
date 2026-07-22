@@ -154,13 +154,6 @@ doc = false
 bench = false
 
 [[bin]]
-name = "ir_migrate_json"
-path = "fuzz_targets/ir_migrate_json.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "ir_validate"
 path = "fuzz_targets/ir_validate.rs"
 test = false
@@ -475,10 +468,6 @@ path = "src/bin/generate_all_seeds.rs"
 [[bin]]
 name = "generate_submodule_seeds"
 path = "src/bin/generate_submodule_seeds.rs"
-
-[[bin]]
-name = "generate_synthetic_fixtures"
-path = "src/bin/generate_synthetic_fixtures.rs"
 
 [[bin]]
 name = "generate_rhino_seeds"
