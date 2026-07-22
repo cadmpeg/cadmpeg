@@ -523,7 +523,14 @@ fn configuration_partitions(
         .model
         .configurations
         .iter()
-        .flat_map(|configuration| configuration.bodies.iter().cloned())
+        .flat_map(|configuration| {
+            configuration
+                .bodies
+                .resolved()
+                .unwrap_or_default()
+                .iter()
+                .cloned()
+        })
         .collect::<HashSet<_>>();
     if let Some(body) = ir
         .model
@@ -540,15 +547,18 @@ fn configuration_partitions(
     configurations.sort_by_key(|configuration| configuration.ordinal);
     configurations
         .into_iter()
-        .filter(|configuration| !configuration.bodies.is_empty())
-        .map(|configuration| {
+        .filter_map(|configuration| {
+            let bodies = configuration.bodies.resolved()?;
+            (!bodies.is_empty()).then_some((configuration, bodies))
+        })
+        .map(|(configuration, bodies)| {
             let index = configuration.source_index.ok_or_else(|| {
                 CodecError::Malformed(format!(
                     "SLDPRT configuration {} has no assigned source index",
                     configuration.id.0
                 ))
             })?;
-            let subset = body_subset(ir, &configuration.bodies)?;
+            let subset = body_subset(ir, bodies)?;
             let schema_32001 = subset
                 .model
                 .bodies
@@ -2302,6 +2312,7 @@ pub(super) fn surface_values(
         }
         SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
@@ -2628,7 +2639,7 @@ pub(super) fn curve_values(
                 "semantic SLDPRT writer does not support polyline curve carriers".into(),
             ))
         }
-        CurveGeometry::Transformed { .. } => {
+        CurveGeometry::Procedural { .. } | CurveGeometry::Transformed { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support transformed curve carriers".into(),
             ))
@@ -2668,6 +2679,7 @@ pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math:
         SurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
         SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
             x: 1.0,
             y: 0.0,

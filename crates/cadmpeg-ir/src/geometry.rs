@@ -126,6 +126,11 @@ pub enum SurfaceGeometry {
     },
     /// Free-form NURBS surface.
     Nurbs(NurbsSurface),
+    /// Exact procedural surface whose construction is stored separately.
+    Procedural {
+        /// Construction defining this carrier.
+        construction: ProceduralSurfaceId,
+    },
     /// Source-native polygonal surface with an explicit chordal error bound.
     Polygonal {
         /// Ordered model-space vertices.
@@ -242,6 +247,11 @@ pub enum CurveGeometry {
     },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
+    /// Exact procedural curve defined by its linked construction.
+    Procedural {
+        /// Construction defining this carrier.
+        construction: ProceduralCurveId,
+    },
     /// Source-native polyline with an explicit chordal error bound.
     Polyline {
         /// Ordered model-space samples.

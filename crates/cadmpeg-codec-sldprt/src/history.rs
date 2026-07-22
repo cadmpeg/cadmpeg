@@ -11,12 +11,13 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
-    ConfigurationId, CosmeticThreadExtent, DesignConfiguration, DesignParameter, DimensionDisplay,
+    ConfigurationBodies, ConfigurationId, CosmeticThreadExtent, CurveProjectionDirection,
+    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, DimensionDisplay,
     EdgeSelection, Extent, FaceMotion, FaceSelection, FeatureDefinition, FeatureId,
     FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length,
     ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, PatternSeed, ProfileRef,
     RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft,
-    RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SweepMode, VariableRadius,
+    RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace, SweepMode, VariableRadius,
     VertexSelection, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
@@ -371,7 +372,7 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                     id: neutral_feature_id(&feature.id),
                     ordinal: u64::from(feature.ordinal),
                     name: (!feature.name.is_empty()).then(|| feature.name.clone()),
-                    suppressed: feature.suppressed,
+                    suppressed: Some(feature.suppressed),
                     parent: feature
                         .tree_parent
                         .as_deref()
@@ -711,7 +712,7 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
             name: configuration.name.clone(),
             material: configuration.material.clone(),
             properties: configuration.properties.clone(),
-            bodies: Vec::new(),
+            bodies: ConfigurationBodies::Unresolved,
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: Some(configuration.id.clone()),
@@ -3076,7 +3077,7 @@ mod history_reference_tests {
             name: id.into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Vec::new(),
+            bodies: ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: native_ref.map(str::to_string),
@@ -3537,13 +3538,16 @@ mod history_reference_tests {
             features: vec![native_feature],
         };
         let feature_id = cadmpeg_ir::features::FeatureId("sketch".into());
-        let unresolved = FeatureDefinition::Sketch { sketch: None };
+        let unresolved = FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
+            sketch: None,
+        };
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
         ir.model.features.push(NeutralFeature {
             id: feature_id.clone(),
             ordinal: 0,
             name: Some("sketch-native".into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -3561,7 +3565,7 @@ mod history_reference_tests {
             id: spatial_feature_id.clone(),
             ordinal: 1,
             name: Some("spatial-native".into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -3602,13 +3606,13 @@ mod history_reference_tests {
             name: "Default".into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Vec::new(),
+            bodies: ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([
                 (
                     feature_id.clone(),
                     ConfigurationFeatureState {
-                        suppressed: false,
+                        suppressed: Some(false),
                         dependencies: Vec::new(),
                         outputs: Vec::new(),
                         definition: unresolved,
@@ -3617,7 +3621,7 @@ mod history_reference_tests {
                 (
                     spatial_feature_id.clone(),
                     ConfigurationFeatureState {
-                        suppressed: false,
+                        suppressed: Some(false),
                         dependencies: Vec::new(),
                         outputs: Vec::new(),
                         definition: FeatureDefinition::SpatialSketch { sketch: None },
@@ -3639,6 +3643,7 @@ mod history_reference_tests {
         assert!(matches!(
             &ir.model.configurations[0].feature_states[&feature_id].definition,
             FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } if sketch == &sketch_id
@@ -3662,7 +3667,7 @@ mod history_reference_tests {
             id: id.clone(),
             ordinal: 0,
             name: Some("Hole".into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -3684,6 +3689,7 @@ mod history_reference_tests {
                     diameter: Length(8.0),
                     depth: Length(4.0),
                 },
+                exit_kind: None,
                 diameter: Some(Length(5.0)),
                 extent: Some(Extent::Blind {
                     length: Length(12.0),
@@ -3704,6 +3710,7 @@ mod history_reference_tests {
             direction: None,
             placements: Vec::new(),
             kind: HoleKind::Simple,
+            exit_kind: None,
             diameter: None,
             extent: None,
             bottom: None,
@@ -3747,7 +3754,7 @@ mod history_reference_tests {
             name: "Default".into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Vec::new(),
+            bodies: ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::from([(parameter_id.clone(), ParameterValue::Integer(7))]),
             feature_states: BTreeMap::new(),
             native_ref: None,
@@ -3824,6 +3831,7 @@ pub fn bind_unique_sketch_feature(
     }
     for (index, _, _, sketch, _) in &bindings {
         features[*index].definition = FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
             sketch: Some(sketch.clone()),
         };
     }
@@ -4320,7 +4328,10 @@ fn project_definition(
         {
             FeatureDefinition::SpatialSketch { sketch: None }
         } else {
-            FeatureDefinition::Sketch { sketch: None }
+            FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: None,
+            }
         };
     }
     if class == Some(FeatureClass::SketchBlockDefinition) {
@@ -5109,18 +5120,20 @@ fn project_projected_curve(
         .get(source.as_str())
         .map_or_else(|| source.clone(), |id| (*id).to_string());
     let direction = match feature.properties.get("Direction") {
-        Some(value) => Some(parse_valid_direction(value)?),
-        None => None,
+        Some(value) => CurveProjectionDirection::Vector(parse_valid_direction(value)?),
+        None => CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal),
     };
     Some(FeatureDefinition::ProjectedCurve {
         source: PathRef::Native(source),
         target_faces: FaceSelection::Native(feature.properties.get("TargetFaces")?.clone()),
         direction,
-        bidirectional: feature
-            .properties
-            .get("Bidirectional")
-            .and_then(|value| parse_bool(value))
-            .unwrap_or(false),
+        bidirectional: Some(
+            feature
+                .properties
+                .get("Bidirectional")
+                .and_then(|value| parse_bool(value))
+                .unwrap_or(false),
+        ),
     })
 }
 
@@ -5882,6 +5895,7 @@ fn project_hole(
             })
             .unwrap_or_default(),
         kind,
+        exit_kind: None,
         diameter,
         extent,
         bottom: None,
@@ -6117,7 +6131,9 @@ fn project_thicken(feature: &Feature) -> FeatureDefinition {
 fn project_offset_surface(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::OffsetSurface {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        distance: Length(parse_length_mm(feature.parameters.get("Distance")?)?),
+        distance: Some(Length(parse_length_mm(
+            feature.parameters.get("Distance")?,
+        )?)),
     })
 }
 
@@ -6183,9 +6199,9 @@ fn project_extend_surface(feature: &Feature) -> Option<FeatureDefinition> {
     let method = crate::feature_schema::parse_surface_extension(feature.properties.get("Method")?)?;
     Some(FeatureDefinition::ExtendSurface {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        distance: Length(parse_positive_length_mm(
+        distance: Some(Length(parse_positive_length_mm(
             feature.parameters.get("Distance")?,
-        )?),
+        )?)),
         method,
     })
 }
@@ -6565,7 +6581,7 @@ fn project_chamfer(feature: &Feature) -> FeatureDefinition {
             .cloned()
             .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
         spec,
-        flip_direction: false,
+        flip_direction: Some(false),
     }
 }
 
@@ -9494,6 +9510,7 @@ pub fn sync_neutral_features(
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } => parent_sources
@@ -9523,6 +9540,15 @@ pub fn sync_neutral_features(
             .iter_mut()
             .flat_map(|history| &mut history.features)
             .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
+        let suppressed = feature
+            .suppressed
+            .or_else(|| existing.as_deref().map(|record| record.suppressed))
+            .ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT writing requires resolved suppression for feature {}",
+                    feature.id
+                ))
+            })?;
         let (kind, mut parameters, mut properties) = match &feature.definition {
             FeatureDefinition::TreeNode {
                 role,
@@ -9886,6 +9912,12 @@ pub fn sync_neutral_features(
                     &feature.id,
                     &["ExtendSurface", "SurfaceExtend"],
                 )?;
+                let distance = distance.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved surface extension distance",
+                        feature.id
+                    ))
+                })?;
                 if !distance.0.is_finite() || distance.0 <= 0.0 {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has an invalid surface extension",
@@ -10135,14 +10167,24 @@ pub fn sync_neutral_features(
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Source".into(), source);
                 properties.insert("TargetFaces".into(), target_faces);
-                properties.insert("Bidirectional".into(), bidirectional.to_string());
+                if let Some(bidirectional) = bidirectional {
+                    properties.insert("Bidirectional".into(), bidirectional.to_string());
+                }
                 match direction {
-                    Some(direction) => {
+                    CurveProjectionDirection::Vector(direction) => {
                         require_direction(*direction, &feature.id, "projection direction")?;
                         properties.insert("Direction".into(), format_vector3(*direction));
                     }
-                    None => {
+                    CurveProjectionDirection::State(
+                        CurveProjectionDirectionState::TargetNormal,
+                    ) => {
                         properties.remove("Direction");
+                    }
+                    CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved) => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unresolved projection direction",
+                            feature.id
+                        )));
                     }
                 }
                 (
@@ -10738,7 +10780,7 @@ pub fn sync_neutral_features(
                 spec,
                 flip_direction,
             } => {
-                if *flip_direction {
+                if flip_direction == &Some(true) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} uses an unsupported reversed chamfer reference side",
                         feature.id
@@ -11114,6 +11156,12 @@ pub fn sync_neutral_features(
                     ))
                 })?;
                 require_same_family(existing.as_deref(), &feature.id, &["OffsetSurface"])?;
+                let distance = distance.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved surface offset",
+                        feature.id
+                    ))
+                })?;
                 if !distance.0.is_finite() {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has a non-finite surface offset",
@@ -11903,6 +11951,7 @@ pub fn sync_neutral_features(
                 direction,
                 placements,
                 kind,
+                exit_kind,
                 diameter,
                 extent,
                 bottom,
@@ -11914,6 +11963,7 @@ pub fn sync_neutral_features(
                     || profile_filter.is_some()
                     || position.is_some()
                     || direction.is_some()
+                    || exit_kind.is_some()
                     || bottom.is_some()
                     || taper_angle.is_some()
                     || specification.is_some()
@@ -12045,6 +12095,12 @@ pub fn sync_neutral_features(
                     HoleKind::Counterdrill { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has unsupported counterdrill construction",
+                            feature.id
+                        )));
+                    }
+                    HoleKind::Chamfer { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unsupported chamfered-hole construction",
                             feature.id
                         )));
                     }
@@ -12790,6 +12846,21 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::DatumPointUnresolved
+            | FeatureDefinition::DatumCoordinateSystemUnresolved
+            | FeatureDefinition::Block { .. }
+            | FeatureDefinition::ExtractBody { .. }
+            | FeatureDefinition::LoftUnresolved
+            | FeatureDefinition::FreeformSurfaceUnresolved
+            | FeatureDefinition::DraftUnresolved
+            | FeatureDefinition::FaceBlend { .. }
+            | FeatureDefinition::SewBodies { .. }
+            | FeatureDefinition::TrimBodies { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses semantics that cannot be written",
+                    feature.id
+                )));
+            }
         };
         if let Some(record) = existing.as_deref() {
             restore_equivalent_parameter_expressions(
@@ -12834,7 +12905,7 @@ pub fn sync_neutral_features(
             existing.ordinal = ordinal;
             existing.name = feature.name.clone().unwrap_or_default();
             existing.kind = kind;
-            existing.suppressed = feature.suppressed;
+            existing.suppressed = suppressed;
             existing.parent_source_id = parent_source_id;
             existing.tree_parent = tree_parent;
             existing.parameters = parameters;
@@ -12865,7 +12936,7 @@ pub fn sync_neutral_features(
                 name: feature.name.clone().unwrap_or_default(),
                 kind,
                 input_class: None,
-                suppressed: feature.suppressed,
+                suppressed,
                 parameters,
                 dimension_properties: BTreeMap::new(),
                 properties,
@@ -13160,6 +13231,7 @@ fn path_source(
     sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
 ) -> Option<String> {
     match path {
+        PathRef::Unresolved => None,
         PathRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         PathRef::Sketch(id) => sketches.get(id).cloned(),
         PathRef::Edges(edges) if !edges.is_empty() => Some(
@@ -13331,6 +13403,16 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Native { kind, .. } if extrude_op(kind).is_some() => "Extrusion",
         FeatureDefinition::Native { kind, .. } if valid_xml_name(kind) => kind,
         FeatureDefinition::Native { .. } => "Feature",
+        FeatureDefinition::DatumPointUnresolved
+        | FeatureDefinition::DatumCoordinateSystemUnresolved
+        | FeatureDefinition::Block { .. }
+        | FeatureDefinition::ExtractBody { .. }
+        | FeatureDefinition::LoftUnresolved
+        | FeatureDefinition::FreeformSurfaceUnresolved
+        | FeatureDefinition::DraftUnresolved
+        | FeatureDefinition::FaceBlend { .. }
+        | FeatureDefinition::SewBodies { .. }
+        | FeatureDefinition::TrimBodies { .. } => "Feature",
     };
     tag.into()
 }

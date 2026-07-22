@@ -1,0 +1,287 @@
+{
+  "decode": {
+    "ir": {
+      "ir_version": "55",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "assembly_joints": [],
+        "attributes": [],
+        "bodies": [],
+        "coedges": [],
+        "components": [],
+        "configurations": [],
+        "curves": [],
+        "drawings": [],
+        "edges": [],
+        "faces": [],
+        "features": [],
+        "loops": [],
+        "occurrences": [],
+        "parameters": [],
+        "pcurves": [],
+        "pmi": [],
+        "points": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "product_occurrences": [],
+        "products": [],
+        "regions": [],
+        "semantic_annotations": [],
+        "shells": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "subds": [],
+        "surfaces": [],
+        "tessellations": [],
+        "vertices": [],
+        "view_presentations": []
+      },
+      "native": {
+        "nx": {
+          "arenas": {
+            "segment_body_bindings": [
+              {
+                "body_alias_object_index": 150,
+                "body_object_index": 94,
+                "id": "nx:segment-body-bindings:binding#0",
+                "source_offset": 104,
+                "stream_kind": "partition",
+                "stream_link": "nx:segment-stream-links:link#0",
+                "stream_ordinal": 0,
+                "stream_role": 19
+              }
+            ],
+            "segment_body_lineage_statuses": [
+              {
+                "body_alias_object_index": 150,
+                "body_object_index": 94,
+                "id": "nx:segment-body-lineage:status#0",
+                "segment_body_binding": "nx:segment-body-bindings:binding#0",
+                "source_offset": 104,
+                "terminal": true
+              }
+            ],
+            "segment_index_rows": [
+              {
+                "id": "nx:segment-index:row#0",
+                "ordinal": 0,
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 72,
+                "subtype_code": 9,
+                "type_code": 7,
+                "value": 11
+              },
+              {
+                "id": "nx:segment-index:row#1",
+                "ordinal": 1,
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 84,
+                "subtype_code": 1,
+                "type_code": 1,
+                "value": 48
+              },
+              {
+                "id": "nx:segment-index:row#2",
+                "ordinal": 2,
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 96,
+                "subtype_code": 0,
+                "type_code": 64,
+                "value": 94
+              },
+              {
+                "id": "nx:segment-index:row#3",
+                "ordinal": 3,
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 108,
+                "subtype_code": 19,
+                "type_code": 150,
+                "value": 0
+              }
+            ],
+            "segment_stream_links": [
+              {
+                "id": "nx:segment-stream-links:link#0",
+                "row": "nx:segment-index:row#2",
+                "slot": "type_code",
+                "source_offset": 136,
+                "stream_kind": "partition",
+                "stream_ordinal": 0,
+                "wrapper_byte_len": 8
+              }
+            ],
+            "unknowns": [
+              {
+                "id": "nx:container:parasolid#0"
+              }
+            ]
+          },
+          "version": 155
+        }
+      },
+      "source": {
+        "attributes": {
+          "deltas_streams": "0",
+          "directory_entries": "1",
+          "file_size": "249",
+          "footer_offset": "0",
+          "jpeg_preview_count": "0",
+          "parasolid_schema": "SCH_test",
+          "partition_streams": "1",
+          "plain_streams": "0"
+        },
+        "format": "nx"
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "container_only": false,
+      "format": "nx",
+      "geometry_transferred": false,
+      "losses": [
+        {
+          "category": "geometry",
+          "code": "geometry_not_transferred",
+          "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
+          "severity": "blocking"
+        }
+      ],
+      "notes": [
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+        "Parasolid schema: SCH_test"
+      ]
+    },
+    "source_fidelity": {
+      "annotations": {
+        "exactness": {
+          "nx:container:parasolid#0": {
+            "entity": "derived"
+          },
+          "nx:segment-body-lineage:status#0": {
+            "entity": "derived"
+          }
+        },
+        "provenance": {
+          "nx:container:parasolid#0": {
+            "offset": 144,
+            "stream": 0,
+            "tag": "partition"
+          },
+          "nx:segment-body-bindings:binding#0": {
+            "offset": 104,
+            "stream": 0,
+            "tag": "UG_PART_SEGMENT_BODY_BINDING"
+          },
+          "nx:segment-body-lineage:status#0": {
+            "offset": 104,
+            "stream": 0,
+            "tag": "SEGMENT_BODY_LINEAGE_STATUS"
+          },
+          "nx:segment-index:row#0": {
+            "offset": 72,
+            "stream": 0,
+            "tag": "UG_PART_SEGMENT_INDEX_ROW"
+          },
+          "nx:segment-index:row#1": {
+            "offset": 84,
+            "stream": 0,
+            "tag": "UG_PART_SEGMENT_INDEX_ROW"
+          },
+          "nx:segment-index:row#2": {
+            "offset": 96,
+            "stream": 0,
+            "tag": "UG_PART_SEGMENT_INDEX_ROW"
+          },
+          "nx:segment-index:row#3": {
+            "offset": 108,
+            "stream": 0,
+            "tag": "UG_PART_SEGMENT_INDEX_ROW"
+          },
+          "nx:segment-stream-links:link#0": {
+            "offset": 136,
+            "stream": 0,
+            "tag": "UG_PART_SEGMENT_STREAM_LINK"
+          }
+        },
+        "streams": [
+          "nx:container"
+        ]
+      },
+      "retained_records": [
+        {
+          "byte_len": 103,
+          "data": "UFMAACAocGFydGl0aW9uKSBTQ0hfdGVzdCBzZWdtZW50IGJvZHkgYmluZGluZyBwYXlsb2FkIHdpdGggbW9yZSB0aGFuIHNpeHR5LWZvdXIgaW5mbGF0ZWQgYnl0ZXMuLi4uLi4uLg==",
+          "id": "nx:container:parasolid#0",
+          "offset": 144,
+          "sha256": "c66887d28b2ef3effa29e40c6850b30211e38b71a0225efec0203889928e9f23",
+          "stream": "nx:container"
+        }
+      ],
+      "version": "3"
+    }
+  },
+  "inspect": {
+    "container_kind": "splmsstr",
+    "entries": [
+      {
+        "attributes": {
+          "file_offset": "72",
+          "region": "HEADER"
+        },
+        "compressed_size": 177,
+        "compression": "none",
+        "name": "/Root/UG_PART/UG_PART",
+        "role": "stream",
+        "uncompressed_size": 177
+      },
+      {
+        "attributes": {
+          "file_offset": "144",
+          "kind": "partition",
+          "records.body": "0",
+          "records.edge": "0",
+          "records.face": "0",
+          "records.fin": "0",
+          "records.live.body": "0",
+          "records.live.edge": "0",
+          "records.live.face": "0",
+          "records.live.fin": "0",
+          "records.live.loop": "0",
+          "records.live.region": "0",
+          "records.live.shell": "0",
+          "records.live.vertex": "0",
+          "records.loop": "0",
+          "records.region": "0",
+          "records.shell": "0",
+          "records.vertex": "0",
+          "schema": "SCH_test"
+        },
+        "compressed_size": 0,
+        "compression": "zlib",
+        "name": "parasolid#0",
+        "role": "parasolid-stream",
+        "uncompressed_size": 103
+      }
+    ],
+    "format": "nx",
+    "notes": [
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+      "Parasolid schema: SCH_test"
+    ]
+  }
+}

@@ -1389,7 +1389,7 @@ pub(crate) fn project(
             id: ids[index].clone(),
             ordinal: u64::try_from(index).expect("history source order fits u64"),
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies,
             source_properties: BTreeMap::new(),

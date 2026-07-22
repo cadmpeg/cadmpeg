@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{AttributeId, BodyId, CoedgeId, EdgeId, FaceId, VertexId};
+use crate::ids::{AttributeId, BodyId, CoedgeId, EdgeId, FaceId, LoopId, ShellId, VertexId};
 
 /// An entity which owns a source attribute.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -14,8 +14,12 @@ pub enum AttributeTarget {
     Document,
     /// Attribute is owned by a body.
     Body(BodyId),
+    /// Attribute is owned by a shell.
+    Shell(ShellId),
     /// Attribute is owned by a face.
     Face(FaceId),
+    /// Attribute is owned by a loop.
+    Loop(LoopId),
     /// Attribute is owned by a coedge.
     Coedge(CoedgeId),
     /// Attribute is owned by an edge.

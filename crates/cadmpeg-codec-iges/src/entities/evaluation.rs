@@ -251,7 +251,9 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
         CurveGeometry::Polyline { .. } | CurveGeometry::Transformed { .. } => {
             cadmpeg_ir::eval::curve_point(geometry, parameter)
         }
-        CurveGeometry::Composite { .. } | CurveGeometry::Unknown { .. } => None,
+        CurveGeometry::Composite { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Unknown { .. } => None,
     }
 }
 
@@ -359,7 +361,7 @@ pub(super) fn surface(geometry: &SurfaceGeometry, uv: Point2) -> Option<Point3> 
         SurfaceGeometry::Transformed { .. } => {
             cadmpeg_ir::eval::surface_point(geometry, uv.u, uv.v)
         }
-        SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => None,
     }
 }
 

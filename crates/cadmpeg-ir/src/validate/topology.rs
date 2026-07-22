@@ -1843,7 +1843,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         let mut seen = HashSet::new();
-        for body in &configuration.bodies {
+        for body in configuration.bodies.resolved().unwrap_or_default() {
             if !ids.bodies.contains(&body.0) {
                 ref_error(findings, &configuration.id.0, "configuration body", &body.0);
             }
@@ -2041,6 +2041,26 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             definition => definition,
         };
         match definition {
+            FeatureDefinition::ExtractBody { source } => body_selections.push(source),
+            FeatureDefinition::Block {
+                dimensions,
+                placement,
+            } => {
+                if dimensions.is_some_and(|dimensions| {
+                    dimensions
+                        .iter()
+                        .any(|dimension| !dimension.0.is_finite() || dimension.0 <= 0.0)
+                }) || placement.as_ref().is_some_and(|placement| {
+                    placement
+                        .rows
+                        .iter()
+                        .flatten()
+                        .any(|value| !value.is_finite())
+                        || placement.rows[3] != [0.0, 0.0, 0.0, 1.0]
+                }) {
+                    feature_geometry_error(findings, feature, "block geometry is invalid");
+                }
+            }
             FeatureDefinition::Primitive { solid, .. } => {
                 let positive = |value: Length| value.0.is_finite() && value.0 > 0.0;
                 let finite_angle = |value: crate::features::Angle| value.0.is_finite();
@@ -2260,6 +2280,32 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "fillet radius is invalid");
                 }
             }
+            FeatureDefinition::FaceBlend {
+                first_faces,
+                second_faces,
+                radius,
+            } => {
+                face_selections.push(first_faces);
+                face_selections.push(second_faces);
+                let valid = match radius {
+                    RadiusSpec::Unresolved { .. } => true,
+                    RadiusSpec::Constant { radius } => positive_feature_length(*radius),
+                    RadiusSpec::Variable { points } => {
+                        points.len() >= 2
+                            && points.iter().all(|point| {
+                                point.parameter.is_finite()
+                                    && (0.0..=1.0).contains(&point.parameter)
+                                    && positive_feature_length(point.radius)
+                            })
+                            && points
+                                .windows(2)
+                                .all(|pair| pair[0].parameter < pair[1].parameter)
+                    }
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "face-blend radius is invalid");
+                }
+            }
             FeatureDefinition::Chamfer { edges, spec, .. } => {
                 edge_selections.push(edges);
                 let valid = match spec {
@@ -2334,7 +2380,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             FeatureDefinition::OffsetSurface { faces, distance } => {
                 face_selections.push(faces);
-                if !distance.0.is_finite() {
+                if distance.is_some_and(|distance| !distance.0.is_finite()) {
                     feature_geometry_error(findings, feature, "surface offset is invalid");
                 }
             }
@@ -2364,7 +2410,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 faces, distance, ..
             } => {
                 face_selections.push(faces);
-                if !positive_feature_length(*distance) {
+                if distance.is_some_and(|distance| !positive_feature_length(distance)) {
                     feature_geometry_error(findings, feature, "surface extension is invalid");
                 }
             }
@@ -2534,6 +2580,19 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 body_selections.push(targets);
                 face_selections.push(tools);
             }
+            FeatureDefinition::SewBodies {
+                bodies,
+                gap_tolerance,
+            } => {
+                body_selections.push(bodies);
+                if gap_tolerance.is_some_and(|value| !value.0.is_finite() || value.0 < 0.0) {
+                    feature_geometry_error(findings, feature, "sew tolerance is invalid");
+                }
+            }
+            FeatureDefinition::TrimBodies { targets, tools, .. } => {
+                body_selections.push(targets);
+                body_selections.push(tools);
+            }
             FeatureDefinition::DeleteBody { bodies, .. } => {
                 body_selections.push(bodies);
             }
@@ -2580,6 +2639,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                     HoleKind::Counterbore { diameter, depth } => {
                         positive_feature_length(*diameter) && positive_feature_length(*depth)
+                    }
+                    HoleKind::Chamfer { diameter, angle } => {
+                        positive_feature_length(*diameter)
+                            && angle.0.is_finite()
+                            && angle.0 > 0.0
+                            && angle.0 < std::f64::consts::PI
                     }
                     HoleKind::CounterboreDrilled {
                         diameter,
@@ -2708,8 +2773,21 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "pattern geometry is invalid");
                 }
             }
-            FeatureDefinition::Sketch { sketch } => {
+            FeatureDefinition::Sketch { space, sketch } => {
                 if let Some(sketch) = sketch {
+                    match space {
+                        crate::features::SketchSpace::Unresolved => feature_geometry_error(
+                            findings,
+                            feature,
+                            "sketch with unresolved coordinate space owns planar sketch geometry",
+                        ),
+                        crate::features::SketchSpace::Spatial => feature_geometry_error(
+                            findings,
+                            feature,
+                            "spatial sketch owns planar sketch geometry",
+                        ),
+                        crate::features::SketchSpace::Planar => {}
+                    }
                     if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
                         ref_error(findings, &feature.id.0, "owned sketch", &sketch.0);
                     }
@@ -2782,7 +2860,11 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 paths.push(source);
                 face_selections.push(target_faces);
-                if direction.is_some_and(|value| !valid_feature_direction(value)) {
+                if matches!(
+                    direction,
+                    crate::features::CurveProjectionDirection::Vector(value)
+                        if !valid_feature_direction(*value)
+                ) {
                     feature_geometry_error(findings, feature, "projection direction is invalid");
                 }
             }
@@ -3247,6 +3329,11 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "datum-plane offset is invalid");
                 }
             }
+            FeatureDefinition::DatumPointUnresolved
+            | FeatureDefinition::DatumCoordinateSystemUnresolved
+            | FeatureDefinition::LoftUnresolved
+            | FeatureDefinition::FreeformSurfaceUnresolved
+            | FeatureDefinition::DraftUnresolved => {}
         }
         for profile in profiles {
             match profile {
@@ -3308,7 +3395,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     curves.iter().map(|id| id.0.as_str()),
                     &ids.curves,
                 ),
-                PathRef::Native(_) | PathRef::Sketch(_) => {}
+                PathRef::Unresolved | PathRef::Native(_) | PathRef::Sketch(_) => {}
             }
         }
         for extent in extents {

@@ -1,0 +1,174 @@
+{
+  "decode": {
+    "ir": {
+      "ir_version": "55",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "assembly_joints": [],
+        "attributes": [],
+        "bodies": [],
+        "coedges": [],
+        "components": [],
+        "configurations": [],
+        "curves": [],
+        "drawings": [],
+        "edges": [],
+        "faces": [],
+        "features": [],
+        "loops": [],
+        "occurrences": [],
+        "parameters": [],
+        "pcurves": [],
+        "pmi": [],
+        "points": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "product_occurrences": [],
+        "products": [],
+        "regions": [],
+        "semantic_annotations": [],
+        "shells": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "subds": [],
+        "surfaces": [],
+        "tessellations": [],
+        "vertices": [],
+        "view_presentations": []
+      },
+      "native": {
+        "nx": {
+          "arenas": {
+            "unknowns": [
+              {
+                "id": "nx:container:parasolid#0"
+              }
+            ]
+          },
+          "version": 1
+        }
+      },
+      "source": {
+        "attributes": {
+          "deltas.0.bytes_decoded": "22",
+          "deltas.0.full.LOOP": "1",
+          "deltas.0.grammar": "status_byte_framed_topology",
+          "deltas_streams": "1",
+          "directory_entries": "1",
+          "file_size": "176",
+          "footer_offset": "0",
+          "jpeg_preview_count": "0",
+          "parasolid_schema": "SCH_TEST_1_9999",
+          "partition_streams": "0",
+          "plain_streams": "0"
+        },
+        "format": "nx"
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "container_only": false,
+      "format": "nx",
+      "geometry_transferred": false,
+      "losses": [
+        {
+          "category": "geometry",
+          "code": "geometry_not_transferred",
+          "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
+          "severity": "blocking"
+        }
+      ],
+      "notes": [
+        "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+        "embedded streams: 0 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+        "Parasolid schema: SCH_TEST_1_9999"
+      ]
+    },
+    "source_fidelity": {
+      "annotations": {
+        "exactness": {
+          "nx:container:parasolid#0": {
+            "entity": "derived"
+          }
+        },
+        "provenance": {
+          "nx:container:parasolid#0": {
+            "offset": 72,
+            "stream": 0,
+            "tag": "deltas"
+          }
+        },
+        "streams": [
+          "nx:container"
+        ]
+      },
+      "retained_records": [
+        {
+          "byte_len": 103,
+          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAP/5wAAAAAAAgAAQEAAgEAAwEABAEAEQBlAAAACQABAQACAQ==",
+          "id": "nx:container:parasolid#0",
+          "offset": 72,
+          "sha256": "fc9c5511cfba0ea64f450672ef56d8aa7f2613578594c536ebc1acacb4f43de3",
+          "stream": "nx:container"
+        }
+      ],
+      "version": "3"
+    }
+  },
+  "inspect": {
+    "container_kind": "splmsstr",
+    "entries": [
+      {
+        "attributes": {
+          "file_offset": "72",
+          "region": "HEADER"
+        },
+        "compressed_size": 104,
+        "compression": "none",
+        "name": "/Root/UG_PART/UG_PART",
+        "role": "stream",
+        "uncompressed_size": 104
+      },
+      {
+        "attributes": {
+          "file_offset": "72",
+          "kind": "deltas",
+          "records.body": "0",
+          "records.delta.full.loop": "1",
+          "records.edge": "0",
+          "records.face": "0",
+          "records.fin": "0",
+          "records.loop": "1",
+          "records.region": "0",
+          "records.shell": "0",
+          "records.vertex": "0",
+          "schema": "SCH_TEST_1_9999"
+        },
+        "compressed_size": 0,
+        "compression": "zlib",
+        "name": "parasolid#0",
+        "role": "parasolid-stream",
+        "uncompressed_size": 103
+      }
+    ],
+    "format": "nx",
+    "notes": [
+      "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+      "embedded streams: 0 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+      "Parasolid schema: SCH_TEST_1_9999"
+    ]
+  }
+}

@@ -1599,7 +1599,7 @@ fn transfer_curve_expression_features(
             id: feature_id,
             ordinal,
             name: Some(format!("Curve Equation {}", record.entity_id)),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -6642,6 +6642,7 @@ fn revolution_boundary_pcurve(
         }
         SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => None,
     }
@@ -10898,7 +10899,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 id: feature_id,
                 ordinal: ir.model.features.len() as u64,
                 name: None,
-                suppressed: false,
+                suppressed: Some(false),
                 parent: None,
                 dependencies: Vec::new(),
                 source_properties: BTreeMap::new(),
@@ -10907,6 +10908,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 source_content: Vec::new(),
                 outputs: Vec::new(),
                 definition: IrFeatureDefinition::Sketch {
+                    space: cadmpeg_ir::features::SketchSpace::default(),
                     sketch: Some(sketch_id.clone()),
                 },
                 native_ref: Some(sketch_native_ref(&sketch_id)),
@@ -10966,7 +10968,9 @@ fn surface_kind_for_geometry(geometry: &SurfaceGeometry) -> Option<crate::surfac
         }
         SurfaceGeometry::Nurbs(_) => Some(crate::surface::SurfaceKind::Spline),
         SurfaceGeometry::Transformed { basis, .. } => surface_kind_for_geometry(basis),
-        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
     }
 }
 
@@ -13178,7 +13182,10 @@ fn schema_feature_definition(
                     .any(|candidate| candidate.id == sketch)
                     .then_some(sketch)
             });
-        return IrFeatureDefinition::Sketch { sketch };
+        return IrFeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::default(),
+            sketch,
+        };
     }
     if schema_class == 911 {
         let unresolved_form = stepped_hole_form(
@@ -13263,6 +13270,7 @@ fn schema_feature_definition(
                     countersink_angle: None,
                 }
             },
+            exit_kind: None,
             diameter: diameter
                 .or_else(|| stepped_dimensions.map(|(diameter, _, _)| Length(diameter))),
             extent,
@@ -13295,7 +13303,7 @@ fn schema_feature_definition(
             edges: feature_edge_selection(scan, ir, feature_id)
                 .unwrap_or(EdgeSelection::Unresolved),
             spec: ChamferSpec::Unresolved { form: None },
-            flip_direction: false,
+            flip_direction: Some(false),
         };
     }
     if schema_class == 927 {
@@ -13543,7 +13551,7 @@ fn feature_allows_additive_linear_extrusion(scan: &ContainerScan, feature_id: u3
 
 fn preceding_features_establish_body(ir: &CadIr) -> bool {
     ir.model.features.iter().any(|feature| {
-        !feature.suppressed
+        feature.suppressed != Some(true)
             && (!feature.outputs.is_empty()
                 || matches!(
                     feature.definition,
@@ -23428,7 +23436,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             id,
             ordinal: ir.model.features.len() as u64,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -23582,7 +23590,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             id,
             ordinal: (operation_ordinal_base + operation_index) as u64,
             name,
-            suppressed: false,
+            suppressed: Some(false),
             parent,
             dependencies,
             source_properties,
@@ -23673,7 +23681,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             name: Some(
                 reference_name.map_or_else(|| format!("{kind} id {feature_id}"), str::to_string),
             ),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: feature_dependencies(scan, &ir, feature_id),
             source_properties,

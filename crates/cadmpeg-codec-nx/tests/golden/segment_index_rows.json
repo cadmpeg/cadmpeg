@@ -1,0 +1,153 @@
+{
+  "decode": {
+    "ir": {
+      "ir_version": "55",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "assembly_joints": [],
+        "attributes": [],
+        "bodies": [],
+        "coedges": [],
+        "components": [],
+        "configurations": [],
+        "curves": [],
+        "drawings": [],
+        "edges": [],
+        "faces": [],
+        "features": [],
+        "loops": [],
+        "occurrences": [],
+        "parameters": [],
+        "pcurves": [],
+        "pmi": [],
+        "points": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "product_occurrences": [],
+        "products": [],
+        "regions": [],
+        "semantic_annotations": [],
+        "shells": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "subds": [],
+        "surfaces": [],
+        "tessellations": [],
+        "vertices": [],
+        "view_presentations": []
+      },
+      "native": {
+        "nx": {
+          "arenas": {
+            "segment_index_rows": [
+              {
+                "id": "nx:segment-index:row#0",
+                "ordinal": 0,
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 72,
+                "subtype_code": 9,
+                "type_code": 7,
+                "value": 11
+              },
+              {
+                "id": "nx:segment-index:row#1",
+                "ordinal": 1,
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 84,
+                "subtype_code": 1,
+                "type_code": 1,
+                "value": 28
+              }
+            ],
+            "unknowns": []
+          },
+          "version": 155
+        }
+      },
+      "source": {
+        "attributes": {
+          "deltas_streams": "0",
+          "directory_entries": "1",
+          "file_size": "100",
+          "footer_offset": "0",
+          "jpeg_preview_count": "0",
+          "partition_streams": "0",
+          "plain_streams": "0"
+        },
+        "format": "nx"
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "container_only": false,
+      "format": "nx",
+      "geometry_transferred": false,
+      "losses": [
+        {
+          "category": "geometry",
+          "code": "geometry_not_transferred",
+          "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
+          "severity": "blocking"
+        }
+      ],
+      "notes": [
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+        "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
+      ]
+    },
+    "source_fidelity": {
+      "annotations": {
+        "provenance": {
+          "nx:segment-index:row#0": {
+            "offset": 72,
+            "stream": 0,
+            "tag": "UG_PART_SEGMENT_INDEX_ROW"
+          },
+          "nx:segment-index:row#1": {
+            "offset": 84,
+            "stream": 0,
+            "tag": "UG_PART_SEGMENT_INDEX_ROW"
+          }
+        },
+        "streams": [
+          "nx:container"
+        ]
+      },
+      "version": "3"
+    }
+  },
+  "inspect": {
+    "container_kind": "splmsstr",
+    "entries": [
+      {
+        "attributes": {
+          "file_offset": "72",
+          "region": "HEADER"
+        },
+        "compressed_size": 28,
+        "compression": "none",
+        "name": "/Root/UG_PART/UG_PART",
+        "role": "stream",
+        "uncompressed_size": 28
+      }
+    ],
+    "format": "nx",
+    "notes": [
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+      "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
+    ]
+  }
+}

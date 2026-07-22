@@ -222,6 +222,7 @@ dependencies = [
  "flate2",
  "roxmltree",
  "serde",
+ "serde_json",
  "sha2",
 ]
 

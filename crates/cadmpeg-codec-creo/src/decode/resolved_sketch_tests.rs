@@ -1502,7 +1502,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         id: IrFeatureId("creo:model:feature#1".to_string()),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
@@ -1518,7 +1518,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         IrFeatureDefinition::Chamfer {
             edges: EdgeSelection::Unresolved,
             spec: ChamferSpec::Unresolved { form: None },
-            flip_direction: false,
+            flip_direction: Some(false),
         },
         Vec::new(),
     ));
@@ -1549,9 +1549,9 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         Vec::new(),
     );
     assert!(preceding_features_establish_body(&ir));
-    ir.model.features[0].suppressed = true;
+    ir.model.features[0].suppressed = Some(true);
     assert!(!preceding_features_establish_body(&ir));
-    ir.model.features[0].suppressed = false;
+    ir.model.features[0].suppressed = Some(false);
     let IrFeatureDefinition::Extrude { op, .. } = &mut ir.model.features[0].definition else {
         unreachable!();
     };

@@ -782,7 +782,7 @@ impl<'a> Builder<'a> {
         }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
         // a face override whose face was skipped, or a body whose faces were all
-        // skipped (hidden bodies or faces on unknown surfaces).
+        // skipped (hidden bodies or faces without an explicit STEP surface).
         let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
         let mut unstyled_targets = face_colors
             .keys()

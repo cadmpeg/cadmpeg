@@ -267,6 +267,7 @@ fn offset_analytic(
         }
         SurfaceGeometry::Cone { .. }
         | SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => return None,
@@ -1152,6 +1153,7 @@ pub(super) fn project(
             SurfaceGeometry::Cone { radius, .. } => *radius > 0.0,
             SurfaceGeometry::Plane { .. } => true,
             SurfaceGeometry::Nurbs(_)
+            | SurfaceGeometry::Procedural { .. }
             | SurfaceGeometry::Polygonal { .. }
             | SurfaceGeometry::Transformed { .. }
             | SurfaceGeometry::Unknown { .. } => false,

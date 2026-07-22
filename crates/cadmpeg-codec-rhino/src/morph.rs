@@ -608,7 +608,7 @@ pub(crate) fn project(
         id: FeatureId(format!("rhino:morph:feature#{key}")),
         ordinal: u64::try_from(morph.source_range.start).expect("source offset fits u64"),
         name,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),

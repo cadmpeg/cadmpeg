@@ -4,7 +4,7 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::eval::{curve_point, pcurve_uv, surface_point};
+use crate::eval::{curve_point, pcurve_uv, surface_point, ModelSurfaceEvaluator};
 use crate::geometry::PcurveGeometry;
 use crate::math::Point3;
 
@@ -130,6 +130,16 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .iter()
         .map(|curve| (curve.id.0.as_str(), &curve.geometry))
         .collect::<HashMap<_, _>>();
+    let cache_tolerances = ir
+        .model
+        .procedural_curves
+        .iter()
+        .filter_map(|curve| {
+            curve
+                .cache_fit_tolerance
+                .map(|tolerance| (curve.curve.0.as_str(), tolerance))
+        })
+        .collect::<HashMap<_, _>>();
     let vertices = vertex_positions(ir);
     for edge in &ir.model.edges {
         let Some([start_t, end_t]) = edge.param_range else {
@@ -149,7 +159,12 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         else {
             continue;
         };
-        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol]);
+        let cache_tolerance = edge
+            .curve
+            .as_ref()
+            .and_then(|curve| cache_tolerances.get(curve.0.as_str()))
+            .copied();
+        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol, cache_tolerance]);
         let mismatch = distance(at_start, *start).max(distance(at_end, *end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
@@ -169,12 +184,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
 /// pcurve's parameter direction is independent of the edge sense, so either
 /// endpoint assignment satisfies the check.
 pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (surface.id.0.as_str(), &surface.geometry))
-        .collect::<HashMap<_, _>>();
+    let surface_evaluator = ModelSurfaceEvaluator::new(ir);
     let pcurves = ir
         .model
         .pcurves
@@ -217,9 +227,6 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         else {
             continue;
         };
-        let Some(geometry) = surfaces.get(face.surface.0.as_str()) else {
-            continue;
-        };
         let Some(edge) = edges.get(coedge.edge.0.as_str()) else {
             continue;
         };
@@ -242,12 +249,22 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             continue;
         };
         let (Some(p0), Some(p1)) = (
-            surface_point(geometry, uv0.u, uv0.v),
-            surface_point(geometry, uv1.u, uv1.v),
+            surface_evaluator.point(&face.surface, uv0.u, uv0.v),
+            surface_evaluator.point(&face.surface, uv1.u, uv1.v),
         ) else {
             continue;
         };
-        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol, face.tolerance]);
+        let bound = allowance(&[
+            edge.tolerance,
+            *start_tol,
+            *end_tol,
+            face.tolerance,
+            first
+                .fit_tolerance
+                .into_iter()
+                .chain(last.fit_tolerance)
+                .reduce(f64::max),
+        ]);
         let forward = distance(p0, *start).max(distance(p1, *end));
         let reversed = distance(p0, *end).max(distance(p1, *start));
         let mismatch = forward.min(reversed);

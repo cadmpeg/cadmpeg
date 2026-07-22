@@ -42,7 +42,7 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
         id: FeatureId("synthetic:test:feature#spatial-path".into()),
         ordinal: 0,
         name: Some("Spatial path".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::default(),

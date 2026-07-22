@@ -6,7 +6,9 @@ extracts zlib-compressed Parasolid neutral-binary streams from the canonical
 part payload, and decodes supported geometry and topology. It does not read
 Creo files, which also use the `.prt` extension.
 
-Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
+Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+for single-body, `RMFastLoad`-selected, and terminal-lineage-resolved body images;
+L2 for unresolved multi-partition history.
 
 ```sh
 cargo add cadmpeg-codec-nx cadmpeg-ir
@@ -54,17 +56,19 @@ trimmed curves. The decoder builds body, region, shell, face, loop, coedge,
 edge, and vertex topology when its fixed-record references resolve. Geometry
 that cannot be attached remains available through derived free topology.
 
-Partition and deltas streams are scanned together. The decoder does not apply
-the tombstone relation that selects the surviving face set, so deleted or
-superseded carriers can remain in the result. Multiple partitions are emitted
-without reconstructing their feature-history Boolean composition. Assembly
-files can contain only external child-part references and therefore produce no
-inline geometry.
+Partition and adjacent equal-schema deltas streams are scanned together.
+Exactly keyed full records and tombstones use the last event for each key.
+Unmatched tombstones remain unresolved. Segment body aliases, primary-body
+writers, and Boolean tool operands select terminal partition images when the
+complete body lineage is unambiguous. Assembly files can contain only external
+child-part references and therefore produce no inline geometry.
 
-Procedural blend surfaces, NX design history, assembly occurrence placement,
-materials, appearances, attributes, tessellation, and native `.prt` writing
-are not supported. See the [format support matrix][support] for current
-coverage and the [format notes][spec] for byte semantics.
+Ordered feature-operation records, body dependencies, Boolean operations,
+sketch record lanes, arrangements, part attributes, and numeric expressions
+transfer. Complete design history, assembly occurrence placement, materials,
+appearances, entity-owned attributes, tessellation, and native `.prt` writing
+are not supported. See the [format support matrix][support] for current coverage
+and the [format notes][spec] for byte semantics.
 
 The crate also exposes lower-level container, stream, geometry, NURBS, and
 topology modules for tools that need inspection or partial decoding. Most

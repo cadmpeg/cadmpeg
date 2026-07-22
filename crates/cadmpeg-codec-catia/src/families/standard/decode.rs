@@ -2692,6 +2692,7 @@ pub(crate) fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool
         }
         SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => return false,
     };
@@ -3220,6 +3221,7 @@ pub(crate) fn circle_axis_from_carrier(
         }
         SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => None,
     }

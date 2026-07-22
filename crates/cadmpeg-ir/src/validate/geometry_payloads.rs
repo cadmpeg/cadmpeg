@@ -414,7 +414,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             // An unknown surface carries no numeric geometry to bounds-check; its
             // record link is checked in `check_references`. A face resting on it
             // is legal (topology known, shape opaque).
-            SurfaceGeometry::Unknown { .. } => {}
+            SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {}
         }
     }
     for procedural in &ir.model.procedural_surfaces {
@@ -1651,6 +1651,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 check_knots(findings, &c.id.0, &n.knots, "");
             }
+            CurveGeometry::Procedural { .. } => {}
             CurveGeometry::Polyline {
                 points,
                 parameters,
@@ -2375,7 +2376,7 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
         SurfaceGeometry::Transformed { basis, transform } => {
             valid_affine_transform(*transform) && valid_surface_basis(basis)
         }
-        SurfaceGeometry::Unknown { .. } => true,
+        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => true,
     }
 }
 
@@ -2421,7 +2422,7 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
             valid_affine_transform(*transform) && valid_curve_basis(basis)
         }
         CurveGeometry::Composite { .. } => true,
-        CurveGeometry::Unknown { .. } => true,
+        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => true,
     }
 }
 

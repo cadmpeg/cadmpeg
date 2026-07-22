@@ -41,6 +41,62 @@ impl<S: Into<String>> From<S> for FeatureId {
 #[serde(transparent)]
 pub struct ConfigurationId(pub String);
 
+/// Resolution state of one configuration's complete body membership.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ConfigurationBodies {
+    /// Complete ordered body membership.
+    Resolved(Vec<BodyId>),
+    /// Source configuration exists but its body membership is not established.
+    #[default]
+    Unresolved,
+}
+
+impl ConfigurationBodies {
+    /// Return the complete body membership when resolved.
+    pub fn resolved(&self) -> Option<&[BodyId]> {
+        match self {
+            Self::Resolved(bodies) => Some(bodies),
+            Self::Unresolved => None,
+        }
+    }
+
+    /// Whether body membership remains unresolved.
+    pub fn is_unresolved(&self) -> bool {
+        matches!(self, Self::Unresolved)
+    }
+
+    /// Iterate over resolved membership; unresolved membership yields no values.
+    pub fn iter(&self) -> std::slice::Iter<'_, BodyId> {
+        self.resolved().unwrap_or_default().iter()
+    }
+
+    /// Number of resolved members; zero when membership is unresolved.
+    pub fn len(&self) -> usize {
+        self.resolved().map_or(0, <[BodyId]>::len)
+    }
+
+    /// Whether resolved membership is empty; false when membership is unresolved.
+    pub fn is_empty(&self) -> bool {
+        self.resolved().is_some_and(<[BodyId]>::is_empty)
+    }
+}
+
+impl PartialEq<Vec<BodyId>> for ConfigurationBodies {
+    fn eq(&self, other: &Vec<BodyId>) -> bool {
+        self.resolved() == Some(other.as_slice())
+    }
+}
+
+impl<'a> IntoIterator for &'a ConfigurationBodies {
+    type Item = &'a BodyId;
+    type IntoIter = std::slice::Iter<'a, BodyId>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 /// A named parametric model variant.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignConfiguration {
@@ -63,9 +119,9 @@ pub struct DesignConfiguration {
     /// Configuration-local named values not otherwise represented.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
-    /// Bodies present when this configuration is active.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bodies: Vec<BodyId>,
+    /// Complete bodies present when this configuration is active, or unresolved membership.
+    #[serde(default, skip_serializing_if = "ConfigurationBodies::is_unresolved")]
+    pub bodies: ConfigurationBodies,
     /// Evaluated parameter state when this configuration is active.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parameter_values: BTreeMap<ParameterId, ParameterValue>,
@@ -80,9 +136,9 @@ pub struct DesignConfiguration {
 /// Configuration-local evaluation state for one construction feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ConfigurationFeatureState {
-    /// Whether evaluation of this feature is disabled in the configuration.
-    #[serde(default)]
-    pub suppressed: bool,
+    /// Whether evaluation of this feature is disabled in the configuration, when resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suppressed: Option<bool>,
     /// Earlier features consumed during regeneration in source operand order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<FeatureId>,
@@ -105,7 +161,7 @@ pub struct ParameterId(pub String);
 pub struct DesignParameter {
     /// Globally unique parameter id.
     pub id: ParameterId,
-    /// Feature that consumes this parameter.
+    /// Feature that owns or defines this parameter.
     pub owner: FeatureId,
     /// Position among parameters owned by the feature.
     #[serde(default)]
@@ -218,9 +274,9 @@ pub struct Feature {
     /// Source display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Whether evaluation of this feature is disabled.
-    #[serde(default)]
-    pub suppressed: bool,
+    /// Whether evaluation of this feature is disabled, when established.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suppressed: Option<bool>,
     /// Containing or logically preceding feature, when represented by the source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<FeatureId>,
@@ -255,7 +311,8 @@ pub struct Feature {
 pub enum FeatureSourceContent {
     /// Literal text between child records.
     Text(String),
-    /// Dimension or equation parameter at this position.
+    /// Dimension or equation parameter referenced at this position. The same
+    /// parameter may occur more than once and may be owned by another feature.
     Parameter(ParameterId),
     /// Nested feature record at this position.
     Feature(FeatureId),
@@ -323,6 +380,8 @@ pub enum FeatureDefinition {
         /// Point position in model space.
         position: Point3,
     },
+    /// Constructed reference-point family whose model-space position is unresolved.
+    DatumPointUnresolved,
     /// Standalone model vertex constructed at one point.
     PointGeometry {
         /// Vertex position in the feature's local construction frame.
@@ -404,6 +463,17 @@ pub enum FeatureDefinition {
         /// Unit z-axis.
         z_axis: Vector3,
     },
+    /// Constructed coordinate-system family whose model-space frame is unresolved.
+    DatumCoordinateSystemUnresolved,
+    /// Rectangular solid primitive constructed from three local dimensions.
+    Block {
+        /// Ordered local x, y, and z dimensions, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dimensions: Option<[Length; 3]>,
+        /// Local-to-model placement; absent until the native frame is resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        placement: Option<crate::transform::Transform>,
+    },
     /// Parametric model-space curve defined by coordinate expressions.
     EquationCurve {
         /// Independent parameter symbol used by the coordinate expressions.
@@ -425,12 +495,12 @@ pub enum FeatureDefinition {
         source: PathRef,
         /// Faces receiving the projected curve.
         target_faces: FaceSelection,
-        /// Explicit projection direction; absent for target-normal projection.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<Vector3>,
-        /// Whether projection proceeds in both directions.
+        /// Direction law used to project the source path.
         #[serde(default)]
-        bidirectional: bool,
+        direction: CurveProjectionDirection,
+        /// Whether projection proceeds in both directions, when resolved.
+        #[serde(default = "default_projected_curve_bidirectional")]
+        bidirectional: Option<bool>,
     },
     /// Shapes projected along a direction onto one support surface.
     ProjectOnSurface {
@@ -516,6 +586,9 @@ pub enum FeatureDefinition {
     },
     /// Solved sketch node in the construction history.
     Sketch {
+        /// Coordinate space containing the sketch geometry.
+        #[serde(default)]
+        space: SketchSpace,
         /// Neutral sketch geometry owned by this history node, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sketch: Option<crate::sketches::SketchId>,
@@ -545,6 +618,11 @@ pub enum FeatureDefinition {
     ///
     /// The feature's `outputs` identify the retained bodies when geometry is present.
     StoredGeometry,
+    /// Body geometry copied from an existing source body.
+    ExtractBody {
+        /// Bodies supplying the copied geometry.
+        source: BodySelection,
+    },
     /// Geometry copied from an earlier feature without an additional modeling operation.
     DerivedGeometry {
         /// Feature supplying the copied geometry.
@@ -667,6 +745,10 @@ pub enum FeatureDefinition {
         /// Binding and derived-shape construction semantics.
         construction: BinderConstruction,
     },
+    /// Loft-family skin whose section and result semantics are unresolved.
+    LoftUnresolved,
+    /// Freeform surface construction whose control geometry is unresolved.
+    FreeformSurfaceUnresolved,
     /// Loft through an ordered sequence of section profiles.
     Loft {
         /// Ordered section profiles.
@@ -709,15 +791,24 @@ pub enum FeatureDefinition {
         /// Fillet radius assignment along the edges.
         radius: RadiusSpec,
     },
+    /// Blend constructed between two sets of faces.
+    FaceBlend {
+        /// First support-face set.
+        first_faces: FaceSelection,
+        /// Second support-face set.
+        second_faces: FaceSelection,
+        /// Blend radius assignment along the face intersection.
+        radius: RadiusSpec,
+    },
     /// Edge chamfer.
     Chamfer {
         /// Edges the chamfer is applied to.
         edges: EdgeSelection,
         /// Dimensional definition of the chamfer.
         spec: ChamferSpec,
-        /// Whether the dimensional reference side is reversed.
-        #[serde(default)]
-        flip_direction: bool,
+        /// Whether the dimensional reference side is reversed, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        flip_direction: Option<bool>,
     },
     /// Thin-wall shell operation.
     Shell {
@@ -822,8 +913,9 @@ pub enum FeatureDefinition {
     OffsetSurface {
         /// Faces supplying the source surface geometry.
         faces: FaceSelection,
-        /// Signed normal offset in canonical millimeters.
-        distance: Length,
+        /// Signed normal offset in canonical millimeters, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance: Option<Length>,
     },
     /// Joins selected surface bodies along coincident or near-coincident boundaries.
     KnitSurface {
@@ -836,6 +928,14 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         create_solid: Option<bool>,
         /// Maximum boundary gap accepted by the operation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        gap_tolerance: Option<Length>,
+    },
+    /// Joins ordered sheet or solid bodies along coincident boundaries.
+    SewBodies {
+        /// Bodies participating in the sew operation.
+        bodies: BodySelection,
+        /// Maximum boundary gap accepted by the operation, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         gap_tolerance: Option<Length>,
     },
@@ -867,8 +967,9 @@ pub enum FeatureDefinition {
     ExtendSurface {
         /// Surface faces whose boundaries are extended.
         faces: FaceSelection,
-        /// Positive extension distance in canonical millimeters.
-        distance: Length,
+        /// Positive extension distance in canonical millimeters, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance: Option<Length>,
         /// Geometric continuation law.
         method: SurfaceExtension,
     },
@@ -897,6 +998,8 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         outward: Option<bool>,
     },
+    /// Draft family whose construction operands and angle remain unresolved.
+    DraftUnresolved,
     /// Boolean operation between existing bodies.
     Combine {
         /// Body modified by the operation.
@@ -914,6 +1017,15 @@ pub enum FeatureDefinition {
         tools: FaceSelection,
         /// Whether the side opposite the default tool orientation is removed.
         reverse: bool,
+    },
+    /// Removes one side of target bodies using ordered sheet or solid bodies.
+    TrimBodies {
+        /// Bodies modified by the operation.
+        targets: BodySelection,
+        /// Sheet or solid bodies defining the trimming boundary.
+        tools: BodySelection,
+        /// Side retained by the trim.
+        keep: BodyTrimSide,
     },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {
@@ -1010,6 +1122,9 @@ pub enum FeatureDefinition {
         placements: Vec<HolePlacement>,
         /// Structural drilling, entry-treatment, and threading form.
         kind: HoleKind,
+        /// Exit-shape family, when the far-side treatment resolves independently.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exit_kind: Option<HoleKind>,
         /// Hole diameter, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         diameter: Option<Length>,
@@ -1116,6 +1231,11 @@ pub enum FuzzyTolerance {
 
 const fn default_true() -> bool {
     true
+}
+
+#[allow(clippy::unnecessary_wraps)]
+const fn default_projected_curve_bidirectional() -> Option<bool> {
+    Some(false)
 }
 
 /// Geometric offset construction used by a thin-wall shell operation.
@@ -1434,6 +1554,31 @@ pub enum PrincipalPlane {
     Right,
 }
 
+/// Coordinate space of a sketch history node.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchSpace {
+    /// Source identifies a sketch but does not establish planar or spatial coordinates.
+    Unresolved,
+    /// Geometry lies on one plane and may resolve into the planar sketch arena.
+    #[default]
+    Planar,
+    /// Geometry is spatial and cannot resolve into the planar sketch arena.
+    Spatial,
+}
+
+/// Side retained by a body-trim operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BodyTrimSide {
+    /// The source records establish a trim without assigning its retained side.
+    Unresolved,
+    /// Retain the side selected by the tool orientation.
+    Forward,
+    /// Retain the side opposite the tool orientation.
+    Reverse,
+}
+
 /// Selection interpretation for a delete/keep-body operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -1474,6 +1619,8 @@ pub enum SurfaceContinuity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TrimRegion {
+    /// Retained region exists semantically but is not resolved.
+    Unresolved,
     /// Retain the region enclosed by the trimming path.
     Inside,
     /// Retain the region outside the trimming path.
@@ -1484,6 +1631,8 @@ pub enum TrimRegion {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SurfaceExtension {
+    /// Continuation law exists semantically but is not resolved.
+    Unresolved,
     /// Continue the source surface parameterization.
     Natural,
     /// Extend boundary tangents as ruled linear strips.
@@ -1753,7 +1902,7 @@ pub struct AxisAngle {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Extent {
-    /// Native extent is present structurally but its termination is unresolved.
+    /// Source feature family is known but its termination is unresolved.
     Unresolved,
     /// Fixed depth or angle in one direction.
     Blind {
@@ -1880,7 +2029,33 @@ pub enum HelixConstructionStyle {
     Corrected,
 }
 
-/// Result topology retained by a projection-on-surface operation.
+/// Direction law for a projected-curve operation.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum CurveProjectionDirection {
+    /// Project every source point along one model-space vector.
+    Vector(Vector3),
+    /// Projection state without one explicit vector.
+    State(CurveProjectionDirectionState),
+}
+
+impl Default for CurveProjectionDirection {
+    fn default() -> Self {
+        Self::State(CurveProjectionDirectionState::TargetNormal)
+    }
+}
+
+/// Direction state for a projected curve without one explicit vector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CurveProjectionDirectionState {
+    /// Projection direction exists semantically but is not resolved.
+    Unresolved,
+    /// Project independently along each target face's normal.
+    TargetNormal,
+}
+
+/// Result family produced by projection onto a support surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SurfaceProjectionMode {
@@ -2190,6 +2365,8 @@ pub struct GeneratedCurveRef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum PathRef {
+    /// Path exists semantically but its geometry is not resolved.
+    Unresolved,
     /// Opaque reference into a native path record.
     Native(String),
     /// Ordered geometry from a neutral sketch.
@@ -2200,7 +2377,7 @@ pub enum PathRef {
     Curves(Vec<CurveId>),
 }
 
-/// Radius assignment along filleted edges.
+/// Radius assignment along an edge fillet or face blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RadiusSpec {
@@ -2210,12 +2387,12 @@ pub enum RadiusSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         form: Option<RadiusForm>,
     },
-    /// Same radius along the whole edge chain.
+    /// Same radius along the complete blend path.
     Constant {
         /// The fillet radius.
         radius: Length,
     },
-    /// Radius varying along the edge chain per explicit control points.
+    /// Radius varying along the blend path per explicit control points.
     Variable {
         /// Radius samples along the edge chain, in chain-parameter order.
         points: Vec<VariableRadius>,
@@ -2235,7 +2412,7 @@ pub enum RadiusForm {
 /// Radius at a normalized position along a filleted edge chain.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VariableRadius {
-    /// Position in `[0, 1]` along the edge chain.
+    /// Position in `[0, 1]` along the blend path.
     pub parameter: f64,
     /// Fillet radius at this position.
     pub radius: Length,
@@ -2319,6 +2496,13 @@ pub enum HoleKind {
         diameter: Length,
         /// Counterbore depth.
         depth: Length,
+    },
+    /// Hole with a beveled entry terminating at a wider circular boundary.
+    Chamfer {
+        /// Diameter at the outer edge of the bevel.
+        diameter: Length,
+        /// Included angle of the conical bevel.
+        angle: Angle,
     },
     /// Counterbored hole terminating in a conical drill point.
     CounterboreDrilled {
@@ -2449,6 +2633,8 @@ pub enum HoleThreadDepth {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HoleForm {
+    /// Beveled entry whose diameter and angle may be resolved independently.
+    Chamfer,
     /// Wider, flat-bottomed entry.
     Counterbore,
     /// Conical entry followed by a cylindrical recess.

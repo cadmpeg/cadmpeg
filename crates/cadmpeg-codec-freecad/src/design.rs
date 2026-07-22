@@ -132,6 +132,7 @@ pub(crate) fn transfer(
             ir.model.sketch_constraints.extend(decoded.constraints);
             ir.model.parameters.extend(decoded.parameters);
             FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id),
             }
         } else if is_stored_geometry_feature(&object.type_name) {
@@ -394,7 +395,7 @@ pub(crate) fn transfer(
             id,
             ordinal: object.order as u64,
             name: Some(object.name.clone()),
-            suppressed: bool_property(&owned, "Suppressed").unwrap_or(false),
+            suppressed: bool_property(&owned, "Suppressed"),
             parent: parent_by_member.get(object.id.as_str()).cloned(),
             dependencies,
             source_properties: feature_state(&owned),
@@ -2642,7 +2643,7 @@ fn chamfer_definition(
     Some(FeatureDefinition::Chamfer {
         edges,
         spec,
-        flip_direction: bool_property(properties, "FlipDirection").unwrap_or(false),
+        flip_direction: Some(bool_property(properties, "FlipDirection").unwrap_or(false)),
     })
 }
 
@@ -3424,6 +3425,7 @@ fn hole_definition(
         direction,
         placements: Vec::new(),
         kind,
+        exit_kind: None,
         diameter: Some(Length(diameter)),
         extent: Some(extent),
         bottom: Some(bottom),

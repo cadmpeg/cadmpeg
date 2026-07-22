@@ -172,7 +172,7 @@ mod tests {
             id: feature_id.clone(),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -180,7 +180,10 @@ mod tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch { sketch: None },
+            definition: FeatureDefinition::Sketch {
+                space: crate::features::SketchSpace::Planar,
+                sketch: None,
+            },
             native_ref: None,
         });
         ir.model.sketches.push(Sketch {
@@ -203,15 +206,16 @@ mod tests {
             name: "Default".into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Vec::new(),
+            bodies: crate::features::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id,
                 ConfigurationFeatureState {
-                    suppressed: false,
+                    suppressed: Some(false),
                     dependencies: Vec::new(),
                     outputs: Vec::new(),
                     definition: FeatureDefinition::Sketch {
+                        space: crate::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     },
                 },

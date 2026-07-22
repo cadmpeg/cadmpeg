@@ -77,9 +77,10 @@ pub use codec::{
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION, PREVIOUS_IR_VERSION};
 pub use features::{
-    BodyRetentionMode, BodySelection, ConfigurationId, DesignConfiguration, DesignParameter,
-    FaceMotion, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterPmi, ParameterValue,
-    PmiDimensionSubtype, ScaleCenter, ScaleFactors,
+    BodyRetentionMode, BodySelection, ConfigurationBodies, ConfigurationFeatureState,
+    ConfigurationId, DesignConfiguration, DesignParameter, FaceMotion, Feature, FeatureDefinition,
+    FeatureId, ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype, ScaleCenter,
+    ScaleFactors, SketchSpace,
 };
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 pub use pmi::{

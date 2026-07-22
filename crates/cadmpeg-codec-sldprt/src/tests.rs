@@ -2083,7 +2083,7 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         id: FeatureId("synthetic:test:feature#extrude".into()),
         ordinal: 0,
         name: Some("Extrude".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -2253,7 +2253,7 @@ fn encoder_writes_source_less_line_sketches() {
         id: sketch_feature_id.clone(),
         ordinal: 0,
         name: Some("Profile".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -2262,6 +2262,7 @@ fn encoder_writes_source_less_line_sketches() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: None,
@@ -2328,7 +2329,7 @@ fn encoder_writes_source_less_line_sketches() {
             id: FeatureId(format!("synthetic:test:feature#profile-op-{index}")),
             ordinal: index as u64 + 2,
             name: Some(format!("Profile op {index}")),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -2344,7 +2345,7 @@ fn encoder_writes_source_less_line_sketches() {
         id: FeatureId("synthetic:test:feature#extrude".into()),
         ordinal: 1,
         name: Some("Boss".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: Some(sketch_feature_id),
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -2477,6 +2478,7 @@ fn encoder_writes_source_less_line_sketches() {
     assert!(decoded.ir.model.features.iter().any(|feature| matches!(
         feature.definition,
         FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(_),
             ..
         }
@@ -2588,7 +2590,7 @@ fn encoder_writes_source_less_spatial_line_sketches() {
         id: FeatureId("synthetic:test:feature#spatial-path".into()),
         ordinal: 0,
         name: Some("Spatial path".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -2890,7 +2892,7 @@ fn encoder_writes_source_less_curved_sketches() {
         id: feature_id.clone(),
         ordinal: 0,
         name: Some("Curves".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -2899,6 +2901,7 @@ fn encoder_writes_source_less_curved_sketches() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: None,
@@ -3506,7 +3509,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             id: FeatureId(format!("synthetic:test:feature#named-{ordinal}")),
             ordinal: ordinal as u64,
             name: Some(name.into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -3515,6 +3518,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id),
             },
             native_ref: None,
@@ -3544,6 +3548,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } => Some(sketch),
@@ -3576,7 +3581,7 @@ fn encoder_writes_source_less_native_features() {
         id: seed_id.clone(),
         ordinal: 0,
         name: Some("Boss".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -3607,7 +3612,7 @@ fn encoder_writes_source_less_native_features() {
                 first: Length(1.0),
                 second: Length(2.0),
             },
-            flip_direction: false,
+            flip_direction: Some(false),
         },
         FeatureDefinition::Shell {
             removed_faces: FaceSelection::Resolved {
@@ -3668,6 +3673,7 @@ fn encoder_writes_source_less_native_features() {
                 diameter: Length(8.0),
                 angle: Angle(1.4),
             },
+            exit_kind: None,
             diameter: Some(Length(5.0)),
             extent: Some(Extent::Blind {
                 length: Length(20.0),
@@ -3683,7 +3689,7 @@ fn encoder_writes_source_less_native_features() {
             id: FeatureId(format!("synthetic:test:feature#direct-{index}")),
             ordinal: index as u64 + 1,
             name: Some(format!("Direct {index}")),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -3722,7 +3728,7 @@ fn encoder_writes_source_less_native_features() {
             id: FeatureId(format!("synthetic:test:feature#pattern-{index}")),
             ordinal: index as u64 + 10,
             name: Some(format!("Pattern {index}")),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -4496,7 +4502,7 @@ fn encoder_writes_source_less_datum_features() {
             id: FeatureId(format!("synthetic:test:feature#datum-{ordinal}")),
             ordinal: ordinal as u64,
             name: Some(format!("Datum {ordinal}")),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -4548,7 +4554,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Metric".into(),
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
-        bodies: vec![ir.model.bodies[0].id.clone()],
+        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![ir.model.bodies[0].id.clone()]),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -4561,7 +4567,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Empty".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Vec::new(),
+        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -4786,7 +4792,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             name: format!("Config {index}"),
             material: None,
             properties: BTreeMap::new(),
-            bodies: vec![body.clone()],
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![body.clone()]),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: None,
@@ -5152,7 +5158,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         id: feature_id.clone(),
         ordinal: 0,
         name: Some("Equation".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -5490,6 +5496,7 @@ fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
             }
             CurveGeometry::Transformed { transform, .. } => transform.rows[0][3] += dx,
             CurveGeometry::Composite { .. } => {}
+            CurveGeometry::Procedural { .. } => {}
             CurveGeometry::Unknown { .. } => {}
         }
     }
@@ -5518,6 +5525,7 @@ fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 }
             }
             SurfaceGeometry::Transformed { transform, .. } => transform.rows[0][3] += dx,
+            SurfaceGeometry::Procedural { .. } => {}
             SurfaceGeometry::Unknown { .. } => {}
         }
     }
@@ -13678,7 +13686,7 @@ fn semantic_writer_round_trips_offset_surface() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Resolved { faces, native },
-            distance: Length(2.0),
+            distance: Some(Length(2.0)),
         } if faces == &[face_id.clone()] && native == &face
     ));
 
@@ -13688,7 +13696,7 @@ fn semantic_writer_round_trips_offset_surface() {
         panic!("typed offset surface");
     };
     *faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *distance = Length(-3.5);
+    *distance = Some(Length(-3.5));
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -13704,7 +13712,7 @@ fn semantic_writer_round_trips_offset_surface() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::OffsetSurface {
-            distance: Length(-3.5),
+            distance: Some(Length(-3.5)),
             ..
         }
     ));
@@ -14002,7 +14010,7 @@ fn semantic_writer_round_trips_extend_surface() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Resolved { faces, native },
-            distance: Length(2.0),
+            distance: Some(Length(2.0)),
             method: SurfaceExtension::Natural,
         } if faces == &[face_id.clone()] && native == &face
     ));
@@ -14016,7 +14024,7 @@ fn semantic_writer_round_trips_extend_surface() {
         panic!("typed extended surface");
     };
     *faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *distance = Length(4.5);
+    *distance = Some(Length(4.5));
     *method = SurfaceExtension::Linear;
 
     let mut encoded = Vec::new();
@@ -14034,7 +14042,7 @@ fn semantic_writer_round_trips_extend_surface() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::ExtendSurface {
-            distance: Length(4.5),
+            distance: Some(Length(4.5)),
             method: SurfaceExtension::Linear,
             ..
         }
@@ -14166,8 +14174,8 @@ fn semantic_writer_round_trips_projected_curve() {
         FeatureDefinition::ProjectedCurve {
             source: PathRef::Edges(edges),
             target_faces: FaceSelection::Resolved { faces, native },
-            direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
-            bidirectional: false,
+            direction: cadmpeg_ir::features::CurveProjectionDirection::Vector(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            bidirectional: Some(false),
         } if edges == &[edge_id.clone()] && faces == &[face_id.clone()] && native == &face
     ));
 
@@ -14182,8 +14190,10 @@ fn semantic_writer_round_trips_projected_curve() {
     };
     *source = PathRef::Edges(vec![edge_id.clone()]);
     *target_faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *direction = None;
-    *bidirectional = true;
+    *direction = cadmpeg_ir::features::CurveProjectionDirection::State(
+        cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
+    );
+    *bidirectional = Some(true);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -14201,8 +14211,10 @@ fn semantic_writer_round_trips_projected_curve() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::ProjectedCurve {
-            direction: None,
-            bidirectional: true,
+            direction: cadmpeg_ir::features::CurveProjectionDirection::State(
+                cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal
+            ),
+            bidirectional: Some(true),
             ..
         }
     ));
@@ -17242,6 +17254,7 @@ fn decode_projects_owned_native_sketch_relation() {
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("projected sketch feature");
     let cadmpeg_ir::features::FeatureDefinition::Sketch {
+        space: cadmpeg_ir::features::SketchSpace::Planar,
         sketch: Some(sketch),
         ..
     } = &feature.definition
@@ -18793,6 +18806,7 @@ fn decode_binds_profile_stream_by_feature_object_interval() {
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(id),
             ..
         } if id == &sketch.id
@@ -18981,6 +18995,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
     assert!(decoded.ir.model.features.iter().any(|feature| matches!(
         &feature.definition,
         FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(value), ..
         } if value == &sketch_id
     )));
@@ -19006,6 +19021,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
     assert!(round_trip.ir.model.features.iter().any(|feature| matches!(
         feature.definition,
         FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(_),
             ..
         }
@@ -19041,7 +19057,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             id: FeatureId(id.into()),
             ordinal: 0,
             name: Some(name.into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -19057,19 +19073,28 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             "base",
             "Profile",
             "native-base",
-            FeatureDefinition::Sketch { sketch: None },
+            FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: None,
+            },
         ),
         neutral(
             "alias",
             "Profile<3>",
             "native-alias",
-            FeatureDefinition::Sketch { sketch: None },
+            FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: None,
+            },
         ),
         neutral(
             "different",
             "Profile<4>",
             "native-different",
-            FeatureDefinition::Sketch { sketch: None },
+            FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: None,
+            },
         ),
         neutral(
             "consumer",
@@ -19162,6 +19187,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
                 ..
             } => Some(sketch.clone()),
@@ -19244,7 +19270,7 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
     ));
     assert!(matches!(
         decoded.ir.model.features[1].definition,
-        FeatureDefinition::Sketch { sketch: None }
+        FeatureDefinition::Sketch { sketch: None, .. }
     ));
 
     decoded.ir.model.features[0].name = Some("Renamed spatial path".into());
