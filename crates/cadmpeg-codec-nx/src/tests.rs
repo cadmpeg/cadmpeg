@@ -9836,6 +9836,27 @@ mod golden {
         }
     }
 
+    fn first_byte_diff(expected: &str, actual: &str) -> String {
+        let expected = expected.as_bytes();
+        let actual = actual.as_bytes();
+        let offset = expected
+            .iter()
+            .zip(actual)
+            .position(|(expected, actual)| expected != actual)
+            .unwrap_or_else(|| expected.len().min(actual.len()));
+        let describe = |bytes: &[u8]| match bytes.get(offset) {
+            Some(byte) => format!("0x{byte:02x}"),
+            None => "<end of file>".to_string(),
+        };
+        format!(
+            "first byte difference at offset {offset}: golden {}, actual {} (lengths: {} and {})",
+            describe(expected),
+            describe(actual),
+            expected.len(),
+            actual.len()
+        )
+    }
+
     fn update_requested() -> bool {
         std::env::var_os("UPDATE_GOLDEN").is_some()
     }
@@ -9868,7 +9889,8 @@ mod golden {
             if expected != actual {
                 let (line, exp_line, act_line) = first_line_diff(&expected, &actual);
                 failures.push(format!(
-                    "fixture `{name}`: output diverged from golden at line {line}\n    golden: {exp_line}\n    actual: {act_line}"
+                    "fixture `{name}`: output diverged from golden at line {line}\n    golden: {exp_line}\n    actual: {act_line}\n    {}",
+                    first_byte_diff(&expected, &actual)
                 ));
             }
         }
