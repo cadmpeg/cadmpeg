@@ -271,14 +271,12 @@ fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(
 fn scalar_suffix(row: &[u8], count: usize, cache: &ScalarCache) -> Option<Vec<f64>> {
     (0..row.len())
         .filter_map(|start| {
-            let mut cursor = start;
+            let mut cursor = crate::psb::Cursor::at(row, start);
             let mut values = Vec::with_capacity(count);
             while values.len() < count {
-                let (value, next) = coordinate(row, cursor, cache)?;
-                values.push(value);
-                cursor = next;
+                values.push(cursor.take_with(|data, pos| coordinate(data, pos, cache))?);
             }
-            (cursor == row.len() && values.iter().all(|value| value.is_finite()))
+            (cursor.pos() == row.len() && values.iter().all(|value| value.is_finite()))
                 .then_some((start, values))
         })
         .min_by_key(|(start, _)| *start)
@@ -327,22 +325,22 @@ fn conic_point_at(
     end: usize,
     cache: &ScalarCache,
 ) -> Option<([f64; 3], usize)> {
-    let mut cursor = label_offset + CONIC_FIELD_HEADERS[3].len();
-    (cursor < end && data.get(cursor) == Some(&crate::psb::token::ARRAY_OPEN)).then_some(())?;
-    let (count, after_count) = crate::psb::compact_int(data, cursor + 1);
-    (count == 3 && after_count > cursor + 1).then_some(())?;
-    cursor = after_count;
+    let array_open = label_offset + CONIC_FIELD_HEADERS[3].len();
+    (array_open < end && data.get(array_open) == Some(&crate::psb::token::ARRAY_OPEN))
+        .then_some(())?;
+    let (count, after_count) = crate::psb::compact_int(data, array_open + 1);
+    (count == 3 && after_count > array_open + 1).then_some(())?;
+    let mut cursor = crate::psb::Cursor::at(data, after_count);
     let mut values = [0.0; 3];
     for value in &mut values {
-        let (decoded, next) = coordinate(data, cursor, cache)?;
-        (next <= end).then_some(())?;
+        let decoded = cursor.take_with(|data, pos| coordinate(data, pos, cache))?;
+        (cursor.pos() <= end).then_some(())?;
         *value = decoded;
-        cursor = next;
     }
     values
         .iter()
         .all(|value| value.is_finite())
-        .then_some((values, cursor))
+        .then_some((values, cursor.pos()))
 }
 
 fn conic_local_system(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
