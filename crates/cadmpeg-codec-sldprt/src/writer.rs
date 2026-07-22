@@ -27,7 +27,7 @@ pub fn write_semantic_with_records(
         .native
         .namespace("sldprt")
         .map(|namespace| {
-            if namespace.version != crate::native::SLDPRT_NATIVE_VERSION {
+            if !crate::native::native_version_supported(namespace.version) {
                 let version = namespace.version;
                 return Err(CodecError::Malformed(format!(
                     "unsupported SLDPRT native namespace version {version}"
@@ -50,11 +50,23 @@ pub fn write_semantic_with_records(
     }
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
+    assign_configuration_indices(&mut normalized.model.configurations)?;
+    let feature_name_changes = crate::history::feature_name_changes(&normalized, native.as_ref());
+    let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
+        && crate::history::native_parameters_match_source(&normalized, native.as_ref());
+    crate::history::apply_feature_name_changes(
+        &mut normalized.model.parameters,
+        &feature_name_changes,
+    );
     let ir = &normalized;
-    crate::resolved_features::prepare_sketches_for_write(ir, &mut native)?;
     crate::history::prepare_features_for_write(ir, &mut native)?;
-    crate::history::prepare_parameters_for_write(ir, &mut native)?;
-    crate::history::prepare_configurations_for_write(ir, &mut native)?;
+    crate::resolved_features::prepare_sketches_for_write(ir, &mut native)?;
+    crate::history::prepare_parameters_for_write(
+        ir,
+        &mut native,
+        feature_parameter_changes_authorized,
+    )?;
+    crate::history::prepare_configurations_for_write(ir, &mut native, annotations)?;
     let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
     if !validation.is_ok() {
         let detail = validation
@@ -185,6 +197,31 @@ pub fn write_semantic_with_records(
     }
     for entry in section_directory_entries(retained_records, &sections, &type_ids)? {
         writer.write_all(&entry)?;
+    }
+    Ok(())
+}
+
+fn assign_configuration_indices(
+    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+) -> Result<(), CodecError> {
+    let mut used = HashSet::new();
+    for configuration in configurations.iter() {
+        if let Some(index) = configuration.source_index {
+            if !used.insert(index) {
+                return Err(CodecError::Malformed(format!(
+                    "duplicate SLDPRT configuration source index {index}"
+                )));
+            }
+        }
+    }
+    let mut positions = (0..configurations.len()).collect::<Vec<_>>();
+    positions.sort_by_key(|position| configurations[*position].ordinal);
+    let mut next = 0;
+    for position in positions {
+        if configurations[position].source_index.is_none() {
+            configurations[position].source_index =
+                Some(reserve_configuration_index(&mut used, &mut next)?);
+        }
     }
     Ok(())
 }
@@ -403,6 +440,43 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             "SLDPRT semantic writer does not support SubD surfaces".into(),
         ));
     }
+    for surface in &ir.model.surfaces {
+        match &surface.geometry {
+            SurfaceGeometry::Cone {
+                ratio, half_angle, ..
+            } => {
+                if *ratio != 1.0 {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
+                        surface.id.0, ratio
+                    )));
+                }
+                if !(*half_angle > 0.0 && *half_angle < std::f64::consts::FRAC_PI_2) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT surface {} has cone half-angle {}; compact cone carriers require an acute positive half-angle",
+                        surface.id.0, half_angle
+                    )));
+                }
+            }
+            SurfaceGeometry::Sphere { radius, .. } if *radius < 0.0 => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT surface {} has signed sphere radius {}; compact sphere carriers require a positive radius",
+                    surface.id.0, radius
+                )));
+            }
+            SurfaceGeometry::Torus {
+                major_radius,
+                minor_radius,
+                ..
+            } if !(*major_radius > *minor_radius && *minor_radius > 0.0) => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT surface {} has torus radii ({}, {}); compact torus carriers require major > minor > 0",
+                    surface.id.0, major_radius, minor_radius
+                )));
+            }
+            _ => {}
+        }
+    }
     for body in &ir.model.bodies {
         if body.name.is_some() && body.color.is_none() {
             return Err(CodecError::NotImplemented(
@@ -445,24 +519,18 @@ fn configuration_partitions(
     ir: &CadIr,
     length_scale: f64,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
-    if let Some(configuration) = ir
-        .model
-        .configurations
-        .iter()
-        .find(|configuration| configuration.bodies.is_unresolved())
-    {
-        return Err(CodecError::NotImplemented(format!(
-            "SLDPRT configuration {} has unresolved body membership",
-            configuration.id.0
-        )));
-    }
     let configured = ir
         .model
         .configurations
         .iter()
-        .filter_map(|configuration| configuration.bodies.resolved())
-        .flatten()
-        .cloned()
+        .flat_map(|configuration| {
+            configuration
+                .bodies
+                .resolved()
+                .unwrap_or_default()
+                .iter()
+                .cloned()
+        })
         .collect::<HashSet<_>>();
     if let Some(body) = ir
         .model
@@ -477,32 +545,19 @@ fn configuration_partitions(
     }
     let mut configurations = ir.model.configurations.iter().collect::<Vec<_>>();
     configurations.sort_by_key(|configuration| configuration.ordinal);
-    let mut used = HashSet::new();
-    for configuration in &configurations {
-        if let Some(index) = configuration.source_index {
-            if !used.insert(index) {
-                return Err(CodecError::Malformed(format!(
-                    "duplicate SLDPRT configuration source index {index}"
-                )));
-            }
-        }
-    }
-    let mut next = 0u32;
-    let mut assigned = Vec::with_capacity(configurations.len());
-    for configuration in configurations {
-        let index = match configuration.source_index {
-            Some(index) => index,
-            None => reserve_configuration_index(&mut used, &mut next)?,
-        };
-        assigned.push((index, configuration));
-    }
-    assigned
+    configurations
         .into_iter()
-        .filter_map(|(index, configuration)| {
+        .filter_map(|configuration| {
             let bodies = configuration.bodies.resolved()?;
-            (!bodies.is_empty()).then_some((index, bodies))
+            (!bodies.is_empty()).then_some((configuration, bodies))
         })
-        .map(|(index, bodies)| {
+        .map(|(configuration, bodies)| {
+            let index = configuration.source_index.ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT configuration {} has no assigned source index",
+                    configuration.id.0
+                ))
+            })?;
             let subset = body_subset(ir, bodies)?;
             let schema_32001 = subset
                 .model
@@ -843,14 +898,23 @@ fn resolved_feature_payload(
             lane.sketch_entities.len()
         )));
     }
-    for (ordinal, (entity, expected_offset)) in lane
+    for (ordinal, ((entity, expected_entity), expected_offset)) in lane
         .sketch_entities
         .iter()
+        .zip(&expected_lane.sketch_entities)
         .zip(&expected_offsets)
         .enumerate()
     {
         if entity.ordinal != ordinal as u32
             || usize::try_from(entity.offset) != Ok(*expected_offset)
+            || entity.feature_ref != expected_entity.feature_ref
+            || entity.links != expected_entity.links
+            || entity.link_selector != expected_entity.link_selector
+            || entity.object_index
+                != crate::resolved_features::marker_object_index(
+                    &lane.native_payload,
+                    *expected_offset,
+                )
             || entity.local_id
                 != crate::resolved_features::marker_local_id(&lane.native_payload, *expected_offset)
         {
@@ -899,6 +963,35 @@ fn resolved_feature_payload(
                 CodecError::Malformed("feature-input state field exceeds retained payload".into())
             })?;
             state.copy_from_slice(&value.to_le_bytes());
+        }
+        if let Some(coordinates) = entity.coordinates_m {
+            if !coordinates.iter().all(|value| value.is_finite()) {
+                return Err(CodecError::Malformed(
+                    "feature-input marker coordinates must be finite".into(),
+                ));
+            }
+            if crate::resolved_features::marker_coordinates(&lane.native_payload, offset).is_none()
+            {
+                return Err(CodecError::NotImplemented(
+                    "feature-input marker does not carry editable coordinate fields".into(),
+                ));
+            }
+            for (relative, value) in [(66usize, coordinates[0]), (74, coordinates[1])] {
+                let start = offset.checked_add(relative).ok_or_else(|| {
+                    CodecError::Malformed("feature-input coordinate offset overflow".into())
+                })?;
+                let end = start.checked_add(8).ok_or_else(|| {
+                    CodecError::Malformed("feature-input coordinate offset overflow".into())
+                })?;
+                payload
+                    .get_mut(start..end)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "feature-input coordinate field exceeds retained payload".into(),
+                        )
+                    })?
+                    .copy_from_slice(&value.to_le_bytes());
+            }
         }
     }
     for (name, expected) in lane.names.iter().zip(&expected_names).rev() {
@@ -1641,6 +1734,19 @@ pub(crate) fn brep_body(
     schema_32001: bool,
 ) -> Result<Vec<u8>, CodecError> {
     let mut next = 2u16;
+    let derived_sphere_seam_curves = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            matches!(curve.geometry, CurveGeometry::Degenerate { .. })
+                && curve
+                    .id
+                    .0
+                    .starts_with("sldprt:brep:curve#sphere-seam-face:")
+        })
+        .map(|curve| curve.id.clone())
+        .collect::<HashSet<_>>();
     let surfaces = ir
         .model
         .surfaces
@@ -1651,6 +1757,7 @@ pub(crate) fn brep_body(
         .model
         .curves
         .iter()
+        .filter(|item| !derived_sphere_seam_curves.contains(&item.id))
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let points = ir
@@ -1698,6 +1805,7 @@ pub(crate) fn brep_body(
                 nurbs,
                 &mut next,
                 length_scale,
+                &surface.id.0,
             )?;
             continue;
         }
@@ -1706,8 +1814,18 @@ pub(crate) fn brep_body(
         compact(&mut out, kind, surfaces[&surface.id], &values);
     }
     for curve in &ir.model.curves {
+        if derived_sphere_seam_curves.contains(&curve.id) {
+            continue;
+        }
         if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
-            write_nurbs_curve(&mut out, curves[&curve.id], nurbs, &mut next, length_scale)?;
+            write_nurbs_curve(
+                &mut out,
+                curves[&curve.id],
+                nurbs,
+                &mut next,
+                length_scale,
+                &curve.id.0,
+            )?;
             continue;
         }
         let (kind, values) = curve_values(&curve.geometry, length_scale)?;
@@ -1752,7 +1870,11 @@ pub(crate) fn brep_body(
             0,
             0,
             0,
-            edge.curve.as_ref().map_or(0, |id| curves[id]),
+            edge.curve
+                .as_ref()
+                .and_then(|id| curves.get(id))
+                .copied()
+                .unwrap_or(0),
             0,
             0,
         ] {
@@ -2099,31 +2221,49 @@ pub(super) fn surface_values(
             origin,
             axis,
             radius,
+            ratio,
             half_angle,
             ..
-        } => (
-            0x34,
-            vec![
-                scaled(origin.x),
-                scaled(origin.y),
-                scaled(origin.z),
-                axis.x,
-                axis.y,
-                axis.z,
-                scaled(*radius),
-                half_angle.sin(),
-                half_angle.cos(),
-                reference.x,
-                reference.y,
-                reference.z,
-            ],
-        ),
+        } => {
+            if *ratio != 1.0 {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT compact cone carriers encode circular cones only".into(),
+                ));
+            }
+            if !(*half_angle > 0.0 && *half_angle < std::f64::consts::FRAC_PI_2) {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT compact cone carriers require an acute positive half-angle".into(),
+                ));
+            }
+            (
+                0x34,
+                vec![
+                    scaled(origin.x),
+                    scaled(origin.y),
+                    scaled(origin.z),
+                    axis.x,
+                    axis.y,
+                    axis.z,
+                    scaled(*radius),
+                    half_angle.sin(),
+                    half_angle.cos(),
+                    reference.x,
+                    reference.y,
+                    reference.z,
+                ],
+            )
+        }
         SurfaceGeometry::Sphere {
             center,
             axis,
             radius,
             ..
         } => {
+            if *radius < 0.0 {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT compact sphere carriers require a positive radius".into(),
+                ));
+            }
             let axis = *axis;
             (
                 0x35,
@@ -2147,25 +2287,32 @@ pub(super) fn surface_values(
             major_radius,
             minor_radius,
             ..
-        } => (
-            0x36,
-            vec![
-                scaled(center.x),
-                scaled(center.y),
-                scaled(center.z),
-                axis.x,
-                axis.y,
-                axis.z,
-                scaled(*major_radius),
-                scaled(*minor_radius),
-                reference.x,
-                reference.y,
-                reference.z,
-            ],
-        ),
+        } => {
+            if !(*major_radius > *minor_radius && *minor_radius > 0.0) {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT compact torus carriers require major > minor > 0".into(),
+                ));
+            }
+            (
+                0x36,
+                vec![
+                    scaled(center.x),
+                    scaled(center.y),
+                    scaled(center.z),
+                    axis.x,
+                    axis.y,
+                    axis.z,
+                    scaled(*major_radius),
+                    scaled(*minor_radius),
+                    reference.x,
+                    reference.y,
+                    reference.z,
+                ],
+            )
+        }
         SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
@@ -2182,6 +2329,7 @@ fn write_nurbs_curve(
     nurbs: &NurbsCurve,
     next: &mut u16,
     length_scale: f64,
+    entity: &str,
 ) -> Result<(), CodecError> {
     if nurbs.periodic {
         return Err(CodecError::NotImplemented(
@@ -2192,14 +2340,25 @@ fn write_nurbs_curve(
     let control = take_attr(next)?;
     let multiplicity = take_attr(next)?;
     let knots = take_attr(next)?;
+    let degree = u16::try_from(nurbs.degree).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS curve {entity} degree {} exceeds the native u16 field",
+            nurbs.degree
+        ))
+    })?;
+    let control_count = u32::try_from(nurbs.control_points.len()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS curve {entity} pole count exceeds the native u32 field"
+        ))
+    })?;
     tag(out, 0x86);
     be16(out, wrapper);
     be16(out, descriptor);
     out.extend_from_slice(&[0; 8]);
     tag(out, 0x88);
     be16(out, descriptor);
-    be16(out, nurbs.degree as u16);
-    be32(out, nurbs.control_points.len() as u32);
+    be16(out, degree);
+    be32(out, control_count);
     be16(out, if nurbs.weights.is_some() { 4 } else { 3 });
     be32(out, 2);
     out.push(0);
@@ -2212,10 +2371,10 @@ fn write_nurbs_curve(
         nurbs.weights.as_deref(),
         length_scale,
     )?;
-    f64_array(out, 0x2d, control, &poles);
-    let (unique, mult) = unique_knots(&nurbs.knots);
-    u16_array(out, multiplicity, &mult);
-    f64_array(out, 0x80, knots, &unique);
+    f64_array(out, 0x2d, control, &poles, entity)?;
+    let (unique, mult) = unique_knots(&nurbs.knots, entity)?;
+    u16_array(out, multiplicity, &mult, entity)?;
+    f64_array(out, 0x80, knots, &unique, entity)?;
     Ok(())
 }
 
@@ -2225,16 +2384,58 @@ fn write_nurbs_surface(
     nurbs: &NurbsSurface,
     next: &mut u16,
     length_scale: f64,
+    entity: &str,
 ) -> Result<(), CodecError> {
     if nurbs.u_periodic || nurbs.v_periodic {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writer does not support periodic NURBS surfaces".into(),
         ));
     }
-    if nurbs.control_points.len() != nurbs.u_count as usize * nurbs.v_count as usize {
+    if !(1..=8).contains(&nurbs.u_degree) || !(1..=8).contains(&nurbs.v_degree) {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} degrees ({}, {}) exceed the inferable native range 1..=8",
+            nurbs.u_degree, nurbs.v_degree
+        )));
+    }
+    let u_count = usize::try_from(nurbs.u_count).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} u pole count exceeds the host address space"
+        ))
+    })?;
+    let v_count = usize::try_from(nurbs.v_count).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} v pole count exceeds the host address space"
+        ))
+    })?;
+    let expected_poles = u_count.checked_mul(v_count).ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} pole grid exceeds the host address space"
+        ))
+    })?;
+    if nurbs.control_points.len() != expected_poles {
         return Err(CodecError::Malformed(
             "invalid NURBS surface pole count".into(),
         ));
+    }
+    let poles = homogeneous_poles(
+        &nurbs.control_points,
+        nurbs.weights.as_deref(),
+        length_scale,
+    )?;
+    let (u_unique, u_mult) = unique_knots(&nurbs.u_knots, entity)?;
+    let (v_unique, v_mult) = unique_knots(&nurbs.v_knots, entity)?;
+    let intended_shape = (
+        u_count,
+        v_count,
+        nurbs.u_degree,
+        nurbs.v_degree,
+        if nurbs.weights.is_some() { 4 } else { 3 },
+    );
+    let inferred_shape = crate::brep::infer_surface_shape(poles.len(), &u_mult, &v_mult);
+    if inferred_shape != Some(intended_shape) {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} shape {intended_shape:?} would decode as {inferred_shape:?}"
+        )));
     }
     let descriptor = take_attr(next)?;
     let control = take_attr(next)?;
@@ -2255,18 +2456,11 @@ fn write_nurbs_surface(
     for attr in [control, u_multiplicity, v_multiplicity, u_knots, v_knots] {
         be16(out, attr);
     }
-    let poles = homogeneous_poles(
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
-        length_scale,
-    )?;
-    f64_array(out, 0x2d, control, &poles);
-    let (u_unique, u_mult) = unique_knots(&nurbs.u_knots);
-    let (v_unique, v_mult) = unique_knots(&nurbs.v_knots);
-    u16_array(out, u_multiplicity, &u_mult);
-    u16_array(out, v_multiplicity, &v_mult);
-    f64_array(out, 0x80, u_knots, &u_unique);
-    f64_array(out, 0x80, v_knots, &v_unique);
+    f64_array(out, 0x2d, control, &poles, entity)?;
+    u16_array(out, u_multiplicity, &u_mult, entity)?;
+    u16_array(out, v_multiplicity, &v_mult, entity)?;
+    f64_array(out, 0x80, u_knots, &u_unique, entity)?;
+    f64_array(out, 0x80, v_knots, &v_unique, entity)?;
     Ok(())
 }
 
@@ -2301,38 +2495,61 @@ fn homogeneous_poles(
     Ok(out)
 }
 
-fn unique_knots(knots: &[f64]) -> (Vec<f64>, Vec<u16>) {
+fn unique_knots(knots: &[f64], entity: &str) -> Result<(Vec<f64>, Vec<u16>), CodecError> {
     let mut unique = Vec::new();
-    let mut multiplicities = Vec::new();
+    let mut multiplicities: Vec<u16> = Vec::new();
     for &knot in knots {
         if unique.last() == Some(&knot) {
-            *multiplicities.last_mut().expect("matching unique knot") += 1;
+            let multiplicity = multiplicities.last_mut().expect("matching unique knot");
+            *multiplicity = multiplicity.checked_add(1).ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT NURBS carrier {entity} knot multiplicity exceeds the native u16 field"
+                ))
+            })?;
         } else {
             unique.push(knot);
             multiplicities.push(1);
         }
     }
-    (unique, multiplicities)
+    Ok((unique, multiplicities))
 }
 
-fn f64_array(out: &mut Vec<u8>, kind: u8, attr: u16, values: &[f64]) {
+fn f64_array(
+    out: &mut Vec<u8>,
+    kind: u8,
+    attr: u16,
+    values: &[f64],
+    entity: &str,
+) -> Result<(), CodecError> {
+    let count = u32::try_from(values.len()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS carrier {entity} array length exceeds the native u32 field"
+        ))
+    })?;
     tag(out, kind);
     out.push(0x2b);
-    be32(out, values.len() as u32);
+    be32(out, count);
     be16(out, attr);
     for value in values {
         bef64(out, *value);
     }
+    Ok(())
 }
 
-fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16]) {
+fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16], entity: &str) -> Result<(), CodecError> {
+    let count = u32::try_from(values.len()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS carrier {entity} array length exceeds the native u32 field"
+        ))
+    })?;
     tag(out, 0x7f);
     out.push(0x2b);
-    be32(out, values.len() as u32);
+    be32(out, count);
     be16(out, attr);
     for value in values {
         be16(out, *value);
     }
+    Ok(())
 }
 
 pub(super) fn curve_values(
@@ -2417,17 +2634,12 @@ pub(super) fn curve_values(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
             ))
         }
-        CurveGeometry::Procedural { .. } => {
-            return Err(CodecError::NotImplemented(
-                "semantic SLDPRT writer cannot regenerate a procedural curve".into(),
-            ))
-        }
         CurveGeometry::Polyline { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support polyline curve carriers".into(),
             ))
         }
-        CurveGeometry::Transformed { .. } => {
+        CurveGeometry::Procedural { .. } | CurveGeometry::Transformed { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support transformed curve carriers".into(),
             ))
@@ -2466,8 +2678,8 @@ pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math:
         } => *ref_direction,
         SurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
         SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
             x: 1.0,
             y: 0.0,
@@ -2548,4 +2760,117 @@ fn be32(out: &mut Vec<u8>, value: u32) {
 }
 fn bef64(out: &mut Vec<u8>, value: f64) {
     out.extend_from_slice(&value.to_be_bytes());
+}
+
+#[cfg(test)]
+mod nurbs_write_tests {
+    use super::*;
+    use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn rejects_surface_degrees_that_cannot_be_inferred_on_decode() {
+        let surface = NurbsSurface {
+            u_degree: 9,
+            v_degree: 1,
+            u_knots: vec![0.0; 20],
+            v_knots: vec![0.0; 4],
+            u_count: 10,
+            v_count: 2,
+            control_points: vec![Point3::new(0.0, 0.0, 0.0); 20],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+
+        let error = write_nurbs_surface(
+            &mut Vec::new(),
+            2,
+            &surface,
+            &mut 3,
+            0.001,
+            "test:surface#high-degree",
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            CodecError::NotImplemented(message)
+                if message.contains("test:surface#high-degree")
+                    && message.contains("inferable native range 1..=8")
+        ));
+    }
+
+    #[test]
+    fn rejects_surface_shape_that_would_decode_differently() {
+        let surface = NurbsSurface {
+            u_degree: 2,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
+            u_count: 3,
+            v_count: 4,
+            control_points: vec![Point3::new(0.0, 0.0, 0.0); 12],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+
+        let error = write_nurbs_surface(
+            &mut Vec::new(),
+            2,
+            &surface,
+            &mut 3,
+            0.001,
+            "test:surface#ambiguous-shape",
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                &error,
+                CodecError::NotImplemented(message)
+                    if message.contains("test:surface#ambiguous-shape")
+                        && message.contains("would decode as Some((3, 3, 2, 2, 4))")
+            ),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_curve_degree_and_knot_multiplicity_overflow() {
+        let curve = NurbsCurve {
+            degree: u32::from(u16::MAX) + 1,
+            knots: Vec::new(),
+            control_points: Vec::new(),
+            weights: None,
+            periodic: false,
+        };
+        let degree_error = write_nurbs_curve(
+            &mut Vec::new(),
+            2,
+            &curve,
+            &mut 3,
+            0.001,
+            "test:curve#high-degree",
+        )
+        .unwrap_err();
+        let multiplicity_error = unique_knots(
+            &vec![0.0; usize::from(u16::MAX) + 1],
+            "test:curve#high-multiplicity",
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            degree_error,
+            CodecError::NotImplemented(message)
+                if message.contains("test:curve#high-degree")
+                    && message.contains("native u16 field")
+        ));
+        assert!(matches!(
+            multiplicity_error,
+            CodecError::NotImplemented(message)
+                if message.contains("test:curve#high-multiplicity")
+                    && message.contains("knot multiplicity")
+        ));
+    }
 }

@@ -153,3 +153,80 @@ pub fn validate_with_source_fidelity(
     );
     report
 }
+
+#[cfg(test)]
+mod tests {
+    use super::validate;
+    use crate::features::{
+        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, Feature,
+        FeatureDefinition, FeatureId,
+    };
+    use crate::math::{Point3, Vector3};
+    use crate::sketches::{Sketch, SketchId};
+    use crate::units::Units;
+    use crate::CadIr;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn configuration_feature_sketch_resolves_against_model_sketches() {
+        let mut ir = CadIr::empty(Units::default());
+        let feature_id = FeatureId("test:model:feature#sketch".into());
+        let sketch_id = SketchId("test:model:sketch#sketch".into());
+        ir.model.features.push(Feature {
+            id: feature_id.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: crate::features::SketchSpace::Planar,
+                sketch: None,
+            },
+            native_ref: None,
+        });
+        ir.model.sketches.push(Sketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: Vec::new(),
+            native_ref: None,
+        });
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId("test:model:configuration#default".into()),
+            ordinal: 0,
+            active: true,
+            source_index: None,
+            name: "Default".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: crate::features::ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::from([(
+                feature_id,
+                ConfigurationFeatureState {
+                    suppressed: Some(false),
+                    dependencies: Vec::new(),
+                    outputs: Vec::new(),
+                    definition: FeatureDefinition::Sketch {
+                        space: crate::features::SketchSpace::Planar,
+                        sketch: Some(sketch_id),
+                    },
+                },
+            )]),
+            native_ref: None,
+        });
+
+        let report = validate(&ir, Vec::new());
+
+        assert!(report.findings.is_empty(), "{:?}", report.findings);
+    }
+}

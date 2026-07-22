@@ -131,8 +131,8 @@ fn axis2_placement_2d(e: &mut Emitter, location: Point2, x_axis: Point2) -> Ref 
 }
 
 /// Emit a two-dimensional curve for use inside a `PCURVE` representation.
-pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Ref {
-    match geometry {
+pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
+    Some(match geometry {
         PcurveGeometry::Line { origin, direction } => {
             let point = point2(e, *origin);
             let magnitude = (direction.u * direction.u + direction.v * direction.v).sqrt();
@@ -236,7 +236,7 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Ref {
             parameter_range,
             basis,
         } => {
-            let basis = pcurve(e, basis);
+            let basis = pcurve(e, basis)?;
             e.emit(
                 "TRIMMED_CURVE",
                 &format!(
@@ -247,13 +247,14 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Ref {
             )
         }
         PcurveGeometry::Offset { distance, basis } => {
-            let basis = pcurve(e, basis);
+            let basis = pcurve(e, basis)?;
             e.emit(
                 "OFFSET_CURVE_2D",
                 &format!("'',{basis},{},.F.", real(*distance)),
             )
         }
-    }
+        PcurveGeometry::PolarHarmonic { .. } | PcurveGeometry::PolarNurbs { .. } => return None,
+    })
 }
 
 /// Emit or reuse a unit-length `DIRECTION`.

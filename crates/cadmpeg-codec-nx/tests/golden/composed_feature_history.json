@@ -352,7 +352,8 @@
               },
               "op": "unresolved",
               "profile": {
-                "kind": "unresolved"
+                "kind": "unresolved",
+                "value": "EXTRUDE"
               }
             },
             "dependencies": [
@@ -392,7 +393,8 @@
               },
               "op": "unresolved",
               "profile": {
-                "kind": "unresolved"
+                "kind": "unresolved",
+                "value": "EXTRUDE"
               }
             },
             "dependencies": [
@@ -431,7 +433,8 @@
               },
               "op": "unresolved",
               "profile": {
-                "kind": "unresolved"
+                "kind": "unresolved",
+                "value": "EXTRUDE"
               }
             },
             "dependencies": [

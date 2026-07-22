@@ -201,6 +201,8 @@ pub(crate) fn attach(
                     })
                     .unwrap_or_default(),
                 bodies,
+                parameter_values: BTreeMap::new(),
+                feature_states: BTreeMap::new(),
                 native_ref: Some(configuration.id.clone()),
             });
         }
@@ -3065,6 +3067,7 @@ fn non_boolean_feature_definition_with_parameters(
             face: None,
             position: hole.position,
             direction: hole.direction,
+            placements: Vec::new(),
             kind: hole.chamfer.unwrap_or_else(|| {
                 if simple_hole_template.is_some() {
                     HoleKind::Unresolved {
@@ -3104,6 +3107,7 @@ fn non_boolean_feature_definition_with_parameters(
             face: None,
             position: hole.position,
             direction: hole.direction,
+            placements: Vec::new(),
             kind: HoleKind::Unresolved {
                 form: None,
                 counterbore_diameter: None,
@@ -3153,7 +3157,7 @@ fn non_boolean_feature_definition_with_parameters(
             keep: BodyTrimSide::Unresolved,
         },
         "EXTRUDE" => FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved,
+            profile: ProfileRef::Unresolved(kind.to_string()),
             direction: None,
             extent: Extent::Unresolved,
             op: BooleanOp::Unresolved,
@@ -3791,7 +3795,9 @@ fn atomic_disjoint_body_selections(
             BodySelection::Native(native)
         }
         BodySelection::Bodies(bodies) => BodySelection::Bodies(bodies),
-        BodySelection::Unresolved => BodySelection::Unresolved,
+        BodySelection::Generated { .. }
+        | BodySelection::Local { .. }
+        | BodySelection::Unresolved => BodySelection::Unresolved,
     };
     (native(left), native(right))
 }
@@ -4963,7 +4969,7 @@ mod tests {
         assert_eq!(
             super::non_boolean_feature_definition("EXTRUDE", &[], None, None, None),
             FeatureDefinition::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+                profile: cadmpeg_ir::features::ProfileRef::Unresolved("EXTRUDE".into()),
                 direction: None,
                 extent: cadmpeg_ir::features::Extent::Unresolved,
                 op: BooleanOp::Unresolved,

@@ -1,0 +1,461 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Parser migration manifest for cadmpeg-codec-sldprt (doc section 10 Phase 2,
+# section 8). Every decoder module in the crate is listed exactly once. Modules
+# are ordered count-framed loops first, then irregular marker probes and graph
+# traversals, then container/orchestration. Encoder modules (writer, writer_patch,
+# writer_transform) are excluded: they emit bytes and are covered by the section 8
+# writer-field rules, not the decode migrated-means checklist.
+#
+# A module is `status = "migrated"` only when it satisfies the full section 8
+# migrated-means checklist: View or proven fixed-size arrays for every hostile
+# read; req_* mirrors for committed required reads; BoundedCount for floored
+# counts; read_counted/exact_vec for count-framed collections; grow_vec for
+# accumulators; alloc_unfloored plus a codec-local cap for zero-floor production;
+# DepthGuard on recursion; work charged per a stated cost model; lint exceptions
+# via expect-with-reason; a declared fuzz target reaching the committed path;
+# truncation tests at the module record boundaries; deterministic output; and a
+# module-level deny(clippy::disallowed_methods).
+#
+# BRANCH REALITY (recorded as the section 11 minimal-faithful resolution): the
+# platform migration API this checklist names is NOT present in `cadmpeg-ir` on
+# this branch. `cadmpeg-ir::cursor` exposes only `Cursor`, `bounded_len`,
+# `Cursor::counted`, and `Cursor::read_counted`; there is no `View` (hence no
+# `View::window`/`req_*`/`View::counted`), no `BoundedCount`, no `grow_vec`, no
+# `alloc_unfloored`, no `DepthGuard`, and no `begin_expand`/`ExpandWriter`.
+# `cadmpeg-ir::compression::inflate_zlib_prefix` is an uncapped
+# `ZlibDecoder::read_to_end`. Because `cadmpeg-ir`, the workspace `Cargo.toml`,
+# and `crates/cadmpeg-fuzz/Cargo.toml` are all OUTSIDE this leg's editable scope,
+# and because faking migration by handing back byte slices is forbidden by the
+# raw-byte egress rule, no sldprt decoder module can currently graduate to
+# `migrated`. Every module below is therefore `legacy` with a written reason
+# anchored to the specific missing primitive(s). The concrete `cadmpeg-ir` and
+# fuzz-manifest edits required to unblock graduation are enumerated in the leg's
+# shared_requests. Per-module calibration observations for the freeze step live
+# in `calibration-note.md`.
+
+[meta]
+crate = "cadmpeg-codec-sldprt"
+phase = "2"
+platform_api_present = false
+# Primitives the migrated-means checklist requires that are absent on this branch.
+missing_primitives = [
+  "cadmpeg_ir::view::View",
+  "View::window",
+  "View::counted",
+  "View::req_u16 / req_u32 / req_f64 (req_* mirrors)",
+  "cadmpeg_ir::bounded::BoundedCount",
+  "cadmpeg_ir::alloc::grow_vec",
+  "cadmpeg_ir::alloc::alloc_unfloored",
+  "cadmpeg_ir::guard::DepthGuard",
+  "cadmpeg_ir::expand::begin_expand / ExpandWriter",
+  "a bounded (capped) replacement for cadmpeg_ir::compression::inflate_zlib_prefix",
+]
+present_primitives = [
+  "cadmpeg_ir::cursor::Cursor",
+  "cadmpeg_ir::cursor::bounded_len",
+  "cadmpeg_ir::cursor::Cursor::counted",
+  "cadmpeg_ir::cursor::Cursor::read_counted",
+]
+
+# ---------------------------------------------------------------------------
+# Count-framed loops (declared-count -> collection). Highest allocation risk.
+# ---------------------------------------------------------------------------
+
+[[module]]
+path = "src/brep/topology.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "family-fixed refs counts (4/5/6) via refs_be/refs_tripled over &[u8]; per-element reads bounded by u16_be get()"
+count_sites = ["refs_be:48", "refs_tripled:56"]
+declared_count_sites = []
+req_mirrors = "absent (no req_* API)"
+bounded_count = "not floored counts; family constants, but still slice-indexed rather than View-read"
+read_counted = "candidate: refs_be/refs_tripled are exact_vec/read_counted shape but read &[u8], not a View"
+grow_vec = "n/a (fixed capacity)"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted (no work charging API)"
+fuzz_target = "sldprt_topology.rs (target file present; NOT reachable until [[bin]] entry lands, shared_request 2)"
+truncation_tests = "record-boundary truncation tests not yet added"
+window_egress = [
+  "whole module reads &[u8] via u16_be/f64_be slicing; residual raw-byte access, not View::window",
+]
+deterministic = true
+deny_disallowed_methods = false
+reason = "Counts are family constants so allocation is not attacker-amplified, but every read is raw &[u8] indexing through super::u16_be/f64_be. Graduation requires reading the topology stream through a View so refs_be/refs_tripled become View::counted + read_counted with req_* for the committed magic/attr fields. Blocked on missing View API (shared_request 3) and clippy.toml disallowed list (shared_request 1)."
+
+[[module]]
+path = "src/brep/entity.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "slot_count(disc,flo) family-fixed (6/7/9); refs() loops that many u16_be reads over &[u8]"
+count_sites = ["refs:75"]
+declared_count_sites = []
+req_mirrors = "absent"
+bounded_count = "slot_count is a bounded match, not a floored attacker count"
+read_counted = "candidate for refs(); currently raw &[u8]"
+grow_vec = "n/a"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted"
+fuzz_target = "sldprt_entity.rs (file present; not reachable until [[bin]], shared_request 2)"
+truncation_tests = "not yet added"
+window_egress = ["refs()/parse_* read &[u8] via u16_be; raw-byte access"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "slot_count bounds allocation to <=9, so no amplification, but reads are raw slice indexing. Graduation needs the entity body delivered as a View so refs() uses View::counted+read_counted and the discriminant/flags become req_* reads. Blocked on missing View API (shared_request 3)."
+
+[[module]]
+path = "src/brep/spline.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "control_count and u_count*v_count products drive Vec::with_capacity"
+count_sites = [
+  "Vec::with_capacity(control_count):324",
+  "Vec::with_capacity(u_count*v_count):483",
+  "interleave buffer:195",
+]
+declared_count_sites = ["descriptor.control_count", "infer_surface_shape -> u_count,v_count"]
+req_mirrors = "absent"
+bounded_count = "control_count is guarded (control.len() == control_count*dimension) before the curve alloc; u_count*v_count is already floored: infer_surface_shape (spline.rs:427) only returns a shape when u_count.checked_mul(v_count) == Some(poles) where poles = control.len()/dimension, so with_capacity(u_count*v_count):483 == poles, bounded by the materialized control array and overflow-safe via checked_mul"
+read_counted = "poles iterated via chunks_exact over an already-materialized control array"
+grow_vec = "points/weights accumulators use Vec::new/push; grow_vec candidates"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted"
+fuzz_target = "sldprt_spline_curves.rs, sldprt_spline_surfaces.rs (files present; not reachable until [[bin]], shared_request 2)"
+truncation_tests = "not yet added"
+window_egress = [
+  "control/knot/mult arrays arrive pre-collected from the array pass; no direct window here, but the upstream array pass reads raw &[u8]",
+]
+deterministic = true
+deny_disallowed_methods = false
+reason = "Both allocations are already floored with present primitives: the curve alloc is length-guarded and the u_count*v_count product equals control-derived poles via infer_surface_shape's checked_mul==poles gate (no attacker amplification). Graduation to migrated is blocked only on threading the array pass through a View so poles/weights become View::counted+read_counted reads with req_* on committed descriptor fields, plus grow_vec accumulators. Blocked on missing View/grow_vec API (shared_request 3), NOT on a missing count floor."
+
+[[module]]
+path = "src/pmi.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "length-prefixed value blocks; already validated via bounded_len before Vec::with_capacity"
+count_sites = ["bounded_len + Vec::with_capacity:485-486", "key encode buffer:388"]
+declared_count_sites = ["len:485"]
+req_mirrors = "absent"
+bounded_count = "partial: uses cadmpeg_ir::cursor::bounded_len (the closest available primitive)"
+read_counted = "manual loop after bounded_len; could be Cursor::read_counted"
+grow_vec = "n/a"
+alloc_unfloored = "the retained 1024 zero-floor production cap is applied by hand, not via alloc_unfloored"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted"
+fuzz_target = "none dedicated; exercised via sldprt_container path"
+truncation_tests = "not yet added"
+window_egress = ["reads &[u8] directly around the bounded_len site"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "Closest to migrated: already floors with bounded_len and caps production at 1024. Cannot graduate because the 1024 cap is hand-rolled rather than expressed through alloc_unfloored, there is no req_* mirror for the committed length prefix, and reads stay on raw &[u8]. Blocked on missing alloc_unfloored/req_* API (shared_request 3)."
+
+[[module]]
+path = "src/resolved_features.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "many declared-count record loops; several already floored with bounded_len; one uncapped zlib re-inflation"
+count_sites = [
+  "bounded_len+with_capacity:3640-3641",
+  "3683-3684",
+  "4036",
+  "5772-5773",
+  "with_capacity(count):3906",
+]
+declared_count_sites = [
+  "ids count:3640",
+  "entries count:3683",
+  "components:3906",
+  "links:4036",
+  "addresses:5772",
+]
+req_mirrors = "absent"
+bounded_count = "floored: components at 3906 and links at 4036 are gated by adjacent .filter(|count| (1..=64)) and (1..=2) checks respectively; both with_capacity(count) sites are bounded to <=64 / <=2, not attacker-amplified"
+read_counted = "manual loops; Cursor::read_counted candidates"
+grow_vec = "profile/parameter accumulators use Vec::with_capacity(len-of-materialized)"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted"
+fuzz_target = "none dedicated; reached via sldprt_container/decode path"
+truncation_tests = "not yet added"
+window_egress = [
+  "compressed_member re-inflation now bounded (see decompression_sites); owned Vec copy remains",
+]
+decompression_sites = [
+  "compressed_member ZlibDecoder read_to_end: HARDENED this leg to Take(target.len()+1) so a member expanding past the target length can never match and is never fully materialized (resolved_features.rs:~18859). Present-primitive floor; the general uncapped inflate_zlib_prefix path still awaits begin_expand/ExpandWriter.",
+]
+deterministic = true
+deny_disallowed_methods = false
+reason = "Largest module. All count-framed with_capacity sites are already floored (bounded_len at 5 record sites; components/links gated to <=64 / <=2 by adjacent filters). The one genuinely uncapped decompression, compressed_member's read_to_end, is now bounded this leg via std::io::Read::take(target.len()+1) using present primitives. Remaining gap to migrated is View/req_* threading and honest work-charging on the decompressed bytes; blocked on missing View + begin_expand/ExpandWriter API (shared_requests 3, 4)."
+
+[[module]]
+path = "src/tessellation.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "triangle/vertex count loops over &[u8]"
+count_sites = ["internal count loops (no cursor adoption)"]
+req_mirrors = "absent"
+bounded_count = "none (no bounded_len adoption in this module)"
+read_counted = "candidate"
+grow_vec = "candidate for vertex/index accumulators"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted"
+fuzz_target = "none dedicated"
+truncation_tests = "not yet added"
+window_egress = ["raw &[u8] reads throughout"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "No bounded-cursor adoption yet. Graduation needs View-based counted reads for vertex/index arrays and grow_vec accumulators. Blocked on missing View/grow_vec API (shared_request 3)."
+
+[[module]]
+path = "src/metadata.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "property-table string/value count loops"
+req_mirrors = "absent"
+bounded_count = "none"
+read_counted = "candidate"
+grow_vec = "candidate"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted"
+fuzz_target = "none dedicated; reached via sldprt_container"
+truncation_tests = "not yet added"
+window_egress = ["raw &[u8] reads"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "No cursor adoption. Blocked on missing View/BoundedCount API (shared_request 3)."
+
+[[module]]
+path = "src/annotations.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "annotation-record count loops"
+req_mirrors = "absent"
+bounded_count = "none"
+read_counted = "candidate"
+grow_vec = "candidate"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted"
+fuzz_target = "none dedicated"
+truncation_tests = "not yet added"
+window_egress = ["raw &[u8] reads"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "No cursor adoption. Blocked on missing View/BoundedCount API (shared_request 3)."
+
+[[module]]
+path = "src/appearance.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "appearance/material entry count loops"
+req_mirrors = "absent"
+bounded_count = "none"
+read_counted = "candidate"
+grow_vec = "candidate"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted"
+fuzz_target = "none dedicated"
+truncation_tests = "not yet added"
+window_egress = ["raw &[u8] reads"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "No cursor adoption. Blocked on missing View/BoundedCount API (shared_request 3)."
+
+[[module]]
+path = "src/classification.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "classification-record scans"
+req_mirrors = "absent"
+bounded_count = "none"
+read_counted = "candidate"
+grow_vec = "candidate"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted"
+fuzz_target = "none dedicated"
+truncation_tests = "not yet added"
+window_egress = ["raw &[u8] reads"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "No cursor adoption. Blocked on missing View/BoundedCount API (shared_request 3)."
+
+[[module]]
+path = "src/history.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "feature-history record count loops"
+req_mirrors = "absent"
+bounded_count = "none"
+read_counted = "candidate"
+grow_vec = "candidate"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted"
+fuzz_target = "none dedicated"
+truncation_tests = "not yet added"
+window_egress = ["raw &[u8] reads"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "No cursor adoption. Blocked on missing View/BoundedCount API (shared_request 3). Note: uncommitted working-tree edits in this file predate this leg and were left untouched."
+
+[[module]]
+path = "src/native.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "native-geometry record loops"
+req_mirrors = "absent"
+bounded_count = "none"
+read_counted = "candidate"
+grow_vec = "candidate"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted"
+fuzz_target = "none dedicated"
+truncation_tests = "not yet added"
+window_egress = ["raw &[u8] reads"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "No cursor adoption. Blocked on missing View/BoundedCount API (shared_request 3)."
+
+[[module]]
+path = "src/records.rs"
+status = "legacy"
+category = "count-framed"
+hostile_reads = "generic record framing primitives shared by other modules"
+req_mirrors = "absent"
+bounded_count = "none"
+read_counted = "candidate; this module is the natural home for a shared View-based record reader"
+grow_vec = "n/a"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted"
+fuzz_target = "none dedicated"
+truncation_tests = "not yet added"
+window_egress = ["exposes raw &[u8] framing helpers"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "Framing helpers operate on &[u8]. This module should become the View adapter once the View API exists. Blocked on missing View API (shared_request 3)."
+
+# ---------------------------------------------------------------------------
+# Irregular marker probes and graph traversals.
+# ---------------------------------------------------------------------------
+
+[[module]]
+path = "src/brep/graph.rs"
+status = "legacy"
+category = "graph-traversal"
+hostile_reads = "reference resolution across topology records"
+req_mirrors = "absent"
+bounded_count = "n/a (iterates already-collected vectors)"
+read_counted = "n/a"
+grow_vec = "n/a"
+alloc_unfloored = "n/a"
+depth_guard = "resolution is flat iteration over body/region/shell/face/loop/coedge/edge/vertex/surface/curve vectors (graph.rs:78-152), NOT unbounded recursion; a DepthGuard is nonetheless the doc-required marker for the coedge ring / next-pointer chain walk to prevent cycle-induced non-termination"
+work_cost_model = "should charge work per node-plus-edge visited; currently unbudgeted"
+fuzz_target = "reached via sldprt_topology/sldprt_entity committed path"
+truncation_tests = "n/a (operates on decoded records)"
+window_egress = ["resolves u16 refs held in Record; no window()"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "Reference chains (coedge ring via next-pointer) can form cycles in hostile input; needs a DepthGuard/visited-set bound and node-plus-edge work charging. Blocked on missing DepthGuard API (shared_request 3)."
+
+[[module]]
+path = "src/brep.rs"
+status = "legacy"
+category = "graph-traversal"
+hostile_reads = "brep assembly orchestration over topology/entity/spline/graph submodules"
+req_mirrors = "n/a (dispatch only)"
+bounded_count = "n/a"
+read_counted = "n/a"
+grow_vec = "n/a"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "delegates to submodules"
+fuzz_target = "reached via sldprt_topology/sldprt_entity"
+truncation_tests = "n/a"
+window_egress = ["none directly"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "Pure dispatch/assembly; graduates automatically once its submodules migrate. No standalone hostile read."
+
+[[module]]
+path = "src/parasolid.rs"
+status = "legacy"
+category = "marker-probe"
+hostile_reads = "PS\\0\\0 marker scan; per-member zlib inflation; scalar_count/3 point alloc"
+count_sites = ["Vec::with_capacity(scalar_count/3):161"]
+declared_count_sites = ["scalar_count derived from stream body length"]
+req_mirrors = "absent"
+bounded_count = "floored: scalar_count passes scalar_count.checked_mul(8) into payload.get(..byte_count), so byte_count<=payload.len() and with_capacity(scalar_count/3):161 is bounded by the materialized payload slice; not attacker-amplified"
+read_counted = "candidate"
+grow_vec = "candidate for point accumulator"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted; inflation should charge decompressed_bytes"
+fuzz_target = "sldprt_parasolid.rs (file present; not reachable until [[bin]], shared_request 2)"
+truncation_tests = "not yet added"
+window_egress = [
+  "extract_streams_with_offsets slices the payload to owned Vec<u8> per member; the marker scan walks raw &[u8]",
+]
+decompression_sites = ["inflate_zlib_prefix (uncapped, in cadmpeg-ir):55-60"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "Member inflation goes through cadmpeg-ir's uncapped inflate_zlib_prefix and the marker scan/stream extraction produce owned copies rather than Views. Graduation needs a bounded begin_expand-based inflation and View-scoped extraction. Blocked on missing bounded-inflate + View API (shared_requests 3, 4)."
+
+# ---------------------------------------------------------------------------
+# Container framing and decode orchestration.
+# ---------------------------------------------------------------------------
+
+[[module]]
+path = "src/container.rs"
+status = "legacy"
+category = "container-decompression"
+hostile_reads = "OLE/block directory scan; per-block raw-DEFLATE inflation with declared uncompressed size"
+count_sites = []
+declared_count_sites = ["uncomp (declared uncompressed size):290"]
+req_mirrors = "absent"
+bounded_count = "n/a"
+read_counted = "n/a"
+grow_vec = "n/a"
+alloc_unfloored = "raw_inflate caps the pre-reserve at min(uncomp, 1<<20) (container.rs:337) and verifies inflated.len()==uncomp and CRC (290-294); this is a hand-rolled ceiling, not begin_expand"
+depth_guard = "n/a"
+work_cost_model = "unbudgeted; should charge decompressed_bytes per block"
+fuzz_target = "sldprt_container.rs, sldprt_container_scan.rs (file present; not reachable until [[bin]], shared_request 2)"
+truncation_tests = "not yet added at block-record boundary"
+window_egress = [
+  "extract_streams_with_offsets over the inflated owned buffer; block payload stored as owned Vec",
+]
+decompression_sites = [
+  "raw_inflate: flate2 read_to_end into Vec::with_capacity(hint.min(1<<20)):337-339",
+]
+deterministic = true
+deny_disallowed_methods = false
+reason = "Best-defended decompression in the crate (declared-size + CRC verification, 1<<20 pre-reserve floor), but the ceiling is hand-rolled and the inflated buffer is owned, severing any derived-space View. Graduation needs the inflation streamed through begin_expand/ExpandWriter charging decompressed_bytes and the derived space exposed as a View to leaves. Blocked on missing begin_expand + derived-space View API (shared_requests 3, 4)."
+
+[[module]]
+path = "src/decode.rs"
+status = "legacy"
+category = "orchestration"
+hostile_reads = "top-level decode driver; dispatches to container + all leaf decoders"
+req_mirrors = "n/a"
+bounded_count = "n/a"
+read_counted = "n/a"
+grow_vec = "n/a"
+alloc_unfloored = "n/a"
+depth_guard = "n/a"
+work_cost_model = "should aggregate submodule work charges"
+fuzz_target = "reached via all sldprt_* targets and decode_pipeline_mutated"
+truncation_tests = "n/a (covered by submodule boundaries)"
+window_egress = ["passes owned inflated buffers to leaves rather than derived-space Views"]
+deterministic = true
+deny_disallowed_methods = false
+reason = "Orchestration only; graduates once container.rs exposes derived spaces as Views and leaves are threaded that View. Note: uncommitted working-tree edits in this file predate this leg and were left untouched. Blocked on missing View API (shared_request 3)."

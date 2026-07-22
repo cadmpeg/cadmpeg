@@ -464,7 +464,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(&Extent::ThroughAll),
     ));
     assert!(crate::decode::hole_feature_is_incomplete(
-        Some(&ProfileRef::Unresolved),
+        Some(&ProfileRef::Unresolved("hole".into())),
         Some(&FaceSelection::Unresolved),
         None,
         None,
@@ -599,12 +599,14 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         direction: Some(Vector3::new(1.0, 0.0, 0.0)),
         spacing: Length(10.0),
         count: 3,
+        second: None,
     };
     assert!(!crate::decode::pattern_is_incomplete(&linear));
     assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
         direction: None,
         spacing: Length(10.0),
         count: 3,
+        second: None,
     }));
     assert!(crate::decode::pattern_is_incomplete(
         &PatternKind::CurveDriven {
@@ -620,6 +622,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                     direction: None,
                     spacing: Length(10.0),
                     count: 3,
+                    second: None,
                 }),
                 combination: PatternStageCombination::Initialize,
             }],
@@ -746,7 +749,9 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
 
 #[test]
 fn nx_pattern_completeness_requires_distinct_seeds() {
-    let seed = cadmpeg_ir::features::FeatureId("test:feature#seed".into());
+    let seed = cadmpeg_ir::features::PatternSeed::Feature(cadmpeg_ir::features::FeatureId(
+        "test:feature#seed".into(),
+    ));
     let pattern = cadmpeg_ir::features::PatternKind::Mirror {
         plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         plane_normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -827,7 +832,8 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
     };
 
     assert!(!incomplete(None, None));
-    assert!(incomplete(Some(&ProfileRef::Unresolved), None));
+    let unresolved_profile = ProfileRef::Unresolved("hole".into());
+    assert!(incomplete(Some(&unresolved_profile), None));
     assert!(incomplete(None, Some(&FaceSelection::Unresolved)));
 }
 
@@ -996,6 +1002,8 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         material: None,
         properties: Default::default(),
         bodies: ConfigurationBodies::Resolved(Vec::new()),
+        parameter_values: Default::default(),
+        feature_states: Default::default(),
         native_ref: None,
     });
 
@@ -8926,6 +8934,8 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             material: None,
             properties: Default::default(),
             bodies: ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values: Default::default(),
+            feature_states: Default::default(),
             native_ref: None,
         },
         DesignConfiguration {
@@ -8937,6 +8947,8 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             material: None,
             properties: Default::default(),
             bodies: ConfigurationBodies::Unresolved,
+            parameter_values: Default::default(),
+            feature_states: Default::default(),
             native_ref: None,
         },
     ]);

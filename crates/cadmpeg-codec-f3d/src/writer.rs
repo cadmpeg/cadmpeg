@@ -9009,6 +9009,12 @@ fn native_pcurve_geometry(
                 periodic: false,
             })
         }
+        PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. } => Err(CodecError::NotImplemented(
+            "F3D analytic pcurve writing is not supported".into(),
+        )),
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -9026,9 +9032,7 @@ fn native_pcurve_geometry(
             parameter_range,
             basis,
         } => native_pcurve_geometry(basis, *parameter_range),
-        PcurveGeometry::Circle { .. }
-        | PcurveGeometry::Ellipse { .. }
-        | PcurveGeometry::Parabola { .. }
+        PcurveGeometry::Parabola { .. }
         | PcurveGeometry::Hyperbola { .. }
         | PcurveGeometry::Offset { .. } => Err(CodecError::NotImplemented(
             "F3D writing of this exact pcurve family is not implemented".into(),

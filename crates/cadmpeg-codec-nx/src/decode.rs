@@ -21,8 +21,8 @@ use cadmpeg_ir::eval::{
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
     CurveProjectionDirection, CurveProjectionDirectionState, EdgeSelection, Extent, FaceSelection,
-    FeatureDefinition, FeatureId, HoleKind, Length, ParameterId, PathRef, PatternKind, ProfileRef,
-    RadiusSpec, RibConstruction, RibDraft, SketchSpace, TrimRegion,
+    FeatureDefinition, HoleKind, Length, ParameterId, PathRef, PatternKind, ProfileRef, RadiusSpec,
+    RibConstruction, RibDraft, SketchSpace, TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -7042,8 +7042,12 @@ pub(crate) fn extent_is_incomplete(extent: &Extent) -> bool {
         | Extent::Symmetric { .. }
         | Extent::TwoSided { .. }
         | Extent::ThroughAll
+        | Extent::ThroughAllBoth
+        | Extent::ThroughNext
         | Extent::ToFirst
         | Extent::ToLast
+        | Extent::ToVertex { .. }
+        | Extent::OffsetFromFace { .. }
         | Extent::Angle { .. }
         | Extent::SymmetricAngle { .. }
         | Extent::TwoSidedAngles { .. } => false,
@@ -7092,9 +7096,15 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
     }
 }
 
-pub(crate) fn pattern_feature_is_incomplete(seeds: &[FeatureId], pattern: &PatternKind) -> bool {
+pub(crate) fn pattern_feature_is_incomplete(
+    seeds: &[cadmpeg_ir::features::PatternSeed],
+    pattern: &PatternKind,
+) -> bool {
     seeds.is_empty()
-        || seeds.iter().collect::<BTreeSet<_>>().len() != seeds.len()
+        || seeds
+            .iter()
+            .enumerate()
+            .any(|(index, seed)| seeds[..index].contains(seed))
         || pattern_is_incomplete(pattern)
 }
 
@@ -7120,13 +7130,18 @@ pub(crate) fn body_selections_overlap(first: &BodySelection, second: &BodySelect
 fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
     match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => Some(bodies),
-        BodySelection::Unresolved | BodySelection::Native(_) => None,
+        BodySelection::Unresolved
+        | BodySelection::Generated { .. }
+        | BodySelection::Local { .. }
+        | BodySelection::Native(_) => None,
     }
 }
 
 pub(crate) fn face_selection_is_incomplete(selection: &FaceSelection) -> bool {
     match selection {
-        FaceSelection::Unresolved | FaceSelection::Native(_) => true,
+        FaceSelection::Unresolved | FaceSelection::Generated { .. } | FaceSelection::Native(_) => {
+            true
+        }
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
             selection_ids_are_incomplete(faces)
         }
@@ -7136,18 +7151,24 @@ pub(crate) fn face_selection_is_incomplete(selection: &FaceSelection) -> bool {
 pub(crate) fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> bool {
     let first = match first {
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces,
-        FaceSelection::Unresolved | FaceSelection::Native(_) => return false,
+        FaceSelection::Unresolved | FaceSelection::Generated { .. } | FaceSelection::Native(_) => {
+            return false
+        }
     };
     let second = match second {
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces,
-        FaceSelection::Unresolved | FaceSelection::Native(_) => return false,
+        FaceSelection::Unresolved | FaceSelection::Generated { .. } | FaceSelection::Native(_) => {
+            return false
+        }
     };
     first.iter().any(|face| second.contains(face))
 }
 
 pub(crate) fn edge_selection_is_incomplete(selection: &EdgeSelection) -> bool {
     match selection {
-        EdgeSelection::Unresolved | EdgeSelection::Native(_) => true,
+        EdgeSelection::Unresolved | EdgeSelection::Generated { .. } | EdgeSelection::Native(_) => {
+            true
+        }
         EdgeSelection::All => false,
         EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => {
             selection_ids_are_incomplete(edges)
@@ -7157,8 +7178,9 @@ pub(crate) fn edge_selection_is_incomplete(selection: &EdgeSelection) -> bool {
 
 pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
     match profile {
-        ProfileRef::Unresolved | ProfileRef::Native(_) => true,
+        ProfileRef::Unresolved(_) | ProfileRef::Native(_) => true,
         ProfileRef::Sketch(_) => false,
+        ProfileRef::Feature(_) | ProfileRef::Generated { .. } => false,
         ProfileRef::Faces(faces) => selection_ids_are_incomplete(faces),
     }
 }

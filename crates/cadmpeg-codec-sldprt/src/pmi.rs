@@ -9,6 +9,55 @@ use cadmpeg_ir::Exactness;
 use crate::container::ContainerScan;
 use crate::records::PmiDimension;
 
+/// Add uniquely owner-qualified PMI dimensions to a projection copy of history.
+pub(crate) fn enrich_history_parameters(
+    histories: &mut [crate::records::FeatureHistory],
+    records: &[PmiDimension],
+) {
+    let mut owners = BTreeMap::<&str, Vec<(usize, usize)>>::new();
+    for (history_index, history) in histories.iter().enumerate() {
+        for (feature_index, feature) in history.features.iter().enumerate() {
+            owners
+                .entry(feature.name.as_str())
+                .or_default()
+                .push((history_index, feature_index));
+        }
+    }
+    let mut candidates = BTreeMap::<(usize, usize, String), Vec<String>>::new();
+    for record in records {
+        let Some((name, owner_name)) = record.cad_text.split_once('@') else {
+            continue;
+        };
+        let Some([(history_index, feature_index)]) = owners.get(owner_name).map(Vec::as_slice)
+        else {
+            continue;
+        };
+        let millimetres = record.value * 1000.0;
+        let expression = match record.subtype.as_str() {
+            "Linear" => format!("{millimetres}mm"),
+            "Angle" => record.value.to_string(),
+            "Diameter" => format!("<MOD-DIAM>{millimetres}mm"),
+            "Radial" => format!("R{millimetres}mm"),
+            _ => continue,
+        };
+        candidates
+            .entry((*history_index, *feature_index, name.to_string()))
+            .or_default()
+            .push(expression);
+    }
+    for ((history_index, feature_index, name), mut expressions) in candidates {
+        expressions.sort();
+        expressions.dedup();
+        let [expression] = expressions.as_slice() else {
+            continue;
+        };
+        histories[history_index].features[feature_index]
+            .parameters
+            .entry(name)
+            .or_insert_with(|| expression.clone());
+    }
+}
+
 pub(crate) fn patch_payload(
     ir: &cadmpeg_ir::CadIr,
     block_id: &str,
@@ -42,6 +91,7 @@ pub(crate) fn patch_payload(
         let semantic = parameter.pmi.as_ref().expect("filtered above");
         let subtype = match record.subtype.as_str() {
             "Linear" => PmiDimensionSubtype::Linear,
+            "Angle" => PmiDimensionSubtype::Angle,
             "Diameter" => PmiDimensionSubtype::Diameter,
             "Radial" => PmiDimensionSubtype::Radial,
             other => PmiDimensionSubtype::Native(other.to_string()),
@@ -52,16 +102,25 @@ pub(crate) fn patch_payload(
                 record.id
             )));
         }
-        let Some(ParameterValue::Length(length)) = parameter.value else {
-            return Err(cadmpeg_ir::CodecError::NotImplemented(format!(
-                "SLDPRT PMI record {} requires a length-valued parameter",
-                record.id
-            )));
+        let native_value = match (&subtype, &parameter.value) {
+            (PmiDimensionSubtype::Angle, Some(ParameterValue::Angle(angle))) => angle.0,
+            (
+                PmiDimensionSubtype::Linear
+                | PmiDimensionSubtype::Diameter
+                | PmiDimensionSubtype::Radial,
+                Some(ParameterValue::Length(length)),
+            ) => length.0 / 1000.0,
+            _ => {
+                return Err(cadmpeg_ir::CodecError::NotImplemented(format!(
+                    "SLDPRT PMI record {} has a value incompatible with its dimension subtype",
+                    record.id
+                )));
+            }
         };
         patch_bytes(
             payload,
             record.value_offset,
-            &(length.0 / 1000.0).to_be_bytes(),
+            &native_value.to_be_bytes(),
             &record.id,
         )?;
         let precision = u8::try_from(semantic.precision)
@@ -159,6 +218,7 @@ pub(crate) fn apply_to_parameters(
         };
         let subtype = match record.subtype.as_str() {
             "Linear" => PmiDimensionSubtype::Linear,
+            "Angle" => PmiDimensionSubtype::Angle,
             "Diameter" => PmiDimensionSubtype::Diameter,
             "Radial" => PmiDimensionSubtype::Radial,
             other => PmiDimensionSubtype::Native(other.to_string()),
@@ -169,6 +229,13 @@ pub(crate) fn apply_to_parameters(
                 format!("{millimetres}mm"),
                 None,
                 Some(ParameterValue::Length(Length(millimetres))),
+            ),
+            PmiDimensionSubtype::Angle => (
+                record.value.to_string(),
+                None,
+                Some(ParameterValue::Angle(cadmpeg_ir::features::Angle(
+                    record.value,
+                ))),
             ),
             PmiDimensionSubtype::Diameter => (
                 format!("<MOD-DIAM>{millimetres}mm"),
@@ -237,16 +304,17 @@ enum Value {
 pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<PmiDimension> {
     let mut records = Vec::new();
     let mut seen = HashSet::<String>::new();
-    for block in &scan.blocks {
-        let Some(section) = block.section.as_deref() else {
+    for source in scan.sections() {
+        let Some(section) = source.name() else {
             continue;
         };
         if !section.eq_ignore_ascii_case("Contents/PMISemanticDataDB") {
             continue;
         }
-        for offset in map_offsets(&block.payload) {
+        let payload = source.payload();
+        for offset in map_offsets(payload) {
             let mut cursor = offset;
-            let Some(Value::Map(outer)) = parse_value(&block.payload, &mut cursor, 0) else {
+            let Some(Value::Map(outer)) = parse_value(payload, &mut cursor, 0) else {
                 continue;
             };
             let Some(cad_text) = string_field(&outer, "cadText") else {
@@ -261,7 +329,7 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
             if string_field(item, "class") != Some("DimSemData") {
                 continue;
             }
-            let Some(guid) = guid_before(&block.payload, offset) else {
+            let Some(guid) = guid_before(payload, offset) else {
                 continue;
             };
             if !seen.insert(guid.clone()) {
@@ -270,32 +338,30 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
             let Some(value) = float_field(item, "value") else {
                 continue;
             };
-            let Some(value_marker) = field_marker(&block.payload, offset, cursor, "value") else {
+            let Some(value_marker) = field_marker(payload, offset, cursor, "value") else {
                 continue;
             };
-            if block.payload.get(value_marker) != Some(&0xcb) {
+            if payload.get(value_marker) != Some(&0xcb) {
                 continue;
             }
-            let Some(precision_offset) =
-                field_marker(&block.payload, offset, cursor, "valPrecision")
+            let Some(precision_offset) = field_marker(payload, offset, cursor, "valPrecision")
             else {
                 continue;
             };
-            let Some(basic_offset) = field_marker(&block.payload, offset, cursor, "isBasic") else {
+            let Some(basic_offset) = field_marker(payload, offset, cursor, "isBasic") else {
                 continue;
             };
-            let Some(inspection_offset) =
-                field_marker(&block.payload, offset, cursor, "isInspection")
+            let Some(inspection_offset) = field_marker(payload, offset, cursor, "isInspection")
             else {
                 continue;
             };
             let Some(reference_only_offset) =
-                field_marker(&block.payload, offset, cursor, "isReferenceOnly")
+                field_marker(payload, offset, cursor, "isReferenceOnly")
             else {
                 continue;
             };
-            let display_text_offset = field_marker(&block.payload, offset, cursor, "dimText")
-                .and_then(|marker| string_data_offset(&block.payload, marker));
+            let display_text_offset = field_marker(payload, offset, cursor, "dimText")
+                .and_then(|marker| string_data_offset(payload, marker));
             let id = format!("sldprt:pmi:dimension#{guid}");
             crate::annotations::note(
                 annotations,
@@ -307,7 +373,7 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
             );
             records.push(PmiDimension {
                 id,
-                parent: format!("sldprt:file:block#{}", block.offset),
+                parent: source.native_id(),
                 offset: offset as u64,
                 guid,
                 cad_text: cad_text.to_string(),
@@ -431,7 +497,11 @@ fn parse_map(bytes: &[u8], cursor: &mut usize, len: usize, depth: usize) -> Opti
 }
 
 fn parse_array(bytes: &[u8], cursor: &mut usize, len: usize, depth: usize) -> Option<Value> {
-    let mut values = Vec::with_capacity(len.min(1024));
+    // Every element encodes as at least one marker byte, so a length exceeding
+    // the unread input cannot be satisfied and is rejected before allocating.
+    let remaining = bytes.len().saturating_sub(*cursor);
+    let len = cadmpeg_ir::cursor::bounded_len(len as u64, 1, remaining)?;
+    let mut values = Vec::with_capacity(len);
     for _ in 0..len {
         values.push(parse_value(bytes, cursor, depth + 1)?);
     }
