@@ -46,8 +46,10 @@ fixtures, claims above L1 remain unproven.
   `exists()` queries resolve against the complete local assignment namespace
   and decoded `d<external_id>` section-dimension identities. Unambiguous
   decoded dimension values initialize those relation symbols in millimeters or
-  degrees; conflicting and unresolved occurrences remain symbolic. A unique
-  transferred dimension identity becomes the neutral parameter dependency;
+  degrees; conflicting and unresolved occurrences remain symbolic. Explicit
+  length and angle units convert to those canonical relation units, propagate
+  through dimensionally valid arithmetic, and transfer as typed neutral values.
+  A unique transferred dimension identity becomes the neutral parameter dependency;
   duplicate identities remain source metadata. Other namespaces remain
   unresolved. Affine
   cylindrical-coordinate programs transfer as helices.

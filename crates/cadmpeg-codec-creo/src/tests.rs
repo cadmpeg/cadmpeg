@@ -3908,7 +3908,7 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     payload.extend_from_slice(&[10, 0x60, 0xc8, 0x1e, 0x15, 0xd4, 0xaf, 0x9f, 0, 0x18, 44]);
     payload.extend_from_slice(b"\xe0\x00relat_ptr\0");
     let expressions = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x0aexpression\0\xf8\x02angle=d42\0length=d43+2\0"
+        \xe0\x0aexpression\0\xf8\x02angle=d42\0length=d43+2[mm]\0"
         .to_vec();
     let scan = container::scan_bytes(build_prt(
         "c",
@@ -3948,13 +3948,13 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(scan.curve_expressions.len(), 1);
     assert_eq!(
         scan.curve_expressions[0].assignments[0].value,
-        Some(crate::curve::CurveExpressionValue::Number(
+        Some(crate::curve::CurveExpressionValue::Angle(
             1.0f64.to_degrees()
         ))
     );
     assert_eq!(
         scan.curve_expressions[0].assignments[1].value,
-        Some(crate::curve::CurveExpressionValue::Number(5.0))
+        Some(crate::curve::CurveExpressionValue::Length(5.0))
     );
 }
 
@@ -3975,7 +3975,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             (
                 "DEPDB_DATA",
                 b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-                    \xe0\x0aexpression\0\xf8\x01result=d42+1\0"
+                    \xe0\x0aexpression\0\xf8\x01result=d42+1[deg]\0"
                     .to_vec(),
             ),
         ],
@@ -4022,8 +4022,8 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(relation.properties["external_dependencies"], "d42");
     assert_eq!(
         relation.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(
-            1.0f64.to_degrees() + 1.0
+        Some(cadmpeg_ir::features::ParameterValue::Angle(
+            cadmpeg_ir::features::Angle(1.0 + 1.0f64.to_radians())
         ))
     );
     let model_feature = result
@@ -4791,7 +4791,7 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
         \xe0\x01ext_id\0\x2a\xe0\x00relat_ptr\0"
         .to_vec();
     let expressions = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x0aexpression\0\xf8\x01result=d42+1\0"
+        \xe0\x0aexpression\0\xf8\x01result=d42+1[deg]\0"
         .to_vec();
     let data = build_prt(
         "c",
@@ -4822,8 +4822,8 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
     assert!(!relation.properties.contains_key("external_dependencies"));
     assert_eq!(
         relation.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(
-            1.0f64.to_degrees() + 1.0
+        Some(cadmpeg_ir::features::ParameterValue::Angle(
+            cadmpeg_ir::features::Angle(1.0 + 1.0f64.to_radians())
         ))
     );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());

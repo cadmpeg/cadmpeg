@@ -1786,13 +1786,10 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         .filter_map(|definition| definition.dimensions.as_ref())
         .flat_map(|table| table.rows.iter())
     {
-        let value = dimension.value.map(|value| {
-            CurveExpressionValue::Number(match dimension.value_unit {
-                feature::DimensionUnit::Radians => value.to_degrees(),
-                feature::DimensionUnit::Millimeters | feature::DimensionUnit::SchemaDefined => {
-                    value
-                }
-            })
+        let value = dimension.value.map(|value| match dimension.value_unit {
+            feature::DimensionUnit::Radians => CurveExpressionValue::Angle(value.to_degrees()),
+            feature::DimensionUnit::Millimeters => CurveExpressionValue::Length(value),
+            feature::DimensionUnit::SchemaDefined => CurveExpressionValue::Number(value),
         });
         relation_dimension_symbols.observe(&format!("d{}", dimension.external_id), value);
     }

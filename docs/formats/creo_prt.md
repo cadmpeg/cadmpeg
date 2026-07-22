@@ -2509,7 +2509,13 @@ A curve-from-equation entity stores `expression f8 <count>` followed by exactly 
 
 Square brackets following a numeric literal or parameter expression contain a
 unit expression. Identifiers inside the brackets are unit symbols, not relation
-dependencies.
+dependencies. Length symbols `mm`, `cm`, `m`, `in`, `inch`, `ft`, `foot`, and
+`micron` convert to millimeters. Angle symbols `deg`, `degree`, `rad`, and
+`radian` convert to relation degrees. Addition, subtraction, and comparison
+require equal dimensions. Multiplication by and division by a dimensionless
+scalar retain the quantity dimension; dividing equal dimensions produces a
+dimensionless scalar. Circular trigonometric functions accept angular
+quantities. Evaluated length and angle assignments retain their dimensions.
 
 `ceil(value)` and `floor(value)` round to an integer after applying their
 defined numeric tolerance. Their optional second argument selects zero through

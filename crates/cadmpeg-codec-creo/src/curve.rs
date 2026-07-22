@@ -101,6 +101,10 @@ pub struct CurveExpressionAssignment {
 pub enum CurveExpressionValue {
     /// Dimensionless numeric value.
     Number(f64),
+    /// Length in canonical millimeters.
+    Length(f64),
+    /// Angle in relation degrees.
+    Angle(f64),
     /// UTF-8 string value.
     String(String),
 }
@@ -109,7 +113,7 @@ impl CurveExpressionValue {
     fn truth(&self) -> Option<bool> {
         match self {
             Self::Number(value) => Some(*value != 0.0),
-            Self::String(_) => None,
+            Self::Length(_) | Self::Angle(_) | Self::String(_) => None,
         }
     }
 }
@@ -922,11 +926,32 @@ struct RelationEvaluationContext<'a> {
     existing_symbols: Option<&'a BTreeSet<String>>,
 }
 
+#[derive(Clone, Copy)]
+enum RelationDimension {
+    Length,
+    Angle,
+}
+
+fn relation_unit(unit: &str) -> Option<(f64, RelationDimension)> {
+    match unit.trim().to_ascii_lowercase().as_str() {
+        "mm" => Some((1.0, RelationDimension::Length)),
+        "cm" => Some((10.0, RelationDimension::Length)),
+        "m" => Some((1_000.0, RelationDimension::Length)),
+        "in" | "inch" => Some((25.4, RelationDimension::Length)),
+        "ft" | "foot" => Some((304.8, RelationDimension::Length)),
+        "micron" => Some((0.001, RelationDimension::Length)),
+        "deg" | "degree" => Some((1.0, RelationDimension::Angle)),
+        "rad" | "radian" => Some((180.0 / std::f64::consts::PI, RelationDimension::Angle)),
+        _ => None,
+    }
+}
+
 trait ExpressionValue: Clone {
     fn number(value: f64) -> Self;
     fn string(_value: String) -> Option<Self> {
         None
     }
+    fn with_unit(self, scale: f64, dimension: RelationDimension) -> Option<Self>;
     fn add(self, right: Self) -> Option<Self>;
     fn subtract(self, right: Self) -> Option<Self>;
     fn multiply(self, right: Self) -> Option<Self>;
@@ -952,6 +977,10 @@ impl ExpressionValue for f64 {
 
     fn add(self, right: Self) -> Option<Self> {
         Some(self + right)
+    }
+
+    fn with_unit(self, scale: f64, _dimension: RelationDimension) -> Option<Self> {
+        Some(self * scale)
     }
 
     fn subtract(self, right: Self) -> Option<Self> {
@@ -1021,6 +1050,13 @@ impl ExpressionValue for AffineValue {
         Some(Self {
             constant: self.constant + right.constant,
             linear: self.linear + right.linear,
+        })
+    }
+
+    fn with_unit(self, scale: f64, _dimension: RelationDimension) -> Option<Self> {
+        Some(Self {
+            constant: self.constant * scale,
+            linear: self.linear * scale,
         })
     }
 
@@ -1110,27 +1146,51 @@ impl ExpressionValue for CurveExpressionValue {
         Some(Self::String(value))
     }
 
+    fn with_unit(self, scale: f64, dimension: RelationDimension) -> Option<Self> {
+        let Self::Number(value) = self else {
+            return None;
+        };
+        Some(match dimension {
+            RelationDimension::Length => Self::Length(value * scale),
+            RelationDimension::Angle => Self::Angle(value * scale),
+        })
+    }
+
     fn add(self, right: Self) -> Option<Self> {
         match (self, right) {
-            (Self::Number(left), Self::Number(right)) => Some(Self::Number(left + right)),
             (Self::String(mut left), Self::String(right)) => {
                 left.push_str(&right);
                 Some(Self::String(left))
             }
-            _ => None,
+            (left, right) => quantity_additive(left, right, |left, right| left + right),
         }
     }
 
     fn subtract(self, right: Self) -> Option<Self> {
-        numeric_binary(self, right, |left, right| left - right)
+        quantity_additive(self, right, |left, right| left - right)
     }
 
     fn multiply(self, right: Self) -> Option<Self> {
-        numeric_binary(self, right, |left, right| left * right)
+        match (self, right) {
+            (Self::Number(left), Self::Number(right)) => Some(Self::Number(left * right)),
+            (Self::Number(scale), Self::Length(value))
+            | (Self::Length(value), Self::Number(scale)) => Some(Self::Length(value * scale)),
+            (Self::Number(scale), Self::Angle(value))
+            | (Self::Angle(value), Self::Number(scale)) => Some(Self::Angle(value * scale)),
+            _ => None,
+        }
     }
 
     fn divide(self, right: Self) -> Option<Self> {
-        numeric_binary(self, right, |left, right| left / right)
+        match (self, right) {
+            (Self::Number(left), Self::Number(right)) => Some(Self::Number(left / right)),
+            (Self::Length(value), Self::Number(scale)) => Some(Self::Length(value / scale)),
+            (Self::Angle(value), Self::Number(scale)) => Some(Self::Angle(value / scale)),
+            (Self::Length(left), Self::Length(right)) | (Self::Angle(left), Self::Angle(right)) => {
+                Some(Self::Number(left / right))
+            }
+            _ => None,
+        }
     }
 
     fn power(self, right: Self) -> Option<Self> {
@@ -1140,6 +1200,9 @@ impl ExpressionValue for CurveExpressionValue {
     fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
         let result = match (self, right) {
             (Self::Number(left), Self::Number(right)) => operator.evaluate(left, right),
+            (Self::Length(left), Self::Length(right)) | (Self::Angle(left), Self::Angle(right)) => {
+                operator.evaluate(left, right)
+            }
             (Self::String(left), Self::String(right)) => match operator {
                 ComparisonOperator::Equal => left == right,
                 ComparisonOperator::NotEqual => left != right,
@@ -1180,15 +1243,36 @@ impl ExpressionValue for CurveExpressionValue {
     fn negate(self) -> Option<Self> {
         match self {
             Self::Number(value) => Some(Self::Number(-value)),
+            Self::Length(value) => Some(Self::Length(-value)),
+            Self::Angle(value) => Some(Self::Angle(-value)),
             Self::String(_) => None,
         }
     }
 
     fn finite(self) -> bool {
         match self {
-            Self::Number(value) => value.is_finite(),
+            Self::Number(value) | Self::Length(value) | Self::Angle(value) => value.is_finite(),
             Self::String(_) => true,
         }
+    }
+}
+
+fn quantity_additive(
+    left: CurveExpressionValue,
+    right: CurveExpressionValue,
+    operation: impl FnOnce(f64, f64) -> f64,
+) -> Option<CurveExpressionValue> {
+    match (left, right) {
+        (CurveExpressionValue::Number(left), CurveExpressionValue::Number(right)) => {
+            Some(CurveExpressionValue::Number(operation(left, right)))
+        }
+        (CurveExpressionValue::Length(left), CurveExpressionValue::Length(right)) => {
+            Some(CurveExpressionValue::Length(operation(left, right)))
+        }
+        (CurveExpressionValue::Angle(left), CurveExpressionValue::Angle(right)) => {
+            Some(CurveExpressionValue::Angle(operation(left, right)))
+        }
+        _ => None,
     }
 }
 
@@ -1370,7 +1454,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
 
     fn primary(&mut self) -> Option<V> {
         self.whitespace();
-        let value = match self.source.get(self.cursor)? {
+        let mut value = match self.source.get(self.cursor)? {
             b'(' => {
                 (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
                 self.cursor += 1;
@@ -1388,6 +1472,18 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             byte if byte.is_ascii_alphabetic() || *byte == b'_' => self.identifier_or_function(),
             _ => None,
         }?;
+        self.whitespace();
+        if self.source.get(self.cursor) == Some(&b'[') {
+            let unit_start = self.cursor + 1;
+            let unit_length = self.source[unit_start..]
+                .iter()
+                .position(|byte| *byte == b']')?;
+            let unit_end = unit_start + unit_length;
+            let unit = std::str::from_utf8(&self.source[unit_start..unit_end]).ok()?;
+            let (scale, dimension) = relation_unit(unit)?;
+            value = value.with_unit(scale, dimension)?;
+            self.cursor = unit_end + 1;
+        }
         Some(value)
     }
 
@@ -1651,7 +1747,7 @@ fn evaluate_creo_relation_function(
     arguments: &[CurveExpressionValue],
     context: RelationEvaluationContext<'_>,
 ) -> Option<CurveExpressionValue> {
-    use CurveExpressionValue::{Number, String};
+    use CurveExpressionValue::{Angle, Length, Number, String};
     let value = match (name, arguments) {
         (CreoMathFunction::Itos, [Number(value)]) if value.is_finite() => {
             let rounded = value.round();
@@ -1711,12 +1807,16 @@ fn evaluate_creo_relation_function(
         (CreoMathFunction::StringPattern, [String(value), String(pattern)]) => {
             Number(f64::from(relation_string_pattern(value, pattern)?))
         }
+        (
+            name @ (CreoMathFunction::Sin | CreoMathFunction::Cos | CreoMathFunction::Tan),
+            [Angle(value)],
+        ) => Number(evaluate_creo_math_function(name, &[*value])?),
         _ => {
             let numbers = arguments
                 .iter()
                 .map(|argument| match argument {
                     Number(value) => Some(*value),
-                    String(_) => None,
+                    Length(_) | Angle(_) | String(_) => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
             Number(evaluate_creo_math_function(name, &numbers)?)
@@ -3126,6 +3226,40 @@ mod tests {
         assert_eq!(assignments[0].value, None);
         assert_eq!(assignments[1].dependencies, ["pressure"]);
         assert_eq!(assignments[1].value, None);
+
+        let values = BTreeMap::new();
+        let cases = [
+            ("5[mm]+.2[cm]", CurveExpressionValue::Length(7.0)),
+            ("1[inch]", CurveExpressionValue::Length(25.4)),
+            ("PI[rad]", CurveExpressionValue::Angle(180.0)),
+            ("sin(PI[rad]/2)", CurveExpressionValue::Number(1.0)),
+            ("1[mm]*2", CurveExpressionValue::Length(2.0)),
+            ("1[mm]/.1[cm]", CurveExpressionValue::Number(1.0)),
+        ];
+        for (expression, expected) in cases {
+            let actual = evaluate_relation_expression(
+                expression,
+                &values,
+                RelationEvaluationContext::default(),
+            )
+            .expect(expression);
+            match (actual, expected) {
+                (CurveExpressionValue::Number(actual), CurveExpressionValue::Number(expected))
+                | (CurveExpressionValue::Length(actual), CurveExpressionValue::Length(expected))
+                | (CurveExpressionValue::Angle(actual), CurveExpressionValue::Angle(expected)) => {
+                    assert!((actual - expected).abs() < 1e-12, "{expression}");
+                }
+                _ => panic!("unexpected value kind for {expression}"),
+            }
+        }
+        assert_eq!(
+            evaluate_relation_expression(
+                "1[mm]+1[deg]",
+                &values,
+                RelationEvaluationContext::default(),
+            ),
+            None
+        );
     }
 
     #[test]

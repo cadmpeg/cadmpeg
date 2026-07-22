@@ -3091,6 +3091,12 @@ fn transfer_curve_expression_features(
                     crate::curve::CurveExpressionValue::Number(value) => {
                         ParameterValue::Real(*value)
                     }
+                    crate::curve::CurveExpressionValue::Length(value) => {
+                        ParameterValue::Length(cadmpeg_ir::features::Length(*value))
+                    }
+                    crate::curve::CurveExpressionValue::Angle(value) => {
+                        ParameterValue::Angle(cadmpeg_ir::features::Angle(value.to_radians()))
+                    }
                     crate::curve::CurveExpressionValue::String(value) => {
                         ParameterValue::String(value.clone())
                     }
