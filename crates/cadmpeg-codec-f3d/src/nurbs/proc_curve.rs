@@ -16,7 +16,8 @@ use crate::nurbs::reader::{
     take_optional_range_value, take_range_value, take_tagged_int, Nullable, INT_WIDTHS, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{
-    find_intcurve_subtype, first_construction_subtype, subtype_refs, subtype_span, SubtypeTables,
+    find_intcurve_subtype, find_subtype_marker, first_construction_subtype, subtype_refs,
+    subtype_span, SubtypeTables,
 };
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_int};
@@ -330,12 +331,7 @@ fn decode_procedural_curve_recursive(
 
 fn decode_embedded_deformable(bytes: &[u8], int_width: usize) -> Option<EmbeddedDeformable> {
     let name = b"defm_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
+    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
     let mut position = marker + name.len() + 3;
     let extension = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
     let bend = decode_curve_block(bytes, position, int_width)?;
@@ -617,12 +613,7 @@ pub(crate) struct CompoundPatchLayout {
 /// Locate both compound parameter arrays from their native counts.
 pub(crate) fn compound_patch_layout(bytes: &[u8], int_width: usize) -> Option<CompoundPatchLayout> {
     let name = b"comp_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
+    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
     let parameters = take_float_array_payloads(bytes, &mut position, int_width)?;
@@ -644,12 +635,7 @@ pub(crate) fn compound_patch_layout(bytes: &[u8], int_width: usize) -> Option<Co
 /// Locate the subset range by consuming the subtype-owned parent curve.
 pub(crate) fn subset_patch_layout(bytes: &[u8], int_width: usize) -> Option<SubsetPatchLayout> {
     let name = b"subset_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
+    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
     position = decode_curve_block(bytes, position, int_width)?.end;
@@ -666,12 +652,7 @@ pub(crate) fn vector_offset_patch_layout(
     int_width: usize,
 ) -> Option<VectorOffsetPatchLayout> {
     let name = b"offset_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
+    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
     take_bool(bytes, &mut position)?;
@@ -691,12 +672,7 @@ pub(crate) fn vector_offset_patch_layout(
 /// Locate helix fields by consuming the subtype prefix grammar.
 pub(crate) fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<HelixPatchLayout> {
     let name = b"helix_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
+    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
     let current_layout = take_optional_helix_revision(bytes, &mut position, int_width)?;
@@ -737,17 +713,8 @@ pub(crate) fn extrusion_patch_layout(
     int_width: usize,
 ) -> Option<ExtrusionPatchLayout> {
     let names: [&[u8]; 2] = [b"cyl_spl_sur", b"cylsur"];
-    let (start, name_len) = names.into_iter().find_map(|name| {
-        bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == name
-            })
-            .map(|start| (start, name.len()))
-    })?;
+    let (start, name_len) =
+        find_subtype_marker(bytes, &names).map(|(start, name)| (start, name.len()))?;
     subtype_span(bytes, start, int_width)?;
     let mut position = start + name_len + 3;
     let parameter_interval = [
@@ -778,17 +745,8 @@ pub(crate) fn rolling_ball_patch_layout(
         b"sss_blend_spl_sur",
         b"sssblndsur",
     ];
-    let (start, name_len) = names.into_iter().find_map(|name| {
-        bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == name
-            })
-            .map(|start| (start, name.len()))
-    })?;
+    let (start, name_len) =
+        find_subtype_marker(bytes, &names).map(|(start, name)| (start, name.len()))?;
     let span = subtype_span(bytes, start, int_width)?;
     let payload_start = name_len + 3;
     let radii = (|| {
@@ -1167,17 +1125,7 @@ pub(crate) fn silhouette_patch_layout(
         SilhouetteKind::Parametric => (&[b"para_silh_int_cur", b"parasil"], false),
         SilhouetteKind::Taper { .. } => (&[b"taper_silh_int_cur"], true),
     };
-    let (marker, name) = names.iter().find_map(|name| {
-        bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == *name
-            })
-            .map(|marker| (marker, *name))
-    })?;
+    let (marker, name) = find_subtype_marker(bytes, names)?;
     let mut position = marker + name.len() + 3;
     decode_embedded_surface(bytes, &mut position, int_width)?;
     decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -1430,17 +1378,7 @@ pub(crate) fn surface_curve_patch_layout(
         SurfaceCurveFamily::Parametric => &[b"par_int_cur", b"parcur"],
         SurfaceCurveFamily::Skin => &[b"skin_int_cur", b"d5c2_cur"],
     };
-    let (marker, name) = names.iter().find_map(|name| {
-        bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == *name
-            })
-            .map(|marker| (marker, *name))
-    })?;
+    let (marker, name) = find_subtype_marker(bytes, names)?;
     let mut position = marker + name.len() + 3;
     decode_embedded_surface(bytes, &mut position, int_width)?;
     decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -1466,12 +1404,7 @@ fn decode_embedded_three_surface_intersection(
     int_width: usize,
 ) -> Option<EmbeddedThreeSurfaceIntersection> {
     let name = b"sss_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
+    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
     let mut position = marker + name.len() + 3;
     let first = decode_embedded_surface(bytes, &mut position, int_width)?;
     let second = decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -1664,17 +1597,7 @@ fn decode_embedded_intersection(
     tables: &SubtypeTables,
 ) -> Option<(EmbeddedIntersection, bool)> {
     let names: [&[u8]; 3] = [b"int_int_cur", b"surf_surf_int_cur", b"surfintcur"];
-    let (marker, name) = names.into_iter().find_map(|name| {
-        bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == name
-            })
-            .map(|marker| (marker, name))
-    })?;
+    let (marker, name) = find_subtype_marker(bytes, &names)?;
     let position = marker + name.len() + 3;
     decode_context_first_intersection(bytes, position, int_width).or_else(|| {
         decode_cache_first_intersection(bytes, position, int_width, solved, active_bytes, tables)
@@ -1781,17 +1704,7 @@ pub(crate) fn intersection_patch_layout(
     int_width: usize,
 ) -> Option<IntersectionPatchLayout> {
     let names: [&[u8]; 3] = [b"int_int_cur", b"surf_surf_int_cur", b"surfintcur"];
-    let (marker, name) = names.into_iter().find_map(|name| {
-        bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == name
-            })
-            .map(|marker| (marker, name))
-    })?;
+    let (marker, name) = find_subtype_marker(bytes, &names)?;
     let mut position = marker + name.len() + 3;
     decode_embedded_surface(bytes, &mut position, int_width)?;
     decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -2237,12 +2150,7 @@ fn decode_two_sided_offset(
 
 fn decode_compound_definition(bytes: &[u8], int_width: usize) -> Option<CompoundDefinition> {
     let name = b"comp_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
+    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
     let mut position = marker + name.len() + 3;
     let parameters = take_float_array(bytes, &mut position, int_width)?;
     let count = usize::try_from(take_tagged_int(bytes, &mut position, 0x04, int_width)?).ok()?;
@@ -2328,12 +2236,7 @@ pub(crate) fn decode_helix_definition(
     int_width: usize,
 ) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
     let name = b"helix_int_cur";
-    let marker = bytes.windows(name.len() + 3).position(|window| {
-        window[0] == 0x0f
-            && matches!(window[1], 0x0d | 0x0e)
-            && usize::from(window[2]) == name.len()
-            && &window[3..] == name
-    })?;
+    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
     let mut position = marker + name.len() + 3;
     let current_layout = take_optional_helix_revision(bytes, &mut position, int_width)?;
     let lower = take_range_value(bytes, &mut position)?;

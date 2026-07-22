@@ -691,9 +691,8 @@ pub(crate) fn decode_var_blend_spl_sur(
         b"srf_srf_v_bl_spl_sur",
         b"srfsrfblndsur",
     ];
-    let (start, name_len) = names
-        .into_iter()
-        .find_map(|name| find_marker(name).map(|start| (start, name.len())))?;
+    let (start, name_len) =
+        find_subtype_marker(record_bytes, &names).map(|(start, name)| (start, name.len()))?;
     // A rolling-ball record can embed a complete variable-blend subtype as a
     // side support surface; a rolling-ball marker before the variable-blend
     // marker means this record belongs to the rolling-ball decoder.
