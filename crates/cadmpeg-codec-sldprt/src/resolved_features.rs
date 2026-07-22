@@ -385,6 +385,8 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             let coordinates_m = marker_coordinates(payload, offset);
             let kind = if marker_spatial_coordinates(payload, offset).is_some() {
                 SketchInputKind::Point
+            } else if legacy_line_handle_coordinates(payload, offset).is_some() {
+                SketchInputKind::Point
             } else if coordinates_m.is_some() && indexed_profile_vertex(payload, offset) {
                 SketchInputKind::Point
             } else if coordinates_m.is_some() && linked_profile_vertex(payload, offset) {
@@ -742,8 +744,12 @@ fn legacy_inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[f64;
 }
 
 fn legacy_line_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+    let handle_variant = match marker_native_code(payload, offset) {
+        Some(0) => [0x00, 0x00, 0x03, 0x00],
+        Some(1) => [0x00, 0x00, 0x02, 0x00],
+        _ => return None,
+    };
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
-        || marker_native_code(payload, offset) != Some(0)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
@@ -751,8 +757,9 @@ fn legacy_line_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64;
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
         || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
-        || payload.get(offset + 74..offset + 84)
-            != Some(&[0x00, 0x00, 0x03, 0x00, 0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
+        || payload.get(offset + 74..offset + 78) != Some(&handle_variant)
+        || payload.get(offset + 78..offset + 84)
+            != Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
         || payload.get(offset + 84..offset + 96) != Some(b"sgLineHandle")
         || payload.get(offset + 96..offset + 106)
             != Some(&[0x03, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
@@ -4245,6 +4252,17 @@ mod marker_tests {
             Some([0.045, -0.0225])
         );
         assert_eq!(marker_coordinates(&payload, 0), Some([0.045, -0.0225]));
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[76..78].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(
+            legacy_line_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
+        );
         assert_eq!(
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
