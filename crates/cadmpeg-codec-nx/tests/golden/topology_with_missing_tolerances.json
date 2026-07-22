@@ -1,0 +1,8 @@
+{
+  "decode": {
+    "decode_error": "not the expected format: missing SPLMSSTR magic"
+  },
+  "inspect": {
+    "inspect_error": "not the expected format: missing SPLMSSTR magic"
+  }
+}
