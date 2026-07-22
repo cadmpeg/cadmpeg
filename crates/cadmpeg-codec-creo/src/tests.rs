@@ -181,12 +181,12 @@ fn scan_decodes_length_prefixed_native_model_name() {
         .to_vec();
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.model_name.as_deref(), Some("widget.prt "));
+    assert_eq!(scan.framing.model_name.as_deref(), Some("widget.prt "));
     let model_name_offset = data
         .windows(b"widget.prt ".len())
         .position(|window| window == b"widget.prt ")
         .expect("model name offset");
-    assert_eq!(scan.model_name_offset, Some(model_name_offset));
+    assert_eq!(scan.framing.model_name_offset, Some(model_name_offset));
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     assert_eq!(
         result
@@ -240,8 +240,8 @@ fn scan_withholds_repeated_native_model_names() {
         .to_vec();
 
     let scan = container::scan_bytes(data);
-    assert!(scan.model_name.is_none());
-    assert!(scan.model_name_offset.is_none());
+    assert!(scan.framing.model_name.is_none());
+    assert!(scan.framing.model_name_offset.is_none());
 }
 
 #[test]
@@ -256,13 +256,13 @@ fn scan_enumerates_and_classifies_sections() {
     );
     let scan = container::scan_bytes(data);
 
-    assert_eq!(scan.version_line, "#UGC:2 P test");
-    assert_eq!(scan.sections.len(), 3);
-    assert_eq!(scan.sections[0].name, "VisibGeom");
-    assert_eq!(scan.sections[0].role, role::GEOMETRY);
-    assert_eq!(scan.sections[1].name, "AllFeatur");
-    assert_eq!(scan.sections[1].role, role::MODEL_DATA);
-    assert_eq!(scan.sections[2].role, role::THUMBNAIL);
+    assert_eq!(scan.framing.version_line, "#UGC:2 P test");
+    assert_eq!(scan.framing.sections.len(), 3);
+    assert_eq!(scan.framing.sections[0].name, "VisibGeom");
+    assert_eq!(scan.framing.sections[0].role, role::GEOMETRY);
+    assert_eq!(scan.framing.sections[1].name, "AllFeatur");
+    assert_eq!(scan.framing.sections[1].role, role::MODEL_DATA);
+    assert_eq!(scan.framing.sections[2].role, role::THUMBNAIL);
     assert!(container::has_thumbnail(&scan));
 }
 
@@ -278,14 +278,15 @@ fn scan_enumerates_toc_backed_compound_close_section_boundaries() {
     let scan = container::scan_bytes(data);
 
     assert_eq!(
-        scan.sections
+        scan.framing
+            .sections
             .iter()
             .map(|section| section.name.as_str())
             .collect::<Vec<_>>(),
         ["DEPDB_DATA", "VisibGeom", "AllFeatur"]
     );
-    assert_eq!(scan.sections[1].role, role::GEOMETRY);
-    assert_eq!(scan.sections[2].role, role::MODEL_DATA);
+    assert_eq!(scan.framing.sections[1].role, role::GEOMETRY);
+    assert_eq!(scan.framing.sections[2].role, role::MODEL_DATA);
 }
 
 #[test]
@@ -317,11 +318,11 @@ fn scan_uses_fixed_width_toc_offsets_for_adjacent_sections() {
 
     let scan = container::scan_bytes(data);
 
-    assert_eq!(scan.sections.len(), 2);
-    assert_eq!(scan.sections[0].name, "SolidPrimdata");
-    assert_eq!(scan.sections[0].length, first.len());
-    assert_eq!(scan.sections[1].name, "VisibGeom");
-    assert_eq!(scan.sections[1].offset, header_base + second_offset);
+    assert_eq!(scan.framing.sections.len(), 2);
+    assert_eq!(scan.framing.sections[0].name, "SolidPrimdata");
+    assert_eq!(scan.framing.sections[0].length, first.len());
+    assert_eq!(scan.framing.sections[1].name, "VisibGeom");
+    assert_eq!(scan.framing.sections[1].offset, header_base + second_offset);
 }
 
 #[test]
@@ -345,8 +346,8 @@ fn scan_expands_toc_sized_unix_compress_payload() {
 
     let scan = container::scan_bytes(data);
 
-    assert_eq!(scan.expanded_sections.len(), 1);
-    assert_eq!(scan.expanded_sections[0].data, b"ABC");
+    assert_eq!(scan.framing.expanded_sections.len(), 1);
+    assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
     let summary = container::summarize(&scan);
     assert_eq!(summary.entries[0].compression, "unix-compress");
     assert_eq!(summary.entries[0].uncompressed_size, 18);
@@ -398,8 +399,8 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
 fn scan_reads_namespace_counts() {
     let data = build_prt("c", &[("VisibGeom", visibgeom_payload(5, 12))]);
     let scan = container::scan_bytes(data);
-    assert_eq!(scan.census.srf_array_count, Some(5));
-    assert_eq!(scan.census.crv_array_count, Some(12));
+    assert_eq!(scan.framing.census.srf_array_count, Some(5));
+    assert_eq!(scan.framing.census.crv_array_count, Some(12));
 }
 
 #[test]
@@ -408,9 +409,9 @@ fn scan_sums_concatenated_depdb_surface_namespaces() {
     payload.extend_from_slice(&visibgeom_payload(5, 6));
     let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", payload)]));
 
-    assert_eq!(scan.layout, Layout::Depdb);
-    assert_eq!(scan.census.srf_array_count, Some(8));
-    assert_eq!(scan.census.crv_array_count, Some(10));
+    assert_eq!(scan.framing.layout, Layout::Depdb);
+    assert_eq!(scan.framing.census.srf_array_count, Some(8));
+    assert_eq!(scan.framing.census.crv_array_count, Some(10));
 }
 
 #[test]
@@ -418,8 +419,8 @@ fn scan_does_not_treat_unlabeled_depdb_bytes_as_geometry_rows() {
     let payload = vec![7, 0x22, 4, 0x01, 0, 8, 8, 0x24, 4, 0xf6, 0x01, 0];
     let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", payload)]));
 
-    assert!(scan.surface_rows.is_empty());
-    assert!(scan.surface_parameters.is_empty());
+    assert!(scan.surfaces.rows.is_empty());
+    assert!(scan.surfaces.parameters.is_empty());
 }
 
 #[test]
@@ -429,11 +430,11 @@ fn scan_discovers_typed_surface_rows() {
     payload.extend_from_slice(&[8, 0x24, 4, 0xf6, 0x01, 0]);
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.surface_rows.len(), 2);
-    assert_eq!(scan.surface_rows[0].id, 7);
-    assert_eq!(scan.surface_rows[0].type_byte, 0x22);
-    assert_eq!(scan.surface_rows[1].id, 8);
-    assert_eq!(scan.surface_rows[1].type_byte, 0x24);
+    assert_eq!(scan.surfaces.rows.len(), 2);
+    assert_eq!(scan.surfaces.rows[0].id, 7);
+    assert_eq!(scan.surfaces.rows[0].type_byte, 0x22);
+    assert_eq!(scan.surfaces.rows[1].id, 8);
+    assert_eq!(scan.surfaces.rows[1].type_byte, 0x24);
 }
 
 #[test]
@@ -444,17 +445,17 @@ fn scan_preserves_linear_extrusion_type_variants() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.surface_rows.len(), 2);
+    assert_eq!(scan.surfaces.rows.len(), 2);
     assert_eq!(
-        scan.surface_rows[0].kind,
+        scan.surfaces.rows[0].kind,
         crate::surface::SurfaceKind::Extrusion
     );
-    assert_eq!(scan.surface_rows[0].type_byte, 0x2a);
+    assert_eq!(scan.surfaces.rows[0].type_byte, 0x2a);
     assert_eq!(
-        scan.surface_rows[1].kind,
+        scan.surfaces.rows[1].kind,
         crate::surface::SurfaceKind::Extrusion
     );
-    assert_eq!(scan.surface_rows[1].type_byte, 0x2c);
+    assert_eq!(scan.surfaces.rows[1].type_byte, 0x2c);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let rows = &result.ir.native.namespace("creo").unwrap().arenas["surface_rows"];
     assert_eq!(rows[0].fields["surface_variant"], "ruled_surface");
@@ -482,8 +483,8 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.tabulated_cylinder_curve_replays.len(), 1);
-    let replay = &scan.tabulated_cylinder_curve_replays[0];
+    assert_eq!(scan.curves.tabulated_cylinder_replays.len(), 1);
+    let replay = &scan.curves.tabulated_cylinder_replays[0];
     assert_eq!(replay.surface_id, 7);
     assert_eq!(replay.curve_id, 9);
     assert_eq!(replay.curve_type, 0x13);
@@ -526,18 +527,18 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
     payload.extend_from_slice(b"\xe0\x01next_record\0");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.surface_parameters.len(), 2);
-    assert_eq!(scan.surface_parameters[0].surface_id, 7);
-    assert_eq!(scan.surface_parameters[0].body, vec![0x0f, 0xe4]);
-    assert_eq!(scan.surface_parameters[0].scalar_values, vec![0.0, 1.0]);
+    assert_eq!(scan.surfaces.parameters.len(), 2);
+    assert_eq!(scan.surfaces.parameters[0].surface_id, 7);
+    assert_eq!(scan.surfaces.parameters[0].body, vec![0x0f, 0xe4]);
+    assert_eq!(scan.surfaces.parameters[0].scalar_values, vec![0.0, 1.0]);
     assert_eq!(
-        scan.surface_parameters[0].boundary,
+        scan.surfaces.parameters[0].boundary,
         crate::surface::SurfaceBodyBoundary::CompoundClose
     );
-    assert_eq!(scan.surface_parameters[1].surface_id, 8);
-    assert_eq!(scan.surface_parameters[1].scalar_values, vec![3.0]);
+    assert_eq!(scan.surfaces.parameters[1].surface_id, 8);
+    assert_eq!(scan.surfaces.parameters[1].scalar_values, vec![3.0]);
     assert_eq!(
-        scan.surface_parameters[1]
+        scan.surfaces.parameters[1]
             .scalar_tokens
             .iter()
             .map(|token| (token.offset, token.length))
@@ -545,7 +546,7 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
         [(0, 8)]
     );
     assert_eq!(
-        scan.surface_parameters[1].boundary,
+        scan.surfaces.parameters[1].boundary,
         crate::surface::SurfaceBodyBoundary::NamedRecord
     );
 }
@@ -709,11 +710,11 @@ fn torus_family_does_not_shorten_unframed_negative_world_scalar() {
     payload.extend_from_slice(b"\xe0\x01next_record\0");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.surface_parameters.len(), 1);
-    assert_eq!(scan.surface_parameters[0].body, scalar);
-    assert_eq!(scan.surface_parameters[0].scalar_tokens[0].length, 8);
+    assert_eq!(scan.surfaces.parameters.len(), 1);
+    assert_eq!(scan.surfaces.parameters[0].body, scalar);
+    assert_eq!(scan.surfaces.parameters[0].scalar_tokens[0].length, 8);
     assert_eq!(
-        scan.surface_parameters[0].boundary,
+        scan.surfaces.parameters[0].boundary,
         crate::surface::SurfaceBodyBoundary::NamedRecord
     );
 }
@@ -730,7 +731,7 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    let frame = scan.surface_parameters[0]
+    let frame = scan.surfaces.parameters[0]
         .torus_outline_frame(0x26)
         .expect("typed torus outline frame");
     assert_eq!(
@@ -739,7 +740,7 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
     );
     assert_eq!(frame.selector, 80);
     assert_eq!(frame.offset, 0);
-    assert!(scan.surface_parameters[0]
+    assert!(scan.surfaces.parameters[0]
         .torus_outline_frame(0x24)
         .is_none());
 
@@ -777,7 +778,7 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         let data = build_prt("c", &[("VisibGeom", payload)]);
         let scan = container::scan_bytes(data.clone());
 
-        let overrides = scan.surface_parameters[0]
+        let overrides = scan.surfaces.parameters[0]
             .torus_radius_overrides(0x26)
             .expect("tagged torus radius overrides");
         assert_eq!(overrides.radius1, 0.499_999_999_999_999_94);
@@ -785,10 +786,10 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         assert_eq!(overrides.radius2_encoding, expected_encoding);
         assert_eq!(overrides.offset, 0);
         assert_eq!(
-            scan.surface_parameters[0].scalar_values,
+            scan.surfaces.parameters[0].scalar_values,
             [stored_radial_scalar, 0.499_999_999_999_999_94]
         );
-        assert!(scan.surface_parameters[0]
+        assert!(scan.surfaces.parameters[0]
             .torus_radius_overrides(0x24)
             .is_none());
 
@@ -854,23 +855,23 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
     let scan = container::scan_bytes(data.clone());
 
     assert_eq!(
-        scan.surface_parameters[0].body,
+        scan.surfaces.parameters[0].body,
         [&[0xe3, 0x18, 0xe4][..], &half_angle[..]].concat()
     );
     assert_eq!(
-        scan.surface_parameters[0].scalar_values,
+        scan.surfaces.parameters[0].scalar_values,
         [0.0, 1.0, expected]
     );
     assert_eq!(
-        scan.surface_parameters[0].boundary,
+        scan.surfaces.parameters[0].boundary,
         crate::surface::SurfaceBodyBoundary::CompoundClose
     );
-    let override_value = scan.surface_parameters[0]
+    let override_value = scan.surfaces.parameters[0]
         .cone_half_angle_override(0x25)
         .expect("terminal cone half-angle");
     assert_eq!(override_value.radians, expected);
     assert_eq!(override_value.offset, 3);
-    assert!(scan.surface_parameters[0]
+    assert!(scan.surfaces.parameters[0]
         .cone_half_angle_override(0x26)
         .is_none());
 
@@ -1207,14 +1208,14 @@ fn surface_parameter_body_ignores_compound_close_inside_scalar() {
     payload.push(0xe3);
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.surface_parameters.len(), 1);
-    assert_eq!(scan.surface_parameters[0].body, scalar);
+    assert_eq!(scan.surfaces.parameters.len(), 1);
+    assert_eq!(scan.surfaces.parameters[0].body, scalar);
     assert_eq!(
-        scan.surface_parameters[0].scalar_values,
+        scan.surfaces.parameters[0].scalar_values,
         [f64::from_be_bytes([0x40, 0x08, 0xe3, 0, 0, 0, 0, 0])]
     );
     assert_eq!(
-        scan.surface_parameters[0].boundary,
+        scan.surfaces.parameters[0].boundary,
         crate::surface::SurfaceBodyBoundary::CompoundClose
     );
 }
@@ -1227,13 +1228,13 @@ fn surface_parameter_body_ignores_invalid_embedded_named_marker() {
     payload.extend_from_slice(b"\xe0\x01next_record\0");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.surface_parameters.len(), 1);
+    assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(
-        scan.surface_parameters[0].body,
+        scan.surfaces.parameters[0].body,
         [0x2f, 0x43, 0, 0xe0, 0xff, 0x80, 0, 0x0f]
     );
     assert_eq!(
-        scan.surface_parameters[0].boundary,
+        scan.surfaces.parameters[0].boundary,
         crate::surface::SurfaceBodyBoundary::NamedRecord
     );
 }
@@ -1247,14 +1248,14 @@ fn surface_parameter_body_ignores_valid_looking_header_inside_scalar() {
     payload.extend_from_slice(b"\xe0\x01next_record\0");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.surface_parameters.len(), 1);
-    assert_eq!(scan.surface_parameters[0].body, scalar);
+    assert_eq!(scan.surfaces.parameters.len(), 1);
+    assert_eq!(scan.surfaces.parameters[0].body, scalar);
     assert_eq!(
-        scan.surface_parameters[0].scalar_values,
+        scan.surfaces.parameters[0].scalar_values,
         [f64::from_be_bytes([0x3f, 0xe0, 0x01, b'x', 0, 0, 0, 0])]
     );
     assert_eq!(
-        scan.surface_parameters[0].boundary,
+        scan.surfaces.parameters[0].boundary,
         crate::surface::SurfaceBodyBoundary::NamedRecord
     );
 }
@@ -1266,8 +1267,8 @@ fn scan_ignores_surface_header_candidates_inside_a_preceding_header() {
     payload.extend_from_slice(&[0x22, 4, 0x01, 0, 0, 0xe3]);
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.surface_parameters.len(), 1);
-    assert_eq!(scan.surface_parameters[0].surface_id, 7);
+    assert_eq!(scan.surfaces.parameters.len(), 1);
+    assert_eq!(scan.surfaces.parameters[0].surface_id, 7);
 }
 
 #[test]
@@ -1287,8 +1288,8 @@ fn scan_decodes_plane_local_system_support_frame() {
     payload.push(0xe3);
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.plane_local_systems.len(), 1);
-    let frame = &scan.plane_local_systems[0];
+    assert_eq!(scan.planes.local_systems.len(), 1);
+    let frame = &scan.planes.local_systems[0];
     assert_eq!(frame.surface_id, 7);
     assert_eq!(frame.slots.len(), 12);
     assert_eq!(frame.origin, Some([3.0, 0.0, 1.0]));
@@ -1298,10 +1299,10 @@ fn scan_decodes_plane_local_system_support_frame() {
         frame.classification,
         crate::surface::LocalSystemClassification::Simple
     );
-    assert_eq!(scan.outline_planes.len(), 1);
-    assert_eq!(scan.outline_planes[0].origin, [0.0, 0.0, 1.0]);
-    assert_eq!(scan.outline_planes[0].normal, [0.0, 0.0, -1.0]);
-    assert_eq!(scan.outline_planes[0].u_axis, [0.0, 1.0, 0.0]);
+    assert_eq!(scan.planes.outlines.len(), 1);
+    assert_eq!(scan.planes.outlines[0].origin, [0.0, 0.0, 1.0]);
+    assert_eq!(scan.planes.outlines[0].normal, [0.0, 0.0, -1.0]);
+    assert_eq!(scan.planes.outlines[0].u_axis, [0.0, 1.0, 0.0]);
 }
 
 #[test]
@@ -1311,9 +1312,9 @@ fn scan_resolves_section_scalar_cache_in_surface_rows() {
     payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0, 0x18, 0x00, 0xe3]);
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.surface_parameters.len(), 1);
-    assert_eq!(scan.surface_parameters[0].surface_id, 7);
-    assert_eq!(scan.surface_parameters[0].scalar_values, vec![3.0]);
+    assert_eq!(scan.surfaces.parameters.len(), 1);
+    assert_eq!(scan.surfaces.parameters[0].surface_id, 7);
+    assert_eq!(scan.surfaces.parameters[0].scalar_values, vec![3.0]);
 }
 
 #[test]
@@ -1328,7 +1329,7 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let expected_offset = container::scan_bytes(data.clone()).plane_local_systems[0].offset as u64;
+    let expected_offset = container::scan_bytes(data.clone()).planes.local_systems[0].offset as u64;
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let namespace = result.ir.native.namespace("creo").unwrap();
     assert_eq!(
@@ -1460,11 +1461,11 @@ fn scan_decodes_standard_and_compact_plane_envelopes() {
     payload.push(0xe3);
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.plane_envelopes.len(), 2);
+    assert_eq!(scan.planes.envelopes.len(), 2);
     let crate::surface::PlaneEnvelope::Standard {
         bounds_2d,
         corners_3d,
-    } = &scan.plane_envelopes[0].envelope
+    } = &scan.planes.envelopes[0].envelope
     else {
         panic!("standard plane envelope");
     };
@@ -1477,7 +1478,7 @@ fn scan_decodes_standard_and_compact_plane_envelopes() {
         ]
     );
     let crate::surface::PlaneEnvelope::Compact { prefix, corners_3d } =
-        &scan.plane_envelopes[1].envelope
+        &scan.planes.envelopes[1].envelope
     else {
         panic!("compact plane envelope");
     };
@@ -1499,11 +1500,11 @@ fn scan_derives_named_surface_plane_from_outline_corners() {
     payload.extend_from_slice(&[0xe4, 0x0f, 0x2f, 0, 0, 0x0d, 0x0f, 0x48, 0, 0]);
     let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", payload)]));
 
-    assert_eq!(scan.plane_envelopes.len(), 1);
-    assert_eq!(scan.outline_planes.len(), 1);
-    assert_eq!(scan.outline_planes[0].surface_id, 5);
-    assert_eq!(scan.outline_planes[0].origin, [0.0, 0.0, 0.0]);
-    assert_eq!(scan.outline_planes[0].normal, [0.0, 1.0, 0.0]);
+    assert_eq!(scan.planes.envelopes.len(), 1);
+    assert_eq!(scan.planes.outlines.len(), 1);
+    assert_eq!(scan.planes.outlines[0].surface_id, 5);
+    assert_eq!(scan.planes.outlines[0].origin, [0.0, 0.0, 0.0]);
+    assert_eq!(scan.planes.outlines[0].normal, [0.0, 1.0, 0.0]);
 }
 
 #[test]
@@ -1515,7 +1516,8 @@ fn scan_discovers_labeled_surface_namespace_row() {
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
     assert!(scan
-        .surface_rows
+        .surfaces
+        .rows
         .iter()
         .any(|row| { row.id == 7 && row.feature_id == 4 && row.next_surface == 0 }));
 }
@@ -1529,11 +1531,11 @@ fn scan_keeps_depdb_cross_section_surfaces_out_of_model_namespace() {
         &[("VisibGeom", visible), ("Xsections", cross_section)],
     ));
 
-    assert_eq!(scan.surface_rows.len(), 1);
-    assert_eq!(scan.surface_rows[0].id, 7);
-    assert_eq!(scan.cross_section_surface_rows.len(), 1);
-    assert_eq!(scan.cross_section_surface_rows[0].id, 9);
-    assert_eq!(scan.cross_section_surface_rows[0].boundary_type, 0x06);
+    assert_eq!(scan.surfaces.rows.len(), 1);
+    assert_eq!(scan.surfaces.rows[0].id, 7);
+    assert_eq!(scan.surfaces.cross_section_rows.len(), 1);
+    assert_eq!(scan.surfaces.cross_section_rows[0].id, 9);
+    assert_eq!(scan.surfaces.cross_section_rows[0].boundary_type, 0x06);
 }
 
 #[test]
@@ -1553,8 +1555,8 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.surface_prototype_records.len(), 1);
-    let prototype = &scan.surface_prototype_records[0];
+    assert_eq!(scan.surfaces.prototype_records.len(), 1);
+    let prototype = &scan.surfaces.prototype_records[0];
     assert_eq!(prototype.declared_family, "cylinder");
     assert_eq!(
         prototype.family,
@@ -1656,7 +1658,8 @@ fn scan_decodes_cone_half_angle_in_its_positive_dict_lane() {
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
     let prototype = scan
-        .surface_prototype_records
+        .surfaces
+        .prototype_records
         .iter()
         .find(|record| record.family == crate::surface::SurfacePrototypeFamily::Cone)
         .expect("cone prototype");
@@ -1677,7 +1680,8 @@ fn scan_keeps_out_of_range_cone_half_angle_opaque() {
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
     let prototype = scan
-        .surface_prototype_records
+        .surfaces
+        .prototype_records
         .iter()
         .find(|record| record.family == crate::surface::SurfacePrototypeFamily::Cone)
         .expect("cone prototype");
@@ -1696,7 +1700,7 @@ fn scan_collects_feature_owners_from_rows_and_parent_lists() {
     payload.extend_from_slice(b"parent_feats\0\xf8\x02\x04\x09");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.feature_ids, vec![4, 9]);
+    assert_eq!(scan.features.ids, vec![4, 9]);
 }
 
 #[test]
@@ -1719,8 +1723,8 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     );
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_entity_tables.len(), 1);
-    let table = &scan.feature_entity_tables[0];
+    assert_eq!(scan.features.entity_tables.len(), 1);
+    let table = &scan.features.entity_tables[0];
     assert_eq!(table.feature_id, Some(4));
     assert_eq!(table.table_class_id, 29);
     assert_eq!(table.entry_ids, vec![7, 9]);
@@ -1852,7 +1856,7 @@ fn scan_decodes_source_entity_id_whose_compact_tail_is_e3() {
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
 
-    let [table] = scan.feature_entity_tables.as_slice() else {
+    let [table] = scan.features.entity_tables.as_slice() else {
         panic!("expected one generated-entity table");
     };
     assert_eq!(table.entry_ids, vec![7, 8]);
@@ -1878,7 +1882,7 @@ fn scan_accepts_large_structurally_bounded_feature_entity_tables() {
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
 
-    let [table] = scan.feature_entity_tables.as_slice() else {
+    let [table] = scan.features.entity_tables.as_slice() else {
         panic!("expected one large generated-entity table");
     };
     assert_eq!(table.feature_id, Some(4));
@@ -1902,7 +1906,7 @@ fn scan_rejects_feature_entity_table_that_crosses_the_next_feature_row() {
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
 
-    assert!(scan.feature_entity_tables.is_empty());
+    assert!(scan.features.entity_tables.is_empty());
 }
 
 #[test]
@@ -1916,12 +1920,12 @@ fn scan_bounds_known_allfeatur_feature_rows() {
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
 
-    assert_eq!(scan.feature_rows.len(), 2);
-    assert_eq!(scan.feature_rows[0].feature_id, 4);
-    assert_eq!(scan.feature_rows[0].header, [0xeb, 0x04]);
-    assert_eq!(scan.feature_rows[0].body, vec![0xeb, 0x04, 0xaa, 0xbb]);
-    assert_eq!(scan.feature_rows[1].feature_id, 9);
-    assert_eq!(scan.feature_rows[1].body, vec![0x90, 0x01, 0xcc]);
+    assert_eq!(scan.features.rows.len(), 2);
+    assert_eq!(scan.features.rows[0].feature_id, 4);
+    assert_eq!(scan.features.rows[0].header, [0xeb, 0x04]);
+    assert_eq!(scan.features.rows[0].body, vec![0xeb, 0x04, 0xaa, 0xbb]);
+    assert_eq!(scan.features.rows[1].feature_id, 9);
+    assert_eq!(scan.features.rows[1].body, vec![0x90, 0x01, 0xcc]);
 }
 
 #[test]
@@ -1946,8 +1950,8 @@ fn scan_decodes_allfeatur_root_featdefs_schema_class() {
     );
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_rows[0].root_schema_class, Some(917));
-    assert_eq!(scan.feature_rows[1].root_schema_class, Some(913));
+    assert_eq!(scan.features.rows[0].root_schema_class, Some(917));
+    assert_eq!(scan.features.rows[1].root_schema_class, Some(913));
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     assert_eq!(
@@ -2372,17 +2376,17 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     let data = build_prt("c", &[("AllFeatur", allfeatur)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_entities.len(), 3);
-    assert_eq!(scan.feature_entities[0].entity_id, 0);
-    assert_eq!(scan.feature_entities[0].name, "Sld_Features");
-    assert_eq!(scan.feature_entities[1].entity_id, 1);
-    assert_eq!(scan.feature_entities[1].name, "first");
-    assert_eq!(scan.feature_entity_references.len(), 2);
-    assert_eq!(scan.feature_entity_references[0].source_entity_id, Some(1));
-    assert_eq!(scan.feature_entity_references[0].target_entity_id, 2);
-    assert!(scan.feature_entity_references[0].target_resolved);
-    assert_eq!(scan.feature_entity_references[1].source_entity_id, Some(2));
-    assert_eq!(scan.feature_entity_references[1].target_entity_id, 1);
+    assert_eq!(scan.features.entities.len(), 3);
+    assert_eq!(scan.features.entities[0].entity_id, 0);
+    assert_eq!(scan.features.entities[0].name, "Sld_Features");
+    assert_eq!(scan.features.entities[1].entity_id, 1);
+    assert_eq!(scan.features.entities[1].name, "first");
+    assert_eq!(scan.features.entity_references.len(), 2);
+    assert_eq!(scan.features.entity_references[0].source_entity_id, Some(1));
+    assert_eq!(scan.features.entity_references[0].target_entity_id, 2);
+    assert!(scan.features.entity_references[0].target_resolved);
+    assert_eq!(scan.features.entity_references[1].source_entity_id, Some(2));
+    assert_eq!(scan.features.entity_references[1].target_entity_id, 1);
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
@@ -2403,7 +2407,7 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
         &result.source_fidelity.annotations,
         &entities[0].id,
         "creo:AllFeatur",
-        scan.feature_entities[0].offset as u64,
+        scan.features.entities[0].offset as u64,
         "feature_entity",
         Exactness::ByteExact,
     );
@@ -2420,13 +2424,13 @@ fn scan_bounds_allfeatur_procedural_choice_spans() {
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
 
-    assert_eq!(scan.feature_choices.len(), 2);
-    assert_eq!(scan.feature_choices[0].feature_id, 4);
-    assert_eq!(scan.feature_choices[0].label, "blend_choice");
-    assert_eq!(scan.feature_choices[0].type_byte, Some(0x22));
-    assert_eq!(scan.feature_choices[0].payload, vec![0x11, 0x12]);
-    assert_eq!(scan.feature_choices[1].label, "depth_choice");
-    assert_eq!(scan.feature_choices[1].payload, vec![0x07]);
+    assert_eq!(scan.features.choices.len(), 2);
+    assert_eq!(scan.features.choices[0].feature_id, 4);
+    assert_eq!(scan.features.choices[0].label, "blend_choice");
+    assert_eq!(scan.features.choices[0].type_byte, Some(0x22));
+    assert_eq!(scan.features.choices[0].payload, vec![0x11, 0x12]);
+    assert_eq!(scan.features.choices[1].label, "depth_choice");
+    assert_eq!(scan.features.choices[1].payload, vec![0x07]);
 }
 
 #[test]
@@ -2446,15 +2450,15 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
     );
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_choice_fields.len(), 2);
-    assert_eq!(scan.feature_choice_fields[0].name, "count");
+    assert_eq!(scan.features.choice_fields.len(), 2);
+    assert_eq!(scan.features.choice_fields[0].name, "count");
     assert_eq!(
-        scan.feature_choice_fields[0].value,
+        scan.features.choice_fields[0].value,
         crate::feature::FeatureFieldValue::CompactInt(7)
     );
-    assert_eq!(scan.feature_choice_fields[1].name, "refs");
+    assert_eq!(scan.features.choice_fields[1].name, "refs");
     assert_eq!(
-        scan.feature_choice_fields[1].value,
+        scan.features.choice_fields[1].value,
         crate::feature::FeatureFieldValue::CompactIntArray(vec![3, 4])
     );
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
@@ -2616,7 +2620,7 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     let scan = container::scan_bytes(data.clone());
 
     assert_eq!(
-        scan.feature_choice_fields[0].value,
+        scan.features.choice_fields[0].value,
         crate::feature::FeatureFieldValue::ScalarArray {
             dimensions: 1,
             count: 3,
@@ -2650,24 +2654,24 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_geometry_tables.len(), 3);
-    assert_eq!(scan.feature_geometry_tables[0].feature_id, 4);
+    assert_eq!(scan.features.geometry_tables.len(), 3);
+    assert_eq!(scan.features.geometry_tables[0].feature_id, 4);
     assert_eq!(
-        scan.feature_geometry_tables[0].kind,
+        scan.features.geometry_tables[0].kind,
         crate::feature::FeatureGeometryTableKind::EdgeIds
     );
-    assert_eq!(scan.feature_geometry_tables[0].count, 3);
-    assert_eq!(scan.feature_geometry_tables[0].entity_class, 0x53);
+    assert_eq!(scan.features.geometry_tables[0].count, 3);
+    assert_eq!(scan.features.geometry_tables[0].entity_class, 0x53);
     assert_eq!(
-        scan.feature_geometry_tables[1].kind,
+        scan.features.geometry_tables[1].kind,
         crate::feature::FeatureGeometryTableKind::UsedBodies
     );
     assert_eq!(
-        scan.feature_geometry_tables[2].kind,
+        scan.features.geometry_tables[2].kind,
         crate::feature::FeatureGeometryTableKind::DatumIds
     );
     assert_eq!(
-        scan.feature_geometry_tables[2].entry_ids,
+        scan.features.geometry_tables[2].entry_ids,
         Some(vec![42, 43])
     );
 
@@ -2684,7 +2688,7 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
         &result.source_fidelity.annotations,
         &tables[0].id,
         "creo:AllFeatur",
-        scan.feature_geometry_tables[0].offset as u64,
+        scan.features.geometry_tables[0].offset as u64,
         "feature_geometry_table",
         Exactness::ByteExact,
     );
@@ -2700,22 +2704,22 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_affected_ids.len(), 3);
+    assert_eq!(scan.features.affected_ids.len(), 3);
     assert_eq!(
-        scan.feature_affected_ids[0].kind,
+        scan.features.affected_ids[0].kind,
         crate::feature::AffectedIdKind::Geometry
     );
-    assert_eq!(scan.feature_affected_ids[0].ids, vec![7, 128, 9]);
+    assert_eq!(scan.features.affected_ids[0].ids, vec![7, 128, 9]);
     assert_eq!(
-        scan.feature_affected_ids[1].kind,
+        scan.features.affected_ids[1].kind,
         crate::feature::AffectedIdKind::Contours
     );
-    assert_eq!(scan.feature_affected_ids[1].ids, vec![42]);
+    assert_eq!(scan.features.affected_ids[1].ids, vec![42]);
     assert_eq!(
-        scan.feature_affected_ids[2].kind,
+        scan.features.affected_ids[2].kind,
         crate::feature::AffectedIdKind::Parents
     );
-    assert_eq!(scan.feature_affected_ids[2].ids, vec![1, 3]);
+    assert_eq!(scan.features.affected_ids[2].ids, vec![1, 3]);
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_affected_ids"];
@@ -2932,19 +2936,19 @@ fn scan_partitions_allfeatur_positional_round_operands() {
     );
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_replay_affected_ids.len(), 1);
-    assert_eq!(scan.feature_replay_affected_ids[0].feature_id, 4);
+    assert_eq!(scan.features.replay_affected_ids.len(), 1);
+    assert_eq!(scan.features.replay_affected_ids[0].feature_id, 4);
     assert_eq!(
-        scan.feature_replay_affected_ids[0].geometry_ids,
+        scan.features.replay_affected_ids[0].geometry_ids,
         vec![7, 128]
     );
-    assert_eq!(scan.feature_replay_affected_ids[0].edge_ids, vec![9]);
+    assert_eq!(scan.features.replay_affected_ids[0].edge_ids, vec![9]);
     assert_eq!(
-        scan.feature_replay_affected_ids[0].geometry_extent,
+        scan.features.replay_affected_ids[0].geometry_extent,
         crate::feature::ReplayExtentSource::Explicit
     );
     assert_eq!(
-        scan.feature_replay_affected_ids[0].edge_extent,
+        scan.features.replay_affected_ids[0].edge_extent,
         crate::feature::ReplayExtentSource::Explicit
     );
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
@@ -2971,10 +2975,10 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_loop_restore_directions.len(), 3);
-    assert_eq!(scan.feature_loop_restore_directions[0].value, 0);
-    assert_eq!(scan.feature_loop_restore_directions[1].value, 167);
-    assert_eq!(scan.feature_loop_restore_directions[2].value, 1);
+    assert_eq!(scan.features.loop_restore_directions.len(), 3);
+    assert_eq!(scan.features.loop_restore_directions[0].value, 0);
+    assert_eq!(scan.features.loop_restore_directions[1].value, 167);
+    assert_eq!(scan.features.loop_restore_directions[2].value, 1);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let records =
         &result.ir.native.namespace("creo").unwrap().arenas["feature_loop_restore_directions"];
@@ -3016,8 +3020,8 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
     );
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_revolution_extents.len(), 1);
-    assert_eq!(scan.feature_revolution_extents[0].feature_id, 40);
+    assert_eq!(scan.features.revolution_extents.len(), 1);
+    assert_eq!(scan.features.revolution_extents[0].feature_id, 40);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let feature = result
         .ir
@@ -3134,25 +3138,25 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_definitions.len(), 2);
-    assert_eq!(scan.feature_definitions[0].id, 40);
-    assert_eq!(scan.feature_definitions[0].parameter_frames.len(), 2);
+    assert_eq!(scan.features.definitions.len(), 2);
+    assert_eq!(scan.features.definitions[0].id, 40);
+    assert_eq!(scan.features.definitions[0].parameter_frames.len(), 2);
     assert_eq!(
-        scan.feature_definitions[0].parameter_frames[0].kind,
+        scan.features.definitions[0].parameter_frames[0].kind,
         crate::feature::FeatureParameterFrameKind::LocalSystem
     );
     assert_eq!(
-        scan.feature_definitions[0].parameter_frames[0].decoded_values,
+        scan.features.definitions[0].parameter_frames[0].decoded_values,
         Some(vec![
             0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0
         ])
     );
     assert_eq!(
-        scan.feature_definitions[0].parameter_frames[1].kind,
+        scan.features.definitions[0].parameter_frames[1].kind,
         crate::feature::FeatureParameterFrameKind::Transform
     );
     assert_eq!(
-        scan.feature_definitions[0].parameter_frames[1].decoded_values,
+        scan.features.definitions[0].parameter_frames[1].decoded_values,
         Some(vec![1.0; 12])
     );
 
@@ -3181,7 +3185,7 @@ fn scan_decodes_rank_two_featdefs_local_system() {
     let scan = container::scan_bytes(data);
 
     assert_eq!(
-        scan.feature_definitions[0].parameter_frames[0].decoded_values,
+        scan.features.definitions[0].parameter_frames[0].decoded_values,
         Some(vec![
             0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0
         ])
@@ -3197,7 +3201,7 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    let outlines = &scan.feature_definitions[0].outlines;
+    let outlines = &scan.features.definitions[0].outlines;
     assert_eq!(outlines.len(), 2);
     assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
     assert_eq!(outlines[0].local_values, vec![Some(0.0); 6]);
@@ -3230,7 +3234,7 @@ fn scan_decodes_featdefs_var_arr_section_points() {
     payload.extend_from_slice(&[1, 8, 0xe4, 0x0f, 1, 0, 5, 0xe2]);
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
 
-    let variables = scan.feature_definitions[0]
+    let variables = scan.features.definitions[0]
         .variables
         .as_ref()
         .expect("var_arr");
@@ -3260,7 +3264,7 @@ fn scan_decodes_featdefs_var_arr_named_prototype_row() {
         .to_vec();
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
 
-    let variables = scan.feature_definitions[0]
+    let variables = scan.features.definitions[0]
         .variables
         .as_ref()
         .expect("var_arr");
@@ -3283,8 +3287,13 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     let definition_length = payload.len();
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes(data.clone());
-    let offset = scan.feature_definitions[0].offset as u64;
-    let variable_offset = scan.feature_definitions[0].variables.as_ref().unwrap().rows[0].offset;
+    let offset = scan.features.definitions[0].offset as u64;
+    let variable_offset = scan.features.definitions[0]
+        .variables
+        .as_ref()
+        .unwrap()
+        .rows[0]
+        .offset;
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
 
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
@@ -3358,7 +3367,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    let segments = scan.feature_definitions[0]
+    let segments = scan.features.definitions[0]
         .segments
         .as_ref()
         .expect("segtab");
@@ -3785,7 +3794,7 @@ fn scan_includes_named_segtab_prototype_as_data() {
         cntrid\0\xf6arcorient\0\x00verhor\0\x01radius\0\xf6radius2\0\xf6\
         ext_id\0\x04\xf2\xf7\x01\xe2order_table\0";
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload.to_vec())]));
-    let segments = scan.feature_definitions[0]
+    let segments = scan.features.definitions[0]
         .segments
         .as_ref()
         .expect("segtab");
@@ -3807,7 +3816,7 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    let entities = scan.feature_definitions[0]
+    let entities = scan.features.definitions[0]
         .trim_entities
         .as_ref()
         .expect("ent_tab");
@@ -3843,7 +3852,7 @@ fn scan_decodes_featdefs_vert_tab_entity_pairs() {
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    let vertices = scan.feature_definitions[0]
+    let vertices = scan.features.definitions[0]
         .trim_vertices
         .as_ref()
         .expect("vert_tab");
@@ -3893,7 +3902,7 @@ fn scan_solves_featdefs_trim_vertex_line_intersection() {
     payload.extend_from_slice(&[42, 43, 100, 0]);
 
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
-    let vertex = &scan.feature_definitions[0]
+    let vertex = &scan.features.definitions[0]
         .trim_vertices
         .as_ref()
         .expect("vert_tab")
@@ -3910,7 +3919,7 @@ fn scan_decodes_featdefs_generated_entity_order_table() {
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    let order = scan.feature_definitions[0]
+    let order = scan.features.definitions[0]
         .order_table
         .as_ref()
         .expect("order_table");
@@ -3946,7 +3955,7 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    let section = scan.feature_definitions[0]
+    let section = scan.features.definitions[0]
         .section_3d
         .as_ref()
         .expect("gsec3d");
@@ -4008,7 +4017,7 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
         &[("FeatDefs", payload), ("DEPDB_DATA", expressions)],
     ));
 
-    let dimensions = scan.feature_definitions[0]
+    let dimensions = scan.features.definitions[0]
         .dimensions
         .as_ref()
         .expect("dimtab");
@@ -4038,15 +4047,15 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
         ]))
     );
     assert_eq!(dimensions.rows[2].external_id, 44);
-    assert_eq!(scan.curve_expressions.len(), 1);
+    assert_eq!(scan.curves.expressions.len(), 1);
     assert_eq!(
-        scan.curve_expressions[0].assignments[0].value,
+        scan.curves.expressions[0].assignments[0].value,
         Some(crate::curve::CurveExpressionValue::Angle(
             1.0f64.to_degrees()
         ))
     );
     assert_eq!(
-        scan.curve_expressions[0].assignments[1].value,
+        scan.curves.expressions[0].assignments[1].value,
         Some(crate::curve::CurveExpressionValue::Length(5.0))
     );
 }
@@ -4074,8 +4083,8 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         ],
     );
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.feature_definitions[0].id, 917);
-    assert_eq!(scan.feature_definitions[0].owner_feature_id, Some(40));
+    assert_eq!(scan.features.definitions[0].id, 917);
+    assert_eq!(scan.features.definitions[0].owner_feature_id, Some(40));
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
 
     assert_eq!(result.ir.model.parameters.len(), 3);
@@ -4174,7 +4183,7 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
         ],
     );
     let scan = container::scan_bytes(data.clone());
-    let dimensions = scan.feature_definitions[0]
+    let dimensions = scan.features.definitions[0]
         .dimensions
         .as_ref()
         .expect("dimension table");
@@ -4268,9 +4277,10 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
         ],
     );
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.feature_definitions.len(), 2);
+    assert_eq!(scan.features.definitions.len(), 2);
     assert!(scan
-        .feature_definitions
+        .features
+        .definitions
         .iter()
         .all(|definition| definition.id == 917));
 
@@ -4332,7 +4342,7 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    let relations = scan.feature_definitions[0]
+    let relations = scan.features.definitions[0]
         .relations
         .as_ref()
         .expect("relat_ptr");
@@ -4413,7 +4423,7 @@ fn scan_decodes_extended_solver_incidences() {
         \xe0\x00triples_ptr\0"
         .to_vec();
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
-    let relations = scan.feature_definitions[0]
+    let relations = scan.features.definitions[0]
         .relations
         .as_ref()
         .expect("relat_ptr");
@@ -4448,7 +4458,7 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
     payload.extend_from_slice(b"\xe0\x02local_sys\0");
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
 
-    let saved = scan.feature_definitions[0]
+    let saved = scan.features.definitions[0]
         .saved_section
         .as_ref()
         .expect("p_saved_result");
@@ -4495,7 +4505,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    let entities = &scan.feature_definitions[0]
+    let entities = &scan.features.definitions[0]
         .saved_section
         .as_ref()
         .expect("p_saved_result")
@@ -4534,9 +4544,9 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         .to_vec();
     let data = build_prt("c", &[("MdlRefInfo", payload)]);
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.reference_circles.len(), 1);
-    assert_eq!(scan.reference_circles[0].center, [0.0; 3]);
-    assert_eq!(scan.reference_circles[0].radius, 1.0);
+    assert_eq!(scan.references.circles.len(), 1);
+    assert_eq!(scan.references.circles[0].center, [0.0; 3]);
+    assert_eq!(scan.references.circles[0].radius, 1.0);
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     assert!(result.ir.model.curves.iter().any(|curve| matches!(
@@ -4561,7 +4571,7 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         &result.source_fidelity.annotations,
         &record.id,
         "creo:MdlRefInfo",
-        scan.reference_circles[0].offset as u64,
+        scan.references.circles[0].offset as u64,
         "reference_circle_record",
         Exactness::Derived,
     );
@@ -4574,7 +4584,7 @@ fn decode_retains_line3d_original_length() {
         .to_vec();
     let data = build_prt("c", &[("MdlRefInfo", payload)]);
     let scan = container::scan_bytes(data.clone());
-    let [line] = scan.reference_lines.as_slice() else {
+    let [line] = scan.references.lines.as_slice() else {
         panic!("one line3d");
     };
     assert_eq!(
@@ -4639,8 +4649,8 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
         .to_vec();
     let data = build_prt("c", &[("MdlRefInfo", payload)]);
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.reference_conics.len(), 1);
-    assert_eq!(scan.reference_ellipses.len(), 1);
+    assert_eq!(scan.references.conics.len(), 1);
+    assert_eq!(scan.references.ellipses.len(), 1);
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     assert!(result.ir.model.curves.iter().any(|curve| matches!(
@@ -4678,7 +4688,7 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
         &result.source_fidelity.annotations,
         &record.id,
         "creo:MdlRefInfo",
-        scan.reference_ellipses[0].offset as u64,
+        scan.references.ellipses[0].offset as u64,
         "reference_ellipse_carrier",
         Exactness::Derived,
     );
@@ -4691,7 +4701,7 @@ fn scan_reads_declared_geomlists_body_count() {
         &[("Geomlists", b"n_bodies\0\x83\x01".to_vec())],
     ));
 
-    assert_eq!(scan.declared_body_count, Some(769));
+    assert_eq!(scan.framing.declared_body_count, Some(769));
 }
 
 #[test]
@@ -4701,7 +4711,7 @@ fn scan_reads_geomlists_first_quilt_discriminator() {
         &[("Geomlists", b"first_quilt_ptr\0\x00".to_vec())],
     ));
 
-    assert_eq!(scan.first_quilt_ptr, Some(0));
+    assert_eq!(scan.framing.first_quilt_ptr, Some(0));
 }
 
 #[test]
@@ -4711,10 +4721,10 @@ fn scan_discovers_labeled_curve_prototypes() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.curve_prototypes.len(), 1);
-    assert_eq!(scan.curve_prototypes[0].id, 7);
-    assert_eq!(scan.curve_prototypes[0].type_byte, 8);
-    assert_eq!(scan.curve_prototypes[0].feature_id, Some(4));
+    assert_eq!(scan.curves.prototypes.len(), 1);
+    assert_eq!(scan.curves.prototypes[0].id, 7);
+    assert_eq!(scan.curves.prototypes[0].type_byte, 8);
+    assert_eq!(scan.curves.prototypes[0].feature_id, Some(4));
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["curve_prototypes"];
     assert_eq!(records[0].fields["curve_id"], 7);
@@ -4730,10 +4740,10 @@ fn decode_preserves_counted_curve_expression_programs() {
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.curve_expressions.len(), 1);
-    assert_eq!(scan.curve_expressions[0].entity_id, 0x094c);
-    assert_eq!(scan.curve_expressions[0].lines.len(), 4);
-    let local_system = scan.curve_expressions[0]
+    assert_eq!(scan.curves.expressions.len(), 1);
+    assert_eq!(scan.curves.expressions[0].entity_id, 0x094c);
+    assert_eq!(scan.curves.expressions[0].lines.len(), 4);
+    let local_system = scan.curves.expressions[0]
         .local_system
         .as_ref()
         .expect("curve local system");
@@ -4800,7 +4810,7 @@ fn decode_preserves_counted_curve_expression_programs() {
         &result.source_fidelity.annotations,
         &records[0].id,
         "creo:DEPDB_DATA",
-        scan.curve_expressions[0].expression_offset as u64,
+        scan.curves.expressions[0].expression_offset as u64,
         "curve_expression_program",
         Exactness::ByteExact,
     );
@@ -5269,10 +5279,10 @@ fn scan_discovers_curve_halfedge_topology() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.curve_topology_rows.len(), 1);
-    assert_eq!(scan.curve_topology_rows[0].faces, [10, 11]);
-    assert_eq!(scan.curve_topology_rows[0].next_edges, [7, 7]);
-    assert_eq!(scan.half_edges.len(), 2);
+    assert_eq!(scan.curves.topology_rows.len(), 1);
+    assert_eq!(scan.curves.topology_rows[0].faces, [10, 11]);
+    assert_eq!(scan.curves.topology_rows[0].next_edges, [7, 7]);
+    assert_eq!(scan.topology.half_edges.len(), 2);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let row = &result.ir.native.namespace("creo").unwrap().arenas["curve_topology_rows"][0];
     assert_eq!(row.fields["curve_id"], 7);
@@ -5302,11 +5312,11 @@ fn scan_decodes_long_terminated_rows_in_each_curve_namespace() {
     payload.extend_from_slice(b"\xe1\xf5\x05\xf6\xe3");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.curve_topology_rows.len(), 2);
-    assert_eq!(scan.curve_topology_rows[0].id, 7);
-    assert_eq!(scan.curve_topology_rows[0].faces, [10, 11]);
-    assert_eq!(scan.curve_topology_rows[1].id, 8);
-    assert_eq!(scan.curve_topology_rows[1].faces, [12, 13]);
+    assert_eq!(scan.curves.topology_rows.len(), 2);
+    assert_eq!(scan.curves.topology_rows[0].id, 7);
+    assert_eq!(scan.curves.topology_rows[0].faces, [10, 11]);
+    assert_eq!(scan.curves.topology_rows[1].id, 8);
+    assert_eq!(scan.curves.topology_rows[1].faces, [12, 13]);
 }
 
 #[test]
@@ -5319,8 +5329,8 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.curve_parameters.len(), 1);
-    let parameters = &scan.curve_parameters[0];
+    assert_eq!(scan.curves.parameters.len(), 1);
+    let parameters = &scan.curves.parameters[0];
     assert_eq!(parameters.curve_id, 7);
     assert_eq!(parameters.type_byte, 8);
     assert_eq!(parameters.scalar_values, vec![0.0, 1.0, 3.0]);
@@ -5371,8 +5381,8 @@ fn scan_resolves_section_scalar_cache_in_curve_rows() {
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.curve_parameters.len(), 1);
-    assert_eq!(scan.curve_parameters[0].scalar_values, vec![3.0]);
+    assert_eq!(scan.curves.parameters.len(), 1);
+    assert_eq!(scan.curves.parameters[0].scalar_values, vec![3.0]);
 }
 
 #[test]
@@ -5388,8 +5398,8 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.pcurves.len(), 1);
-    let pcurve = &scan.pcurves[0];
+    assert_eq!(scan.curves.pcurves.len(), 1);
+    let pcurve = &scan.curves.pcurves[0];
     assert_eq!(pcurve.curve_id, 7);
     assert_eq!(pcurve.faces, [10, 11]);
     assert_eq!(pcurve.face_0_endpoints, [[0.0, 1.0], [1.0, 0.0]]);
@@ -5403,10 +5413,10 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     assert_eq!(records[0].fields["faces"][1], 11);
     assert_eq!(records[0].fields["source_form"], "positional");
 
-    let mut mismatched_topology = scan.curve_topology_rows.clone();
+    let mut mismatched_topology = scan.curves.topology_rows.clone();
     mismatched_topology[0].type_byte = 1;
     assert!(
-        crate::curve::pcurve_endpoints(&scan.curve_parameters, &mismatched_topology).is_empty()
+        crate::curve::pcurve_endpoints(&scan.curves.parameters, &mismatched_topology).is_empty()
     );
 }
 
@@ -5422,16 +5432,22 @@ fn scan_decodes_standalone_zero_slots_in_pcurve_endpoint_frames() {
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.curve_parameters.len(), 1);
-    assert_eq!(scan.curve_parameters[0].scalar_tokens.len(), 5);
-    assert_eq!(scan.curve_parameters[0].opaque_spans.len(), 3);
-    assert!(scan.curve_parameters[0]
+    assert_eq!(scan.curves.parameters.len(), 1);
+    assert_eq!(scan.curves.parameters[0].scalar_tokens.len(), 5);
+    assert_eq!(scan.curves.parameters[0].opaque_spans.len(), 3);
+    assert!(scan.curves.parameters[0]
         .opaque_spans
         .iter()
         .all(|span| span.raw == [0x12]));
-    assert_eq!(scan.pcurves.len(), 1);
-    assert_eq!(scan.pcurves[0].face_0_endpoints, [[0.0, 1.0], [1.0, 0.0]]);
-    assert_eq!(scan.pcurves[0].face_1_endpoints, [[3.0, 0.0], [3.0, 1.0]]);
+    assert_eq!(scan.curves.pcurves.len(), 1);
+    assert_eq!(
+        scan.curves.pcurves[0].face_0_endpoints,
+        [[0.0, 1.0], [1.0, 0.0]]
+    );
+    assert_eq!(
+        scan.curves.pcurves[0].face_1_endpoints,
+        [[3.0, 0.0], [3.0, 1.0]]
+    );
 }
 
 #[test]
@@ -5446,7 +5462,7 @@ fn scan_withholds_nine_slot_pcurve_endpoint_frames() {
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert!(scan.pcurves.is_empty());
+    assert!(scan.curves.pcurves.is_empty());
 }
 
 #[test]
@@ -5458,10 +5474,10 @@ fn scan_withholds_pcurve_endpoints_with_unclaimed_body_bytes() {
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.curve_parameters.len(), 1);
-    assert_eq!(scan.curve_parameters[0].scalar_tokens.len(), 8);
-    assert_eq!(scan.curve_parameters[0].opaque_spans[0].raw, [0xff]);
-    assert!(scan.pcurves.is_empty());
+    assert_eq!(scan.curves.parameters.len(), 1);
+    assert_eq!(scan.curves.parameters[0].scalar_tokens.len(), 8);
+    assert_eq!(scan.curves.parameters[0].opaque_spans[0].raw, [0xff]);
+    assert!(scan.curves.pcurves.is_empty());
 }
 
 #[test]
@@ -5476,11 +5492,11 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.fc_curve_coordinates.len(), 1);
-    let coordinates = &scan.fc_curve_coordinates[0];
+    assert_eq!(scan.curves.fc_coordinates.len(), 1);
+    let coordinates = &scan.curves.fc_coordinates[0];
     assert_eq!(coordinates.curve_id, 7);
     assert_eq!(coordinates.subtype, 8);
-    assert_eq!(coordinates.body, scan.curve_parameters[0].body);
+    assert_eq!(coordinates.body, scan.curves.parameters[0].body);
     assert_eq!(coordinates.values_mm, vec![3.0, -3.0, 2.0, -2.0]);
     assert_eq!(coordinates.tokens[0].offset, 2);
     assert_eq!(coordinates.tokens[0].length, 8);
@@ -5812,8 +5828,8 @@ fn decode_places_first_interpolation_spline_instance_from_named_prototype() {
 
     let data = build_prt("c", &[("ND:0:VisibGeom:0", payload)]);
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.surface_rows.len(), 1);
-    assert_eq!(scan.surface_prototype_records.len(), 1);
+    assert_eq!(scan.surfaces.rows.len(), 1);
+    assert_eq!(scan.surfaces.prototype_records.len(), 1);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let surface = result
         .ir
@@ -5917,8 +5933,8 @@ fn scan_validates_fc05_circle_from_record_points() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.fc05_circles.len(), 1);
-    let circle = &scan.fc05_circles[0];
+    assert_eq!(scan.curves.fc05_circles.len(), 1);
+    let circle = &scan.curves.fc05_circles[0];
     assert_eq!(circle.curve_id, 7);
     assert_eq!(circle.center_row_frame, [3.0, 3.0]);
     assert_eq!(circle.radius_mm, 1.0);
@@ -5932,7 +5948,7 @@ fn scan_validates_fc05_circle_from_record_points() {
         .expect("unique parameter-zero direction");
     assert!((direction[0] - (-2.0_f64).cos()).abs() < 1e-12);
     assert!((direction[1] - (-2.0_f64).sin()).abs() < 1e-12);
-    let mut unknown_parameter = scan.curve_parameters[0].clone();
+    let mut unknown_parameter = scan.curves.parameters[0].clone();
     unknown_parameter.body.splice(114..122, [0x39, 0x29, 0x00]);
     let carriers = crate::curve::fc05_circles(&[unknown_parameter]);
     let [carrier] = carriers.as_slice() else {
@@ -5944,7 +5960,7 @@ fn scan_validates_fc05_circle_from_record_points() {
     assert_eq!(carrier.parameter_sign, None);
     assert_eq!(carrier.reference_direction_row_frame, None);
     assert_eq!(carrier.sample_direction_row_frame, [1.0, 0.0]);
-    let mut trailing = scan.curve_parameters[0].clone();
+    let mut trailing = scan.curves.parameters[0].clone();
     trailing.body.push(0xfe);
     assert!(crate::curve::fc05_circles(&[trailing]).is_empty());
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
@@ -6134,8 +6150,8 @@ fn scan_decodes_labeled_prototype_pcurve_uvs() {
     payload.extend_from_slice(b"topol_ref_data\0");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.prototype_pcurves.len(), 1);
-    let prototype = &scan.prototype_pcurves[0];
+    assert_eq!(scan.curves.prototype_pcurves.len(), 1);
+    let prototype = &scan.curves.prototype_pcurves[0];
     assert_eq!(prototype.curve_id, 44);
     assert_eq!(prototype.face_0_endpoints, [[0.0, 1.0], [1.0, 0.0]]);
     assert_eq!(prototype.face_1_endpoints, [[3.0, 0.0], [3.0, 1.0]]);
@@ -6158,7 +6174,7 @@ fn scan_withholds_non_exact_labeled_prototype_pcurve_arrays() {
         payload.extend_from_slice(b"topol_ref_data\0");
         let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-        assert!(scan.prototype_pcurves.is_empty());
+        assert!(scan.curves.prototype_pcurves.is_empty());
     }
 }
 
@@ -6174,7 +6190,7 @@ fn scan_withholds_displaced_labeled_prototype_pcurve_wrapper() {
     payload.extend_from_slice(b"topol_ref_data\0");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert!(scan.prototype_pcurves.is_empty());
+    assert!(scan.curves.prototype_pcurves.is_empty());
 }
 
 #[test]
@@ -6187,7 +6203,7 @@ fn scan_withholds_duplicate_labeled_prototype_pcurve_arrays() {
     payload.extend_from_slice(b"topol_ref_data\0");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert!(scan.prototype_pcurves.is_empty());
+    assert!(scan.curves.prototype_pcurves.is_empty());
 }
 
 #[test]
@@ -6206,14 +6222,14 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.curve_prototype_topology.len(), 1);
-    assert_eq!(scan.curve_prototype_topology[0].curve_id, 44);
-    assert_eq!(scan.curve_prototype_topology[0].faces, [10, 11]);
-    assert_eq!(scan.curve_prototype_topology[0].next_edges, [44, 44]);
-    assert_eq!(scan.bound_prototype_pcurves.len(), 1);
-    assert_eq!(scan.bound_prototype_pcurves[0].faces, [10, 11]);
+    assert_eq!(scan.curves.prototype_topology.len(), 1);
+    assert_eq!(scan.curves.prototype_topology[0].curve_id, 44);
+    assert_eq!(scan.curves.prototype_topology[0].faces, [10, 11]);
+    assert_eq!(scan.curves.prototype_topology[0].next_edges, [44, 44]);
+    assert_eq!(scan.curves.bound_prototype_pcurves.len(), 1);
+    assert_eq!(scan.curves.bound_prototype_pcurves[0].faces, [10, 11]);
     assert_eq!(
-        scan.bound_prototype_pcurves[0].face_0_endpoints,
+        scan.curves.bound_prototype_pcurves[0].face_0_endpoints,
         [[0.0, 1.0], [1.0, 0.0]]
     );
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
@@ -6239,7 +6255,7 @@ fn scan_withholds_duplicate_labeled_prototype_topology_fields() {
     payload.extend_from_slice(b"topol_ref_data\0");
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert!(scan.curve_prototype_topology.is_empty());
+    assert!(scan.curves.prototype_topology.is_empty());
 }
 
 #[test]
@@ -6277,9 +6293,9 @@ fn scan_groups_connected_nonzero_face_references() {
     );
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.face_components.len(), 1);
-    assert_eq!(scan.face_components[0].face_ids, vec![10, 11, 12]);
-    assert_eq!(scan.face_components[0].curve_ids, vec![7, 8]);
+    assert_eq!(scan.topology.face_components.len(), 1);
+    assert_eq!(scan.topology.face_components[0].face_ids, vec![10, 11, 12]);
+    assert_eq!(scan.topology.face_components[0].curve_ids, vec![7, 8]);
 }
 
 #[test]
@@ -6291,9 +6307,9 @@ fn scan_builds_topological_vertex_orbits_and_incidence() {
     );
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.topological_vertices.len(), 2);
+    assert_eq!(scan.topology.vertices.len(), 2);
     assert_eq!(
-        scan.topological_vertices[0].half_edges,
+        scan.topology.vertices[0].half_edges,
         vec![
             crate::topology::HalfEdgeId {
                 curve_id: 7,
@@ -6306,6 +6322,7 @@ fn scan_builds_topological_vertex_orbits_and_incidence() {
         ]
     );
     let incidence = scan
+        .topology
         .half_edge_vertex_incidence
         .iter()
         .find(|incidence| {
@@ -6380,19 +6397,19 @@ fn decode_transfers_closed_plane_intersection_brep() {
         ],
     );
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.plane_local_systems.len(), 4);
-    assert_eq!(scan.curve_topology_rows.len(), 6);
+    assert_eq!(scan.planes.local_systems.len(), 4);
+    assert_eq!(scan.curves.topology_rows.len(), 6);
     assert!(
-        scan.feature_affected_ids.iter().any(|record| {
+        scan.features.affected_ids.iter().any(|record| {
             record.feature_id == 4
                 && record.kind == crate::feature::AffectedIdKind::Edges
                 && record.ids == [10, 11]
         }),
         "affected ids: {:#?}",
-        scan.feature_affected_ids
+        scan.features.affected_ids
     );
-    assert_eq!(scan.loops.len(), 4);
-    assert_eq!(scan.topological_vertices.len(), 4);
+    assert_eq!(scan.topology.loops.len(), 4);
+    assert_eq!(scan.topology.vertices.len(), 4);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let model = &result.ir.model;
     let namespace = result.ir.native.namespace("creo").unwrap();
@@ -6533,8 +6550,8 @@ fn scan_discovers_model_space_datum_planes() {
         }
     }
     let scan = container::scan_bytes(build_prt("c", &[("ActDatums", datum)]));
-    assert_eq!(scan.datum_planes.len(), 1);
-    assert_eq!(scan.datum_planes[0].normal, [0.0, 1.0, 0.0]);
+    assert_eq!(scan.planes.datums.len(), 1);
+    assert_eq!(scan.planes.datums[0].normal, [0.0, 1.0, 0.0]);
 }
 
 #[test]
@@ -6725,7 +6742,8 @@ fn decode_annotations_cover_every_emitted_entity() {
             ("ActDatums", datum),
         ],
     );
-    let datum_offset = container::scan_bytes(data.clone()).datum_planes[0].offset_in_payload as u64;
+    let datum_offset =
+        container::scan_bytes(data.clone()).planes.datums[0].offset_in_payload as u64;
     let mut reader = Cursor::new(data);
     let result = decode::decode(&mut reader, &DecodeOptions::default()).expect("decode");
 
@@ -6784,7 +6802,7 @@ fn scan_decodes_active_principal_unit() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data);
 
-    assert_eq!(scan.principal_unit.as_deref(), Some("mmNs"));
+    assert_eq!(scan.framing.principal_unit.as_deref(), Some("mmNs"));
 }
 
 #[test]
@@ -6798,36 +6816,36 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
         )],
     );
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.feature_operation_states.len(), 7);
-    assert_eq!(scan.feature_operation_states[0].feature_id, 40);
-    assert_eq!(scan.feature_operation_states[0].kind, "Protrusion");
+    assert_eq!(scan.features.operation_states.len(), 7);
+    assert_eq!(scan.features.operation_states[0].feature_id, 40);
+    assert_eq!(scan.features.operation_states[0].kind, "Protrusion");
     assert_eq!(
-        scan.feature_operation_states[0].stored_name.as_deref(),
+        scan.features.operation_states[0].stored_name.as_deref(),
         Some("xProtrusion id 40")
     );
     assert_eq!(
-        scan.feature_operation_states[0]
+        scan.features.operation_states[0]
             .identifier_keyword
             .as_deref(),
         Some("id")
     );
     assert_eq!(
-        scan.feature_operation_states[0].state_offset + 1,
-        scan.feature_operation_states[0].offset
+        scan.features.operation_states[0].state_offset + 1,
+        scan.features.operation_states[0].offset
     );
-    assert_eq!(scan.feature_operation_states[5].feature_id, 40);
-    assert_eq!(scan.feature_operation_states[5].kind, "Hole");
-    assert_eq!(scan.feature_operations.len(), 6);
-    assert_eq!(scan.feature_operations[0].feature_id, 41);
-    assert_eq!(scan.feature_operations[0].kind, "Round");
-    assert_eq!(scan.feature_operations[1].kind, "Future Feature");
-    assert_eq!(scan.feature_operations[2].kind, "Datum Plane");
-    assert_eq!(scan.feature_operations[3].kind, "Draft");
-    assert_eq!(scan.feature_operations[4].feature_id, 40);
-    assert_eq!(scan.feature_operations[4].kind, "Hole");
-    assert_eq!(scan.feature_operations[4].stored_name_prefix, None);
-    assert_eq!(scan.feature_operations[5].kind, "Surface");
-    assert_eq!(scan.feature_operations[5].stored_name_prefix, Some(b'y'));
+    assert_eq!(scan.features.operation_states[5].feature_id, 40);
+    assert_eq!(scan.features.operation_states[5].kind, "Hole");
+    assert_eq!(scan.features.operations.len(), 6);
+    assert_eq!(scan.features.operations[0].feature_id, 41);
+    assert_eq!(scan.features.operations[0].kind, "Round");
+    assert_eq!(scan.features.operations[1].kind, "Future Feature");
+    assert_eq!(scan.features.operations[2].kind, "Datum Plane");
+    assert_eq!(scan.features.operations[3].kind, "Draft");
+    assert_eq!(scan.features.operations[4].feature_id, 40);
+    assert_eq!(scan.features.operations[4].kind, "Hole");
+    assert_eq!(scan.features.operations[4].stored_name_prefix, None);
+    assert_eq!(scan.features.operations[5].kind, "Surface");
+    assert_eq!(scan.features.operations[5].stored_name_prefix, Some(b'y'));
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let states = &result.ir.native.namespace("creo").unwrap().arenas["feature_operation_states"];
@@ -6898,7 +6916,7 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
         &result.source_fidelity.annotations,
         "creo:model:feature#41",
         "creo:MdlStatus",
-        scan.feature_operations[0].offset as u64,
+        scan.features.operations[0].offset as u64,
         "feature_operation_name",
         Exactness::ByteExact,
     );
@@ -6931,11 +6949,11 @@ fn decode_preserves_stored_feature_identifier_keyword() {
 fn nd_decoration_selects_nd_layout() {
     let data = build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(3, 4))]);
     let scan = container::scan_bytes(data);
-    assert_eq!(scan.layout, Layout::Nd);
+    assert_eq!(scan.framing.layout, Layout::Nd);
     // The decorated name is normalized for classification and census.
-    assert_eq!(scan.sections[0].name, "VisibGeom");
-    assert_eq!(scan.sections[0].raw_name, "ND:0:VisibGeom:1");
-    assert_eq!(scan.census.srf_array_count, Some(3));
+    assert_eq!(scan.framing.sections[0].name, "VisibGeom");
+    assert_eq!(scan.framing.sections[0].raw_name, "ND:0:VisibGeom:1");
+    assert_eq!(scan.framing.census.srf_array_count, Some(3));
 }
 
 #[test]
@@ -6964,45 +6982,48 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
     ));
 
     assert_eq!(
-        scan.surface_rows
+        scan.surfaces
+            .rows
             .iter()
             .map(|row| row.id)
             .collect::<Vec<_>>(),
         [7]
     );
     assert_eq!(
-        scan.surface_parameters
+        scan.surfaces
+            .parameters
             .iter()
             .map(|record| record.surface_id)
             .collect::<Vec<_>>(),
         [7]
     );
     assert_eq!(
-        scan.nonvisible_surface_rows
+        scan.surfaces
+            .nonvisible_rows
             .iter()
             .map(|row| (row.id, row.feature_id))
             .collect::<Vec<_>>(),
         [(8, 5)]
     );
-    assert_eq!(scan.curve_prototypes.len(), 1);
-    assert_eq!(scan.nonvisible_surface_parameters.len(), 1);
-    assert_eq!(scan.nonvisible_surface_parameters[0].surface_id, 8);
-    assert_eq!(scan.nonvisible_surface_parameters[0].scalar_values, [1.0]);
-    assert_eq!(scan.nonvisible_surface_prototype_records.len(), 1);
+    assert_eq!(scan.curves.prototypes.len(), 1);
+    assert_eq!(scan.surfaces.nonvisible_parameters.len(), 1);
+    assert_eq!(scan.surfaces.nonvisible_parameters[0].surface_id, 8);
+    assert_eq!(scan.surfaces.nonvisible_parameters[0].scalar_values, [1.0]);
+    assert_eq!(scan.surfaces.nonvisible_prototype_records.len(), 1);
     assert_eq!(
-        scan.nonvisible_surface_prototype_records[0].declared_family,
+        scan.surfaces.nonvisible_prototype_records[0].declared_family,
         "cylinder"
     );
-    assert_eq!(scan.nonvisible_curve_prototypes.len(), 1);
-    assert_eq!(scan.nonvisible_curve_prototypes[0].feature_id, Some(5));
-    assert_eq!(scan.curve_parameters.len(), 1);
-    assert_eq!(scan.nonvisible_curve_parameters.len(), 1);
-    assert_eq!(scan.curve_topology_rows[0].faces, [10, 11]);
-    assert_eq!(scan.nonvisible_curve_topology_rows[0].faces, [12, 13]);
-    assert_eq!(scan.half_edges.len(), 2);
+    assert_eq!(scan.curves.nonvisible_prototypes.len(), 1);
+    assert_eq!(scan.curves.nonvisible_prototypes[0].feature_id, Some(5));
+    assert_eq!(scan.curves.parameters.len(), 1);
+    assert_eq!(scan.curves.nonvisible_parameters.len(), 1);
+    assert_eq!(scan.curves.topology_rows[0].faces, [10, 11]);
+    assert_eq!(scan.curves.nonvisible_topology_rows[0].faces, [12, 13]);
+    assert_eq!(scan.topology.half_edges.len(), 2);
 
     let result = decode::decode(
-        &mut Cursor::new(scan.data.clone()),
+        &mut Cursor::new(scan.framing.data.clone()),
         &DecodeOptions::default(),
     )
     .expect("decode");
@@ -7037,19 +7058,21 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
     let depdb = b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\0next_geom_ptr\0\0feat_defs_12\0protrevolve\0Revolve id 17\0".to_vec();
     let data = build_prt("c", &[("VisibGeom", vec![0x00]), ("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes(data);
-    assert_eq!(scan.layout, Layout::Depdb);
+    assert_eq!(scan.framing.layout, Layout::Depdb);
     assert!(scan
-        .surface_rows
+        .surfaces
+        .rows
         .iter()
         .any(|row| row.id == 7 && row.feature_id == 4));
     assert!(scan
-        .feature_definitions
+        .features
+        .definitions
         .iter()
         .any(|definition| definition.id == 12));
-    assert_eq!(scan.feature_operations.len(), 1);
-    assert_eq!(scan.feature_operations[0].feature_id, 17);
+    assert_eq!(scan.features.operations.len(), 1);
+    assert_eq!(scan.features.operations[0].feature_id, 17);
     assert_eq!(
-        scan.feature_operations[0].recipe,
+        scan.features.operations[0].recipe,
         Some(crate::feature::FeatureRecipe::ProtrudeRevolve)
     );
 }
@@ -7061,11 +7084,12 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.feature_operations.len(), 2);
-    assert_eq!(scan.depdb_recipe_rows.len(), 1);
-    assert_eq!(scan.depdb_recipe_rows[0].feature_id, 8053);
+    assert_eq!(scan.features.operations.len(), 2);
+    assert_eq!(scan.features.depdb_recipe_rows.len(), 1);
+    assert_eq!(scan.features.depdb_recipe_rows[0].feature_id, 8053);
     let operation = scan
-        .feature_operations
+        .features
+        .operations
         .iter()
         .find(|operation| operation.feature_id == 8053)
         .expect("recipe operation");
@@ -7084,7 +7108,7 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
     assert_eq!(rows[0].fields["header"][0], 0);
     assert_eq!(
         rows[0].fields["body"].as_array().map(Vec::len),
-        Some(scan.depdb_recipe_rows[0].body.len())
+        Some(scan.features.depdb_recipe_rows[0].body.len())
     );
     assert_eq!(feature.name, None);
     assert_eq!(
@@ -7125,13 +7149,21 @@ fn scan_partitions_multiple_depdb_recipe_rows() {
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes(data);
 
-    assert_eq!(scan.depdb_recipe_rows.len(), 2);
-    assert_eq!(scan.depdb_recipe_rows[0].feature_id, 8053);
-    assert_eq!(scan.depdb_recipe_rows[0].root_schema_class, Some(917));
-    assert_eq!(scan.depdb_recipe_rows[1].feature_id, 8055);
-    assert_eq!(scan.depdb_recipe_rows[1].root_schema_class, Some(916));
-    assert!(scan.depdb_recipe_rows[0].offset < scan.depdb_recipe_rows[1].offset);
-    assert!(scan.depdb_recipe_rows[0].body_offset <= scan.depdb_recipe_rows[0].offset);
+    assert_eq!(scan.features.depdb_recipe_rows.len(), 2);
+    assert_eq!(scan.features.depdb_recipe_rows[0].feature_id, 8053);
+    assert_eq!(
+        scan.features.depdb_recipe_rows[0].root_schema_class,
+        Some(917)
+    );
+    assert_eq!(scan.features.depdb_recipe_rows[1].feature_id, 8055);
+    assert_eq!(
+        scan.features.depdb_recipe_rows[1].root_schema_class,
+        Some(916)
+    );
+    assert!(scan.features.depdb_recipe_rows[0].offset < scan.features.depdb_recipe_rows[1].offset);
+    assert!(
+        scan.features.depdb_recipe_rows[0].body_offset <= scan.features.depdb_recipe_rows[0].offset
+    );
 }
 
 #[test]
@@ -7142,19 +7174,21 @@ fn decode_retains_recipe_history_and_projects_the_final_state() {
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_operation_states.len(), 2);
-    assert_eq!(scan.feature_operations.len(), 1);
+    assert_eq!(scan.features.operation_states.len(), 2);
+    assert_eq!(scan.features.operations.len(), 1);
     assert_eq!(
-        scan.feature_operations[0].recipe,
+        scan.features.operations[0].recipe,
         Some(crate::feature::FeatureRecipe::ProtrudeRevolve)
     );
-    assert_eq!(scan.depdb_recipe_rows.len(), 2);
+    assert_eq!(scan.features.depdb_recipe_rows.len(), 2);
     assert!(scan
+        .features
         .depdb_recipe_rows
         .iter()
         .all(|row| row.feature_id == 8053));
     assert_eq!(
-        scan.depdb_recipe_rows
+        scan.features
+            .depdb_recipe_rows
             .iter()
             .filter_map(|row| row.root_schema_class)
             .collect::<Vec<_>>(),
@@ -7209,8 +7243,8 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_definitions.len(), 1);
-    let definition = &scan.feature_definitions[0];
+    assert_eq!(scan.features.definitions.len(), 1);
+    let definition = &scan.features.definitions[0];
     assert_eq!(definition.id, 2);
     assert_eq!(definition.owner_feature_id, Some(17));
     let variables = definition.variables.as_ref().expect("var_arr");
@@ -7238,7 +7272,8 @@ fn decode_preserves_unowned_depdb_section_instances_with_unique_native_ids() {
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes(data.clone());
     let positional = scan
-        .feature_definitions
+        .features
+        .definitions
         .iter()
         .filter(|definition| definition.body.starts_with(b"\xe3S2D"))
         .collect::<Vec<_>>();
@@ -7282,7 +7317,8 @@ fn scan_binds_standalone_depdb_datum_and_parent_tables_to_recipe_owner() {
     let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", depdb)]));
 
     let datum_table = scan
-        .feature_geometry_tables
+        .features
+        .geometry_tables
         .iter()
         .find(|table| table.kind == crate::feature::FeatureGeometryTableKind::DatumIds)
         .expect("datum table");
@@ -7290,7 +7326,8 @@ fn scan_binds_standalone_depdb_datum_and_parent_tables_to_recipe_owner() {
     assert_eq!(datum_table.entry_ids.as_deref(), Some(&[41][..]));
 
     let parents = scan
-        .feature_affected_ids
+        .features
+        .affected_ids
         .iter()
         .find(|record| record.kind == crate::feature::AffectedIdKind::Parents)
         .expect("parent table");
@@ -7309,7 +7346,7 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
     );
     let null = container::scan_bytes(null_data.clone());
     assert_eq!(
-        null.family_table.unwrap().pointer,
+        null.framing.family_table.unwrap().pointer,
         crate::container::FamilyTablePointer::Null
     );
     let decoded = decode::decode(&mut Cursor::new(null_data), &DecodeOptions::default())
@@ -7337,7 +7374,7 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
     );
     let referenced = container::scan_bytes(referenced_data.clone());
     assert_eq!(
-        referenced.family_table.unwrap().pointer,
+        referenced.framing.family_table.unwrap().pointer,
         crate::container::FamilyTablePointer::Entity(0x0123)
     );
     let decoded = decode::decode(&mut Cursor::new(referenced_data), &DecodeOptions::default())
@@ -7372,8 +7409,8 @@ fn framing_names_are_not_mistaken_for_sections() {
     let data = build_prt("c", &[("VisibGeom", vec![0x00])]);
     let scan = container::scan_bytes(data);
     // Only VisibGeom — the header/TOC framing markers are excluded.
-    assert_eq!(scan.sections.len(), 1);
-    assert_eq!(scan.sections[0].name, "VisibGeom");
+    assert_eq!(scan.framing.sections.len(), 1);
+    assert_eq!(scan.framing.sections[0].name, "VisibGeom");
 }
 
 #[test]

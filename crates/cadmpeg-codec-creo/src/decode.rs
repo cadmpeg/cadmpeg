@@ -452,6 +452,7 @@ fn attach_expanded_sections(
         },
     )?;
     let tables = scan
+        .primitives
         .double_xar_tables
         .iter()
         .map(|table| CreoDoubleXarTableRecord {
@@ -492,7 +493,8 @@ fn attach_expanded_sections(
         },
     )?;
     let primitive_arrays = scan
-        .primitive_scalar_arrays
+        .primitives
+        .scalar_arrays
         .iter()
         .map(|array| CreoPrimitiveScalarArrayRecord {
             id: format!(
@@ -574,7 +576,7 @@ fn feature_surface_replay_associations(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureSurfaceReplayAssociation> {
     let mut associations = Vec::new();
-    for table in &scan.feature_entity_tables {
+    for table in &scan.features.entity_tables {
         let Some(owner_feature_id) = table.feature_id else {
             continue;
         };
@@ -589,7 +591,7 @@ fn feature_surface_replay_associations(
         }
         let visible_rows = visible_ids
             .iter()
-            .map(|id| crate::surface::unique_surface_row(&scan.surface_rows, *id))
+            .map(|id| crate::surface::unique_surface_row(&scan.surfaces.rows, *id))
             .collect::<Option<Vec<_>>>();
         let Some(visible_rows) = visible_rows else {
             continue;
@@ -607,7 +609,7 @@ fn feature_surface_replay_associations(
                 .iter()
                 .map(|entry| {
                     crate::surface::unique_surface_row(
-                        &scan.nonvisible_surface_rows,
+                        &scan.surfaces.nonvisible_rows,
                         entry.entity_id,
                     )
                 })
@@ -674,7 +676,8 @@ fn half_edge_ref(id: crate::topology::HalfEdgeId) -> CreoHalfEdgeRef {
 }
 
 fn fc05_circle_records(scan: &ContainerScan) -> Vec<CreoFc05CircleRecord> {
-    scan.fc05_circles
+    scan.curves
+        .fc05_circles
         .iter()
         .map(|record| CreoFc05CircleRecord {
             id: format!("creo:curve:fc05_circle#{}", record.curve_id),
@@ -695,7 +698,8 @@ fn fc05_circle_records(scan: &ContainerScan) -> Vec<CreoFc05CircleRecord> {
 }
 
 fn fc05_cylinder_cap_pair_records(scan: &ContainerScan) -> Vec<CreoFc05CylinderCapPairRecord> {
-    scan.fc05_cylinder_cap_pairs
+    scan.curves
+        .fc05_cylinder_cap_pairs
         .iter()
         .map(|record| CreoFc05CylinderCapPairRecord {
             id: format!("creo:surface:fc05_cylinder_cap_pair#{}", record.surface_id),
@@ -823,7 +827,8 @@ struct CreoSurfaceParameterSlot {
 }
 
 fn source_section(scan: &ContainerScan, offset: usize) -> String {
-    scan.sections
+    scan.framing
+        .sections
         .iter()
         .find(|section| offset >= section.offset && offset < section.offset + section.length)
         .map_or("unknown", |section| section.name.as_str())
@@ -1113,7 +1118,7 @@ fn surface_named_parameter_record(
 }
 
 fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTableRecord> {
-    let record = scan.family_table?;
+    let record = scan.framing.family_table?;
     let (pointer_kind, table_entity_id) = match record.pointer {
         crate::container::FamilyTablePointer::Null => ("null", None),
         crate::container::FamilyTablePointer::Entity(id) => ("entity_reference", Some(id)),
@@ -1310,7 +1315,8 @@ fn transfer_curve_expression_features(
         .map_or(0, |value| value + 1);
     let mut transferred_assignment_count = 0;
     for (expression_ordinal, record) in scan
-        .curve_expressions
+        .curves
+        .expressions
         .iter()
         .filter(|record| !record.backup)
         .enumerate()
@@ -1785,7 +1791,8 @@ fn feature_definition_record_id(
     definition: &crate::feature::FeatureDefinition,
 ) -> String {
     if scan
-        .feature_definitions
+        .features
+        .definitions
         .iter()
         .filter(|candidate| candidate.id == definition.id)
         .count()
@@ -1806,7 +1813,8 @@ fn feature_sketch_record_id_in_scan(
     definition: &crate::feature::FeatureDefinition,
 ) -> String {
     if scan
-        .feature_definitions
+        .features
+        .definitions
         .iter()
         .filter(|candidate| candidate.id == definition.id)
         .count()
@@ -1883,7 +1891,8 @@ fn section_owner_feature_id(
 
 fn owning_feature_definition_ref(scan: &ContainerScan, feature_id: u32) -> Option<String> {
     let definitions = scan
-        .feature_definitions
+        .features
+        .definitions
         .iter()
         .filter(|definition| definition.owner_feature_id == Some(feature_id))
         .collect::<Vec<_>>();
@@ -4472,7 +4481,8 @@ fn normalized(vector: [f64; 3]) -> Option<[f64; 3]> {
 
 fn feature_plane_equations(scan: &ContainerScan, feature_id: u32) -> Vec<([f64; 3], [f64; 3])> {
     let ids = scan
-        .surface_rows
+        .surfaces
+        .rows
         .iter()
         .filter(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
@@ -4481,9 +4491,10 @@ fn feature_plane_equations(scan: &ContainerScan, feature_id: u32) -> Vec<([f64; 
         .collect::<BTreeSet<_>>();
     ids.into_iter()
         .filter_map(|id| {
-            crate::surface::unique_surface_row(&scan.surface_rows, id)?;
+            crate::surface::unique_surface_row(&scan.surfaces.rows, id)?;
             let outlines = scan
-                .outline_planes
+                .planes
+                .outlines
                 .iter()
                 .filter(|plane| plane.surface_id == id)
                 .collect::<Vec<_>>();
@@ -4491,7 +4502,8 @@ fn feature_plane_equations(scan: &ContainerScan, feature_id: u32) -> Vec<([f64; 
                 [plane] => Some((plane.origin, plane.normal)),
                 [] => {
                     let frames = scan
-                        .plane_local_systems
+                        .planes
+                        .local_systems
                         .iter()
                         .filter(|frame| frame.surface_id == id)
                         .collect::<Vec<_>>();
@@ -4507,7 +4519,8 @@ fn feature_plane_equations(scan: &ContainerScan, feature_id: u32) -> Vec<([f64; 
 }
 
 fn feature_outline_planes(scan: &ContainerScan, feature_id: u32) -> Vec<(u32, [f64; 3], [f64; 3])> {
-    scan.surface_rows
+    scan.surfaces
+        .rows
         .iter()
         .filter(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
@@ -4516,9 +4529,10 @@ fn feature_outline_planes(scan: &ContainerScan, feature_id: u32) -> Vec<(u32, [f
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter_map(|id| {
-            crate::surface::unique_surface_row(&scan.surface_rows, id)?;
+            crate::surface::unique_surface_row(&scan.surfaces.rows, id)?;
             let outlines = scan
-                .outline_planes
+                .planes
+                .outlines
                 .iter()
                 .filter(|plane| plane.surface_id == id)
                 .collect::<Vec<_>>();
@@ -4540,7 +4554,8 @@ fn generated_arc_cylinder_extent(
     let mut frames = Vec::new();
     let mut surface_ids = BTreeSet::new();
     for entry in scan
-        .feature_entity_tables
+        .features
+        .entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
         .flat_map(|table| &table.entries)
@@ -4554,14 +4569,14 @@ fn generated_arc_cylinder_extent(
         if segment.kind != crate::feature::FeatureSegmentKind::Arc {
             continue;
         }
-        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, entry.entity_id)
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
             .filter(|row| {
                 row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
             })
         else {
             continue;
         };
-        let frame = crate::surface::unique_surface_parameter(&scan.surface_parameters, row.id)?
+        let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?
             .positional_cylinder_frame?;
         surface_ids.insert(row.id).then_some(())?;
         frames.push(frame);
@@ -5439,9 +5454,9 @@ fn transfer_saved_spline_curves(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for transform in &scan.feature_section_transforms {
+    for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
-            &scan.feature_section_transforms,
+            &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
         )
@@ -5450,7 +5465,7 @@ fn transfer_saved_spline_curves(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
@@ -5646,9 +5661,9 @@ fn transfer_feature_extrusion_surfaces(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for transform in &scan.feature_section_transforms {
+    for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
-            &scan.feature_section_transforms,
+            &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
         )
@@ -5657,7 +5672,7 @@ fn transfer_feature_extrusion_surfaces(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
@@ -5690,8 +5705,8 @@ fn transfer_feature_extrusion_surfaces(
                 continue;
             };
             let Some(surface_id) = analytic_surface_id_for_feature(
-                &scan.surface_rows,
-                &scan.feature_entity_tables,
+                &scan.surfaces.rows,
+                &scan.features.entity_tables,
                 feature_id,
                 segment.external_id,
                 &geometry,
@@ -5736,7 +5751,7 @@ fn transfer_feature_extrusion_surfaces(
                 continue;
             };
             let Some(native_surface_id) = generated_surface_id_for_feature(
-                &scan.feature_entity_tables,
+                &scan.features.entity_tables,
                 feature_id,
                 external_id,
             ) else {
@@ -5748,7 +5763,7 @@ fn transfer_feature_extrusion_surfaces(
             let Some(expected_kind) = surface_kind_for_geometry(&geometry) else {
                 continue;
             };
-            if !scan.surface_rows.iter().any(|row| {
+            if !scan.surfaces.rows.iter().any(|row| {
                 row.id == native_surface_id
                     && row.feature_id == feature_id
                     && row.kind == expected_kind
@@ -5795,11 +5810,12 @@ fn transfer_feature_extrusion_surfaces(
                 let internal_id = spline.entity_id?;
                 let external_id = order_table.external_id(internal_id)?;
                 let surface_id = generated_surface_id_for_feature(
-                    &scan.feature_entity_tables,
+                    &scan.features.entity_tables,
                     feature_id,
                     external_id,
                 )?;
-                scan.surface_rows
+                scan.surfaces
+                    .rows
                     .iter()
                     .any(|row| {
                         row.id == surface_id
@@ -6697,9 +6713,9 @@ fn transfer_resolved_revolution_breps(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for transform in &scan.feature_section_transforms {
+    for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
-            &scan.feature_section_transforms,
+            &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
         )
@@ -6710,16 +6726,16 @@ fn transfer_resolved_revolution_breps(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if current_additive_feature_recipe(&scan.feature_operations, feature_id)
+        if current_additive_feature_recipe(&scan.features.operations, feature_id)
             != Some(crate::feature::FeatureRecipeKind::Revolve)
             || !feature_is_first_material_operation(scan, feature_id)
-            || unique_feature_revolution_extent_kind(&scan.feature_revolution_extents, feature_id)
+            || unique_feature_revolution_extent_kind(&scan.features.revolution_extents, feature_id)
                 != Some(crate::feature::FeatureRevolutionExtentKind::FullTurn)
         {
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
@@ -6950,9 +6966,9 @@ fn transfer_resolved_circular_extrusion_breps(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for transform in &scan.feature_section_transforms {
+    for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
-            &scan.feature_section_transforms,
+            &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
         )
@@ -6969,7 +6985,7 @@ fn transfer_resolved_circular_extrusion_breps(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
@@ -7288,13 +7304,15 @@ fn sketch_profiles_cover_generated_extrusion_sides(
     sketch: &Sketch,
 ) -> bool {
     let expected_entities = scan
-        .feature_entity_tables
+        .features
+        .entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
         .flat_map(|table| &table.entries)
         .filter_map(|entry| {
             let external_id = entry.source_entity_id?;
-            scan.surface_rows
+            scan.surfaces
+                .rows
                 .iter()
                 .any(|row| {
                     row.id == entry.entity_id
@@ -7333,9 +7351,9 @@ fn transfer_resolved_extrusion_breps(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for transform in &scan.feature_section_transforms {
+    for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
-            &scan.feature_section_transforms,
+            &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
         )
@@ -7352,7 +7370,7 @@ fn transfer_resolved_extrusion_breps(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
@@ -7842,7 +7860,7 @@ fn feature_recipe(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<crate::feature::FeatureRecipeKind> {
-    current_feature_recipe(&scan.feature_operations, feature_id)
+    current_feature_recipe(&scan.features.operations, feature_id)
         .map(crate::feature::FeatureRecipe::kind)
 }
 
@@ -7850,7 +7868,7 @@ fn feature_recipe_effect(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<crate::feature::FeatureRecipeEffect> {
-    current_feature_recipe(&scan.feature_operations, feature_id)
+    current_feature_recipe(&scan.features.operations, feature_id)
         .map(crate::feature::FeatureRecipe::effect)
 }
 
@@ -7863,17 +7881,18 @@ fn current_additive_feature_recipe(
 }
 
 fn feature_is_first_material_operation(scan: &ContainerScan, feature_id: u32) -> bool {
-    let Some(target) = current_feature_operation(&scan.feature_operations, feature_id) else {
+    let Some(target) = current_feature_operation(&scan.features.operations, feature_id) else {
         return false;
     };
-    scan.feature_operations
+    scan.features
+        .operations
         .iter()
         .map(|operation| operation.feature_id)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter(|candidate| *candidate != feature_id)
         .filter_map(|candidate| {
-            let operation = current_feature_operation(&scan.feature_operations, candidate)?;
+            let operation = current_feature_operation(&scan.features.operations, candidate)?;
             let recipe_is_material = operation.recipe.is_some_and(|recipe| {
                 matches!(
                     recipe.effect(),
@@ -7916,7 +7935,7 @@ fn current_feature_operation(
 
 fn feature_schema_class(scan: &ContainerScan, feature_id: u32) -> Option<u32> {
     resolved_feature_schema_class_from_classes(
-        &scan.feature_operations,
+        &scan.features.operations,
         feature_row_schema_classes(scan, feature_id),
         feature_id,
     )
@@ -7941,10 +7960,10 @@ fn resolved_feature_schema_class_from_classes(
 }
 
 fn feature_row_schema_classes(scan: &ContainerScan, feature_id: u32) -> BTreeSet<u32> {
-    row_feature_schema_classes(&scan.feature_rows, feature_id)
+    row_feature_schema_classes(&scan.features.rows, feature_id)
         .into_iter()
         .chain(row_feature_schema_classes(
-            &scan.depdb_recipe_rows,
+            &scan.features.depdb_recipe_rows,
             feature_id,
         ))
         .collect()
@@ -7961,7 +7980,7 @@ fn row_feature_schema_classes(
 }
 
 fn feature_revolution_extent(scan: &ContainerScan, feature_id: u32) -> Option<Extent> {
-    unique_feature_revolution_extent_kind(&scan.feature_revolution_extents, feature_id).map(
+    unique_feature_revolution_extent_kind(&scan.features.revolution_extents, feature_id).map(
         |kind| match kind {
             crate::feature::FeatureRevolutionExtentKind::FullTurn => Extent::Angle {
                 angle: Angle(std::f64::consts::TAU),
@@ -10035,13 +10054,14 @@ fn solver_only_section_entities(
 
 fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     for definition in scan
-        .feature_definitions
+        .features
+        .definitions
         .iter()
         .filter(|definition| feature_definition_has_sketch_design(definition))
     {
         let transform = definition.section_3d.as_ref().and_then(|section| {
             unique_feature_section_transform(
-                &scan.feature_section_transforms,
+                &scan.features.section_transforms,
                 definition.id,
                 section.offset,
             )
@@ -10147,8 +10167,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     definition.owner_feature_id,
                     segment.external_id,
                     expected_kinds,
-                    &scan.feature_entity_tables,
-                    &scan.surface_rows,
+                    &scan.features.entity_tables,
+                    &scan.surfaces.rows,
                 )
                 .then_some((segment.external_id, geometry))
             })
@@ -10168,8 +10188,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                             definition.owner_feature_id,
                             segment.external_id,
                             expected_kinds,
-                            &scan.feature_entity_tables,
-                            &scan.surface_rows,
+                            &scan.features.entity_tables,
+                            &scan.surfaces.rows,
                         )
                         .then_some((segment.external_id, geometry))
                     }),
@@ -10396,8 +10416,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     definition.owner_feature_id,
                     external_id,
                     expected_kinds,
-                    &scan.feature_entity_tables,
-                    &scan.surface_rows,
+                    &scan.features.entity_tables,
+                    &scan.surfaces.rows,
                 )
             });
             let curve_id = CurveId(sketch_section_curve_id(&sketch_id, &suffix));
@@ -10471,8 +10491,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     definition.owner_feature_id,
                     external_id,
                     expected_kinds,
-                    &scan.feature_entity_tables,
-                    &scan.surface_rows,
+                    &scan.features.entity_tables,
+                    &scan.surfaces.rows,
                 )
             });
             let entity_id = external_id.map_or_else(
@@ -10879,11 +10899,12 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
 
 fn link_feature_sketch_history(scan: &ContainerScan, ir: &mut CadIr) {
     let links = scan
-        .feature_section_transforms
+        .features
+        .section_transforms
         .iter()
         .filter(|transform| {
             unique_feature_section_transform(
-                &scan.feature_section_transforms,
+                &scan.features.section_transforms,
                 transform.definition_id,
                 transform.offset,
             )
@@ -10892,7 +10913,7 @@ fn link_feature_sketch_history(scan: &ContainerScan, ir: &mut CadIr) {
         .filter_map(|transform| {
             let owner = IrFeatureId(format!("creo:model:feature#{}", transform.feature_id?));
             let definition =
-                unique_feature_definition_for_transform(&scan.feature_definitions, transform)?;
+                unique_feature_definition_for_transform(&scan.features.definitions, transform)?;
             let sketch = model_sketch_id(scan, definition);
             let sketch_feature = section_owner_feature_id(scan, transform.definition_id, &sketch);
             ir.model
@@ -11102,9 +11123,9 @@ fn transfer_resolved_revolution_surfaces(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for transform in &scan.feature_section_transforms {
+    for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
-            &scan.feature_section_transforms,
+            &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
         )
@@ -11118,13 +11139,13 @@ fn transfer_resolved_revolution_surfaces(
         if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve) {
             continue;
         }
-        if unique_feature_revolution_extent_kind(&scan.feature_revolution_extents, feature_id)
+        if unique_feature_revolution_extent_kind(&scan.features.revolution_extents, feature_id)
             .is_none()
         {
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
@@ -11157,9 +11178,9 @@ fn transfer_resolved_revolution_surfaces(
             .as_ref()
             .map_or_else(BTreeMap::new, |order| {
                 ordered_family_surface_bindings_for_feature(
-                    &scan.surface_rows,
+                    &scan.surfaces.rows,
                     feature_id,
-                    &scan.feature_entity_tables,
+                    &scan.features.entity_tables,
                     order,
                     complete_section_segment_rows(definition)
                         .iter()
@@ -11176,9 +11197,9 @@ fn transfer_resolved_revolution_surfaces(
             .as_ref()
             .map_or_else(BTreeMap::new, |order| {
                 ordered_family_surface_bindings_for_feature(
-                    &scan.surface_rows,
+                    &scan.surfaces.rows,
                     feature_id,
-                    &scan.feature_entity_tables,
+                    &scan.features.entity_tables,
                     order,
                     definition
                         .saved_section
@@ -11208,8 +11229,8 @@ fn transfer_resolved_revolution_surfaces(
                 crate::feature::FeatureSegmentKind::Line => {
                     definition.order_table.as_ref().and_then(|order| {
                         ordered_analytic_surface_id_for_feature(
-                            &scan.surface_rows,
-                            &scan.feature_entity_tables,
+                            &scan.surfaces.rows,
+                            &scan.features.entity_tables,
                             feature_id,
                             order,
                             segment.external_id,
@@ -11280,8 +11301,8 @@ fn transfer_resolved_revolution_surfaces(
                     continue;
                 };
                 let Some(native_surface) = ordered_analytic_surface_id_for_feature(
-                    &scan.surface_rows,
-                    &scan.feature_entity_tables,
+                    &scan.surfaces.rows,
+                    &scan.features.entity_tables,
                     feature_id,
                     order,
                     external_id,
@@ -11419,9 +11440,9 @@ fn transfer_resolved_revolution_vertex_orbit_curves(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut pending = Vec::new();
-    for transform in &scan.feature_section_transforms {
+    for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
-            &scan.feature_section_transforms,
+            &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
         )
@@ -11436,7 +11457,7 @@ fn transfer_resolved_revolution_vertex_orbit_curves(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
@@ -11499,9 +11520,9 @@ fn transfer_resolved_extrusion_vertex_orbit_curves(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut pending = Vec::new();
-    for transform in &scan.feature_section_transforms {
+    for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
-            &scan.feature_section_transforms,
+            &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
         )
@@ -11516,7 +11537,7 @@ fn transfer_resolved_extrusion_vertex_orbit_curves(
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
@@ -11703,7 +11724,7 @@ fn transfer_feature_dimensions(
         .map(|feature| feature.id.clone())
         .collect::<BTreeSet<_>>();
     let mut candidates = Vec::new();
-    for definition in &scan.feature_definitions {
+    for definition in &scan.features.definitions {
         let sketch = model_sketch_id(scan, definition);
         let owner = section_owner_feature_id(scan, definition.id, &sketch);
         if !feature_ids.contains(&owner) {
@@ -11824,17 +11845,19 @@ fn transfer_feature_dimensions(
 
 fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
     let affected_geometry = agreed_feature_affected_ids(
-        &scan.feature_affected_ids,
+        &scan.features.affected_ids,
         feature_id,
         crate::feature::AffectedIdKind::Geometry,
     );
     let generated_surfaces = scan
-        .surface_rows
+        .surfaces
+        .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
         .map(|row| SurfaceId(format!("creo:visibgeom:surface#{}", row.id)))
         .chain(
-            scan.feature_entity_tables
+            scan.features
+                .entity_tables
                 .iter()
                 .filter(|table| table.feature_id == Some(feature_id))
                 .flat_map(|table| &table.surface_ids)
@@ -12004,7 +12027,8 @@ fn insert_feature_parameter(parameters: &mut BTreeMap<String, String>, base: &st
 fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String, String> {
     let mut parameters = BTreeMap::new();
     for field in scan
-        .feature_choice_fields
+        .features
+        .choice_fields
         .iter()
         .filter(|field| field.feature_id == feature_id)
     {
@@ -12018,7 +12042,8 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         );
     }
     for affected in scan
-        .feature_affected_ids
+        .features
+        .affected_ids
         .iter()
         .filter(|record| record.feature_id == feature_id)
     {
@@ -12041,7 +12066,8 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         );
     }
     for affected in scan
-        .feature_replay_affected_ids
+        .features
+        .replay_affected_ids
         .iter()
         .filter(|record| record.feature_id == feature_id)
     {
@@ -12085,7 +12111,8 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         );
     }
     for direction in scan
-        .feature_loop_restore_directions
+        .features
+        .loop_restore_directions
         .iter()
         .filter(|record| record.feature_id == feature_id)
     {
@@ -12100,7 +12127,7 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         );
     }
     if let Some(extent) =
-        unique_feature_revolution_extent_kind(&scan.feature_revolution_extents, feature_id)
+        unique_feature_revolution_extent_kind(&scan.features.revolution_extents, feature_id)
     {
         parameters.insert(
             "revolution_extent".to_string(),
@@ -12111,7 +12138,8 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         );
     }
     for table in scan
-        .feature_entity_tables
+        .features
+        .entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
     {
@@ -12135,7 +12163,8 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         }
     }
     let owned_definitions = scan
-        .feature_definitions
+        .features
+        .definitions
         .iter()
         .filter(|definition| definition.owner_feature_id == Some(feature_id))
         .collect::<Vec<_>>();
@@ -12158,12 +12187,13 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         );
     }
     for transform in scan
-        .feature_section_transforms
+        .features
+        .section_transforms
         .iter()
         .filter(|transform| transform.feature_id == Some(feature_id))
     {
         let Some(definition) =
-            unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
@@ -12205,7 +12235,8 @@ fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
 
 fn feature_reference_name(scan: &ContainerScan, feature_id: u32) -> Option<&str> {
     let mut records = scan
-        .feature_reference_names
+        .features
+        .reference_names
         .iter()
         .filter(|record| record.feature_id == feature_id);
     let record = records.next()?;
@@ -12216,7 +12247,8 @@ fn feature_reference_name(scan: &ContainerScan, feature_id: u32) -> Option<&str>
 
 fn owned_section_feature_id(scan: &ContainerScan, definition_id: u32) -> Option<u32> {
     let definitions = scan
-        .feature_definitions
+        .features
+        .definitions
         .iter()
         .filter(|definition| definition.id == definition_id)
         .collect::<Vec<_>>();
@@ -12224,7 +12256,8 @@ fn owned_section_feature_id(scan: &ContainerScan, definition_id: u32) -> Option<
         return None;
     };
     let rows = scan
-        .feature_rows
+        .features
+        .rows
         .iter()
         .filter(|row| {
             row.root_schema_class == Some(926)
@@ -12243,7 +12276,8 @@ fn section_definition_for_history_feature(
     feature_id: u32,
 ) -> Option<&crate::feature::FeatureDefinition> {
     let rows = scan
-        .feature_rows
+        .features
+        .rows
         .iter()
         .filter(|row| row.feature_id == feature_id && row.root_schema_class == Some(926))
         .collect::<Vec<_>>();
@@ -12251,7 +12285,8 @@ fn section_definition_for_history_feature(
         return None;
     };
     let definitions = scan
-        .feature_definitions
+        .features
+        .definitions
         .iter()
         .filter(|definition| {
             definition.offset >= row.body_offset
@@ -12266,7 +12301,7 @@ fn section_definition_for_history_feature(
 
 fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
-    if let Some(recipe) = current_feature_recipe(&scan.feature_operations, feature_id) {
+    if let Some(recipe) = current_feature_recipe(&scan.features.operations, feature_id) {
         properties.insert("recipe".to_string(), recipe.name().to_string());
     }
     let schema_class = feature_schema_class(scan, feature_id);
@@ -12294,14 +12329,14 @@ fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<
 }
 
 fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<IrFeatureId> {
-    agreed_feature_parent_ids(&scan.feature_affected_ids, feature_id)
+    agreed_feature_parent_ids(&scan.features.affected_ids, feature_id)
         .into_iter()
         .chain(current_feature_recipe_parent(
-            &scan.feature_operations,
+            &scan.features.operations,
             feature_id,
         ))
         .chain(feature_entity_dependencies(
-            &scan.feature_entity_tables,
+            &scan.features.entity_tables,
             feature_id,
         ))
         .filter_map(|dependency| {
@@ -12453,21 +12488,22 @@ fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
         else {
             continue;
         };
-        let native_dependencies = agreed_feature_parent_ids(&scan.feature_affected_ids, feature_id)
-            .into_iter()
-            .chain(current_feature_recipe_parent(
-                &scan.feature_operations,
-                feature_id,
-            ))
-            .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
-            .filter(|dependency| emitted.contains(dependency))
-            .filter(|dependency| *dependency != feature.id)
-            .fold(Vec::new(), |mut dependencies, dependency| {
-                if !dependencies.contains(&dependency) {
-                    dependencies.push(dependency);
-                }
-                dependencies
-            });
+        let native_dependencies =
+            agreed_feature_parent_ids(&scan.features.affected_ids, feature_id)
+                .into_iter()
+                .chain(current_feature_recipe_parent(
+                    &scan.features.operations,
+                    feature_id,
+                ))
+                .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
+                .filter(|dependency| emitted.contains(dependency))
+                .filter(|dependency| *dependency != feature.id)
+                .fold(Vec::new(), |mut dependencies, dependency| {
+                    if !dependencies.contains(&dependency) {
+                        dependencies.push(dependency);
+                    }
+                    dependencies
+                });
         feature.dependencies = reconciled_dependencies(
             &feature.id,
             &feature.dependencies,
@@ -12475,7 +12511,7 @@ fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
             &emitted,
         );
         if feature.parent.is_none() {
-            feature.parent = current_feature_recipe_parent(&scan.feature_operations, feature_id)
+            feature.parent = current_feature_recipe_parent(&scan.features.operations, feature_id)
                 .map(|parent| IrFeatureId(format!("creo:model:feature#{parent}")))
                 .filter(|parent| *parent != feature.id && emitted.contains(parent));
         }
@@ -12580,7 +12616,7 @@ fn feature_edge_selection(
     feature_id: u32,
 ) -> Option<EdgeSelection> {
     let (ids, native) = if let Some(ids) = agreed_feature_affected_ids(
-        &scan.feature_affected_ids,
+        &scan.features.affected_ids,
         feature_id,
         crate::feature::AffectedIdKind::Edges,
     ) {
@@ -12594,13 +12630,13 @@ fn feature_edge_selection(
         (ids, native)
     } else {
         if has_feature_affected_ids(
-            &scan.feature_affected_ids,
+            &scan.features.affected_ids,
             feature_id,
             crate::feature::AffectedIdKind::Edges,
         ) {
             return None;
         }
-        let ids = agreed_feature_replay_edge_ids(&scan.feature_replay_affected_ids, feature_id)?;
+        let ids = agreed_feature_replay_edge_ids(&scan.features.replay_affected_ids, feature_id)?;
         if ids.is_empty() {
             return None;
         }
@@ -12874,7 +12910,8 @@ fn unique_surface_parameter_record<'a>(
     row: &crate::surface::SurfaceRow,
 ) -> Option<&'a crate::surface::SurfaceParameterRecord> {
     let mut records = scan
-        .surface_parameters
+        .surfaces
+        .parameters
         .iter()
         .filter(|record| record.offset == row.offset);
     let record = records.next()?;
@@ -12885,7 +12922,7 @@ fn prototype_envelope_round_radius(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Option<f64> {
-    (scan.layout == crate::container::Layout::Nd).then_some(())?;
+    (scan.framing.layout == crate::container::Layout::Nd).then_some(())?;
     let feature_id = rows.first()?.feature_id;
     let prototype_radii = unique_surface_prototype_associations(scan)
         .into_iter()
@@ -12944,7 +12981,8 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         return Some(radius);
     }
     let cylinder_rows = scan
-        .surface_rows
+        .surfaces
+        .rows
         .iter()
         .filter(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
@@ -12952,7 +12990,8 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         .collect::<Vec<_>>();
     if cylinder_rows.is_empty() {
         let generated_rows = scan
-            .surface_rows
+            .surfaces
+            .rows
             .iter()
             .filter(|row| row.feature_id == feature_id)
             .collect::<Vec<_>>();
@@ -12966,7 +13005,8 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         return prototype_envelope_round_radius(scan, &generated_rows);
     }
     let generated_row_count = scan
-        .surface_rows
+        .surfaces
+        .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
         .count();
@@ -12988,17 +13028,17 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         return unique_positive_length(&cylinder_radii);
     }
     let named_ids = agreed_feature_affected_ids(
-        &scan.feature_affected_ids,
+        &scan.features.affected_ids,
         feature_id,
         crate::feature::AffectedIdKind::Geometry,
     );
     let named_present = has_feature_affected_ids(
-        &scan.feature_affected_ids,
+        &scan.features.affected_ids,
         feature_id,
         crate::feature::AffectedIdKind::Geometry,
     );
     let replay_ids =
-        agreed_feature_replay_geometry_ids(&scan.feature_replay_affected_ids, feature_id);
+        agreed_feature_replay_geometry_ids(&scan.features.replay_affected_ids, feature_id);
     let affected_ids = match (named_ids, replay_ids) {
         (Some(ids), _) => ids,
         (None, Some(ids)) if !named_present => ids,
@@ -13028,7 +13068,8 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
 
 fn round_direct_radii(scan: &ContainerScan, feature_id: u32) -> Option<Vec<f64>> {
     let generated_rows = scan
-        .surface_rows
+        .surfaces
+        .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
         .collect::<Vec<_>>();
@@ -13108,7 +13149,7 @@ fn schema_feature_definition(
             section_definition_for_history_feature(scan, feature_id).and_then(|definition| {
                 let section = definition.section_3d.as_ref()?;
                 unique_feature_section_transform(
-                    &scan.feature_section_transforms,
+                    &scan.features.section_transforms,
                     definition.id,
                     section.offset,
                 )?;
@@ -13125,16 +13166,19 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 911 {
-        let unresolved_form =
-            stepped_hole_form(feature_id, &scan.feature_entity_tables, &scan.surface_rows);
+        let unresolved_form = stepped_hole_form(
+            feature_id,
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+        );
         let stepped_dimensions = (unresolved_form == Some(HoleForm::Counterbore))
             .then(|| counterbore_dimensions(scan, ir, feature_id))
             .flatten();
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
-            &scan.feature_entity_tables,
-            &scan.surface_rows,
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
         );
         let solved = simple_hole_geometry(scan, feature_id)
             .or_else(|| compact_simple_hole_geometry(scan, feature_id));
@@ -13252,7 +13296,7 @@ fn schema_feature_definition(
     {
         let sweep = circular_sweep_geometry(scan, feature_id);
         if let (Some(definition), Some(sweep)) = (
-            unique_owned_feature_definition(&scan.feature_definitions, feature_id),
+            unique_owned_feature_definition(&scan.features.definitions, feature_id),
             sweep,
         ) {
             if sweep
@@ -13279,17 +13323,18 @@ fn schema_feature_definition(
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
         let extent = feature_revolution_extent(scan, feature_id);
         let transforms = scan
-            .feature_section_transforms
+            .features
+            .section_transforms
             .iter()
             .filter(|transform| transform.feature_id == Some(feature_id))
             .collect::<Vec<_>>();
         let (definition, transform) = match transforms.as_slice() {
             [transform] => (
-                unique_feature_definition_for_transform(&scan.feature_definitions, transform),
+                unique_feature_definition_for_transform(&scan.features.definitions, transform),
                 Some(*transform),
             ),
             [] => (
-                unique_owned_feature_definition(&scan.feature_definitions, feature_id),
+                unique_owned_feature_definition(&scan.features.definitions, feature_id),
                 None,
             ),
             _ => (None, None),
@@ -13323,15 +13368,16 @@ fn schema_feature_definition(
     let recipe = feature_recipe(scan, feature_id);
     if section_sweep_allows_linear_extrusion(schema_class, recipe) {
         let transforms = scan
-            .feature_section_transforms
+            .features
+            .section_transforms
             .iter()
             .filter(|transform| transform.feature_id == Some(feature_id))
             .collect::<Vec<_>>();
         let definition = match transforms.as_slice() {
             [transform] => {
-                unique_feature_definition_for_transform(&scan.feature_definitions, transform)
+                unique_feature_definition_for_transform(&scan.features.definitions, transform)
             }
-            [] => unique_owned_feature_definition(&scan.feature_definitions, feature_id),
+            [] => unique_owned_feature_definition(&scan.features.definitions, feature_id),
             _ => None,
         };
         let profile = definition.map(|definition| {
@@ -13387,11 +13433,12 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 923 {
-        if let Some(datum) = unique_feature_datum_plane(&scan.datum_planes, feature_id) {
+        if let Some(datum) = unique_feature_datum_plane(&scan.planes.datums, feature_id) {
             return datum_plane_feature_definition(datum);
         }
         if scan
-            .datum_planes
+            .planes
+            .datums
             .iter()
             .any(|datum| datum.feature_id == feature_id)
         {
@@ -13399,7 +13446,8 @@ fn schema_feature_definition(
         }
         let placed = placed_planes(scan);
         let planes = scan
-            .surface_rows
+            .surfaces
+            .rows
             .iter()
             .filter(|row| {
                 row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
@@ -13952,7 +14000,8 @@ fn counterbore_dimensions(
     feature_id: u32,
 ) -> Option<(f64, f64, f64)> {
     let tables = scan
-        .feature_entity_tables
+        .features
+        .entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
         .collect::<Vec<_>>();
@@ -13964,9 +14013,12 @@ fn counterbore_dimensions(
         .iter()
         .copied()
         .filter(|surface_id| {
-            crate::surface::unique_surface_row(&scan.surface_rows, *surface_id).is_some_and(|row| {
-                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
-            })
+            crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_some_and(
+                |row| {
+                    row.feature_id == feature_id
+                        && row.kind == crate::surface::SurfaceKind::Cylinder
+                },
+            )
         })
         .collect::<BTreeSet<_>>();
     let generated_radii = ir
@@ -13988,7 +14040,8 @@ fn counterbore_dimensions(
         })
         .collect::<Vec<_>>();
     counterbore_dimension_values(
-        scan.feature_definitions
+        scan.features
+            .definitions
             .iter()
             .filter(|definition| definition.id == 911)
             .filter_map(|definition| definition.dimensions.as_ref()),
@@ -14058,7 +14111,8 @@ fn counterbore_patch_geometries(
 ) -> Option<Vec<(u32, SurfaceGeometry)>> {
     let (bore_diameter, counterbore_diameter, _) = counterbore_dimensions(scan, ir, feature_id)?;
     let tables = scan
-        .feature_entity_tables
+        .features
+        .entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
         .collect::<Vec<_>>();
@@ -14068,7 +14122,7 @@ fn counterbore_patch_geometries(
     let mut cylinders_by_source = BTreeMap::<u32, Vec<u32>>::new();
     for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
         let source_id = entry.source_entity_id?;
-        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, entry.entity_id)
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
         else {
             continue;
         };
@@ -14169,7 +14223,8 @@ fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleH
         .into_iter()
         .map(|(id, origin, normal)| {
             let envelopes = scan
-                .plane_envelopes
+                .planes
+                .envelopes
                 .iter()
                 .filter(|envelope| envelope.surface_id == id)
                 .collect::<Vec<_>>();
@@ -14188,7 +14243,8 @@ fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleH
         return None;
     };
     let tables = scan
-        .feature_entity_tables
+        .features
+        .entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
         .collect::<Vec<_>>();
@@ -14205,7 +14261,7 @@ fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleH
     }
     let cylinder_ids = [*first_cylinder, *second_cylinder];
     if cylinder_ids.iter().any(|id| {
-        !crate::surface::unique_surface_row(&scan.surface_rows, *id).is_some_and(|row| {
+        !crate::surface::unique_surface_row(&scan.surfaces.rows, *id).is_some_and(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
     }) {
@@ -14277,10 +14333,10 @@ fn compact_simple_hole_geometry(
 ) -> Option<SimpleHoleGeometry> {
     let cylinder_id = compact_simple_hole_cylinder_id(
         feature_id,
-        &scan.feature_entity_tables,
-        &scan.surface_rows,
+        &scan.features.entity_tables,
+        &scan.surfaces.rows,
     )?;
-    let frame = crate::surface::unique_surface_parameter(&scan.surface_parameters, cylinder_id)?
+    let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?
         .positional_cylinder_frame?;
     let length = frame.length?;
     Some(SimpleHoleGeometry {
@@ -14359,7 +14415,8 @@ fn single_cap_circular_sweep_geometry(
     feature_id: u32,
 ) -> Option<CircularSweepGeometry> {
     let tables = scan
-        .feature_entity_tables
+        .features
+        .entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
         .collect::<Vec<_>>();
@@ -14382,12 +14439,12 @@ fn single_cap_circular_sweep_geometry(
             .contains(&rowless_cap.entity_id)
         && table.non_surface_entity_ids.contains(&profile_id.entity_id))
     .then_some(())?;
-    crate::surface::unique_surface_row(&scan.surface_rows, cap_id.entity_id)
+    crate::surface::unique_surface_row(&scan.surfaces.rows, cap_id.entity_id)
         .is_some_and(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
         })
         .then_some(())?;
-    crate::surface::unique_surface_row(&scan.surface_rows, cylinder_id.entity_id)
+    crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_id.entity_id)
         .is_some_and(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
@@ -14400,7 +14457,8 @@ fn single_cap_circular_sweep_geometry(
         return None;
     };
     let envelopes = scan
-        .plane_envelopes
+        .planes
+        .envelopes
         .iter()
         .filter(|envelope| envelope.surface_id == cap_id.entity_id)
         .collect::<Vec<_>>();
@@ -14414,7 +14472,8 @@ fn single_cap_circular_sweep_geometry(
         plane_envelope_corners(&envelope.envelope),
     );
     let transforms = scan
-        .feature_section_transforms
+        .features
+        .section_transforms
         .iter()
         .filter(|transform| transform.feature_id == Some(feature_id))
         .collect::<Vec<_>>();
@@ -14470,7 +14529,8 @@ fn two_cap_circular_sweep_geometry(
     feature_id: u32,
 ) -> Option<CircularSweepGeometry> {
     let tables = scan
-        .feature_entity_tables
+        .features
+        .entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
         .collect::<Vec<_>>();
@@ -14498,7 +14558,8 @@ fn two_cap_circular_sweep_geometry(
     }
     let cap = |plane: &(u32, [f64; 3], [f64; 3])| {
         let envelopes = scan
-            .plane_envelopes
+            .planes
+            .envelopes
             .iter()
             .filter(|envelope| envelope.surface_id == plane.0)
             .collect::<Vec<_>>();
@@ -14510,7 +14571,7 @@ fn two_cap_circular_sweep_geometry(
     };
     let cylinder_ids = [*first_cylinder, *second_cylinder];
     if cylinder_ids.iter().any(|id| {
-        !crate::surface::unique_surface_row(&scan.surface_rows, *id).is_some_and(|row| {
+        !crate::surface::unique_surface_row(&scan.surfaces.rows, *id).is_some_and(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
     }) {
@@ -15915,7 +15976,8 @@ mod plane_reconciliation_tests;
 
 fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> {
     let held_planes = scan
-        .plane_envelopes
+        .planes
+        .envelopes
         .iter()
         .filter_map(|envelope| Some((envelope.surface_id, held_coordinate_plane(envelope)?)))
         .fold(
@@ -15929,8 +15991,8 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
         .filter_map(|(surface_id, planes)| agreed_plane(&planes).map(|plane| (surface_id, plane)))
         .collect::<BTreeMap<_, _>>();
     let frame_bound_outlines = crate::surface::frame_bound_outline_planes(
-        &scan.plane_envelopes,
-        &scan.plane_local_systems,
+        &scan.planes.envelopes,
+        &scan.planes.local_systems,
     )
     .into_iter()
     .filter(|outline| {
@@ -15938,7 +16000,7 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
             .normal
             .iter()
             .position(|component| component.abs() > 1e-9);
-        scan.plane_envelopes.iter().any(|envelope| {
+        scan.planes.envelopes.iter().any(|envelope| {
             envelope.surface_id == outline.surface_id
                 && envelope.offset == outline.offset
                 && axis.is_some_and(|axis| {
@@ -15966,7 +16028,7 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
         },
     );
     let mut candidates = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
-    for frame in &scan.plane_local_systems {
+    for frame in &scan.planes.local_systems {
         let (Some(origin), Some(normal)) = (frame.origin, frame.normal) else {
             continue;
         };
@@ -16003,12 +16065,13 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
             .push(candidate);
     }
     let local_chart_ids = scan
-        .plane_local_systems
+        .planes
+        .local_systems
         .iter()
         .filter(|frame| frame.origin.is_some() && frame.normal.is_some() && frame.u_axis.is_some())
         .map(|frame| frame.surface_id)
         .collect::<BTreeSet<_>>();
-    for outline in &scan.outline_planes {
+    for outline in &scan.planes.outlines {
         candidates
             .entry(outline.surface_id)
             .or_default()
@@ -16025,7 +16088,7 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                 offset: outline.offset,
             });
     }
-    for envelope in &scan.plane_envelopes {
+    for envelope in &scan.planes.envelopes {
         let Some(equation) = held_coordinate_plane(envelope) else {
             continue;
         };
@@ -16038,7 +16101,7 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                 offset: envelope.offset,
             });
     }
-    for plane in &scan.positional_frame_planes {
+    for plane in &scan.planes.positional_frames {
         if candidates.contains_key(&plane.surface_id) {
             continue;
         }
@@ -16061,7 +16124,8 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
     candidates
         .into_iter()
         .filter(|(id, _)| {
-            scan.surface_rows
+            scan.surfaces
+                .rows
                 .iter()
                 .filter(|row| row.id == *id)
                 .take(2)
@@ -16223,7 +16287,7 @@ fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEqu
         .into_iter()
         .map(|(id, plane)| (id, CarrierEquation::Plane(plane)))
         .collect::<BTreeMap<_, _>>();
-    for row in crate::surface::uniquely_identified_rows(&scan.surface_rows) {
+    for row in crate::surface::uniquely_identified_rows(&scan.surfaces.rows) {
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
         let Some(surface) = ir.model.surfaces.iter().find(|surface| surface.id == id) else {
             continue;
@@ -16320,7 +16384,8 @@ fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEqu
 }
 
 fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<UnknownId> {
-    scan.sections
+    scan.framing
+        .sections
         .iter()
         .filter(|section| section.role == role::GEOMETRY)
         .find(|section| {
@@ -16478,17 +16543,20 @@ fn rowless_round_face_orientations(
 
 fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, bool> {
     let mut orientations = scan
-        .surface_rows
+        .surfaces
+        .rows
         .iter()
         .map(|row| row.id)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter_map(|id| {
-            crate::surface::unique_surface_row(&scan.surface_rows, id).map(|row| (id, row.reversed))
+            crate::surface::unique_surface_row(&scan.surfaces.rows, id)
+                .map(|row| (id, row.reversed))
         })
         .collect::<BTreeMap<_, _>>();
     let round_feature_ids = scan
-        .feature_rows
+        .features
+        .rows
         .iter()
         .filter(|row| row.root_schema_class == Some(913))
         .map(|row| row.feature_id)
@@ -16508,8 +16576,8 @@ fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, b
         .collect::<BTreeSet<_>>();
     orientations.extend(rowless_round_face_orientations(
         &round_feature_ids,
-        &scan.feature_entity_tables,
-        &scan.surface_rows,
+        &scan.features.entity_tables,
+        &scan.surfaces.rows,
         &available_surfaces,
     ));
     orientations
@@ -16854,6 +16922,7 @@ fn mapped_pcurve_endpoints(
 fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f64; 3]; 2]> {
     let mut candidates = BTreeMap::<u32, Vec<[[f64; 3]; 2]>>::new();
     for (curve_id, faces, first, second) in scan
+        .curves
         .pcurves
         .iter()
         .map(|pcurve| {
@@ -16864,7 +16933,7 @@ fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f6
                 pcurve.face_1_endpoints,
             )
         })
-        .chain(scan.bound_prototype_pcurves.iter().map(|pcurve| {
+        .chain(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
             (
                 pcurve.curve_id,
                 pcurve.faces,
@@ -16910,6 +16979,7 @@ fn transfer_straight_pcurve_lines(
     let reconciled_endpoints = pcurve_edge_endpoints(scan, ir);
     let mut offsets = BTreeMap::<u32, Vec<usize>>::new();
     for (curve_id, faces, endpoint_sets, offset) in scan
+        .curves
         .pcurves
         .iter()
         .map(|pcurve| {
@@ -16920,7 +16990,7 @@ fn transfer_straight_pcurve_lines(
                 pcurve.offset,
             )
         })
-        .chain(scan.bound_prototype_pcurves.iter().map(|pcurve| {
+        .chain(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
             (
                 pcurve.curve_id,
                 pcurve.faces,
@@ -17135,9 +17205,10 @@ fn solved_topological_vertices(
     carriers: &BTreeMap<u32, CarrierEquation>,
 ) -> BTreeMap<u32, [f64; 3]> {
     let vertex_faces =
-        crate::topology::vertex_incident_faces(&scan.topological_vertices, &scan.half_edges);
+        crate::topology::vertex_incident_faces(&scan.topology.vertices, &scan.topology.half_edges);
     let carrier_points = scan
-        .topological_vertices
+        .topology
+        .vertices
         .iter()
         .filter_map(|vertex| {
             let incident_carriers = vertex_faces
@@ -17150,13 +17221,14 @@ fn solved_topological_vertices(
         })
         .collect::<BTreeMap<_, _>>();
     let edge_endpoints = pcurve_edge_endpoints(scan, ir);
-    let edge_vertices = crate::topology::edge_vertex_pairs(&scan.half_edge_vertex_incidence);
+    let edge_vertices =
+        crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let mut fixed_points = carrier_points
         .into_iter()
         .map(|(vertex, point)| (vertex, Some(point)))
         .collect::<BTreeMap<_, _>>();
     let mut constraints = Vec::new();
-    for row in crate::topology::uniquely_identified_rows(&scan.curve_topology_rows) {
+    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
         let Some(points) = edge_endpoints.get(&row.id).copied() else {
             continue;
         };
@@ -17182,7 +17254,7 @@ fn solved_topological_vertices(
             }
         }
     }
-    let analytic_curves = crate::topology::uniquely_identified_rows(&scan.curve_topology_rows)
+    let analytic_curves = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
         .into_iter()
         .filter_map(|row| {
             let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
@@ -17204,7 +17276,8 @@ fn solved_topological_vertices(
         })
         .collect::<BTreeMap<_, _>>();
     let incident_curves = scan
-        .topological_vertices
+        .topology
+        .vertices
         .iter()
         .filter_map(|vertex| {
             let curves = vertex
@@ -18445,11 +18518,13 @@ fn transfer_native_brep(
     let carriers = placed_carriers(scan, ir);
     let face_orientations = native_face_orientations(scan, ir);
     let half_edges = scan
+        .topology
         .half_edges
         .iter()
         .map(|half_edge| (half_edge.id, half_edge))
         .collect::<BTreeMap<_, _>>();
     let incidence = scan
+        .topology
         .half_edge_vertex_incidence
         .iter()
         .map(|binding| (binding.half_edge, binding))
@@ -18457,6 +18532,7 @@ fn transfer_native_brep(
     let solved_vertices = solved_topological_vertices(scan, ir, &carriers);
     let mut native_pcurves = NativePcurveCandidates::new();
     for (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) in scan
+        .curves
         .pcurves
         .iter()
         .map(|pcurve| {
@@ -18468,7 +18544,7 @@ fn transfer_native_brep(
                 pcurve.offset,
             )
         })
-        .chain(scan.bound_prototype_pcurves.iter().map(|pcurve| {
+        .chain(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
             (
                 pcurve.curve_id,
                 pcurve.faces,
@@ -18487,9 +18563,11 @@ fn transfer_native_brep(
             .or_default()
             .push((face_1_endpoints, offset));
     }
-    let native_edge_vertices = crate::topology::edge_vertex_pairs(&scan.half_edge_vertex_incidence);
+    let native_edge_vertices =
+        crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let edge_vertices = scan
-        .curve_topology_rows
+        .curves
+        .topology_rows
         .iter()
         .filter_map(|row| {
             let vertices = native_edge_vertices.get(&row.id).copied()?;
@@ -18500,7 +18578,7 @@ fn transfer_native_brep(
         })
         .collect::<BTreeMap<_, _>>();
     let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
-    for lp in &scan.loops {
+    for lp in &scan.topology.loops {
         loops_by_face.entry(lp.face_id).or_default().push(lp);
     }
     let eligible_faces = loops_by_face
@@ -18561,11 +18639,12 @@ fn transfer_native_brep(
         .copied()
         .collect::<BTreeSet<_>>();
     let row_offsets = scan
-        .curve_topology_rows
+        .curves
+        .topology_rows
         .iter()
         .map(|row| (row.id, row.offset))
         .collect::<BTreeMap<_, _>>();
-    let curve_faces = crate::topology::uniquely_identified_rows(&scan.curve_topology_rows)
+    let curve_faces = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
         .into_iter()
         .map(|row| (row.id, row.faces))
         .collect::<BTreeMap<_, _>>();
@@ -18812,7 +18891,7 @@ fn transfer_native_brep(
                     }
                 })
                 .collect::<Vec<_>>();
-            let face_offset = crate::surface::unique_surface_row(&scan.surface_rows, *face_id)
+            let face_offset = crate::surface::unique_surface_row(&scan.surfaces.rows, *face_id)
                 .map_or(0, |row| row.offset);
             let surface = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
             if !ir.model.surfaces.iter().any(|item| item.id == surface) {
@@ -19049,13 +19128,13 @@ fn transfer_cap_pair_cylinders(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) {
-    for pair in &scan.fc05_cylinder_cap_pairs {
+    for pair in &scan.curves.fc05_cylinder_cap_pairs {
         let placed_caps = pair
             .cap_plane_ids
             .iter()
             .zip(&pair.curve_cap_ordinates_row_frame)
             .filter_map(|(id, ordinate)| {
-                crate::surface::unique_outline_plane(&scan.outline_planes, *id)
+                crate::surface::unique_outline_plane(&scan.planes.outlines, *id)
                     .map(|plane| (plane, *ordinate))
             })
             .collect::<Vec<_>>();
@@ -19128,7 +19207,7 @@ fn transfer_cap_pair_cylinders(
             .zip(&pair.cap_plane_ids)
         {
             let cap_offset =
-                crate::surface::unique_outline_plane(&scan.outline_planes, *cap_plane_id)
+                crate::surface::unique_outline_plane(&scan.planes.outlines, *cap_plane_id)
                     .map_or_else(
                         || ordinate + translations[0],
                         |plane| plane.origin[axis_index],
@@ -19148,7 +19227,8 @@ fn transfer_cap_pair_cylinders(
                 annotations,
                 &id,
                 "VisibGeom",
-                scan.fc05_circles
+                scan.curves
+                    .fc05_circles
                     .iter()
                     .find(|circle| circle.curve_id == *curve_id)
                     .map_or(pair.offset, |circle| circle.offset) as u64,
@@ -19287,7 +19367,7 @@ fn unique_surface_prototype_associations(
     &crate::container::Section,
 )> {
     let mut associations = Vec::new();
-    for record in &scan.surface_prototype_records {
+    for record in &scan.surfaces.prototype_records {
         let row_kind = match record.family {
             crate::surface::SurfacePrototypeFamily::Plane => crate::surface::SurfaceKind::Plane,
             crate::surface::SurfacePrototypeFamily::Cylinder => {
@@ -19300,13 +19380,13 @@ fn unique_surface_prototype_associations(
             crate::surface::SurfacePrototypeFamily::Spline => crate::surface::SurfaceKind::Spline,
             _ => continue,
         };
-        let Some(section) = scan.sections.iter().find(|section| {
+        let Some(section) = scan.framing.sections.iter().find(|section| {
             record.offset >= section.offset
                 && record.offset < section.offset.saturating_add(section.length)
         }) else {
             continue;
         };
-        let adjacent_rows = scan.surface_rows.iter().filter(|row| {
+        let adjacent_rows = scan.surfaces.rows.iter().filter(|row| {
             row.offset >= section.offset
                 && row.offset < section.offset.saturating_add(section.length)
         });
@@ -19322,7 +19402,7 @@ fn unique_surface_prototype_associations(
         let Some(row) = previous.or(following) else {
             continue;
         };
-        if crate::surface::unique_surface_row(&scan.surface_rows, row.id)
+        if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id)
             .is_none_or(|unique| unique.offset != row.offset)
         {
             continue;
@@ -19344,7 +19424,7 @@ fn transfer_first_instance_prototype_surfaces(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
-    if scan.layout != crate::container::Layout::Nd {
+    if scan.framing.layout != crate::container::Layout::Nd {
         return 0;
     }
     let mut transferred = 0;
@@ -19472,7 +19552,7 @@ fn transfer_paired_envelope_spheres(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
-    if scan.layout != crate::container::Layout::Nd {
+    if scan.framing.layout != crate::container::Layout::Nd {
         return 0;
     }
     let mut transferred = 0;
@@ -19488,7 +19568,8 @@ fn transfer_paired_envelope_spheres(
             continue;
         };
         let rows = scan
-            .surface_rows
+            .surfaces
+            .rows
             .iter()
             .filter(|row| {
                 row.feature_id == associated_row.feature_id
@@ -19553,14 +19634,17 @@ fn transfer_positional_tori(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for record in &scan.surface_parameters {
-        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
+    for record in &scan.surfaces.parameters {
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
         else {
             continue;
         };
         if row.kind != crate::surface::SurfaceKind::TorusOrSphere
-            || crate::surface::unique_surface_parameter(&scan.surface_parameters, record.surface_id)
-                .is_none_or(|unique| unique.offset != record.offset)
+            || crate::surface::unique_surface_parameter(
+                &scan.surfaces.parameters,
+                record.surface_id,
+            )
+            .is_none_or(|unique| unique.offset != record.offset)
         {
             continue;
         }
@@ -19571,7 +19655,7 @@ fn transfer_positional_tori(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        let Some(section) = scan.sections.iter().find(|section| {
+        let Some(section) = scan.framing.sections.iter().find(|section| {
             row.offset >= section.offset
                 && row.offset < section.offset.saturating_add(section.length)
         }) else {
@@ -19619,21 +19703,22 @@ fn transfer_positional_line_extrusion_planes(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let replay_bound_surfaces = scan
-        .tabulated_cylinder_curve_replays
+        .curves
+        .tabulated_cylinder_replays
         .iter()
         .map(|replay| replay.surface_id)
         .collect::<BTreeSet<_>>();
     let mut transferred = 0;
-    for record in &scan.surface_parameters {
+    for record in &scan.surfaces.parameters {
         if replay_bound_surfaces.contains(&record.surface_id) {
             continue;
         }
-        if crate::surface::unique_surface_parameter(&scan.surface_parameters, record.surface_id)
+        if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
             .is_none_or(|unique| unique.offset != record.offset)
         {
             continue;
         }
-        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
         else {
             continue;
         };
@@ -19757,15 +19842,15 @@ fn transfer_tabulated_cylinder_spline_extrusions(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut replay_counts = BTreeMap::<u32, usize>::new();
-    for replay in &scan.tabulated_cylinder_curve_replays {
+    for replay in &scan.curves.tabulated_cylinder_replays {
         *replay_counts.entry(replay.surface_id).or_default() += 1;
     }
     let mut transferred = 0;
-    for replay in &scan.tabulated_cylinder_curve_replays {
+    for replay in &scan.curves.tabulated_cylinder_replays {
         if replay_counts.get(&replay.surface_id) != Some(&1) {
             continue;
         }
-        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, replay.surface_id)
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, replay.surface_id)
         else {
             continue;
         };
@@ -19773,7 +19858,7 @@ fn transfer_tabulated_cylinder_spline_extrusions(
             continue;
         }
         let Some(parameters) =
-            crate::surface::unique_surface_parameter(&scan.surface_parameters, replay.surface_id)
+            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, replay.surface_id)
         else {
             continue;
         };
@@ -19872,10 +19957,10 @@ fn transfer_part_product(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> bool {
-    let Some(model_name) = scan.model_name.as_ref() else {
+    let Some(model_name) = scan.framing.model_name.as_ref() else {
         return false;
     };
-    let Some(model_name_offset) = scan.model_name_offset else {
+    let Some(model_name_offset) = scan.framing.model_name_offset else {
         return false;
     };
     let product_id = ProductId("creo:model:product#root".to_string());
@@ -19946,9 +20031,10 @@ fn transfer_fc05_cap_circles(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) {
-    for circle in &scan.fc05_circles {
+    for circle in &scan.curves.fc05_circles {
         let topology = scan
-            .curve_topology_rows
+            .curves
+            .topology_rows
             .iter()
             .filter(|row| row.id == circle.curve_id)
             .collect::<Vec<_>>();
@@ -19959,16 +20045,16 @@ fn transfer_fc05_cap_circles(
             .faces
             .iter()
             .filter_map(|face| {
-                crate::surface::unique_surface_row(&scan.surface_rows, *face)
+                crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
                     .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)?;
-                crate::surface::unique_outline_plane(&scan.outline_planes, *face)
+                crate::surface::unique_outline_plane(&scan.planes.outlines, *face)
             })
             .collect::<Vec<_>>();
         let cylinders = topology
             .faces
             .iter()
             .filter(|face| {
-                crate::surface::unique_surface_row(&scan.surface_rows, **face)
+                crate::surface::unique_surface_row(&scan.surfaces.rows, **face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
             })
             .copied()
@@ -21698,8 +21784,9 @@ fn transfer_carrier_intersection_curves(
     let mut transferred = BTreeSet::new();
     let carriers = placed_carriers(scan, ir);
     let solved_vertices = solved_topological_vertices(scan, ir, &carriers);
-    let edge_vertices = crate::topology::edge_vertex_pairs(&scan.half_edge_vertex_incidence);
-    for row in crate::topology::uniquely_identified_rows(&scan.curve_topology_rows) {
+    let edge_vertices =
+        crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
+    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
         let (Some(first), Some(second)) = (
             carriers.get(&row.faces[0]).copied(),
             carriers.get(&row.faces[1]).copied(),
@@ -21791,7 +21878,8 @@ fn transfer_constrained_slot_fillet_cylinders(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let round_feature_ids = scan
-        .feature_rows
+        .features
+        .rows
         .iter()
         .filter(|row| row.root_schema_class == Some(913))
         .map(|row| row.feature_id)
@@ -21799,17 +21887,17 @@ fn transfer_constrained_slot_fillet_cylinders(
     let mut transferred = 0;
     for feature_id in round_feature_ids {
         let named = agreed_feature_affected_ids(
-            &scan.feature_affected_ids,
+            &scan.features.affected_ids,
             feature_id,
             crate::feature::AffectedIdKind::Geometry,
         );
         let named_present = has_feature_affected_ids(
-            &scan.feature_affected_ids,
+            &scan.features.affected_ids,
             feature_id,
             crate::feature::AffectedIdKind::Geometry,
         );
         let replay =
-            agreed_feature_replay_geometry_ids(&scan.feature_replay_affected_ids, feature_id);
+            agreed_feature_replay_geometry_ids(&scan.features.replay_affected_ids, feature_id);
         let affected = match (named, replay) {
             (Some(ids), _) => ids,
             (None, Some(ids)) if !named_present => ids,
@@ -21847,7 +21935,8 @@ fn transfer_constrained_slot_fillet_cylinders(
             continue;
         };
         let unresolved_rows = scan
-            .surface_rows
+            .surfaces
+            .rows
             .iter()
             .filter(|row| {
                 row.feature_id == feature_id
@@ -21902,7 +21991,8 @@ fn transfer_rowless_round_cylinders(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let round_feature_ids = scan
-        .feature_rows
+        .features
+        .rows
         .iter()
         .filter(|row| row.root_schema_class == Some(913))
         .map(|row| row.feature_id)
@@ -21910,8 +22000,8 @@ fn transfer_rowless_round_cylinders(
     let mut transferred = 0;
     for (rowless_id, sibling_id, offset) in rowless_round_cylinder_pairs(
         &round_feature_ids,
-        &scan.feature_entity_tables,
-        &scan.surface_rows,
+        &scan.features.entity_tables,
+        &scan.surfaces.rows,
     ) {
         let sibling = SurfaceId(format!("creo:visibgeom:surface#{sibling_id}"));
         let Some(SurfaceGeometry::Cylinder {
@@ -21969,7 +22059,8 @@ fn transfer_hole_cylinders(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let hole_feature_ids = scan
-        .feature_rows
+        .features
+        .rows
         .iter()
         .filter(|row| row.root_schema_class == Some(911))
         .map(|row| row.feature_id)
@@ -21985,7 +22076,7 @@ fn transfer_hole_cylinders(
             counterbore_patch_geometries(scan, ir, feature_id).unwrap_or_default()
         };
         for (cylinder_id, geometry) in cylinders {
-            let row = crate::surface::unique_surface_row(&scan.surface_rows, cylinder_id)
+            let row = crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_id)
                 .expect("validated cylinder row");
             let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -22024,12 +22115,13 @@ fn transfer_split_outline_cylinders(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let rows = scan
-        .surface_rows
+        .surfaces
+        .rows
         .iter()
         .map(|row| (row.id, row))
         .collect::<BTreeMap<_, _>>();
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
-    for edge in crate::topology::uniquely_identified_rows(&scan.curve_topology_rows) {
+    for edge in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
         if edge.type_byte != 0 {
             continue;
         }
@@ -22064,12 +22156,12 @@ fn transfer_split_outline_cylinders(
             continue;
         };
         let Some(first) =
-            crate::surface::unique_surface_parameter(&scan.surface_parameters, *first_id)
+            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, *first_id)
         else {
             continue;
         };
         let Some(second) =
-            crate::surface::unique_surface_parameter(&scan.surface_parameters, *second_id)
+            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, *second_id)
         else {
             continue;
         };
@@ -22132,13 +22224,13 @@ fn transfer_positional_cylinders(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for record in &scan.surface_parameters {
-        if crate::surface::unique_surface_parameter(&scan.surface_parameters, record.surface_id)
+    for record in &scan.surfaces.parameters {
+        if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
             != Some(record)
         {
             continue;
         }
-        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
             .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
         else {
             continue;
@@ -22146,13 +22238,15 @@ fn transfer_positional_cylinders(
         let reference_cap_frame = || {
             let envelope = record.type24_scalar_frame_round_envelope(row.type_byte)?;
             let entity_ids = scan
-                .feature_entity_tables
+                .features
+                .entity_tables
                 .iter()
                 .filter(|table| table.feature_id == Some(row.feature_id))
                 .flat_map(|table| table.entry_ids.iter().copied())
                 .collect::<BTreeSet<_>>();
             let circles = scan
-                .reference_circles
+                .references
+                .circles
                 .iter()
                 .filter(|circle| entity_ids.contains(&circle.entity_id))
                 .collect::<Vec<_>>();
@@ -22292,16 +22386,16 @@ fn transfer_positional_cones(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for record in &scan.surface_parameters {
+    for record in &scan.surfaces.parameters {
         let Some(frame) = record.positional_cone_frame else {
             continue;
         };
-        if crate::surface::unique_surface_parameter(&scan.surface_parameters, record.surface_id)
+        if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
             != Some(record)
         {
             continue;
         }
-        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
             .filter(|row| row.kind == crate::surface::SurfaceKind::Cone)
         else {
             continue;
@@ -22353,7 +22447,8 @@ fn transfer_circular_sweep_cylinders(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let sweep_feature_ids = scan
-        .feature_rows
+        .features
+        .rows
         .iter()
         .filter(|row| {
             row.root_schema_class == Some(917)
@@ -22367,7 +22462,7 @@ fn transfer_circular_sweep_cylinders(
             continue;
         };
         for cylinder_id in &sweep.cylinder_ids {
-            let row = crate::surface::unique_surface_row(&scan.surface_rows, *cylinder_id)
+            let row = crate::surface::unique_surface_row(&scan.surfaces.rows, *cylinder_id)
                 .expect("validated cylinder row");
             let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -22406,7 +22501,7 @@ fn transfer_cross_section_planes(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for frame in &scan.cross_section_plane_local_systems {
+    for frame in &scan.planes.cross_section_local_systems {
         let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
         else {
             continue;
@@ -22448,7 +22543,7 @@ fn transfer_cross_section_planes(
         });
         transferred += 1;
     }
-    for plane in &scan.cross_section_outline_planes {
+    for plane in &scan.planes.cross_section_outlines {
         let id = SurfaceId(format!(
             "creo:cross_section_geometry:surface#{}",
             plane.surface_id
@@ -22521,12 +22616,13 @@ fn preserve_passthrough_sections(
 ) -> Vec<UnknownRecord> {
     let mut unknowns = Vec::new();
     for section in scan
+        .framing
         .sections
         .iter()
         .filter(|section| section.role == role::GEOMETRY || section.role == role::THUMBNAIL)
     {
-        let end = (section.offset + section.length).min(scan.data.len());
-        let section_bytes = &scan.data[section.offset..end];
+        let end = (section.offset + section.length).min(scan.framing.data.len());
+        let section_bytes = &scan.framing.data[section.offset..end];
         let payload_start = if section.role == role::THUMBNAIL {
             let Some(offset) = section_bytes
                 .windows(3)
@@ -22585,13 +22681,14 @@ fn build_ir(
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
-    if !scan.reference_lines.is_empty() {
+    if !scan.references.lines.is_empty() {
         let family = |kind: &crate::reference::ReferenceLineKind| match kind {
             crate::reference::ReferenceLineKind::Line => "line",
             crate::reference::ReferenceLineKind::Line3d { .. } => "line3d",
         };
         let records = scan
-            .reference_lines
+            .references
+            .lines
             .iter()
             .map(|line| CreoReferenceLineRecord {
                 id: format!(
@@ -22634,9 +22731,10 @@ fn build_ir(
             },
         )?;
     }
-    if !scan.reference_circles.is_empty() {
+    if !scan.references.circles.is_empty() {
         let records = scan
-            .reference_circles
+            .references
+            .circles
             .iter()
             .map(|circle| CreoReferenceCircleRecord {
                 id: format!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
@@ -22670,9 +22768,10 @@ fn build_ir(
             },
         )?;
     }
-    if !scan.reference_conics.is_empty() {
+    if !scan.references.conics.is_empty() {
         let records = scan
-            .reference_conics
+            .references
+            .conics
             .iter()
             .map(|conic| CreoReferenceConicRecord {
                 id: format!("creo:mdl_ref_info:conic_record#{}", conic.offset),
@@ -22704,9 +22803,10 @@ fn build_ir(
             },
         )?;
     }
-    if !scan.reference_ellipses.is_empty() {
+    if !scan.references.ellipses.is_empty() {
         let records = scan
-            .reference_ellipses
+            .references
+            .ellipses
             .iter()
             .map(|ellipse| CreoReferenceEllipseRecord {
                 id: format!("creo:mdl_ref_info:ellipse_carrier#{}", ellipse.offset),
@@ -22738,7 +22838,8 @@ fn build_ir(
         )?;
     }
     let line3d_id_counts =
-        scan.reference_lines
+        scan.references
+            .lines
             .iter()
             .fold(BTreeMap::<u32, usize>::new(), |mut counts, line| {
                 if let crate::reference::ReferenceLineKind::Line3d { entity_id, .. } = &line.kind {
@@ -22746,7 +22847,7 @@ fn build_ir(
                 }
                 counts
             });
-    for line in &scan.reference_lines {
+    for line in &scan.references.lines {
         let direction = std::array::from_fn(|axis| line.end[axis] - line.start[axis]);
         let Some(direction) = normalized(direction) else {
             continue;
@@ -22790,13 +22891,14 @@ fn build_ir(
         });
     }
     let circle_id_counts =
-        scan.reference_circles
+        scan.references
+            .circles
             .iter()
             .fold(BTreeMap::<u32, usize>::new(), |mut counts, circle| {
                 *counts.entry(circle.entity_id).or_default() += 1;
                 counts
             });
-    for circle in &scan.reference_circles {
+    for circle in &scan.references.circles {
         let radial = std::array::from_fn(|axis| circle.start[axis] - circle.center[axis]);
         let Some(reference) = normalized(radial) else {
             continue;
@@ -22834,14 +22936,14 @@ fn build_ir(
             }),
         });
     }
-    let ellipse_id_counts = scan.reference_ellipses.iter().fold(
+    let ellipse_id_counts = scan.references.ellipses.iter().fold(
         BTreeMap::<u32, usize>::new(),
         |mut counts, ellipse| {
             *counts.entry(ellipse.source_entity_id).or_default() += 1;
             counts
         },
     );
-    for ellipse in &scan.reference_ellipses {
+    for ellipse in &scan.references.ellipses {
         let native_identity = if ellipse_id_counts.get(&ellipse.source_entity_id) == Some(&1) {
             ellipse.source_entity_id.to_string()
         } else {
@@ -22880,7 +22982,7 @@ fn build_ir(
             }),
         });
     }
-    for strip in &scan.primitive_triangle_strips {
+    for strip in &scan.primitives.triangle_strips {
         let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
         let mut triangles = Vec::new();
         let mut base = 0u32;
@@ -22925,7 +23027,7 @@ fn build_ir(
             channels: Vec::new(),
         });
     }
-    for plane in &scan.datum_planes {
+    for plane in &scan.planes.datums {
         let id = SurfaceId(format!("creo:actdatums:surface#{}", plane.id));
         annotate(
             &mut annotations,
@@ -22967,13 +23069,15 @@ fn build_ir(
             continue;
         }
         let tag = if scan
-            .positional_frame_planes
+            .planes
+            .positional_frames
             .iter()
             .any(|plane| plane.surface_id == surface_id && plane.offset == offset)
         {
             "plane_positional_corner_frame"
         } else if scan
-            .outline_planes
+            .planes
+            .outlines
             .iter()
             .any(|outline| outline.surface_id == surface_id && outline.offset == offset)
         {
@@ -23059,7 +23163,8 @@ fn build_ir(
         transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
     let transferred_part_product = transfer_part_product(scan, &mut ir, &mut annotations);
     let decoded_feature_skamp_count = scan
-        .feature_definitions
+        .features
+        .definitions
         .iter()
         .filter_map(|definition| definition.relations.as_ref())
         .map(|relations| relations.skamps.len())
@@ -23067,7 +23172,8 @@ fn build_ir(
     let skamp_constraint_coverage =
         design_constraint_transfer_coverage(&ir.model.sketch_constraints, ":skamp:", "creo:skamp:");
     let decoded_feature_relation_count = scan
-        .feature_definitions
+        .features
+        .definitions
         .iter()
         .filter_map(|definition| definition.relations.as_ref())
         .map(|relations| relations.rows.len())
@@ -23078,11 +23184,11 @@ fn build_ir(
         "creo:relation:",
     );
     let surface_coverage = surface_transfer_coverage(
-        &scan.surface_rows,
+        &scan.surfaces.rows,
         &ir.model.surfaces,
         &ir.model.procedural_surfaces,
     );
-    let curve_coverage = curve_transfer_coverage(&scan.curve_topology_rows, &ir.model.curves);
+    let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.model.curves);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "unique_visible_surface_row_count".to_string(),
@@ -23276,11 +23382,12 @@ fn build_ir(
         );
     }
     let operation_feature_ids = scan
-        .feature_operations
+        .features
+        .operations
         .iter()
         .map(|operation| operation.feature_id)
         .collect::<BTreeSet<_>>();
-    for datum in &scan.datum_planes {
+    for datum in &scan.planes.datums {
         if operation_feature_ids.contains(&datum.feature_id) {
             continue;
         }
@@ -23308,7 +23415,7 @@ fn build_ir(
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: if unique_feature_datum_plane(&scan.datum_planes, datum.feature_id)
+            definition: if unique_feature_datum_plane(&scan.planes.datums, datum.feature_id)
                 .is_some()
             {
                 datum_plane_feature_definition(datum)
@@ -23319,10 +23426,10 @@ fn build_ir(
         });
     }
     let operation_ordinal_base = ir.model.features.len();
-    for (operation_index, operation) in scan.feature_operations.iter().enumerate() {
+    for (operation_index, operation) in scan.features.operations.iter().enumerate() {
         let id = IrFeatureId(format!("creo:model:feature#{}", operation.feature_id));
         let current_operation =
-            current_feature_operation(&scan.feature_operations, operation.feature_id);
+            current_feature_operation(&scan.features.operations, operation.feature_id);
         let outputs = feature_output_bodies(scan, &ir, operation.feature_id);
         let mut source_properties = feature_source_properties(scan, operation.feature_id);
         if let Some(prefix) = current_operation.and_then(|operation| operation.stored_name_prefix) {
@@ -23335,7 +23442,7 @@ fn build_ir(
         let schema_class = feature_schema_class(scan, operation.feature_id);
         let definition = schema_class.map_or_else(
             || {
-                current_feature_recipe(&scan.feature_operations, operation.feature_id)
+                current_feature_recipe(&scan.features.operations, operation.feature_id)
                     .map(|_| {
                         schema_feature_definition(
                             scan,
@@ -23375,7 +23482,7 @@ fn build_ir(
         );
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         let dependencies = feature_dependencies(scan, &ir, operation.feature_id);
-        let parent = current_feature_recipe_parent(&scan.feature_operations, operation.feature_id)
+        let parent = current_feature_recipe_parent(&scan.features.operations, operation.feature_id)
             .and_then(|parent_feature_id| {
                 let parent = IrFeatureId(format!("creo:model:feature#{parent_feature_id}"));
                 ir.model
@@ -23385,6 +23492,7 @@ fn build_ir(
                     .then_some(parent)
             });
         let operation_section = scan
+            .framing
             .sections
             .iter()
             .find(|section| {
@@ -23403,7 +23511,7 @@ fn build_ir(
                     .to_string(),
             )
         });
-        let source_tag = current_feature_recipe(&scan.feature_operations, operation.feature_id)
+        let source_tag = current_feature_recipe(&scan.features.operations, operation.feature_id)
             .map(|recipe| recipe.name().to_string());
         let native_ref = owning_feature_definition_ref(scan, operation.feature_id);
         if let Some(existing) = ir
@@ -23466,7 +23574,8 @@ fn build_ir(
         });
     }
     let row_feature_ids = scan
-        .feature_rows
+        .features
+        .rows
         .iter()
         .map(|row| row.feature_id)
         .collect::<BTreeSet<_>>();
@@ -23477,7 +23586,8 @@ fn build_ir(
         }
         let schema_class = feature_schema_class(scan, feature_id);
         let Some(offset) = scan
-            .feature_rows
+            .features
+            .rows
             .iter()
             .filter(|row| row.feature_id == feature_id)
             .map(|row| row.offset)
@@ -23513,7 +23623,7 @@ fn build_ir(
             },
             |schema_class| schema_feature_definition(scan, &ir, feature_id, schema_class, kind),
         );
-        let row_schema_classes = row_feature_schema_classes(&scan.feature_rows, feature_id);
+        let row_schema_classes = row_feature_schema_classes(&scan.features.rows, feature_id);
         if schema_class.is_none() {
             source_properties.insert(
                 "featdefs_schema_state".to_string(),
@@ -23562,7 +23672,8 @@ fn build_ir(
         transfer_curve_expression_features(scan, &mut ir, &mut annotations, &dimension_parameters);
     if let Some(source) = &mut ir.source {
         let active_expressions = scan
-            .curve_expressions
+            .curves
+            .expressions
             .iter()
             .filter(|record| !record.backup);
         let decoded_curve_expression_assignment_count = active_expressions
@@ -23626,7 +23737,8 @@ fn build_ir(
             );
         }
         let (decoded_dimension_count, resolved_dimension_count) = scan
-            .feature_definitions
+            .features
+            .definitions
             .iter()
             .filter_map(|definition| definition.dimensions.as_ref())
             .flat_map(|table| &table.rows)
@@ -23651,7 +23763,7 @@ fn build_ir(
     }
     close_sketch_constraint_parameter_references(&mut ir);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
-    let surface_rows = surface_row_records(scan, &scan.surface_rows, "visibgeom");
+    let surface_rows = surface_row_records(scan, &scan.surfaces.rows, "visibgeom");
     emit_arena(
         &mut ir,
         &mut annotations,
@@ -23669,7 +23781,7 @@ fn build_ir(
         },
     )?;
     let nonvisible_surface_rows =
-        surface_row_records(scan, &scan.nonvisible_surface_rows, "novisgeom");
+        surface_row_records(scan, &scan.surfaces.nonvisible_rows, "novisgeom");
     emit_arena(
         &mut ir,
         &mut annotations,
@@ -23688,7 +23800,7 @@ fn build_ir(
     )?;
     let cross_section_surface_rows = surface_row_records(
         scan,
-        &scan.cross_section_surface_rows,
+        &scan.surfaces.cross_section_rows,
         "cross_section_geometry",
     );
     emit_arena(
@@ -23708,7 +23820,7 @@ fn build_ir(
         },
     )?;
     let surface_prototypes =
-        surface_prototype_records(scan, &scan.surface_prototype_records, "visibgeom");
+        surface_prototype_records(scan, &scan.surfaces.prototype_records, "visibgeom");
     emit_arena(
         &mut ir,
         &mut annotations,
@@ -23727,7 +23839,7 @@ fn build_ir(
     )?;
     let nonvisible_surface_prototypes = surface_prototype_records(
         scan,
-        &scan.nonvisible_surface_prototype_records,
+        &scan.surfaces.nonvisible_prototype_records,
         "novisgeom",
     );
     emit_arena(
@@ -23763,7 +23875,7 @@ fn build_ir(
             );
         },
     )?;
-    let curve_parameters = curve_parameter_records(scan, &scan.curve_parameters, "visibgeom");
+    let curve_parameters = curve_parameter_records(scan, &scan.curves.parameters, "visibgeom");
     emit_arena(
         &mut ir,
         &mut annotations,
@@ -23781,7 +23893,7 @@ fn build_ir(
         },
     )?;
     let nonvisible_curve_parameters =
-        curve_parameter_records(scan, &scan.nonvisible_curve_parameters, "novisgeom");
+        curve_parameter_records(scan, &scan.curves.nonvisible_parameters, "novisgeom");
     emit_arena(
         &mut ir,
         &mut annotations,
@@ -23828,7 +23940,7 @@ fn build_ir(
         &curve_prototype_topology,
     )?;
     let curve_prototypes =
-        curve_prototype_records(scan, &scan.curve_prototypes, "creo:curve:prototype");
+        curve_prototype_records(scan, &scan.curves.prototypes, "creo:curve:prototype");
     emit_arena(
         &mut ir,
         &mut annotations,
@@ -23847,7 +23959,7 @@ fn build_ir(
     )?;
     let nonvisible_curve_prototypes = curve_prototype_records(
         scan,
-        &scan.nonvisible_curve_prototypes,
+        &scan.curves.nonvisible_prototypes,
         "creo:novisgeom:curve_prototype",
     );
     emit_arena(
@@ -23868,7 +23980,7 @@ fn build_ir(
     )?;
     let cross_section_curve_prototypes = curve_prototype_records(
         scan,
-        &scan.cross_section_curve_prototypes,
+        &scan.curves.cross_section_prototypes,
         "creo:cross_section_geometry:curve_prototype",
     );
     emit_arena(
@@ -23888,7 +24000,7 @@ fn build_ir(
         },
     )?;
     let curve_topology_rows =
-        curve_topology_row_records(scan, &scan.curve_topology_rows, "visibgeom");
+        curve_topology_row_records(scan, &scan.curves.topology_rows, "visibgeom");
     emit_arena(
         &mut ir,
         &mut annotations,
@@ -23906,7 +24018,7 @@ fn build_ir(
         },
     )?;
     let nonvisible_curve_topology_rows =
-        curve_topology_row_records(scan, &scan.nonvisible_curve_topology_rows, "novisgeom");
+        curve_topology_row_records(scan, &scan.curves.nonvisible_topology_rows, "novisgeom");
     emit_arena(
         &mut ir,
         &mut annotations,
@@ -23971,8 +24083,8 @@ fn build_ir(
     store_arena(&mut ir, "face_components", &face_components)?;
     let surface_parameters = surface_parameter_records(
         scan,
-        &scan.surface_rows,
-        &scan.surface_parameters,
+        &scan.surfaces.rows,
+        &scan.surfaces.parameters,
         "visibgeom",
     );
     emit_arena(
@@ -23993,8 +24105,8 @@ fn build_ir(
     )?;
     let nonvisible_surface_parameters = surface_parameter_records(
         scan,
-        &scan.nonvisible_surface_rows,
-        &scan.nonvisible_surface_parameters,
+        &scan.surfaces.nonvisible_rows,
+        &scan.surfaces.nonvisible_parameters,
         "novisgeom",
     );
     emit_arena(
@@ -24015,8 +24127,8 @@ fn build_ir(
     )?;
     let cross_section_surface_parameters = surface_parameter_records(
         scan,
-        &scan.cross_section_surface_rows,
-        &scan.cross_section_surface_parameters,
+        &scan.surfaces.cross_section_rows,
+        &scan.surfaces.cross_section_parameters,
         "cross_section_geometry",
     );
     emit_arena(
@@ -24037,13 +24149,13 @@ fn build_ir(
     )?;
     let plane_local_systems = plane_local_system_records(
         scan,
-        &scan.plane_local_systems,
+        &scan.planes.local_systems,
         "creo:surface:plane_local_system",
     );
     store_arena(&mut ir, "plane_local_systems", &plane_local_systems)?;
     let cross_section_plane_local_systems = plane_local_system_records(
         scan,
-        &scan.cross_section_plane_local_systems,
+        &scan.planes.cross_section_local_systems,
         "creo:cross_section_geometry:plane_local_system",
     );
     store_arena(
@@ -24052,11 +24164,11 @@ fn build_ir(
         &cross_section_plane_local_systems,
     )?;
     let plane_envelopes =
-        plane_envelope_records(scan, &scan.plane_envelopes, "creo:surface:plane_envelope");
+        plane_envelope_records(scan, &scan.planes.envelopes, "creo:surface:plane_envelope");
     store_arena(&mut ir, "plane_envelopes", &plane_envelopes)?;
     let cross_section_plane_envelopes = plane_envelope_records(
         scan,
-        &scan.cross_section_plane_envelopes,
+        &scan.planes.cross_section_envelopes,
         "creo:cross_section_geometry:plane_envelope",
     );
     store_arena(
@@ -24065,17 +24177,17 @@ fn build_ir(
         &cross_section_plane_envelopes,
     )?;
     let outline_planes =
-        outline_plane_records(scan, &scan.outline_planes, "creo:surface:outline_plane");
+        outline_plane_records(scan, &scan.planes.outlines, "creo:surface:outline_plane");
     store_arena(&mut ir, "outline_planes", &outline_planes)?;
     let positional_frame_planes = outline_plane_records(
         scan,
-        &scan.positional_frame_planes,
+        &scan.planes.positional_frames,
         "creo:surface:positional_frame_plane",
     );
     store_arena(&mut ir, "positional_frame_planes", &positional_frame_planes)?;
     let cross_section_outline_planes = outline_plane_records(
         scan,
-        &scan.cross_section_outline_planes,
+        &scan.planes.cross_section_outlines,
         "creo:cross_section_geometry:outline_plane",
     );
     store_arena(
@@ -24373,7 +24485,7 @@ fn build_ir(
     // Bespoke annotation: the source offset comes from the parallel scan rows, not
     // the record, so annotation zips the two before the arena is stored.
     let curve_expressions = curve_expression_records(scan);
-    for (expression, source) in curve_expressions.iter().zip(&scan.curve_expressions) {
+    for (expression, source) in curve_expressions.iter().zip(&scan.curves.expressions) {
         annotate(
             &mut annotations,
             &expression.id,
@@ -24392,6 +24504,7 @@ fn build_ir(
         &feature_operation_states,
         |annotations, state| {
             let section = scan
+                .framing
                 .sections
                 .iter()
                 .find(|section| {
@@ -24449,8 +24562,8 @@ struct TorusParameterCoverage {
 }
 
 fn torus_parameter_coverage(scan: &ContainerScan) -> TorusParameterCoverage {
-    let rows = scan.surface_parameters.iter().filter_map(|record| {
-        crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
+    let rows = scan.surfaces.parameters.iter().filter_map(|record| {
+        crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
             .map(|row| (record, row))
     });
     TorusParameterCoverage {
@@ -24482,14 +24595,23 @@ fn torus_parameter_coverage(scan: &ContainerScan) -> TorusParameterCoverage {
 
 fn source_meta(scan: &ContainerScan) -> SourceMeta {
     let mut attributes = BTreeMap::new();
-    attributes.insert("version_line".to_string(), scan.version_line.clone());
-    if let Some(name) = &scan.model_name {
+    attributes.insert(
+        "version_line".to_string(),
+        scan.framing.version_line.clone(),
+    );
+    if let Some(name) = &scan.framing.model_name {
         attributes.insert("model_name".to_string(), name.clone());
     }
-    attributes.insert("layout".to_string(), scan.layout.token().to_string());
-    attributes.insert("file_size".to_string(), scan.data.len().to_string());
-    attributes.insert("section_count".to_string(), scan.sections.len().to_string());
-    for (index, section) in scan.sections.iter().enumerate() {
+    attributes.insert(
+        "layout".to_string(),
+        scan.framing.layout.token().to_string(),
+    );
+    attributes.insert("file_size".to_string(), scan.framing.data.len().to_string());
+    attributes.insert(
+        "section_count".to_string(),
+        scan.framing.sections.len().to_string(),
+    );
+    for (index, section) in scan.framing.sections.iter().enumerate() {
         let prefix = format!("section.{index}");
         attributes.insert(format!("{prefix}.name"), section.name.clone());
         attributes.insert(format!("{prefix}.raw_name"), section.raw_name.clone());
@@ -24497,37 +24619,38 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         attributes.insert(format!("{prefix}.offset"), section.offset.to_string());
         attributes.insert(format!("{prefix}.length"), section.length.to_string());
     }
-    if let Some(c) = scan.census.srf_array_count {
+    if let Some(c) = scan.framing.census.srf_array_count {
         attributes.insert("srf_array_count".to_string(), c.to_string());
     }
-    if let Some(c) = scan.census.crv_array_count {
+    if let Some(c) = scan.framing.census.crv_array_count {
         attributes.insert("crv_array_count".to_string(), c.to_string());
     }
-    if let Some(unit) = &scan.principal_unit {
+    if let Some(unit) = &scan.framing.principal_unit {
         attributes.insert("principal_unit".to_string(), unit.clone());
     }
     attributes.insert(
         "decoded_surface_row_count".to_string(),
-        scan.surface_rows.len().to_string(),
+        scan.surfaces.rows.len().to_string(),
     );
     attributes.insert(
         "decoded_cross_section_surface_row_count".to_string(),
-        scan.cross_section_surface_rows.len().to_string(),
+        scan.surfaces.cross_section_rows.len().to_string(),
     );
     attributes.insert(
         "decoded_surface_parameter_record_count".to_string(),
-        scan.surface_parameters.len().to_string(),
+        scan.surfaces.parameters.len().to_string(),
     );
     attributes.insert(
         "decoded_cross_section_surface_parameter_record_count".to_string(),
-        scan.cross_section_surface_parameters.len().to_string(),
+        scan.surfaces.cross_section_parameters.len().to_string(),
     );
     attributes.insert(
         "decoded_positional_extrusion_direction_count".to_string(),
-        scan.surface_parameters
+        scan.surfaces
+            .parameters
             .iter()
             .filter(|record| {
-                crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
+                crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
                     .is_some_and(|row| {
                         row.kind == crate::surface::SurfaceKind::Extrusion
                             && record.extrusion_direction(row.type_byte).is_some()
@@ -24555,63 +24678,64 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_plane_local_system_count".to_string(),
-        scan.plane_local_systems.len().to_string(),
+        scan.planes.local_systems.len().to_string(),
     );
     attributes.insert(
         "decoded_cross_section_plane_local_system_count".to_string(),
-        scan.cross_section_plane_local_systems.len().to_string(),
+        scan.planes.cross_section_local_systems.len().to_string(),
     );
     attributes.insert(
         "decoded_plane_envelope_count".to_string(),
-        scan.plane_envelopes.len().to_string(),
+        scan.planes.envelopes.len().to_string(),
     );
     attributes.insert(
         "decoded_cross_section_plane_envelope_count".to_string(),
-        scan.cross_section_plane_envelopes.len().to_string(),
+        scan.planes.cross_section_envelopes.len().to_string(),
     );
     attributes.insert(
         "decoded_outline_plane_count".to_string(),
-        scan.outline_planes.len().to_string(),
+        scan.planes.outlines.len().to_string(),
     );
     attributes.insert(
         "decoded_positional_frame_plane_count".to_string(),
-        scan.positional_frame_planes.len().to_string(),
+        scan.planes.positional_frames.len().to_string(),
     );
     attributes.insert(
         "decoded_cross_section_outline_plane_count".to_string(),
-        scan.cross_section_outline_planes.len().to_string(),
+        scan.planes.cross_section_outlines.len().to_string(),
     );
     attributes.insert(
         "decoded_surface_prototype_count".to_string(),
-        scan.surface_prototypes.len().to_string(),
+        scan.surfaces.prototypes.len().to_string(),
     );
     attributes.insert(
         "decoded_named_surface_prototype_count".to_string(),
-        scan.surface_prototype_records.len().to_string(),
+        scan.surfaces.prototype_records.len().to_string(),
     );
     attributes.insert(
         "decoded_reference_line_count".to_string(),
-        scan.reference_lines.len().to_string(),
+        scan.references.lines.len().to_string(),
     );
     attributes.insert(
         "decoded_reference_circle_count".to_string(),
-        scan.reference_circles.len().to_string(),
+        scan.references.circles.len().to_string(),
     );
     attributes.insert(
         "decoded_reference_conic_count".to_string(),
-        scan.reference_conics.len().to_string(),
+        scan.references.conics.len().to_string(),
     );
     attributes.insert(
         "transferred_reference_ellipse_count".to_string(),
-        scan.reference_ellipses.len().to_string(),
+        scan.references.ellipses.len().to_string(),
     );
     attributes.insert(
         "decoded_tabulated_cylinder_curve_replay_count".to_string(),
-        scan.tabulated_cylinder_curve_replays.len().to_string(),
+        scan.curves.tabulated_cylinder_replays.len().to_string(),
     );
     attributes.insert(
         "decoded_tabulated_cylinder_control_point_set_count".to_string(),
-        scan.tabulated_cylinder_curve_replays
+        scan.curves
+            .tabulated_cylinder_replays
             .iter()
             .filter(|replay| replay.control_points.iter().all(Option::is_some))
             .count()
@@ -24619,29 +24743,30 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_curve_prototype_count".to_string(),
-        scan.curve_prototypes.len().to_string(),
+        scan.curves.prototypes.len().to_string(),
     );
     attributes.insert(
         "decoded_curve_parameter_record_count".to_string(),
-        scan.curve_parameters.len().to_string(),
+        scan.curves.parameters.len().to_string(),
     );
     attributes.insert(
         "decoded_curve_expression_record_count".to_string(),
-        scan.curve_expressions.len().to_string(),
+        scan.curves.expressions.len().to_string(),
     );
     attributes.insert(
         "expanded_section_count".to_string(),
-        scan.expanded_sections.len().to_string(),
+        scan.framing.expanded_sections.len().to_string(),
     );
     attributes.insert(
         "expanded_section_byte_count".to_string(),
-        scan.expanded_sections
+        scan.framing
+            .expanded_sections
             .iter()
             .map(|section| section.data.len())
             .sum::<usize>()
             .to_string(),
     );
-    if let Some(family_table) = scan.family_table {
+    if let Some(family_table) = scan.framing.family_table {
         attributes.insert(
             "family_table_pointer".to_string(),
             match family_table.pointer {
@@ -24661,111 +24786,112 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     }
     attributes.insert(
         "decoded_pcurve_count".to_string(),
-        scan.pcurves.len().to_string(),
+        scan.curves.pcurves.len().to_string(),
     );
     attributes.insert(
         "decoded_fc_curve_coordinate_record_count".to_string(),
-        scan.fc_curve_coordinates.len().to_string(),
+        scan.curves.fc_coordinates.len().to_string(),
     );
     attributes.insert(
         "decoded_fc05_circle_count".to_string(),
-        scan.fc05_circles.len().to_string(),
+        scan.curves.fc05_circles.len().to_string(),
     );
     attributes.insert(
         "decoded_fc05_cylinder_cap_pair_count".to_string(),
-        scan.fc05_cylinder_cap_pairs.len().to_string(),
+        scan.curves.fc05_cylinder_cap_pairs.len().to_string(),
     );
     attributes.insert(
         "decoded_prototype_pcurve_count".to_string(),
-        scan.prototype_pcurves.len().to_string(),
+        scan.curves.prototype_pcurves.len().to_string(),
     );
     attributes.insert(
         "decoded_curve_prototype_topology_count".to_string(),
-        scan.curve_prototype_topology.len().to_string(),
+        scan.curves.prototype_topology.len().to_string(),
     );
     attributes.insert(
         "decoded_bound_prototype_pcurve_count".to_string(),
-        scan.bound_prototype_pcurves.len().to_string(),
+        scan.curves.bound_prototype_pcurves.len().to_string(),
     );
     attributes.insert(
         "decoded_curve_topology_row_count".to_string(),
-        scan.curve_topology_rows.len().to_string(),
+        scan.curves.topology_rows.len().to_string(),
     );
     attributes.insert(
         "decoded_cross_section_curve_row_count".to_string(),
-        scan.cross_section_curve_rows.len().to_string(),
+        scan.curves.cross_section_rows.len().to_string(),
     );
     attributes.insert(
         "decoded_cross_section_curve_prototype_count".to_string(),
-        scan.cross_section_curve_prototypes.len().to_string(),
+        scan.curves.cross_section_prototypes.len().to_string(),
     );
     attributes.insert(
         "decoded_half_edge_count".to_string(),
-        scan.half_edges.len().to_string(),
+        scan.topology.half_edges.len().to_string(),
     );
     attributes.insert(
         "decoded_topological_vertex_count".to_string(),
-        scan.topological_vertices.len().to_string(),
+        scan.topology.vertices.len().to_string(),
     );
     attributes.insert(
         "decoded_loop_count".to_string(),
-        scan.loops.len().to_string(),
+        scan.topology.loops.len().to_string(),
     );
     attributes.insert(
         "decoded_face_component_count".to_string(),
-        scan.face_components.len().to_string(),
+        scan.topology.face_components.len().to_string(),
     );
     attributes.insert(
         "decoded_datum_plane_count".to_string(),
-        scan.datum_planes.len().to_string(),
+        scan.planes.datums.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_count".to_string(),
-        scan.feature_ids.len().to_string(),
+        scan.features.ids.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_row_count".to_string(),
-        scan.feature_rows.len().to_string(),
+        scan.features.rows.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_choice_count".to_string(),
-        scan.feature_choices.len().to_string(),
+        scan.features.choices.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_choice_field_count".to_string(),
-        scan.feature_choice_fields.len().to_string(),
+        scan.features.choice_fields.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_geometry_table_count".to_string(),
-        scan.feature_geometry_tables.len().to_string(),
+        scan.features.geometry_tables.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_affected_id_array_count".to_string(),
-        scan.feature_affected_ids.len().to_string(),
+        scan.features.affected_ids.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_replay_affected_id_count".to_string(),
-        scan.feature_replay_affected_ids.len().to_string(),
+        scan.features.replay_affected_ids.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_loop_restore_direction_count".to_string(),
-        scan.feature_loop_restore_directions.len().to_string(),
+        scan.features.loop_restore_directions.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_revolution_extent_count".to_string(),
-        scan.feature_revolution_extents.len().to_string(),
+        scan.features.revolution_extents.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_definition_count".to_string(),
-        scan.feature_definitions.len().to_string(),
+        scan.features.definitions.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_section_transform_count".to_string(),
-        scan.feature_section_transforms.len().to_string(),
+        scan.features.section_transforms.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_placement_instruction_count".to_string(),
-        scan.feature_definitions
+        scan.features
+            .definitions
             .iter()
             .map(|definition| crate::feature::placement_instructions(definition).len())
             .sum::<usize>()
@@ -24773,15 +24899,16 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_feature_operation_state_count".to_string(),
-        scan.feature_operation_states.len().to_string(),
+        scan.features.operation_states.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_operation_count".to_string(),
-        scan.feature_operations.len().to_string(),
+        scan.features.operations.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_outline_count".to_string(),
-        scan.feature_definitions
+        scan.features
+            .definitions
             .iter()
             .map(|definition| definition.outlines.len())
             .sum::<usize>()
@@ -24789,7 +24916,8 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_feature_section_point_count".to_string(),
-        scan.feature_definitions
+        scan.features
+            .definitions
             .iter()
             .filter_map(|definition| definition.variables.as_ref())
             .map(|variables| {
@@ -24801,7 +24929,8 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_feature_segment_count".to_string(),
-        scan.feature_definitions
+        scan.features
+            .definitions
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.rows.len())
@@ -24810,7 +24939,8 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_feature_opaque_segment_count".to_string(),
-        scan.feature_definitions
+        scan.features
+            .definitions
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.opaque_rows.len())
@@ -24819,7 +24949,8 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_feature_trim_entity_count".to_string(),
-        scan.feature_definitions
+        scan.features
+            .definitions
             .iter()
             .filter_map(|definition| definition.trim_entities.as_ref())
             .map(|entities| entities.rows.len())
@@ -24828,7 +24959,8 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_feature_trim_vertex_count".to_string(),
-        scan.feature_definitions
+        scan.features
+            .definitions
             .iter()
             .filter_map(|definition| definition.trim_vertices.as_ref())
             .map(|vertices| vertices.rows.len())
@@ -24837,7 +24969,8 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_feature_order_entry_count".to_string(),
-        scan.feature_definitions
+        scan.features
+            .definitions
             .iter()
             .filter_map(|definition| definition.order_table.as_ref())
             .map(|order| order.rows.len())
@@ -24846,7 +24979,8 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_feature_dimension_count".to_string(),
-        scan.feature_definitions
+        scan.features
+            .definitions
             .iter()
             .filter_map(|definition| definition.dimensions.as_ref())
             .map(|dimensions| dimensions.rows.len())
@@ -24855,7 +24989,8 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_feature_relation_count".to_string(),
-        scan.feature_definitions
+        scan.features
+            .definitions
             .iter()
             .filter_map(|definition| definition.relations.as_ref())
             .map(|relations| relations.rows.len())
@@ -24864,7 +24999,8 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_feature_saved_entity_count".to_string(),
-        scan.feature_definitions
+        scan.features
+            .definitions
             .iter()
             .filter_map(|definition| definition.saved_section.as_ref())
             .map(|saved| saved.entities.len())
@@ -24873,24 +25009,24 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     );
     attributes.insert(
         "decoded_feature_entity_count".to_string(),
-        scan.feature_entities.len().to_string(),
+        scan.features.entities.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_entity_reference_count".to_string(),
-        scan.feature_entity_references.len().to_string(),
+        scan.features.entity_references.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_entity_table_count".to_string(),
-        scan.feature_entity_tables.len().to_string(),
+        scan.features.entity_tables.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_surface_replay_association_count".to_string(),
         feature_surface_replay_associations(scan).len().to_string(),
     );
-    if let Some(count) = scan.declared_body_count {
+    if let Some(count) = scan.framing.declared_body_count {
         attributes.insert("declared_body_count".to_string(), count.to_string());
     }
-    if let Some(value) = scan.first_quilt_ptr {
+    if let Some(value) = scan.framing.first_quilt_ptr {
         attributes.insert("first_quilt_ptr".to_string(), value.to_string());
     }
     SourceMeta {
@@ -24941,12 +25077,14 @@ fn has_transferred_geometry(ir: &CadIr) -> bool {
 fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let geom_sections = scan
+        .framing
         .sections
         .iter()
         .filter(|s| s.role == role::GEOMETRY)
         .count();
     let mut placed_plane_ids = scan
-        .plane_local_systems
+        .planes
+        .local_systems
         .iter()
         .filter(|frame| {
             frame.origin.is_some()
@@ -24955,9 +25093,10 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         })
         .map(|frame| frame.surface_id)
         .collect::<BTreeSet<_>>();
-    placed_plane_ids.extend(scan.outline_planes.iter().map(|plane| plane.surface_id));
+    placed_plane_ids.extend(scan.planes.outlines.iter().map(|plane| plane.surface_id));
     placed_plane_ids.extend(
-        scan.positional_frame_planes
+        scan.planes
+            .positional_frames
             .iter()
             .map(|plane| plane.surface_id),
     );
@@ -25037,10 +25176,12 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
 
     // The namespace census: what is byte-backed and readable.
     let srf = scan
+        .framing
         .census
         .srf_array_count
         .map_or_else(|| "n/a".to_string(), |c| c.to_string());
     let crv = scan
+        .framing
         .census
         .crv_array_count
         .map_or_else(|| "n/a".to_string(), |c| c.to_string());
@@ -25064,12 +25205,12 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              complete support-apex and planar-envelope positional cones, and complete \
              local-system positional tori transfer as carriers; \
              other parameter bodies remain structural records.",
-            scan.sections.len(),
-            scan.layout.token(),
-            scan.surface_rows.len(),
-            scan.curve_prototypes.len(),
-            scan.curve_topology_rows.len(),
-            scan.loops.len(),
+            scan.framing.sections.len(),
+            scan.framing.layout.token(),
+            scan.surfaces.rows.len(),
+            scan.curves.prototypes.len(),
+            scan.curves.topology_rows.len(),
+            scan.topology.loops.len(),
         ),
         provenance: None,
     });
@@ -25196,51 +25337,51 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         });
     }
 
-    if !container_only && !scan.datum_planes.is_empty() {
+    if !container_only && !scan.planes.datums.is_empty() {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
                 "Transferred {} exact model-space construction datum plane carrier(s) from ActDatums; \
                  these are unbounded reference planes, not model B-rep faces.",
-                scan.datum_planes.len()
+                scan.planes.datums.len()
             ),
             provenance: None,
         });
     }
 
-    if !container_only && !scan.reference_lines.is_empty() {
+    if !container_only && !scan.references.lines.is_empty() {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
                 "Transferred {} finite model-space reference line carrier(s) from MdlRefInfo; \
                  their byte-exact endpoints remain attached as native line records.",
-                scan.reference_lines.len()
+                scan.references.lines.len()
             ),
             provenance: None,
         });
     }
 
-    if !container_only && !scan.reference_circles.is_empty() {
+    if !container_only && !scan.references.circles.is_empty() {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
                 "Transferred {} circular reference carrier(s) from MdlRefInfo rows whose stored center, radius, and endpoints satisfy the circle equation; byte-exact endpoints remain attached as native circle records.",
-                scan.reference_circles.len()
+                scan.references.circles.len()
             ),
             provenance: None,
         });
     }
 
-    if !container_only && !scan.reference_ellipses.is_empty() {
+    if !container_only && !scan.references.ellipses.is_empty() {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
                 "Transferred {} elliptical reference carrier(s) from MdlRefInfo conic rows whose frame, coefficient radii, and antipodal endpoints satisfy one ellipse equation; the source conic records remain byte-exact native records.",
-                scan.reference_ellipses.len()
+                scan.references.ellipses.len()
             ),
             provenance: None,
         });
@@ -25354,7 +25495,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         provenance: None,
     });
 
-    let configuration_gap = match scan.family_table.map(|record| record.pointer) {
+    let configuration_gap = match scan.framing.family_table.map(|record| record.pointer) {
         Some(crate::container::FamilyTablePointer::Null) => "",
         Some(crate::container::FamilyTablePointer::Entity(_)) => {
             ", configuration driver-table rows"
@@ -25362,7 +25503,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         None => ", configuration presence",
     };
     let prohibited_curve_expression_record_count = scan
-        .curve_expressions
+        .curves
+        .expressions
         .iter()
         .filter(|record| !record.backup && !record.prohibited_constructs.is_empty())
         .count();

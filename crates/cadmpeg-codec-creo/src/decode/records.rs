@@ -330,7 +330,8 @@ pub(super) struct CreoReferenceEllipseRecord {
 }
 
 pub(super) fn expanded_section_records(scan: &ContainerScan) -> Vec<CreoExpandedSectionRecord> {
-    scan.expanded_sections
+    scan.framing
+        .expanded_sections
         .iter()
         .map(|section| CreoExpandedSectionRecord {
             id: format!(
@@ -471,7 +472,8 @@ pub(super) struct CreoFeaturePlacementInstructionRecord {
 }
 
 pub(super) fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
-    scan.feature_entities
+    scan.features
+        .entities
         .iter()
         .map(|entity| CreoFeatureEntityRecord {
             id: format!("creo:allfeatur:entity#{}", entity.entity_id),
@@ -486,7 +488,8 @@ pub(super) fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEnt
 pub(super) fn feature_entity_reference_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureEntityReferenceRecord> {
-    scan.feature_entity_references
+    scan.features
+        .entity_references
         .iter()
         .map(|reference| CreoFeatureEntityReferenceRecord {
             id: format!("creo:allfeatur:entity_reference#{}", reference.offset),
@@ -501,7 +504,8 @@ pub(super) fn feature_entity_reference_records(
 pub(super) fn feature_entity_table_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureEntityTableRecord> {
-    scan.feature_entity_tables
+    scan.features
+        .entity_tables
         .iter()
         .map(|table| CreoFeatureEntityTableRecord {
             id: format!("creo:allfeatur:entity_table#{}", table.offset),
@@ -530,7 +534,8 @@ pub(super) fn feature_entity_table_records(
 pub(super) fn feature_geometry_table_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureGeometryTableRecord> {
-    scan.feature_geometry_tables
+    scan.features
+        .geometry_tables
         .iter()
         .map(|table| CreoFeatureGeometryTableRecord {
             id: format!("creo:feature:geometry_table#{}", table.offset),
@@ -555,7 +560,8 @@ pub(super) fn feature_geometry_table_records(
 pub(super) fn feature_affected_id_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureAffectedIdsRecord> {
-    scan.feature_affected_ids
+    scan.features
+        .affected_ids
         .iter()
         .map(|record| CreoFeatureAffectedIdsRecord {
             id: format!("creo:feature:affected_ids#{}", record.offset),
@@ -571,7 +577,8 @@ pub(super) fn feature_affected_id_records(
 pub(super) fn feature_replay_affected_id_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureReplayAffectedIdsRecord> {
-    scan.feature_replay_affected_ids
+    scan.features
+        .replay_affected_ids
         .iter()
         .map(|record| CreoFeatureReplayAffectedIdsRecord {
             id: format!("creo:feature:replay_affected_ids#{}", record.offset),
@@ -589,7 +596,8 @@ pub(super) fn feature_replay_affected_id_records(
 pub(super) fn feature_loop_restore_direction_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureLoopRestoreDirectionRecord> {
-    scan.feature_loop_restore_directions
+    scan.features
+        .loop_restore_directions
         .iter()
         .map(|record| CreoFeatureLoopRestoreDirectionRecord {
             id: format!("creo:feature:loop_restore_direction#{}", record.offset),
@@ -608,7 +616,8 @@ pub(super) fn feature_loop_restore_direction_records(
 pub(super) fn feature_revolution_extent_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureRevolutionExtentRecord> {
-    scan.feature_revolution_extents
+    scan.features
+        .revolution_extents
         .iter()
         .map(|record| CreoFeatureRevolutionExtentRecord {
             id: format!("creo:feature:revolution_extent#{}", record.offset),
@@ -624,7 +633,8 @@ pub(super) fn feature_revolution_extent_records(
 }
 
 pub(super) fn feature_choice_records(scan: &ContainerScan) -> Vec<CreoFeatureChoiceRecord> {
-    scan.feature_choices
+    scan.features
+        .choices
         .iter()
         .map(|choice| CreoFeatureChoiceRecord {
             id: format!("creo:feature:choice#{}", choice.offset),
@@ -640,7 +650,8 @@ pub(super) fn feature_choice_records(scan: &ContainerScan) -> Vec<CreoFeatureCho
 }
 
 pub(super) fn feature_row_records(scan: &ContainerScan) -> Vec<CreoFeatureRowRecord> {
-    scan.feature_rows
+    scan.features
+        .rows
         .iter()
         .map(|row| CreoFeatureRowRecord {
             id: format!("creo:allfeatur:feature_row#{}", row.offset),
@@ -657,7 +668,8 @@ pub(super) fn feature_row_records(scan: &ContainerScan) -> Vec<CreoFeatureRowRec
 }
 
 pub(super) fn depdb_recipe_row_records(scan: &ContainerScan) -> Vec<CreoFeatureRowRecord> {
-    scan.depdb_recipe_rows
+    scan.features
+        .depdb_recipe_rows
         .iter()
         .map(|row| CreoFeatureRowRecord {
             id: format!("creo:depdb:recipe_row#{}", row.offset),
@@ -676,7 +688,8 @@ pub(super) fn depdb_recipe_row_records(scan: &ContainerScan) -> Vec<CreoFeatureR
 pub(super) fn feature_choice_field_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureChoiceFieldRecord> {
-    scan.feature_choice_fields
+    scan.features
+        .choice_fields
         .iter()
         .map(|field| CreoFeatureChoiceFieldRecord {
             id: format!("creo:feature:choice_field#{}", field.offset),
@@ -724,11 +737,13 @@ pub(super) fn feature_choice_field_records(
 
 pub(super) fn half_edge_records(scan: &ContainerScan) -> Vec<CreoHalfEdgeRecord> {
     let topology_rows = scan
-        .curve_topology_rows
+        .curves
+        .topology_rows
         .iter()
         .map(|row| (row.id, row))
         .collect::<BTreeMap<_, _>>();
-    scan.half_edges
+    scan.topology
+        .half_edges
         .iter()
         .filter_map(|edge| {
             let row = topology_rows.get(&edge.id.curve_id)?;
@@ -749,7 +764,8 @@ pub(super) fn half_edge_records(scan: &ContainerScan) -> Vec<CreoHalfEdgeRecord>
 }
 
 pub(super) fn loop_records(scan: &ContainerScan) -> Vec<CreoLoopRecord> {
-    scan.loops
+    scan.topology
+        .loops
         .iter()
         .enumerate()
         .map(|(index, record)| CreoLoopRecord {
@@ -766,7 +782,8 @@ pub(super) fn loop_records(scan: &ContainerScan) -> Vec<CreoLoopRecord> {
 }
 
 pub(super) fn topological_vertex_records(scan: &ContainerScan) -> Vec<CreoTopologicalVertexRecord> {
-    scan.topological_vertices
+    scan.topology
+        .vertices
         .iter()
         .map(|record| CreoTopologicalVertexRecord {
             id: format!("creo:topology:vertex#{}", record.id),
@@ -784,7 +801,8 @@ pub(super) fn topological_vertex_records(scan: &ContainerScan) -> Vec<CreoTopolo
 pub(super) fn half_edge_vertex_incidence_records(
     scan: &ContainerScan,
 ) -> Vec<CreoHalfEdgeVertexIncidenceRecord> {
-    scan.half_edge_vertex_incidence
+    scan.topology
+        .half_edge_vertex_incidence
         .iter()
         .map(|record| CreoHalfEdgeVertexIncidenceRecord {
             id: format!(
@@ -799,7 +817,8 @@ pub(super) fn half_edge_vertex_incidence_records(
 }
 
 pub(super) fn face_component_records(scan: &ContainerScan) -> Vec<CreoFaceComponentRecord> {
-    scan.face_components
+    scan.topology
+        .face_components
         .iter()
         .enumerate()
         .map(|(index, record)| CreoFaceComponentRecord {
@@ -813,7 +832,8 @@ pub(super) fn face_component_records(scan: &ContainerScan) -> Vec<CreoFaceCompon
 pub(super) fn fc_curve_coordinate_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFcCurveCoordinateRecord> {
-    scan.fc_curve_coordinates
+    scan.curves
+        .fc_coordinates
         .iter()
         .map(|record| CreoFcCurveCoordinateRecord {
             id: format!("creo:curve:fc_coordinates#{}", record.curve_id),
@@ -847,7 +867,8 @@ pub(super) fn fc_curve_coordinate_records(
 }
 
 pub(super) fn prototype_pcurve_records(scan: &ContainerScan) -> Vec<CreoPrototypePcurveRecord> {
-    scan.prototype_pcurves
+    scan.curves
+        .prototype_pcurves
         .iter()
         .map(|record| CreoPrototypePcurveRecord {
             id: format!("creo:curve:prototype_pcurve#{}", record.curve_id),
@@ -863,7 +884,8 @@ pub(super) fn prototype_pcurve_records(scan: &ContainerScan) -> Vec<CreoPrototyp
 pub(super) fn curve_prototype_topology_records(
     scan: &ContainerScan,
 ) -> Vec<CreoCurvePrototypeTopologyRecord> {
-    scan.curve_prototype_topology
+    scan.curves
+        .prototype_topology
         .iter()
         .map(|record| CreoCurvePrototypeTopologyRecord {
             id: format!("creo:curve:prototype_topology#{}", record.curve_id),
@@ -975,7 +997,8 @@ pub(super) fn outline_plane_records(
 }
 
 pub(super) fn datum_plane_records(scan: &ContainerScan) -> Vec<CreoDatumPlaneRecord> {
-    scan.datum_planes
+    scan.planes
+        .datums
         .iter()
         .map(|record| CreoDatumPlaneRecord {
             id: format!(
@@ -997,7 +1020,8 @@ pub(super) fn feature_section_transform_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureSectionTransformRecord> {
     let mut records = scan
-        .feature_section_transforms
+        .features
+        .section_transforms
         .iter()
         .map(|record| CreoFeatureSectionTransformRecord {
             id: format!(
@@ -1022,7 +1046,8 @@ pub(super) fn feature_section_transform_records(
 pub(super) fn feature_placement_instruction_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeaturePlacementInstructionRecord> {
-    scan.feature_definitions
+    scan.features
+        .definitions
         .iter()
         .flat_map(|definition| {
             crate::feature::placement_instructions(definition)
@@ -1293,7 +1318,8 @@ pub(super) fn curve_parameter_records(
 pub(super) fn cross_section_curve_row_records(
     scan: &ContainerScan,
 ) -> Vec<CreoCrossSectionCurveRowRecord> {
-    scan.cross_section_curve_rows
+    scan.curves
+        .cross_section_rows
         .iter()
         .map(|row| CreoCrossSectionCurveRowRecord {
             id: format!("creo:cross_section_geometry:curve_row#{}", row.id),
@@ -1361,7 +1387,8 @@ pub(super) fn curve_topology_row_records(
 pub(super) fn tabulated_cylinder_curve_replay_records(
     scan: &ContainerScan,
 ) -> Vec<CreoTabulatedCylinderCurveReplayRecord> {
-    scan.tabulated_cylinder_curve_replays
+    scan.curves
+        .tabulated_cylinder_replays
         .iter()
         .map(|record| CreoTabulatedCylinderCurveReplayRecord {
             id: format!(
@@ -1549,12 +1576,14 @@ pub(super) fn feature_operation_state_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureOperationState> {
     let current_offsets = scan
-        .feature_operations
+        .features
+        .operations
         .iter()
         .map(|state| (state.feature_id, state.offset))
         .collect::<BTreeMap<_, _>>();
     let mut ordinals = BTreeMap::<u32, usize>::new();
-    scan.feature_operation_states
+    scan.features
+        .operation_states
         .iter()
         .map(|state| {
             let state_ordinal = *ordinals.entry(state.feature_id).or_default();
@@ -1588,7 +1617,8 @@ pub(super) fn feature_operation_state_records(
 pub(super) fn feature_reference_name_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureReferenceNameRecord> {
-    scan.feature_reference_names
+    scan.features
+        .reference_names
         .iter()
         .map(|record| CreoFeatureReferenceNameRecord {
             id: format!("creo:mdlrefinfo:feature_name#{}", record.offset),
@@ -1616,6 +1646,7 @@ pub(super) fn pcurve_endpoint_records(
     scan: &ContainerScan,
 ) -> Vec<(CreoPcurveEndpointRecord, usize)> {
     let mut records = scan
+        .curves
         .pcurves
         .iter()
         .map(|pcurve| {
@@ -1632,7 +1663,7 @@ pub(super) fn pcurve_endpoint_records(
             )
         })
         .collect::<Vec<_>>();
-    records.extend(scan.bound_prototype_pcurves.iter().map(|pcurve| {
+    records.extend(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
         (
             CreoPcurveEndpointRecord {
                 id: format!(
@@ -1653,7 +1684,8 @@ pub(super) fn pcurve_endpoint_records(
 }
 
 pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionRecord> {
-    scan.curve_expressions
+    scan.curves
+        .expressions
         .iter()
         .map(|record| CreoCurveExpressionRecord {
             id: curve_expression_record_id(record),
@@ -1695,7 +1727,8 @@ pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExp
 }
 
 pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
-    scan.feature_definitions
+    scan.features
+        .definitions
         .iter()
         .filter(|definition| feature_definition_has_sketch_design(definition))
         .map(|definition| CreoSketchRecord {
@@ -1970,7 +2003,8 @@ pub(super) fn sketch_section_point_records(
 }
 
 pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatureDefinitionRecord> {
-    scan.feature_definitions
+    scan.features
+        .definitions
         .iter()
         .map(|definition| CreoFeatureDefinitionRecord {
             id: feature_definition_record_id(scan, definition),

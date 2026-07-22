@@ -180,8 +180,33 @@ pub struct FamilyTableRecord {
     pub offset: usize,
 }
 
-/// Structural data read from one `.prt` file.
+/// Structural data read from one `.prt` file. The 76 decoded products are
+/// grouped into per-domain sub-structs so each consumer names the domain it
+/// reads. `ContainerScan` is never serialized; grouping and field naming are
+/// internal and do not affect IR or JSON output.
 pub struct ContainerScan {
+    /// Container framing: raw bytes, header, TOC-enumerated sections, and
+    /// model-level diagnostics.
+    pub framing: FramingScan,
+    /// Named scalar and triangle-strip products from expanded primitive data.
+    pub primitives: PrimitiveScan,
+    /// Model-space reference entities decoded from `MdlRefInfo`.
+    pub references: ReferenceScan,
+    /// Typed surface rows, parameter bodies, and prototypes across the model,
+    /// non-visible, and cross-section namespaces.
+    pub surfaces: SurfaceScan,
+    /// Plane support frames, envelopes, placed planes, and datum planes.
+    pub planes: PlaneScan,
+    /// Curve prototypes, parameter bodies, pcurves, and native curve rows.
+    pub curves: CurveScan,
+    /// Native half-edge adjacency graph resolved from curve topology rows.
+    pub topology: TopologyScan,
+    /// Feature rows, definitions, operations, and the implicit entity graph.
+    pub features: FeatureScan,
+}
+
+/// Container framing: raw bytes, header, sections, and model-level diagnostics.
+pub struct FramingScan {
     /// Complete source bytes.
     pub data: Vec<u8>,
     /// The magic/version header line, ASCII, trimmed.
@@ -194,20 +219,6 @@ pub struct ContainerScan {
     pub sections: Vec<Section>,
     /// Successfully expanded Unix-compress section payloads.
     pub expanded_sections: Vec<ExpandedSection>,
-    /// Counted model-level scalar dictionaries from expanded sections.
-    pub double_xar_tables: Vec<ModelDoubleXarTable>,
-    /// Complete named model-space scalar arrays from expanded primitive data.
-    pub primitive_scalar_arrays: Vec<PrimitiveScalarArray>,
-    /// Complete named position-only triangle strips from expanded primitive data.
-    pub primitive_triangle_strips: Vec<PrimitiveTriangleStrip>,
-    /// Complete model-space line entities from `MdlRefInfo`.
-    pub reference_lines: Vec<ReferenceLine>,
-    /// Complete model-Z circular entities from `MdlRefInfo` rows.
-    pub reference_circles: Vec<ReferenceCircle>,
-    /// Named conic entities from `MdlRefInfo` with complete defining fields.
-    pub reference_conics: Vec<ReferenceConic>,
-    /// Conic records whose complete fields independently define an ellipse.
-    pub reference_ellipses: Vec<ReferenceEllipse>,
     /// Identified layout family.
     pub layout: Layout,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
@@ -217,64 +228,105 @@ pub struct ContainerScan {
     pub principal_unit: Option<String>,
     /// Configuration driver-table pointer from `FamilyInf`.
     pub family_table: Option<FamilyTableRecord>,
+    /// Declared `Geomlists.n_bodies` cardinality, when present.
+    pub declared_body_count: Option<u32>,
+    /// `Geomlists.first_quilt_ptr`: zero denotes the single-quilt form;
+    /// nonzero is a multi-quilt discriminator rather than a body count.
+    pub first_quilt_ptr: Option<u32>,
+}
+
+/// Named products from expanded primitive-data sections.
+pub struct PrimitiveScan {
+    /// Counted model-level scalar dictionaries from expanded sections.
+    pub double_xar_tables: Vec<ModelDoubleXarTable>,
+    /// Complete named model-space scalar arrays from expanded primitive data.
+    pub scalar_arrays: Vec<PrimitiveScalarArray>,
+    /// Complete named position-only triangle strips from expanded primitive data.
+    pub triangle_strips: Vec<PrimitiveTriangleStrip>,
+}
+
+/// Model-space reference entities decoded from `MdlRefInfo`.
+pub struct ReferenceScan {
+    /// Complete model-space line entities from `MdlRefInfo`.
+    pub lines: Vec<ReferenceLine>,
+    /// Complete model-Z circular entities from `MdlRefInfo` rows.
+    pub circles: Vec<ReferenceCircle>,
+    /// Named conic entities from `MdlRefInfo` with complete defining fields.
+    pub conics: Vec<ReferenceConic>,
+    /// Conic records whose complete fields independently define an ellipse.
+    pub ellipses: Vec<ReferenceEllipse>,
+}
+
+/// Typed surface rows, parameter bodies, and prototypes.
+pub struct SurfaceScan {
     /// Typed fixed-prefix surface rows from the selected material model
     /// geometry namespace. Parameter bodies are decoded separately.
-    pub surface_rows: Vec<SurfaceRow>,
+    pub rows: Vec<SurfaceRow>,
     /// Typed fixed-prefix rows from the separate invisible and construction
     /// surface namespace.
-    pub nonvisible_surface_rows: Vec<SurfaceRow>,
+    pub nonvisible_rows: Vec<SurfaceRow>,
     /// Typed fixed-prefix surface rows from the DEPDB cross-section geometry
     /// namespace. These are kept separate from model-face surface rows.
-    pub cross_section_surface_rows: Vec<SurfaceRow>,
+    pub cross_section_rows: Vec<SurfaceRow>,
     /// Bounded scalar parameter bodies from positional surface rows.
-    pub surface_parameters: Vec<SurfaceParameterRecord>,
+    pub parameters: Vec<SurfaceParameterRecord>,
     /// Bounded scalar parameter bodies from the separate invisible and
     /// construction surface namespace.
-    pub nonvisible_surface_parameters: Vec<SurfaceParameterRecord>,
+    pub nonvisible_parameters: Vec<SurfaceParameterRecord>,
     /// Bounded scalar parameter bodies from DEPDB cross-section surface rows.
-    pub cross_section_surface_parameters: Vec<SurfaceParameterRecord>,
-    /// Cubic curve replay records bound to following tabulated-cylinder rows.
-    pub tabulated_cylinder_curve_replays: Vec<TabulatedCylinderCurveReplay>,
-    /// Inherited support frames following positional plane envelopes.
-    pub plane_local_systems: Vec<PlaneLocalSystem>,
-    /// Plane support frames from the DEPDB cross-section namespace.
-    pub cross_section_plane_local_systems: Vec<PlaneLocalSystem>,
-    /// Plane-specific standard and compact positional envelopes.
-    pub plane_envelopes: Vec<PlaneEnvelopeRecord>,
-    /// Plane envelopes from the DEPDB cross-section namespace.
-    pub cross_section_plane_envelopes: Vec<PlaneEnvelopeRecord>,
-    /// Axis-aligned placed planes derived from unambiguous outline corners.
-    pub outline_planes: Vec<OutlinePlane>,
-    /// Axis-aligned planes from marker-bound six-scalar positional frames.
-    pub positional_frame_planes: Vec<OutlinePlane>,
-    /// Placed planes derived inside the DEPDB cross-section namespace.
-    pub cross_section_outline_planes: Vec<OutlinePlane>,
+    pub cross_section_parameters: Vec<SurfaceParameterRecord>,
     /// Labeled surface prototypes with fully decoded scalar fields.
-    pub surface_prototypes: Vec<SurfacePrototype>,
+    pub prototypes: Vec<SurfacePrototype>,
     /// Bounded named `srf_prim_ptr(<kind>)` parameter records.
-    pub surface_prototype_records: Vec<SurfacePrototypeRecord>,
+    pub prototype_records: Vec<SurfacePrototypeRecord>,
     /// Bounded named surface-prototype records from the separate invisible
     /// and construction geometry namespace.
-    pub nonvisible_surface_prototype_records: Vec<SurfacePrototypeRecord>,
+    pub nonvisible_prototype_records: Vec<SurfacePrototypeRecord>,
+}
+
+/// Plane support frames, envelopes, placed planes, and datum planes.
+pub struct PlaneScan {
+    /// Inherited support frames following positional plane envelopes.
+    pub local_systems: Vec<PlaneLocalSystem>,
+    /// Plane support frames from the DEPDB cross-section namespace.
+    pub cross_section_local_systems: Vec<PlaneLocalSystem>,
+    /// Plane-specific standard and compact positional envelopes.
+    pub envelopes: Vec<PlaneEnvelopeRecord>,
+    /// Plane envelopes from the DEPDB cross-section namespace.
+    pub cross_section_envelopes: Vec<PlaneEnvelopeRecord>,
+    /// Axis-aligned placed planes derived from unambiguous outline corners.
+    pub outlines: Vec<OutlinePlane>,
+    /// Axis-aligned planes from marker-bound six-scalar positional frames.
+    pub positional_frames: Vec<OutlinePlane>,
+    /// Placed planes derived inside the DEPDB cross-section namespace.
+    pub cross_section_outlines: Vec<OutlinePlane>,
+    /// Model-space standard datum planes decoded from `ActDatums` outlines.
+    pub datums: Vec<DatumPlane>,
+}
+
+/// Curve prototypes, parameter bodies, pcurves, and native curve rows.
+pub struct CurveScan {
+    /// Cubic curve replay records bound to following tabulated-cylinder rows.
+    pub tabulated_cylinder_replays: Vec<TabulatedCylinderCurveReplay>,
     /// Labeled curve prototypes from geometry sections. The curve body and
     /// its analytic interpretation are decoded separately.
-    pub curve_prototypes: Vec<CurvePrototype>,
+    pub prototypes: Vec<CurvePrototype>,
     /// Labeled curve prototypes from the separate invisible and construction
     /// geometry namespace.
-    pub nonvisible_curve_prototypes: Vec<CurvePrototype>,
+    pub nonvisible_prototypes: Vec<CurvePrototype>,
     /// Labeled first curve rows from DEPDB cross-section namespaces.
-    pub cross_section_curve_prototypes: Vec<CurvePrototype>,
+    pub cross_section_prototypes: Vec<CurvePrototype>,
     /// Source programs from curve-from-equation entity records.
-    pub curve_expressions: Vec<CurveExpressionRecord>,
+    pub expressions: Vec<CurveExpressionRecord>,
     /// Bounded analytic parameter bodies from positional curve rows.
-    pub curve_parameters: Vec<CurveParameterRecord>,
+    pub parameters: Vec<CurveParameterRecord>,
     /// Bounded curve parameter bodies from the separate invisible and
     /// construction geometry namespace.
-    pub nonvisible_curve_parameters: Vec<CurveParameterRecord>,
+    pub nonvisible_parameters: Vec<CurveParameterRecord>,
     /// Complete eight-slot pcurve endpoints in both adjacent face frames.
     pub pcurves: Vec<PcurveEndpoints>,
     /// Ordered world-coordinate lanes from FC-prefixed dense curve rows.
-    pub fc_curve_coordinates: Vec<FcCurveCoordinates>,
+    pub fc_coordinates: Vec<FcCurveCoordinates>,
     /// FC05 records whose decoded points prove an exact circle.
     pub fc05_circles: Vec<Fc05Circle>,
     /// Cylinder cap groups joined through typed curve-face topology. Their
@@ -283,17 +335,21 @@ pub struct ContainerScan {
     /// Complete pcurve UV endpoints from labeled curve prototypes.
     pub prototype_pcurves: Vec<PrototypePcurveEndpoints>,
     /// Labeled face and next-edge references from curve prototypes.
-    pub curve_prototype_topology: Vec<CurvePrototypeTopology>,
+    pub prototype_topology: Vec<CurvePrototypeTopology>,
     /// Prototype pcurve endpoints bound to their adjacent face identifiers.
     pub bound_prototype_pcurves: Vec<BoundPrototypePcurve>,
     /// Curve rows with an unambiguous canonical four-reference topology
     /// suffix. These rows define the native half-edge adjacency graph.
-    pub curve_topology_rows: Vec<CurveTopologyRow>,
+    pub topology_rows: Vec<CurveTopologyRow>,
     /// Curve rows from the separate invisible and construction geometry
     /// namespace. These rows do not participate in model topology.
-    pub nonvisible_curve_topology_rows: Vec<CurveTopologyRow>,
+    pub nonvisible_topology_rows: Vec<CurveTopologyRow>,
     /// Complete one-sided curve rows from the DEPDB cross-section namespace.
-    pub cross_section_curve_rows: Vec<DepdbCurveRow>,
+    pub cross_section_rows: Vec<DepdbCurveRow>,
+}
+
+/// Native half-edge adjacency graph resolved from curve topology rows.
+pub struct TopologyScan {
     /// Resolved native half-edges and closed loops built from curve rows.
     pub half_edges: Vec<HalfEdge>,
     /// Closed rings of half-edges, one per resolved face loop.
@@ -302,53 +358,50 @@ pub struct ContainerScan {
     /// topology. These are not emitted IR shells.
     pub face_components: Vec<FaceComponent>,
     /// Topological vertex identities derived from half-edge orbits.
-    pub topological_vertices: Vec<TopologicalVertex>,
+    pub vertices: Vec<TopologicalVertex>,
     /// Start/end vertex binding for each decoded half-edge.
     pub half_edge_vertex_incidence: Vec<HalfEdgeVertexIncidence>,
-    /// Model-space standard datum planes decoded from `ActDatums` outlines.
-    pub datum_planes: Vec<DatumPlane>,
+}
+
+/// Feature rows, definitions, operations, and the implicit entity graph.
+pub struct FeatureScan {
     /// Feature IDs that own decoded geometry rows.
-    pub feature_ids: Vec<u32>,
+    pub ids: Vec<u32>,
     /// Byte-bounded `AllFeatur` rows for known geometry-owning features.
-    pub feature_rows: Vec<FeatureRow>,
+    pub rows: Vec<FeatureRow>,
     /// Section-bounded procedural recipe rows synthesized from `DEPDB_DATA`.
     pub depdb_recipe_rows: Vec<FeatureRow>,
     /// Labeled procedural-choice spans inside decoded feature rows.
-    pub feature_choices: Vec<FeatureChoice>,
+    pub choices: Vec<FeatureChoice>,
     /// Named fields and typed wrappers inside procedural-choice spans.
-    pub feature_choice_fields: Vec<FeatureChoiceField>,
+    pub choice_fields: Vec<FeatureChoiceField>,
     /// Generated-geometry namespace headers owned by decoded features.
-    pub feature_geometry_tables: Vec<FeatureGeometryTable>,
+    pub geometry_tables: Vec<FeatureGeometryTable>,
     /// Complete named affected-ID arrays owned by decoded features.
-    pub feature_affected_ids: Vec<FeatureAffectedIds>,
+    pub affected_ids: Vec<FeatureAffectedIds>,
     /// Affected-ID runs from unlabeled positional replay feature rows.
-    pub feature_replay_affected_ids: Vec<FeatureReplayAffectedIds>,
+    pub replay_affected_ids: Vec<FeatureReplayAffectedIds>,
     /// Named compact direction values from loop-restoration records.
-    pub feature_loop_restore_directions: Vec<FeatureLoopRestoreDirection>,
+    pub loop_restore_directions: Vec<FeatureLoopRestoreDirection>,
     /// Resolved angular termination from rotational feature rows.
-    pub feature_revolution_extents: Vec<FeatureRevolutionExtent>,
+    pub revolution_extents: Vec<FeatureRevolutionExtent>,
     /// Byte-bounded `FeatDefs` records and definition-space parameter frames.
-    pub feature_definitions: Vec<FeatureDefinition>,
+    pub definitions: Vec<FeatureDefinition>,
     /// Section-to-model frames resolved from perpendicular active datums.
-    pub feature_section_transforms: Vec<FeatureSectionTransform>,
+    pub section_transforms: Vec<FeatureSectionTransform>,
     /// Every stored feature-operation state from `MdlStatus`, in byte order.
-    pub feature_operation_states: Vec<FeatureOperation>,
+    pub operation_states: Vec<FeatureOperation>,
     /// Current feature-operation state for each feature identifier.
-    pub feature_operations: Vec<FeatureOperation>,
+    pub operations: Vec<FeatureOperation>,
     /// Feature names joined to model feature identifiers by reference data.
-    pub feature_reference_names: Vec<FeatureReferenceName>,
+    pub reference_names: Vec<FeatureReferenceName>,
     /// Named records in the implicit `AllFeatur` walker-order entity table.
-    pub feature_entities: Vec<FeatureEntity>,
+    pub entities: Vec<FeatureEntity>,
     /// Canonical `f7` references between implicit `AllFeatur` entities.
-    pub feature_entity_references: Vec<FeatureEntityReference>,
+    pub entity_references: Vec<FeatureEntityReference>,
     /// Mixed generated-entity tables from `AllFeatur`, with owner bindings
     /// retained only where their containing feature row is byte-bounded.
-    pub feature_entity_tables: Vec<FeatureEntityTable>,
-    /// Declared `Geomlists.n_bodies` cardinality, when present.
-    pub declared_body_count: Option<u32>,
-    /// `Geomlists.first_quilt_ptr`: zero denotes the single-quilt form;
-    /// nonzero is a multi-quilt discriminator rather than a body count.
-    pub first_quilt_ptr: Option<u32>,
+    pub entity_tables: Vec<FeatureEntityTable>,
 }
 
 /// Whether a byte prefix is a Creo PSB `.prt`: the `#UGC:2` ASCII magic is the
@@ -1839,92 +1892,110 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0");
 
     ContainerScan {
-        data,
-        version_line,
-        model_name,
-        model_name_offset,
-        sections,
-        expanded_sections,
-        double_xar_tables,
-        primitive_scalar_arrays,
-        primitive_triangle_strips,
-        reference_lines,
-        reference_circles,
-        reference_conics,
-        reference_ellipses,
-        layout,
-        census,
-        principal_unit,
-        family_table,
-        surface_rows,
-        nonvisible_surface_rows,
-        cross_section_surface_rows,
-        surface_parameters,
-        nonvisible_surface_parameters,
-        cross_section_surface_parameters,
-        tabulated_cylinder_curve_replays,
-        plane_local_systems,
-        cross_section_plane_local_systems,
-        plane_envelopes,
-        cross_section_plane_envelopes,
-        outline_planes,
-        positional_frame_planes,
-        cross_section_outline_planes,
-        surface_prototypes,
-        surface_prototype_records,
-        nonvisible_surface_prototype_records,
-        curve_prototypes,
-        nonvisible_curve_prototypes,
-        cross_section_curve_prototypes,
-        curve_expressions,
-        curve_parameters,
-        nonvisible_curve_parameters,
-        pcurves,
-        fc_curve_coordinates,
-        fc05_circles,
-        fc05_cylinder_cap_pairs,
-        prototype_pcurves,
-        curve_prototype_topology,
-        bound_prototype_pcurves,
-        curve_topology_rows,
-        nonvisible_curve_topology_rows,
-        cross_section_curve_rows,
-        half_edges,
-        loops,
-        face_components,
-        topological_vertices,
-        half_edge_vertex_incidence,
-        datum_planes,
-        feature_ids,
-        feature_rows,
-        depdb_recipe_rows,
-        feature_choices,
-        feature_choice_fields,
-        feature_geometry_tables,
-        feature_affected_ids,
-        feature_replay_affected_ids,
-        feature_loop_restore_directions,
-        feature_revolution_extents,
-        feature_definitions,
-        feature_section_transforms,
-        feature_operation_states,
-        feature_operations,
-        feature_reference_names,
-        feature_entities,
-        feature_entity_references,
-        feature_entity_tables,
-        declared_body_count,
-        first_quilt_ptr,
+        framing: FramingScan {
+            data,
+            version_line,
+            model_name,
+            model_name_offset,
+            sections,
+            expanded_sections,
+            layout,
+            census,
+            principal_unit,
+            family_table,
+            declared_body_count,
+            first_quilt_ptr,
+        },
+        primitives: PrimitiveScan {
+            double_xar_tables,
+            scalar_arrays: primitive_scalar_arrays,
+            triangle_strips: primitive_triangle_strips,
+        },
+        references: ReferenceScan {
+            lines: reference_lines,
+            circles: reference_circles,
+            conics: reference_conics,
+            ellipses: reference_ellipses,
+        },
+        surfaces: SurfaceScan {
+            rows: surface_rows,
+            nonvisible_rows: nonvisible_surface_rows,
+            cross_section_rows: cross_section_surface_rows,
+            parameters: surface_parameters,
+            nonvisible_parameters: nonvisible_surface_parameters,
+            cross_section_parameters: cross_section_surface_parameters,
+            prototypes: surface_prototypes,
+            prototype_records: surface_prototype_records,
+            nonvisible_prototype_records: nonvisible_surface_prototype_records,
+        },
+        planes: PlaneScan {
+            local_systems: plane_local_systems,
+            cross_section_local_systems: cross_section_plane_local_systems,
+            envelopes: plane_envelopes,
+            cross_section_envelopes: cross_section_plane_envelopes,
+            outlines: outline_planes,
+            positional_frames: positional_frame_planes,
+            cross_section_outlines: cross_section_outline_planes,
+            datums: datum_planes,
+        },
+        curves: CurveScan {
+            tabulated_cylinder_replays: tabulated_cylinder_curve_replays,
+            prototypes: curve_prototypes,
+            nonvisible_prototypes: nonvisible_curve_prototypes,
+            cross_section_prototypes: cross_section_curve_prototypes,
+            expressions: curve_expressions,
+            parameters: curve_parameters,
+            nonvisible_parameters: nonvisible_curve_parameters,
+            pcurves,
+            fc_coordinates: fc_curve_coordinates,
+            fc05_circles,
+            fc05_cylinder_cap_pairs,
+            prototype_pcurves,
+            prototype_topology: curve_prototype_topology,
+            bound_prototype_pcurves,
+            topology_rows: curve_topology_rows,
+            nonvisible_topology_rows: nonvisible_curve_topology_rows,
+            cross_section_rows: cross_section_curve_rows,
+        },
+        topology: TopologyScan {
+            half_edges,
+            loops,
+            face_components,
+            vertices: topological_vertices,
+            half_edge_vertex_incidence,
+        },
+        features: FeatureScan {
+            ids: feature_ids,
+            rows: feature_rows,
+            depdb_recipe_rows,
+            choices: feature_choices,
+            choice_fields: feature_choice_fields,
+            geometry_tables: feature_geometry_tables,
+            affected_ids: feature_affected_ids,
+            replay_affected_ids: feature_replay_affected_ids,
+            loop_restore_directions: feature_loop_restore_directions,
+            revolution_extents: feature_revolution_extents,
+            definitions: feature_definitions,
+            section_transforms: feature_section_transforms,
+            operation_states: feature_operation_states,
+            operations: feature_operations,
+            reference_names: feature_reference_names,
+            entities: feature_entities,
+            entity_references: feature_entity_references,
+            entity_tables: feature_entity_tables,
+        },
     }
 }
 
 /// Return whether a thumbnail section contains a JPEG start marker.
 pub fn has_thumbnail(scan: &ContainerScan) -> bool {
-    scan.sections
+    scan.framing
+        .sections
         .iter()
         .filter(|s| s.role == role::THUMBNAIL)
         .any(|s| {
-            let region = &scan.data[s.offset..(s.offset + s.length).min(scan.data.len())];
+            let region =
+                &scan.framing.data[s.offset..(s.offset + s.length).min(scan.framing.data.len())];
             find(region, JPEG_MAGIC, 0).is_some()
         })
 }
@@ -1932,6 +2003,7 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
 /// Build a codec-neutral summary of the sections, layout, and namespace census.
 pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let entries = scan
+        .framing
         .sections
         .iter()
         .map(|s| {
@@ -1940,7 +2012,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             if s.raw_name != s.name {
                 attributes.insert("raw_name".to_string(), s.raw_name.clone());
             }
-            let expanded = scan.expanded_sections.iter().find(|expanded| {
+            let expanded = scan.framing.expanded_sections.iter().find(|expanded| {
                 expanded.name == s.name
                     && expanded.source_offset > s.offset
                     && expanded.source_offset < s.offset.saturating_add(s.length)
@@ -1965,18 +2037,21 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         .collect();
 
     let mut notes = vec![
-        format!("PSB container: {}", scan.version_line),
+        format!("PSB container: {}", scan.framing.version_line),
         format!(
             "layout: {}; {} section(s) enumerated",
-            scan.layout.token(),
-            scan.sections.len()
+            scan.framing.layout.token(),
+            scan.framing.sections.len()
         ),
     ];
-    if let Some(name) = &scan.model_name {
+    if let Some(name) = &scan.framing.model_name {
         notes.push(format!("native model name: {name}"));
     }
 
-    match (scan.census.srf_array_count, scan.census.crv_array_count) {
+    match (
+        scan.framing.census.srf_array_count,
+        scan.framing.census.crv_array_count,
+    ) {
         (None, None) => {
             notes.push("no VisibGeom srf_array/crv_array count header was located".to_string());
         }
@@ -1993,10 +2068,10 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     if has_thumbnail(scan) {
         notes.push("THMB_IMG_MAIN carries a JPEG preview (excluded from geometry)".to_string());
     }
-    if !scan.expanded_sections.is_empty() {
+    if !scan.framing.expanded_sections.is_empty() {
         notes.push(format!(
             "expanded {} Unix-compress section payload(s) with TOC-validated output lengths",
-            scan.expanded_sections.len()
+            scan.framing.expanded_sections.len()
         ));
     }
 
