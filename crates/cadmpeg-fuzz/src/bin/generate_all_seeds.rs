@@ -1173,11 +1173,11 @@ fn generate_ir_seeds() {
         .to_canonical_json()
         .unwrap();
     let canonical = [
-        ("minimal_v8.json", minimal.as_bytes()),
-        ("unit_cube_v8.json", cube.as_bytes()),
-        ("directed_subd_sum_v8.json", directed_subd_sum.as_bytes()),
+        ("minimal_v13.json", minimal.as_bytes()),
+        ("unit_cube_v13.json", cube.as_bytes()),
+        ("directed_subd_sum_v13.json", directed_subd_sum.as_bytes()),
     ];
-    let valid_v0 = minimal.replacen(r#""ir_version": "8""#, r#""ir_version": "0""#, 1);
+    let valid_v0 = minimal.replacen(r#""ir_version": "54""#, r#""ir_version": "0""#, 1);
 
     let from_json = Path::new("seeds/ir_from_json");
     replace_seed_directory(from_json);
@@ -1186,6 +1186,17 @@ fn generate_ir_seeds() {
         println!("  ir/{name} ({} bytes)", data.len());
     }
     fs::write(from_json.join("valid_v0_rejected.json"), valid_v0).unwrap();
+
+    let migrate = Path::new("seeds/ir_migrate_json");
+    replace_seed_directory(migrate);
+    for (name, data) in &canonical {
+        let legacy = std::str::from_utf8(data).unwrap().replacen(
+            r#""ir_version": "54""#,
+            r#""ir_version": "53""#,
+            1,
+        );
+        fs::write(migrate.join(name.replace("_v13.json", "_v12.json")), legacy).unwrap();
+    }
 
     for target in ["ir_validate", "ir_canonical_roundtrip", "step_writer"] {
         let dir = Path::new("seeds").join(target);

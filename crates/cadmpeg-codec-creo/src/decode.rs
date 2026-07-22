@@ -340,6 +340,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: Point3::new(position[0], position[1], position[2]),
+            source_object: None,
         });
         ir.model.vertices.push(Vertex {
             id: vertex,
@@ -504,7 +505,9 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
             ir.model.loops.push(IrLoop {
                 id: loop_id.clone(),
                 face,
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: coedge_ids.clone(),
+                vertex_uses: Vec::new(),
             });
             for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
                 let id = coedge_ids[index].clone();
@@ -540,8 +543,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                     } else {
                         Sense::Reversed
                     },
-                    pcurve: None,
-                    pcurve_parameter_range: None,
+                    pcurves: Vec::new(),
                     use_curve: None,
                     use_curve_parameter_range: None,
                 });
@@ -561,15 +563,27 @@ pub fn decode(
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(reader)?;
 
-    let ir = build_ir(&scan)?;
+    let (mut ir, annotations, unknowns) = build_ir(&scan)?;
     let report = build_report(&scan, options.container_only);
-    Ok(DecodeResult::new(ir, report))
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..cadmpeg_ir::SourceFidelity::default()
+    };
+    source_fidelity.attach_native_unknown_records(&mut ir, "creo", &unknowns)?;
+    Ok(DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        source_fidelity,
+    ))
 }
 
 /// Build source metadata, preserved geometry records, and datum-plane surfaces.
-fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
+fn build_ir(
+    scan: &ContainerScan,
+) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
+    let mut unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
 
     for section in scan.sections.iter().filter(|s| s.role == role::GEOMETRY) {
@@ -584,17 +598,14 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             "psb_geometry_section",
             Exactness::Unknown,
         );
-        ir.push_native_unknown(
-            "creo",
-            UnknownRecord {
-                id,
-                offset: section.offset as u64,
-                byte_len: bytes.len() as u64,
-                sha256: sha256_hex(bytes),
-                data: Some(bytes.to_vec()),
-                links: Vec::new(),
-            },
-        )?;
+        unknowns.push(UnknownRecord {
+            id,
+            offset: section.offset as u64,
+            byte_len: bytes.len() as u64,
+            sha256: sha256_hex(bytes),
+            data: Some(bytes.to_vec()),
+            links: Vec::new(),
+        });
     }
     for plane in &scan.datum_planes {
         let id = SurfaceId(format!("creo:actdatums:surface#{}", plane.id));
@@ -789,8 +800,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("sketches", &sketches)?;
     }
-    ir.annotations = annotations.build();
-    Ok(ir)
+    Ok((ir, annotations.build(), unknowns))
 }
 
 fn annotate(

@@ -28,8 +28,12 @@ mod tests {
     #[test]
     fn inflates_complete_member_with_trailing_bytes() {
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(b"parasolid").unwrap();
-        let mut compressed = encoder.finish().unwrap();
+        encoder
+            .write_all(b"parasolid")
+            .expect("writing to an in-memory zlib encoder succeeds");
+        let mut compressed = encoder
+            .finish()
+            .expect("finishing an in-memory zlib encoder succeeds");
         compressed.extend_from_slice(b"next stream");
         assert_eq!(
             inflate_zlib_prefix(&compressed).as_deref(),

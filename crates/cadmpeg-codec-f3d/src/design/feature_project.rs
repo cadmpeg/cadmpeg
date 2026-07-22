@@ -1213,6 +1213,10 @@ pub(crate) fn project_shell(
         removed_faces,
         thickness: Some(Length(*thickness * 10.0)),
         outward: Some(*outward),
+        mode: None,
+        join: None,
+        resolve_intersections: None,
+        allow_self_intersections: None,
     })
 }
 
@@ -1941,7 +1945,10 @@ fn project_chamfer(
             }
         })
         .collect();
-    Some(FeatureDefinition::Chamfer { groups })
+    Some(FeatureDefinition::Chamfer {
+        groups,
+        flip_direction: false,
+    })
 }
 
 fn project_fixed_chamfer(
@@ -1979,6 +1986,7 @@ fn project_fixed_chamfer(
                 distance: Length(fixed.distance * 10.0),
             },
         }],
+        flip_direction: false,
     })
 }
 
@@ -2056,6 +2064,11 @@ pub(crate) fn project_fixed_revolve(
             extent: Some(Extent::Angle {
                 angle: Angle(*angle),
             }),
+            axis_reference: None,
+            solid: None,
+            face_maker_class: None,
+            fuse_order: None,
+            allow_multi_profile_faces: None,
         },
         op: fixed_boolean_operation(*operation),
     })
@@ -2205,6 +2218,11 @@ pub(crate) fn project_fixed_loft(
         centerline,
         op: fixed_boolean_operation(*operation),
         closed: false,
+        solid: true,
+        ruled: false,
+        max_degree: None,
+        check_compatibility: None,
+        allow_multi_profile_faces: None,
     })
 }
 
@@ -2256,7 +2274,8 @@ pub(crate) fn loft_path_from_edge_selection(
             edges,
             native,
         },
-        EdgeSelection::Unresolved
+        EdgeSelection::All
+        | EdgeSelection::Unresolved
         | EdgeSelection::Native(_)
         | EdgeSelection::HistoricalPartial { .. } => PathRef::Native(native.to_owned()),
     }
@@ -2298,12 +2317,19 @@ fn project_fixed_sweep(
     }
     Some(FeatureDefinition::Sweep {
         profile: Some(ProfileRef::Native(profile.id.clone())),
+        sections: Vec::new(),
         path: Some(PathRef::Native(path.id.clone())),
         mode: SweepMode::Solid {
             op: fixed_boolean_operation(*operation),
         },
+        orientation: None,
+        transition: None,
+        transformation: None,
+        path_tangent: false,
+        linearize: false,
         twist: (values[4] != 0.0).then_some(Angle(values[4])),
         scale: None,
+        allow_multi_profile_faces: None,
     })
 }
 
@@ -2718,6 +2744,15 @@ pub(crate) fn project_extrude(
         op,
         draft,
         second_draft,
+        reverse_draft: None,
+        direction_source: None,
+        solid: None,
+        face_maker: None,
+        inner_wire_taper: None,
+        first_offset: None,
+        second_offset: None,
+        length_along_profile_normal: None,
+        allow_multi_profile_faces: None,
     })
 }
 

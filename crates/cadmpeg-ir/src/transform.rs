@@ -26,6 +26,11 @@ impl Transform {
             ],
         }
     }
+
+    /// Whether every matrix coefficient is finite.
+    pub fn is_finite(&self) -> bool {
+        self.rows.iter().flatten().all(|value| value.is_finite())
+    }
 }
 
 impl Default for Transform {

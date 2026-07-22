@@ -5,7 +5,7 @@
 #![allow(clippy::unwrap_used)]
 
 use std::fs;
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 
 use assert_cmd::Command;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -17,6 +17,56 @@ fn fixture(dir: &std::path::Path, name: &str, ir: &cadmpeg_ir::CadIr) -> std::pa
     let path = dir.join(name);
     fs::write(&path, ir.to_canonical_json().unwrap()).unwrap();
     path
+}
+
+fn minimal_fcstd(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let path = dir.join(name);
+    let file = fs::File::create(&path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    zip.start_file(
+        "Document.xml",
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+    )
+    .unwrap();
+    zip.write_all(
+        b"<Document SchemaVersion=\"4\" FileVersion=\"1\" ProgramVersion=\"1.0\"><Object/></Document>",
+    )
+    .unwrap();
+    zip.finish().unwrap();
+    path
+}
+
+#[test]
+fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
+    let dir = tempdir().unwrap();
+    let input = minimal_fcstd(dir.path(), "document.FCStd");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["inspect", input.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("format: fcstd (detected high)")
+                .and(predicate::str::contains("SchemaVersion=4")),
+        );
+
+    for forced in [false, true] {
+        let mut command = Command::cargo_bin("cadmpeg").unwrap();
+        command.args(["decode", input.to_str().unwrap(), "--container-only"]);
+        if forced {
+            command.args(["--input-format", "fcstd"]);
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["source"]["format"], "fcstd");
+        assert_eq!(value["source"]["attributes"]["schema_version"], "4");
+    }
 }
 
 fn geometryless_creo(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
@@ -192,11 +242,21 @@ fn step_artifact_starts_with_step_header() {
     let input = fixture(dir.path(), "cube.json", &unit_cube());
     let output = Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["convert", input.to_str().unwrap(), "-f", "step"])
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-f",
+            "step",
+            "--step-target",
+            "ap242e3",
+            "--reject-step-losses",
+        ])
         .output()
         .unwrap();
     assert!(output.status.success());
     assert!(output.stdout.starts_with(b"ISO-10303-21"));
+    assert!(String::from_utf8_lossy(&output.stdout)
+        .contains("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }"));
     assert!(!String::from_utf8_lossy(&output.stdout).contains("validation:"));
 }
 
@@ -234,6 +294,7 @@ fn source_less_ir_exports_to_decodable_rhino() {
     ir.model.points.push(cadmpeg_ir::topology::Point {
         id: cadmpeg_ir::ids::PointId("cadir:model:point#cli".into()),
         position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+        source_object: None,
     });
     let input = fixture(dir.path(), "point.cadir.json", &ir);
     let output = dir.path().join("point.3dm");
@@ -269,6 +330,7 @@ fn rhino_output_version_is_selected_explicitly() {
     ir.model.points.push(cadmpeg_ir::topology::Point {
         id: cadmpeg_ir::ids::PointId("cadir:model:point#version".into()),
         position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+        source_object: None,
     });
     let input = fixture(dir.path(), "point.cadir.json", &ir);
     let output = dir.path().join("point.3dm");
@@ -436,7 +498,7 @@ fn garbage_reports_supported_formats() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM",
+            "supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP",
         ));
 }
 
@@ -669,7 +731,7 @@ fn inspect_garbage_reports_rhino_among_supported_formats() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM",
+            "supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP",
         ));
 }
 

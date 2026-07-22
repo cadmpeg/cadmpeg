@@ -461,6 +461,15 @@ fn project_all_dimension_constraints(
                 id: constraint_id,
                 sketch,
                 definition,
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
                 native_ref: Some(pair.id.clone()),
             })
         })
@@ -497,6 +506,15 @@ fn project_all_dimension_constraints(
                 id: neutral_sketch_constraint_id(&group.id, group.record_index),
                 sketch,
                 definition,
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
                 native_ref: Some(group.id.clone()),
             })
         }))
@@ -556,6 +574,15 @@ fn project_all_dimension_constraints(
                 id: constraint_id,
                 sketch,
                 definition,
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
                 native_ref: Some(frame.id.clone()),
             })
         }))
@@ -584,6 +611,15 @@ fn project_all_dimension_constraints(
                             id: constraint_id,
                             sketch,
                             definition,
+                            name: None,
+                            driving: None,
+                            active: None,
+                            virtual_space: None,
+                            visible: None,
+                            orientation: None,
+                            label_distance: None,
+                            label_position: None,
+                            metadata: None,
                             native_ref: Some(pair.id.clone()),
                         });
                     }
@@ -621,6 +657,15 @@ fn project_all_dimension_constraints(
                     parameter: Some(parameter_id),
                     operands,
                 },
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
                 native_ref: Some(pair.id.clone()),
             })
         }))
@@ -708,6 +753,15 @@ fn project_all_dimension_constraints(
                 id: constraint_id,
                 sketch,
                 definition,
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
                 native_ref: Some(companion.id.clone()),
             })
         },
@@ -782,6 +836,15 @@ fn project_all_dimension_constraints(
                     native_ref: Some(companion.id.clone()),
                 }],
             },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
             native_ref: Some(companion.id.clone()),
         })
     }));
@@ -1605,10 +1668,13 @@ pub(crate) fn exact_coincident_loci(
             }
             Geometry::Circle { center, .. }
             | Geometry::Arc { center, .. }
-            | Geometry::Ellipse { center, .. } => {
+            | Geometry::Ellipse { center, .. }
+            | Geometry::Hyperbola { center, .. } => {
                 loci.push((SketchLocus::Center(entity.id.clone()), *center));
             }
             Geometry::Line { .. }
+            | Geometry::ReferenceLine { .. }
+            | Geometry::Parabola { .. }
             | Geometry::Nurbs { .. }
             | Geometry::Text { .. }
             | Geometry::Native { .. } => {}
@@ -2120,6 +2186,18 @@ pub(crate) fn point_lies_on_sketch_geometry(
             (-1.0e-9..=1.0 + 1.0e-9).contains(&parameter)
                 && cross.abs() <= 1.0e-9 * (1.0 + length_squared.sqrt())
         }
+        SketchGeometry::ReferenceLine { origin, direction } => {
+            let length = direction.u.hypot(direction.v);
+            if length <= 1.0e-9 {
+                return false;
+            }
+            let relative = Point2::new(point.u - origin.u, point.v - origin.v);
+            relative
+                .u
+                .mul_add(direction.v, -relative.v * direction.u)
+                .abs()
+                <= 1.0e-9 * (1.0 + length)
+        }
         SketchGeometry::Circle { center, radius } => {
             close((point.u - center.u).hypot(point.v - center.v), radius.0)
         }
@@ -2156,6 +2234,55 @@ pub(crate) fn point_lies_on_sketch_geometry(
             close(x.mul_add(x, y * y), 1.0)
                 && match (start_angle, end_angle) {
                     (Some(start), Some(end)) => angle_in_sweep(y.atan2(x), start.0, end.0, 1.0e-9),
+                    (None, None) => true,
+                    _ => false,
+                }
+        }
+        SketchGeometry::Hyperbola {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            start_parameter,
+            end_parameter,
+        } => {
+            if major_radius.0 <= 0.0 || minor_radius.0 <= 0.0 {
+                return false;
+            }
+            let relative = Point2::new(point.u - center.u, point.v - center.v);
+            let (sin, cos) = major_angle.0.sin_cos();
+            let x = relative.u.mul_add(cos, relative.v * sin) / major_radius.0;
+            let y = (-relative.u).mul_add(sin, relative.v * cos) / minor_radius.0;
+            let parameter = y.asinh();
+            close(x, parameter.cosh())
+                && match (start_parameter, end_parameter) {
+                    (Some(start), Some(end)) => {
+                        parameter >= *start - 1.0e-9 && parameter <= *end + 1.0e-9
+                    }
+                    (None, None) => true,
+                    _ => false,
+                }
+        }
+        SketchGeometry::Parabola {
+            vertex,
+            axis_angle,
+            focal_length,
+            start_parameter,
+            end_parameter,
+        } => {
+            if focal_length.0 <= 0.0 {
+                return false;
+            }
+            let relative = Point2::new(point.u - vertex.u, point.v - vertex.v);
+            let (sin, cos) = axis_angle.0.sin_cos();
+            let x = relative.u.mul_add(cos, relative.v * sin);
+            let y = (-relative.u).mul_add(sin, relative.v * cos);
+            let parameter = y / (2.0 * focal_length.0);
+            close(x, focal_length.0 * parameter * parameter)
+                && match (start_parameter, end_parameter) {
+                    (Some(start), Some(end)) => {
+                        parameter >= *start - 1.0e-9 && parameter <= *end + 1.0e-9
+                    }
                     (None, None) => true,
                     _ => false,
                 }

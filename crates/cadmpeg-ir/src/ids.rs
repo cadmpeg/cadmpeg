@@ -126,3 +126,19 @@ id_type!(
     /// Identifies a linked [`crate::attributes::SourceAttribute`] record.
     AttributeId
 );
+id_type!(
+    /// Identifies a reusable [`crate::product::Product`] prototype.
+    ProductId
+);
+id_type!(
+    /// Identifies a placed [`crate::product::ProductOccurrence`].
+    OccurrenceId
+);
+id_type!(
+    /// Identifies a document-level [`crate::pmi::PmiAnnotation`].
+    PmiId
+);
+id_type!(
+    /// Identifies a [`crate::presentation::PresentationLayer`].
+    LayerId
+);

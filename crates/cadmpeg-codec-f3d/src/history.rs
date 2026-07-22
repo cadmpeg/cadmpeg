@@ -3790,8 +3790,8 @@ fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology
             .map(|coedge| {
                 Some(AsmHistoricalOptionalCarrierBinding {
                     entity: entity_ref(&coedge.id.0)?,
-                    carrier: match &coedge.pcurve {
-                        Some(pcurve) => Some(entity_ref(&pcurve.0)?),
+                    carrier: match coedge.pcurves.first() {
+                        Some(use_) => Some(entity_ref(&use_.pcurve.0)?),
                         None => None,
                     },
                 })
@@ -4506,6 +4506,8 @@ mod tests {
             id: LoopId(id(5)),
             face: FaceId(id(4)),
             coedges: vec![CoedgeId(id(6))],
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+            vertex_uses: Vec::new(),
         });
         brep.coedges.push(Coedge {
             id: CoedgeId(id(6)),
@@ -4515,8 +4517,7 @@ mod tests {
             previous: CoedgeId(id(6)),
             radial_next: CoedgeId(id(6)),
             sense: Sense::Forward,
-            pcurve: None,
-            pcurve_parameter_range: None,
+            pcurves: Vec::new(),
             use_curve: None,
             use_curve_parameter_range: None,
         });

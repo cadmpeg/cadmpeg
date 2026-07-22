@@ -187,11 +187,13 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
     let vertices = vertex_positions(ir);
 
     for coedge in &ir.model.coedges {
-        let Some(pcurve) = coedge
-            .pcurve
-            .as_ref()
-            .and_then(|id| pcurves.get(id.0.as_str()))
-        else {
+        let Some((first_use, last_use)) = coedge.pcurves.first().zip(coedge.pcurves.last()) else {
+            continue;
+        };
+        let (Some(first), Some(last)) = (
+            pcurves.get(first_use.pcurve.0.as_str()),
+            pcurves.get(last_use.pcurve.0.as_str()),
+        ) else {
             continue;
         };
         let Some(face) = loops
@@ -219,20 +221,35 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         ) else {
             continue;
         };
-        let Some(parameter_ranges) = pcurve_parameter_ranges(
-            &pcurve.geometry,
-            coedge.pcurve_parameter_range,
-            edge.param_range,
-        ) else {
+        // A single parameter-space image is checked over its candidate
+        // intervals, honoring an opposite-sign parameterization and a stored
+        // range. Multiple images are checked from the first image's start
+        // extreme to the last image's end extreme.
+        let intervals = if coedge.pcurves.len() == 1 {
+            pcurve_parameter_ranges(&first.geometry, first_use.parameter_range, edge.param_range)
+        } else {
+            match (
+                first_use
+                    .parameter_range
+                    .or_else(|| pcurve_parameter_extremes(&first.geometry)),
+                last_use
+                    .parameter_range
+                    .or_else(|| pcurve_parameter_extremes(&last.geometry)),
+            ) {
+                (Some([t0, _]), Some([_, t1])) => Some(vec![[t0, t1]]),
+                _ => None,
+            }
+        };
+        let Some(intervals) = intervals else {
             continue;
         };
         let bound = allowance(&[edge.tolerance, *start_tol, *end_tol, face.tolerance]);
-        let Some(mismatch) = parameter_ranges
+        let Some(mismatch) = intervals
             .into_iter()
             .filter_map(|[t0, t1]| {
                 let (uv0, uv1) = (
-                    pcurve_uv(&pcurve.geometry, t0)?,
-                    pcurve_uv(&pcurve.geometry, t1)?,
+                    pcurve_uv(&first.geometry, t0)?,
+                    pcurve_uv(&last.geometry, t1)?,
                 );
                 let (p0, p1) = (
                     surface_point(geometry, uv0.u, uv0.v)?,
@@ -261,23 +278,44 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
 }
 
 /// Candidate pcurve intervals for an edge. Native pcurves can parameterize the
-/// same edge with the opposite sign. A NURBS pcurve's full knot domain remains
-/// its intrinsic interval; an unbounded line without an edge interval is
-/// skipped.
+/// same edge with the opposite sign, and a stored use interval can wrap a
+/// periodic pcurve's seam, so no single interval is authoritative. The stored
+/// range, the edge interval (in either sign), and the pcurve's intrinsic
+/// parameter extremes are all candidates; the check takes the closest image.
+/// An unbounded line without a stored range or edge interval is skipped.
 fn pcurve_parameter_ranges(
     geometry: &PcurveGeometry,
     pcurve_range: Option<[f64; 2]>,
     edge_range: Option<[f64; 2]>,
 ) -> Option<Vec<[f64; 2]>> {
+    let mut ranges = Vec::with_capacity(4);
     if let Some(range) = pcurve_range {
-        return Some(vec![range]);
+        ranges.push(range);
     }
-    let mut ranges = Vec::with_capacity(3);
     if let Some([start, end]) = edge_range {
         ranges.extend([[start, end], [-start, -end]]);
     }
-    if let PcurveGeometry::Nurbs { knots, .. } = geometry {
-        ranges.push([*knots.first()?, *knots.last()?]);
+    if let Some(extremes) = pcurve_parameter_extremes(geometry) {
+        ranges.push(extremes);
     }
     (!ranges.is_empty()).then_some(ranges)
+}
+
+/// The parameter extremes over which a pcurve is checked: the NURBS knot
+/// extremes, a trimmed range, or an offset basis's extremes. A line, conic,
+/// parabola, or hyperbola pcurve without a stored range has no intrinsic extent
+/// and is skipped.
+fn pcurve_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        PcurveGeometry::Nurbs { knots, .. } => Some([*knots.first()?, *knots.last()?]),
+        PcurveGeometry::Trimmed {
+            parameter_range, ..
+        } => Some(*parameter_range),
+        PcurveGeometry::Offset { basis, .. } => pcurve_parameter_extremes(basis),
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. } => None,
+    }
 }

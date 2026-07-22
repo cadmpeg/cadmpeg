@@ -288,6 +288,14 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     finding(findings, Check::Bounds, id, "sketch line is not finite");
                 }
             }
+            SketchGeometry::ReferenceLine { origin, direction } => {
+                if !finite2(*origin)
+                    || !finite2(*direction)
+                    || direction.u.hypot(direction.v) <= f64::EPSILON
+                {
+                    finding(findings, Check::Bounds, id, "invalid sketch reference line");
+                }
+            }
             SketchGeometry::Circle { center, radius }
             | SketchGeometry::Arc { center, radius, .. } => {
                 if !finite2(*center) || nonpositive(radius.0) {
@@ -341,6 +349,49 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Check::ParameterDomain,
                         id,
                         "invalid elliptical arc parameters",
+                    );
+                }
+            }
+            SketchGeometry::Hyperbola {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                start_parameter,
+                end_parameter,
+            } => {
+                if !finite2(*center)
+                    || !major_angle.0.is_finite()
+                    || nonpositive(major_radius.0)
+                    || nonpositive(minor_radius.0)
+                {
+                    finding(findings, Check::Bounds, id, "invalid sketch hyperbola");
+                }
+                if invalid_optional_parameter_pair(*start_parameter, *end_parameter) {
+                    finding(
+                        findings,
+                        Check::ParameterDomain,
+                        id,
+                        "invalid hyperbolic arc parameters",
+                    );
+                }
+            }
+            SketchGeometry::Parabola {
+                vertex,
+                axis_angle,
+                focal_length,
+                start_parameter,
+                end_parameter,
+            } => {
+                if !finite2(*vertex) || !axis_angle.0.is_finite() || nonpositive(focal_length.0) {
+                    finding(findings, Check::Bounds, id, "invalid sketch parabola");
+                }
+                if invalid_optional_parameter_pair(*start_parameter, *end_parameter) {
+                    finding(
+                        findings,
+                        Check::ParameterDomain,
+                        id,
+                        "invalid parabolic arc parameters",
                     );
                 }
             }
@@ -855,6 +906,19 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|entity| (&entity.id, &entity.geometry))
         .collect::<HashMap<_, _>>();
     for constraint in &ir.model.sketch_constraints {
+        if constraint
+            .label_distance
+            .iter()
+            .chain(&constraint.label_position)
+            .any(|value| !value.is_finite())
+        {
+            finding(
+                findings,
+                Check::Bounds,
+                &constraint.id.0,
+                "sketch constraint label placement is not finite",
+            );
+        }
         let valid = match &constraint.definition {
             Constraint::Coincident { entities } => entities.len() >= 2,
             Constraint::SplineGroup { entities } => entities.len() >= 2,
@@ -1006,6 +1070,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && distance.0 > 0.0
                     && valid_parameter
             }
+            Constraint::Group { elements } | Constraint::Text { elements, .. } => {
+                !elements.is_empty()
+            }
             Constraint::Native {
                 native_kind,
                 entities,
@@ -1032,6 +1099,19 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 &constraint.id.0,
                 "invalid sketch constraint arity",
             );
+        }
+        if let Constraint::PointOnObject { point: _, entity } = &constraint.definition {
+            if geometry
+                .get(entity)
+                .is_some_and(|geometry| matches!(geometry, SketchGeometry::Point { .. }))
+            {
+                finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    &constraint.id.0,
+                    "point-on-object support is itself a point",
+                );
+            }
         }
         for locus in constraint_loci(&constraint.definition) {
             let Some(entity_geometry) = geometry.get(locus_entity(locus)) else {
@@ -1086,6 +1166,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
     }
+}
+
+fn invalid_optional_parameter_pair(start: Option<f64>, end: Option<f64>) -> bool {
+    start.is_some() != end.is_some() || start.into_iter().chain(end).any(|value| !value.is_finite())
 }
 
 fn distance2(left: crate::math::Point2, right: crate::math::Point2) -> f64 {
@@ -1178,7 +1262,7 @@ fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
 fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
     match definition {
         Constraint::CoincidentLoci { loci } => loci.iter().collect(),
-        Constraint::Midpoint { point, .. } => vec![point],
+        Constraint::Midpoint { point, .. } | Constraint::PointOnObject { point, .. } => vec![point],
         Constraint::Symmetric { first, second, .. } => vec![first, second],
         Constraint::DistanceLoci { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
@@ -1195,6 +1279,14 @@ fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
                 [first, second]
             })
             .collect(),
+        Constraint::SnellsLaw {
+            incident,
+            refracted,
+            ..
+        } => vec![incident, refracted],
+        Constraint::Group { elements } | Constraint::Text { elements, .. } => {
+            elements.iter().collect()
+        }
         _ => Vec::new(),
     }
 }

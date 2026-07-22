@@ -350,7 +350,13 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
             .coedges
             .iter()
             .filter(|coedge| coedges.contains(&coedge.id.0))
-            .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.clone()))
+            .filter_map(|coedge| {
+                coedge
+                    .pcurves
+                    .first()
+                    .map(|use_| &use_.pcurve)
+                    .map(|id| id.0.clone())
+            })
             .collect::<BTreeSet<_>>();
         let vertices = model
             .edges
@@ -2172,12 +2178,16 @@ fn brep_c2_curve(
 ) -> Result<([u8; 16], Vec<u8>), CodecError> {
     let generated =
         generated_projected_brep_c2_curve(model, edge, coedge.sense, origin, u_axis, v_axis)?;
-    if coedge.pcurve.is_none() {
+    if coedge.pcurves.is_empty() {
         return Ok(generated);
     }
     let explicit = explicit_brep_c2_curve(model, edge, coedge)?;
     if explicit != generated {
-        let id = coedge.pcurve.as_ref().expect("explicit pcurve");
+        let id = coedge
+            .pcurves
+            .first()
+            .map(|use_| &use_.pcurve)
+            .expect("explicit pcurve");
         return Err(CodecError::Malformed(format!(
             "pcurve {} does not exactly match its directed planar C3 projection",
             id.0
@@ -2191,9 +2201,13 @@ fn explicit_brep_c2_curve(
     edge: &cadmpeg_ir::topology::Edge,
     coedge: &cadmpeg_ir::topology::Coedge,
 ) -> Result<([u8; 16], Vec<u8>), CodecError> {
-    let pcurve_id = coedge.pcurve.as_ref().ok_or_else(|| {
-        CodecError::NotImplemented(format!("coedge {} has no explicit pcurve", coedge.id.0))
-    })?;
+    let pcurve_id = coedge
+        .pcurves
+        .first()
+        .map(|use_| &use_.pcurve)
+        .ok_or_else(|| {
+            CodecError::NotImplemented(format!("coedge {} has no explicit pcurve", coedge.id.0))
+        })?;
     let pcurve = model
         .pcurves
         .iter()
@@ -2267,6 +2281,10 @@ fn explicit_brep_c2_curve(
             }
             Ok((NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)))
         }
+        _ => Err(CodecError::NotImplemented(format!(
+            "pcurve {} geometry is not writable as Rhino Brep trim geometry",
+            pcurve.id.0
+        ))),
     }
 }
 
@@ -2276,7 +2294,8 @@ fn validate_brep_pcurve_ownership(
 ) -> Result<(), CodecError> {
     let mut owned = std::collections::BTreeSet::new();
     for coedge in coedges {
-        if let Some(id) = &coedge.pcurve {
+        for pcurve_use in &coedge.pcurves {
+            let id = &pcurve_use.pcurve;
             if !owned.insert(id.0.clone()) {
                 return Err(CodecError::NotImplemented(format!(
                     "pcurve {} is shared by multiple coedges",
@@ -2301,8 +2320,9 @@ fn brep_pcurve_fit_tolerance(
     coedge: &cadmpeg_ir::topology::Coedge,
 ) -> f64 {
     coedge
-        .pcurve
-        .as_ref()
+        .pcurves
+        .first()
+        .map(|pcurve_use| &pcurve_use.pcurve)
         .and_then(|id| model.pcurves.iter().find(|pcurve| pcurve.id == *id))
         .and_then(|pcurve| pcurve.fit_tolerance)
         .unwrap_or(0.0)
@@ -2330,7 +2350,11 @@ fn validate_nurbs_trim_loop(
     ];
     for (edge, coedge) in edges.iter().zip(coedges) {
         explicit_brep_c2_curve(model, edge, coedge)?;
-        let pcurve_id = coedge.pcurve.as_ref().expect("explicit NURBS-face pcurve");
+        let pcurve_id = coedge
+            .pcurves
+            .first()
+            .map(|use_| &use_.pcurve)
+            .expect("explicit NURBS-face pcurve");
         let pcurve = model
             .pcurves
             .iter()
@@ -2361,6 +2385,12 @@ fn validate_nurbs_trim_loop(
             cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } => control_points
                 .iter()
                 .all(|point| inside_domain(point.u, point.v)),
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "pcurve {} geometry is not writable on a Rhino NURBS face",
+                    pcurve.id.0
+                )))
+            }
         };
         if !control_hull_inside {
             return Err(CodecError::Malformed(format!(
@@ -3462,6 +3492,7 @@ mod tests {
         ir.model.points.push(Point {
             id: PointId("point:a".into()),
             position: Point3::new(1.25, -2.5, 3.75),
+            source_object: None,
         });
 
         for (version, value) in [
@@ -3491,6 +3522,7 @@ mod tests {
         ir.model.points.push(Point {
             id: PointId("point:coarse-tolerance".into()),
             position: Point3::new(1.0, 2.0, 3.0),
+            source_object: None,
         });
 
         let mut bytes = Vec::new();
@@ -3710,6 +3742,8 @@ mod tests {
             .push(cadmpeg_ir::tessellation::Tessellation {
                 id: "cadir:model:tessellation#mesh".into(),
                 body: None,
+                faces: Vec::new(),
+                chordal_deflection: None,
                 source_object: None,
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),
@@ -3757,6 +3791,8 @@ mod tests {
             .push(cadmpeg_ir::tessellation::Tessellation {
                 id: "cadir:model:tessellation#precision".into(),
                 body: None,
+                faces: Vec::new(),
+                chordal_deflection: None,
                 source_object: None,
                 vertices: vec![
                     Point3::new(0.1, 0.0, 0.0),
@@ -3818,6 +3854,8 @@ mod tests {
             .push(cadmpeg_ir::tessellation::Tessellation {
                 id: "cadir:model:tessellation#channels".into(),
                 body: None,
+                faces: Vec::new(),
+                chordal_deflection: None,
                 source_object: None,
                 vertices,
                 triangles: vec![[0, 1, 2]],
@@ -3852,6 +3890,8 @@ mod tests {
             .push(cadmpeg_ir::tessellation::Tessellation {
                 id: "cadir:model:tessellation#chunk-like-channel".into(),
                 body: None,
+                faces: Vec::new(),
+                chordal_deflection: None,
                 source_object: None,
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),
@@ -3929,6 +3969,7 @@ mod tests {
             ir.model.points.push(cadmpeg_ir::topology::Point {
                 id: point,
                 position: Point3::new(index as f64, index as f64 + 2.0, 3.0),
+                source_object: None,
             });
         }
         let mut bytes = Vec::new();
@@ -3955,6 +3996,7 @@ mod tests {
         source.model.points.push(Point {
             id: PointId("cadir:model:point#retained".into()),
             position: Point3::new(1.0, 2.0, 3.0),
+            source_object: None,
         });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
@@ -3985,6 +4027,7 @@ mod tests {
         source.model.points.push(Point {
             id: PointId("cadir:model:point#retained".into()),
             position: Point3::new(1.0, 2.0, 3.0),
+            source_object: None,
         });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
@@ -4235,7 +4278,9 @@ mod tests {
                     .model
                     .pcurves
                     .iter()
-                    .find(|pcurve| use_.pcurve.as_ref() == Some(&pcurve.id))
+                    .find(|pcurve| {
+                        use_.pcurves.first().map(|use_| &use_.pcurve) == Some(&pcurve.id)
+                    })
                     .expect("projected NURBS C2");
                 assert!(matches!(
                     pcurve.geometry,
@@ -4287,7 +4332,11 @@ mod tests {
                 parameter_range: Some([2.0, 5.0]),
                 fit_tolerance: Some(0.001),
             });
-            ir.model.coedges[coedge].pcurve = Some(id);
+            ir.model.coedges[coedge].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id,
+                isoparametric: None,
+                parameter_range: None,
+            }];
         }
         for version in [
             RhinoArchiveVersion::V5,
@@ -4339,7 +4388,11 @@ mod tests {
             parameter_range: ir.model.edges[0].param_range,
             fit_tolerance: None,
         });
-        ir.model.coedges[0].pcurve = Some(id);
+        ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+            pcurve: id,
+            isoparametric: None,
+            parameter_range: None,
+        }];
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&ir, &mut output)
@@ -4367,7 +4420,11 @@ mod tests {
             parameter_range: Some([0.0, 2.0]),
             fit_tolerance: Some(0.002),
         });
-        ir.model.coedges[0].pcurve = Some(id);
+        ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+            pcurve: id,
+            isoparametric: None,
+            parameter_range: None,
+        }];
         for version in [
             RhinoArchiveVersion::V5,
             RhinoArchiveVersion::V6,
@@ -4614,7 +4671,7 @@ mod tests {
         let mut ir = rectangular_nurbs_patch();
         ir.model.pcurves.clear();
         for coedge in &mut ir.model.coedges {
-            coedge.pcurve = None;
+            coedge.pcurves.clear();
         }
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
@@ -4736,6 +4793,7 @@ mod tests {
         ir.model.points.push(Point {
             id: PointId("cadir:model:point#free".into()),
             position: Point3::new(5.0, 6.0, 7.0),
+            source_object: None,
         });
         ir.model.curves.push(Curve {
             id: CurveId("cadir:model:curve#free".into()),
@@ -4905,7 +4963,9 @@ mod tests {
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face,
+            boundary_role: Default::default(),
             coedges: coedge_ids.to_vec(),
+            vertex_uses: Vec::new(),
         });
         ir.model.surfaces.push(Surface {
             id: surface,
@@ -4928,6 +4988,7 @@ mod tests {
             ir.model.points.push(Point {
                 id: point_ids[index].clone(),
                 position: points[index],
+                source_object: None,
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_ids[index].clone(),
@@ -4958,8 +5019,7 @@ mod tests {
                 previous: coedge_ids[(index + points.len() - 1) % points.len()].clone(),
                 radial_next: coedge_ids[index].clone(),
                 sense: Sense::Forward,
-                pcurve: None,
-                pcurve_parameter_range: None,
+                pcurves: Vec::new(),
                 use_curve: None,
                 use_curve_parameter_range: None,
             });
@@ -4996,7 +5056,9 @@ mod tests {
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face,
+            boundary_role: Default::default(),
             coedges: coedge_ids.clone(),
+            vertex_uses: Vec::new(),
         });
         for index in 0..points.len() {
             let next_index = (index + 1) % points.len();
@@ -5010,6 +5072,7 @@ mod tests {
             ir.model.points.push(Point {
                 id: point_ids[index].clone(),
                 position: points[index],
+                source_object: None,
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_ids[index].clone(),
@@ -5040,8 +5103,7 @@ mod tests {
                 previous: coedge_ids[(index + points.len() - 1) % points.len()].clone(),
                 radial_next: coedge_ids[index].clone(),
                 sense: Sense::Forward,
-                pcurve: None,
-                pcurve_parameter_range: None,
+                pcurves: Vec::new(),
                 use_curve: None,
                 use_curve_parameter_range: None,
             });
@@ -5139,17 +5201,22 @@ mod tests {
         ir.model.loops.push(Loop {
             id: loop_ids[0].clone(),
             face: face_ids[0].clone(),
+            boundary_role: Default::default(),
             coedges: coedge_ids[0..4].to_vec(),
+            vertex_uses: Vec::new(),
         });
         ir.model.loops.push(Loop {
             id: loop_ids[1].clone(),
             face: face_ids[1].clone(),
+            boundary_role: Default::default(),
             coedges: coedge_ids[4..8].to_vec(),
+            vertex_uses: Vec::new(),
         });
         for index in 0..positions.len() {
             ir.model.points.push(Point {
                 id: point_ids[index].clone(),
                 position: positions[index],
+                source_object: None,
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_ids[index].clone(),
@@ -5213,8 +5280,7 @@ mod tests {
                 previous: coedge_ids[loop_start + (offset + 3) % 4].clone(),
                 radial_next: coedge_ids[radial_next].clone(),
                 sense,
-                pcurve: None,
-                pcurve_parameter_range: None,
+                pcurves: Vec::new(),
                 use_curve: None,
                 use_curve_parameter_range: None,
             });
@@ -5288,6 +5354,7 @@ mod tests {
             ir.model.points.push(Point {
                 id: point_ids[index].clone(),
                 position: positions[index],
+                source_object: None,
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_ids[index].clone(),
@@ -5373,7 +5440,9 @@ mod tests {
             ir.model.loops.push(Loop {
                 id: loop_ids[face].clone(),
                 face: face_ids[face].clone(),
+                boundary_role: Default::default(),
                 coedges: coedge_ids[start..start + 3].to_vec(),
+                vertex_uses: Vec::new(),
             });
             ir.model.surfaces.push(Surface {
                 id: surface_ids[face].clone(),
@@ -5394,8 +5463,7 @@ mod tests {
                     previous: coedge_ids[start + (offset + 2) % 3].clone(),
                     radial_next: coedge_ids[index].clone(),
                     sense: face_uses[face][offset].1,
-                    pcurve: None,
-                    pcurve_parameter_range: None,
+                    pcurves: Vec::new(),
                     use_curve: None,
                     use_curve_parameter_range: None,
                 });
@@ -5491,7 +5559,11 @@ mod tests {
                 parameter_range: Some(domain),
                 fit_tolerance: Some(0.001),
             });
-            ir.model.coedges[index].pcurve = Some(id);
+            ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id,
+                isoparametric: None,
+                parameter_range: None,
+            }];
         }
         ir.finalize();
         ir
@@ -5571,7 +5643,11 @@ mod tests {
                 parameter_range: Some(domain),
                 fit_tolerance: Some(0.001),
             });
-            ir.model.coedges[index].pcurve = Some(id);
+            ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id,
+                isoparametric: None,
+                parameter_range: None,
+            }];
         }
         ir.finalize();
         ir
@@ -5630,7 +5706,11 @@ mod tests {
                 parameter_range: Some(domain),
                 fit_tolerance: Some(0.0001),
             });
-            ir.model.coedges[index].pcurve = Some(id);
+            ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id,
+                isoparametric: None,
+                parameter_range: None,
+            }];
         }
         ir.finalize();
     }

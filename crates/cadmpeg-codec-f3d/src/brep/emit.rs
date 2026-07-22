@@ -269,7 +269,7 @@ fn emit_carrier_surface(
                     axis_origin,
                     axis_direction,
                     angular_interval,
-                    parameter_interval,
+                    parameter_interval: Some(parameter_interval),
                     transposed: false,
                     revision_form,
                 }
@@ -291,8 +291,8 @@ fn emit_carrier_surface(
                 ProceduralSurfaceDefinition::Offset {
                     support: support_id,
                     distance,
-                    u_sense,
-                    v_sense,
+                    u_sense: Some(u_sense),
+                    v_sense: Some(v_sense),
                     extension_flags,
                     revision_form,
                 }
@@ -3167,6 +3167,7 @@ pub(crate) fn emit_points(out: &mut Brep, records: &[Record], reach: &Reachable)
                 out.points.push(Point {
                     id: PointId(id(i)),
                     position: scale_point(*p),
+                    source_object: None,
                 });
             }
         }
@@ -3458,11 +3459,16 @@ pub(crate) fn emit_coedges(
                 previous: CoedgeId(id(prev)),
                 radial_next: partner.map_or_else(|| CoedgeId(id(i)), |p| CoedgeId(id(p))),
                 sense: sense_at(r, 7),
-                pcurve: r
+                pcurves: r
                     .ref_at(10)
                     .filter(|p| kept_pcurves.contains(p))
-                    .map(|p| PcurveId(id(p))),
-                pcurve_parameter_range: pcurve_parameter_ranges.get(&i).copied(),
+                    .map(|p| cadmpeg_ir::topology::PcurveUse {
+                        pcurve: PcurveId(id(p)),
+                        isoparametric: None,
+                        parameter_range: pcurve_parameter_ranges.get(&i).copied(),
+                    })
+                    .into_iter()
+                    .collect(),
                 use_curve: use_curve.as_ref().map(|(curve, _)| curve.clone()),
                 use_curve_parameter_range: use_curve.map(|(_, range)| range),
             });
@@ -3500,7 +3506,9 @@ pub(crate) fn emit_loops(
             out.loops.push(Loop {
                 id: LoopId(id(i)),
                 face: FaceId(id(owner)),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges,
+                vertex_uses: Vec::new(),
             });
         }
     }

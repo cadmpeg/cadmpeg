@@ -89,7 +89,8 @@ use cadmpeg_ir::codec::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::{Check, Finding, Severity};
+use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::{Annotations, Check, Finding, Severity, SourceFidelity};
 use std::io::Write;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
@@ -445,26 +446,31 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
 }
 
 impl SldprtCodec {
-    /// Write a decoded or constructed IR as `.sldprt`.
-    ///
-    /// An unchanged decoded document uses its integrity-checked retained source
-    /// image. Modified documents use native partition retention, in-place
-    /// geometry patching, or semantic regeneration according to the changes and
-    /// available provenance.
-    ///
-    /// Returns [`CodecError::NotImplemented`] when the IR contains a construct
-    /// the semantic writer cannot represent, and [`CodecError::Malformed`] when
-    /// the IR or retained source data violates a required invariant.
-    pub fn write_preserved(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+    /// Write a decoded document with its retained source-fidelity sidecar.
+    pub fn write_preserved_with_source_fidelity(
+        &self,
+        ir: &CadIr,
+        source_fidelity: &SourceFidelity,
+        writer: &mut dyn Write,
+    ) -> Result<(), CodecError> {
+        let records = source_records(ir, source_fidelity)?;
+        Self::write_preserved_with_annotations(ir, &source_fidelity.annotations, &records, writer)
+    }
+
+    fn write_preserved_with_annotations(
+        ir: &CadIr,
+        annotations: &Annotations,
+        records: &[UnknownRecord],
+        writer: &mut dyn Write,
+    ) -> Result<(), CodecError> {
         let expected = ir
             .source
             .as_ref()
             .and_then(|source| source.attributes.get("semantic_sha256"));
         if expected.is_none_or(|expected| decode::semantic_hash(ir) != *expected) {
-            return writer::write_semantic(ir, writer);
+            return writer::write_semantic_with_records(ir, annotations, records, writer);
         }
-        let unknowns = ir.native_unknowns("sldprt")?;
-        let record = unknowns
+        let record = records
             .iter()
             .find(|record| record.id.0 == "sldprt:file:source-image#0")
             .ok_or_else(|| {
@@ -517,11 +523,42 @@ impl Encoder for SldprtCodec {
     }
 
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        let replay = ir
-            .native_unknowns("sldprt")?
-            .into_iter()
+        Self::encode_with_annotations(ir, &Annotations::default(), &[], writer)
+    }
+
+    fn encode_with_source_fidelity(
+        &self,
+        ir: &CadIr,
+        source_fidelity: Option<&SourceFidelity>,
+        writer: &mut dyn Write,
+    ) -> Result<ExportReport, CodecError> {
+        match source_fidelity {
+            Some(value) => Self::encode_with_fidelity(ir, value, writer),
+            None => Self::encode_with_annotations(ir, &Annotations::default(), &[], writer),
+        }
+    }
+}
+
+impl SldprtCodec {
+    fn encode_with_fidelity(
+        ir: &CadIr,
+        source_fidelity: &SourceFidelity,
+        writer: &mut dyn Write,
+    ) -> Result<ExportReport, CodecError> {
+        let records = source_records(ir, source_fidelity)?;
+        Self::encode_with_annotations(ir, &source_fidelity.annotations, &records, writer)
+    }
+
+    fn encode_with_annotations(
+        ir: &CadIr,
+        annotations: &Annotations,
+        records: &[UnknownRecord],
+        writer: &mut dyn Write,
+    ) -> Result<ExportReport, CodecError> {
+        let replay = records
+            .iter()
             .any(|record| record.id.0 == "sldprt:file:source-image#0");
-        self.write_preserved(ir, writer)?;
+        Self::write_preserved_with_annotations(ir, annotations, records, writer)?;
         let validation = cadmpeg_ir::validate(ir, Vec::new());
         let total_entities = validation.entity_counts.values().sum();
         Ok(ExportReport {
@@ -540,6 +577,24 @@ impl Encoder for SldprtCodec {
             ],
         })
     }
+}
+
+fn source_records(
+    ir: &CadIr,
+    source_fidelity: &SourceFidelity,
+) -> Result<Vec<UnknownRecord>, CodecError> {
+    let mut records = source_fidelity.native_unknown_records(ir, "sldprt")?;
+    if let Some(source) = source_fidelity.retained_record("sldprt:file:source-image#0") {
+        records.push(UnknownRecord {
+            id: source.id.clone().into(),
+            offset: source.offset,
+            byte_len: source.byte_len,
+            sha256: source.sha256.clone(),
+            data: source.data.clone(),
+            links: Vec::new(),
+        });
+    }
+    Ok(records)
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 
 `cadmpeg` inspects native CAD containers, decodes supported model data into
 CADIR, validates and compares CADIR models, and exports CADIR or STEP AP214.
-It also writes supported `.f3d` and `.sldprt` models.
+It also writes supported `.FCStd`, `.f3d`, and `.sldprt` models.
 
 Native codecs transfer different subsets of geometry, topology, design intent,
 presentation, and metadata. Check [format support][support] before relying on a
@@ -37,7 +37,7 @@ cargo install cadmpeg
 cadmpeg convert bracket.f3d -o bracket.step
 ```
 
-The output extension selects `step`, `f3d`, `sldprt`, or `cadir`. Pass
+The output extension selects `step`, `fcstd`, `f3d`, `sldprt`, or `cadir`. Pass
 `--format` when writing to standard output or when the filename does not
 identify the format:
 
@@ -109,7 +109,7 @@ Output formats are:
 
 - `cadir` for canonical CADIR JSON; `json` is an alias.
 - `step` for ISO 10303-21 STEP AP214.
-- `f3d` and `sldprt` for the native writers' supported subsets.
+- `fcstd`, `f3d`, and `sldprt` for the native writers' supported subsets.
 
 Native writing may depend on retained source data and rejects unsupported
 edits. The [format support page][support] defines each reader and writer's

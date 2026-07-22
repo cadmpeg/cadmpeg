@@ -216,6 +216,15 @@ pub fn project_sketch_constraints(
             id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
             sketch,
             definition,
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
             native_ref: Some(relation.id.clone()),
         })
     });

@@ -106,30 +106,38 @@ const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 pub struct F3dCodec;
 
 impl F3dCodec {
-    /// Write a decoded F3D document, replaying its source bytes when its
-    /// semantic content is unchanged.
-    ///
-    /// Supported edits regenerate affected records within the retained archive.
-    /// The method returns [`CodecError::NotImplemented`] when `ir` has no F3D
-    /// semantic baseline or retained source image.
-    pub fn write_preserved(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+    /// Write a decoded F3D document using its source-fidelity sidecar.
+    pub fn write_preserved_with_source_fidelity(
+        &self,
+        ir: &CadIr,
+        source_fidelity: &cadmpeg_ir::SourceFidelity,
+        writer: &mut dyn Write,
+    ) -> Result<(), CodecError> {
+        let record = source_fidelity
+            .retained_record(ids::FILE_SOURCE_IMAGE_ID)
+            .ok_or_else(|| {
+                CodecError::NotImplemented("sidecar has no retained F3D source image".into())
+            })?;
+        let data = record.data.as_ref().ok_or_else(|| {
+            CodecError::Malformed("retained F3D source image has no bytes".into())
+        })?;
+        Self::write_preserved_bytes(ir, data, record.byte_len, &record.sha256, writer)
+    }
+
+    fn write_preserved_bytes(
+        ir: &CadIr,
+        data: &[u8],
+        byte_len: u64,
+        sha256: &str,
+        writer: &mut dyn Write,
+    ) -> Result<(), CodecError> {
         let expected = ir
             .source
             .as_ref()
             .and_then(|source| source.attributes.get("semantic_sha256"))
             .ok_or_else(|| CodecError::NotImplemented("IR has no F3D semantic baseline".into()))?;
-        let unknowns = ir.native_unknowns("f3d")?;
-        let record = unknowns
-            .iter()
-            .find(|record| record.id.0 == ids::FILE_SOURCE_IMAGE_ID)
-            .ok_or_else(|| {
-                CodecError::NotImplemented("IR has no retained F3D source image".into())
-            })?;
-        let data = record.data.as_ref().ok_or_else(|| {
-            CodecError::Malformed("retained F3D source image has no bytes".into())
-        })?;
         let hash = sha256_hex(data);
-        if data.len() as u64 != record.byte_len || hash != record.sha256 {
+        if data.len() as u64 != byte_len || hash != sha256 {
             return Err(CodecError::Malformed(
                 "retained F3D source image failed integrity validation".into(),
             ));
@@ -185,12 +193,32 @@ impl Encoder for F3dCodec {
     }
 
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        let replay = ir
-            .native_unknowns("f3d")?
-            .into_iter()
-            .any(|record| record.id.0 == ids::FILE_SOURCE_IMAGE_ID);
-        if replay {
-            self.write_preserved(ir, writer)?;
+        writer::generate::write_new(ir, writer)?;
+        let validation = cadmpeg_ir::validate(ir, Vec::new());
+        let total_entities = validation.entity_counts.values().sum();
+        Ok(ExportReport {
+            format: "f3d".into(),
+            entity_counts: validation.entity_counts,
+            total_entities,
+            losses: Vec::new(),
+            notes: vec![
+                "source container regenerated from IR".into(),
+                "entity counts are derived from the IR".into(),
+            ],
+        })
+    }
+
+    fn encode_with_source_fidelity(
+        &self,
+        ir: &CadIr,
+        source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+        writer: &mut dyn Write,
+    ) -> Result<ExportReport, CodecError> {
+        let replay = source_fidelity
+            .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))
+            .is_some();
+        if let Some(sidecar) = source_fidelity.filter(|_| replay) {
+            self.write_preserved_with_source_fidelity(ir, sidecar, writer)?;
         } else {
             writer::generate::write_new(ir, writer)?;
         }

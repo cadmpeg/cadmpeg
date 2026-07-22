@@ -15,7 +15,7 @@ cargo add cadmpeg-ir
 
 A `CadIr` document contains:
 
-- required IR version 3 schema, including the `subds` arena;
+- required IR version 53 schema, including loop boundary roles, vertex loops, ordered pcurve uses, and the `subds` arena;
 - canonical units and document tolerances;
 - flat, ID-referenced arenas for topology, geometry, subdivision control cages, construction features,
   tessellation, appearance, and source attributes;
@@ -41,7 +41,7 @@ after construction or transformation.
 
 ## Construct and consume a document
 
-Create and validate an empty version-2 document:
+Create and validate an empty current-version document:
 
 ```rust
 use cadmpeg_ir::units::Units;
@@ -57,8 +57,9 @@ assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);
 ```
 
 `CadIr::to_canonical_json` emits pretty JSON after the caller establishes
-canonical arena order. `CadIr::from_json` parses only `ir_version: "9"` and
-requires the version-6 schema, including `model.subds`. `diff` compares units,
+canonical arena order. `CadIr::from_json` parses only `ir_version: "54"`, while
+`CadIr::migrate_json` explicitly migrates version 53. The version-54 schema
+requires `model.subds`. `diff` compares units,
 tolerances, annotations, and entity arenas by stable identity.
 
 Format crates implement the object-safe `Codec` trait. A consumer can select a
@@ -73,31 +74,32 @@ fn accepts(codec: &dyn Codec, prefix: &[u8]) -> bool {
 }
 ```
 
-`DecodeResult` contains the finalized document and a `DecodeReport`.
+`DecodeResult` contains the finalized document, a `DecodeReport`, and an independently versioned `SourceFidelity` sidecar for source-byte accounting, provenance, and conversion exactness.
 `CodecError` represents operation failure such as wrong format, malformed
 container, unsupported capability, or I/O failure. Successful decoding can
 still be incomplete: `LossNote` records transferred information that was
 approximated or omitted, while `UnknownRecord` retains an uninterpreted source
 record by location, digest, links, and optional bytes.
 
-Entity and field fidelity belongs in `Annotations`. Missing exactness entries
+Entity and field fidelity belongs in sidecar `Annotations`. Missing exactness entries
 mean byte-exact. Other entries distinguish deterministic derivation, inference,
 and unknown origin. Provenance entries identify source streams and byte
 offsets.
 
 ## Scope
 
-IR version 3 covers B-rep topology, analytic and NURBS geometry, Catmull–Clark
+IR version 54 covers B-rep topology, analytic and NURBS geometry, Catmull–Clark
 control cages, procedural construction links including Sum and bounded
-Revolution definitions, tessellation, appearance, attributes, and neutral
-feature records. Native namespaces retain format-specific design and history
-records.
-Assembly instancing, component trees, and joint constraints are reserved.
+Revolution definitions, planar and spatial sketches, tessellation, appearance,
+attributes, and neutral feature records. Native namespaces retain
+format-specific design and history records. Assembly instancing through
+components, occurrences, and joint constraints, together with drawings, semantic
+annotations, spreadsheets, and presentations, extend the neutral model.
 
 ## Documentation
 
 - [API documentation][docs]
-- [CAD IR version 3][ir-spec]
+- [CAD IR version 54][ir-spec]
 - [Architecture and crate map][architecture]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]

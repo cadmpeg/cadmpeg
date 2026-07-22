@@ -962,6 +962,11 @@ fn native_procedural_surface_definition(
                 bytes.push(0x10);
                 return Ok(true);
             }
+            let parameter_interval = (*parameter_interval).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "source-less F3D rot_spl_sur requires a directrix parameter interval".into(),
+                )
+            })?;
             let directrix = target
                 .model
                 .curves
@@ -973,7 +978,7 @@ fn native_procedural_surface_definition(
                         procedural.id
                     ))
                 })?;
-            let directrix = native_interval_curve(&directrix.geometry, *parameter_interval)?;
+            let directrix = native_interval_curve(&directrix.geometry, parameter_interval)?;
             let native_parameter_interval = [
                 directrix.knots.first().copied().unwrap_or(0.0),
                 directrix.knots.last().copied().unwrap_or(0.0),
@@ -983,7 +988,7 @@ fn native_procedural_surface_definition(
                 solved_cache.v_knots.last().copied().unwrap_or(0.0),
             ];
             if *transposed
-                || *parameter_interval != native_parameter_interval
+                || parameter_interval != native_parameter_interval
                 || *angular_interval != native_angular_interval
             {
                 return Err(CodecError::NotImplemented(
@@ -1060,6 +1065,16 @@ fn native_procedural_surface_definition(
                 bytes.push(0x10);
                 return Ok(true);
             }
+            let u_sense = (*u_sense).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "source-less F3D offset surface requires a U sense".into(),
+                )
+            })?;
+            let v_sense = (*v_sense).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "source-less F3D offset surface requires a V sense".into(),
+                )
+            })?;
             let valid_flags = matches!(
                 extension_flags.as_slice(),
                 [] | [false] | [true, _] | [true, _, _]
@@ -1081,8 +1096,8 @@ fn native_procedural_surface_definition(
             )?;
             native_embedded_surface(bytes, &support.geometry)?;
             native_f64(bytes, *distance / LEN_TO_MM);
-            native_enum(bytes, *u_sense);
-            native_enum(bytes, *v_sense);
+            native_enum(bytes, u_sense);
+            native_enum(bytes, v_sense);
             for flag in extension_flags {
                 bytes.push(native_bool(*flag));
             }
@@ -1145,9 +1160,15 @@ fn native_procedural_surface_definition(
                 procedural.id
             )))
         }
-        ProceduralSurfaceDefinition::Unknown { .. } => {
+        ProceduralSurfaceDefinition::LinearSweep { .. }
+        | ProceduralSurfaceDefinition::AxisRevolution { .. }
+        | ProceduralSurfaceDefinition::ParallelOffset { .. }
+        | ProceduralSurfaceDefinition::DegenerateTorus { .. }
+        | ProceduralSurfaceDefinition::CurveBounded { .. }
+        | ProceduralSurfaceDefinition::Subset { .. }
+        | ProceduralSurfaceDefinition::Unknown { .. } => {
             return Err(CodecError::NotImplemented(format!(
-                "source-less F3D unknown procedural surface {} cannot be regenerated losslessly",
+                "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
@@ -5066,7 +5087,8 @@ pub(crate) fn native_procedural_curve(
             apex_factor,
             axis,
         } => (angle_range, center, major, minor, pitch, apex_factor, axis),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { .. } => {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D offset curve {} lacks a defined native offset-law grammar",
                 procedural.id
@@ -5294,6 +5316,16 @@ fn native_embedded_surface(
             return Err(CodecError::NotImplemented(
                 "source-less F3D embedded procedural or unknown support surfaces are unsupported"
                     .into(),
+            ));
+        }
+        SurfaceGeometry::Polygonal { .. } => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D embedded polygonal support surfaces are unsupported".into(),
+            ));
+        }
+        SurfaceGeometry::Transformed { .. } => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D embedded transformed support surfaces are unsupported".into(),
             ));
         }
     }
@@ -5715,6 +5747,17 @@ fn native_pcurve_geometry(
             weights: weights.clone(),
             periodic: *periodic,
         }),
+        PcurveGeometry::Trimmed {
+            parameter_range,
+            basis,
+        } => native_pcurve_geometry(basis, *parameter_range),
+        PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Offset { .. } => Err(CodecError::NotImplemented(
+            "F3D writing of this exact pcurve family is not implemented".into(),
+        )),
     }
 }
 

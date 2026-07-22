@@ -3498,6 +3498,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             removed_faces: cadmpeg_ir::features::FaceSelection::Native(native),
             thickness: Some(cadmpeg_ir::features::Length(5.0)),
             outward: Some(true),
+            ..
         }) if native == "shell-group"
     ));
     offset_scope.direct_face_operation = exact_direct_face_operation(&bytes, &offset_scope);
@@ -10538,7 +10539,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         .expect("typed chamfer");
     assert!(matches!(
         &chamfer.definition,
-        FeatureDefinition::Chamfer { groups }
+        FeatureDefinition::Chamfer { groups, .. }
             if matches!(groups.as_slice(), [ChamferGroup {
                 edges: EdgeSelection::Native(selection),
                 spec: ChamferSpec::TwoDistances { first, second },
@@ -10670,7 +10671,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::Chamfer { groups }
+        FeatureDefinition::Chamfer { groups, .. }
             if matches!(groups.as_slice(), [
                 ChamferGroup {
                     edges: EdgeSelection::Unresolved,

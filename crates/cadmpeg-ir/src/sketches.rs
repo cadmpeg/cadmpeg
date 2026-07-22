@@ -114,6 +114,13 @@ pub enum SketchGeometry {
         /// Segment end.
         end: Point2,
     },
+    /// Unbounded construction or reference line.
+    ReferenceLine {
+        /// Point on the line.
+        origin: Point2,
+        /// Non-zero direction in sketch coordinates.
+        direction: Point2,
+    },
     /// Full circle.
     Circle {
         /// Circle center.
@@ -148,6 +155,38 @@ pub enum SketchGeometry {
         /// End parameter for a bounded arc; absent for a full ellipse.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         end_angle: Option<Angle>,
+    },
+    /// Full or bounded hyperbola.
+    Hyperbola {
+        /// Hyperbola center.
+        center: Point2,
+        /// Major-axis angle in sketch coordinates.
+        major_angle: Angle,
+        /// Semi-major radius.
+        major_radius: Length,
+        /// Semi-minor radius.
+        minor_radius: Length,
+        /// Start parameter for a bounded branch; absent for the full curve.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        start_parameter: Option<f64>,
+        /// End parameter for a bounded branch; absent for the full curve.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        end_parameter: Option<f64>,
+    },
+    /// Full or bounded parabola.
+    Parabola {
+        /// Parabola vertex.
+        vertex: Point2,
+        /// Symmetry-axis angle in sketch coordinates.
+        axis_angle: Angle,
+        /// Distance from the vertex to the focus.
+        focal_length: Length,
+        /// Start parameter for a bounded branch; absent for the full curve.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        start_parameter: Option<f64>,
+        /// End parameter for a bounded branch; absent for the full curve.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        end_parameter: Option<f64>,
     },
     /// NURBS curve in sketch coordinates.
     Nurbs {
@@ -416,6 +455,33 @@ pub struct SketchConstraint {
     pub sketch: SketchId,
     /// Constraint semantics.
     pub definition: SketchConstraintDefinition,
+    /// User-visible constraint name, when assigned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Whether this dimensional relation drives geometry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub driving: Option<bool>,
+    /// Whether the solver currently applies this relation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active: Option<bool>,
+    /// Whether the relation belongs to virtual sketch space.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub virtual_space: Option<bool>,
+    /// Whether the relation is displayed in the sketch UI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<bool>,
+    /// Source orientation bit field, when the relation carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orientation: Option<u32>,
+    /// Persisted label offset from the constrained geometry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_distance: Option<f64>,
+    /// Persisted position along the dimension label path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_position: Option<f64>,
+    /// Application metadata text attached to this relation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<String>,
     /// Source-native relation record when decoded from one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
@@ -533,10 +599,40 @@ pub enum SketchDistanceMeasurement {
     },
 }
 
+/// Meaning of an internal sketch alignment helper relation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchInternalAlignment {
+    /// Major diameter helper for an ellipse.
+    EllipseMajorDiameter,
+    /// Minor diameter helper for an ellipse.
+    EllipseMinorDiameter,
+    /// First ellipse focus helper.
+    EllipseFocus1,
+    /// Second ellipse focus helper.
+    EllipseFocus2,
+    /// Hyperbola major-axis helper.
+    HyperbolaMajor,
+    /// Hyperbola minor-axis helper.
+    HyperbolaMinor,
+    /// Hyperbola focus helper.
+    HyperbolaFocus,
+    /// Parabola focus helper.
+    ParabolaFocus,
+    /// B-spline control-point helper.
+    BsplineControlPoint,
+    /// B-spline knot-point helper.
+    BsplineKnotPoint,
+    /// Parabola focal-axis helper.
+    ParabolaFocalAxis,
+}
+
 /// Neutral geometric and dimensional sketch relations.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SketchConstraintDefinition {
+    /// Persisted no-op relation slot.
+    Disabled,
     /// Two entity loci coincide.
     Coincident {
         /// Coincident entity loci.
@@ -597,6 +693,13 @@ pub enum SketchConstraintDefinition {
     CoincidentLoci {
         /// Coincident endpoints, centers, or complete entities.
         loci: Vec<SketchLocus>,
+    },
+    /// A point locus lies on another sketch entity.
+    PointOnObject {
+        /// Point constrained to the supporting entity.
+        point: SketchLocus,
+        /// Entity on which the point lies.
+        entity: SketchEntityId,
     },
     /// A point locus lies at the midpoint of a bounded entity.
     Midpoint {
@@ -778,6 +881,53 @@ pub enum SketchConstraintDefinition {
         entity: SketchEntityId,
         /// Driving diameter parameter.
         parameter: ParameterId,
+    },
+    /// Refraction relation between two curve loci and their interface.
+    SnellsLaw {
+        /// Incident curve locus.
+        incident: SketchLocus,
+        /// Refracted curve locus.
+        refracted: SketchLocus,
+        /// Interface entity carrying the surface normal in sketch space.
+        interface: SketchEntityId,
+        /// Dimensionless refractive-index ratio.
+        parameter: ParameterId,
+    },
+    /// Rational spline weight controlled by a dimensionless parameter.
+    Weight {
+        /// Weighted spline entity.
+        entity: SketchEntityId,
+        /// Dimensionless weight parameter.
+        parameter: ParameterId,
+    },
+    /// Relation between generated helper geometry and its parent conic or spline.
+    InternalAlignment {
+        /// Generated helper geometry.
+        helper: SketchEntityId,
+        /// Parent geometry receiving the alignment.
+        parent: SketchEntityId,
+        /// Exact helper relation family.
+        alignment: SketchInternalAlignment,
+        /// Control-point or knot index when carried by the family.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<u32>,
+    },
+    /// Ordered geometry grouped under a sketch construction handle.
+    Group {
+        /// Group handle followed by its ordered member loci.
+        elements: Vec<SketchLocus>,
+    },
+    /// Text constructed from an ordered set of sketch geometry.
+    Text {
+        /// Text handle followed by its ordered construction loci.
+        elements: Vec<SketchLocus>,
+        /// Displayed text.
+        text: String,
+        /// Font family or source font token, when carried.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        font: Option<String>,
+        /// Whether the construction dimension controls text height rather than width.
+        is_text_height: bool,
     },
     /// Source-native relation not yet reduced to a neutral family.
     Native {

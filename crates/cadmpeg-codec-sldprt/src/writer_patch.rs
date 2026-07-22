@@ -6,31 +6,42 @@ use std::collections::HashMap;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::Annotations;
 
-pub fn patch_partition(ir: &CadIr, scale: f64) -> Result<Option<(String, Vec<u8>)>, CodecError> {
-    patch_partition_inner(ir, scale).transpose()
+pub fn patch_partition(
+    ir: &CadIr,
+    annotations: &Annotations,
+    retained_records: &[UnknownRecord],
+    scale: f64,
+) -> Result<Option<(String, Vec<u8>)>, CodecError> {
+    patch_partition_inner(ir, annotations, retained_records, scale).transpose()
 }
 
-fn patch_partition_inner(ir: &CadIr, scale: f64) -> Option<Result<(String, Vec<u8>), CodecError>> {
-    if !ir
+fn patch_partition_inner(
+    ir: &CadIr,
+    annotations: &Annotations,
+    retained_records: &[UnknownRecord],
+    scale: f64,
+) -> Option<Result<(String, Vec<u8>), CodecError>> {
+    let requires_native_carrier_patch = ir
         .model
         .surfaces
         .iter()
         .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
-        && !ir
+        || ir
             .model
             .curves
             .iter()
-            .any(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
-    {
+            .any(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }));
+    if !requires_native_carrier_patch {
         return None;
     }
-    let source = ir
-        .native_unknowns("sldprt")
-        .ok()?
-        .into_iter()
+    let source = retained_records
+        .iter()
         .find(|record| record.id.0 == "sldprt:file:source-image#0")?
-        .data?;
+        .data
+        .clone()?;
     let scan = crate::container::scan_bytes(&source);
     let (block, header) = crate::container::select_active_parasolid(&scan)?;
     if block.ps_stream.as_deref() != Some(block.payload.as_slice()) {
@@ -74,19 +85,41 @@ fn patch_partition_inner(ir: &CadIr, scale: f64) -> Option<Result<(String, Vec<u
         .section
         .clone()
         .unwrap_or_else(|| format!("block@{}", block.offset));
-    if let Err(error) = validate_changed_annotations(ir, &native, &section) {
+    if let Err(error) = validate_changed_annotations(ir, annotations, &native, &section) {
         return Some(Err(error));
     }
 
     let mut payload = block.payload.clone();
-    patch_points(ir, &native, &mut payload, header.body_offset, scale)?;
-    patch_surfaces(ir, &native, &mut payload, header.body_offset, scale)?;
-    patch_curves(ir, &native, &mut payload, header.body_offset, scale)?;
+    patch_points(
+        ir,
+        annotations,
+        &native,
+        &mut payload,
+        header.body_offset,
+        scale,
+    )?;
+    patch_surfaces(
+        ir,
+        annotations,
+        &native,
+        &mut payload,
+        header.body_offset,
+        scale,
+    )?;
+    patch_curves(
+        ir,
+        annotations,
+        &native,
+        &mut payload,
+        header.body_offset,
+        scale,
+    )?;
     Some(Ok((section, payload)))
 }
 
 fn validate_changed_annotations(
     ir: &CadIr,
+    annotations: &Annotations,
     native: &crate::brep::Brep,
     section: &str,
 ) -> Result<(), CodecError> {
@@ -110,7 +143,7 @@ fn validate_changed_annotations(
             .get(&point.id)
             .is_some_and(|old| old.position != point.position)
         {
-            annotation_offset(ir, &point.id, section)?;
+            annotation_offset(annotations, &point.id, section)?;
         }
     }
     for surface in &ir.model.surfaces {
@@ -118,7 +151,7 @@ fn validate_changed_annotations(
             .get(&surface.id)
             .is_some_and(|old| old.geometry != surface.geometry)
         {
-            annotation_offset(ir, &surface.id, section)?;
+            annotation_offset(annotations, &surface.id, section)?;
         }
     }
     for curve in &ir.model.curves {
@@ -126,26 +159,26 @@ fn validate_changed_annotations(
             .get(&curve.id)
             .is_some_and(|old| old.geometry != curve.geometry)
         {
-            annotation_offset(ir, &curve.id, section)?;
+            annotation_offset(annotations, &curve.id, section)?;
         }
     }
     Ok(())
 }
 
 fn annotation_offset(
-    ir: &CadIr,
+    annotations: &Annotations,
     id: impl std::fmt::Display,
     section: &str,
 ) -> Result<usize, CodecError> {
     let id = id.to_string();
-    let provenance = ir.annotations.provenance.get(&id).ok_or_else(|| {
+    let provenance = annotations.provenance.get(&id).ok_or_else(|| {
         CodecError::Malformed(format!(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))
     })?;
     let stream = usize::try_from(provenance.stream)
         .ok()
-        .and_then(|index| ir.annotations.streams.get(index))
+        .and_then(|index| annotations.streams.get(index))
         .ok_or_else(|| {
             CodecError::Malformed(format!(
                 "SLDPRT mutation provenance for {id} references a missing stream"
@@ -156,12 +189,15 @@ fn annotation_offset(
             "SLDPRT mutation provenance for {id} references {stream}, not {section}"
         )));
     }
-    raw_annotation_offset(ir, &id)
+    raw_annotation_offset(annotations, &id)
 }
 
-fn raw_annotation_offset(ir: &CadIr, id: impl std::fmt::Display) -> Result<usize, CodecError> {
+fn raw_annotation_offset(
+    annotations: &Annotations,
+    id: impl std::fmt::Display,
+) -> Result<usize, CodecError> {
     let id = id.to_string();
-    let provenance = ir.annotations.provenance.get(&id).ok_or_else(|| {
+    let provenance = annotations.provenance.get(&id).ok_or_else(|| {
         CodecError::Malformed(format!(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))
@@ -234,7 +270,7 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
                     &v.previous,
                     &v.radial_next,
                     v.sense,
-                    &v.pcurve,
+                    &v.pcurves,
                 )
             })
             .eq(native.coedges.iter().map(|v| {
@@ -246,7 +282,7 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
                     &v.previous,
                     &v.radial_next,
                     v.sense,
-                    &v.pcurve,
+                    &v.pcurves,
                 )
             }))
         && ir
@@ -300,6 +336,8 @@ fn surface_class(value: &SurfaceGeometry) -> u8 {
         SurfaceGeometry::Nurbs(_) => 5,
         SurfaceGeometry::Procedural { .. } => 6,
         SurfaceGeometry::Unknown { .. } => 7,
+        SurfaceGeometry::Transformed { .. } => 8,
+        SurfaceGeometry::Polygonal { .. } => 9,
     }
 }
 
@@ -314,11 +352,15 @@ fn curve_class(value: &CurveGeometry) -> u8 {
         CurveGeometry::Degenerate { .. } => 6,
         CurveGeometry::Procedural { .. } => 7,
         CurveGeometry::Unknown { .. } => 8,
+        CurveGeometry::Transformed { .. } => 9,
+        CurveGeometry::Polyline { .. } => 10,
+        CurveGeometry::Composite { .. } => 11,
     }
 }
 
 fn patch_points(
     ir: &CadIr,
+    annotations: &Annotations,
     native: &crate::brep::Brep,
     payload: &mut [u8],
     body_start: usize,
@@ -337,7 +379,7 @@ fn patch_points(
         }
         let old_bytes = point_bytes(old.position, 0.001);
         let new_bytes = point_bytes(new.position, scale);
-        let start = body_start.checked_add(raw_annotation_offset(ir, &old.id).ok()?)?;
+        let start = body_start.checked_add(raw_annotation_offset(annotations, &old.id).ok()?)?;
         if payload.get(start..start + 2) != Some(&[0, 0x1d]) {
             return None;
         }
@@ -371,6 +413,7 @@ fn point_bytes(point: cadmpeg_ir::math::Point3, scale: f64) -> Vec<u8> {
 
 fn patch_surfaces(
     ir: &CadIr,
+    annotations: &Annotations,
     native: &crate::brep::Brep,
     payload: &mut [u8],
     body_start: usize,
@@ -389,7 +432,7 @@ fn patch_surfaces(
             (SurfaceGeometry::Nurbs(new), SurfaceGeometry::Nurbs(old)) => {
                 crate::brep::patch_nurbs_surface(
                     payload.get_mut(body_start..)?,
-                    raw_annotation_offset(ir, &surface.id).ok()?,
+                    raw_annotation_offset(annotations, &surface.id).ok()?,
                     old,
                     new,
                     scale,
@@ -405,7 +448,7 @@ fn patch_surfaces(
         patch_compact(
             payload,
             body_start,
-            raw_annotation_offset(ir, &surface.id).ok()? as u64,
+            raw_annotation_offset(annotations, &surface.id).ok()? as u64,
             &values,
         )?;
     }
@@ -414,6 +457,7 @@ fn patch_surfaces(
 
 fn patch_curves(
     ir: &CadIr,
+    annotations: &Annotations,
     native: &crate::brep::Brep,
     payload: &mut [u8],
     body_start: usize,
@@ -432,7 +476,7 @@ fn patch_curves(
             (CurveGeometry::Nurbs(new), CurveGeometry::Nurbs(old)) => {
                 crate::brep::patch_nurbs_curve(
                     payload.get_mut(body_start..)?,
-                    raw_annotation_offset(ir, &curve.id).ok()?,
+                    raw_annotation_offset(annotations, &curve.id).ok()?,
                     old,
                     new,
                     scale,
@@ -446,7 +490,7 @@ fn patch_curves(
         patch_compact(
             payload,
             body_start,
-            raw_annotation_offset(ir, &curve.id).ok()? as u64,
+            raw_annotation_offset(annotations, &curve.id).ok()? as u64,
             &values,
         )?;
     }

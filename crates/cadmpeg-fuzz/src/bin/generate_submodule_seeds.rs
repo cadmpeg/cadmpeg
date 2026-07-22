@@ -313,7 +313,7 @@ fn generate_ir_submodule_seeds() {
         write_seed("seeds/ir_diff", name, &input);
     }
 
-    for (name, data) in [("empty_v8.json", &empty), ("unit_cube_v8.json", &cube)] {
+    for (name, data) in [("empty_v13.json", &empty), ("unit_cube_v13.json", &cube)] {
         write_seed("seeds/ir_canonical_roundtrip", name, data.as_bytes());
 
         let mut custom = vec![0; 8];

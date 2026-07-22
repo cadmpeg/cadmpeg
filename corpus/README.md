@@ -36,14 +36,16 @@ The first accepted donation creates `corpus/manifest.toml`. Each later donation 
 
 ## Manifest format
 
-Valid format keys are `f3d`, `sldprt`, `catia`, `nx`, `creo`, and `rhino`. The manifest records each file's name, format key, authoring application and version, CC0 dedication, SHA-256, purpose, and optional expected topology. See [`manifest.example.toml`](manifest.example.toml) for an annotated template. A minimal entry:
+Valid format keys are `f3d`, `fcstd`, `sldprt`, `catia`, `nx`, `creo`, `rhino`, and `iges`. The manifest records each file's name, format key, authoring application and version, source URL, acquisition date, CC0 dedication, SHA-256, purpose, and optional expected topology. See [`manifest.example.toml`](manifest.example.toml) for an annotated template. A minimal entry:
 
 ```toml
 [[file]]
 filename = "bracket_single_body.f3d"
-format = "f3d"                       # f3d | sldprt | catia | nx | creo | rhino
+format = "f3d"                       # f3d | fcstd | sldprt | catia | nx | creo | rhino | iges
 authoring_app = "Autodesk Fusion 360"
 authoring_app_version = "2.0.19426"
+source_url = "https://github.com/example/cadmpeg-corpus/pull/1"
+acquisition_date = "2026-07-14"
 license = "CC0-1.0"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 notes = "Minimal single prismatic body; exercises container and planar faces."
