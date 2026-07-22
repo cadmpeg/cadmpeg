@@ -6417,15 +6417,41 @@ fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3
     ))
 }
 
+fn canonical_unit_direction(direction: Vector3) -> Vector3 {
+    let component = |value: f64| if value.abs() <= 1.0e-12 { 0.0 } else { value };
+    Vector3::new(
+        component(direction.x),
+        component(direction.y),
+        component(direction.z),
+    )
+}
+
+#[cfg(test)]
 fn compact_line_reference_direction(
     payload: &[u8],
     object_start: usize,
     object_end: usize,
     excluded_handles: &[usize],
 ) -> Option<Vector3> {
+    let directions =
+        compact_line_reference_directions(payload, object_start, object_end, excluded_handles);
+    let [direction] = directions.as_slice() else {
+        return None;
+    };
+    Some(*direction)
+}
+
+fn compact_line_reference_directions(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+    excluded_handles: &[usize],
+) -> Vec<Vector3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let end = object_end.min(payload.len());
-    let final_handle = end.checked_sub(80).filter(|end| *end >= object_start)?;
+    let Some(final_handle) = end.checked_sub(80).filter(|end| *end >= object_start) else {
+        return Vec::new();
+    };
     let mut candidates = (object_start..=final_handle).flat_map(|handle| {
         if excluded_handles.contains(&handle) {
             return Vec::new();
@@ -6489,10 +6515,13 @@ fn compact_line_reference_direction(
         }
         directions
     });
-    let first = candidates.next()?;
-    candidates
-        .all(|candidate| candidate == first)
-        .then_some(first)
+    let mut directions = Vec::new();
+    for candidate in &mut candidates {
+        if !directions.contains(&candidate) {
+            directions.push(candidate);
+        }
+    }
+    directions
 }
 
 fn revolution_line_reference_inputs(
@@ -7598,23 +7627,25 @@ pub(crate) fn bind_pattern_inputs(
                         .filter_map(|class| usize::try_from(class.offset).ok())
                         .flat_map(|offset| [offset + 136, offset + 144])
                         .collect::<Vec<_>>();
-                    directions.extend(compact_line_reference_direction(
+                    directions.extend(compact_line_reference_directions(
                         &lane.native_payload,
                         start,
                         end,
                         &excluded_handles,
                     ));
                 }
-                directions.sort_by_key(|direction| {
-                    [
-                        direction.x.to_bits(),
-                        direction.y.to_bits(),
-                        direction.z.to_bits(),
-                    ]
-                });
-                directions.dedup();
-                if let [direction] = directions.as_slice() {
-                    linear_direction_assignments.push((model_index, *direction));
+                let mut unique_directions = Vec::new();
+                for direction in directions.into_iter().map(canonical_unit_direction) {
+                    if !unique_directions.contains(&direction) {
+                        unique_directions.push(direction);
+                    }
+                }
+                if matches!(unique_directions.len(), 1 | 2) {
+                    linear_direction_assignments.extend(
+                        unique_directions
+                            .into_iter()
+                            .map(|direction| (model_index, direction)),
+                    );
                 }
                 continue;
             }
@@ -7722,18 +7753,37 @@ pub(crate) fn bind_pattern_inputs(
         }
     }
     for (index, candidates) in linear_directions_by_pattern {
-        let [direction] = candidates.as_slice() else {
-            continue;
-        };
         if let FeatureDefinition::Pattern {
             pattern: PatternKind::Linear {
-                direction: slot, ..
+                direction, second, ..
             },
             ..
         } = &mut model_features[index].definition
         {
-            if slot.is_none() {
-                *slot = Some(*direction);
+            match candidates.as_slice() {
+                [first] if direction.is_none() => *direction = Some(*first),
+                [first, second_direction] => {
+                    let native = model_features[index]
+                        .native_ref
+                        .as_deref()
+                        .and_then(|native| {
+                            history_features.iter().find(|feature| feature.id == native)
+                        });
+                    let secondary = native.and_then(|feature| {
+                        Some(cadmpeg_ir::features::LinearPatternDirection {
+                            direction: *second_direction,
+                            spacing: Length(feature.parameters.get("D4").and_then(|value| {
+                                crate::history::parse_positive_dimension_length_mm(value)
+                            })?),
+                            count: feature.parameters.get("D2")?.parse::<u32>().ok()?,
+                        })
+                    });
+                    if direction.is_none() && second.is_none() && secondary.is_some() {
+                        *direction = Some(*first);
+                        *second = secondary;
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -27686,6 +27736,7 @@ mod profile_join_tests {
                 direction: None,
                 spacing: Length(5.0),
                 count: 3,
+                second: None,
             },
         };
         bind_pattern_inputs(

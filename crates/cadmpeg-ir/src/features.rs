@@ -1587,6 +1587,9 @@ pub enum PatternKind {
         spacing: Length,
         /// Total number of instances, including the original.
         count: u32,
+        /// Optional complete second translation direction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        second: Option<LinearPatternDirection>,
     },
     /// Repeats seeds evenly around an axis.
     Circular {
@@ -1616,6 +1619,17 @@ pub enum PatternKind {
         /// Unit normal of the mirror plane.
         plane_normal: Vector3,
     },
+}
+
+/// Complete secondary direction of a two-direction linear pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LinearPatternDirection {
+    /// Unit translation direction.
+    pub direction: Vector3,
+    /// Distance between consecutive instances.
+    pub spacing: Length,
+    /// Total number of instances, including the original.
+    pub count: u32,
 }
 
 /// Structural form of a repeated or reflected feature operation.

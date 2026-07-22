@@ -2849,6 +2849,7 @@ fn feature_operation_geometry_is_validated() {
                 direction: Some(Vector3::new(0.0, 0.0, 0.0)),
                 spacing: Length(-1.0),
                 count: 0,
+                second: None,
             },
         },
         FeatureDefinition::Pattern {

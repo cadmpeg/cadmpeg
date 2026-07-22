@@ -5228,6 +5228,20 @@ fn project_pattern(
                         .get("Count")
                         .or_else(|| feature.parameters.get("D1"))?,
                 )?,
+                second: match (
+                    feature.properties.get("Direction2"),
+                    feature.parameters.get("D4"),
+                    feature.parameters.get("D2"),
+                ) {
+                    (Some(direction), Some(spacing), Some(count)) => {
+                        Some(cadmpeg_ir::features::LinearPatternDirection {
+                            direction: parse_valid_direction(direction)?,
+                            spacing: Length(parse_positive_dimension_length_mm(spacing)?),
+                            count: parse_count(count)?,
+                        })
+                    }
+                    _ => None,
+                },
             },
             PatternForm::Circular => PatternKind::Circular {
                 axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
@@ -11817,6 +11831,7 @@ pub fn sync_neutral_features(
                         direction,
                         spacing,
                         count,
+                        second,
                     } => {
                         match direction {
                             Some(direction) => {
@@ -11862,6 +11877,21 @@ pub fn sync_neutral_features(
                             ),
                         );
                         parameters.insert(count_key.into(), count.to_string());
+                        if let Some(second) = second {
+                            require_direction(second.direction, &feature.id, "second pattern")?;
+                            require_count(second.count, &feature.id)?;
+                            if !second.spacing.0.is_finite() || second.spacing.0 <= 0.0 {
+                                return Err(CodecError::Malformed(format!(
+                                    "SLDPRT feature {} has invalid second linear-pattern spacing",
+                                    feature.id
+                                )));
+                            }
+                            properties
+                                .insert("Direction2".into(), format_vector3(second.direction));
+                            parameters
+                                .insert("D4".into(), format_length_like(second.spacing.0, None));
+                            parameters.insert("D2".into(), second.count.to_string());
+                        }
                     }
                     PatternKind::Circular {
                         axis_origin,

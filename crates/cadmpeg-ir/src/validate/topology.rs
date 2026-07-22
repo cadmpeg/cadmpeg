@@ -2051,10 +2051,16 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         direction,
                         spacing,
                         count,
+                        second,
                     } => {
                         direction.is_none_or(valid_feature_direction)
                             && positive_feature_length(*spacing)
                             && *count > 0
+                            && second.as_ref().is_none_or(|second| {
+                                valid_feature_direction(second.direction)
+                                    && positive_feature_length(second.spacing)
+                                    && second.count > 0
+                            })
                     }
                     PatternKind::Circular {
                         axis_origin,

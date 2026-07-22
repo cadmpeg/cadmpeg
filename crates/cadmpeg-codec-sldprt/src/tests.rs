@@ -3579,6 +3579,11 @@ fn encoder_writes_source_less_native_features() {
             direction: Some(Vector3::new(1.0, 0.0, 0.0)),
             spacing: Length(10.0),
             count: 3,
+            second: Some(cadmpeg_ir::features::LinearPatternDirection {
+                direction: Vector3::new(0.0, 1.0, 0.0),
+                spacing: Length(20.0),
+                count: 4,
+            }),
         },
         PatternKind::Circular {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
@@ -3657,6 +3662,20 @@ fn encoder_writes_source_less_native_features() {
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Fillet { .. })));
+    assert!(decoded.ir.model.features.iter().any(|feature| matches!(
+        feature.definition,
+        FeatureDefinition::Pattern {
+            pattern: PatternKind::Linear {
+                second: Some(cadmpeg_ir::features::LinearPatternDirection {
+                    direction: Vector3 { x: 0.0, y: 1.0, z: 0.0 },
+                    spacing: Length(20.0),
+                    count: 4,
+                }),
+                ..
+            },
+            ..
+        }
+    )));
     assert!(decoded
         .ir
         .model
@@ -14344,6 +14363,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
                 direction: Some(Vector3 { x: 1.0, y: 0.0, z: 0.0 }),
                 spacing: Length(10.0),
                 count: 3,
+                second: None,
             },
         } if seeds == &[cadmpeg_ir::features::PatternSeed::Feature(seed.clone())]
     ));
@@ -14384,6 +14404,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
                 direction,
                 spacing,
                 count,
+                second: _,
             },
         ..
     } = &mut decoded.ir.model.features[1].definition
@@ -14537,6 +14558,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
                 direction: None,
                 spacing: Length(2.54),
                 count: 15,
+                second: None,
             },
         } if seeds.is_empty()
     ));
@@ -14582,6 +14604,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
                 direction: None,
                 spacing: Length(3.5),
                 count: 12,
+                second: None,
             },
             ..
         }
