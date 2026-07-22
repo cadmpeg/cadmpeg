@@ -24,7 +24,7 @@ use crate::families::FamilyOutput;
 use crate::native::cgm_source;
 
 pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<FamilyOutput> {
-    let mut b5_graph = crate::b5::parse(&scan.data);
+    let mut b5_graph = crate::families::b5::graph::parse(&scan.data);
     let mut fallback_surfaces = b5_graph
         .is_none()
         .then(|| freeform_surface_carriers(&scan.data));
@@ -43,7 +43,7 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();
     let topology_transferred = b5_graph.take().is_some_and(|graph| {
-        crate::b5_transfer::transfer(
+        crate::families::b5::transfer::transfer(
             &mut topology_ir,
             &mut topology_annotations,
             graph,

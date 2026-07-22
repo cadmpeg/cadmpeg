@@ -8,6 +8,7 @@ use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeo
 use cadmpeg_ir::le::f64_at;
 use cadmpeg_ir::math::Point2;
 
+use super::vecmath::{add, cross, scale};
 use crate::wire;
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
@@ -1893,22 +1894,10 @@ fn point(bytes: &[u8], offset: usize) -> Option<[f64; 3]> {
     ])
 }
 
-fn add(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
-    [left[0] + right[0], left[1] + right[1], left[2] + right[2]]
-}
-
-fn scale(value: [f64; 3], scalar: f64) -> [f64; 3] {
-    [value[0] * scalar, value[1] * scalar, value[2] * scalar]
-}
-
-fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
-    [
-        left[1] * right[2] - left[2] * right[1],
-        left[2] * right[0] - left[0] * right[2],
-        left[0] * right[1] - left[1] * right[0],
-    ]
-}
-
+// `unit` divides by reciprocal-multiply (`scale(value, 1.0 / length)`), a
+// bit-level-distinct normalization from the transfer module's per-component
+// division. The two must NOT be unified: the affected profiles depend on the
+// exact rounding of each form. See `transfer::unit` for the sibling copy.
 fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
     let length = value
         .iter()

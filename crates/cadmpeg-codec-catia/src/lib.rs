@@ -44,14 +44,11 @@
 //! appearances, materials, complete persistent identity, or general document
 //! metadata beyond the embedded JPEG preview.
 //!
-//! The low-level [`families`], [`topology`], [`b5`], [`e5`], and
-//! [`zero_entity`] modules expose record decoders for applications that need
-//! format-level access.
+//! The low-level [`families`] modules expose record decoders for applications
+//! that need format-level access.
 
 pub(crate) mod analytic;
 pub(crate) mod assemble;
-pub mod b5;
-mod b5_transfer;
 pub mod catalog;
 pub mod container;
 pub mod decode;

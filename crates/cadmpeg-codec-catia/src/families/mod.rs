@@ -14,6 +14,7 @@ use crate::variant::Variant;
 
 pub mod a5a8;
 pub mod b2;
+pub mod b5;
 pub mod consolidated;
 pub mod e5;
 pub mod freeform;

@@ -3697,7 +3697,7 @@ fn b5_frame_walk_ignores_markers_inside_payloads() {
     }
     append_b5_record(&mut bytes, 0x06, 1, &payload);
     bytes.extend_from_slice(&b5_closed_triangle_stream());
-    let graph = crate::b5::parse(&bytes).expect("length-closed B5 graph");
+    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
     assert_eq!(graph.faces.len(), 1);
     assert_eq!(graph.loops.len(), 1);
     assert_eq!(graph.vertex_points.len(), 3);
@@ -3727,7 +3727,7 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
     );
     // Keep the appended record in a length-closed run.
     append_b5_record(&mut bytes, 0x5e, 603, &[]);
-    let graph = crate::b5::parse(&bytes).expect("length-closed B5 graph");
+    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
     let pcurve = graph.pcurves.get(&600).expect("analytic line pcurve");
     assert_eq!(pcurve.degree, 1);
     assert_eq!(pcurve.distinct_knots, vec![-0.5, 1.5]);
@@ -3831,7 +3831,7 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
         }
     }
 
-    let graph = crate::b5::parse(&bytes).expect("B5 object topology");
+    let graph = crate::families::b5::graph::parse(&bytes).expect("B5 object topology");
     assert_eq!(graph.faces[0].surface, 100);
     assert_eq!(graph.faces[0].loops, vec![400]);
     assert_eq!(graph.loops[&400].pcurves, vec![200, 201, 202]);
@@ -5118,7 +5118,11 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
             .definition
             .as_ref()
             .and_then(|definition| definition.data.as_ref()),
-        Some(crate::native::CatiaConsolidatedEdgeDefinitionData::Compact24 { operand: 1 })
+        Some(
+            crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Compact24 {
+                operand: 1
+            }
+        )
     ));
 }
 
@@ -5234,7 +5238,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
             .as_ref()
             .and_then(|definition| definition.data.as_ref()),
         Some(
-            crate::native::CatiaConsolidatedEdgeDefinitionData::Scalar25 {
+            crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Scalar25 {
                 operands: [1, 0xe7, 3463],
                 persistent_lead: Some(0x0a),
                 ..
@@ -7502,7 +7506,7 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
 #[test]
 fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     let stream = b5_closed_triangle_stream();
-    crate::b5::parse(&stream).expect("generated B5 topology");
+    crate::families::b5::graph::parse(&stream).expect("generated B5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
         crate::container::scan_bytes(file.clone()).variant,

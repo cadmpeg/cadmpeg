@@ -42,7 +42,7 @@ pub(crate) fn emit_standard_extrusion_definition(
     surfaces: &mut Vec<Surface>,
     procedural_supports: &mut HashMap<u32, SurfaceId>,
     extrusion_definitions: &mut HashMap<u32, ProceduralSurfaceDefinition>,
-    extrusion: crate::b5_transfer::ResolvedExtrusionSurface,
+    extrusion: crate::families::b5::transfer::ResolvedExtrusionSurface,
 ) -> ProceduralSurfaceDefinition {
     if let Some(definition) = extrusion_definitions.get(&extrusion.surface_object_id) {
         return definition.clone();
@@ -390,7 +390,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                 distance,
             } => {
                 let support_id = match support {
-                    crate::b5_transfer::ResolvedOffsetSupport::Geometry(support) => {
+                    crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(support) => {
                         procedural_supports
                             .entry(support_object_id)
                             .or_insert_with(|| {
@@ -414,7 +414,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                             })
                             .clone()
                     }
-                    crate::b5_transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
+                    crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
                         let support_id = SurfaceId(format!(
                             "catia:standard:procedural-support#{support_object_id}"
                         ));
@@ -616,10 +616,10 @@ pub(crate) enum StandardSurfaceProcedure {
     Offset {
         carrier_object_id: u32,
         support_object_id: u32,
-        support: crate::b5_transfer::ResolvedOffsetSupport,
+        support: crate::families::b5::transfer::ResolvedOffsetSupport,
         distance: f64,
     },
-    Extrusion(Box<crate::b5_transfer::ResolvedExtrusionSurface>),
+    Extrusion(Box<crate::families::b5::transfer::ResolvedExtrusionSurface>),
 }
 
 #[derive(PartialEq)]
@@ -649,11 +649,11 @@ pub(crate) fn standard_object_evidence_from_streams(
 ) -> StandardObjectEvidence {
     let mut surface_candidates = HashMap::<u32, Option<StandardSurfaceEvidence>>::new();
     let mut support_candidates =
-        HashMap::<u32, Option<crate::b5_transfer::ResolvedOffsetSupport>>::new();
+        HashMap::<u32, Option<crate::families::b5::transfer::ResolvedOffsetSupport>>::new();
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     for stream in streams {
-        let face_surfaces = crate::b5::face_surface_references(&stream);
-        let Some(graph) = crate::b5::parse(&stream) else {
+        let face_surfaces = crate::families::b5::graph::face_surface_references(&stream);
+        let Some(graph) = crate::families::b5::graph::parse(&stream) else {
             continue;
         };
         let mut stream_edge_faces = HashMap::<u32, HashSet<u32>>::new();
@@ -684,10 +684,13 @@ pub(crate) fn standard_object_evidence_from_streams(
             .iter()
             .filter(|(face_id, _)| tags.contains(face_id))
         {
-            let evidence = crate::b5_transfer::resolved_surface_geometry(&graph, surface_id)
-                .map(StandardSurfaceEvidence::Geometry)
-                .or_else(|| {
-                    crate::b5_transfer::resolved_surface_procedural_definition(&graph, surface_id)
+            let evidence =
+                crate::families::b5::transfer::resolved_surface_geometry(&graph, surface_id)
+                    .map(StandardSurfaceEvidence::Geometry)
+                    .or_else(|| {
+                        crate::families::b5::transfer::resolved_surface_procedural_definition(
+                            &graph, surface_id,
+                        )
                         .map(|(carrier_object_id, definition)| {
                             StandardSurfaceEvidence::Procedural(
                                 StandardSurfaceProcedure::RollingBall {
@@ -696,23 +699,28 @@ pub(crate) fn standard_object_evidence_from_streams(
                                 },
                             )
                         })
-                })
-                .or_else(|| {
-                    crate::b5_transfer::resolved_offset_surface(&graph, surface_id).map(|offset| {
-                        StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
-                            carrier_object_id: offset.carrier_object_id,
-                            support_object_id: offset.support_object_id,
-                            support: offset.support,
-                            distance: offset.distance,
-                        })
                     })
-                })
-                .or_else(|| {
-                    crate::b5_transfer::resolved_extrusion_surface(&graph, surface_id)
+                    .or_else(|| {
+                        crate::families::b5::transfer::resolved_offset_surface(&graph, surface_id)
+                            .map(|offset| {
+                                StandardSurfaceEvidence::Procedural(
+                                    StandardSurfaceProcedure::Offset {
+                                        carrier_object_id: offset.carrier_object_id,
+                                        support_object_id: offset.support_object_id,
+                                        support: offset.support,
+                                        distance: offset.distance,
+                                    },
+                                )
+                            })
+                    })
+                    .or_else(|| {
+                        crate::families::b5::transfer::resolved_extrusion_surface(
+                            &graph, surface_id,
+                        )
                         .map(Box::new)
                         .map(StandardSurfaceProcedure::Extrusion)
                         .map(StandardSurfaceEvidence::Procedural)
-                });
+                    });
             let Some(evidence) = evidence else { continue };
             if let StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
                 support_object_id,
@@ -739,7 +747,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                         .and_modify(|stored| {
                             if stored.as_ref().is_some_and(|stored| {
                                 stored
-                                    != &crate::b5_transfer::ResolvedOffsetSupport::Geometry(
+                                    != &crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
                                         side.surface.clone(),
                                     )
                             }) {
@@ -747,7 +755,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                             }
                         })
                         .or_insert_with(|| {
-                            Some(crate::b5_transfer::ResolvedOffsetSupport::Geometry(
+                            Some(crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
                                 side.surface.clone(),
                             ))
                         });
@@ -792,7 +800,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                                 support_candidates
                                     .get(&side.surface_object_id)
                                     .and_then(Option::as_ref)
-                                    == Some(&crate::b5_transfer::ResolvedOffsetSupport::Geometry(
+                                    == Some(&crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
                                         side.surface.clone(),
                                     ))
                             })
@@ -1187,7 +1195,7 @@ pub(crate) fn attach_standard_topology(
             .map_or(edge, |candidate| edge_classes[candidate]);
         edge_classes.push(class);
     }
-    let native_edges = crate::b5::edge_vertex_references(source);
+    let native_edges = crate::families::b5::graph::edge_vertex_references(source);
     let graph_endpoint_pairs =
         standard_native_graph_endpoint_pairs(source, &supports, &native_edges, &ir.model.points);
     let native_port_options = supports
@@ -2097,7 +2105,7 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
     native_edges: &BTreeMap<u32, [u32; 2]>,
     points: &[Point],
 ) -> Option<Vec<Option<[usize; 2]>>> {
-    let graph = crate::b5::parse(source)?;
+    let graph = crate::families::b5::graph::parse(source)?;
     let identity_points = unique_native_identity_points(
         &graph.logical_vertex_refs,
         &graph.logical_vertex_points,

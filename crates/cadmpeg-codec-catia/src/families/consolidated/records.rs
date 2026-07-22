@@ -8,6 +8,8 @@ use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 
@@ -155,7 +157,8 @@ pub struct ConsolidatedEdgeDefinition {
 }
 
 /// Closed payload grammar of a consolidated edge-definition frame.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ConsolidatedEdgeDefinitionData {
     /// Compact class-`0x24` payload `81 <operand> 0f 87`.
     Compact24 {
@@ -1174,7 +1177,7 @@ pub(crate) fn object_stream_vertices(data: &[u8]) -> Vec<Point3> {
     let mut ranges = consolidated_records(data)
         .into_iter()
         .map(|record| record.range)
-        .chain(crate::b5::framed_ranges(data))
+        .chain(crate::families::b5::graph::framed_ranges(data))
         .collect::<Vec<_>>();
     if ranges.is_empty() {
         return Vec::new();

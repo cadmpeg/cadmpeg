@@ -9,6 +9,7 @@ use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::catalog;
 use crate::container;
+use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 use crate::object_graph::{
     self, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField, PayloadSubtype,
 };
@@ -216,49 +217,12 @@ pub struct CatiaConsolidatedEdgeDefinition {
     pub header_token: u32,
     /// Complete class-specific payload.
     pub payload: Vec<u8>,
-    /// Structurally decoded class-specific payload.
+    /// Structurally decoded class-specific payload. Reuses the consolidated
+    /// family enum directly: it is serialization-identical (same variant and
+    /// field names, no id/offset decoration), so no native restatement is
+    /// needed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<CatiaConsolidatedEdgeDefinitionData>,
-}
-
-/// Closed payload grammar of a consolidated edge-definition frame.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case", tag = "kind")]
-pub enum CatiaConsolidatedEdgeDefinitionData {
-    /// Compact class-`0x24` form.
-    Compact24 {
-        /// Width-coded operand.
-        operand: u32,
-    },
-    /// Three operands followed by eight or nine scalar lanes.
-    Scalar {
-        /// Two compact operands followed by one persistent operand.
-        operands: [u32; 3],
-        /// Complete finite scalar lane.
-        values: Vec<f64>,
-    },
-    /// Class-`0x25` uninterrupted scalar form.
-    Scalar25 {
-        /// Two mixed-width allocation operands followed by one persistent operand.
-        operands: [u32; 3],
-        /// Explicit third-operand lead, or `None` for compact encoding.
-        persistent_lead: Option<u8>,
-        /// Complete finite scalar lane.
-        values: Vec<f64>,
-    },
-    /// Class-`0x25` tagged scalar-lane form.
-    SegmentedScalar25 {
-        /// Two mixed-width allocation operands followed by one persistent operand.
-        operands: [u32; 3],
-        /// Explicit third-operand lead, or `None` for compact encoding.
-        persistent_lead: Option<u8>,
-        /// Five finite scalars preceding the segment marker.
-        leading: [f64; 5],
-        /// Scalar-lane boundary marker.
-        marker: u8,
-        /// Complete finite scalar lane following the marker.
-        trailing: Vec<f64>,
-    },
+    pub data: Option<crate::families::consolidated::records::ConsolidatedEdgeDefinitionData>,
 }
 
 /// Exact oriented-use allocation chain owned by one consolidated edge node.
@@ -999,44 +963,7 @@ fn native_consolidated_edge_definition(
         class: definition.class,
         header_token: definition.header_token,
         payload: definition.payload,
-        data: definition
-            .data
-            .map(native_consolidated_edge_definition_data),
-    }
-}
-
-fn native_consolidated_edge_definition_data(
-    data: crate::families::consolidated::records::ConsolidatedEdgeDefinitionData,
-) -> CatiaConsolidatedEdgeDefinitionData {
-    match data {
-        crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Compact24 { operand } => {
-            CatiaConsolidatedEdgeDefinitionData::Compact24 { operand }
-        }
-        crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Scalar { operands, values } => {
-            CatiaConsolidatedEdgeDefinitionData::Scalar { operands, values }
-        }
-        crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Scalar25 {
-            operands,
-            persistent_lead,
-            values,
-        } => CatiaConsolidatedEdgeDefinitionData::Scalar25 {
-            operands,
-            persistent_lead,
-            values,
-        },
-        crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
-            operands,
-            persistent_lead,
-            leading,
-            marker,
-            trailing,
-        } => CatiaConsolidatedEdgeDefinitionData::SegmentedScalar25 {
-            operands,
-            persistent_lead,
-            leading,
-            marker,
-            trailing,
-        },
+        data: definition.data,
     }
 }
 
@@ -1195,8 +1122,7 @@ fn validate_consolidated_edge_runs(
                 crate::families::consolidated::records::consolidated_edge_definition_data(
                     definition.class,
                     &definition.payload,
-                )
-                .map(native_consolidated_edge_definition_data);
+                );
             node.uses.is_some()
                 && matches!(definition.width, 1..=3)
                 && matches!(definition.flag, 0x03 | 0x13 | 0x83)
@@ -1213,7 +1139,7 @@ fn validate_consolidated_edge_runs(
                     definition.class == 0x23
                         && matches!(
                             definition.data,
-                            Some(CatiaConsolidatedEdgeDefinitionData::Scalar {
+                            Some(ConsolidatedEdgeDefinitionData::Scalar {
                                 ref values,
                                 ..
                             }) if values.len() == 8
@@ -1233,22 +1159,23 @@ fn validate_consolidated_edge_runs(
                 && carrier.range.iter().all(|value| value.is_finite())
                 && carrier.range[0] < carrier.range[1]
         });
-        let class25_descriptor_valid =
-            node.class25_descriptor.as_ref().is_none_or(|descriptor| {
-                node.uses.is_some() && node.definition.as_ref().is_some_and(|definition| {
+        let class25_descriptor_valid = node.class25_descriptor.as_ref().is_none_or(|descriptor| {
+            node.uses.is_some()
+                && node.definition.as_ref().is_some_and(|definition| {
                     definition.class == 0x25
                         && matches!(
                             definition.data,
                             Some(
-                                CatiaConsolidatedEdgeDefinitionData::Scalar25 { .. }
-                                    | CatiaConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
+                                ConsolidatedEdgeDefinitionData::Scalar25 { .. }
+                                    | ConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
                             )
                         )
                         && descriptor.byte_offset < definition.byte_offset
-                }) && matches!(descriptor.control, 0x02 | 0x0a)
-                    && matches!(descriptor.values.len(), 2 | 3)
-                    && descriptor.values.iter().all(|value| value.is_finite())
-            });
+                })
+                && matches!(descriptor.control, 0x02 | 0x0a)
+                && matches!(descriptor.values.len(), 2 | 3)
+                && descriptor.values.iter().all(|value| value.is_finite())
+        });
         if node.id != format!("catia:consolidated:edge-node#{index}")
             || !matches!(node.width, 1..=3)
             || !matches!(node.flag, 0x03 | 0x13 | 0x83)
