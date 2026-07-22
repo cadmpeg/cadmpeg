@@ -49,9 +49,11 @@ fixtures, claims above L1 remain unproven.
   degrees; conflicting and unresolved occurrences remain symbolic. Explicit
   length and angle units convert to those canonical relation units, propagate
   through dimensionally valid arithmetic, and transfer as typed neutral values.
-  A unique transferred dimension identity becomes the neutral parameter dependency;
-  duplicate identities remain source metadata. Other namespaces remain
-  unresolved. Affine
+  Unit declarations on newly created assignment targets define typed parameter
+  values and remain separate from parameter identity.
+  A unique transferred dimension identity becomes the neutral parameter
+  dependency; duplicate identities remain source metadata. Other namespaces
+  remain unresolved. Affine
   cylindrical-coordinate programs transfer as helices.
 - Feature rows, parent/input tables, affected geometry and edge identifiers,
   recipe effects, saved sections, and operation states retain stable native

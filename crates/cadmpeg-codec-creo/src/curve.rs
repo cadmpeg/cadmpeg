@@ -83,6 +83,8 @@ pub struct CurveExpressionLocalSystem {
 pub struct CurveExpressionAssignment {
     /// Assigned identifier.
     pub name: String,
+    /// Unit expression declared on a newly created parameter target.
+    pub declared_unit: Option<String>,
     /// Exact right-hand expression after surrounding ASCII whitespace removal.
     pub expression: String,
     /// Referenced identifiers in first-appearance order.
@@ -625,13 +627,9 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
         return None;
     }
     let (name, expression) = source.split_once('=')?;
-    let name = name.trim();
+    let (name, declared_unit) = expression_assignment_target(name.trim())?;
     let expression = expression.trim();
-    let valid_name = !name.is_empty()
-        && name.bytes().enumerate().all(|(index, byte)| {
-            byte == b'_' || byte.is_ascii_alphabetic() || (index > 0 && byte.is_ascii_digit())
-        });
-    if !valid_name || expression.is_empty() {
+    if expression.is_empty() {
         return None;
     }
     let mut dependencies = Vec::<String>::new();
@@ -708,12 +706,29 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
     }
     Some(CurveExpressionAssignment {
         name: name.to_owned(),
+        declared_unit: declared_unit.map(str::to_owned),
         expression: expression.to_owned(),
         dependencies,
         value: None,
         activation: CurveExpressionActivation::Active,
         offset: line.offset,
     })
+}
+
+fn expression_assignment_target(source: &str) -> Option<(&str, Option<&str>)> {
+    let (name, declared_unit) = if source.ends_with(']') {
+        let unit_start = source.rfind('[')?;
+        let unit = source.get(unit_start + 1..source.len() - 1)?.trim();
+        (!unit.is_empty()).then_some(())?;
+        (source.get(..unit_start)?.trim_end(), Some(unit))
+    } else {
+        (source, None)
+    };
+    let valid_name = !name.is_empty()
+        && name.bytes().enumerate().all(|(index, byte)| {
+            byte == b'_' || byte.is_ascii_alphabetic() || (index > 0 && byte.is_ascii_digit())
+        });
+    valid_name.then_some((name, declared_unit))
 }
 
 pub(crate) fn expression_identifier_key(name: &str) -> String {
@@ -870,6 +885,11 @@ fn evaluate_expression_program(
         .iter()
         .filter_map(|(name, value)| value.clone().map(|value| (name.clone(), value)))
         .collect::<BTreeMap<_, _>>();
+    let mut defined_symbols = external_symbols
+        .values
+        .keys()
+        .cloned()
+        .collect::<BTreeSet<_>>();
     let mut stack = Vec::<ConditionalFrame>::new();
     let mut activity = CurveExpressionActivation::Active;
     let mut assignments = Vec::new();
@@ -900,10 +920,34 @@ fn evaluate_expression_program(
         };
         assignment.activation = activity;
         let key = expression_identifier_key(&assignment.name);
+        let declaration_is_valid =
+            assignment.declared_unit.is_none() || !defined_symbols.contains(&key);
+        defined_symbols.insert(key.clone());
         match activity {
             CurveExpressionActivation::Active => {
-                assignment.value =
-                    evaluate_relation_expression(&assignment.expression, &values, context);
+                assignment.value = declaration_is_valid
+                    .then(|| evaluate_relation_expression(&assignment.expression, &values, context))
+                    .flatten()
+                    .and_then(|value| match assignment.declared_unit.as_deref() {
+                        None => Some(value),
+                        Some(unit) => {
+                            let (scale, dimension) = relation_unit(unit)?;
+                            match (value, dimension) {
+                                (CurveExpressionValue::Number(value), dimension) => {
+                                    CurveExpressionValue::Number(value).with_unit(scale, dimension)
+                                }
+                                (
+                                    value @ CurveExpressionValue::Length(_),
+                                    RelationDimension::Length,
+                                )
+                                | (
+                                    value @ CurveExpressionValue::Angle(_),
+                                    RelationDimension::Angle,
+                                ) => Some(value),
+                                _ => None,
+                            }
+                        }
+                    });
                 if let Some(value) = assignment.value.clone() {
                     values.insert(key, value);
                 } else {
@@ -1934,11 +1978,27 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
             linear: 1.0,
         },
     )]);
+    let mut defined_symbols = BTreeSet::from(["t".to_string()]);
     for assignment in &record.assignments {
         let key = expression_identifier_key(&assignment.name);
+        let declaration_is_valid =
+            assignment.declared_unit.is_none() || !defined_symbols.contains(&key);
+        defined_symbols.insert(key.clone());
         match assignment.activation {
             CurveExpressionActivation::Active => {
-                if let Some(value) = evaluate_affine_expression(&assignment.expression, &values) {
+                let value = declaration_is_valid
+                    .then(|| evaluate_affine_expression(&assignment.expression, &values))
+                    .flatten()
+                    .and_then(|value| {
+                        assignment
+                            .declared_unit
+                            .as_deref()
+                            .map_or(Some(value), |unit| {
+                                let (scale, dimension) = relation_unit(unit)?;
+                                value.with_unit(scale, dimension)
+                            })
+                    });
+                if let Some(value) = value {
                     values.insert(key, value);
                 } else {
                     values.remove(&key);
@@ -3072,6 +3132,39 @@ mod tests {
         assert_eq!(records[0].assignments[2].value, None);
         assert_eq!(records[0].assignments[3].dependencies, ["r"]);
         assert_eq!(records[0].assignments[3].value, number(11.0));
+    }
+
+    #[test]
+    fn declares_units_only_on_new_relation_parameters() {
+        let lines = [
+            "span[inch]=2",
+            "copy=span+25.4[mm]",
+            "span[mm]=50.8[mm]",
+            "bad[degree]=1[mm]",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(assignments[0].name, "span");
+        assert_eq!(assignments[0].declared_unit.as_deref(), Some("inch"));
+        assert_eq!(
+            assignments[0].value,
+            Some(CurveExpressionValue::Length(50.8))
+        );
+        let Some(CurveExpressionValue::Length(copy)) = &assignments[1].value else {
+            panic!("dimensioned copy");
+        };
+        assert!((*copy - 76.2).abs() < 1e-12);
+        assert_eq!(assignments[2].declared_unit.as_deref(), Some("mm"));
+        assert_eq!(assignments[2].value, None);
+        assert_eq!(assignments[3].value, None);
     }
 
     #[test]

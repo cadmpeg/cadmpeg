@@ -389,6 +389,7 @@ struct CreoCurveExpressionLine {
 #[derive(Serialize)]
 struct CreoCurveExpressionAssignment {
     name: String,
+    declared_unit: Option<String>,
     expression: String,
     dependencies: Vec<String>,
     value: Option<crate::curve::CurveExpressionValue>,
@@ -2726,6 +2727,7 @@ fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionReco
                 .iter()
                 .map(|assignment| CreoCurveExpressionAssignment {
                     name: assignment.name.clone(),
+                    declared_unit: assignment.declared_unit.clone(),
                     expression: assignment.expression.clone(),
                     dependencies: assignment.dependencies.clone(),
                     value: assignment.value.clone(),
@@ -3041,6 +3043,9 @@ fn transfer_curve_expression_features(
                 "activation".to_string(),
                 assignment.activation.token().to_string(),
             );
+            if let Some(unit) = &assignment.declared_unit {
+                properties.insert("declared_unit".to_string(), unit.clone());
+            }
             if parameter_names[assignment_ordinal] != assignment.name {
                 properties.insert("source_name".to_string(), assignment.name.clone());
             }

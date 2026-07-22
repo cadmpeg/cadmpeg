@@ -4906,6 +4906,33 @@ fn decode_evaluates_relation_model_name_from_unique_counted_header() {
 }
 
 #[test]
+fn decode_transfers_new_relation_parameter_unit_declarations() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x02span[inch]=2\0copy=span+25.4[mm]\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let parameters = &result.ir.model.parameters;
+    assert_eq!(parameters.len(), 2);
+    assert_eq!(parameters[0].name, "span");
+    assert_eq!(parameters[0].properties["declared_unit"], "inch");
+    assert_eq!(
+        parameters[0].value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(50.8)
+        ))
+    );
+    let Some(cadmpeg_ir::features::ParameterValue::Length(copy)) = &parameters[1].value else {
+        panic!("dimensioned copy");
+    };
+    assert!((copy.0 - 76.2).abs() < 1e-12);
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert_eq!(native.fields["assignments"][0]["name"], "span");
+    assert_eq!(native.fields["assignments"][0]["declared_unit"], "inch");
+}
+
+#[test]
 fn decode_transfers_curve_expression_conditional_activation() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x07a=YES\0IF a\0value=5\0ELSE\0value=9\0ENDIF\0z=value\0"

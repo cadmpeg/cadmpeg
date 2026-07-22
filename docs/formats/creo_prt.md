@@ -2516,6 +2516,11 @@ require equal dimensions. Multiplication by and division by a dimensionless
 scalar retain the quantity dimension; dividing equal dimensions produces a
 dimensionless scalar. Circular trigonometric functions accept angular
 quantities. Evaluated length and angle assignments retain their dimensions.
+An assignment target may append a bracketed unit expression only when that
+assignment creates the parameter. A dimensionless right-hand value is
+interpreted in the declared unit; an explicitly dimensioned right-hand value
+must have the same dimension. The parameter identity excludes the bracketed
+declaration.
 
 `ceil(value)` and `floor(value)` round to an integer after applying their
 defined numeric tolerance. Their optional second argument selects zero through
