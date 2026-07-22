@@ -5,12 +5,12 @@
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{ExactVec, View};
+use cadmpeg_ir::decode::View;
 
 use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
-use crate::wire::{scaled_coordinate, Uuid};
+use crate::wire::{scaled_coordinate, ExactVec, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const MAX_DIMENSION: usize = 10_000;
@@ -39,10 +39,6 @@ fn malformed(offset: usize, message: impl Into<String>) -> GeometryError {
     })
 }
 
-/// A budget refusal is treated as malformed input: the codec-local caps
-/// (`MAX_CONTROL_POINTS`, `MAX_SCALARS`) bound the counts well below any
-/// default budget ceiling, so a refusal here means the reserved size was
-/// implausible for the surrounding window.
 fn refused(offset: usize, error: &CodecError) -> GeometryError {
     malformed(offset, format!("NURBS cage allocation refused: {error}"))
 }
@@ -97,9 +93,6 @@ pub(crate) fn decode_at(
         return Err(malformed(offset, "invalid NURBS cage framing"));
     }
 
-    // Only this record's bytes are navigable; the
-    // count-framed loops below size themselves against `body`'s remaining
-    // window, not a trusted decoded count.
     let mut body = expand
         .root()
         .child(chunk.body.start, chunk.body.end)
@@ -178,7 +171,7 @@ pub(crate) fn decode_at(
                 .map_err(|error| refused(body.position(), &error))?;
         }
         knots[axis] = reserved
-            .finish_exact()
+            .finish()
             .map_err(|error| refused(body.position(), &error))?;
     }
 
@@ -188,8 +181,6 @@ pub(crate) fn decode_at(
         .filter(|count| *count <= MAX_SCALARS && *count <= body.remaining() / 8)
         .ok_or_else(|| malformed(body.position(), "NURBS cage control data exceeds bound"))?;
 
-    // Count-framed control net: the outer point list and each point's stored
-    // coordinate tuple are reserved through `exact_vec`.
     let control_bound = body
         .counted(control_count as u64, stored_dimension * 8)
         .ok_or_else(|| malformed(body.position(), "NURBS cage control net truncated"))?;
@@ -223,7 +214,7 @@ pub(crate) fn decode_at(
                 .map_err(|error| refused(body.position(), &error))?;
         }
         let mut stored = stored
-            .finish_exact()
+            .finish()
             .map_err(|error| refused(body.position(), &error))?;
         let weight = if rational {
             let weight = stored.pop().expect("rational cage has a weight");
@@ -254,7 +245,7 @@ pub(crate) fn decode_at(
         return Err(malformed(body.position(), "NURBS cage has trailing bytes"));
     }
     let control_points = control_points
-        .finish_exact()
+        .finish()
         .map_err(|error| refused(body.position(), &error))?;
     Ok((
         Cage {

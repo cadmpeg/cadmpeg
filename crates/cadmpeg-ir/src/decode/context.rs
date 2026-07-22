@@ -14,7 +14,7 @@ use super::policy::{
     DecodeMode, DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
     DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE,
 };
-use super::space::{ByteRange, SpaceRegistry};
+use super::space::{ByteRange, SpaceId};
 use super::view::View;
 
 /// Initial per-expand reservation clamp: an attacker's declared size cannot
@@ -29,7 +29,7 @@ pub struct DecodeContext<'a> {
     container_only: bool,
     input_bytes: u64,
     decompressed_bytes: Cell<u64>,
-    spaces: SpaceRegistry,
+    next_space: Cell<u32>,
     fuse: Cell<Option<ResourceLimit>>,
 }
 
@@ -95,18 +95,16 @@ impl<'a> DecodeContext<'a> {
                 length,
             ));
         }
-        let spaces = SpaceRegistry::default();
-        let root_space = spaces.register_root();
         let ctx = DecodeContext {
             arena,
             policy: *policy,
             container_only: false,
             input_bytes: length,
             decompressed_bytes: Cell::new(0),
-            spaces,
+            next_space: Cell::new(1),
             fuse: Cell::new(None),
         };
-        Ok((ctx, View::over_space(bytes, root_space)))
+        Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
     }
 
     /// Returns the decode policy in force.
@@ -141,6 +139,12 @@ impl<'a> DecodeContext<'a> {
             .limits
             .max_decompressed_bytes_per_expand
             .min(proportional)
+    }
+
+    fn allocate_space(&self) -> SpaceId {
+        let index = self.next_space.get();
+        self.next_space.set(index.saturating_add(1));
+        SpaceId::from_index(index)
     }
 
     fn charge_decompressed(
@@ -212,7 +216,7 @@ impl<'a> DecodeContext<'a> {
         }
         let mut buffer: Vec<u8> = Vec::new();
         let reserve = match spec {
-            ExpandSpec::Exact(size) | ExpandSpec::AtMost(size) => size.min(RESERVE_CLAMP),
+            ExpandSpec::Exact(size) => size.min(RESERVE_CLAMP),
             ExpandSpec::Unknown => 0,
         };
         if reserve > 0 {
@@ -254,7 +258,7 @@ impl<'a> DecodeContext<'a> {
             buffer.extend_from_slice(view.window());
         }
         let bytes = self.arena.alloc(buffer.into_boxed_slice());
-        let space = self.spaces.register();
+        let space = self.allocate_space();
         Ok(View::over_space(bytes, space))
     }
 
@@ -289,7 +293,7 @@ impl<'a> DecodeContext<'a> {
                     parent.space().index()
                 ))
             })?;
-        let space = self.spaces.register();
+        let space = self.allocate_space();
         Ok(View::over_space(child.window(), space))
     }
 
@@ -355,8 +359,6 @@ fn root_error(reason: ResourceFailure, limit: u64, used: u64) -> CodecError {
 pub enum ExpandSpec {
     /// A declared exact size, enforced per-write and at finalize.
     Exact(u64),
-    /// A declared upper bound only.
-    AtMost(u64),
     /// No trustworthy declared size: the decompression limits apply.
     Unknown,
 }
@@ -380,11 +382,6 @@ impl<'a> ExpandWriter<'_, 'a> {
             ExpandSpec::Exact(size) if new_written > size => {
                 return Err(CodecError::Malformed(format!(
                     "expansion exceeded declared exact size {size}"
-                )))
-            }
-            ExpandSpec::AtMost(size) if new_written > size => {
-                return Err(CodecError::Malformed(format!(
-                    "expansion exceeded declared upper bound {size}"
                 )))
             }
             _ => {}
@@ -430,7 +427,7 @@ impl<'a> ExpandWriter<'_, 'a> {
             }
         }
         let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
-        let space = self.ctx.spaces.register();
+        let space = self.ctx.allocate_space();
         Ok(View::over_space(bytes, space))
     }
 

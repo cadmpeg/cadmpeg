@@ -5,7 +5,7 @@
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{ExactVec, View};
+use cadmpeg_ir::decode::View;
 
 use crate::mesh::MeshExpand;
 
@@ -13,7 +13,7 @@ use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::parse_class_wrapper;
 use crate::settings::{Plane, Point3, Vector3};
-use crate::wire::Uuid;
+use crate::wire::{ExactVec, Uuid};
 
 pub(crate) const CLASS: Uuid = Uuid::from_canonical([
     0x05, 0x59, 0x73, 0x3b, 0x53, 0x32, 0x49, 0xd1, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76, 0xad, 0xe5,
@@ -51,9 +51,6 @@ fn structural(offset: usize, message: impl Into<String>) -> GeometryError {
     })
 }
 
-/// The codec-local `MAX_LOOPS` cap bounds the loop count well below any
-/// default budget ceiling, so a refusal here means the reserved size was
-/// implausible for the surrounding window.
 fn refused(offset: usize, error: &CodecError) -> GeometryError {
     structural(offset, format!("hatch allocation refused: {error}"))
 }
@@ -237,7 +234,7 @@ pub(crate) fn decode(
         return Err(structural(body.position(), "hatch has trailing bytes"));
     }
     let loops = loops
-        .finish_exact()
+        .finish()
         .map_err(|error| refused(body.position(), &error))?;
     Ok(Hatch {
         source_range: range,

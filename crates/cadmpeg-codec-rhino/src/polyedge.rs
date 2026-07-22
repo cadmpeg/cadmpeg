@@ -5,13 +5,13 @@
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{ExactVec, View};
+use cadmpeg_ir::decode::View;
 
 use crate::mesh::MeshExpand;
 
 use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::objects::parse_class_wrapper;
-use crate::wire::Uuid;
+use crate::wire::{ExactVec, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const ITEM_CAP: usize = 1 << 20;
@@ -55,9 +55,6 @@ fn malformed(offset: usize, message: impl Into<String>) -> FramingError {
     }
 }
 
-/// The codec-local `ITEM_CAP` bounds each count well below any default
-/// budget ceiling, so a refusal here means the reserved size was implausible for
-/// the surrounding window.
 fn refused(offset: usize, error: &CodecError) -> FramingError {
     malformed(offset, format!("polyedge allocation refused: {error}"))
 }
@@ -220,7 +217,7 @@ pub(crate) fn decode(
             .map_err(|error| refused(body.position(), &error))?;
     }
     let parameters = reserved
-        .finish_exact()
+        .finish()
         .map_err(|error| refused(body.position(), &error))?;
 
     let mut segments = ExactVec::<Segment>::new(segment_bound)
@@ -254,7 +251,7 @@ pub(crate) fn decode(
         ));
     }
     let segments = segments
-        .finish_exact()
+        .finish()
         .map_err(|error| refused(body.position(), &error))?;
     Ok(PolyEdge {
         parameters,

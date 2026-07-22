@@ -4,6 +4,52 @@
 
 use std::fmt;
 
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::BoundedCount;
+
+/// A vector that must contain exactly a count proven against input.
+#[derive(Debug)]
+pub(crate) struct ExactVec<T> {
+    values: Vec<T>,
+    capacity: usize,
+}
+
+impl<T> ExactVec<T> {
+    /// Allocates storage for a count already bounded by the input window.
+    pub(crate) fn new(count: BoundedCount) -> Result<Self, CodecError> {
+        let capacity = count.get();
+        let mut values = Vec::new();
+        values
+            .try_reserve_exact(capacity)
+            .map_err(|_| CodecError::Io(std::io::Error::other("allocation failed")))?;
+        Ok(Self { values, capacity })
+    }
+
+    /// Appends one value without exceeding the bounded count.
+    pub(crate) fn push(&mut self, value: T) -> Result<(), CodecError> {
+        if self.values.len() == self.capacity {
+            return Err(CodecError::Malformed(
+                "fixed-capacity vector overflow".to_owned(),
+            ));
+        }
+        self.values.push(value);
+        Ok(())
+    }
+
+    /// Returns the values if the bounded count was filled exactly.
+    pub(crate) fn finish(self) -> Result<Vec<T>, CodecError> {
+        if self.values.len() == self.capacity {
+            Ok(self.values)
+        } else {
+            Err(CodecError::Malformed(format!(
+                "fixed-capacity vector contains {} of {} values",
+                self.values.len(),
+                self.capacity
+            )))
+        }
+    }
+}
+
 /// A UUID in canonical textual byte order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct Uuid {

@@ -37,16 +37,13 @@ fn views_bound_reads_and_children() {
 }
 
 #[test]
-fn fixed_vector_requires_a_physically_possible_count() {
+fn counted_requires_a_physically_possible_count() {
     let bytes = [0_u8; 8];
     let arena = DecodeArena::new();
     let (_, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     assert!(root.counted(3, 4).is_none());
-    let mut values = ExactVec::<u32>::new(root.counted(2, 4).unwrap()).unwrap();
-    values.push(1).unwrap();
-    values.push(2).unwrap();
-    assert_eq!(values.finish_exact().unwrap(), vec![1, 2]);
+    assert_eq!(root.counted(2, 4).unwrap().get(), 2);
 }
 
 #[test]

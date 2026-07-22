@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded navigation over one address space.
 
-use crate::codec::CodecError;
 use crate::cursor::bounded_len;
 
 use super::error::SourceLocation;
@@ -10,62 +9,12 @@ use super::space::SpaceId;
 
 /// A count proven to fit in the unread input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BoundedCount {
-    count: usize,
-    min_element_size: usize,
-}
+pub struct BoundedCount(usize);
 
 impl BoundedCount {
     /// Returns the proven element count.
     pub fn get(self) -> usize {
-        self.count
-    }
-
-    /// Returns the minimum encoded size of one element.
-    pub fn min_element_size(self) -> usize {
-        self.min_element_size
-    }
-}
-
-/// A vector that must contain exactly a count proven against input.
-#[derive(Debug)]
-pub struct ExactVec<T> {
-    vec: Vec<T>,
-    capacity: usize,
-}
-
-impl<T> ExactVec<T> {
-    /// Allocates storage for a proven count.
-    pub fn new(count: BoundedCount) -> Result<Self, CodecError> {
-        let capacity = count.get();
-        let mut vec = Vec::new();
-        vec.try_reserve_exact(capacity)
-            .map_err(|_| CodecError::Io(std::io::Error::other("allocation failed")))?;
-        Ok(Self { vec, capacity })
-    }
-
-    /// Appends one value without exceeding the proven count.
-    pub fn push(&mut self, value: T) -> Result<(), CodecError> {
-        if self.vec.len() == self.capacity {
-            return Err(CodecError::Malformed(
-                "fixed-capacity vector overflow".to_owned(),
-            ));
-        }
-        self.vec.push(value);
-        Ok(())
-    }
-
-    /// Returns the values if the proven count was filled exactly.
-    pub fn finish_exact(self) -> Result<Vec<T>, CodecError> {
-        if self.vec.len() == self.capacity {
-            Ok(self.vec)
-        } else {
-            Err(CodecError::Malformed(format!(
-                "fixed-capacity vector contains {} of {} values",
-                self.vec.len(),
-                self.capacity
-            )))
-        }
+        self.0
     }
 }
 
@@ -92,7 +41,7 @@ impl<'a> View<'a> {
     }
 
     /// Returns the space this view navigates.
-    pub fn space(self) -> SpaceId {
+    pub(crate) fn space(self) -> SpaceId {
         self.space
     }
 
@@ -114,11 +63,6 @@ impl<'a> View<'a> {
     /// Returns the number of unread bytes before the window's end.
     pub fn remaining(self) -> usize {
         self.end.saturating_sub(self.position)
-    }
-
-    /// Returns whether the window is fully read.
-    pub fn is_empty(self) -> bool {
-        self.remaining() == 0
     }
 
     /// Returns this view's current source location.
@@ -155,16 +99,6 @@ impl<'a> View<'a> {
         self.take(count).map(|_| ())
     }
 
-    /// Reads the bytes at `position + offset` without advancing.
-    pub fn peek(self, offset: usize, count: usize) -> Option<&'a [u8]> {
-        let start = self.position.checked_add(offset)?;
-        let end = start.checked_add(count)?;
-        if end > self.end {
-            return None;
-        }
-        self.bytes.get(start..end)
-    }
-
     /// Moves to an absolute offset, honoring the stored lower bound.
     pub fn seek(&mut self, position: usize) -> Option<()> {
         (self.start <= position && position <= self.end).then(|| self.position = position)
@@ -192,10 +126,7 @@ impl<'a> View<'a> {
 
     /// Proves a declared element count could fit in the unread bytes.
     pub fn counted(self, count: u64, min_element_size: usize) -> Option<BoundedCount> {
-        bounded_len(count, min_element_size, self.remaining()).map(|count| BoundedCount {
-            count,
-            min_element_size,
-        })
+        bounded_len(count, min_element_size, self.remaining()).map(BoundedCount)
     }
 
     /// Builds an unexpected-eof error from the view's current state.
