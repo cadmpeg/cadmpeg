@@ -4300,14 +4300,30 @@ fn surface_body_compound_close(
 }
 
 fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usize> {
+    const OUTLINE_PAIR_SEPARATOR: &[u8] = &[0x00, 0x0c, 0x98];
+
+    let separator_close = payload
+        .get(start..end)?
+        .windows(OUTLINE_PAIR_SEPARATOR.len() + 1)
+        .position(|window| {
+            window.starts_with(OUTLINE_PAIR_SEPARATOR)
+                && window.last() == Some(&psb::token::COMPOUND_CLOSE)
+        })
+        .map(|offset| start + offset + OUTLINE_PAIR_SEPARATOR.len());
     for token in psb::tokens(payload.get(start..end)?) {
         match token.kind {
-            psb::TokenKind::CompoundClose => return Some(start + token.offset),
-            psb::TokenKind::NamedRecord => return None,
+            psb::TokenKind::CompoundClose => {
+                return Some(
+                    separator_close.map_or(start + token.offset, |separator_close| {
+                        separator_close.min(start + token.offset)
+                    }),
+                );
+            }
+            psb::TokenKind::NamedRecord => return separator_close,
             _ => {}
         }
     }
-    None
+    separator_close
 }
 
 fn named_spline_scalar_slots(
@@ -4643,6 +4659,12 @@ fn complete_plane_local_system_slots(
     cache: &scalar::ScalarCache,
 ) -> Option<[f64; 12]> {
     let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
+    if let Some(prefix) = frame_body.strip_suffix(&[0x00, 0x0c, 0x98]) {
+        let mut normalized = Vec::with_capacity(prefix.len() + 1);
+        normalized.extend_from_slice(prefix);
+        normalized.push(0x0f);
+        return scalar::decode_plane_support_local_system_slots(&normalized, cache);
+    }
     scalar::decode_plane_support_local_system_slots(frame_body, cache)
 }
 
@@ -7288,6 +7310,33 @@ mod tests {
         assert_eq!(frame.origin, Some([6.0, -12.62, 0.0]));
         assert_eq!(frame.u_axis, Some([0.0, 1.0, 0.0]));
         assert_eq!(frame.normal, Some([1.0, 0.0, 0.0]));
+    }
+
+    #[test]
+    fn positional_plane_frame_decodes_outline_separator_zero_suffix() {
+        let first = [
+            0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x18, 0x2f, 0x05, 0x00, 0x00, 0x0c, 0x98,
+        ];
+        let second = [
+            0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x18, 0x2a, 0xfa, 0x00, 0x00, 0x0c, 0x98,
+        ];
+
+        assert_eq!(
+            complete_plane_local_system_slots(&first, &scalar::ScalarCache::default())
+                .map(|slots| [slots[9], slots[10], slots[11]]),
+            Some([0.0, 2.625, 0.0])
+        );
+        assert_eq!(
+            complete_plane_local_system_slots(&second, &scalar::ScalarCache::default())
+                .map(|slots| [slots[9], slots[10], slots[11]]),
+            Some([0.0, 1.625, 0.0])
+        );
+    }
+
+    #[test]
+    fn outline_separator_precedes_compact_integer_alias_of_compound_close() {
+        let payload = [0x0f, 0x00, 0x0c, 0x98, 0xe3, 0xe0, 0x01, b'x', 0];
+        assert_eq!(first_compound_close(&payload, 0, payload.len()), Some(4));
     }
 
     #[test]
