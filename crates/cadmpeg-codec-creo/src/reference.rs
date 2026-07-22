@@ -343,38 +343,77 @@ fn conic_point_at(
         .then_some((values, cursor.pos()))
 }
 
+/// One decoded run of conic local-frame slots: the axis marker `18 e5` emits
+/// `[0, 1, 0]`, a bare `18` zero marker emits `[0]`, and a frame coordinate
+/// emits its single value.
+struct ConicFrameRun {
+    slots: [f64; 3],
+    len: usize,
+}
+
+impl ConicFrameRun {
+    fn triple(slots: [f64; 3]) -> Self {
+        Self { slots, len: 3 }
+    }
+
+    fn single(value: f64) -> Self {
+        Self {
+            slots: [value, 0.0, 0.0],
+            len: 1,
+        }
+    }
+
+    fn as_slice(&self) -> &[f64] {
+        &self.slots[..self.len]
+    }
+}
+
+/// Decode one conic local-frame slot run at `offset`.
+///
+/// - `18 e5`: axis marker, emits `[0, 1, 0]` and consumes two bytes.
+/// - `18` at end of body: zero marker, emits `[0]` and consumes one byte.
+/// - `18` followed by a frame coordinate: zero marker, emits `[0]` and
+///   consumes only the `18` (the coordinate is left for the next run).
+/// - otherwise: a frame coordinate, emitting its value.
+///
+/// Returns `None` only when no arm applies, aborting the frame walk exactly as
+/// the original trailing `frame_coordinate(cursor)?` did.
+fn conic_frame_run(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(ConicFrameRun, usize)> {
+    let frame_coordinate = |off| {
+        scalar::decode_model_reference_coordinate(data, off, cache)
+            .or_else(|| scalar::decode_tabulated_cylinder_frame_coordinate(data, off, cache))
+    };
+    if data.get(offset..offset + 2) == Some(&[0x18, 0xe5]) {
+        return Some((ConicFrameRun::triple([0.0, 1.0, 0.0]), offset + 2));
+    }
+    if data.get(offset) == Some(&0x18) && offset + 1 == data.len() {
+        return Some((ConicFrameRun::single(0.0), offset + 1));
+    }
+    if data.get(offset) == Some(&0x18) && frame_coordinate(offset + 1).is_some() {
+        return Some((ConicFrameRun::single(0.0), offset + 1));
+    }
+    let (value, next) = frame_coordinate(offset)?;
+    Some((ConicFrameRun::single(value), next))
+}
+
 fn conic_local_system(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
     if let Some(slots) = scalar::decode_explicit_local_system_slots(body, cache) {
         return Some(slots);
     }
     let mut values = Vec::with_capacity(12);
-    let mut cursor = 0;
-    let frame_coordinate = |offset| {
-        scalar::decode_model_reference_coordinate(body, offset, cache)
-            .or_else(|| scalar::decode_tabulated_cylinder_frame_coordinate(body, offset, cache))
-    };
-    while cursor < body.len() && values.len() < 12 {
-        if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-            values.extend([0.0, 1.0, 0.0]);
-            cursor += 2;
-            continue;
-        }
-        if body.get(cursor) == Some(&0x18) && cursor + 1 == body.len() {
-            values.push(0.0);
-            cursor += 1;
-            continue;
-        }
-        if body.get(cursor) == Some(&0x18) && frame_coordinate(cursor + 1).is_some() {
-            values.push(0.0);
-            cursor += 1;
-            continue;
-        }
-        let (value, next) = frame_coordinate(cursor)?;
-        values.push(value);
-        cursor = next;
+    let mut cursor = crate::psb::Cursor::new(body);
+    while cursor.pos() < body.len() && values.len() < 12 {
+        let run = cursor.take_with(|data, pos| conic_frame_run(data, pos, cache))?;
+        values.extend_from_slice(run.as_slice());
     }
-    (cursor == body.len() && values.len() == 12 && values.iter().all(|value| value.is_finite()))
-        .then(|| values.try_into().expect("twelve bounded conic frame slots"))
+    (cursor.pos() == body.len()
+        && values.len() == 12
+        && values.iter().all(|value| value.is_finite()))
+    .then(|| values.try_into().expect("twelve bounded conic frame slots"))
 }
 
 fn named_conic_local_system(
