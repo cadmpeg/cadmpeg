@@ -234,13 +234,13 @@ fn a5_edge_binding_resolves_cone_by_endpoint_lifts() {
 
 #[test]
 fn consolidated_record_walk_inventory_preserves_width_flag_and_boundaries() {
-    use crate::families::consolidated::records::ConsolidatedFamily;
+    use crate::wire::records::ConsolidatedFamily;
 
     let first = a6_pcurve_stream();
     let second = b3_cylinder_stream();
     let mut bytes = first.clone();
     bytes.extend_from_slice(&second);
-    let records = crate::families::consolidated::records::consolidated_records(&bytes);
+    let records = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].family, ConsolidatedFamily::A);
     assert_eq!(
@@ -260,7 +260,7 @@ fn consolidated_record_walk_suppresses_payload_records_and_resumes_after_parent(
     let sibling_start = outer.len();
     outer.extend_from_slice(&[0xb2, 0x03, 0x20, 1, 2, 0xbb]);
 
-    let records = crate::families::consolidated::records::consolidated_records(&outer);
+    let records = crate::wire::records::consolidated_records(&outer);
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].range, 0..sibling_start);
     assert_eq!(records[1].range, sibling_start..outer.len());

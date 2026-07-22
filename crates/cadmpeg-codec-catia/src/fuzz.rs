@@ -30,7 +30,7 @@ pub fn zero_entity_parse(data: &[u8]) {
 
 /// Exercise standard-family vertex-record scanning.
 pub fn geometry_vertices(data: &[u8]) {
-    let _ = crate::families::standard::records::scan_vertex_records(data);
+    let _ = crate::wire::records::scan_vertex_records(data);
 }
 
 /// Exercise standard-family surface-prefix extraction.

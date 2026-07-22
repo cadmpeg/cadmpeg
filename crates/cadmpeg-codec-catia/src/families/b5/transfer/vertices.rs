@@ -14,7 +14,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use super::super::graph::B5Graph;
 use super::edges::{b5_support_endpoints, b5_vertex_point};
 use super::{annotate, distance, B5SupportPlan, SurfacePlan, TransferPlan};
-use crate::native::cgm_source;
+use crate::assemble::cgm_source;
 
 pub(super) fn transfer_vertex_tolerances(
     graph: &B5Graph,

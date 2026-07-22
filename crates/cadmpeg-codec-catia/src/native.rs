@@ -7,8 +7,6 @@ use std::collections::HashMap;
 #[cfg(test)]
 use std::collections::HashSet;
 
-use cadmpeg_ir::SourceObjectAssociation;
-
 use crate::catalog;
 use crate::container;
 #[cfg(test)]
@@ -17,18 +15,6 @@ use crate::object_graph::{
     self, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField, PayloadSubtype,
 };
 use crate::value_block;
-
-pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
-    SourceObjectAssociation {
-        format: "catia".to_string(),
-        object_id: format!("cgm-{kind}:{tag:06x}"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
-        instance_path: Vec::new(),
-    }
-}
 
 /// Current schema version for the CATIA native namespace.
 pub const CATIA_NATIVE_VERSION: u32 = 71;
@@ -859,11 +845,10 @@ fn consolidated_edge_runs(
 }
 
 fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
-    let frames = crate::families::consolidated::records::consolidated_records(bytes)
+    let frames = crate::wire::records::consolidated_records(bytes)
         .into_iter()
         .filter(|record| {
-            record.family == crate::families::consolidated::records::ConsolidatedFamily::B
-                && record.class == 0x5e
+            record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x5e
         })
         .map(|record| (record.range.start, (record.width, record.flag)))
         .collect::<HashMap<_, _>>();

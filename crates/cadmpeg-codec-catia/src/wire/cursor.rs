@@ -4,8 +4,7 @@
 //! It backs the compact-int and reference-token readers (`object_ref`,
 //! `compact_uint`) and the finite-checked scalar and compound reads (`f64`,
 //! `point3`, `vector3`, `unit3`, `skip`) that drive the analytic surface
-//! frame readers in `analytic.rs`. `f64_raw`, `range`, and `positive` carry
-//! the target API shape for scan-loop migration in later phases.
+//! frame readers in `analytic.rs`.
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -86,8 +85,7 @@ impl<'a> Cursor<'a> {
 /// Finite-checked scalar and compound reads.
 ///
 /// The analytic surface readers (`analytic.rs`) consume `f64`, `point3`,
-/// `vector3`, `unit3`, and `skip`; `f64_raw`, `range`, and `positive` carry the
-/// target `wire::Cursor` API shape for later phases and are not yet called.
+/// `vector3`, `unit3`, and `skip`, backed by the private `f64_raw` helper.
 impl Cursor<'_> {
     fn take(&mut self, count: usize) -> Option<&[u8]> {
         let end = self.position.checked_add(count)?;
@@ -126,20 +124,6 @@ impl Cursor<'_> {
     /// direction, failing on a degenerate (near-zero-length) vector.
     pub(crate) fn unit3(&mut self) -> Option<Vector3> {
         self.vector3()?.unit()
-    }
-
-    /// Reads two finite `f64` values as a `[start, end]` pair. Ordering is
-    /// not enforced; callers that need an increasing range check it.
-    #[allow(dead_code)]
-    fn range(&mut self) -> Option<[f64; 2]> {
-        Some([self.f64()?, self.f64()?])
-    }
-
-    /// Reads a finite, strictly positive `f64`.
-    #[allow(dead_code)]
-    fn positive(&mut self) -> Option<f64> {
-        let value = self.f64()?;
-        (value > 0.0).then_some(value)
     }
 }
 

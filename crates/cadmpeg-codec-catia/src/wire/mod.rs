@@ -5,6 +5,7 @@
 
 pub(crate) mod bytes;
 pub(crate) mod cursor;
+pub(crate) mod records;
 pub(crate) mod tokens;
 
 pub(crate) use tokens::{compact_uint, counted_refs, object_ref};

@@ -1,9 +1,11 @@
 //! Compact-int and reference-token readers shared by the `b5` and `e5`
 //! families.
 //!
-//! These free functions keep the historical `(&[u8], &mut usize)` signature so
-//! the family scan loops migrate onto the shared reader without being rewritten
-//! this phase. Each delegates to [`Cursor`], which owns the byte semantics.
+//! These free functions expose the `(&[u8], &mut usize)` signature the `b5` and
+//! `e5` scan loops read against. `object_ref` and `compact_uint` are thin
+//! adapters over [`Cursor`], which owns the byte semantics; `counted_refs`
+//! composes `object_ref`. The free-function surface is the settled boundary
+//! between those position-threading loops and the cursor.
 
 use super::cursor::Cursor;
 

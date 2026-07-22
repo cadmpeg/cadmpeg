@@ -16,7 +16,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::B5Graph;
 use super::{annotate, distance, B5Support, CurvePlan, SurfacePlan, TransferPlan};
-use crate::native::cgm_source;
+use crate::assemble::cgm_source;
 
 pub(super) fn merge_curve_plan(
     plans: &mut HashMap<u32, CurvePlan>,

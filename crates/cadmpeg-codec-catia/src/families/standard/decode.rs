@@ -20,6 +20,7 @@ use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use crate::assemble::cgm_source;
 use crate::assemble::{
     annotate, attach_free_vertices, build_geometry_report,
     circle_parameter_range_from_surface_branch, link_payload_carriers, neutral_model_is_admissible,
@@ -30,7 +31,6 @@ use crate::container::{self, ContainerScan};
 use crate::families::freeform::append_freeform_surface_pools;
 use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
-use crate::native::cgm_source;
 use crate::solve::{mesh_quotient, missing_edge};
 
 /// Decode the standard-nested vertex cloud and analytic surface carriers. Returns

@@ -11,11 +11,11 @@ use cadmpeg_ir::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::HashSet;
 
-use crate::families::consolidated::records::{
-    a_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
-};
 use crate::nurbs::{expand_knots, pole_count};
 use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
+use crate::wire::records::{
+    a_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
+};
 
 /// A decoded common-form object-stream NURBS surface (`a8 03 34`).
 #[derive(Debug, Clone)]

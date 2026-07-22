@@ -1586,6 +1586,13 @@ pub fn resolve_occurrence_edges(topology: &ZeroEntityTopology) -> Vec<ZeroResolv
     edges
 }
 
+// Retained as a private copy rather than migrated onto `solve::UnionFind`.
+// The consumer in `resolve_occurrence_edges` keys a `BTreeMap` directly by the
+// component root and emits pairs via `into_values()` in root-sorted order, so
+// the output edge order depends on WHICH element is the representative. This
+// copy makes `right` the root; `solve::UnionFind::union` makes `left` the root.
+// Swapping would reorder pairs within a multi-member endpoint group, changing
+// `edges` order and the `edge_index` identities the decoder derives from it.
 fn component_root(components: &mut [usize], mut index: usize) -> usize {
     while components[index] != index {
         components[index] = components[components[index]];
@@ -1671,14 +1678,14 @@ pub fn unframed_vertices(bytes: &[u8]) -> Vec<Point3> {
     let mut region_start = 0usize;
     for record in &records {
         if region_start <= record.offset {
-            vertices.extend(crate::families::standard::records::scan_vertex_records(
+            vertices.extend(crate::wire::records::scan_vertex_records(
                 &bytes[region_start..record.offset],
             ));
         }
         let logical_len = support_logical_len(record.tag).unwrap_or(record.bytes.len());
         region_start = record.offset.saturating_add(logical_len).min(bytes.len());
     }
-    vertices.extend(crate::families::standard::records::scan_vertex_records(
+    vertices.extend(crate::wire::records::scan_vertex_records(
         &bytes[region_start..],
     ));
     vertices

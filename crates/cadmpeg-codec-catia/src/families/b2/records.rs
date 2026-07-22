@@ -12,14 +12,14 @@ use std::collections::BTreeMap;
 
 use crate::families::a5a8::records::A8Surface;
 #[cfg(test)]
-use crate::families::consolidated::records::consolidated_records;
-use crate::families::consolidated::records::{
-    b_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
-};
-#[cfg(test)]
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
     allocation_ref, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
+};
+#[cfg(test)]
+use crate::wire::records::consolidated_records;
+use crate::wire::records::{
+    b_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
 };
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a

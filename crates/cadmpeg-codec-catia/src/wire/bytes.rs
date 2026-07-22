@@ -5,6 +5,7 @@
 //! compact integer decoders; persistent and allocation reference tokens; and
 //! fixed-size `f64` array reads.
 
+use super::cursor::Cursor;
 use cadmpeg_ir::le::{f64_at, u16_at as u16_le};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -60,24 +61,10 @@ pub(crate) fn u32_le_24(bytes: &[u8], at: usize) -> Option<u32> {
 }
 
 pub(crate) fn compact_int(bytes: &[u8], at: &mut usize) -> Option<u32> {
-    let byte = *bytes.get(*at)?;
-    if byte % 4 == 1 {
-        *at += 1;
-        Some(((byte - 1) / 4) as u32)
-    } else if byte != 0 && byte % 4 == 0 {
-        let width = (byte / 4) as usize;
-        if width > 4 {
-            return None;
-        }
-        let mut value = 0u32;
-        for (shift, byte) in bytes.get(*at + 1..*at + 1 + width)?.iter().enumerate() {
-            value |= (*byte as u32) << (shift * 8);
-        }
-        *at += width + 1;
-        Some(value)
-    } else {
-        None
-    }
+    let mut cursor = Cursor::new_at(bytes, *at);
+    let value = cursor.compact_uint()?;
+    *at = cursor.position();
+    Some(value)
 }
 
 pub(crate) fn persistent_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {

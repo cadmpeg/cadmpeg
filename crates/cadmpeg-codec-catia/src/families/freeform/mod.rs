@@ -15,13 +15,13 @@ use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use std::collections::HashMap;
 
+use crate::assemble::cgm_source;
 use crate::assemble::{
     annotate, insert_unresolved_carrier_loss, link_payload_carriers, neutral_model_is_admissible,
     preserve_raw_payload, quintic_jet_pcurve, source_meta,
 };
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
-use crate::native::cgm_source;
 
 pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<FamilyOutput> {
     let mut b5_graph = crate::families::b5::graph::parse(&scan.data);
@@ -390,7 +390,7 @@ impl ConsolidatedCarrierChart<'_> {
 }
 
 pub(crate) fn consolidated_jet_pcurve(
-    pcurve: &crate::families::consolidated::records::ConsolidatedPcurve,
+    pcurve: &crate::wire::records::ConsolidatedPcurve,
     chart: &ConsolidatedCarrierChart<'_>,
 ) -> Option<PcurveGeometry> {
     let points = pcurve

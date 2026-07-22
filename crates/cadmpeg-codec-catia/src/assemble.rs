@@ -19,9 +19,22 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
+use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, HashSet};
 
 use crate::container::{self, ContainerScan};
+
+pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
+    SourceObjectAssociation {
+        format: "catia".to_string(),
+        object_id: format!("cgm-{kind}:{tag:06x}"),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    }
+}
 
 pub(crate) fn annotate(
     annotations: &mut AnnotationBuilder,

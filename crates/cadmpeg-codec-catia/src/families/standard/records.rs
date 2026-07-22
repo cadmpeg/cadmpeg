@@ -206,27 +206,6 @@ pub fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
     }
 }
 
-/// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
-/// vertex points in stream order.
-pub fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
-    let mut out = Vec::new();
-    let mut p = 0usize;
-    while p + 15 <= bytes.len() {
-        if bytes[p] == 0x05 && bytes[p + 1] == 0x08 && bytes[p + 2] == 0x01 {
-            let x = f32_le(bytes, p + 3);
-            let y = f32_le(bytes, p + 7);
-            let z = f32_le(bytes, p + 11);
-            if finite_in_range(x) && finite_in_range(y) && finite_in_range(z) {
-                out.push(Point3::new(x as f64, y as f64, z as f64));
-            }
-            p += 15;
-        } else {
-            p += 1;
-        }
-    }
-    out
-}
-
 /// Read the unique contiguous standard vertex roster with the requested
 /// cardinality. Each seven-byte row stores `54 <identity:u24le> 00 00 00`;
 /// roster order is coordinate-table order.
@@ -735,10 +714,6 @@ fn face_ref(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
 
 fn u24_le(bytes: &[u8], at: usize) -> u32 {
     bytes[at] as u32 | ((bytes[at + 1] as u32) << 8) | ((bytes[at + 2] as u32) << 16)
-}
-
-fn finite_in_range(v: f32) -> bool {
-    v.is_finite() && v.abs() < 1e4
 }
 
 fn all_finite(vs: &[f32]) -> bool {

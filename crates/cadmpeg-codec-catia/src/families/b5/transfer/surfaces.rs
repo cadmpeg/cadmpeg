@@ -18,7 +18,7 @@ use super::{
     annotate, dot, length, point, point3, subtract, unit, vector, RevolutionPlan, SurfacePlan,
     SurfaceProcedure, TransferPlan,
 };
-use crate::native::cgm_source;
+use crate::assemble::cgm_source;
 
 pub(super) fn neutral_surface(
     surface: &B5Surface,
