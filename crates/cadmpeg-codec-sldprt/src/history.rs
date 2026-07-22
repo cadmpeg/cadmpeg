@@ -3008,6 +3008,7 @@ fn format_parameter_value(value: &ParameterValue) -> String {
         ParameterValue::Real(value) => value.to_string(),
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
+        ParameterValue::String(value) => value.clone(),
     }
 }
 

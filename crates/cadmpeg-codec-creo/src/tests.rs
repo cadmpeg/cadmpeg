@@ -4734,6 +4734,41 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
 }
 
 #[test]
+fn decode_transfers_evaluated_curve_expression_strings() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x04material='steel'\0label=material+'-'+itos(2)\0\
+        length=string_length(label)\0match=label=='steel-2'\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let parameters = &result.ir.model.parameters;
+
+    assert_eq!(
+        parameters[0].value,
+        Some(cadmpeg_ir::features::ParameterValue::String(
+            "steel".to_owned()
+        ))
+    );
+    assert_eq!(
+        parameters[1].value,
+        Some(cadmpeg_ir::features::ParameterValue::String(
+            "steel-2".to_owned()
+        ))
+    );
+    assert_eq!(
+        parameters[2].value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(7.0))
+    );
+    assert_eq!(
+        parameters[3].value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(1.0))
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn decode_transfers_curve_expression_conditional_activation() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x07a=YES\0IF a\0value=5\0ELSE\0value=9\0ENDIF\0z=value\0"

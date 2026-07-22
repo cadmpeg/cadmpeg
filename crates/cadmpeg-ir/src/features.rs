@@ -170,6 +170,8 @@ pub enum ParameterValue {
     Integer(i64),
     /// Boolean scalar.
     Boolean(bool),
+    /// Unicode string scalar.
+    String(String),
 }
 
 /// A length in canonical millimeters.

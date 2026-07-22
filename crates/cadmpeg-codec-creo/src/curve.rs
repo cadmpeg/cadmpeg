@@ -87,12 +87,31 @@ pub struct CurveExpressionAssignment {
     pub expression: String,
     /// Referenced identifiers in first-appearance order.
     pub dependencies: Vec<String>,
-    /// Sequentially evaluated scalar when every dependency is resolved.
-    pub value: Option<f64>,
+    /// Sequentially evaluated value when every dependency is resolved.
+    pub value: Option<CurveExpressionValue>,
     /// Whether the source-ordered conditional program executes this assignment.
     pub activation: CurveExpressionActivation,
     /// Byte offset of the assignment source line.
     pub offset: usize,
+}
+
+/// A deterministic value produced by a curve relation expression.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(untagged)]
+pub enum CurveExpressionValue {
+    /// Dimensionless numeric value.
+    Number(f64),
+    /// UTF-8 string value.
+    String(String),
+}
+
+impl CurveExpressionValue {
+    fn truth(&self) -> Option<bool> {
+        match self {
+            Self::Number(value) => Some(*value != 0.0),
+            Self::String(_) => None,
+        }
+    }
 }
 
 /// Evaluation state of an assignment inside relation conditionals.
@@ -571,7 +590,16 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
-        if bytes[cursor].is_ascii_digit()
+        if matches!(bytes[cursor], b'\'' | b'"') {
+            let delimiter = bytes[cursor];
+            cursor += 1;
+            while bytes.get(cursor).is_some_and(|byte| *byte != delimiter) {
+                cursor += 1;
+            }
+            if bytes.get(cursor) == Some(&delimiter) {
+                cursor += 1;
+            }
+        } else if bytes[cursor].is_ascii_digit()
             || (bytes[cursor] == b'.' && bytes.get(cursor + 1).is_some_and(u8::is_ascii_digit))
         {
             while bytes
@@ -772,9 +800,9 @@ fn evaluate_expression_program(lines: &[CurveExpressionLine]) -> Vec<CurveExpres
         let source = line.text.trim();
         if let Some(condition_source) = conditional_keyword_expression(source, "if") {
             let condition = (activity == CurveExpressionActivation::Active)
-                .then(|| evaluate_expression(condition_source, &values))
+                .then(|| evaluate_relation_expression(condition_source, &values))
                 .flatten()
-                .map(|value| value != 0.0);
+                .and_then(|value| value.truth());
             let parent = activity;
             activity = branch_activation(parent, condition, false);
             stack.push(ConditionalFrame { parent, condition });
@@ -797,8 +825,8 @@ fn evaluate_expression_program(lines: &[CurveExpressionLine]) -> Vec<CurveExpres
         let key = expression_identifier_key(&assignment.name);
         match activity {
             CurveExpressionActivation::Active => {
-                assignment.value = evaluate_expression(&assignment.expression, &values);
-                if let Some(value) = assignment.value {
+                assignment.value = evaluate_relation_expression(&assignment.expression, &values);
+                if let Some(value) = assignment.value.clone() {
                     values.insert(key, value);
                 } else {
                     values.remove(&key);
@@ -814,8 +842,11 @@ fn evaluate_expression_program(lines: &[CurveExpressionLine]) -> Vec<CurveExpres
     assignments
 }
 
-trait ExpressionValue: Copy {
+trait ExpressionValue: Clone {
     fn number(value: f64) -> Self;
+    fn string(_value: String) -> Option<Self> {
+        None
+    }
     fn add(self, right: Self) -> Option<Self>;
     fn subtract(self, right: Self) -> Option<Self>;
     fn multiply(self, right: Self) -> Option<Self>;
@@ -826,7 +857,7 @@ trait ExpressionValue: Copy {
     fn logical_or(self, right: Self) -> Option<Self>;
     fn logical_not(self) -> Option<Self>;
     fn function(name: CreoMathFunction, arguments: &[Self]) -> Option<Self>;
-    fn negate(self) -> Self;
+    fn negate(self) -> Option<Self>;
     fn finite(self) -> bool;
 }
 
@@ -875,8 +906,8 @@ impl ExpressionValue for f64 {
         evaluate_creo_math_function(name, arguments)
     }
 
-    fn negate(self) -> Self {
-        -self
+    fn negate(self) -> Option<Self> {
+        Some(-self)
     }
 
     fn finite(self) -> bool {
@@ -966,15 +997,115 @@ impl ExpressionValue for AffineValue {
         evaluate_creo_math_function(name, &constants).map(Self::number)
     }
 
-    fn negate(self) -> Self {
-        Self {
+    fn negate(self) -> Option<Self> {
+        Some(Self {
             constant: -self.constant,
             linear: -self.linear,
-        }
+        })
     }
 
     fn finite(self) -> bool {
         self.constant.is_finite() && self.linear.is_finite()
+    }
+}
+
+impl ExpressionValue for CurveExpressionValue {
+    fn number(value: f64) -> Self {
+        Self::Number(value)
+    }
+
+    fn string(value: String) -> Option<Self> {
+        Some(Self::String(value))
+    }
+
+    fn add(self, right: Self) -> Option<Self> {
+        match (self, right) {
+            (Self::Number(left), Self::Number(right)) => Some(Self::Number(left + right)),
+            (Self::String(mut left), Self::String(right)) => {
+                left.push_str(&right);
+                Some(Self::String(left))
+            }
+            _ => None,
+        }
+    }
+
+    fn subtract(self, right: Self) -> Option<Self> {
+        numeric_binary(self, right, |left, right| left - right)
+    }
+
+    fn multiply(self, right: Self) -> Option<Self> {
+        numeric_binary(self, right, |left, right| left * right)
+    }
+
+    fn divide(self, right: Self) -> Option<Self> {
+        numeric_binary(self, right, |left, right| left / right)
+    }
+
+    fn power(self, right: Self) -> Option<Self> {
+        numeric_binary(self, right, f64::powf)
+    }
+
+    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
+        let result = match (self, right) {
+            (Self::Number(left), Self::Number(right)) => operator.evaluate(left, right),
+            (Self::String(left), Self::String(right)) => match operator {
+                ComparisonOperator::Equal => left == right,
+                ComparisonOperator::NotEqual => left != right,
+                _ => return None,
+            },
+            _ => return None,
+        };
+        Some(Self::Number(f64::from(result)))
+    }
+
+    fn logical_and(self, right: Self) -> Option<Self> {
+        numeric_binary(self, right, |left, right| {
+            f64::from(left != 0.0 && right != 0.0)
+        })
+    }
+
+    fn logical_or(self, right: Self) -> Option<Self> {
+        numeric_binary(self, right, |left, right| {
+            f64::from(left != 0.0 || right != 0.0)
+        })
+    }
+
+    fn logical_not(self) -> Option<Self> {
+        let Self::Number(value) = self else {
+            return None;
+        };
+        Some(Self::Number(f64::from(value == 0.0)))
+    }
+
+    fn function(name: CreoMathFunction, arguments: &[Self]) -> Option<Self> {
+        evaluate_creo_relation_function(name, arguments)
+    }
+
+    fn negate(self) -> Option<Self> {
+        match self {
+            Self::Number(value) => Some(Self::Number(-value)),
+            Self::String(_) => None,
+        }
+    }
+
+    fn finite(self) -> bool {
+        match self {
+            Self::Number(value) => value.is_finite(),
+            Self::String(_) => true,
+        }
+    }
+}
+
+fn numeric_binary(
+    left: CurveExpressionValue,
+    right: CurveExpressionValue,
+    operation: impl FnOnce(f64, f64) -> f64,
+) -> Option<CurveExpressionValue> {
+    match (left, right) {
+        (CurveExpressionValue::Number(left), CurveExpressionValue::Number(right)) => {
+            Some(CurveExpressionValue::Number(operation(left, right)))
+        }
+        _ => None,
     }
 }
 
@@ -1118,7 +1249,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         let mut value = self.power()?;
         for operator in operators.into_iter().rev() {
             value = if operator == b'-' {
-                value.negate()
+                value.negate()?
             } else {
                 value.logical_not()?
             };
@@ -1156,10 +1287,30 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 })
             }
             byte if byte.is_ascii_digit() || *byte == b'.' => self.number(),
+            b'\'' | b'"' => self.string(),
             byte if byte.is_ascii_alphabetic() || *byte == b'_' => self.identifier_or_function(),
             _ => None,
         }?;
         Some(value)
+    }
+
+    fn string(&mut self) -> Option<V> {
+        let delimiter = *self.source.get(self.cursor)?;
+        self.cursor += 1;
+        let start = self.cursor;
+        while self
+            .source
+            .get(self.cursor)
+            .is_some_and(|byte| *byte != delimiter)
+        {
+            self.cursor += 1;
+        }
+        (self.source.get(self.cursor) == Some(&delimiter)).then_some(())?;
+        let value = std::str::from_utf8(&self.source[start..self.cursor])
+            .ok()?
+            .to_owned();
+        self.cursor += 1;
+        V::string(value)
     }
 
     fn number(&mut self) -> Option<V> {
@@ -1204,7 +1355,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             if let Some(value) = reserved_relation_scalar(name) {
                 return Some(V::number(value));
             }
-            return self.values.get(&expression_identifier_key(name)).copied();
+            return self.values.get(&expression_identifier_key(name)).cloned();
         }
         (!name.contains(':')).then_some(())?;
         (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
@@ -1260,6 +1411,12 @@ enum CreoMathFunction {
     Ceil,
     Floor,
     DblInTol,
+    Itos,
+    Search,
+    Extract,
+    StringLength,
+    StringStarts,
+    StringEnds,
 }
 
 fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
@@ -1291,6 +1448,12 @@ fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
         "ceil" => Some(CreoMathFunction::Ceil),
         "floor" => Some(CreoMathFunction::Floor),
         "dbl_in_tol" => Some(CreoMathFunction::DblInTol),
+        "itos" => Some(CreoMathFunction::Itos),
+        "search" => Some(CreoMathFunction::Search),
+        "extract" => Some(CreoMathFunction::Extract),
+        "string_length" => Some(CreoMathFunction::StringLength),
+        "string_starts" => Some(CreoMathFunction::StringStarts),
+        "string_ends" => Some(CreoMathFunction::StringEnds),
         _ => None,
     }
 }
@@ -1353,6 +1516,84 @@ fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Opt
     value.is_finite().then_some(value)
 }
 
+fn evaluate_creo_relation_function(
+    name: CreoMathFunction,
+    arguments: &[CurveExpressionValue],
+) -> Option<CurveExpressionValue> {
+    use CurveExpressionValue::{Number, String};
+    let value = match (name, arguments) {
+        (CreoMathFunction::Itos, [Number(value)]) if value.is_finite() => {
+            let rounded = value.round();
+            if rounded == 0.0 {
+                String(std::string::String::new())
+            } else if rounded >= i64::MIN as f64 && rounded <= i64::MAX as f64 {
+                String(format!("{rounded:.0}"))
+            } else {
+                return None;
+            }
+        }
+        (CreoMathFunction::Search, [String(value), String(needle)]) => {
+            let position = value
+                .find(needle)
+                .map_or(0, |byte| value[..byte].chars().count() + 1);
+            Number(position as f64)
+        }
+        (CreoMathFunction::Extract, [String(value), Number(position), Number(length)]) => {
+            let (position, length) = integer_pair(*position, *length)?;
+            if position == 0 {
+                return None;
+            }
+            String(value.chars().skip(position - 1).take(length).collect())
+        }
+        (CreoMathFunction::StringLength, [String(value)]) => Number(value.chars().count() as f64),
+        (CreoMathFunction::StringStarts, [String(value), String(prefix)]) => {
+            Number(f64::from(value.starts_with(prefix)))
+        }
+        (CreoMathFunction::StringEnds, [String(value), String(suffix)]) => {
+            Number(f64::from(value.ends_with(suffix)))
+        }
+        _ => {
+            let numbers = arguments
+                .iter()
+                .map(|argument| match argument {
+                    Number(value) => Some(*value),
+                    String(_) => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Number(evaluate_creo_math_function(name, &numbers)?)
+        }
+    };
+    value.clone().finite().then_some(value)
+}
+
+fn integer_pair(first: f64, second: f64) -> Option<(usize, usize)> {
+    (first.is_finite()
+        && second.is_finite()
+        && first.fract() == 0.0
+        && second.fract() == 0.0
+        && first >= 0.0
+        && second >= 0.0
+        && first <= usize::MAX as f64
+        && second <= usize::MAX as f64)
+        .then_some((first as usize, second as usize))
+}
+
+fn evaluate_relation_expression(
+    expression: &str,
+    values: &BTreeMap<String, CurveExpressionValue>,
+) -> Option<CurveExpressionValue> {
+    let mut parser = ExpressionParser {
+        source: expression.as_bytes(),
+        cursor: 0,
+        values,
+        nesting: 0,
+    };
+    let value = parser.logical_or()?;
+    parser.whitespace();
+    (parser.cursor == parser.source.len() && value.clone().finite()).then_some(value)
+}
+
+#[cfg(test)]
 fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Option<f64> {
     let mut parser = ExpressionParser {
         source: expression.as_bytes(),
@@ -2424,6 +2665,17 @@ fn find_in(data: &[u8], needle: &[u8], from: usize, end: usize) -> Option<usize>
 mod tests {
     use super::*;
 
+    fn number(value: f64) -> Option<CurveExpressionValue> {
+        Some(CurveExpressionValue::Number(value))
+    }
+
+    fn numeric_value(value: &Option<CurveExpressionValue>) -> f64 {
+        let Some(CurveExpressionValue::Number(value)) = value else {
+            panic!("expected evaluated numeric value")
+        };
+        *value
+    }
+
     fn parameter_record(curve_id: u32, suffix: CurveSuffixStatus) -> CurveParameterRecord {
         CurveParameterRecord {
             curve_id,
@@ -2507,14 +2759,14 @@ mod tests {
         assert_eq!(records[0].assignments[0].name, "r");
         assert_eq!(records[0].assignments[0].expression, "5");
         assert!(records[0].assignments[0].dependencies.is_empty());
-        assert_eq!(records[0].assignments[0].value, Some(5.0));
+        assert_eq!(records[0].assignments[0].value, number(5.0));
         assert_eq!(records[0].assignments[1].name, "theta");
         assert_eq!(records[0].assignments[1].expression, "t*360");
         assert_eq!(records[0].assignments[1].dependencies, ["t"]);
         assert_eq!(records[0].assignments[1].value, None);
         assert_eq!(records[0].assignments[2].value, None);
         assert_eq!(records[0].assignments[3].dependencies, ["r"]);
-        assert_eq!(records[0].assignments[3].value, Some(11.0));
+        assert_eq!(records[0].assignments[3].value, number(11.0));
     }
 
     #[test]
@@ -2526,15 +2778,15 @@ mod tests {
         let assignments = &records[0].assignments;
 
         assert!(assignments[0].dependencies.is_empty());
-        assert!((assignments[0].value.expect("sine") - 0.5).abs() < 1e-12);
+        assert!((numeric_value(&assignments[0].value) - 0.5).abs() < 1e-12);
         assert_eq!(assignments[1].dependencies, ["a"]);
-        assert!((assignments[1].value.expect("power and root") - 3.25).abs() < 1e-12);
+        assert!((numeric_value(&assignments[1].value) - 3.25).abs() < 1e-12);
         assert!(assignments[2].dependencies.is_empty());
-        assert_eq!(assignments[2].value, Some(11.0));
+        assert_eq!(assignments[2].value, number(11.0));
         assert_eq!(assignments[3].dependencies, ["custom", "a"]);
         assert_eq!(assignments[3].value, None);
         assert!(assignments[4].dependencies.is_empty());
-        assert_eq!(assignments[4].value, Some(1000.0));
+        assert_eq!(assignments[4].value, number(1000.0));
 
         let values = BTreeMap::new();
         let cases = [
@@ -2585,6 +2837,56 @@ mod tests {
     }
 
     #[test]
+    fn evaluates_string_relations_and_ignores_literal_contents_in_dependencies() {
+        let sources = [
+            "material='steel'",
+            "label=material+\"-\"+itos(2.4)",
+            "where=search(label,'eel')",
+            "piece=extract(label,2,3)",
+            "length=string_length(piece)",
+            "starts=string_starts(label,'ste')",
+            "ends=string_ends(label,'-2')",
+            "same=piece=='tee'",
+            "zero=itos(0)",
+            "bad=-'text'",
+        ];
+        let lines = sources
+            .iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: (*text).to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+        let assignments = evaluate_expression_program(&lines);
+
+        assert!(assignments[0].dependencies.is_empty());
+        assert_eq!(
+            assignments[0].value,
+            Some(CurveExpressionValue::String("steel".into()))
+        );
+        assert_eq!(assignments[1].dependencies, ["material"]);
+        assert_eq!(
+            assignments[1].value,
+            Some(CurveExpressionValue::String("steel-2".into()))
+        );
+        assert_eq!(assignments[2].value, number(3.0));
+        assert_eq!(
+            assignments[3].value,
+            Some(CurveExpressionValue::String("tee".into()))
+        );
+        assert_eq!(assignments[4].value, number(3.0));
+        assert_eq!(assignments[5].value, number(1.0));
+        assert_eq!(assignments[6].value, number(1.0));
+        assert_eq!(assignments[7].value, number(1.0));
+        assert_eq!(
+            assignments[8].value,
+            Some(CurveExpressionValue::String(String::new()))
+        );
+        assert_eq!(assignments[9].value, None);
+    }
+
+    #[test]
     fn binds_relation_symbols_case_insensitively_and_preserves_scoped_dependencies() {
         let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
             \xe0\x0aexpression\0\xf8\x04Radius=5\0q=radius+PI\0\
@@ -2592,10 +2894,10 @@ mod tests {
         let assignments = &expression_records(payload)[0].assignments;
 
         assert_eq!(assignments[1].dependencies, ["radius"]);
-        assert_eq!(assignments[1].value, Some(5.0 + std::f64::consts::PI));
+        assert_eq!(assignments[1].value, number(5.0 + std::f64::consts::PI));
         assert_eq!(assignments[2].dependencies, ["d1:2", "PARAM:FID_20"]);
         assert_eq!(assignments[2].value, None);
-        assert_eq!(assignments[3].value, Some(7.0));
+        assert_eq!(assignments[3].value, number(7.0));
         assert_eq!(
             evaluate_expression("pi", &BTreeMap::new()),
             Some(std::f64::consts::PI)
@@ -2610,22 +2912,22 @@ mod tests {
         let assignments = &expression_records(payload)[0].assignments;
 
         assert_eq!(assignments.len(), 8);
-        assert_eq!(assignments[0].value, Some(0.0));
-        assert_eq!(assignments[1].value, Some(5.0));
+        assert_eq!(assignments[0].value, number(0.0));
+        assert_eq!(assignments[1].value, number(5.0));
         assert_eq!(
             assignments[2].activation,
             CurveExpressionActivation::Inactive
         );
         assert_eq!(assignments[2].value, None);
-        assert_eq!(assignments[3].value, Some(6.0));
+        assert_eq!(assignments[3].value, number(6.0));
         assert_eq!(
             assignments[4].activation,
             CurveExpressionActivation::Inactive
         );
-        assert_eq!(assignments[5].value, Some(5.0));
-        assert_eq!(assignments[6].value, Some(5.0));
+        assert_eq!(assignments[5].value, number(5.0));
+        assert_eq!(assignments[6].value, number(5.0));
         assert_eq!(assignments[7].name, "iffy");
-        assert_eq!(assignments[7].value, Some(9.0));
+        assert_eq!(assignments[7].value, number(9.0));
     }
 
     #[test]
@@ -2657,8 +2959,8 @@ mod tests {
         let records = expression_records(payload);
         let assignments = &records[0].assignments;
 
-        assert_eq!(assignments[0].value, Some(5.0));
-        assert_eq!(assignments[1].value, Some(6.0));
+        assert_eq!(assignments[0].value, number(5.0));
+        assert_eq!(assignments[1].value, number(6.0));
         assert_eq!(assignments[2].value, None);
         assert_eq!(assignments[3].value, None);
     }

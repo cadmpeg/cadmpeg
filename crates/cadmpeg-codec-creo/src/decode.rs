@@ -391,7 +391,7 @@ struct CreoCurveExpressionAssignment {
     name: String,
     expression: String,
     dependencies: Vec<String>,
-    value: Option<f64>,
+    value: Option<crate::curve::CurveExpressionValue>,
     activation: &'static str,
     offset: usize,
 }
@@ -2728,7 +2728,7 @@ fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionReco
                     name: assignment.name.clone(),
                     expression: assignment.expression.clone(),
                     dependencies: assignment.dependencies.clone(),
-                    value: assignment.value,
+                    value: assignment.value.clone(),
                     activation: assignment.activation.token(),
                     offset: assignment.offset,
                 })
@@ -3076,7 +3076,14 @@ fn transfer_curve_expression_features(
                 name: parameter_names[assignment_ordinal].clone(),
                 expression: assignment.expression.clone(),
                 display: None,
-                value: assignment.value.map(ParameterValue::Real),
+                value: assignment.value.as_ref().map(|value| match value {
+                    crate::curve::CurveExpressionValue::Number(value) => {
+                        ParameterValue::Real(*value)
+                    }
+                    crate::curve::CurveExpressionValue::String(value) => {
+                        ParameterValue::String(value.clone())
+                    }
+                }),
                 dependencies,
                 properties,
                 pmi: None,
@@ -36598,9 +36605,10 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         message: format!(
             "Named feature operations and their decoded dependency/input tables transfer as typed \
              or native design records. Curve-equation assignments transfer with their source, \
-             dependencies, and closed scalar operator and standard mathematical-function values. \
+             dependencies, and closed numeric and string operator and deterministic function values. \
              Full neutral operation semantics\
-             {configuration_gap}, string-valued relation semantics, materials, and display data \
+             {configuration_gap}, environment-dependent and formatted relation functions, \
+             materials, and display data \
              remain untransferred."
         ),
         provenance: None,
