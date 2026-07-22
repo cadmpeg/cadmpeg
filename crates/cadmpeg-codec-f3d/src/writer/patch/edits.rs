@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use crate::history_records::{AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmHistory};
+use crate::history_records::{AsmBulletinBoard, AsmDeltaState, AsmEntityChange};
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, DesignMaterialAssignment, LostEdgeReference,
     SketchCurveGeometry,
@@ -1945,9 +1945,21 @@ pub(crate) fn validate_persistent_reference_edits(
     Ok(edits)
 }
 
+/// The three history-preamble fields a patch writes back, carried as
+/// non-optional values. [`validate_history_state_edits`] only builds one after
+/// it has confirmed both `stream_size` and `history_entry_count` are present, so
+/// a [`HistoryEdits`] that holds a preamble cannot reach the patcher with either
+/// field absent — the invariant `patch_history_states` previously asserted with
+/// `expect`.
+pub(crate) struct PreambleEdit {
+    pub(crate) byte_offset: u64,
+    pub(crate) stream_size: i64,
+    pub(crate) history_entry_count: i64,
+}
+
 #[derive(Default)]
 pub(crate) struct HistoryEdits {
-    pub(crate) preamble: Option<AsmHistory>,
+    pub(crate) preamble: Option<PreambleEdit>,
     pub(crate) states: Vec<AsmDeltaState>,
     pub(crate) boards: Vec<AsmBulletinBoard>,
     pub(crate) changes: Vec<AsmEntityChange>,
@@ -2059,7 +2071,7 @@ pub(crate) fn validate_history_state_edits(
         if history.stream_size != before.stream_size
             || history.history_entry_count != before.history_entry_count
         {
-            let (Some(_size), Some(entry_count)) =
+            let (Some(stream_size), Some(history_entry_count)) =
                 (history.stream_size, history.history_entry_count)
             else {
                 return Err(CodecError::NotImplemented(format!(
@@ -2067,13 +2079,17 @@ pub(crate) fn validate_history_state_edits(
                     history.id
                 )));
             };
-            if history.byte_offset == 0 || entry_count < 0 {
+            if history.byte_offset == 0 || history_entry_count < 0 {
                 return Err(CodecError::Malformed(format!(
                     "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
             }
-            edits.entry(stream.clone()).or_default().preamble = Some(history.clone());
+            edits.entry(stream.clone()).or_default().preamble = Some(PreambleEdit {
+                byte_offset: history.byte_offset,
+                stream_size,
+                history_entry_count,
+            });
         }
         for (state, before_state) in history.states.iter().zip(&before.states) {
             if state != before_state {

@@ -564,10 +564,8 @@ pub(crate) fn patch_history_states(
             .ok_or_else(|| {
                 CodecError::Malformed("ASM preamble offset exceeds address space".into())
             })?;
-        let size = history.stream_size.expect("validated history preamble");
-        let entry_count = history
-            .history_entry_count
-            .expect("validated history preamble");
+        let size = history.stream_size;
+        let entry_count = history.history_entry_count;
         for (ordinal, value) in [(0, size), (1, size), (3, entry_count)] {
             let tag = start + ordinal * 9;
             if bytes.get(tag) != Some(&0x04) {
