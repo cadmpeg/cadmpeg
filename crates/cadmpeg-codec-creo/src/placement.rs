@@ -1825,6 +1825,7 @@ mod tests {
             }),
             split_cylinder_outline_bounds: None,
             positional_cone_frame: None,
+            positional_torus_frame: None,
             boundary: SurfaceBodyBoundary::CompoundClose,
             offset,
             body_offset: offset + 1,

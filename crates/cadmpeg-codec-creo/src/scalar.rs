@@ -451,6 +451,16 @@ pub fn decode_positional_cylinder_local_system_slots(
     decode_local_system_slots(body, cache, LocalSystemVariant::PositionalCylinder)
 }
 
+/// Decode the twelve-slot local-system prefix in a positional torus body.
+///
+/// The returned byte count leaves the following radius suffix unconsumed.
+pub fn decode_positional_torus_local_system_prefix(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<([f64; 12], usize)> {
+    decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PositionalTorus)
+}
+
 /// Decode a positional plane support frame whose origin uses the named
 /// local-system sign for compact one-half coordinates.
 pub(crate) fn decode_plane_support_local_system_slots(
@@ -466,6 +476,7 @@ enum LocalSystemVariant {
     Feature,
     PositionalPlane,
     PositionalCylinder,
+    PositionalTorus,
     PlaneSupport,
 }
 
@@ -474,8 +485,20 @@ fn decode_local_system_slots(
     cache: &ScalarCache,
     variant: LocalSystemVariant,
 ) -> Option<[f64; 12]> {
+    let (values, cursor) = decode_local_system_slot_prefix(body, cache, variant)?;
+    (cursor == body.len()).then_some(values)
+}
+
+fn decode_local_system_slot_prefix(
+    body: &[u8],
+    cache: &ScalarCache,
+    variant: LocalSystemVariant,
+) -> Option<([f64; 12], usize)> {
     if body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6] {
-        return Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        return Some((
+            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            body.len(),
+        ));
     }
     let mut values = Vec::with_capacity(12);
     let mut cursor = 0;
@@ -525,15 +548,27 @@ fn decode_local_system_slots(
             (LocalSystemVariant::PositionalCylinder, 9..=11) => {
                 decode_tabulated_cylinder_first_coordinate(body, cursor, cache).or(row)?
             }
+            (LocalSystemVariant::PositionalTorus, 6) if body.get(cursor) == Some(&0x28) => {
+                ieee8(body, cursor, 0xbf)?
+            }
+            (LocalSystemVariant::PositionalTorus, 0..=8) => {
+                decode_tabulated_cylinder_first_coordinate(body, cursor, cache).or(row)?
+            }
+            (LocalSystemVariant::PositionalTorus, 9..=11) => {
+                row.or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache))?
+            }
             _ => row?,
         };
         values.push(value);
         cursor = next;
     }
-    (cursor == body.len() && values.len() == 12).then(|| {
-        values
-            .try_into()
-            .expect("twelve bounded local-system slots")
+    (values.len() == 12).then(|| {
+        (
+            values
+                .try_into()
+                .expect("twelve bounded local-system slots"),
+            cursor,
+        )
     })
 }
 

@@ -684,6 +684,19 @@ coordinates followed by `21`. Its split form stores two coordinates, `3a`, a
 six-byte body-local control payload, and two more coordinates at the bounded
 body end. The control payload does not occupy a coordinate slot.
 
+A placement-complete direct torus replay continues after `21` with the control
+bytes `b1 48 0a e3`, a twelve-slot local system, and two terminal radius
+scalars. Local-system support slots 0 through 8 use the first-coordinate lane;
+in slot 6, `28 b1 b2 b3 b4 b5 b6 b7` stores the negative IEEE-754 image `bf b1
+b2 b3 b4 b5 b6 b7`. Origin slots 9 through 11 use the positional row lane.
+Slots 0 through 2 and 6 through 8 are equal-scale orthogonal support
+directions; their normalized cross product is the torus axis. The origin is
+the torus center. The first terminal scalar is a positive major radius. The
+second is a nonzero signed minor radius; its magnitude is the analytic minor
+radius. The five-coordinate envelope independently satisfies the two-radius
+equation below. The local system and both radius scalars consume the remainder
+of the bounded body.
+
 A compact type-24 cylinder envelope has a model-space Y axis. Its direct form
 is `14 <y0> <scalar> <y1> <x-center> <y0> <z0> <x-edge> <y1> <z1>`.
 Its split form is `12 <y0> 14 <y1> <x-edge> <y0> <z0> <x-center> <y1>

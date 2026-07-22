@@ -273,6 +273,8 @@ pub struct SurfaceParameterRecord {
     pub split_cylinder_outline_bounds: Option<[[f64; 2]; 2]>,
     /// Complete analytic carrier decoded from a positional cone row.
     pub positional_cone_frame: Option<PositionalConeFrame>,
+    /// Complete analytic carrier decoded from a positional torus row.
+    pub positional_torus_frame: Option<PositionalTorusFrame>,
     /// Structural form that bounded the body.
     pub boundary: SurfaceBodyBoundary,
     /// Byte offset of the positional surface row in the original stream.
@@ -329,6 +331,21 @@ pub struct PositionalConeFrame {
     pub ref_direction: [f64; 3],
     /// Positive cone half-angle in radians.
     pub half_angle: f64,
+}
+
+/// Complete model-space carrier decoded from a positional torus row.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PositionalTorusFrame {
+    /// Model-space torus center.
+    pub center: [f64; 3],
+    /// Unit torus axis.
+    pub axis: [f64; 3],
+    /// Unit parameter-space reference direction.
+    pub ref_direction: [f64; 3],
+    /// Positive major radius.
+    pub major_radius: f64,
+    /// Positive minor radius.
+    pub minor_radius: f64,
 }
 
 /// Six-slot outline frame in a positional torus-or-sphere body.
@@ -2479,6 +2496,9 @@ fn parameter_records_for_rows(
         let positional_cone_frame = (row.kind == SurfaceKind::Cone)
             .then(|| decode_positional_cone_frame(&body, &cache))
             .flatten();
+        let positional_torus_frame = (row.kind == SurfaceKind::TorusOrSphere)
+            .then(|| decode_positional_torus_frame(&body, &cache))
+            .flatten();
         let mut record = SurfaceParameterRecord {
             surface_id: row.id,
             scalar_values: scalar_tokens
@@ -2493,6 +2513,7 @@ fn parameter_records_for_rows(
             positional_cylinder_frame,
             split_cylinder_outline_bounds,
             positional_cone_frame,
+            positional_torus_frame,
             body,
             boundary,
             offset: row.offset,
@@ -2504,6 +2525,89 @@ fn parameter_records_for_rows(
         records.push(record);
     }
     records
+}
+
+fn decode_positional_torus_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalTorusFrame> {
+    (body.get(8..19)
+        == Some(&[
+            0x18, 0x94, 0x3f, 0x02, 0x70, 0x16, 0xbe, 0xfc, 0x00, 0x12, 0x20,
+        ])
+        && body.get(44..49) == Some(&[0x21, 0xb1, 0x48, 0x0a, 0xe3]))
+    .then_some(())?;
+    let (slots, frame_end) =
+        scalar::decode_positional_torus_local_system_prefix(body.get(49..)?, cache)?;
+    let mut cursor = 49usize.checked_add(frame_end)?;
+    let (major_radius, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    let (signed_minor_radius, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    (next == body.len()
+        && major_radius.is_finite()
+        && major_radius > 0.0
+        && signed_minor_radius.is_finite()
+        && signed_minor_radius != 0.0)
+        .then_some(())?;
+    let mut envelope = [0.0; 5];
+    cursor = 19;
+    for coordinate in &mut envelope {
+        let (value, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+        value.is_finite().then_some(())?;
+        *coordinate = value;
+        cursor = next;
+    }
+    (cursor == 44).then_some(())?;
+    let minor_radius = signed_minor_radius.abs();
+    let scale = envelope
+        .into_iter()
+        .chain([major_radius, minor_radius])
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let [a1, a2, b0, b1, b2] = envelope;
+    let proves_radii = |outer_delta: f64, minor_delta: f64| {
+        close(outer_delta.abs(), 2.0 * (major_radius + minor_radius))
+            && close(minor_delta.abs(), minor_radius)
+    };
+    (close(a1, b0) && (proves_radii(b1 - a1, b2 - a2) ^ proves_radii(b2 - a1, b1 - a2)))
+        .then_some(())?;
+
+    let first: [f64; 3] = slots[0..3].try_into().ok()?;
+    let second: [f64; 3] = slots[6..9].try_into().ok()?;
+    let first_norm = first.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let second_norm = second.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let scale = first_norm.max(second_norm).max(1.0);
+    (first_norm.is_finite()
+        && second_norm.is_finite()
+        && first_norm > 1e-12
+        && second_norm > 1e-12
+        && (first_norm - second_norm).abs() <= 1e-10 * scale)
+        .then_some(())?;
+    let ref_direction = first.map(|value| value / first_norm);
+    let second = second.map(|value| value / second_norm);
+    let orthogonality = ref_direction
+        .iter()
+        .zip(second)
+        .map(|(first, second)| first * second)
+        .sum::<f64>();
+    (orthogonality.abs() <= 1e-10).then_some(())?;
+    let axis = [
+        ref_direction[1] * second[2] - ref_direction[2] * second[1],
+        ref_direction[2] * second[0] - ref_direction[0] * second[2],
+        ref_direction[0] * second[1] - ref_direction[1] * second[0],
+    ];
+    let axis_norm = axis.iter().map(|value| value * value).sum::<f64>().sqrt();
+    (axis_norm.is_finite() && axis_norm > 1e-12).then_some(())?;
+    let axis = axis.map(|value| value / axis_norm);
+
+    Some(PositionalTorusFrame {
+        center: slots[9..12].try_into().ok()?,
+        axis,
+        ref_direction,
+        major_radius,
+        minor_radius,
+    })
 }
 
 fn decode_positional_cylinder_frame(
@@ -5909,6 +6013,52 @@ mod tests {
     }
 
     #[test]
+    fn decodes_complete_positional_torus_frame() {
+        let body = [
+            40, 141, 7, 27, 210, 101, 111, 108, 24, 148, 63, 2, 112, 22, 190, 252, 0, 18, 32, 71,
+            19, 204, 70, 49, 61, 112, 163, 215, 10, 62, 71, 19, 204, 46, 19, 204, 70, 48, 189, 112,
+            163, 215, 10, 62, 33, 177, 72, 10, 227, 194, 255, 45, 89, 199, 15, 241, 65, 141, 6,
+            220, 32, 138, 77, 219, 24, 229, 16, 40, 141, 6, 220, 32, 138, 77, 219, 194, 255, 45,
+            89, 199, 15, 241, 24, 228, 70, 48, 189, 112, 163, 215, 10, 62, 24, 46, 17, 204, 14,
+        ];
+        let mut payload = vec![7, 0x26, 4, 0x01, 0, 0];
+        payload.extend(body);
+        payload.push(0xe3);
+        let record = parameter_records(&payload).remove(0);
+
+        let frame = record
+            .positional_torus_frame
+            .expect("complete positional torus frame");
+        assert!(frame
+            .center
+            .into_iter()
+            .zip([1.0, 16.74, 0.0])
+            .all(|(actual, expected)| (actual - expected).abs() < 1e-12));
+        assert!(frame
+            .axis
+            .into_iter()
+            .zip([0.0, 0.0, 1.0])
+            .all(|(actual, expected)| (actual - expected).abs() < 1e-12));
+        assert!(frame
+            .ref_direction
+            .into_iter()
+            .zip([-0.999_899_554_583_406_1, 0.014_173_240_416_574_131, 0.0])
+            .all(|(actual, expected)| (actual - expected).abs() < 1e-12));
+        assert!((frame.major_radius - 4.45).abs() < 1e-12);
+        assert!((frame.minor_radius - 0.5).abs() < 1e-12);
+
+        payload[55] = 0x20;
+        assert!(parameter_records(&payload)[0]
+            .positional_torus_frame
+            .is_none());
+        payload[55] = body[49];
+        payload[102] = 0x0d;
+        assert!(parameter_records(&payload)[0]
+            .positional_torus_frame
+            .is_none());
+    }
+
+    #[test]
     fn decodes_repeated_diameter_type24_round_envelopes() {
         let record = |body: &[u8]| {
             let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
@@ -6264,6 +6414,7 @@ mod tests {
             terminal_scalar_frame: None,
             tabulated_cylinder_frame: None,
             positional_cylinder_frame: None,
+            positional_torus_frame: None,
             split_cylinder_outline_bounds: None,
             positional_cone_frame: None,
             boundary: SurfaceBodyBoundary::CompoundClose,
@@ -6347,6 +6498,7 @@ mod tests {
             terminal_scalar_frame: None,
             tabulated_cylinder_frame: None,
             positional_cylinder_frame: None,
+            positional_torus_frame: None,
             split_cylinder_outline_bounds: None,
             positional_cone_frame: None,
             boundary: SurfaceBodyBoundary::CompoundClose,
@@ -6490,6 +6642,7 @@ mod tests {
             positional_cylinder_frame: None,
             split_cylinder_outline_bounds: None,
             positional_cone_frame: None,
+            positional_torus_frame: None,
             body,
             boundary: SurfaceBodyBoundary::CompoundClose,
             offset: 3,

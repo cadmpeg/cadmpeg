@@ -1741,6 +1741,7 @@ struct CreoSurfaceParameterRecord {
     positional_cylinder_frame: Option<CreoPositionalCylinderFrame>,
     split_cylinder_outline_bounds: Option<[[f64; 2]; 2]>,
     positional_cone_frame: Option<CreoPositionalConeFrame>,
+    positional_torus_frame: Option<CreoPositionalTorusFrame>,
     torus_outline_frame: Option<CreoTorusOutlineFrame>,
     type26_five_coordinate_envelope: Option<CreoType26FiveCoordinateEnvelope>,
     type26_split_coordinate_envelope: Option<CreoType26SplitCoordinateEnvelope>,
@@ -1773,6 +1774,15 @@ struct CreoPositionalConeFrame {
     axis: [f64; 3],
     ref_direction: [f64; 3],
     half_angle: f64,
+}
+
+#[derive(Serialize)]
+struct CreoPositionalTorusFrame {
+    center: [f64; 3],
+    axis: [f64; 3],
+    ref_direction: [f64; 3],
+    major_radius: f64,
+    minor_radius: f64,
 }
 
 #[derive(Serialize)]
@@ -2547,6 +2557,15 @@ fn surface_parameter_records(
                         axis: frame.axis,
                         ref_direction: frame.ref_direction,
                         half_angle: frame.half_angle,
+                    }
+                }),
+                positional_torus_frame: record.positional_torus_frame.map(|frame| {
+                    CreoPositionalTorusFrame {
+                        center: frame.center,
+                        axis: frame.axis,
+                        ref_direction: frame.ref_direction,
+                        major_radius: frame.major_radius,
+                        minor_radius: frame.minor_radius,
                     }
                 }),
                 torus_outline_frame: record.torus_outline_frame(row.type_byte).map(|frame| {
@@ -16521,6 +16540,7 @@ mod resolved_sketch_tests {
             positional_cylinder_frame: None,
             split_cylinder_outline_bounds: None,
             positional_cone_frame: None,
+            positional_torus_frame: None,
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
             body_offset: 0,
@@ -16645,6 +16665,7 @@ mod resolved_sketch_tests {
             positional_cylinder_frame: None,
             split_cylinder_outline_bounds: None,
             positional_cone_frame: None,
+            positional_torus_frame: None,
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
             body_offset: 0,
@@ -31053,6 +31074,72 @@ fn transfer_paired_envelope_spheres(
     transferred
 }
 
+fn transfer_positional_tori(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut transferred = 0;
+    for record in &scan.surface_parameters {
+        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
+        else {
+            continue;
+        };
+        if row.kind != crate::surface::SurfaceKind::TorusOrSphere
+            || crate::surface::unique_surface_parameter(&scan.surface_parameters, record.surface_id)
+                .is_none_or(|unique| unique.offset != record.offset)
+        {
+            continue;
+        }
+        let Some(frame) = record.positional_torus_frame else {
+            continue;
+        };
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        let Some(section) = scan.sections.iter().find(|section| {
+            row.offset >= section.offset
+                && row.offset < section.offset.saturating_add(section.length)
+        }) else {
+            continue;
+        };
+        annotate(
+            annotations,
+            &id,
+            &section.name,
+            row.offset as u64,
+            "positional_torus_frame",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Torus {
+                center: Point3::new(frame.center[0], frame.center[1], frame.center[2]),
+                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                ref_direction: Vector3::new(
+                    frame.ref_direction[0],
+                    frame.ref_direction[1],
+                    frame.ref_direction[2],
+                ),
+                major_radius: frame.major_radius,
+                minor_radius: frame.minor_radius,
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("{}:{}", section.name, row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 fn transfer_positional_line_extrusion_planes(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -34459,6 +34546,7 @@ fn build_ir(
         transfer_first_instance_prototype_surfaces(scan, &mut ir, &mut annotations);
     let paired_envelope_sphere_count =
         transfer_paired_envelope_spheres(scan, &mut ir, &mut annotations);
+    let positional_torus_count = transfer_positional_tori(scan, &mut ir, &mut annotations);
     let positional_line_extrusion_plane_count =
         transfer_positional_line_extrusion_planes(scan, &mut ir, &mut annotations);
     let tabulated_cylinder_spline_extrusion_count =
@@ -34599,6 +34687,10 @@ fn build_ir(
         source.attributes.insert(
             "transferred_paired_envelope_sphere_count".to_string(),
             paired_envelope_sphere_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_positional_torus_count".to_string(),
+            positional_torus_count.to_string(),
         );
         source.attributes.insert(
             "transferred_positional_line_extrusion_plane_count".to_string(),
@@ -36494,6 +36586,12 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         })
         .and_then(|count| count.parse::<usize>().ok())
         .unwrap_or(0);
+    let positional_torus_count = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("transferred_positional_torus_count"))
+        .and_then(|count| count.parse::<usize>().ok())
+        .unwrap_or(0);
     let mut losses = Vec::new();
 
     if container_only {
@@ -36530,7 +36628,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              four-entry simple-hole cylinders with complete cap outlines, and compact simple-hole \
              cylinders with complete positional carriers, complementary split-outline cylinders \
              bound to an axis-normal plane, complete positional cylinder bodies, \
-             and complete support-apex and planar-envelope positional cones transfer as carriers; \
+             complete support-apex and planar-envelope positional cones, and complete \
+             local-system positional tori transfer as carriers; \
              other parameter bodies remain structural records.",
             scan.sections.len(),
             scan.layout.token(),
@@ -36596,6 +36695,18 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
                 "Transferred {paired_envelope_sphere_count} sphere carrier(s) from complementary \
                  five-coordinate type-26 hemisphere envelopes and their shared zero-major-radius \
                  prototype."
+            ),
+            provenance: None,
+        });
+    }
+
+    if !container_only && positional_torus_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {positional_torus_count} exact positional torus carrier(s) from \
+                 complete local-system, radius, and five-coordinate envelope bodies."
             ),
             provenance: None,
         });

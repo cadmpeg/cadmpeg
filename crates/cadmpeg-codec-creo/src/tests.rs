@@ -974,6 +974,72 @@ fn decode_retains_type26_coordinate_envelope_in_native_ir() {
 }
 
 #[test]
+fn decode_places_complete_positional_torus() {
+    let body = [
+        40, 141, 7, 27, 210, 101, 111, 108, 24, 148, 63, 2, 112, 22, 190, 252, 0, 18, 32, 71, 19,
+        204, 70, 49, 61, 112, 163, 215, 10, 62, 71, 19, 204, 46, 19, 204, 70, 48, 189, 112, 163,
+        215, 10, 62, 33, 177, 72, 10, 227, 194, 255, 45, 89, 199, 15, 241, 65, 141, 6, 220, 32,
+        138, 77, 219, 24, 229, 16, 40, 141, 6, 220, 32, 138, 77, 219, 194, 255, 45, 89, 199, 15,
+        241, 24, 228, 70, 48, 189, 112, 163, 215, 10, 62, 24, 46, 17, 204, 14,
+    ];
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend(body);
+    payload.push(0xe3);
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode complete positional torus");
+
+    let surface = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+        .expect("positional torus surface");
+    assert!(matches!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } if (center.x - 1.0).abs() < 1e-12
+            && (center.y - 16.74).abs() < 1e-12
+            && center.z.abs() < 1e-12
+            && axis.x.abs() < 1e-12
+            && axis.y.abs() < 1e-12
+            && (axis.z - 1.0).abs() < 1e-12
+            && (ref_direction.x + 0.999_899_554_583_406_1).abs() < 1e-12
+            && (ref_direction.y - 0.014_173_240_416_574_131).abs() < 1e-12
+            && ref_direction.z.abs() < 1e-12
+            && (major_radius - 4.45).abs() < 1e-12
+            && (minor_radius - 0.5).abs() < 1e-12
+    ));
+    let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    assert!(
+        (record.fields["positional_torus_frame"]["major_radius"]
+            .as_f64()
+            .expect("major radius")
+            - 4.45)
+            .abs()
+            < 1e-12
+    );
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes["transferred_positional_torus_count"],
+        "1"
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("1 exact positional torus carrier")));
+}
+
+#[test]
 fn decode_places_paired_five_coordinate_sphere_envelopes() {
     let lower = [
         0x18, 0x18, 0x01, 0x11, 0x2e, 0xb0, 0x12, 0x47, 0x05, 0x33, 0x2d, 0x2d, 0xff, 0xff, 0xff,
