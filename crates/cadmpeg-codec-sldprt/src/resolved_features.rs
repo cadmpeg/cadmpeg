@@ -7384,6 +7384,14 @@ mod marker_tests {
             &HashSet::from(["profile-point", "opposite-profile-point"]),
             [&lane.sketch_entities[0], &lane.sketch_entities[1]],
         ));
+        lane.sketch_entities[4].object_index = None;
+        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
+        assert!(bounded_profile_axis_endpoints(
+            "profile-native",
+            &markers,
+            &HashSet::from(["profile-point", "opposite-profile-point"]),
+            [&lane.sketch_entities[0], &lane.sketch_entities[1]],
+        ));
         lane.sketch_entities.pop();
 
         lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
@@ -8837,7 +8845,9 @@ fn profile_roster_origin_axis_endpoints(
     let mut candidates = markers
         .iter()
         .copied()
-        .filter(|marker| curve_endpoints.contains(marker.id.as_str()))
+        .filter(|marker| {
+            marker.object_index.is_some() && curve_endpoints.contains(marker.id.as_str())
+        })
         .filter_map(|marker| {
             let end = marker.coordinates_m?;
             let endpoints = [[origin_u, origin_v], end];
@@ -8868,7 +8878,9 @@ fn profile_roster_origin_axis_endpoints(
         let [line_u, line_v] = [line[1][0] - origin_u, line[1][1] - origin_v];
         markers
             .iter()
-            .filter(|marker| curve_endpoints.contains(marker.id.as_str()))
+            .filter(|marker| {
+                marker.object_index.is_some() && curve_endpoints.contains(marker.id.as_str())
+            })
             .filter_map(|marker| marker.coordinates_m)
             .filter(|[u, v]| {
                 let relative_u = u - origin_u;
@@ -9062,6 +9074,7 @@ fn bounded_profile_axis_coordinates(
                 marker.kind,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
+            && marker.object_index.is_some()
             && curve_endpoints.contains(marker.id.as_str()))
         .then_some(marker.coordinates_m)
         .flatten()
