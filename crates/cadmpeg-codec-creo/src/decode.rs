@@ -27902,36 +27902,36 @@ fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Opti
     .then(|| std::array::from_fn(|axis| f64::midpoint(first_point[axis], second_point[axis])))
 }
 
-fn line_periodic_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<[f64; 3]> {
+fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<[f64; 3]> {
     let CurveGeometry::Line { origin, direction } = line else {
         return Vec::new();
     };
-    let Some(PeriodicConicFrame {
-        center,
+    let Some(PlanarConicEquation {
+        origin: conic_origin,
         normal,
         x_axis,
         y_axis,
-        radii,
-    }) = periodic_conic_frame(conic)
+        quadratic,
+        linear,
+        constant,
+        scale: conic_scale,
+    }) = planar_conic_equation(conic)
     else {
         return Vec::new();
     };
     let origin = [origin.x, origin.y, origin.z];
-    let direction = [direction.x, direction.y, direction.z];
-    let relative = std::array::from_fn(|coordinate| origin[coordinate] - center[coordinate]);
-    let direction_squared = dot(direction, direction);
-    if !direction_squared.is_finite() || direction_squared <= 0.0 {
+    let Some(direction) = normalized([direction.x, direction.y, direction.z]) else {
         return Vec::new();
-    }
+    };
+    let relative = std::array::from_fn(|coordinate| origin[coordinate] - conic_origin[coordinate]);
     let direction_plane = dot(direction, normal);
     let origin_plane = dot(relative, normal);
-    let angular_scale = direction_squared.sqrt();
     let model_scale = origin
         .into_iter()
-        .chain(center)
+        .chain(conic_origin)
         .map(f64::abs)
-        .fold(radii.into_iter().fold(1.0, f64::max), f64::max);
-    if direction_plane.abs() > 1e-12 * angular_scale {
+        .fold(conic_scale.max(1.0), f64::max);
+    if direction_plane.abs() > 1e-12 {
         let parameter = -origin_plane / direction_plane;
         let point = std::array::from_fn(|coordinate| {
             direction[coordinate].mul_add(parameter, origin[coordinate])
@@ -27945,49 +27945,72 @@ fn line_periodic_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry
     if origin_plane.abs() > 1e-9 * model_scale {
         return Vec::new();
     }
-    let local_origin = [
-        dot(relative, x_axis) / radii[0],
-        dot(relative, y_axis) / radii[1],
-    ];
-    let local_direction = [
-        dot(direction, x_axis) / radii[0],
-        dot(direction, y_axis) / radii[1],
-    ];
-    let quadratic = local_direction[0].mul_add(local_direction[0], local_direction[1].powi(2));
-    let linear =
-        2.0 * local_origin[0].mul_add(local_direction[0], local_origin[1] * local_direction[1]);
-    let constant = local_origin[0].mul_add(local_origin[0], local_origin[1].powi(2)) - 1.0;
-    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
-    let coefficient_scale = linear
+    let local_origin = [dot(relative, x_axis), dot(relative, y_axis)];
+    let local_direction = [dot(direction, x_axis), dot(direction, y_axis)];
+    let line_quadratic = quadratic[0].mul_add(
+        local_direction[0].powi(2),
+        quadratic[1] * local_direction[1].powi(2),
+    );
+    let line_linear =
+        2.0 * quadratic[0].mul_add(
+            local_origin[0] * local_direction[0],
+            quadratic[1] * local_origin[1] * local_direction[1],
+        ) + linear[0].mul_add(local_direction[0], linear[1] * local_direction[1]);
+    let line_constant = quadratic[0].mul_add(
+        local_origin[0].powi(2),
+        quadratic[1] * local_origin[1].powi(2),
+    ) + linear[0].mul_add(local_origin[0], linear[1] * local_origin[1])
+        + constant;
+    let coefficient_scale = line_linear
         .abs()
-        .max((quadratic * constant).abs().sqrt())
+        .max((line_quadratic * line_constant).abs().sqrt())
         .max(1.0);
+    let coefficient_tolerance = 1e-14 * coefficient_scale;
+    if !line_quadratic.is_finite() || !line_linear.is_finite() || !line_constant.is_finite() {
+        return Vec::new();
+    }
+    if line_quadratic.abs() <= coefficient_tolerance {
+        if line_linear.abs() <= coefficient_tolerance {
+            return Vec::new();
+        }
+        let parameter = -line_constant / line_linear;
+        let point = std::array::from_fn(|coordinate| {
+            direction[coordinate].mul_add(parameter, origin[coordinate])
+        });
+        return curve_contains_points(conic, [point, point])
+            .then_some(point)
+            .into_iter()
+            .collect();
+    }
+    let discriminant = line_linear.mul_add(line_linear, -4.0 * line_quadratic * line_constant);
     let tolerance = 1e-12 * coefficient_scale * coefficient_scale;
-    if !quadratic.is_finite()
-        || quadratic <= 0.0
-        || !discriminant.is_finite()
-        || discriminant < -tolerance
-    {
+    if !discriminant.is_finite() || discriminant < -tolerance {
         return Vec::new();
     }
     let root = discriminant.max(0.0).sqrt();
-    let first_parameter = -linear / (2.0 * quadratic);
+    let first_parameter = -line_linear / (2.0 * line_quadratic);
     let first = std::array::from_fn(|coordinate| {
         direction[coordinate].mul_add(first_parameter, origin[coordinate])
     });
     if root <= 1e-9 * coefficient_scale {
-        return vec![first];
+        return curve_contains_points(conic, [first, first])
+            .then_some(first)
+            .into_iter()
+            .collect();
     }
-    let root_product = -0.5 * (linear + root.copysign(linear));
-    let first_parameter = root_product / quadratic;
-    let second_parameter = constant / root_product;
+    let root_product = -0.5 * (line_linear + root.copysign(line_linear));
+    let first_parameter = root_product / line_quadratic;
+    let second_parameter = line_constant / root_product;
     let first = std::array::from_fn(|coordinate| {
         direction[coordinate].mul_add(first_parameter, origin[coordinate])
     });
     let second = std::array::from_fn(|coordinate| {
         direction[coordinate].mul_add(second_parameter, origin[coordinate])
     });
-    vec![first, second]
+    [first, second]
+        .into_iter()
+        .filter(|point| curve_contains_points(conic, [*point, *point]))
+        .collect()
 }
 
 fn circle_circle_intersections(first: &CurveGeometry, second: &CurveGeometry) -> Vec<[f64; 3]> {
@@ -28086,14 +28109,8 @@ fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3]> {
             candidates.extend(
                 line_line_intersection(curves[first], curves[second])
                     .into_iter()
-                    .chain(line_periodic_conic_intersections(
-                        curves[first],
-                        curves[second],
-                    ))
-                    .chain(line_periodic_conic_intersections(
-                        curves[second],
-                        curves[first],
-                    ))
+                    .chain(line_conic_intersections(curves[first], curves[second]))
+                    .chain(line_conic_intersections(curves[second], curves[first]))
                     .chain(circle_circle_intersections(curves[first], curves[second])),
             );
         }
@@ -28560,7 +28577,7 @@ mod topological_vertex_tests {
     }
 
     #[test]
-    fn line_periodic_conic_candidates_preserve_secants_and_collapse_tangency() {
+    fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
         let circle = CurveGeometry::Circle {
             center: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -28572,14 +28589,14 @@ mod topological_vertex_tests {
         let skew = line([-3.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
 
         assert_eq!(
-            line_periodic_conic_intersections(&secant, &circle),
+            line_conic_intersections(&secant, &circle),
             [[2.0, 0.0, 0.0], [-2.0, 0.0, 0.0]]
         );
         assert_eq!(
-            line_periodic_conic_intersections(&tangent, &circle),
+            line_conic_intersections(&tangent, &circle),
             [[0.0, 2.0, 0.0]]
         );
-        assert!(line_periodic_conic_intersections(&skew, &circle).is_empty());
+        assert!(line_conic_intersections(&skew, &circle).is_empty());
 
         let ellipse = CurveGeometry::Ellipse {
             center: Point3::new(0.0, 0.0, 0.0),
@@ -28589,8 +28606,42 @@ mod topological_vertex_tests {
             minor_radius: 2.0,
         };
         assert_eq!(
-            line_periodic_conic_intersections(&secant, &ellipse),
+            line_conic_intersections(&secant, &ellipse),
             [[3.0, 0.0, 0.0], [-3.0, 0.0, 0.0]]
+        );
+
+        let parabola = CurveGeometry::Parabola {
+            vertex: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            focal_distance: 1.0,
+        };
+        assert_eq!(
+            line_conic_intersections(&line([1.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &parabola),
+            [[1.0, 2.0, 0.0], [1.0, -2.0, 0.0]]
+        );
+        assert_eq!(
+            line_conic_intersections(&line([-3.0, 2.0, 0.0], [1.0, 0.0, 0.0]), &parabola),
+            [[1.0, 2.0, 0.0]]
+        );
+
+        let hyperbola = CurveGeometry::Hyperbola {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 2.0,
+            minor_radius: 1.0,
+        };
+        let hyperbola_points =
+            line_conic_intersections(&line([4.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &hyperbola);
+        assert_eq!(hyperbola_points.len(), 2);
+        assert!(hyperbola_points.iter().all(|point| {
+            model_points_agree(*point, [4.0, 3.0_f64.sqrt(), 0.0])
+                || model_points_agree(*point, [4.0, -3.0_f64.sqrt(), 0.0])
+        }));
+        assert_eq!(
+            line_conic_intersections(&line([-3.0, 0.0, 0.0], [1.0, 0.0, 0.0]), &hyperbola),
+            [[2.0, 0.0, 0.0]]
         );
     }
 
@@ -28912,9 +28963,126 @@ struct PeriodicConicFrame {
 }
 
 #[derive(Clone, Copy)]
+struct PlanarConicEquation {
+    origin: [f64; 3],
+    normal: [f64; 3],
+    x_axis: [f64; 3],
+    y_axis: [f64; 3],
+    quadratic: [f64; 2],
+    linear: [f64; 2],
+    constant: f64,
+    scale: f64,
+}
+
+#[derive(Clone, Copy)]
 enum NonperiodicConicFamily {
     Parabola,
     Hyperbola,
+}
+
+#[derive(Clone, Copy)]
+struct NonperiodicConicFrame {
+    origin: [f64; 3],
+    normal: [f64; 3],
+    x_axis: [f64; 3],
+    y_axis: [f64; 3],
+    x_scale: f64,
+    y_scale: f64,
+    family: NonperiodicConicFamily,
+}
+
+fn planar_conic_equation(geometry: &CurveGeometry) -> Option<PlanarConicEquation> {
+    if let Some(frame) = periodic_conic_frame(geometry) {
+        return Some(PlanarConicEquation {
+            origin: frame.center,
+            normal: frame.normal,
+            x_axis: frame.x_axis,
+            y_axis: frame.y_axis,
+            quadratic: [1.0 / frame.radii[0].powi(2), 1.0 / frame.radii[1].powi(2)],
+            linear: [0.0, 0.0],
+            constant: -1.0,
+            scale: frame.radii.into_iter().fold(1.0, f64::max),
+        });
+    }
+    let NonperiodicConicFrame {
+        origin,
+        normal,
+        x_axis,
+        y_axis,
+        x_scale,
+        y_scale,
+        family,
+    } = nonperiodic_conic_frame(geometry)?;
+    let (quadratic, linear, constant) = match family {
+        NonperiodicConicFamily::Parabola => ([0.0, -1.0 / (2.0 * y_scale)], [1.0, 0.0], 0.0),
+        NonperiodicConicFamily::Hyperbola => (
+            [1.0 / x_scale.powi(2), -1.0 / y_scale.powi(2)],
+            [0.0, 0.0],
+            -1.0,
+        ),
+    };
+    Some(PlanarConicEquation {
+        origin,
+        normal,
+        x_axis,
+        y_axis,
+        quadratic,
+        linear,
+        constant,
+        scale: x_scale.max(y_scale),
+    })
+}
+
+fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicFrame> {
+    let (origin, normal, x_axis, x_scale, y_scale, family) = match geometry {
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => (
+            [vertex.x, vertex.y, vertex.z],
+            [axis.x, axis.y, axis.z],
+            [major_direction.x, major_direction.y, major_direction.z],
+            *focal_distance,
+            2.0 * *focal_distance,
+            NonperiodicConicFamily::Parabola,
+        ),
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => (
+            [center.x, center.y, center.z],
+            [axis.x, axis.y, axis.z],
+            [major_direction.x, major_direction.y, major_direction.z],
+            *major_radius,
+            *minor_radius,
+            NonperiodicConicFamily::Hyperbola,
+        ),
+        _ => return None,
+    };
+    let normal = normalized(normal)?;
+    let x_axis = normalized(x_axis)?;
+    (dot(normal, x_axis).abs() <= 1e-9).then_some(())?;
+    let y_axis = normalized(cross(normal, x_axis))?;
+    (origin.into_iter().all(f64::is_finite)
+        && x_scale > 0.0
+        && x_scale.is_finite()
+        && y_scale > 0.0
+        && y_scale.is_finite())
+    .then_some(())?;
+    Some(NonperiodicConicFrame {
+        origin,
+        normal,
+        x_axis,
+        y_axis,
+        x_scale,
+        y_scale,
+        family,
+    })
 }
 
 fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFrame> {
@@ -28962,41 +29130,15 @@ fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFrame> 
 }
 
 fn nonperiodic_conic_parameter(geometry: &CurveGeometry, point: [f64; 3]) -> Option<f64> {
-    let (origin, normal, x_axis, x_scale, y_scale, family) = match geometry {
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            focal_distance,
-        } => (
-            [vertex.x, vertex.y, vertex.z],
-            [axis.x, axis.y, axis.z],
-            [major_direction.x, major_direction.y, major_direction.z],
-            *focal_distance,
-            2.0 * *focal_distance,
-            NonperiodicConicFamily::Parabola,
-        ),
-        CurveGeometry::Hyperbola {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => (
-            [center.x, center.y, center.z],
-            [axis.x, axis.y, axis.z],
-            [major_direction.x, major_direction.y, major_direction.z],
-            *major_radius,
-            *minor_radius,
-            NonperiodicConicFamily::Hyperbola,
-        ),
-        _ => return None,
-    };
-    let normal = normalized(normal)?;
-    let x_axis = normalized(x_axis)?;
-    (dot(normal, x_axis).abs() <= 1e-9).then_some(())?;
-    let y_axis = normalized(cross(normal, x_axis))?;
-    (x_scale > 0.0 && x_scale.is_finite() && y_scale > 0.0 && y_scale.is_finite()).then_some(())?;
+    let NonperiodicConicFrame {
+        origin,
+        normal,
+        x_axis,
+        y_axis,
+        x_scale,
+        y_scale,
+        family,
+    } = nonperiodic_conic_frame(geometry)?;
     let relative = std::array::from_fn(|index| point[index] - origin[index]);
     let scale = dot(relative, relative)
         .sqrt()

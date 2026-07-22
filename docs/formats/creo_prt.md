@@ -2133,7 +2133,7 @@ A pair of nonparallel incident model-space line carriers also defines a vertex
 candidate when their closest points coincide. Every intersecting line pair in
 the orbit must produce that same point, and the point must lie on every other
 incident analytic carrier.
-An incident line and periodic conic contribute their finite model-space
+An incident line and analytic conic contribute their finite model-space
 intersection set. A tangent contributes one candidate and a secant contributes
 two. The same rule applies to coplanar or transverse incident circles. The
 orbit transfers only when the incident-carrier and mapped-pcurve constraints
