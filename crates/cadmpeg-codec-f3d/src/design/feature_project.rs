@@ -78,9 +78,8 @@ pub fn project_parameter_design_with_edge_identities(
     Vec<cadmpeg_ir::features::DesignParameter>,
 ) {
     use cadmpeg_ir::features::{
-        Angle, DesignParameter as NeutralParameter, DimensionDisplay, EdgeSelection, Feature,
-        FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, PatternForm,
-        PatternKind, RadiusSpec,
+        Angle, DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
+        Length, ParameterId, ParameterValue, PatternForm, PatternKind,
     };
     use std::collections::BTreeMap;
 
@@ -98,23 +97,7 @@ pub fn project_parameter_design_with_edge_identities(
         .filter_map(|owner| Some(((native_stream(&owner.id)?, owner.record_index), owner)))
         .collect::<HashMap<_, _>>();
     let native_scope_properties = |scope: &DesignParameterScope, native_scope: &str| {
-        let mut properties = BTreeMap::new();
-        for (ordinal, record_index) in scope.reference_members.iter().enumerate() {
-            properties.insert(format!("reference:{ordinal}"), record_index.to_string());
-        }
-        if let Some(profile) = scope
-            .extrude_profile
-            .as_ref()
-            .or(scope.base_flange_profile.as_ref())
-        {
-            if let Some(placement) = placements.iter().find(|placement| {
-                native_stream(&placement.id) == Some(native_scope)
-                    && placement.entity_id == profile.entity_id
-            }) {
-                properties.insert("profile".into(), neutral_sketch_id(placement).0);
-            }
-        }
-        properties
+        scope_properties(scope, native_scope, placements)
     };
     let mut features = scopes
         .iter()
@@ -137,10 +120,9 @@ pub fn project_parameter_design_with_edge_identities(
                 })
                 .collect::<Vec<_>>();
             let family = design_feature_family(&scope.kind);
-            let definition = if family == Some(DesignFeatureFamily::Sketch) {
-                FeatureDefinition::Sketch { sketch: None }
-            } else if family == Some(DesignFeatureFamily::Extrude) {
-                project_extrude(
+            let definition = match family {
+                Some(DesignFeatureFamily::Sketch) => FeatureDefinition::Sketch { sketch: None },
+                Some(DesignFeatureFamily::Extrude) => project_extrude(
                     scope,
                     &parameters,
                     construction_groups,
@@ -156,191 +138,19 @@ pub fn project_parameter_design_with_edge_identities(
                         })
                         .collect(),
                     properties: native_scope_properties(scope, native_scope),
-                })
-            } else if family == Some(DesignFeatureFamily::Fillet) {
-                if let Some(definition) = project_variable_fillet(
+                }),
+                Some(DesignFeatureFamily::Fillet) => project_fillet_arm(
                     scope,
-                    &parameters,
+                    parameters.as_slice(),
+                    native,
+                    native_scope,
                     construction_groups,
+                    fillet_radius_groups,
                     edge_operands,
                     edge_identity_operands,
-                ) {
-                    definition
-                } else if let Some(definition) = parameters
-                    .is_empty()
-                    .then(|| {
-                        project_fixed_fillet(
-                            scope,
-                            construction_groups,
-                            edge_operands,
-                            edge_identity_operands,
-                        )
-                    })
-                    .flatten()
-                {
-                    definition
-                } else {
-                    let mut assignments = fillet_radius_groups
-                        .iter()
-                        .filter(|assignment| {
-                            native_stream(&assignment.id) == Some(native_scope)
-                                && assignment.scope_record_index == scope.record_index
-                        })
-                        .collect::<Vec<_>>();
-                    assignments.sort_by_key(|assignment| assignment.group_ordinal);
-                    let assigned_parameter_records = assignments
-                        .iter()
-                        .flat_map(|assignment| {
-                            fillet_law_parameter_records(&assignment.law)
-                                .into_iter()
-                                .chain(assignment.tangency_weight_parameter_record_index)
-                        })
-                        .collect::<Vec<_>>();
-                    let incomplete_assignment = if assignments.is_empty() {
-                        let radii = parameters
-                            .iter()
-                            .filter(|(_, parameter)| parameter.source_kind == "Radius")
-                            .map(|(_, parameter)| *parameter)
-                            .collect::<Vec<_>>();
-                        radii.len() != 1
-                            || radii.iter().any(|parameter| {
-                                design_length(parameter).is_none_or(|value| value.0 <= 0.0)
-                            })
-                            || parameters
-                                .iter()
-                                .any(|(_, parameter)| parameter.source_kind != "Radius")
-                    } else {
-                        assigned_parameter_records.len() != parameters.len()
-                            || parameters.iter().any(|(_, parameter)| {
-                                !matches!(
-                                    parameter.source_kind.as_str(),
-                                    "Radius" | "ChordLen" | "TangencyWeight"
-                                ) || assigned_parameter_records
-                                    .iter()
-                                    .filter(|record_index| **record_index == parameter.record_index)
-                                    .count()
-                                    != 1
-                            })
-                            || parameters.iter().any(|(_, parameter)| {
-                                if matches!(parameter.source_kind.as_str(), "Radius" | "ChordLen") {
-                                    design_length(parameter).is_none_or(|value| value.0 <= 0.0)
-                                } else {
-                                    !parameter.evaluated_value.is_finite()
-                                }
-                            })
-                    };
-                    if incomplete_assignment {
-                        FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
-                            parameters: parameters
-                                .iter()
-                                .map(|(_, parameter)| {
-                                    (parameter.name.clone(), parameter.expression.clone())
-                                })
-                                .collect(),
-                            properties: native_scope_properties(scope, native_scope),
-                        }
-                    } else {
-                        let groups = assignments
-                            .into_iter()
-                            .map(|assignment| {
-                                let (radius, edge_radius) = match assignment.law {
-                                    DesignFilletRadiusLaw::Constant {
-                                        radius_parameter_record_index,
-                                    } => {
-                                        let radius = parameters
-                                            .iter()
-                                            .find(|(_, parameter)| {
-                                                parameter.record_index
-                                                    == radius_parameter_record_index
-                                            })
-                                            .and_then(|(_, parameter)| design_length(parameter))
-                                            .expect(
-                                                "complete Fillet assignment has a positive radius",
-                                            );
-                                        (RadiusSpec::Constant { radius }, Some(radius.0))
-                                    }
-                                    DesignFilletRadiusLaw::Chordal {
-                                        chord_length_parameter_record_index,
-                                    } => {
-                                        let chord_length = parameters
-                                            .iter()
-                                            .find(|(_, parameter)| {
-                                                parameter.record_index
-                                                    == chord_length_parameter_record_index
-                                            })
-                                            .and_then(|(_, parameter)| design_length(parameter))
-                                            .expect(
-                                                "complete chordal Fillet has a positive chord length",
-                                            );
-                                        (RadiusSpec::Chordal { chord_length }, None)
-                                    }
-                                    DesignFilletRadiusLaw::Variable { .. } => {
-                                        unreachable!("variable Fillet projected before constants")
-                                    }
-                                };
-                                let tangency_weight = assignment
-                                    .tangency_weight_parameter_record_index
-                                    .and_then(|record_index| {
-                                        native.iter().find(|parameter| {
-                                            native_stream(&parameter.id) == Some(native_scope)
-                                                && parameter.record_index == record_index
-                                        })
-                                    })
-                                    .map(|parameter| parameter.evaluated_value)
-                                    .filter(|weight| weight.is_finite());
-                                let edges = construction_groups
-                                    .iter()
-                                    .find(|group| {
-                                        native_stream(&group.id) == Some(native_scope)
-                                            && group.record_index == assignment.group_record_index
-                                    })
-                                    .map_or_else(
-                                        || EdgeSelection::Native(assignment.id.clone()),
-                                        |group| {
-                                            resolved_edge_group(
-                                                group,
-                                                construction_groups,
-                                                edge_operands,
-                                                edge_identity_operands,
-                                                scope.previous_history_state_id,
-                                                &neutral_feature_id(scope),
-                                                edge_radius,
-                                            )
-                                        },
-                                    );
-                                FilletGroup {
-                                    edges,
-                                    radius,
-                                    tangency_weight,
-                                }
-                            })
-                            .collect::<Vec<_>>();
-                        FeatureDefinition::Fillet {
-                            groups: if groups.is_empty() {
-                                vec![FilletGroup {
-                                    edges: EdgeSelection::Native(scope.id.clone()),
-                                    radius: RadiusSpec::Constant {
-                                        radius: parameters
-                                            .iter()
-                                            .filter(|(_, parameter)| {
-                                                parameter.source_kind == "Radius"
-                                            })
-                                            .find_map(|(_, parameter)| design_length(parameter))
-                                            .expect(
-                                                "complete ungrouped Fillet has one positive radius",
-                                            ),
-                                    },
-                                    tangency_weight: None,
-                                }]
-                            } else {
-                                groups
-                            },
-                        }
-                    }
-                }
-            } else if family == Some(DesignFeatureFamily::Chamfer) {
-                parameters
+                    placements,
+                ),
+                Some(DesignFeatureFamily::Chamfer) => parameters
                     .is_empty()
                     .then(|| {
                         project_fixed_chamfer(
@@ -369,17 +179,17 @@ pub fn project_parameter_design_with_edge_identities(
                             })
                             .collect(),
                         properties: native_scope_properties(scope, native_scope),
-                    })
-            } else if family == Some(DesignFeatureFamily::Revolve) {
-                project_fixed_revolve(scope, construction_groups, edge_operands).unwrap_or_else(
-                    || FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
-                    },
-                )
-            } else if family == Some(DesignFeatureFamily::Loft) {
-                project_fixed_loft(
+                    }),
+                Some(DesignFeatureFamily::Revolve) => {
+                    project_fixed_revolve(scope, construction_groups, edge_operands).unwrap_or_else(
+                        || FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: BTreeMap::new(),
+                            properties: native_scope_properties(scope, native_scope),
+                        },
+                    )
+                }
+                Some(DesignFeatureFamily::Loft) => project_fixed_loft(
                     scope,
                     construction_groups,
                     edge_operands,
@@ -390,137 +200,66 @@ pub fn project_parameter_design_with_edge_identities(
                     kind: scope.kind.clone(),
                     parameters: BTreeMap::new(),
                     properties: native_scope_properties(scope, native_scope),
-                })
-            } else if family == Some(DesignFeatureFamily::Sweep) {
-                project_fixed_sweep(scope, construction_groups).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
+                }),
+                Some(DesignFeatureFamily::Sweep) => project_fixed_sweep(scope, construction_groups)
+                    .unwrap_or_else(|| FeatureDefinition::Native {
                         kind: scope.kind.clone(),
                         parameters: BTreeMap::new(),
                         properties: native_scope_properties(scope, native_scope),
-                    }
-                })
-            } else if family == Some(DesignFeatureFamily::SurfacePatch) {
-                project_surface_patch(scope, construction_groups).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }
-                })
-            } else if family == Some(DesignFeatureFamily::BoundaryFill) {
-                project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }
-                })
-            } else if family == Some(DesignFeatureFamily::Split) {
-                project_split(scope, construction_groups, face_operands).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }
-                })
-            } else if let Some(primitive) = scope.solid_primitive.as_ref() {
-                let operation = |operation| match operation {
-                    DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
-                    DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
-                    DesignExtrudeOperation::Intersect => cadmpeg_ir::features::BooleanOp::Intersect,
-                    DesignExtrudeOperation::NewBody => cadmpeg_ir::features::BooleanOp::NewBody,
-                };
-                match primitive {
-                    DesignSolidPrimitive::Sphere {
-                        transform,
-                        diameter,
-                        operation: result,
-                        ..
-                    } => FeatureDefinition::Sphere {
-                        center: Point3::new(
-                            transform[0][3] * 10.0,
-                            transform[1][3] * 10.0,
-                            transform[2][3] * 10.0,
-                        ),
-                        radius: Length(*diameter * 5.0),
-                        op: operation(*result),
-                    },
-                    DesignSolidPrimitive::Torus {
-                        transform,
-                        major_diameter,
-                        minor_diameter,
-                        operation: result,
-                        ..
-                    } => FeatureDefinition::Torus {
-                        center: Point3::new(
-                            transform[0][3] * 10.0,
-                            transform[1][3] * 10.0,
-                            transform[2][3] * 10.0,
-                        ),
-                        axis: Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
-                        major_radius: Length(*major_diameter * 5.0),
-                        minor_radius: Length(*minor_diameter * 5.0),
-                        op: operation(*result),
-                    },
+                    }),
+                Some(DesignFeatureFamily::SurfacePatch) => {
+                    project_surface_patch(scope, construction_groups).unwrap_or_else(|| {
+                        FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: BTreeMap::new(),
+                            properties: native_scope_properties(scope, native_scope),
+                        }
+                    })
                 }
-            } else if scope.kind == "WorkPlane" {
-                scope.work_plane_transform.map_or_else(
-                    || FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: parameters
-                            .iter()
-                            .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
-                            })
-                            .collect(),
-                        properties: native_scope_properties(scope, native_scope),
-                    },
-                    |transform| FeatureDefinition::DatumPlane {
-                        origin: Point3::new(
-                            transform[0][3] * 10.0,
-                            transform[1][3] * 10.0,
-                            transform[2][3] * 10.0,
-                        ),
-                        normal: Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
-                        u_axis: Vector3::new(transform[0][0], transform[1][0], transform[2][0]),
-                    },
-                )
-            } else if scope.kind == "WorkPoint" {
-                scope.work_point_position.map_or_else(
-                    || FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: parameters
-                            .iter()
-                            .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
-                            })
-                            .collect(),
-                        properties: native_scope_properties(scope, native_scope),
-                    },
-                    |position| FeatureDefinition::DatumPoint {
-                        position: Point3::new(
-                            position[0] * 10.0,
-                            position[1] * 10.0,
-                            position[2] * 10.0,
-                        ),
-                    },
-                )
-            } else if matches!(
-                family,
-                Some(DesignFeatureFamily::CircularPattern | DesignFeatureFamily::Mirror)
-            ) {
-                FeatureDefinition::Pattern {
-                    seeds: Vec::new(),
-                    pattern: PatternKind::Unresolved {
-                        form: Some(if family == Some(DesignFeatureFamily::CircularPattern) {
-                            PatternForm::Circular
-                        } else {
-                            PatternForm::Mirror
-                        }),
-                    },
+                Some(DesignFeatureFamily::BoundaryFill) => {
+                    project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
+                        FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: BTreeMap::new(),
+                            properties: native_scope_properties(scope, native_scope),
+                        }
+                    })
                 }
-            } else if family == Some(DesignFeatureFamily::OffsetFaces) {
-                project_offset_faces(scope, &parameters, face_operands, construction_groups)
+                Some(DesignFeatureFamily::Split) => {
+                    project_split(scope, construction_groups, face_operands).unwrap_or_else(|| {
+                        FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: BTreeMap::new(),
+                            properties: native_scope_properties(scope, native_scope),
+                        }
+                    })
+                }
+                Some(DesignFeatureFamily::CircularPattern | DesignFeatureFamily::Mirror) => {
+                    FeatureDefinition::Pattern {
+                        seeds: Vec::new(),
+                        pattern: PatternKind::Unresolved {
+                            form: Some(if family == Some(DesignFeatureFamily::CircularPattern) {
+                                PatternForm::Circular
+                            } else {
+                                PatternForm::Mirror
+                            }),
+                        },
+                    }
+                }
+                Some(DesignFeatureFamily::OffsetFaces) => {
+                    project_offset_faces(scope, &parameters, face_operands, construction_groups)
+                        .unwrap_or_else(|| FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: parameters
+                                .iter()
+                                .map(|(_, parameter)| {
+                                    (parameter.name.clone(), parameter.expression.clone())
+                                })
+                                .collect(),
+                            properties: native_scope_properties(scope, native_scope),
+                        })
+                }
+                Some(DesignFeatureFamily::Move) => project_move(scope, construction_groups)
                     .unwrap_or_else(|| FeatureDefinition::Native {
                         kind: scope.kind.clone(),
                         parameters: parameters
@@ -530,85 +269,50 @@ pub fn project_parameter_design_with_edge_identities(
                             })
                             .collect(),
                         properties: native_scope_properties(scope, native_scope),
+                    }),
+                Some(DesignFeatureFamily::Shell) => {
+                    project_shell(scope, face_operands, construction_groups).unwrap_or_else(|| {
+                        FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: parameters
+                                .iter()
+                                .map(|(_, parameter)| {
+                                    (parameter.name.clone(), parameter.expression.clone())
+                                })
+                                .collect(),
+                            properties: native_scope_properties(scope, native_scope),
+                        }
                     })
-            } else if scope.kind == "BaseFlange" {
-                project_base_flange(scope, construction_groups, placements).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }
-                })
-            } else if scope.kind == "RemoveBody" {
-                project_remove_body(scope, construction_groups).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }
-                })
-            } else if scope.kind == "SurfaceStitch" {
-                project_surface_stitch(scope, construction_groups).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }
-                })
-            } else if family == Some(DesignFeatureFamily::Move) {
-                project_move(scope, construction_groups).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: parameters
-                            .iter()
-                            .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
-                            })
-                            .collect(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }
-                })
-            } else if family == Some(DesignFeatureFamily::Shell) {
-                project_shell(scope, face_operands, construction_groups).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: parameters
-                            .iter()
-                            .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
-                            })
-                            .collect(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }
-                })
-            } else if family == Some(DesignFeatureFamily::Thicken) {
-                project_thicken(scope, face_operands, construction_groups).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: parameters
-                            .iter()
-                            .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
-                            })
-                            .collect(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }
-                })
-            } else if family == Some(DesignFeatureFamily::Coil) {
-                project_coil(scope, &parameters, construction_groups).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: parameters
-                            .iter()
-                            .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
-                            })
-                            .collect(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }
-                })
-            } else if family == Some(DesignFeatureFamily::Scale) {
-                scope.scale_operation.as_ref().map_or_else(
+                }
+                Some(DesignFeatureFamily::Thicken) => {
+                    project_thicken(scope, face_operands, construction_groups).unwrap_or_else(
+                        || FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: parameters
+                                .iter()
+                                .map(|(_, parameter)| {
+                                    (parameter.name.clone(), parameter.expression.clone())
+                                })
+                                .collect(),
+                            properties: native_scope_properties(scope, native_scope),
+                        },
+                    )
+                }
+                Some(DesignFeatureFamily::Coil) => {
+                    project_coil(scope, &parameters, construction_groups).unwrap_or_else(|| {
+                        FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: parameters
+                                .iter()
+                                .map(|(_, parameter)| {
+                                    (parameter.name.clone(), parameter.expression.clone())
+                                })
+                                .collect(),
+                            properties: native_scope_properties(scope, native_scope),
+                        }
+                    })
+                }
+                Some(DesignFeatureFamily::Scale) => scope.scale_operation.as_ref().map_or_else(
                     || FeatureDefinition::Native {
                         kind: scope.kind.clone(),
                         parameters: BTreeMap::new(),
@@ -623,7 +327,9 @@ pub fn project_parameter_design_with_edge_identities(
                         FeatureDefinition::Scale {
                             bodies: body_group.map_or(
                                 cadmpeg_ir::features::BodySelection::Unresolved,
-                                |group| cadmpeg_ir::features::BodySelection::Native(group.id.clone()),
+                                |group| {
+                                    cadmpeg_ir::features::BodySelection::Native(group.id.clone())
+                                },
                             ),
                             center: Some(cadmpeg_ir::features::ScaleCenter::Native(format!(
                                 "{native_scope}:design-record#{}",
@@ -637,47 +343,172 @@ pub fn project_parameter_design_with_edge_identities(
                             },
                         }
                     },
-                )
-            } else if scope.kind == "CopyPasteBodies" {
-                scope.copy_paste_bodies_operation.as_ref().map_or_else(
-                    || FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
-                    },
-                    |operation| FeatureDefinition::InsertBodies {
-                        bodies: design_body_selection(
-                            scope,
-                            &operation.copied_body_entity_suffixes,
-                            body_bindings,
-                        ),
-                    },
-                )
-            } else if scope.kind == "Base Feature" {
-                scope.base_feature_construction.as_ref().map_or_else(
-                    || FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
-                    },
-                    |construction| FeatureDefinition::BaseFeature {
-                        bodies: design_body_selection(
-                            scope,
-                            &construction.body_entity_suffixes,
-                            body_bindings,
-                        ),
-                    },
-                )
-            } else {
-                FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
-                    parameters: parameters
-                        .iter()
-                        .map(|(_, parameter)| {
-                            (parameter.name.clone(), parameter.expression.clone())
+                ),
+                None => {
+                    if let Some(primitive) = scope.solid_primitive.as_ref() {
+                        let operation = |operation| match operation {
+                            DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
+                            DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
+                            DesignExtrudeOperation::Intersect => {
+                                cadmpeg_ir::features::BooleanOp::Intersect
+                            }
+                            DesignExtrudeOperation::NewBody => {
+                                cadmpeg_ir::features::BooleanOp::NewBody
+                            }
+                        };
+                        match primitive {
+                            DesignSolidPrimitive::Sphere {
+                                transform,
+                                diameter,
+                                operation: result,
+                                ..
+                            } => FeatureDefinition::Sphere {
+                                center: Point3::new(
+                                    transform[0][3] * 10.0,
+                                    transform[1][3] * 10.0,
+                                    transform[2][3] * 10.0,
+                                ),
+                                radius: Length(*diameter * 5.0),
+                                op: operation(*result),
+                            },
+                            DesignSolidPrimitive::Torus {
+                                transform,
+                                major_diameter,
+                                minor_diameter,
+                                operation: result,
+                                ..
+                            } => FeatureDefinition::Torus {
+                                center: Point3::new(
+                                    transform[0][3] * 10.0,
+                                    transform[1][3] * 10.0,
+                                    transform[2][3] * 10.0,
+                                ),
+                                axis: Vector3::new(
+                                    transform[0][2],
+                                    transform[1][2],
+                                    transform[2][2],
+                                ),
+                                major_radius: Length(*major_diameter * 5.0),
+                                minor_radius: Length(*minor_diameter * 5.0),
+                                op: operation(*result),
+                            },
+                        }
+                    } else if scope.kind == "WorkPlane" {
+                        scope.work_plane_transform.map_or_else(
+                            || FeatureDefinition::Native {
+                                kind: scope.kind.clone(),
+                                parameters: parameters
+                                    .iter()
+                                    .map(|(_, parameter)| {
+                                        (parameter.name.clone(), parameter.expression.clone())
+                                    })
+                                    .collect(),
+                                properties: native_scope_properties(scope, native_scope),
+                            },
+                            |transform| FeatureDefinition::DatumPlane {
+                                origin: Point3::new(
+                                    transform[0][3] * 10.0,
+                                    transform[1][3] * 10.0,
+                                    transform[2][3] * 10.0,
+                                ),
+                                normal: Vector3::new(
+                                    transform[0][2],
+                                    transform[1][2],
+                                    transform[2][2],
+                                ),
+                                u_axis: Vector3::new(
+                                    transform[0][0],
+                                    transform[1][0],
+                                    transform[2][0],
+                                ),
+                            },
+                        )
+                    } else if scope.kind == "WorkPoint" {
+                        scope.work_point_position.map_or_else(
+                            || FeatureDefinition::Native {
+                                kind: scope.kind.clone(),
+                                parameters: parameters
+                                    .iter()
+                                    .map(|(_, parameter)| {
+                                        (parameter.name.clone(), parameter.expression.clone())
+                                    })
+                                    .collect(),
+                                properties: native_scope_properties(scope, native_scope),
+                            },
+                            |position| FeatureDefinition::DatumPoint {
+                                position: Point3::new(
+                                    position[0] * 10.0,
+                                    position[1] * 10.0,
+                                    position[2] * 10.0,
+                                ),
+                            },
+                        )
+                    } else if scope.kind == "BaseFlange" {
+                        project_base_flange(scope, construction_groups, placements).unwrap_or_else(
+                            || FeatureDefinition::Native {
+                                kind: scope.kind.clone(),
+                                parameters: BTreeMap::new(),
+                                properties: native_scope_properties(scope, native_scope),
+                            },
+                        )
+                    } else if scope.kind == "RemoveBody" {
+                        project_remove_body(scope, construction_groups).unwrap_or_else(|| {
+                            FeatureDefinition::Native {
+                                kind: scope.kind.clone(),
+                                parameters: BTreeMap::new(),
+                                properties: native_scope_properties(scope, native_scope),
+                            }
                         })
-                        .collect(),
-                    properties: native_scope_properties(scope, native_scope),
+                    } else if scope.kind == "SurfaceStitch" {
+                        project_surface_stitch(scope, construction_groups).unwrap_or_else(|| {
+                            FeatureDefinition::Native {
+                                kind: scope.kind.clone(),
+                                parameters: BTreeMap::new(),
+                                properties: native_scope_properties(scope, native_scope),
+                            }
+                        })
+                    } else if scope.kind == "CopyPasteBodies" {
+                        scope.copy_paste_bodies_operation.as_ref().map_or_else(
+                            || FeatureDefinition::Native {
+                                kind: scope.kind.clone(),
+                                parameters: BTreeMap::new(),
+                                properties: native_scope_properties(scope, native_scope),
+                            },
+                            |operation| FeatureDefinition::InsertBodies {
+                                bodies: design_body_selection(
+                                    scope,
+                                    &operation.copied_body_entity_suffixes,
+                                    body_bindings,
+                                ),
+                            },
+                        )
+                    } else if scope.kind == "Base Feature" {
+                        scope.base_feature_construction.as_ref().map_or_else(
+                            || FeatureDefinition::Native {
+                                kind: scope.kind.clone(),
+                                parameters: BTreeMap::new(),
+                                properties: native_scope_properties(scope, native_scope),
+                            },
+                            |construction| FeatureDefinition::BaseFeature {
+                                bodies: design_body_selection(
+                                    scope,
+                                    &construction.body_entity_suffixes,
+                                    body_bindings,
+                                ),
+                            },
+                        )
+                    } else {
+                        FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: parameters
+                                .iter()
+                                .map(|(_, parameter)| {
+                                    (parameter.name.clone(), parameter.expression.clone())
+                                })
+                                .collect(),
+                            properties: native_scope_properties(scope, native_scope),
+                        }
+                    }
                 }
             };
             let outputs = match &definition {
@@ -928,6 +759,216 @@ pub fn project_parameter_design_with_edge_identities(
     assign_feature_ordinals(&mut features);
     parameters.sort_by_key(|parameter| parameter.id.clone());
     (features, parameters)
+}
+
+fn scope_properties(
+    scope: &DesignParameterScope,
+    native_scope: &str,
+    placements: &[DesignSketchPlacement],
+) -> std::collections::BTreeMap<String, String> {
+    use std::collections::BTreeMap;
+    let mut properties = BTreeMap::new();
+    for (ordinal, record_index) in scope.reference_members.iter().enumerate() {
+        properties.insert(format!("reference:{ordinal}"), record_index.to_string());
+    }
+    if let Some(profile) = scope
+        .extrude_profile
+        .as_ref()
+        .or(scope.base_flange_profile.as_ref())
+    {
+        if let Some(placement) = placements.iter().find(|placement| {
+            native_stream(&placement.id) == Some(native_scope)
+                && placement.entity_id == profile.entity_id
+        }) {
+            properties.insert("profile".into(), neutral_sketch_id(placement).0);
+        }
+    }
+    properties
+}
+
+#[allow(clippy::too_many_arguments)]
+fn project_fillet_arm(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+    native: &[DesignParameter],
+    native_scope: &str,
+    construction_groups: &[DesignConstructionOperandGroup],
+    fillet_radius_groups: &[DesignFilletRadiusGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
+    placements: &[DesignSketchPlacement],
+) -> cadmpeg_ir::features::FeatureDefinition {
+    use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FilletGroup, RadiusSpec};
+
+    if let Some(definition) = project_variable_fillet(
+        scope,
+        parameters,
+        construction_groups,
+        edge_operands,
+        edge_identity_operands,
+    ) {
+        definition
+    } else if let Some(definition) = parameters
+        .is_empty()
+        .then(|| {
+            project_fixed_fillet(
+                scope,
+                construction_groups,
+                edge_operands,
+                edge_identity_operands,
+            )
+        })
+        .flatten()
+    {
+        definition
+    } else {
+        let mut assignments = fillet_radius_groups
+            .iter()
+            .filter(|assignment| {
+                native_stream(&assignment.id) == Some(native_scope)
+                    && assignment.scope_record_index == scope.record_index
+            })
+            .collect::<Vec<_>>();
+        assignments.sort_by_key(|assignment| assignment.group_ordinal);
+        let assigned_parameter_records = assignments
+            .iter()
+            .flat_map(|assignment| {
+                fillet_law_parameter_records(&assignment.law)
+                    .into_iter()
+                    .chain(assignment.tangency_weight_parameter_record_index)
+            })
+            .collect::<Vec<_>>();
+        let incomplete_assignment = if assignments.is_empty() {
+            let radii = parameters
+                .iter()
+                .filter(|(_, parameter)| parameter.source_kind == "Radius")
+                .map(|(_, parameter)| *parameter)
+                .collect::<Vec<_>>();
+            radii.len() != 1
+                || radii
+                    .iter()
+                    .any(|parameter| design_length(parameter).is_none_or(|value| value.0 <= 0.0))
+                || parameters
+                    .iter()
+                    .any(|(_, parameter)| parameter.source_kind != "Radius")
+        } else {
+            assigned_parameter_records.len() != parameters.len()
+                || parameters.iter().any(|(_, parameter)| {
+                    !matches!(
+                        parameter.source_kind.as_str(),
+                        "Radius" | "ChordLen" | "TangencyWeight"
+                    ) || assigned_parameter_records
+                        .iter()
+                        .filter(|record_index| **record_index == parameter.record_index)
+                        .count()
+                        != 1
+                })
+                || parameters.iter().any(|(_, parameter)| {
+                    if matches!(parameter.source_kind.as_str(), "Radius" | "ChordLen") {
+                        design_length(parameter).is_none_or(|value| value.0 <= 0.0)
+                    } else {
+                        !parameter.evaluated_value.is_finite()
+                    }
+                })
+        };
+        if incomplete_assignment {
+            FeatureDefinition::Native {
+                kind: scope.kind.clone(),
+                parameters: parameters
+                    .iter()
+                    .map(|(_, parameter)| (parameter.name.clone(), parameter.expression.clone()))
+                    .collect(),
+                properties: scope_properties(scope, native_scope, placements),
+            }
+        } else {
+            let groups = assignments
+                .into_iter()
+                .map(|assignment| {
+                    let (radius, edge_radius) = match assignment.law {
+                        DesignFilletRadiusLaw::Constant {
+                            radius_parameter_record_index,
+                        } => {
+                            let radius = parameters
+                                .iter()
+                                .find(|(_, parameter)| {
+                                    parameter.record_index == radius_parameter_record_index
+                                })
+                                .and_then(|(_, parameter)| design_length(parameter))
+                                .expect("complete Fillet assignment has a positive radius");
+                            (RadiusSpec::Constant { radius }, Some(radius.0))
+                        }
+                        DesignFilletRadiusLaw::Chordal {
+                            chord_length_parameter_record_index,
+                        } => {
+                            let chord_length = parameters
+                                .iter()
+                                .find(|(_, parameter)| {
+                                    parameter.record_index == chord_length_parameter_record_index
+                                })
+                                .and_then(|(_, parameter)| design_length(parameter))
+                                .expect("complete chordal Fillet has a positive chord length");
+                            (RadiusSpec::Chordal { chord_length }, None)
+                        }
+                        DesignFilletRadiusLaw::Variable { .. } => {
+                            unreachable!("variable Fillet projected before constants")
+                        }
+                    };
+                    let tangency_weight = assignment
+                        .tangency_weight_parameter_record_index
+                        .and_then(|record_index| {
+                            native.iter().find(|parameter| {
+                                native_stream(&parameter.id) == Some(native_scope)
+                                    && parameter.record_index == record_index
+                            })
+                        })
+                        .map(|parameter| parameter.evaluated_value)
+                        .filter(|weight| weight.is_finite());
+                    let edges = construction_groups
+                        .iter()
+                        .find(|group| {
+                            native_stream(&group.id) == Some(native_scope)
+                                && group.record_index == assignment.group_record_index
+                        })
+                        .map_or_else(
+                            || EdgeSelection::Native(assignment.id.clone()),
+                            |group| {
+                                resolved_edge_group(
+                                    group,
+                                    construction_groups,
+                                    edge_operands,
+                                    edge_identity_operands,
+                                    scope.previous_history_state_id,
+                                    &neutral_feature_id(scope),
+                                    edge_radius,
+                                )
+                            },
+                        );
+                    FilletGroup {
+                        edges,
+                        radius,
+                        tangency_weight,
+                    }
+                })
+                .collect::<Vec<_>>();
+            FeatureDefinition::Fillet {
+                groups: if groups.is_empty() {
+                    vec![FilletGroup {
+                        edges: EdgeSelection::Native(scope.id.clone()),
+                        radius: RadiusSpec::Constant {
+                            radius: parameters
+                                .iter()
+                                .filter(|(_, parameter)| parameter.source_kind == "Radius")
+                                .find_map(|(_, parameter)| design_length(parameter))
+                                .expect("complete ungrouped Fillet has one positive radius"),
+                        },
+                        tangency_weight: None,
+                    }]
+                } else {
+                    groups
+                },
+            }
+        }
+    }
 }
 
 fn design_body_selection<T>(
