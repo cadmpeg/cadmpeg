@@ -27902,31 +27902,199 @@ fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Opti
     .then(|| std::array::from_fn(|axis| f64::midpoint(first_point[axis], second_point[axis])))
 }
 
-fn incident_line_vertex_point(curves: &[&CurveGeometry]) -> Option<[f64; 3]> {
-    let lines = curves
-        .iter()
-        .copied()
-        .filter(|curve| matches!(curve, CurveGeometry::Line { .. }))
-        .collect::<Vec<_>>();
+fn line_circle_intersections(line: &CurveGeometry, circle: &CurveGeometry) -> Vec<[f64; 3]> {
+    let (
+        CurveGeometry::Line { origin, direction },
+        CurveGeometry::Circle {
+            center,
+            axis,
+            radius,
+            ..
+        },
+    ) = (line, circle)
+    else {
+        return Vec::new();
+    };
+    if !radius.is_finite() || *radius <= 0.0 {
+        return Vec::new();
+    }
+    let origin = [origin.x, origin.y, origin.z];
+    let center = [center.x, center.y, center.z];
+    let direction = [direction.x, direction.y, direction.z];
+    let axis = [axis.x, axis.y, axis.z];
+    let relative = std::array::from_fn(|coordinate| origin[coordinate] - center[coordinate]);
+    let direction_squared = dot(direction, direction);
+    let axis_squared = dot(axis, axis);
+    if !direction_squared.is_finite()
+        || !axis_squared.is_finite()
+        || direction_squared <= 0.0
+        || axis_squared <= 0.0
+    {
+        return Vec::new();
+    }
+    let direction_plane = dot(direction, axis);
+    let origin_plane = dot(relative, axis);
+    let angular_scale = (direction_squared * axis_squared).sqrt();
+    let model_scale = origin
+        .into_iter()
+        .chain(center)
+        .map(f64::abs)
+        .fold(radius.abs().max(1.0), f64::max);
+    if direction_plane.abs() > 1e-12 * angular_scale {
+        let parameter = -origin_plane / direction_plane;
+        let point = std::array::from_fn(|coordinate| {
+            direction[coordinate].mul_add(parameter, origin[coordinate])
+        });
+        return (point.iter().all(|value| value.is_finite())
+            && curve_contains_points(circle, [point, point]))
+        .then_some(point)
+        .into_iter()
+        .collect();
+    }
+    if origin_plane.abs() > 1e-9 * model_scale * axis_squared.sqrt() {
+        return Vec::new();
+    }
+    let nearest_parameter = -dot(relative, direction) / direction_squared;
+    let nearest: [f64; 3] = std::array::from_fn(|coordinate| {
+        direction[coordinate].mul_add(nearest_parameter, origin[coordinate])
+    });
+    let center_delta = std::array::from_fn(|coordinate| nearest[coordinate] - center[coordinate]);
+    let remaining = radius.mul_add(*radius, -dot(center_delta, center_delta));
+    let tolerance = 1e-9 * model_scale * model_scale;
+    if !remaining.is_finite() || remaining < -tolerance {
+        return Vec::new();
+    }
+    let travel = remaining.max(0.0).sqrt() / direction_squared.sqrt();
+    let first = std::array::from_fn(|coordinate| {
+        direction[coordinate].mul_add(nearest_parameter + travel, origin[coordinate])
+    });
+    if travel <= 1e-9 * model_scale / direction_squared.sqrt() {
+        return vec![first];
+    }
+    let second = std::array::from_fn(|coordinate| {
+        direction[coordinate].mul_add(nearest_parameter - travel, origin[coordinate])
+    });
+    vec![first, second]
+}
+
+fn circle_circle_intersections(first: &CurveGeometry, second: &CurveGeometry) -> Vec<[f64; 3]> {
+    let (
+        CurveGeometry::Circle {
+            center: first_center,
+            axis: first_axis,
+            radius: first_radius,
+            ..
+        },
+        CurveGeometry::Circle {
+            center: second_center,
+            axis: second_axis,
+            radius: second_radius,
+            ..
+        },
+    ) = (first, second)
+    else {
+        return Vec::new();
+    };
+    if !first_radius.is_finite()
+        || !second_radius.is_finite()
+        || *first_radius <= 0.0
+        || *second_radius <= 0.0
+    {
+        return Vec::new();
+    }
+    let first_center = [first_center.x, first_center.y, first_center.z];
+    let second_center = [second_center.x, second_center.y, second_center.z];
+    let Some(first_axis) = normalized([first_axis.x, first_axis.y, first_axis.z]) else {
+        return Vec::new();
+    };
+    let Some(second_axis) = normalized([second_axis.x, second_axis.y, second_axis.z]) else {
+        return Vec::new();
+    };
+    let axis_cross = cross(first_axis, second_axis);
+    if dot(axis_cross, axis_cross) > 1e-18 {
+        let mut points = intersect_plane_with_circle(
+            PlaneEquation {
+                origin: second_center,
+                normal: second_axis,
+            },
+            first_center,
+            first_axis,
+            *first_radius,
+        );
+        points.retain(|point| curve_contains_points(second, [*point, *point]));
+        return points;
+    }
+    let delta: [f64; 3] =
+        std::array::from_fn(|coordinate| second_center[coordinate] - first_center[coordinate]);
+    let scale = first_center
+        .into_iter()
+        .chain(second_center)
+        .map(f64::abs)
+        .fold(first_radius.max(*second_radius).max(1.0), f64::max);
+    if dot(delta, first_axis).abs() > 1e-9 * scale {
+        return Vec::new();
+    }
+    let distance = dot(delta, delta).sqrt();
+    if !distance.is_finite() || distance <= 1e-12 * scale {
+        return Vec::new();
+    }
+    let along = (first_radius.mul_add(*first_radius, -(second_radius * second_radius))
+        + distance * distance)
+        / (2.0 * distance);
+    let remaining = first_radius.mul_add(*first_radius, -(along * along));
+    let tolerance = 1e-9 * scale * scale;
+    if !remaining.is_finite() || remaining < -tolerance {
+        return Vec::new();
+    }
+    let direction = delta.map(|value| value / distance);
+    let Some(perpendicular) = normalized(cross(first_axis, direction)) else {
+        return Vec::new();
+    };
+    let base: [f64; 3] = std::array::from_fn(|coordinate| {
+        direction[coordinate].mul_add(along, first_center[coordinate])
+    });
+    let height = remaining.max(0.0).sqrt();
+    let first = std::array::from_fn(|coordinate| {
+        perpendicular[coordinate].mul_add(height, base[coordinate])
+    });
+    if height <= 1e-9 * scale {
+        return vec![first];
+    }
+    let second = std::array::from_fn(|coordinate| {
+        (-perpendicular[coordinate]).mul_add(height, base[coordinate])
+    });
+    vec![first, second]
+}
+
+fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3]> {
     let mut candidates = Vec::new();
-    for first in 0..lines.len() {
-        for second in first + 1..lines.len() {
-            let Some(point) = line_line_intersection(lines[first], lines[second]) else {
-                continue;
-            };
-            if curves
-                .iter()
-                .all(|curve| curve_contains_points(curve, [point, point]))
-            {
-                candidates.push(point);
-            }
+    for first in 0..curves.len() {
+        for second in first + 1..curves.len() {
+            candidates.extend(
+                line_line_intersection(curves[first], curves[second])
+                    .into_iter()
+                    .chain(line_circle_intersections(curves[first], curves[second]))
+                    .chain(line_circle_intersections(curves[second], curves[first]))
+                    .chain(circle_circle_intersections(curves[first], curves[second])),
+            );
         }
     }
-    let first = *candidates.first()?;
+    candidates.retain(|point| {
+        curves
+            .iter()
+            .all(|curve| curve_contains_points(curve, [*point, *point]))
+    });
     candidates
-        .iter()
-        .all(|candidate| model_points_agree(first, *candidate))
-        .then_some(first)
+        .into_iter()
+        .fold(Vec::new(), |mut unique, point| {
+            if !unique
+                .iter()
+                .any(|candidate| model_points_agree(*candidate, point))
+            {
+                unique.push(point);
+            }
+            unique
+        })
 }
 
 fn mapped_pcurve_endpoints(
@@ -28112,6 +28280,7 @@ fn directed_pcurve_points(directions: [u8; 2], points: [[f64; 3]; 2]) -> Option<
 fn solve_pcurve_vertex_domains(
     constraints: &[PcurveVertexConstraint],
     fixed_points: &BTreeMap<u32, Option<[f64; 3]>>,
+    analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
     incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
 ) -> BTreeMap<u32, [f64; 3]> {
     let mut domains = BTreeMap::<u32, Vec<[f64; 3]>>::new();
@@ -28143,6 +28312,20 @@ fn solve_pcurve_vertex_domains(
                     .iter()
                     .any(|point| model_points_agree(*candidate, *point))
             });
+        }
+    }
+    for (vertex, candidates) in analytic_domains {
+        match domains.entry(*vertex) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(candidates.clone());
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().retain(|point| {
+                    candidates
+                        .iter()
+                        .any(|candidate| model_points_agree(*point, *candidate))
+                });
+            }
         }
     }
     for (vertex, point) in fixed_points {
@@ -28306,25 +28489,19 @@ fn solved_topological_vertices(
             (!curves.is_empty()).then_some((vertex.id, curves))
         })
         .collect::<BTreeMap<_, _>>();
-    for (vertex, curves) in &incident_curves {
-        let Some(point) = incident_line_vertex_point(curves) else {
-            continue;
-        };
-        match fixed_points.entry(*vertex) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(Some(point));
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                if entry
-                    .get()
-                    .is_none_or(|known| !model_points_agree(known, point))
-                {
-                    entry.insert(None);
-                }
-            }
-        }
-    }
-    solve_pcurve_vertex_domains(&constraints, &fixed_points, &incident_curves)
+    let analytic_domains = incident_curves
+        .iter()
+        .filter_map(|(vertex, curves)| {
+            let candidates = incident_analytic_vertex_domain(curves);
+            (!candidates.is_empty()).then_some((*vertex, candidates))
+        })
+        .collect::<BTreeMap<_, _>>();
+    solve_pcurve_vertex_domains(
+        &constraints,
+        &fixed_points,
+        &analytic_domains,
+        &incident_curves,
+    )
 }
 
 #[cfg(test)]
@@ -28345,8 +28522,8 @@ mod topological_vertex_tests {
         let third = line([1.0, 2.0, -5.0], [0.0, 0.0, 4.0]);
 
         assert_eq!(
-            incident_line_vertex_point(&[&first, &second, &third]),
-            Some([1.0, 2.0, 3.0])
+            incident_analytic_vertex_domain(&[&first, &second, &third]),
+            [[1.0, 2.0, 3.0]]
         );
     }
 
@@ -28360,10 +28537,68 @@ mod topological_vertex_tests {
 
         assert_eq!(line_line_intersection(&x, &skew_y), None);
         assert_eq!(line_line_intersection(&x, &parallel), None);
+        assert!(incident_analytic_vertex_domain(&[&x, &crossing_y, &displaced_z]).is_empty());
+    }
+
+    #[test]
+    fn line_circle_candidates_preserve_secants_and_collapse_tangency() {
+        let circle = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let secant = line([-3.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+        let tangent = line([-3.0, 2.0, 0.0], [1.0, 0.0, 0.0]);
+        let skew = line([-3.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+
         assert_eq!(
-            incident_line_vertex_point(&[&x, &crossing_y, &displaced_z]),
-            None
+            line_circle_intersections(&secant, &circle),
+            [[2.0, 0.0, 0.0], [-2.0, 0.0, 0.0]]
         );
+        assert_eq!(
+            line_circle_intersections(&tangent, &circle),
+            [[0.0, 2.0, 0.0]]
+        );
+        assert!(line_circle_intersections(&skew, &circle).is_empty());
+    }
+
+    #[test]
+    fn circle_circle_candidates_cover_coplanar_and_transverse_planes() {
+        let circle = |center: [f64; 3], axis: [f64; 3], radius| {
+            let reference = if axis[0].abs() > 0.5 {
+                [0.0, 1.0, 0.0]
+            } else {
+                [1.0, 0.0, 0.0]
+            };
+            CurveGeometry::Circle {
+                center: Point3::new(center[0], center[1], center[2]),
+                axis: Vector3::new(axis[0], axis[1], axis[2]),
+                ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                radius,
+            }
+        };
+        let first = circle([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0);
+        let secant = circle([2.0, 0.0, 0.0], [0.0, 0.0, -1.0], 2.0);
+        let tangent = circle([4.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0);
+        let transverse = circle([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 2.0);
+
+        let secant_points = circle_circle_intersections(&first, &secant);
+        assert_eq!(secant_points.len(), 2);
+        assert!(secant_points.iter().all(|point| {
+            model_points_agree(*point, [1.0, 3.0_f64.sqrt(), 0.0])
+                || model_points_agree(*point, [1.0, -3.0_f64.sqrt(), 0.0])
+        }));
+        assert_eq!(
+            circle_circle_intersections(&first, &tangent),
+            [[2.0, 0.0, 0.0]]
+        );
+        let transverse_points = circle_circle_intersections(&first, &transverse);
+        assert_eq!(transverse_points.len(), 2);
+        assert!(transverse_points.iter().all(|point| {
+            model_points_agree(*point, [0.0, 2.0, 0.0])
+                || model_points_agree(*point, [0.0, -2.0, 0.0])
+        }));
     }
 }
 
@@ -29959,16 +30194,25 @@ mod native_pcurve_tests {
         let c = [3.0, 0.0, 0.0];
         let constraints = [([1, 2], [a, b]), ([2, 3], [c, b])];
         assert_eq!(
-            solve_pcurve_vertex_domains(&constraints, &BTreeMap::new(), &BTreeMap::new()),
+            solve_pcurve_vertex_domains(
+                &constraints,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            ),
             BTreeMap::from([(1, a), (2, b), (3, c)])
         );
-        assert!(
-            solve_pcurve_vertex_domains(&constraints[..1], &BTreeMap::new(), &BTreeMap::new())
-                .is_empty()
-        );
+        assert!(solve_pcurve_vertex_domains(
+            &constraints[..1],
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        )
+        .is_empty());
         assert!(solve_pcurve_vertex_domains(
             &constraints,
             &BTreeMap::from([(2, Some([9.0, 0.0, 0.0]))]),
+            &BTreeMap::new(),
             &BTreeMap::new(),
         )
         .is_empty());
@@ -29981,7 +30225,26 @@ mod native_pcurve_tests {
             solve_pcurve_vertex_domains(
                 &constraints[..1],
                 &BTreeMap::new(),
+                &BTreeMap::new(),
                 &BTreeMap::from([(1, vec![&line])]),
+            ),
+            BTreeMap::from([(1, a), (2, b)])
+        );
+
+        let analytic_domains = BTreeMap::from([(1, vec![a, c])]);
+        assert!(solve_pcurve_vertex_domains(
+            &[],
+            &BTreeMap::new(),
+            &analytic_domains,
+            &BTreeMap::new(),
+        )
+        .is_empty());
+        assert_eq!(
+            solve_pcurve_vertex_domains(
+                &constraints[..1],
+                &BTreeMap::new(),
+                &analytic_domains,
+                &BTreeMap::new(),
             ),
             BTreeMap::from([(1, a), (2, b)])
         );
