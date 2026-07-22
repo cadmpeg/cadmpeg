@@ -22592,12 +22592,12 @@ pub fn decode(
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(reader)?;
 
-    let (mut ir, annotations, unknowns) = if options.container_only {
+    let (mut ir, annotations, unknowns, coverage) = if options.container_only {
         build_container_ir(&scan)?
     } else {
         build_ir(&scan)?
     };
-    let report = build_report(&scan, &ir, options.container_only);
+    let report = build_report(&scan, &ir, coverage, options.container_only);
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()
@@ -22662,24 +22662,31 @@ fn preserve_passthrough_sections(
     unknowns
 }
 
-fn build_container_ir(
-    scan: &ContainerScan,
-) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
+/// Decoded IR together with its annotations, preserved unknown records, and
+/// decode-coverage counts.
+type BuiltIr = (
+    CadIr,
+    cadmpeg_ir::Annotations,
+    Vec<UnknownRecord>,
+    BTreeMap<String, usize>,
+);
+
+fn build_container_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
-    ir.source = Some(source_meta(scan));
+    let (meta, coverage) = source_meta(scan);
+    ir.source = Some(meta);
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
-    Ok((ir, annotations.build(), unknowns))
+    Ok((ir, annotations.build(), unknowns, coverage))
 }
 
 /// Build source metadata, preserved geometry records, and transferred entities.
-fn build_ir(
-    scan: &ContainerScan,
-) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
+fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
-    ir.source = Some(source_meta(scan));
+    let (meta, mut coverage) = source_meta(scan);
+    ir.source = Some(meta);
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     if !scan.references.lines.is_empty() {
         let family = |kind: &crate::reference::ReferenceLineKind| match kind {
@@ -23189,196 +23196,191 @@ fn build_ir(
         &ir.model.procedural_surfaces,
     );
     let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.model.curves);
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert(
+    {
+        coverage.insert(
             "unique_visible_surface_row_count".to_string(),
-            surface_coverage.unique_rows.to_string(),
+            surface_coverage.unique_rows,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_visible_surface_row_count".to_string(),
-            surface_coverage.transferred_rows.to_string(),
+            surface_coverage.transferred_rows,
         );
-        source.attributes.insert(
+        coverage.insert(
             "untransferred_visible_surface_row_count".to_string(),
             surface_coverage
                 .unique_rows
-                .saturating_sub(surface_coverage.transferred_rows)
-                .to_string(),
+                .saturating_sub(surface_coverage.transferred_rows),
         );
-        source.attributes.insert(
+        coverage.insert(
             "ambiguous_visible_surface_row_count".to_string(),
-            surface_coverage.ambiguous_rows.to_string(),
+            surface_coverage.ambiguous_rows,
         );
         for (family, (rows, transferred)) in &surface_coverage.by_family {
-            source.attributes.insert(
-                format!("visible_{family}_surface_row_count"),
-                rows.to_string(),
-            );
-            source.attributes.insert(
+            coverage.insert(format!("visible_{family}_surface_row_count"), *rows);
+            coverage.insert(
                 format!("transferred_visible_{family}_surface_row_count"),
-                transferred.to_string(),
+                *transferred,
             );
         }
-        source.attributes.insert(
+        coverage.insert(
             "unique_visible_curve_row_count".to_string(),
-            curve_coverage.unique_rows.to_string(),
+            curve_coverage.unique_rows,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_visible_curve_row_count".to_string(),
-            curve_coverage.transferred_rows.to_string(),
+            curve_coverage.transferred_rows,
         );
-        source.attributes.insert(
+        coverage.insert(
             "untransferred_visible_curve_row_count".to_string(),
             curve_coverage
                 .unique_rows
-                .saturating_sub(curve_coverage.transferred_rows)
-                .to_string(),
+                .saturating_sub(curve_coverage.transferred_rows),
         );
-        source.attributes.insert(
+        coverage.insert(
             "ambiguous_visible_curve_row_count".to_string(),
-            curve_coverage.ambiguous_rows.to_string(),
+            curve_coverage.ambiguous_rows,
         );
         for (type_byte, (rows, transferred)) in &curve_coverage.by_type {
-            source.attributes.insert(
+            coverage.insert(
                 format!("visible_curve_type_{type_byte:02x}_row_count"),
-                rows.to_string(),
+                *rows,
             );
-            source.attributes.insert(
+            coverage.insert(
                 format!("transferred_visible_curve_type_{type_byte:02x}_row_count"),
-                transferred.to_string(),
+                *transferred,
             );
         }
-        source.attributes.insert(
+        coverage.insert(
             "transferred_cross_section_plane_count".to_string(),
-            cross_section_plane_count.to_string(),
+            cross_section_plane_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_first_instance_prototype_surface_count".to_string(),
-            first_instance_prototype_surface_count.to_string(),
+            first_instance_prototype_surface_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_paired_envelope_sphere_count".to_string(),
-            paired_envelope_sphere_count.to_string(),
+            paired_envelope_sphere_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_positional_torus_count".to_string(),
-            positional_torus_count.to_string(),
+            positional_torus_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_positional_line_extrusion_plane_count".to_string(),
-            positional_line_extrusion_plane_count.to_string(),
+            positional_line_extrusion_plane_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_tabulated_cylinder_spline_extrusion_count".to_string(),
-            tabulated_cylinder_spline_extrusion_count.to_string(),
+            tabulated_cylinder_spline_extrusion_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_saved_spline_curve_count".to_string(),
-            saved_spline_curve_count.to_string(),
+            saved_spline_curve_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_topological_point_count".to_string(),
-            topological_point_count.to_string(),
+            topological_point_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_native_topological_edge_count".to_string(),
-            native_topological_edge_count.to_string(),
+            native_topological_edge_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_straight_pcurve_line_count".to_string(),
-            straight_pcurve_line_count.to_string(),
+            straight_pcurve_line_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_feature_revolution_surface_count".to_string(),
-            feature_revolution_surface_count.to_string(),
+            feature_revolution_surface_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_feature_revolution_vertex_orbit_curve_count".to_string(),
-            feature_revolution_vertex_orbit_curve_count.to_string(),
+            feature_revolution_vertex_orbit_curve_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_feature_extrusion_surface_count".to_string(),
-            feature_extrusion_surface_count.to_string(),
+            feature_extrusion_surface_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_feature_extrusion_vertex_orbit_curve_count".to_string(),
-            feature_extrusion_vertex_orbit_curve_count.to_string(),
+            feature_extrusion_vertex_orbit_curve_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_circular_sweep_cylinder_count".to_string(),
-            circular_sweep_cylinder_count.to_string(),
+            circular_sweep_cylinder_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_hole_cylinder_count".to_string(),
-            hole_cylinder_count.to_string(),
+            hole_cylinder_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_positional_cylinder_count".to_string(),
-            positional_cylinder_count.to_string(),
+            positional_cylinder_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_positional_cone_count".to_string(),
-            positional_cone_count.to_string(),
+            positional_cone_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_split_outline_cylinder_count".to_string(),
-            split_outline_cylinder_count.to_string(),
+            split_outline_cylinder_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_constrained_slot_fillet_cylinder_count".to_string(),
-            constrained_slot_fillet_cylinder_count.to_string(),
+            constrained_slot_fillet_cylinder_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_rowless_round_cylinder_count".to_string(),
-            rowless_round_cylinder_count.to_string(),
+            rowless_round_cylinder_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_feature_revolution_brep_count".to_string(),
-            feature_revolution_brep_count.to_string(),
+            feature_revolution_brep_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_feature_circular_extrusion_brep_count".to_string(),
-            feature_circular_extrusion_brep_count.to_string(),
+            feature_circular_extrusion_brep_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_feature_extrusion_brep_count".to_string(),
-            feature_extrusion_brep_count.to_string(),
+            feature_extrusion_brep_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_part_product_count".to_string(),
-            usize::from(transferred_part_product).to_string(),
+            usize::from(transferred_part_product),
         );
-        source.attributes.insert(
+        coverage.insert(
             "decoded_feature_skamp_count".to_string(),
-            decoded_feature_skamp_count.to_string(),
+            decoded_feature_skamp_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_feature_skamp_constraint_count".to_string(),
-            skamp_constraint_coverage.transferred.to_string(),
+            skamp_constraint_coverage.transferred,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_native_feature_skamp_constraint_count".to_string(),
-            skamp_constraint_coverage.native.to_string(),
+            skamp_constraint_coverage.native,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_typed_feature_skamp_constraint_count".to_string(),
-            skamp_constraint_coverage.typed().to_string(),
+            skamp_constraint_coverage.typed(),
         );
-        source.attributes.insert(
+        coverage.insert(
             "decoded_feature_relation_count".to_string(),
-            decoded_feature_relation_count.to_string(),
+            decoded_feature_relation_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_feature_relation_constraint_count".to_string(),
-            relation_constraint_coverage.transferred.to_string(),
+            relation_constraint_coverage.transferred,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_native_feature_relation_constraint_count".to_string(),
-            relation_constraint_coverage.native.to_string(),
+            relation_constraint_coverage.native,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_typed_feature_relation_constraint_count".to_string(),
-            relation_constraint_coverage.typed().to_string(),
+            relation_constraint_coverage.typed(),
         );
     }
     let operation_feature_ids = scan
@@ -23670,7 +23672,7 @@ fn build_ir(
         transfer_feature_dimensions(scan, &mut ir, &mut annotations);
     let transferred_curve_expression_assignment_count =
         transfer_curve_expression_features(scan, &mut ir, &mut annotations, &dimension_parameters);
-    if let Some(source) = &mut ir.source {
+    {
         let active_expressions = scan
             .curves
             .expressions
@@ -23700,25 +23702,25 @@ fn build_ir(
                 .filter(|assignment| assignment.activation == activation)
                 .count()
         };
-        source.attributes.insert(
+        coverage.insert(
             "decoded_active_curve_expression_assignment_count".to_string(),
-            decoded_curve_expression_assignment_count.to_string(),
+            decoded_curve_expression_assignment_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_curve_expression_parameter_count".to_string(),
-            transferred_curve_expression_assignment_count.to_string(),
+            transferred_curve_expression_assignment_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "evaluated_active_curve_expression_assignment_count".to_string(),
-            evaluated_curve_expression_assignment_count.to_string(),
+            evaluated_curve_expression_assignment_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "prohibited_active_curve_expression_record_count".to_string(),
-            prohibited_curve_expression_record_count.to_string(),
+            prohibited_curve_expression_record_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "prohibited_active_curve_expression_kind_count".to_string(),
-            prohibited_curve_expression_kind_count.to_string(),
+            prohibited_curve_expression_kind_count,
         );
         for (name, activation) in [
             ("active", crate::curve::CurveExpressionActivation::Active),
@@ -23731,9 +23733,9 @@ fn build_ir(
                 crate::curve::CurveExpressionActivation::Conditional,
             ),
         ] {
-            source.attributes.insert(
+            coverage.insert(
                 format!("{name}_curve_expression_assignment_count"),
-                activation_count(activation).to_string(),
+                activation_count(activation),
             );
         }
         let (decoded_dimension_count, resolved_dimension_count) = scan
@@ -23748,17 +23750,17 @@ fn build_ir(
                     resolved + usize::from(dimension.value.is_some()),
                 )
             });
-        source.attributes.insert(
+        coverage.insert(
             "decoded_feature_dimension_count".to_string(),
-            decoded_dimension_count.to_string(),
+            decoded_dimension_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "transferred_feature_dimension_parameter_count".to_string(),
-            transferred_feature_dimension_count.to_string(),
+            transferred_feature_dimension_count,
         );
-        source.attributes.insert(
+        coverage.insert(
             "resolved_feature_dimension_value_count".to_string(),
-            resolved_dimension_count.to_string(),
+            resolved_dimension_count,
         );
     }
     close_sketch_constraint_parameter_references(&mut ir);
@@ -24550,7 +24552,7 @@ fn build_ir(
         );
         store_arena(&mut ir, "configuration", &[family_table])?;
     }
-    Ok((ir, annotations.build(), unknowns))
+    Ok((ir, annotations.build(), unknowns, coverage))
 }
 
 #[derive(Default)]
@@ -24593,8 +24595,9 @@ fn torus_parameter_coverage(scan: &ContainerScan) -> TorusParameterCoverage {
     }
 }
 
-fn source_meta(scan: &ContainerScan) -> SourceMeta {
+fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
     let mut attributes = BTreeMap::new();
+    let mut coverage = BTreeMap::new();
     attributes.insert(
         "version_line".to_string(),
         scan.framing.version_line.clone(),
@@ -24628,23 +24631,23 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     if let Some(unit) = &scan.framing.principal_unit {
         attributes.insert("principal_unit".to_string(), unit.clone());
     }
-    attributes.insert(
+    coverage.insert(
         "decoded_surface_row_count".to_string(),
-        scan.surfaces.rows.len().to_string(),
+        scan.surfaces.rows.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_cross_section_surface_row_count".to_string(),
-        scan.surfaces.cross_section_rows.len().to_string(),
+        scan.surfaces.cross_section_rows.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_surface_parameter_record_count".to_string(),
-        scan.surfaces.parameters.len().to_string(),
+        scan.surfaces.parameters.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_cross_section_surface_parameter_record_count".to_string(),
-        scan.surfaces.cross_section_parameters.len().to_string(),
+        scan.surfaces.cross_section_parameters.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_positional_extrusion_direction_count".to_string(),
         scan.surfaces
             .parameters
@@ -24656,102 +24659,100 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
                             && record.extrusion_direction(row.type_byte).is_some()
                     })
             })
-            .count()
-            .to_string(),
+            .count(),
     );
     let torus_coverage = torus_parameter_coverage(scan);
-    attributes.insert(
+    coverage.insert(
         "decoded_torus_radius_override_count".to_string(),
-        torus_coverage.radius_overrides.to_string(),
+        torus_coverage.radius_overrides,
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_torus_outline_extent_count".to_string(),
-        torus_coverage.outline_extents.to_string(),
+        torus_coverage.outline_extents,
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_type26_five_coordinate_envelope_count".to_string(),
-        torus_coverage.five_coordinate_envelopes.to_string(),
+        torus_coverage.five_coordinate_envelopes,
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_type26_split_coordinate_envelope_count".to_string(),
-        torus_coverage.split_coordinate_envelopes.to_string(),
+        torus_coverage.split_coordinate_envelopes,
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_plane_local_system_count".to_string(),
-        scan.planes.local_systems.len().to_string(),
+        scan.planes.local_systems.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_cross_section_plane_local_system_count".to_string(),
-        scan.planes.cross_section_local_systems.len().to_string(),
+        scan.planes.cross_section_local_systems.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_plane_envelope_count".to_string(),
-        scan.planes.envelopes.len().to_string(),
+        scan.planes.envelopes.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_cross_section_plane_envelope_count".to_string(),
-        scan.planes.cross_section_envelopes.len().to_string(),
+        scan.planes.cross_section_envelopes.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_outline_plane_count".to_string(),
-        scan.planes.outlines.len().to_string(),
+        scan.planes.outlines.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_positional_frame_plane_count".to_string(),
-        scan.planes.positional_frames.len().to_string(),
+        scan.planes.positional_frames.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_cross_section_outline_plane_count".to_string(),
-        scan.planes.cross_section_outlines.len().to_string(),
+        scan.planes.cross_section_outlines.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_surface_prototype_count".to_string(),
-        scan.surfaces.prototypes.len().to_string(),
+        scan.surfaces.prototypes.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_named_surface_prototype_count".to_string(),
-        scan.surfaces.prototype_records.len().to_string(),
+        scan.surfaces.prototype_records.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_reference_line_count".to_string(),
-        scan.references.lines.len().to_string(),
+        scan.references.lines.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_reference_circle_count".to_string(),
-        scan.references.circles.len().to_string(),
+        scan.references.circles.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_reference_conic_count".to_string(),
-        scan.references.conics.len().to_string(),
+        scan.references.conics.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "transferred_reference_ellipse_count".to_string(),
-        scan.references.ellipses.len().to_string(),
+        scan.references.ellipses.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_tabulated_cylinder_curve_replay_count".to_string(),
-        scan.curves.tabulated_cylinder_replays.len().to_string(),
+        scan.curves.tabulated_cylinder_replays.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_tabulated_cylinder_control_point_set_count".to_string(),
         scan.curves
             .tabulated_cylinder_replays
             .iter()
             .filter(|replay| replay.control_points.iter().all(Option::is_some))
-            .count()
-            .to_string(),
+            .count(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_curve_prototype_count".to_string(),
-        scan.curves.prototypes.len().to_string(),
+        scan.curves.prototypes.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_curve_parameter_record_count".to_string(),
-        scan.curves.parameters.len().to_string(),
+        scan.curves.parameters.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_curve_expression_record_count".to_string(),
-        scan.curves.expressions.len().to_string(),
+        scan.curves.expressions.len(),
     );
     attributes.insert(
         "expanded_section_count".to_string(),
@@ -24784,137 +24785,129 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
             },
         );
     }
-    attributes.insert(
+    coverage.insert(
         "decoded_pcurve_count".to_string(),
-        scan.curves.pcurves.len().to_string(),
+        scan.curves.pcurves.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_fc_curve_coordinate_record_count".to_string(),
-        scan.curves.fc_coordinates.len().to_string(),
+        scan.curves.fc_coordinates.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_fc05_circle_count".to_string(),
-        scan.curves.fc05_circles.len().to_string(),
+        scan.curves.fc05_circles.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_fc05_cylinder_cap_pair_count".to_string(),
-        scan.curves.fc05_cylinder_cap_pairs.len().to_string(),
+        scan.curves.fc05_cylinder_cap_pairs.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_prototype_pcurve_count".to_string(),
-        scan.curves.prototype_pcurves.len().to_string(),
+        scan.curves.prototype_pcurves.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_curve_prototype_topology_count".to_string(),
-        scan.curves.prototype_topology.len().to_string(),
+        scan.curves.prototype_topology.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_bound_prototype_pcurve_count".to_string(),
-        scan.curves.bound_prototype_pcurves.len().to_string(),
+        scan.curves.bound_prototype_pcurves.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_curve_topology_row_count".to_string(),
-        scan.curves.topology_rows.len().to_string(),
+        scan.curves.topology_rows.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_cross_section_curve_row_count".to_string(),
-        scan.curves.cross_section_rows.len().to_string(),
+        scan.curves.cross_section_rows.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_cross_section_curve_prototype_count".to_string(),
-        scan.curves.cross_section_prototypes.len().to_string(),
+        scan.curves.cross_section_prototypes.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_half_edge_count".to_string(),
-        scan.topology.half_edges.len().to_string(),
+        scan.topology.half_edges.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_topological_vertex_count".to_string(),
-        scan.topology.vertices.len().to_string(),
+        scan.topology.vertices.len(),
     );
-    attributes.insert(
-        "decoded_loop_count".to_string(),
-        scan.topology.loops.len().to_string(),
-    );
-    attributes.insert(
+    coverage.insert("decoded_loop_count".to_string(), scan.topology.loops.len());
+    coverage.insert(
         "decoded_face_component_count".to_string(),
-        scan.topology.face_components.len().to_string(),
+        scan.topology.face_components.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_datum_plane_count".to_string(),
-        scan.planes.datums.len().to_string(),
+        scan.planes.datums.len(),
     );
-    attributes.insert(
-        "decoded_feature_count".to_string(),
-        scan.features.ids.len().to_string(),
-    );
-    attributes.insert(
+    coverage.insert("decoded_feature_count".to_string(), scan.features.ids.len());
+    coverage.insert(
         "decoded_feature_row_count".to_string(),
-        scan.features.rows.len().to_string(),
+        scan.features.rows.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_choice_count".to_string(),
-        scan.features.choices.len().to_string(),
+        scan.features.choices.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_choice_field_count".to_string(),
-        scan.features.choice_fields.len().to_string(),
+        scan.features.choice_fields.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_geometry_table_count".to_string(),
-        scan.features.geometry_tables.len().to_string(),
+        scan.features.geometry_tables.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_affected_id_array_count".to_string(),
-        scan.features.affected_ids.len().to_string(),
+        scan.features.affected_ids.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_replay_affected_id_count".to_string(),
-        scan.features.replay_affected_ids.len().to_string(),
+        scan.features.replay_affected_ids.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_loop_restore_direction_count".to_string(),
-        scan.features.loop_restore_directions.len().to_string(),
+        scan.features.loop_restore_directions.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_revolution_extent_count".to_string(),
-        scan.features.revolution_extents.len().to_string(),
+        scan.features.revolution_extents.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_definition_count".to_string(),
-        scan.features.definitions.len().to_string(),
+        scan.features.definitions.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_section_transform_count".to_string(),
-        scan.features.section_transforms.len().to_string(),
+        scan.features.section_transforms.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_placement_instruction_count".to_string(),
         scan.features
             .definitions
             .iter()
             .map(|definition| crate::feature::placement_instructions(definition).len())
-            .sum::<usize>()
-            .to_string(),
+            .sum::<usize>(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_operation_state_count".to_string(),
-        scan.features.operation_states.len().to_string(),
+        scan.features.operation_states.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_operation_count".to_string(),
-        scan.features.operations.len().to_string(),
+        scan.features.operations.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_outline_count".to_string(),
         scan.features
             .definitions
             .iter()
             .map(|definition| definition.outlines.len())
-            .sum::<usize>()
-            .to_string(),
+            .sum::<usize>(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_section_point_count".to_string(),
         scan.features
             .definitions
@@ -24924,104 +24917,95 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
                 let (points, ambiguous) = variables.reconciled_points();
                 points.len() + ambiguous.len()
             })
-            .sum::<usize>()
-            .to_string(),
+            .sum::<usize>(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_segment_count".to_string(),
         scan.features
             .definitions
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.rows.len())
-            .sum::<usize>()
-            .to_string(),
+            .sum::<usize>(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_opaque_segment_count".to_string(),
         scan.features
             .definitions
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
             .map(|segments| segments.opaque_rows.len())
-            .sum::<usize>()
-            .to_string(),
+            .sum::<usize>(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_trim_entity_count".to_string(),
         scan.features
             .definitions
             .iter()
             .filter_map(|definition| definition.trim_entities.as_ref())
             .map(|entities| entities.rows.len())
-            .sum::<usize>()
-            .to_string(),
+            .sum::<usize>(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_trim_vertex_count".to_string(),
         scan.features
             .definitions
             .iter()
             .filter_map(|definition| definition.trim_vertices.as_ref())
             .map(|vertices| vertices.rows.len())
-            .sum::<usize>()
-            .to_string(),
+            .sum::<usize>(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_order_entry_count".to_string(),
         scan.features
             .definitions
             .iter()
             .filter_map(|definition| definition.order_table.as_ref())
             .map(|order| order.rows.len())
-            .sum::<usize>()
-            .to_string(),
+            .sum::<usize>(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_dimension_count".to_string(),
         scan.features
             .definitions
             .iter()
             .filter_map(|definition| definition.dimensions.as_ref())
             .map(|dimensions| dimensions.rows.len())
-            .sum::<usize>()
-            .to_string(),
+            .sum::<usize>(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_relation_count".to_string(),
         scan.features
             .definitions
             .iter()
             .filter_map(|definition| definition.relations.as_ref())
             .map(|relations| relations.rows.len())
-            .sum::<usize>()
-            .to_string(),
+            .sum::<usize>(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_saved_entity_count".to_string(),
         scan.features
             .definitions
             .iter()
             .filter_map(|definition| definition.saved_section.as_ref())
             .map(|saved| saved.entities.len())
-            .sum::<usize>()
-            .to_string(),
+            .sum::<usize>(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_entity_count".to_string(),
-        scan.features.entities.len().to_string(),
+        scan.features.entities.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_entity_reference_count".to_string(),
-        scan.features.entity_references.len().to_string(),
+        scan.features.entity_references.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_entity_table_count".to_string(),
-        scan.features.entity_tables.len().to_string(),
+        scan.features.entity_tables.len(),
     );
-    attributes.insert(
+    coverage.insert(
         "decoded_feature_surface_replay_association_count".to_string(),
-        feature_surface_replay_associations(scan).len().to_string(),
+        feature_surface_replay_associations(scan).len(),
     );
     if let Some(count) = scan.framing.declared_body_count {
         attributes.insert("declared_body_count".to_string(), count.to_string());
@@ -25029,10 +25013,13 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     if let Some(value) = scan.framing.first_quilt_ptr {
         attributes.insert("first_quilt_ptr".to_string(), value.to_string());
     }
-    SourceMeta {
-        format: "creo".to_string(),
-        attributes,
-    }
+    (
+        SourceMeta {
+            format: "creo".to_string(),
+            attributes,
+        },
+        coverage,
+    )
 }
 
 fn has_transferred_geometry(ir: &CadIr) -> bool {
@@ -25074,7 +25061,13 @@ fn has_transferred_geometry(ir: &CadIr) -> bool {
 }
 
 /// Build diagnostics for data that cannot be represented in the emitted IR.
-fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> DecodeReport {
+fn build_report(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    coverage: BTreeMap<String, usize>,
+    container_only: bool,
+) -> DecodeReport {
+    let count = |key: &str| coverage.get(key).copied().unwrap_or(0);
     let summary = container::summarize(scan);
     let geom_sections = scan
         .framing
@@ -25101,68 +25094,16 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             .map(|plane| plane.surface_id),
     );
     let placed_plane_count = placed_plane_ids.len();
-    let first_instance_prototype_surface_count = ir
-        .source
-        .as_ref()
-        .and_then(|source| {
-            source
-                .attributes
-                .get("transferred_first_instance_prototype_surface_count")
-        })
-        .and_then(|count| count.parse::<usize>().ok())
-        .unwrap_or(0);
-    let positional_line_extrusion_plane_count = ir
-        .source
-        .as_ref()
-        .and_then(|source| {
-            source
-                .attributes
-                .get("transferred_positional_line_extrusion_plane_count")
-        })
-        .and_then(|count| count.parse::<usize>().ok())
-        .unwrap_or(0);
-    let tabulated_cylinder_spline_extrusion_count = ir
-        .source
-        .as_ref()
-        .and_then(|source| {
-            source
-                .attributes
-                .get("transferred_tabulated_cylinder_spline_extrusion_count")
-        })
-        .and_then(|count| count.parse::<usize>().ok())
-        .unwrap_or(0);
-    let positional_cone_count = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("transferred_positional_cone_count"))
-        .and_then(|count| count.parse::<usize>().ok())
-        .unwrap_or(0);
-    let positional_cylinder_count = ir
-        .source
-        .as_ref()
-        .and_then(|source| {
-            source
-                .attributes
-                .get("transferred_positional_cylinder_count")
-        })
-        .and_then(|count| count.parse::<usize>().ok())
-        .unwrap_or(0);
-    let paired_envelope_sphere_count = ir
-        .source
-        .as_ref()
-        .and_then(|source| {
-            source
-                .attributes
-                .get("transferred_paired_envelope_sphere_count")
-        })
-        .and_then(|count| count.parse::<usize>().ok())
-        .unwrap_or(0);
-    let positional_torus_count = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("transferred_positional_torus_count"))
-        .and_then(|count| count.parse::<usize>().ok())
-        .unwrap_or(0);
+    let first_instance_prototype_surface_count =
+        count("transferred_first_instance_prototype_surface_count");
+    let positional_line_extrusion_plane_count =
+        count("transferred_positional_line_extrusion_plane_count");
+    let tabulated_cylinder_spline_extrusion_count =
+        count("transferred_tabulated_cylinder_spline_extrusion_count");
+    let positional_cone_count = count("transferred_positional_cone_count");
+    let positional_cylinder_count = count("transferred_positional_cylinder_count");
+    let paired_envelope_sphere_count = count("transferred_paired_envelope_sphere_count");
+    let positional_torus_count = count("transferred_positional_torus_count");
     let mut losses = Vec::new();
 
     if container_only {
@@ -25387,12 +25328,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         });
     }
 
-    let topological_point_count = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("transferred_topological_point_count"))
-        .and_then(|count| count.parse::<usize>().ok())
-        .unwrap_or(0);
+    let topological_point_count = count("transferred_topological_point_count");
     if !container_only && topological_point_count != 0 {
         losses.push(LossNote {
             category: LossCategory::Geometry,
@@ -25404,16 +25340,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         });
     }
 
-    let native_topological_edge_count = ir
-        .source
-        .as_ref()
-        .and_then(|source| {
-            source
-                .attributes
-                .get("transferred_native_topological_edge_count")
-        })
-        .and_then(|count| count.parse::<usize>().ok())
-        .unwrap_or(0);
+    let native_topological_edge_count = count("transferred_native_topological_edge_count");
     if !container_only && native_topological_edge_count != 0 {
         losses.push(LossNote {
             category: LossCategory::Topology,
@@ -25425,16 +25352,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         });
     }
 
-    let straight_pcurve_line_count = ir
-        .source
-        .as_ref()
-        .and_then(|source| {
-            source
-                .attributes
-                .get("transferred_straight_pcurve_line_count")
-        })
-        .and_then(|count| count.parse::<usize>().ok())
-        .unwrap_or(0);
+    let straight_pcurve_line_count = count("transferred_straight_pcurve_line_count");
     if !container_only && straight_pcurve_line_count != 0 {
         losses.push(LossNote {
             category: LossCategory::Geometry,
@@ -25537,11 +25455,87 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         provenance: None,
     });
 
+    // Coverage drops: VisibGeom rows and curve-equation records that decoded
+    // but could not be transferred, resolved, or evaluated.
+    let untransferred_surface_rows = count("untransferred_visible_surface_row_count");
+    if untransferred_surface_rows != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{untransferred_surface_rows} unique VisibGeom surface row(s) were not \
+                 transferred as carriers and remain structural namespace records."
+            ),
+            provenance: None,
+        });
+    }
+    let untransferred_curve_rows = count("untransferred_visible_curve_row_count");
+    if untransferred_curve_rows != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{untransferred_curve_rows} unique VisibGeom curve-topology row(s) were not \
+                 transferred as carriers and remain structural namespace records."
+            ),
+            provenance: None,
+        });
+    }
+    let ambiguous_surface_rows = count("ambiguous_visible_surface_row_count");
+    if ambiguous_surface_rows != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "{ambiguous_surface_rows} VisibGeom surface row(s) share a non-unique identity \
+                 and were not resolved to a single carrier."
+            ),
+            provenance: None,
+        });
+    }
+    let ambiguous_curve_rows = count("ambiguous_visible_curve_row_count");
+    if ambiguous_curve_rows != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "{ambiguous_curve_rows} VisibGeom curve-topology row(s) share a non-unique \
+                 identity and were not resolved to a single carrier."
+            ),
+            provenance: None,
+        });
+    }
+    let prohibited_records = count("prohibited_active_curve_expression_record_count");
+    if prohibited_records != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{prohibited_records} active curve-equation record(s) containing prohibited \
+                 datum-curve constructs were not evaluated; source and dependencies were \
+                 retained without values or derived curves."
+            ),
+            provenance: None,
+        });
+    }
+    let prohibited_kinds = count("prohibited_active_curve_expression_kind_count");
+    if prohibited_kinds != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{prohibited_kinds} prohibited datum-curve construct(s) across active \
+                 curve-equation records were not evaluated."
+            ),
+            provenance: None,
+        });
+    }
+
     DecodeReport {
         format: "creo".to_string(),
         container_only,
         geometry_transferred: has_transferred_geometry(ir),
-        coverage: std::collections::BTreeMap::new(),
+        coverage,
         losses,
         notes: summary.notes,
     }

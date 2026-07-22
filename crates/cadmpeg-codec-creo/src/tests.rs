@@ -624,14 +624,11 @@ fn decode_transfers_positional_line_extrusion_plane() {
     assert_eq!(record.fields["extrusion_direction"][2], 1.0);
     assert_eq!(
         result
-            .ir
-            .source
-            .as_ref()
-            .unwrap()
-            .attributes
+            .report
+            .coverage
             .get("decoded_positional_extrusion_direction_count")
-            .map(String::as_str),
-        Some("1")
+            .copied(),
+        Some(1)
     );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
@@ -813,25 +810,19 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         );
         assert_eq!(
             result
-                .ir
-                .source
-                .as_ref()
-                .expect("source metadata")
-                .attributes
+                .report
+                .coverage
                 .get("decoded_torus_radius_override_count")
-                .map(String::as_str),
-            Some("1")
+                .copied(),
+            Some(1)
         );
         assert_eq!(
             result
-                .ir
-                .source
-                .as_ref()
-                .expect("source metadata")
-                .attributes
+                .report
+                .coverage
                 .get("decoded_torus_outline_extent_count")
-                .map(String::as_str),
-            Some("0")
+                .copied(),
+            Some(0)
         );
         assert!(result.report.losses.iter().any(|loss| {
             loss.message
@@ -963,9 +954,8 @@ fn decode_retains_type26_coordinate_envelope_in_native_ir() {
     }
     assert!(record.fields["type26_split_coordinate_envelope"].is_null());
     assert_eq!(
-        result.ir.source.as_ref().unwrap().attributes
-            ["decoded_type26_five_coordinate_envelope_count"],
-        "1"
+        result.report.coverage["decoded_type26_five_coordinate_envelope_count"],
+        1
     );
     assert!(result
         .report
@@ -1030,8 +1020,8 @@ fn decode_places_complete_positional_torus() {
             < 1e-12
     );
     assert_eq!(
-        result.ir.source.as_ref().unwrap().attributes["transferred_positional_torus_count"],
-        "1"
+        result.report.coverage["transferred_positional_torus_count"],
+        1
     );
     assert!(result
         .report
@@ -1057,8 +1047,8 @@ fn decode_reports_transferred_positional_cylinders() {
     .expect("decode positional cylinder");
 
     assert_eq!(
-        result.ir.source.as_ref().unwrap().attributes["transferred_positional_cylinder_count"],
-        "1"
+        result.report.coverage["transferred_positional_cylinder_count"],
+        1
     );
     assert!(result
         .report
@@ -1120,8 +1110,8 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
         ));
     }
     assert_eq!(
-        result.ir.source.as_ref().unwrap().attributes["transferred_paired_envelope_sphere_count"],
-        "2"
+        result.report.coverage["transferred_paired_envelope_sphere_count"],
+        2
     );
     assert!(result.report.losses.iter().any(|loss| {
         loss.message
@@ -1158,9 +1148,8 @@ fn decode_retains_split_type26_coordinate_envelope_in_native_ir() {
     }
     assert!(record.fields["type26_five_coordinate_envelope"].is_null());
     assert_eq!(
-        result.ir.source.as_ref().unwrap().attributes
-            ["decoded_type26_split_coordinate_envelope_count"],
-        "1"
+        result.report.coverage["decoded_type26_split_coordinate_envelope_count"],
+        1
     );
     assert!(result
         .report
@@ -1396,13 +1385,10 @@ fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
             u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
         }
     );
-    let attributes = &result.ir.source.expect("source metadata").attributes;
-    assert_eq!(attributes["visible_plane_surface_row_count"], "1");
-    assert_eq!(
-        attributes["transferred_visible_plane_surface_row_count"],
-        "1"
-    );
-    assert_eq!(attributes["untransferred_visible_surface_row_count"], "0");
+    let coverage = &result.report.coverage;
+    assert_eq!(coverage["visible_plane_surface_row_count"], 1);
+    assert_eq!(coverage["transferred_visible_plane_surface_row_count"], 1);
+    assert_eq!(coverage["untransferred_visible_surface_row_count"], 0);
 }
 
 #[test]
@@ -1836,9 +1822,8 @@ fn decode_binds_ordered_visible_surfaces_to_matching_replay_runs() {
         assert_eq!(association.fields["replay_ordinal"], ordinal);
     }
     assert_eq!(
-        result.ir.source.as_ref().unwrap().attributes
-            ["decoded_feature_surface_replay_association_count"],
-        "4"
+        result.report.coverage["decoded_feature_surface_replay_association_count"],
+        4
     );
 }
 
@@ -4199,16 +4184,10 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
         .parameters
         .iter()
         .all(|parameter| parameter.owner.as_str() == "creo:model:sketch_feature#917"));
-    let source = result.ir.source.as_ref().expect("source metadata");
-    assert_eq!(source.attributes["decoded_feature_dimension_count"], "2");
-    assert_eq!(
-        source.attributes["transferred_feature_dimension_parameter_count"],
-        "2"
-    );
-    assert_eq!(
-        source.attributes["resolved_feature_dimension_value_count"],
-        "2"
-    );
+    let coverage = &result.report.coverage;
+    assert_eq!(coverage["decoded_feature_dimension_count"], 2);
+    assert_eq!(coverage["transferred_feature_dimension_parameter_count"], 2);
+    assert_eq!(coverage["resolved_feature_dimension_value_count"], 2);
 }
 
 #[test]
@@ -4666,8 +4645,8 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
     assert_eq!(record.fields["major_radius"], 1.0);
     assert_eq!(record.fields["minor_radius"], 1.0);
     assert_eq!(
-        result.ir.source.as_ref().unwrap().attributes["transferred_reference_ellipse_count"],
-        "1"
+        result.report.coverage["transferred_reference_ellipse_count"],
+        1
     );
     let ellipse = result
         .ir
@@ -4870,18 +4849,15 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
         "d1:2,PARAM:FID_20"
     );
     assert!(!parameter.properties.contains_key("ambiguous_dependencies"));
-    let source = result.ir.source.as_ref().expect("source metadata");
+    let coverage = &result.report.coverage;
     assert_eq!(
-        source.attributes["decoded_active_curve_expression_assignment_count"],
-        "1"
+        coverage["decoded_active_curve_expression_assignment_count"],
+        1
     );
+    assert_eq!(coverage["transferred_curve_expression_parameter_count"], 1);
     assert_eq!(
-        source.attributes["transferred_curve_expression_parameter_count"],
-        "1"
-    );
-    assert_eq!(
-        source.attributes["evaluated_active_curve_expression_assignment_count"],
-        "0"
+        coverage["evaluated_active_curve_expression_assignment_count"],
+        0
     );
 }
 
@@ -4953,15 +4929,28 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
         .expect("Creo native data")
         .arenas["curve_expressions"][0];
     assert_eq!(native.fields["prohibited_constructs"][0], "itos");
-    let source = result.ir.source.as_ref().expect("source metadata");
+    let coverage = &result.report.coverage;
     assert_eq!(
-        source.attributes["prohibited_active_curve_expression_record_count"],
-        "1"
+        coverage["prohibited_active_curve_expression_record_count"],
+        1
     );
-    assert_eq!(
-        source.attributes["prohibited_active_curve_expression_kind_count"],
-        "1"
-    );
+    assert_eq!(coverage["prohibited_active_curve_expression_kind_count"], 1);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Attribute
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "1 active curve-equation record(s) containing prohibited datum-curve constructs \
+                 were not evaluated",
+            )
+    }));
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Attribute
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "1 prohibited datum-curve construct(s) across active curve-equation records were \
+                 not evaluated",
+            )
+    }));
     assert!(result
         .report
         .losses
@@ -5106,19 +5095,10 @@ fn decode_transfers_curve_expression_conditional_activation() {
     assert_eq!(prohibited[0], "else");
     assert_eq!(prohibited[1], "endif");
     assert_eq!(prohibited[2], "if");
-    let source = result.ir.source.as_ref().expect("source metadata");
-    assert_eq!(
-        source.attributes["active_curve_expression_assignment_count"],
-        "3"
-    );
-    assert_eq!(
-        source.attributes["inactive_curve_expression_assignment_count"],
-        "1"
-    );
-    assert_eq!(
-        source.attributes["conditional_curve_expression_assignment_count"],
-        "0"
-    );
+    let coverage = &result.report.coverage;
+    assert_eq!(coverage["active_curve_expression_assignment_count"], 3);
+    assert_eq!(coverage["inactive_curve_expression_assignment_count"], 1);
+    assert_eq!(coverage["conditional_curve_expression_assignment_count"], 0);
 }
 
 #[test]
@@ -5697,9 +5677,8 @@ fn decode_places_first_plane_instance_from_named_prototype() {
         }
     );
     assert_eq!(
-        result.ir.source.as_ref().unwrap().attributes
-            ["transferred_first_instance_prototype_surface_count"],
-        "1"
+        result.report.coverage["transferred_first_instance_prototype_surface_count"],
+        1
     );
 }
 
@@ -5758,9 +5737,8 @@ fn decode_binds_prototype_between_same_family_rows_to_the_preceding_instance() {
         .iter()
         .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#8"));
     assert_eq!(
-        result.ir.source.as_ref().unwrap().attributes
-            ["transferred_first_instance_prototype_surface_count"],
-        "1"
+        result.report.coverage["transferred_first_instance_prototype_surface_count"],
+        1
     );
 }
 
