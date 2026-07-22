@@ -680,6 +680,23 @@ fn active_parasolid_summary(
         .max_by_key(|(_, size, _)| *size)
 }
 
+/// Modeller generation carried by the active Parasolid stream schema.
+pub(crate) fn active_parasolid_modeler_generation(scan: &ContainerScan) -> Option<u32> {
+    let (_, _, header) = active_parasolid_summary(scan)?;
+    parasolid_modeler_generation(&header.schema)
+}
+
+pub(crate) fn parasolid_modeler_generation(schema: &str) -> Option<u32> {
+    let body = schema.strip_prefix("SCH_")?;
+    body.strip_prefix("SW_")
+        .unwrap_or(body)
+        .split('_')
+        .next()?
+        .get(..2)?
+        .parse()
+        .ok()
+}
+
 /// Test whether either outer envelope carries a framed Parasolid body stream.
 pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
     active_parasolid_summary(scan).is_some()
@@ -788,4 +805,25 @@ pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> 
         return partitions.get(position).copied();
     }
     partitions.contains(&position).then_some(position)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parasolid_modeler_generation;
+
+    #[test]
+    fn parasolid_schema_starts_with_the_modeller_generation() {
+        assert_eq!(
+            parasolid_modeler_generation("SCH_3000310_30000_13006"),
+            Some(30)
+        );
+        assert_eq!(
+            parasolid_modeler_generation("SCH_3101284_31100_13006"),
+            Some(31)
+        );
+        assert_eq!(
+            parasolid_modeler_generation("SCH_SW_33103_11000"),
+            Some(33)
+        );
+    }
 }
