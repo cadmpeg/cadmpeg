@@ -706,6 +706,15 @@ Its split form is `12 <y0> 14 <y1> <x-edge> <y0> <z0> <x-center> <y1>
 reference direction points from `x-center` to `x-edge`, its radius is half the
 Z span, and its finite length is the Y span.
 
+An XZ-axis type-24 cylinder body has the form `20 10 00 <z0-local> <aux>
+<z1-local> <x0> <y0> <z0> <x1> <y1> <z1>`. The first-corner `z0` slot can use
+the exact three-byte zero form `34 f0 00`; all other coordinates use the
+positional row lane. The local and model Z deltas agree. The cylinder origin
+is `(x0, midpoint(y0,y1), z0)`, its axis points along `(x1-x0, 0, z1-z0)`, its
+reference direction points from `y0` to `y1`, its radius is half the nonzero Y
+span, and its finite length is the XZ span. The auxiliary magnitude is less
+than that length, and the body contains no trailing bytes.
+
 A held-coordinate type-24 round envelope has three contiguous scalar frames
 with slot counts two, two, and five. The first frame starts at the body with a
 zero slot and ends before control bytes `78 ac`; the second starts immediately

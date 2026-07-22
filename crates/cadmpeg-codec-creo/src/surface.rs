@@ -2621,6 +2621,7 @@ fn decode_positional_cylinder_frame(
         .or_else(|| decode_signed_axis_aligned_cylinder_frame(body, cache))
         .or_else(|| decode_signed_axial_radial_cylinder_frame(body, cache))
         .or_else(|| decode_signed_radial_envelope_cylinder_frame(body, cache))
+        .or_else(|| decode_xz_axis_y_radial_cylinder_frame(body, cache))
         .or_else(|| decode_precise_center_edge_cylinder_frame(body, cache))
         .or_else(|| decode_precise_held_center_cylinder_frame(body, cache))
         .or_else(|| decode_local_system_suffix_cylinder_frame(body, cache))
@@ -2629,6 +2630,55 @@ fn decode_positional_cylinder_frame(
         .or_else(|| decode_axial_radial_cylinder_frame(body, cache))
         .or_else(|| decode_compact_axis_aligned_cylinder_frame(body, cache))
         .or_else(|| decode_directrix_lane_axis_aligned_cylinder_frame(body, cache))
+}
+
+fn decode_xz_axis_y_radial_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    (body.get(..3) == Some(&[0x20, 0x10, 0x00])).then_some(())?;
+    let mut values = [0.0; 9];
+    let mut cursor = 3;
+    for (index, value) in values.iter_mut().enumerate() {
+        if index == 5 && body.get(cursor..cursor + 3) == Some(&[0x34, 0xf0, 0x00]) {
+            cursor += 3;
+            continue;
+        }
+        let (decoded, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+        decoded.is_finite().then_some(())?;
+        *value = decoded;
+        cursor = next;
+    }
+    (cursor == body.len()).then_some(())?;
+
+    let [first_axial, auxiliary, second_axial, x0, y0, z0, x1, y1, z1] = values;
+    let axis_vector = [x1 - x0, 0.0, z1 - z0];
+    let length = axis_vector
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    let radius = 0.5 * (y1 - y0).abs();
+    let scale = values
+        .into_iter()
+        .map(f64::abs)
+        .fold(length.max(radius).max(1.0), f64::max);
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    (length.is_finite()
+        && length > 1e-12 * scale
+        && radius.is_finite()
+        && radius > 1e-12 * scale
+        && auxiliary.abs() < length
+        && close(second_axial - first_axial, z1 - z0))
+    .then_some(())?;
+
+    Some(PositionalCylinderFrame {
+        origin: [x0, f64::midpoint(y0, y1), z0],
+        axis: axis_vector.map(|value| value / length),
+        ref_direction: [0.0, (y1 - y0).signum(), 0.0],
+        radius,
+        length: Some(length),
+    })
 }
 
 fn decode_compact_y_axis_cylinder_frame(
@@ -5616,6 +5666,35 @@ mod tests {
         assert!(
             decode_positional_cylinder_frame(&reversed[..reversed.len() - 1], &cache).is_none()
         );
+    }
+
+    #[test]
+    fn positional_cylinder_frame_decodes_xz_axis_y_radial_envelopes() {
+        let cache = scalar::ScalarCache::default();
+        let macro_zero = [
+            32, 16, 0, 45, 48, 95, 210, 181, 75, 36, 250, 142, 178, 2, 128, 130, 232, 214, 45, 53,
+            164, 168, 193, 84, 201, 136, 45, 32, 56, 227, 142, 56, 227, 144, 45, 66, 106, 9, 230,
+            103, 243, 189, 52, 240, 0, 47, 34, 0, 45, 66, 170, 9, 230, 103, 243, 189, 160, 19, 88,
+            48, 38, 146, 52,
+        ];
+        let compact_zero = [
+            32, 16, 0, 45, 53, 164, 168, 193, 84, 201, 135, 142, 178, 2, 128, 130, 232, 193, 45,
+            58, 233, 127, 49, 250, 214, 118, 72, 34, 0, 45, 66, 106, 9, 230, 103, 243, 190, 24, 70,
+            32, 56, 227, 142, 56, 227, 144, 45, 66, 170, 9, 230, 103, 243, 189, 160, 19, 89, 194,
+            152, 51, 188,
+        ];
+        for body in [macro_zero.as_slice(), compact_zero.as_slice()] {
+            let frame = decode_positional_cylinder_frame(body, &cache)
+                .expect("complete XZ-axis cylinder frame");
+            assert!((frame.radius - 0.25).abs() < 1e-12);
+            assert!(frame.axis[1].abs() < 1e-12);
+            assert_eq!(frame.ref_direction, [0.0, -1.0, 0.0]);
+            assert!(frame.length.is_some_and(|length| length > 17.0));
+        }
+
+        let mut inconsistent = compact_zero;
+        inconsistent[54] = 0x18;
+        assert!(decode_positional_cylinder_frame(&inconsistent, &cache).is_none());
     }
 
     #[test]
