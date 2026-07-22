@@ -7068,23 +7068,32 @@ fn decode_preserves_unowned_depdb_section_instances_with_unique_native_ids() {
     let positional = scan
         .feature_definitions
         .iter()
-        .filter(|definition| definition.id == 0)
+        .filter(|definition| definition.body.starts_with(b"\xe3S2D"))
         .collect::<Vec<_>>();
 
     assert_eq!(positional.len(), 2);
     assert!(positional
         .iter()
         .all(|definition| definition.owner_feature_id.is_none()));
+    let expected_positional_ids = positional
+        .iter()
+        .map(|definition| {
+            format!(
+                "creo:featdefs:feature_definition#offset:{}",
+                definition.offset
+            )
+        })
+        .collect::<BTreeSet<_>>();
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
     let positional_ids = records
         .iter()
-        .filter(|record| record.fields["definition_id"] == 0)
-        .map(|record| record.id.as_str())
+        .filter(|record| expected_positional_ids.contains(record.id.as_str()))
+        .map(|record| record.id.clone())
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(positional_ids.len(), 2);
+    assert_eq!(positional_ids, expected_positional_ids);
     assert!(positional_ids
         .iter()
         .all(|id| id.starts_with("creo:featdefs:feature_definition#offset:")));

@@ -15041,6 +15041,9 @@ fn schema_feature_definition(
     if schema_class == 911 {
         let unresolved_form =
             stepped_hole_form(feature_id, &scan.feature_entity_tables, &scan.surface_rows);
+        let stepped_dimensions = (unresolved_form == Some(HoleForm::Counterbore))
+            .then(|| counterbore_dimensions(scan, ir, feature_id))
+            .flatten();
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
@@ -15107,13 +15110,15 @@ fn schema_feature_definition(
             } else {
                 HoleKind::Unresolved {
                     form: unresolved_form,
-                    counterbore_diameter: None,
-                    counterbore_depth: None,
+                    counterbore_diameter: stepped_dimensions
+                        .map(|(_, diameter, _)| Length(diameter)),
+                    counterbore_depth: stepped_dimensions.map(|(_, _, depth)| Length(depth)),
                     countersink_diameter: None,
                     countersink_angle: None,
                 }
             },
-            diameter,
+            diameter: diameter
+                .or_else(|| stepped_dimensions.map(|(diameter, _, _)| Length(diameter))),
             extent,
             bottom,
             taper_angle: None,
@@ -15846,7 +15851,7 @@ fn stepped_hole_form(
             )
         })
         .count();
-    let shoulder_sources = generated_by_source
+    let planar_support_sources = generated_by_source
         .values()
         .filter(|entries| {
             entries.len() == 2
@@ -15862,7 +15867,113 @@ fn stepped_hole_form(
         .values()
         .flatten()
         .any(|kind| *kind == Some(crate::surface::SurfaceKind::Cone));
-    (cylinder_sources == 2 && shoulder_sources == 1 && !has_cone).then_some(HoleForm::Counterbore)
+    (cylinder_sources == 2 && planar_support_sources == 1 && !has_cone)
+        .then_some(HoleForm::Counterbore)
+}
+
+fn counterbore_dimensions(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<(f64, f64, f64)> {
+    let tables = scan
+        .feature_entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    let generated_cylinders = table
+        .surface_ids
+        .iter()
+        .copied()
+        .filter(|surface_id| {
+            crate::surface::unique_surface_row(&scan.surface_rows, *surface_id).is_some_and(|row| {
+                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+            })
+        })
+        .collect::<BTreeSet<_>>();
+    let generated_radii = ir
+        .model
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            let surface_id = surface
+                .id
+                .0
+                .strip_prefix("creo:visibgeom:surface#")?
+                .parse::<u32>()
+                .ok()?;
+            generated_cylinders.contains(&surface_id).then_some(())?;
+            let SurfaceGeometry::Cylinder { radius, .. } = surface.geometry else {
+                return None;
+            };
+            Some(radius)
+        })
+        .collect::<Vec<_>>();
+    counterbore_dimension_values(
+        scan.feature_definitions
+            .iter()
+            .filter(|definition| definition.id == 911)
+            .filter_map(|definition| definition.dimensions.as_ref()),
+        &generated_radii,
+    )
+}
+
+fn counterbore_dimension_values<'a>(
+    tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
+    generated_radii: &[f64],
+) -> Option<(f64, f64, f64)> {
+    let mut candidates = Vec::new();
+    for table in tables {
+        if usize::try_from(table.declared_count).ok() != Some(table.rows.len())
+            || table.rows.len() != 4
+        {
+            continue;
+        }
+        let value = |external_id, dimension_type| {
+            let rows = table
+                .rows
+                .iter()
+                .filter(|row| {
+                    row.external_id == external_id && row.dimension_type == dimension_type
+                })
+                .collect::<Vec<_>>();
+            let [row] = rows.as_slice() else {
+                return None;
+            };
+            row.value.filter(|value| value.is_finite() && *value > 0.0)
+        };
+        let (Some(bore_radius), Some(placement_distance), Some(depth), Some(counterbore_radius)) =
+            (value(0, 2), value(1, 2), value(2, 1), value(3, 2))
+        else {
+            continue;
+        };
+        if bore_radius >= counterbore_radius
+            || placement_distance <= 0.0
+            || !generated_radii.iter().any(|radius| {
+                (*radius - counterbore_radius).abs()
+                    <= 1e-9 * radius.abs().max(counterbore_radius.abs()).max(1.0)
+            })
+        {
+            continue;
+        }
+        candidates.push((2.0 * bore_radius, 2.0 * counterbore_radius, depth));
+    }
+    let first = *candidates.first()?;
+    candidates
+        .iter()
+        .all(|candidate| {
+            [
+                candidate.0 - first.0,
+                candidate.1 - first.1,
+                candidate.2 - first.2,
+            ]
+            .iter()
+            .all(|delta| delta.abs() <= 1e-9)
+        })
+        .then_some(first)
 }
 
 fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleHoleGeometry> {
@@ -17140,7 +17251,7 @@ mod resolved_sketch_tests {
     }
 
     #[test]
-    fn paired_cylinder_sources_and_planar_shoulder_identify_counterbore_form() {
+    fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
         let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
             entity_id,
             class_id: 200,
@@ -17192,6 +17303,51 @@ mod resolved_sketch_tests {
         rows[4].kind = crate::surface::SurfaceKind::Cone;
         assert_eq!(
             stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+            None
+        );
+    }
+
+    #[test]
+    fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
+        let table = |depth: f64| crate::feature::FeatureDimensionTable {
+            declared_count: 4,
+            entity_ref: Some(88),
+            rows: [
+                (2, 0.098, 0),
+                (2, 0.463_628_944_932_919_5, 1),
+                (1, depth, 2),
+                (2, 0.3125, 3),
+            ]
+            .into_iter()
+            .map(
+                |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
+                    dimension_type,
+                    value: Some(value),
+                    unresolved_value_token: None,
+                    value_unit: crate::feature::DimensionUnit::Millimeters,
+                    direction_byte: 0,
+                    auxiliary_value: Some(0.0),
+                    external_id,
+                    offset: 0,
+                },
+            )
+            .collect(),
+            offset: 0,
+        };
+        let first = table(0.15);
+        let second = table(0.15);
+
+        assert_eq!(
+            counterbore_dimension_values([&first, &second].into_iter(), &[0.3125]),
+            Some((0.196, 0.625, 0.15))
+        );
+        assert_eq!(
+            counterbore_dimension_values([&first].into_iter(), &[0.25]),
+            None
+        );
+        let conflicting = table(0.2);
+        assert_eq!(
+            counterbore_dimension_values([&first, &conflicting].into_iter(), &[0.3125]),
             None
         );
     }

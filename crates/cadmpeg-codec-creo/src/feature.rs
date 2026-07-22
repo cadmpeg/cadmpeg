@@ -1416,8 +1416,9 @@ pub struct FeatureSavedSection {
 /// One byte-bounded feature-definition template or instantiated saved section.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureDefinition {
-    /// Numeric identifier embedded in `feat_defs_<id>`, or the canonical
-    /// feature owner identifier for an instantiated positional definition.
+    /// Numeric identifier embedded in `feat_defs_<id>`. A positional replay
+    /// inherits that schema identifier until an exact owner join replaces it
+    /// with the canonical feature identifier.
     pub id: u32,
     /// Canonical definition owner, joining the definition to its modeling
     /// feature.
@@ -3777,6 +3778,49 @@ fn positional_dimension_table(
     })
 }
 
+fn self_described_positional_dimension_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<FeatureDimensionTable> {
+    let mut candidates = Vec::new();
+    for table in start..end {
+        if payload.get(table) != Some(&psb::token::ARRAY_OPEN) {
+            continue;
+        }
+        let (declared_count, after_count) = psb::compact_int(payload, table + 1);
+        if payload.get(after_count) != Some(&psb::token::ENTITY_REF) {
+            continue;
+        }
+        let Ok((table_class, after_reference)) = psb::reference_id(payload, after_count + 1) else {
+            continue;
+        };
+        if payload.get(after_reference..after_reference + 2) != Some(&[0xfb, 0xe2]) {
+            continue;
+        }
+        let Some(candidate) = positional_dimension_table(payload, table, end, table_class, cache)
+        else {
+            continue;
+        };
+        if candidate.offset == table
+            && declared_count > 1
+            && candidate.declared_count == declared_count
+            && usize::try_from(declared_count).ok() == Some(candidate.rows.len())
+            && candidate
+                .rows
+                .iter()
+                .all(|row| matches!(row.dimension_type, 0x01..=0x05 | 0x0a))
+        {
+            candidates.push(candidate);
+        }
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
 fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp> {
     let Some(table) = find_bytes(payload, b"skamp_ptr\0", start, end) else {
         return Vec::new();
@@ -6043,11 +6087,15 @@ fn definitions_in_ranges(
                 .flatten()
         });
         let dimensions = dimension_table(payload, start, end, &cache).or_else(|| {
-            positional
-                .then(|| {
-                    positional_dimension_table(payload, start, end, replay_dimension_class?, &cache)
-                })
-                .flatten()
+            positional.then_some(()).and_then(|()| {
+                replay_dimension_class
+                    .and_then(|table_class| {
+                        positional_dimension_table(payload, start, end, table_class, &cache)
+                    })
+                    .or_else(|| {
+                        self_described_positional_dimension_table(payload, start, end, &cache)
+                    })
+            })
         });
         if !positional {
             replay_dimension_class = dimensions.as_ref().and_then(|table| table.entity_ref);
@@ -6227,12 +6275,12 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         .collect::<BTreeSet<_>>();
     let replay_markers = s2d_replay_starts(payload);
     let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
-    starts.extend(
-        replay_markers
-            .into_iter()
-            .filter(|offset| !claimed_markers.contains(offset))
-            .map(|offset| (offset, 0, None, true)),
-    );
+    let replay_starts = replay_markers
+        .into_iter()
+        .filter(|offset| !claimed_markers.contains(offset))
+        .map(|offset| (offset, inherited_definition_id(&starts, offset), None, true))
+        .collect::<Vec<_>>();
+    starts.extend(replay_starts);
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     starts.dedup_by_key(|entry| entry.0);
     definitions_in_ranges(payload, &starts)
@@ -6249,12 +6297,12 @@ pub fn depdb_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
     starts.extend(depdb_gsec2d_starts(payload));
     let replay_markers = s2d_replay_starts(payload);
     let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
-    starts.extend(
-        replay_markers
-            .into_iter()
-            .filter(|offset| !claimed_markers.contains(offset))
-            .map(|offset| (offset, 0, None, true)),
-    );
+    let replay_starts = replay_markers
+        .into_iter()
+        .filter(|offset| !claimed_markers.contains(offset))
+        .map(|offset| (offset, inherited_definition_id(&starts, offset), None, true))
+        .collect::<Vec<_>>();
+    starts.extend(replay_starts);
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     starts.dedup_by_key(|entry| entry.0);
     definitions_in_ranges(payload, &starts)
@@ -6274,6 +6322,17 @@ fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
             (nul > 0 && suffix[..nul].iter().all(u8::is_ascii_digit)).then_some(offset)
         })
         .collect()
+}
+
+fn inherited_definition_id(
+    starts: &[(usize, u32, Option<u32>, bool)],
+    replay_offset: usize,
+) -> u32 {
+    starts
+        .iter()
+        .filter(|(offset, _, _, positional)| !positional && *offset < replay_offset)
+        .max_by_key(|(offset, _, _, _)| *offset)
+        .map_or(0, |(_, id, _, _)| *id)
 }
 
 fn claimed_s2d_replay_markers(
@@ -6307,12 +6366,12 @@ pub fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         .into_iter()
         .filter(|offset| !claimed_markers.contains(offset))
         .collect::<BTreeSet<_>>();
-    starts.extend(
-        pending_offsets
-            .iter()
-            .copied()
-            .map(|offset| (offset, 0, None, true)),
-    );
+    let replay_starts = pending_offsets
+        .iter()
+        .copied()
+        .map(|offset| (offset, inherited_definition_id(&starts, offset), None, true))
+        .collect::<Vec<_>>();
+    starts.extend(replay_starts);
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     starts.dedup_by_key(|entry| entry.0);
     definitions_in_ranges(payload, &starts)
@@ -7206,7 +7265,7 @@ mod tests {
         let decoded = positional_replay_definitions(payload);
 
         assert_eq!(decoded.len(), 1);
-        assert_eq!(decoded[0].id, 0);
+        assert_eq!(decoded[0].id, 917);
         assert_eq!(decoded[0].owner_feature_id, None);
         assert!(decoded[0].body.starts_with(b"\xe3S2D0004\0"));
         assert!(decoded[0].body.ends_with(b"pending"));
@@ -7370,6 +7429,49 @@ mod tests {
     }
 
     #[test]
+    fn positional_dimension_table_is_self_describing_when_multiple_rows_close() {
+        let mut payload = b"prefix\xf8\x04\xf7\x58\xfb\xe2\xf7\x59".to_vec();
+        for (index, row) in [
+            [1, 0xe4, 0, 0x18, 2],
+            [2, 0x0e, 0, 0x18, 0],
+            [2, 0xe4, 0, 0x18, 3],
+            [2, 0xe4, 0, 0x18, 1],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            payload.extend_from_slice(&row);
+            if index < 3 {
+                payload.extend_from_slice(b"\xf3\xf7\x58\xe2");
+            }
+        }
+        let cache = scalar::ScalarCache::from_section(&payload);
+
+        let dimensions =
+            self_described_positional_dimension_table(&payload, 0, payload.len(), &cache)
+                .expect("self-described dimension table");
+
+        assert_eq!(dimensions.entity_ref, Some(88));
+        assert_eq!(dimensions.rows.len(), 4);
+        assert_eq!(dimensions.rows[0].external_id, 2);
+        assert_eq!(dimensions.rows[1].value, Some(-0.5));
+    }
+
+    #[test]
+    fn one_row_positional_table_does_not_self_identify_as_dimensions() {
+        let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\x01\xe4\x00\x18\x02";
+        assert_eq!(
+            self_described_positional_dimension_table(
+                payload,
+                0,
+                payload.len(),
+                &scalar::ScalarCache::default(),
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn positional_dimension_table_retains_bounded_opaque_values() {
         let mut payload = b"prefix\xf8\x03\xf7\x58\xfb\xe2\xf7\x59".to_vec();
         payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
@@ -7502,7 +7604,7 @@ mod tests {
 
         assert_eq!(decoded.len(), 2);
         assert_eq!(decoded[0].id, 2);
-        assert_eq!(decoded[1].id, 0);
+        assert_eq!(decoded[1].id, 2);
         assert!(decoded
             .iter()
             .all(|definition| definition.owner_feature_id.is_none()));

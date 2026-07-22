@@ -1900,10 +1900,20 @@ In a class-911 table-class-29 generated table, a cylindrical stepped entry has
 two distinct source section entities that each generate exactly two
 materialized cylinder rows and one other source entity that generates one
 materialized plane row plus one rowless face use. The paired cylinder rows are
-the two patches of each cylindrical step, and the plane source is the shoulder
-between them. When the feature generates no conical surface, this structure
+the two patches of each cylindrical step. The plane is an axis-containing
+support and does not define the step depth. When the feature generates no conical surface, this structure
 selects counterbore form independently of whether both cylinder carriers and
 the counterbore dimensions are evaluable.
+
+An instantiated class-911 positional definition inherits schema identifier
+`911` from its preceding `feat_defs_911` template. Its complete four-row
+dimension table assigns external ID `0` to the bore radius, ID `1` to the
+placement distance, ID `2` to the counterbore depth, and ID `3` to the
+counterbore radius. IDs `0`, `1`, and `3` have dimension type `2`; ID `2` has
+dimension type `1`. Bore and counterbore diameters are twice their stored
+radii. A replay supplies neutral hole dimensions only when its ID-3 radius
+equals a generated larger-cylinder radius for that hole and all matching
+replays agree.
 
 A cylinder patch may end with two scalar coordinate pairs separated by
 `00 0c 98`, followed by orientation scalar `-1`. The pairs are opposite
@@ -2348,7 +2358,11 @@ The positional dimension table repeats the labelled template's `dimtab_ptr`
 table-class reference in an unlabeled `f8 <count> f7 <table-class> fb e2`
 header. The following entity reference selects the dimension-row class. The
 first row follows that reference; later rows follow
-`f3 f7 <table-class> e2`. All rows use the labelled dimension field order.
+`f3 f7 <table-class> e2`. All rows use the labelled dimension field order. A
+table with at least two rows is self-identifying without a decoded labelled
+template when the declared count is complete, every row has a defined linear
+or angular dimension type, and exactly one array in the positional definition
+satisfies this grammar. A one-row array does not establish its table family.
 
 The positional variable table repeats the labelled template's `var_arr`
 table-class reference in the same unlabeled array header and then stores its
