@@ -15,7 +15,7 @@ use super::attributes::{
     owner_color_or_face_tag_ref, sketch_link_attribute_ref, source_less_body_key,
     timestamp_attribute_ref,
 };
-use super::bytes::{
+use super::native_bytes::{
     native_curve_base, native_f64, native_history_tail, native_i64, native_ident, native_point,
     native_record_index, native_ref, native_string, native_surface_base, native_transform,
     native_vector,
@@ -25,10 +25,10 @@ use super::native_geometry::{
     native_nurbs_surface, native_pcurve, native_procedural_curve, native_procedural_surface,
     native_ref_pcurve_companion, native_smbh_header, pcurve_uses_ref_form,
 };
-use super::records::{native_tolerant_coedge_extension, tolerant_coedge_range};
-use super::validate::{
+use super::preconditions::{
     validate_source_less_body_kinds, validate_source_less_wire_vertices, WireVerticesValidated,
 };
+use super::records::{native_tolerant_coedge_extension, tolerant_coedge_range};
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{f3d_native, native_bool, normalized_face_sense_to_native};
 

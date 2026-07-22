@@ -11,20 +11,20 @@ use zip::write::SimpleFileOptions;
 
 use crate::writer::primitives::{f3d_native, validate_configuration_projection};
 pub(crate) mod attributes;
-pub(crate) mod bytes;
+pub(crate) mod native_bytes;
 pub(crate) mod native_geometry;
+pub(crate) mod preconditions;
 pub(crate) mod records;
 pub(crate) mod smbh;
-pub(crate) mod validate;
-use records::{encode_act_bulkstream, encode_design_bulkstream, encode_design_metastream};
-use smbh::encode_planar_triangle_smbh;
-use validate::{
+use preconditions::{
     validate_source_less_act, validate_source_less_auxiliary_geometry,
     validate_source_less_design_bindings, validate_source_less_design_links,
     validate_source_less_design_ownership, validate_source_less_history_graph,
     validate_source_less_procedural_carriers, validate_source_less_recipes,
     validate_source_less_sketch_graph, validate_source_less_topology_tolerances,
 };
+use records::{encode_act_bulkstream, encode_design_bulkstream, encode_design_metastream};
+use smbh::encode_planar_triangle_smbh;
 
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.

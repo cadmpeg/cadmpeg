@@ -4,7 +4,7 @@
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::body::decode_stream;
-use crate::design::decode::dimensions::companion_owned_interval;
+use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::ids::{self, native_stream};
 use crate::records::{

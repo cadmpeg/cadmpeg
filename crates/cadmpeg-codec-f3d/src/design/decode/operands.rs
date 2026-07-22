@@ -3,7 +3,7 @@
 
 use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
-use crate::design::decode::dimensions::{
+use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates, decode_recipe_references, recipe_record_prefix,
 };
 use crate::design::decode::sketch::{

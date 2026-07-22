@@ -8,7 +8,7 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face};
 
-use super::bytes::{
+use super::native_bytes::{
     native_f64, native_i64, native_ident, native_record_index, native_ref, native_string,
     native_subident,
 };

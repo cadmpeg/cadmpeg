@@ -2041,12 +2041,12 @@ fn validate_edge_operands<'a>(
                 )
             })
             .unwrap_or_default();
-        let mut expected_references = design::decode::dimensions::decode_recipe_references(
+        let mut expected_references = design::decode::dimension_frames::decode_recipe_references(
             &operand.recipe_prefix_bytes,
             operand.recipe_prefix_offset,
         );
         for reference in &mut expected_references {
-            design::decode::dimensions::bind_recipe_reference_candidates(
+            design::decode::dimension_frames::bind_recipe_reference_candidates(
                 reference,
                 &native.persistent_subentity_tags,
             );
@@ -2202,12 +2202,12 @@ fn validate_face_operands<'a>(
             .unwrap_or_default();
         expected_faces.sort_by(|left, right| left.0.cmp(&right.0));
         expected_faces.dedup();
-        let mut expected_references = design::decode::dimensions::decode_recipe_references(
+        let mut expected_references = design::decode::dimension_frames::decode_recipe_references(
             &operand.recipe_prefix_bytes,
             operand.recipe_prefix_offset,
         );
         for reference in &mut expected_references {
-            design::decode::dimensions::bind_recipe_reference_candidates(
+            design::decode::dimension_frames::bind_recipe_reference_candidates(
                 reference,
                 &native.persistent_subentity_tags,
             );
@@ -2704,12 +2704,12 @@ fn validate_dimension_recipe_records<'a>(
         let program_end = record
             .program_offset
             .checked_add((record.program.len() as u64).saturating_mul(4));
-        let mut decoded_references = design::decode::dimensions::decode_recipe_references(
+        let mut decoded_references = design::decode::dimension_frames::decode_recipe_references(
             &record.prefix_bytes,
             record.prefix_offset,
         );
         for reference in &mut decoded_references {
-            design::decode::dimensions::bind_recipe_reference_candidates(
+            design::decode::dimension_frames::bind_recipe_reference_candidates(
                 reference,
                 &native.persistent_subentity_tags,
             );
@@ -2719,7 +2719,7 @@ fn validate_dimension_recipe_records<'a>(
             && record.frame_length >= 11
             && !record.prefix_bytes.is_empty()
             && decoded_references == record.references
-            && design::decode::dimensions::dimension_recipe_matching_edge_operand_ids(
+            && design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
                 record,
                 &native.design_edge_operands,
             ) == record.matching_edge_operand_ids
@@ -2821,7 +2821,7 @@ fn validate_dimension_locus_pairs<'a>(
                 .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
         });
         let governs_following_dimension =
-            design::decode::dimensions::following_dimension_companion_record_index(
+            design::decode::dimension_frames::following_dimension_companion_record_index(
                 &pair.id,
                 pair.paired_byte_offset,
                 &native.design_parameter_owners,
@@ -3142,7 +3142,7 @@ fn validate_dimension_null_locus_pairs<'a>(
                 .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
         });
         let governs_following_dimension =
-            design::decode::dimensions::following_dimension_companion_record_index(
+            design::decode::dimension_frames::following_dimension_companion_record_index(
                 &pair.id,
                 pair.paired_byte_offset,
                 &native.design_parameter_owners,

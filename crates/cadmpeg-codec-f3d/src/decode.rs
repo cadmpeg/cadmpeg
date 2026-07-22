@@ -932,7 +932,7 @@ pub fn decode(
                 &native.sketch_points,
                 &native.sketch_curve_identities,
             );
-            let dimension_inputs = crate::design::decode::dimensions::DimensionDecodeInputs {
+            let dimension_inputs = crate::design::decode::dimension_frames::DimensionDecodeInputs {
                 scan: &scan,
                 parameters: &native.design_parameters,
                 owners: &native.design_parameter_owners,
@@ -943,19 +943,21 @@ pub fn decode(
                 curves: &native.sketch_curve_identities,
             };
             native.design_dimension_locus_pairs =
-                crate::design::decode::dimensions::decode_dimension_locus_pairs(&dimension_inputs)?;
+                crate::design::decode::dimension_frames::decode_dimension_locus_pairs(
+                    &dimension_inputs,
+                )?;
             native.design_dimension_annotation_frames =
-                crate::design::decode::dimensions::decode_dimension_annotation_frames(
+                crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
                     &dimension_inputs,
                     &native.design_entity_headers,
                 )?;
             native.design_dimension_locus_groups =
-                crate::design::decode::dimensions::decode_dimension_locus_groups(
+                crate::design::decode::dimension_frames::decode_dimension_locus_groups(
                     &dimension_inputs,
                     &native.design_entity_headers,
                 )?;
             native.design_dimension_null_locus_pairs =
-                crate::design::decode::dimensions::decode_dimension_null_locus_pairs(
+                crate::design::decode::dimension_frames::decode_dimension_null_locus_pairs(
                     &dimension_inputs,
                     &native.design_dimension_locus_pairs,
                     &native.design_dimension_locus_groups,
@@ -1289,7 +1291,7 @@ pub fn decode(
         &native.sketch_points,
         &native.sketch_curve_identities,
     );
-    let dimension_inputs = crate::design::decode::dimensions::DimensionDecodeInputs {
+    let dimension_inputs = crate::design::decode::dimension_frames::DimensionDecodeInputs {
         scan: &scan,
         parameters: &native.design_parameters,
         owners: &native.design_parameter_owners,
@@ -1300,19 +1302,19 @@ pub fn decode(
         curves: &native.sketch_curve_identities,
     };
     native.design_dimension_locus_pairs =
-        crate::design::decode::dimensions::decode_dimension_locus_pairs(&dimension_inputs)?;
+        crate::design::decode::dimension_frames::decode_dimension_locus_pairs(&dimension_inputs)?;
     native.design_dimension_annotation_frames =
-        crate::design::decode::dimensions::decode_dimension_annotation_frames(
+        crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
             &dimension_inputs,
             &native.design_entity_headers,
         )?;
     native.design_dimension_locus_groups =
-        crate::design::decode::dimensions::decode_dimension_locus_groups(
+        crate::design::decode::dimension_frames::decode_dimension_locus_groups(
             &dimension_inputs,
             &native.design_entity_headers,
         )?;
     native.design_dimension_null_locus_pairs =
-        crate::design::decode::dimensions::decode_dimension_null_locus_pairs(
+        crate::design::decode::dimension_frames::decode_dimension_null_locus_pairs(
             &dimension_inputs,
             &native.design_dimension_locus_pairs,
             &native.design_dimension_locus_groups,
@@ -2380,18 +2382,18 @@ fn extend_related_design_records(
         &stream_lengths,
     );
     native.design_dimension_recipe_records =
-        crate::design::decode::dimensions::decode_dimension_recipe_records(
+        crate::design::decode::dimension_frames::decode_dimension_recipe_records(
             scan,
             &native.design_parameters,
             &native.design_parameter_owners,
             &native.design_parameter_companions,
             &native.construction_recipes,
         )?;
-    crate::design::decode::dimensions::bind_dimension_recipe_reference_candidates(
+    crate::design::decode::dimension_frames::bind_dimension_recipe_reference_candidates(
         &mut native.design_dimension_recipe_records,
         &native.persistent_subentity_tags,
     );
-    crate::design::decode::dimensions::bind_dimension_recipe_edge_operands(
+    crate::design::decode::dimension_frames::bind_dimension_recipe_edge_operands(
         &mut native.design_dimension_recipe_records,
         &native.design_edge_operands,
     );

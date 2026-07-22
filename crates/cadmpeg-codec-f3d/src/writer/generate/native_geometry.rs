@@ -9,7 +9,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use super::bytes::{
+use super::native_bytes::{
     native_curve_base, native_enum, native_f64, native_i64, native_ident, native_point, native_ref,
     native_string, native_subident, native_surface_base, native_u16_string, native_vector,
 };

@@ -9,7 +9,7 @@ use crate::design::configurations::{
 };
 use crate::design::constraints::project_sketch_constraints;
 use crate::design::decode::body::body_bound_candidates;
-use crate::design::decode::dimensions::{
+use crate::design::decode::dimension_frames::{
     companion_owned_interval, contiguous_i32_program, find_dimension_locus_groups,
     find_dimension_locus_pair, find_dimension_null_locus_pair, indexed_record_containing,
     parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
@@ -2349,7 +2349,8 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     prefix.extend_from_slice(&0u32.to_le_bytes());
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
-    let references = crate::design::decode::dimensions::decode_recipe_references(&prefix, 1_000);
+    let references =
+        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
     assert_eq!(references.len(), 3);
     assert_eq!(references[0].selector, 1);
     assert_eq!(references[0].selector_offset, 1_022);
@@ -2384,16 +2385,16 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             .flat_map(u32::to_le_bytes),
     );
     assert_eq!(
-        crate::design::decode::dimensions::decode_recipe_references(&prefix, 1_000),
+        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000),
         references
     );
     prefix.extend_from_slice(&[0; 2]);
     assert_eq!(
-        crate::design::decode::dimensions::decode_recipe_references(&prefix, 1_000),
+        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000),
         references
     );
     assert_eq!(
-        crate::design::decode::dimensions::recipe_reference_candidate_faces(
+        crate::design::decode::dimension_frames::recipe_reference_candidate_faces(
             &references[0],
             &[
                 PersistentSubentityTag {
@@ -2433,7 +2434,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         [FaceId("face-b".into())]
     );
     assert_eq!(
-        crate::design::decode::dimensions::recipe_reference_candidate_edges(
+        crate::design::decode::dimension_frames::recipe_reference_candidate_edges(
             &references[0],
             &[PersistentSubentityTag {
                 id: "matching-edge".into(),
@@ -2447,7 +2448,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         [EdgeId("edge-b".into())]
     );
     assert_eq!(
-        crate::design::decode::dimensions::recipe_reference_alternate_selector_faces(
+        crate::design::decode::dimension_frames::recipe_reference_alternate_selector_faces(
             &references[0],
             &[PersistentSubentityTag {
                 id: "alternate-face".into(),
@@ -2461,7 +2462,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         [FaceId("face-c".into())]
     );
     assert_eq!(
-        crate::design::decode::dimensions::recipe_reference_alternate_selector_edges(
+        crate::design::decode::dimension_frames::recipe_reference_alternate_selector_edges(
             &references[0],
             &[PersistentSubentityTag {
                 id: "alternate-edge".into(),
@@ -2533,7 +2534,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
         companion_record_index: 302,
     };
     assert_eq!(
-        crate::design::decode::dimensions::following_dimension_companion_record_index(
+        crate::design::decode::dimension_frames::following_dimension_companion_record_index(
             &pair.id,
             pair.paired_byte_offset,
             std::slice::from_ref(&owner),
@@ -2542,7 +2543,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
         Some(302)
     );
     assert_eq!(
-        crate::design::decode::dimensions::following_dimension_companion_record_index(
+        crate::design::decode::dimension_frames::following_dimension_companion_record_index(
             &pair.id,
             pair.paired_byte_offset,
             &[owner.clone(), owner],
@@ -5826,7 +5827,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         matching_edge_operand_ids: Vec::new(),
     };
     assert_eq!(
-        crate::design::decode::dimensions::dimension_recipe_matching_edge_operand_ids(
+        crate::design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
             &dimension_recipe,
             std::slice::from_ref(&edge_operand),
         ),

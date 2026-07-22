@@ -14,9 +14,9 @@ use cadmpeg_ir::ids::CoedgeId;
 use cadmpeg_ir::math::Point3;
 
 use super::attributes::source_less_body_key;
-use super::bytes::{native_f64, native_i64, native_ref};
+use super::native_bytes::{native_f64, native_i64, native_ref};
 use super::native_geometry::native_nurbs_curve;
-use super::validate::DesignBindingsValidated;
+use super::preconditions::DesignBindingsValidated;
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{f3d_native, native_bool};
 
