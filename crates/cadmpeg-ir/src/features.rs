@@ -521,6 +521,12 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sketch: Option<crate::sketches::SketchId>,
     },
+    /// Solved spatial-sketch node in the construction history.
+    SpatialSketch {
+        /// Neutral model-space sketch geometry owned by this history node, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sketch: Option<crate::sketches::SpatialSketchId>,
+    },
     /// Directly stored geometry with no replayable parametric construction.
     ///
     /// The feature's `outputs` identify the retained bodies when geometry is present.

@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "54",
+      "ir_version": "55",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -137,6 +137,8 @@
         "sketch_constraints": [],
         "sketch_entities": [],
         "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
         "spreadsheets": [],
         "subds": [],
         "surfaces": [
@@ -236,7 +238,7 @@
           "severity": "info"
         },
         {
-          "category": "feature",
+          "category": "design_intent",
           "message": "Activation or complete body membership remains unresolved for 2 NX design configuration(s).",
           "severity": "warning"
         },

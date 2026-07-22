@@ -6482,7 +6482,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .count();
     if unresolved_suppression_count != 0 {
         losses.push(LossNote {
-            category: LossCategory::Feature,
+            category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
                 "Suppression state remains unresolved for {unresolved_suppression_count} NX \
@@ -6520,7 +6520,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .count();
     if incomplete_configuration_count != 0 {
         losses.push(LossNote {
-            category: LossCategory::Feature,
+            category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
                 "Activation or complete body membership remains unresolved for \
@@ -6533,7 +6533,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
     let incomplete_expression_count = incomplete_expression_parameters(ir).len();
     if incomplete_expression_count != 0 {
         losses.push(LossNote {
-            category: LossCategory::Feature,
+            category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
                 "Neutral evaluation or dependency semantics remain incomplete for \
@@ -6556,7 +6556,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .collect::<Vec<_>>()
             .join(", ");
         losses.push(LossNote {
-            category: LossCategory::Feature,
+            category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
                 "NX feature-history operation(s) remain native-only because their complete neutral \
@@ -6586,7 +6586,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .collect::<Vec<_>>()
             .join(", ");
         losses.push(LossNote {
-            category: LossCategory::Feature,
+            category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
                 "NX feature family identities were transferred, but their neutral construction \
@@ -6816,7 +6816,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .collect::<Vec<_>>()
             .join(", ");
         losses.push(LossNote {
-            category: LossCategory::Feature,
+            category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
                 "NX feature families were transferred as typed neutral operations, but \
@@ -6846,7 +6846,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .count();
     if unresolved_sketch_feature_count != 0 {
         losses.push(LossNote {
-            category: LossCategory::Feature,
+            category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
                 "Decoded {sketch_feature_count} NX sketch history feature(s), of which \
@@ -6857,7 +6857,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         });
     } else if sketch_feature_count != 0 && ir.model.sketch_constraints.is_empty() {
         losses.push(LossNote {
-            category: LossCategory::Feature,
+            category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
                 "Decoded {} NX sketch record(s), but no sketch constraints were transferred because \
@@ -6892,7 +6892,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .count();
     if native_sketch_entity_count != 0 || native_sketch_constraint_count != 0 {
         losses.push(LossNote {
-            category: LossCategory::Feature,
+            category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
                 "Neutral semantics remain unresolved for {native_sketch_entity_count} NX sketch \

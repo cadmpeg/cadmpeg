@@ -15,7 +15,7 @@ use crate::native::Native;
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Component, Occurrence};
 use crate::semantic_annotations::SemanticAnnotation;
-use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
+use crate::sketches::{Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchEntity};
 use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
@@ -47,6 +47,8 @@ macro_rules! arena_registry {
             sketches: Sketch, "Planar sketch arena.", [serde(default)] => |e| e.id.0.clone();
             sketch_entities: SketchEntity, "Solved sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
             sketch_constraints: SketchConstraint, "Sketch constraint arena.", [serde(default)] => |e| e.id.0.clone();
+            spatial_sketches: SpatialSketch, "Spatial sketch arena.", [serde(default)] => |e| e.id.0.clone();
+            spatial_sketch_entities: SpatialSketchEntity, "Solved spatial sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
             spreadsheets: Spreadsheet, "Spreadsheet arena.", [serde(default)] => |e| e.id.0.clone();
             components: Component, "Product component arena.", [serde(default)] => |e| e.id.0.clone();
             occurrences: Occurrence, "Product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
@@ -95,10 +97,10 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "54";
+pub const IR_VERSION: &str = "55";
 
 /// Immediately preceding IR version supported by the explicit JSON migration.
-pub const PREVIOUS_IR_VERSION: &str = "53";
+pub const PREVIOUS_IR_VERSION: &str = "54";
 
 arena_registry!(declare_model);
 

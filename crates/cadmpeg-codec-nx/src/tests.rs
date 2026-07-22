@@ -8945,22 +8945,22 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 6);
-    assert_eq!(losses[0].category, LossCategory::Feature);
+    assert_eq!(losses[0].category, LossCategory::DesignIntent);
     assert!(losses[0].message.contains("9 NX feature history operation"));
-    assert_eq!(losses[1].category, LossCategory::Feature);
+    assert_eq!(losses[1].category, LossCategory::DesignIntent);
     assert!(losses[1].message.contains("1 NX design configuration"));
-    assert_eq!(losses[2].category, LossCategory::Feature);
+    assert_eq!(losses[2].category, LossCategory::DesignIntent);
     assert!(losses[2].message.contains("DELETE (2)"));
-    assert_eq!(losses[3].category, LossCategory::Feature);
+    assert_eq!(losses[3].category, LossCategory::DesignIntent);
     assert!(losses[3].message.contains("datum coordinate system (1)"));
     assert!(losses[3].message.contains("datum plane (1)"));
     assert!(losses[3].message.contains("freeform surface (1)"));
     assert!(losses[3].message.contains("loft (2)"));
-    assert_eq!(losses[4].category, LossCategory::Feature);
+    assert_eq!(losses[4].category, LossCategory::DesignIntent);
     assert!(losses[4].message.contains("block (1)"));
     assert!(losses[4].message.contains("delete body (1)"));
     assert!(losses[4].message.contains("sketch (1)"));
-    assert_eq!(losses[5].category, LossCategory::Feature);
+    assert_eq!(losses[5].category, LossCategory::DesignIntent);
     assert!(losses[5].message.contains("1 NX sketch history feature"));
     assert!(losses[5].message.contains("1 have no neutral sketch graph"));
 

@@ -8,7 +8,7 @@
     "schema_version": 4,
     "file_version": 1,
     "native_namespace_version": 20,
-    "cadir_version": "54",
+    "cadir_version": "55",
     "write_support": true
   },
   "fixtures": [

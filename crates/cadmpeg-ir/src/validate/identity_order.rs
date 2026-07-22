@@ -8,7 +8,7 @@ use crate::features::{DesignConfiguration, DesignParameter};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Component, Occurrence};
 use crate::semantic_annotations::SemanticAnnotation;
-use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
+use crate::sketches::{Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchEntity};
 use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 

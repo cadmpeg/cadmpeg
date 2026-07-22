@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "54",
+      "ir_version": "55",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -120,6 +120,8 @@
         "sketch_constraints": [],
         "sketch_entities": [],
         "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
         "spreadsheets": [],
         "subds": [],
         "surfaces": [
