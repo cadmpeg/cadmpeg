@@ -658,6 +658,9 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
         return None;
     }
     let (name, expression) = source.split_once('=')?;
+    if expression.trim_start().starts_with('=') {
+        return None;
+    }
     let (name, declared_unit) = expression_assignment_target(name.trim())?;
     let expression = expression.trim();
     if expression.is_empty() {
@@ -3718,6 +3721,27 @@ mod tests {
         assert_eq!(records[0].assignments[2].value, None);
         assert_eq!(records[0].assignments[3].dependencies, ["r"]);
         assert_eq!(records[0].assignments[3].value, number(11.0));
+    }
+
+    #[test]
+    fn standalone_equality_does_not_create_an_assignment() {
+        let lines = ["ghost==missing", "seen=exists('ghost')", "flag=1==1"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(assignments.len(), 2);
+        assert_eq!(assignments[0].name, "seen");
+        assert_eq!(assignments[0].value, None);
+        assert_eq!(assignments[1].name, "flag");
+        assert_eq!(assignments[1].value, number(1.0));
     }
 
     #[test]
