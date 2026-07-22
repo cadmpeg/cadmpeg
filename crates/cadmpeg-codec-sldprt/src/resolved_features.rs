@@ -159,7 +159,9 @@ pub(crate) fn spatial_sketches(
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     for feature in model_features {
-        if !matches!(feature.definition, FeatureDefinition::SpatialSketch { .. }) {
+        let declared_spatial =
+            matches!(feature.definition, FeatureDefinition::SpatialSketch { .. });
+        if !declared_spatial && !matches!(feature.definition, FeatureDefinition::Sketch { .. }) {
             continue;
         }
         let Some(native_ref) = feature.native_ref.as_deref() else {
@@ -213,6 +215,9 @@ pub(crate) fn spatial_sketches(
             feature.definition = FeatureDefinition::SpatialSketch {
                 sketch: Some(sketch_id),
             };
+            continue;
+        }
+        if !declared_spatial {
             continue;
         }
         let mut candidates = Vec::new();
@@ -288,6 +293,15 @@ fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
                     && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
             {
                 (offset.checked_add(66)?, true)
+            }
+            prefix
+                if prefix == LEGACY_SKETCH_MARKER
+                    && marker_native_code(payload, offset) == Some(0)
+                    && locus == [0x05, 0x00, 0x01, 0x00]
+                    && marker_profile_curve_role(payload, offset) == Some(1)
+                    && payload.get(offset + 56..offset + 58) == Some(&[0x0e, 0x00]) =>
+            {
+                (offset.checked_add(58)?, false)
             }
             prefix
                 if prefix == LEGACY_SKETCH_MARKER
@@ -937,6 +951,28 @@ mod marker_tests {
         );
         payload[offset + 4] = 3;
         assert_eq!(marker_spatial_coordinates(&payload, offset), None);
+    }
+
+    #[test]
+    fn legacy_geometry_locus_spatial_point_uses_compact_coordinates() {
+        let mut payload = vec![0; 82];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[56..58].copy_from_slice(&[0x0e, 0x00]);
+        for (index, value) in [0.125_f64, -0.25, 0.375].into_iter().enumerate() {
+            let start = 58 + index * 8;
+            payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+        }
+
+        assert_eq!(
+            marker_spatial_coordinates(&payload, 0),
+            Some(Point3::new(125.0, -250.0, 375.0))
+        );
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        assert_eq!(marker_spatial_coordinates(&payload, 0), None);
     }
 
     #[test]
