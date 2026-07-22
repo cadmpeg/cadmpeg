@@ -19,6 +19,11 @@ macro_rules! string_id {
 
 string_id!(SketchId, "Identifies a neutral planar sketch.");
 string_id!(SketchEntityId, "Identifies solved geometry in a sketch.");
+string_id!(SpatialSketchId, "Identifies a neutral spatial sketch.");
+string_id!(
+    SpatialSketchEntityId,
+    "Identifies solved geometry in a spatial sketch."
+);
 string_id!(
     SketchConstraintId,
     "Identifies a geometric sketch constraint."
@@ -188,6 +193,148 @@ pub enum SketchGeometry {
         periodic: bool,
     },
     /// Source-native geometry not yet reduced to a neutral family.
+    Native {
+        /// Source geometry family.
+        native_kind: String,
+    },
+}
+
+/// A sketch whose solved geometry is expressed directly in model space.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketch {
+    /// Globally unique spatial-sketch id.
+    pub id: SpatialSketchId,
+    /// Source display name, when recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Source configuration key, when scoped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configuration: Option<String>,
+    /// Ordered closed profile loops with profile-local planes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profiles: Vec<SpatialSketchProfile>,
+    /// Identifier of the full-fidelity native input lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+}
+
+/// One closed spatial-sketch profile and its model-space plane.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchProfile {
+    /// Profile-plane origin in model space.
+    pub origin: Point3,
+    /// Profile-plane unit normal, oriented by boundary traversal.
+    pub normal: Vector3,
+    /// Profile-plane unit u-axis.
+    pub u_axis: Vector3,
+    /// Ordered oriented boundary uses.
+    pub boundary: Vec<SpatialSketchEntityUse>,
+}
+
+/// Oriented use of one spatial-sketch entity in a profile boundary.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchEntityUse {
+    /// Referenced spatial-sketch entity.
+    pub entity: SpatialSketchEntityId,
+    /// Whether traversal opposes the entity's stored direction.
+    #[serde(default)]
+    pub reversed: bool,
+}
+
+/// Solved model-space geometry belonging to one spatial sketch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchEntity {
+    /// Globally unique spatial entity id.
+    pub id: SpatialSketchEntityId,
+    /// Owning spatial sketch.
+    pub sketch: SpatialSketchId,
+    /// Whether the entity is construction geometry.
+    #[serde(default)]
+    pub construction: bool,
+    /// Source-native geometry record represented by this entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+    /// Source-native curve carrier represented by this entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geometry_ref: Option<String>,
+    /// Source-native endpoint records in stored entity direction.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub endpoint_refs: Vec<String>,
+    /// Solved model-space geometry.
+    pub geometry: SpatialSketchGeometry,
+}
+
+/// Solved model-space spatial-sketch geometry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SpatialSketchGeometry {
+    /// Model-space point.
+    Point {
+        /// Point position in model coordinates.
+        position: Point3,
+    },
+    /// Bounded model-space line segment.
+    Line {
+        /// Segment start in model coordinates.
+        start: Point3,
+        /// Segment end in model coordinates.
+        end: Point3,
+    },
+    /// Oriented full model-space circle.
+    Circle {
+        /// Circle center in model coordinates.
+        center: Point3,
+        /// Unit normal defining positive angular travel.
+        normal: Vector3,
+        /// Unit radial direction at parameter zero.
+        reference_direction: Vector3,
+        /// Circle radius.
+        radius: Length,
+    },
+    /// Oriented bounded model-space circular arc.
+    Arc {
+        /// Arc center in model coordinates.
+        center: Point3,
+        /// Unit normal defining positive angular travel.
+        normal: Vector3,
+        /// Unit radial direction at parameter zero.
+        reference_direction: Vector3,
+        /// Arc radius.
+        radius: Length,
+        /// Inclusive start parameter in radians.
+        start_angle: Angle,
+        /// Inclusive end parameter in radians.
+        end_angle: Angle,
+    },
+    /// Model-space NURBS curve.
+    Nurbs {
+        /// Curve degree.
+        degree: u32,
+        /// Full knot vector.
+        knots: Vec<f64>,
+        /// Control points in parameter order.
+        control_points: Vec<Point3>,
+        /// Per-pole weights; absent for non-rational curves.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        weights: Option<Vec<f64>>,
+        /// Whether the curve is periodic.
+        #[serde(default)]
+        periodic: bool,
+    },
+    /// Tensor-product NURBS surface embedded in model space.
+    NurbsSurface {
+        /// Degree in the first parameter.
+        u_degree: u32,
+        /// Degree in the second parameter.
+        v_degree: u32,
+        /// Full knot vector in the first parameter.
+        u_knots: Vec<f64>,
+        /// Full knot vector in the second parameter.
+        v_knots: Vec<f64>,
+        /// Rectangular control grid in first-parameter-major order.
+        control_points: Vec<Vec<Point3>>,
+    },
+    /// Source-native spatial geometry not yet reduced to a neutral family.
     Native {
         /// Source geometry family.
         native_kind: String,
