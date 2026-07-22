@@ -27902,77 +27902,90 @@ fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Opti
     .then(|| std::array::from_fn(|axis| f64::midpoint(first_point[axis], second_point[axis])))
 }
 
-fn line_circle_intersections(line: &CurveGeometry, circle: &CurveGeometry) -> Vec<[f64; 3]> {
-    let (
-        CurveGeometry::Line { origin, direction },
-        CurveGeometry::Circle {
-            center,
-            axis,
-            radius,
-            ..
-        },
-    ) = (line, circle)
+fn line_periodic_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<[f64; 3]> {
+    let CurveGeometry::Line { origin, direction } = line else {
+        return Vec::new();
+    };
+    let Some(PeriodicConicFrame {
+        center,
+        normal,
+        x_axis,
+        y_axis,
+        radii,
+    }) = periodic_conic_frame(conic)
     else {
         return Vec::new();
     };
-    if !radius.is_finite() || *radius <= 0.0 {
-        return Vec::new();
-    }
     let origin = [origin.x, origin.y, origin.z];
-    let center = [center.x, center.y, center.z];
     let direction = [direction.x, direction.y, direction.z];
-    let axis = [axis.x, axis.y, axis.z];
     let relative = std::array::from_fn(|coordinate| origin[coordinate] - center[coordinate]);
     let direction_squared = dot(direction, direction);
-    let axis_squared = dot(axis, axis);
-    if !direction_squared.is_finite()
-        || !axis_squared.is_finite()
-        || direction_squared <= 0.0
-        || axis_squared <= 0.0
-    {
+    if !direction_squared.is_finite() || direction_squared <= 0.0 {
         return Vec::new();
     }
-    let direction_plane = dot(direction, axis);
-    let origin_plane = dot(relative, axis);
-    let angular_scale = (direction_squared * axis_squared).sqrt();
+    let direction_plane = dot(direction, normal);
+    let origin_plane = dot(relative, normal);
+    let angular_scale = direction_squared.sqrt();
     let model_scale = origin
         .into_iter()
         .chain(center)
         .map(f64::abs)
-        .fold(radius.abs().max(1.0), f64::max);
+        .fold(radii.into_iter().fold(1.0, f64::max), f64::max);
     if direction_plane.abs() > 1e-12 * angular_scale {
         let parameter = -origin_plane / direction_plane;
         let point = std::array::from_fn(|coordinate| {
             direction[coordinate].mul_add(parameter, origin[coordinate])
         });
         return (point.iter().all(|value| value.is_finite())
-            && curve_contains_points(circle, [point, point]))
+            && curve_contains_points(conic, [point, point]))
         .then_some(point)
         .into_iter()
         .collect();
     }
-    if origin_plane.abs() > 1e-9 * model_scale * axis_squared.sqrt() {
+    if origin_plane.abs() > 1e-9 * model_scale {
         return Vec::new();
     }
-    let nearest_parameter = -dot(relative, direction) / direction_squared;
-    let nearest: [f64; 3] = std::array::from_fn(|coordinate| {
-        direction[coordinate].mul_add(nearest_parameter, origin[coordinate])
-    });
-    let center_delta = std::array::from_fn(|coordinate| nearest[coordinate] - center[coordinate]);
-    let remaining = radius.mul_add(*radius, -dot(center_delta, center_delta));
-    let tolerance = 1e-9 * model_scale * model_scale;
-    if !remaining.is_finite() || remaining < -tolerance {
+    let local_origin = [
+        dot(relative, x_axis) / radii[0],
+        dot(relative, y_axis) / radii[1],
+    ];
+    let local_direction = [
+        dot(direction, x_axis) / radii[0],
+        dot(direction, y_axis) / radii[1],
+    ];
+    let quadratic = local_direction[0].mul_add(local_direction[0], local_direction[1].powi(2));
+    let linear =
+        2.0 * local_origin[0].mul_add(local_direction[0], local_origin[1] * local_direction[1]);
+    let constant = local_origin[0].mul_add(local_origin[0], local_origin[1].powi(2)) - 1.0;
+    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
+    let coefficient_scale = linear
+        .abs()
+        .max((quadratic * constant).abs().sqrt())
+        .max(1.0);
+    let tolerance = 1e-12 * coefficient_scale * coefficient_scale;
+    if !quadratic.is_finite()
+        || quadratic <= 0.0
+        || !discriminant.is_finite()
+        || discriminant < -tolerance
+    {
         return Vec::new();
     }
-    let travel = remaining.max(0.0).sqrt() / direction_squared.sqrt();
+    let root = discriminant.max(0.0).sqrt();
+    let first_parameter = -linear / (2.0 * quadratic);
     let first = std::array::from_fn(|coordinate| {
-        direction[coordinate].mul_add(nearest_parameter + travel, origin[coordinate])
+        direction[coordinate].mul_add(first_parameter, origin[coordinate])
     });
-    if travel <= 1e-9 * model_scale / direction_squared.sqrt() {
+    if root <= 1e-9 * coefficient_scale {
         return vec![first];
     }
+    let root_product = -0.5 * (linear + root.copysign(linear));
+    let first_parameter = root_product / quadratic;
+    let second_parameter = constant / root_product;
+    let first = std::array::from_fn(|coordinate| {
+        direction[coordinate].mul_add(first_parameter, origin[coordinate])
+    });
     let second = std::array::from_fn(|coordinate| {
-        direction[coordinate].mul_add(nearest_parameter - travel, origin[coordinate])
+        direction[coordinate].mul_add(second_parameter, origin[coordinate])
     });
     vec![first, second]
 }
@@ -28073,8 +28086,14 @@ fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3]> {
             candidates.extend(
                 line_line_intersection(curves[first], curves[second])
                     .into_iter()
-                    .chain(line_circle_intersections(curves[first], curves[second]))
-                    .chain(line_circle_intersections(curves[second], curves[first]))
+                    .chain(line_periodic_conic_intersections(
+                        curves[first],
+                        curves[second],
+                    ))
+                    .chain(line_periodic_conic_intersections(
+                        curves[second],
+                        curves[first],
+                    ))
                     .chain(circle_circle_intersections(curves[first], curves[second])),
             );
         }
@@ -28541,7 +28560,7 @@ mod topological_vertex_tests {
     }
 
     #[test]
-    fn line_circle_candidates_preserve_secants_and_collapse_tangency() {
+    fn line_periodic_conic_candidates_preserve_secants_and_collapse_tangency() {
         let circle = CurveGeometry::Circle {
             center: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -28553,14 +28572,26 @@ mod topological_vertex_tests {
         let skew = line([-3.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
 
         assert_eq!(
-            line_circle_intersections(&secant, &circle),
+            line_periodic_conic_intersections(&secant, &circle),
             [[2.0, 0.0, 0.0], [-2.0, 0.0, 0.0]]
         );
         assert_eq!(
-            line_circle_intersections(&tangent, &circle),
+            line_periodic_conic_intersections(&tangent, &circle),
             [[0.0, 2.0, 0.0]]
         );
-        assert!(line_circle_intersections(&skew, &circle).is_empty());
+        assert!(line_periodic_conic_intersections(&skew, &circle).is_empty());
+
+        let ellipse = CurveGeometry::Ellipse {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        };
+        assert_eq!(
+            line_periodic_conic_intersections(&secant, &ellipse),
+            [[3.0, 0.0, 0.0], [-3.0, 0.0, 0.0]]
+        );
     }
 
     #[test]
