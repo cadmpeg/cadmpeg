@@ -25132,18 +25132,8 @@ fn compact_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32;
     {
         return None;
     }
-    let endpoint = |relative: usize| {
-        u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        )
-        .checked_add(1)
-        .map(u32::from)
-    };
-    let endpoints = [endpoint(56)?, endpoint(58)?];
-    (endpoints[0] != endpoints[1]).then_some(endpoints)
+    one_based_u16_endpoint_pair(payload, offset, 56)
+        .filter(|endpoints| endpoints[0] != endpoints[1])
 }
 
 fn coordinate_roster_curve_endpoint_markers<'a>(
@@ -25801,17 +25791,7 @@ fn compact_legacy_curve_endpoint_indices(payload: &[u8], offset: usize) -> Optio
     {
         return None;
     }
-    let endpoint = |relative: usize| {
-        u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        )
-        .checked_add(1)
-        .map(u32::from)
-    };
-    Some([endpoint(42)?, endpoint(44)?])
+    one_based_u16_endpoint_pair(payload, offset, 42)
 }
 
 fn alternate_current_indexed_curve_endpoint_indices(
@@ -25910,17 +25890,7 @@ fn compact_indexed_curve_endpoint_indices_for_prefixes(
     {
         return None;
     }
-    let endpoint = |relative: usize| {
-        u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        )
-        .checked_add(1)
-        .map(u32::from)
-    };
-    Some([endpoint(56)?, endpoint(58)?])
+    one_based_u16_endpoint_pair(payload, offset, 56)
 }
 
 fn compact_indexed_curve_record_ends_at(payload: &[u8], offset: usize) -> bool {
@@ -25984,17 +25954,7 @@ fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<
     {
         return None;
     }
-    let endpoint = |relative: usize| {
-        u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        )
-        .checked_add(1)
-        .map(u32::from)
-    };
-    Some([endpoint(64)?, endpoint(66)?])
+    one_based_u16_endpoint_pair(payload, offset, 64)
 }
 
 fn current_extended_wide_curve_body(payload: &[u8], offset: usize) -> bool {
@@ -26180,17 +26140,7 @@ fn compact_legacy_selected_axis_endpoint_indices(
     {
         return None;
     }
-    let endpoint = |relative: usize| {
-        u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        )
-        .checked_add(1)
-        .map(u32::from)
-    };
-    Some([endpoint(42)?, endpoint(44)?])
+    one_based_u16_endpoint_pair(payload, offset, 42)
 }
 
 fn current_vertical_axis_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
@@ -26209,17 +26159,7 @@ fn current_vertical_axis_endpoint_indices(payload: &[u8], offset: usize) -> Opti
     {
         return None;
     }
-    let endpoint = |relative: usize| {
-        u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        )
-        .checked_add(1)
-        .map(u32::from)
-    };
-    Some([endpoint(56)?, endpoint(58)?])
+    one_based_u16_endpoint_pair(payload, offset, 56)
 }
 
 fn extended_wide_horizontal_relation_endpoint_indices(
@@ -26254,17 +26194,7 @@ fn extended_wide_horizontal_relation_endpoint_indices(
     {
         return None;
     }
-    let endpoint = |relative: usize| {
-        u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        )
-        .checked_add(1)
-        .map(u32::from)
-    };
-    Some([endpoint(64)?, endpoint(66)?])
+    one_based_u16_endpoint_pair(payload, offset, 64)
 }
 
 fn extended_horizontal_axis_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
@@ -26285,17 +26215,7 @@ fn extended_horizontal_axis_endpoint_indices(payload: &[u8], offset: usize) -> O
     {
         return None;
     }
-    let endpoint = |relative: usize| {
-        u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        )
-        .checked_add(1)
-        .map(u32::from)
-    };
-    Some([endpoint(64)?, endpoint(66)?])
+    one_based_u16_endpoint_pair(payload, offset, 64)
 }
 
 fn linked_single_arc_entity(
