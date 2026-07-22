@@ -677,6 +677,25 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     if payload.get(offset + 5..offset + 17)? != GEOMETRY_PREFIX {
         return None;
     }
+    let compact_indexed_value_body = matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix)
+            if prefix == SKETCH_MARKER
+                || prefix == LEGACY_SKETCH_MARKER
+                || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+    ) && matches!(marker_native_code(payload, offset), Some(0..=2))
+        && (marker_is_geometry_locus(payload, offset)
+            || payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]))
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && sketch_marker_prefix_at(payload, offset.saturating_add(84));
+    if compact_indexed_value_body {
+        return None;
+    }
     if let Some(coordinates) = legacy_linked_coordinates(payload, offset) {
         return Some(coordinates);
     }
@@ -3919,6 +3938,17 @@ mod marker_tests {
             compact_indexed_curve_endpoint_indices(&payload, 0),
             Some([7, 11])
         );
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[56..58].copy_from_slice(&30u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&31u16.to_le_bytes());
+        assert_eq!(
+            compact_indexed_curve_endpoint_indices(&payload, 0),
+            Some([31, 32])
+        );
+        assert_eq!(marker_coordinates(&payload, 0), None);
+        payload[56..58].copy_from_slice(&6u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&10u16.to_le_bytes());
         payload[27..29].copy_from_slice(&2u16.to_le_bytes());
         assert_eq!(compact_indexed_curve_endpoint_indices(&payload, 0), None);
     }
