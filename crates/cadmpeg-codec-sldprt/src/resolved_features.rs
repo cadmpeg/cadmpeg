@@ -931,6 +931,7 @@ mod marker_tests {
         enrich_history_revolution_inputs, explicit_reference_axis_frame,
         explicit_reference_plane_frame, fixed_reference_plane_frame, generated_surface_identities,
         indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
+        legacy_compact_diameter_arc_center,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
         legacy_feature_input_section, legacy_linked_coordinates, legacy_reference_axis_triads,
@@ -4909,6 +4910,51 @@ mod marker_tests {
                 1.0e-8,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn compact_legacy_bounded_arc_uses_its_diameter_center_marker() {
+        let mut payload = vec![0; 102];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..60].copy_from_slice(&[4, 0, 0, 0]);
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..76].copy_from_slice(&1i32.to_le_bytes());
+        payload[76..78].copy_from_slice(&5u16.to_le_bytes());
+        for relative in (78..94).step_by(4) {
+            payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        let marker = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("profile".into()),
+            ordinal: 0,
+            offset,
+            object_index: None,
+            local_id: None,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let curve = marker("arc", 0, SketchInputKind::Arc, None);
+        let start = marker("start", 1, SketchInputKind::Point, Some([1.0, 0.0]));
+        let center = marker("center", 2, SketchInputKind::Point, Some([0.0, 0.0]));
+        let end = marker("end", 3, SketchInputKind::Point, Some([-1.0, 0.0]));
+        let off_axis = marker("handle", 4, SketchInputKind::Point, Some([0.0, 2.0]));
+        let markers = [&start, &center, &end, &off_axis];
+
+        assert_eq!(
+            legacy_compact_diameter_arc_center(&payload, &curve, &markers, [&start, &end]),
+            Some([0.0, 0.0])
         );
     }
 
@@ -16887,6 +16933,22 @@ pub(crate) fn project_marker_backed_sketches(
                                     };
                                     let (start, end) = (project(start)?, project(end)?);
                                     let offset = usize::try_from(marker.offset).ok()?;
+                                    if let Some([u, v]) = legacy_compact_diameter_arc_center(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                        [endpoints[0], endpoints[1]],
+                                    ) {
+                                        let center = transform.apply(quantize(
+                                            Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
+                                            QUANTUM,
+                                        ))?;
+                                        let center = Point2::new(
+                                            center.0 as f64 * QUANTUM,
+                                            center.1 as f64 * QUANTUM,
+                                        );
+                                        return minor_arc_geometry(start, end, center, QUANTUM);
+                                    }
                                     if indexed_arc_uses_coordinate_center(
                                         &lane.native_payload,
                                         offset,
@@ -23221,6 +23283,57 @@ fn coordinate_roster_arc_center(
         })
         .filter_map(|marker| marker.coordinates_m)
         .filter(|center| equidistant(*center))
+        .collect::<Vec<_>>();
+    centers.sort_by(|left, right| {
+        left[0]
+            .total_cmp(&right[0])
+            .then_with(|| left[1].total_cmp(&right[1]))
+    });
+    centers.dedup();
+    let [center] = centers.as_slice() else {
+        return None;
+    };
+    Some(*center)
+}
+
+fn legacy_compact_diameter_arc_center(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+    endpoints: [&SketchInputEntity; 2],
+) -> Option<[f64; 2]> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(2)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x05, 0x00, 0x01, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || compact_indexed_curve_endpoint_indices(payload, offset).is_none()
+    {
+        return None;
+    }
+    let [first_u, first_v] = endpoints[0].coordinates_m?;
+    let [second_u, second_v] = endpoints[1].coordinates_m?;
+    if first_u == second_u && first_v == second_v {
+        return None;
+    }
+    let midpoint = [(first_u + second_u) * 0.5, (first_v + second_v) * 0.5];
+    let mut centers = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref == curve.feature_ref
+                && marker.id != endpoints[0].id
+                && marker.id != endpoints[1].id
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        })
+        .filter_map(|marker| marker.coordinates_m)
+        .filter(|center| {
+            same_dimension_length(center[0], midpoint[0])
+                && same_dimension_length(center[1], midpoint[1])
+        })
         .collect::<Vec<_>>();
     centers.sort_by(|left, right| {
         left[0]
