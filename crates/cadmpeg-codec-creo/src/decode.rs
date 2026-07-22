@@ -7230,40 +7230,7 @@ fn placed_tabulated_cylinder_directrix(
         .copied()
         .collect::<Option<Vec<_>>>()?;
     let (values, layout) = (|| {
-        let frame = parameters.tabulated_cylinder_frame.or_else(|| {
-            let cache = crate::scalar::ScalarCache::default();
-            let marker = parameters
-                .body
-                .windows(3)
-                .position(|window| window == [0x00, 0x0c, 0x9a])?;
-            let mut cursor = marker + 3;
-            let mut values = Vec::with_capacity(6);
-            let mut prefixes = Vec::with_capacity(6);
-            for slot in 0..6 {
-                prefixes.push(*parameters.body.get(cursor)?);
-                let (value, next) = if matches!(slot, 0 | 3)
-                    || (matches!(slot, 1 | 4) && parameters.body.get(cursor) == Some(&0x2d))
-                {
-                    crate::scalar::decode_tabulated_cylinder_first_frame_coordinate(
-                        &parameters.body,
-                        cursor,
-                        &cache,
-                    )?
-                } else {
-                    crate::scalar::decode_tabulated_cylinder_frame_coordinate(
-                        &parameters.body,
-                        cursor,
-                        &cache,
-                    )?
-                };
-                values.push(value);
-                cursor = next;
-            }
-            Some(crate::surface::TabulatedCylinderFrame {
-                values: values.try_into().ok()?,
-                prefixes: prefixes.try_into().ok()?,
-            })
-        })?;
+        let frame = parameters.tabulated_cylinder_frame?;
         let values = frame.values.to_vec();
         let heads = frame.prefixes;
         let offset_planar_layout = matches!(heads.as_slice(), [_, 0x46, _, _, 0x46, _]);
@@ -16636,6 +16603,11 @@ mod resolved_sketch_tests {
             0x8f, 0xd4, 0x07, 0xeb, 0x3f, 0xff, 0xf8, 0x2d, 0x1a, 0x89, 0xfe, 0x14, 0x80, 0xb6,
             0x48, 0x9e, 0x85, 0x1e, 0xb8, 0x51, 0xeb, 0x85,
         ];
+        let tabulated_cylinder_frame = crate::surface::decode_tabulated_cylinder_frame(
+            &body,
+            &crate::scalar::ScalarCache::default(),
+        )
+        .map(|(frame, _)| frame);
         let parameters = crate::surface::SurfaceParameterRecord {
             surface_id: 815,
             body,
@@ -16655,7 +16627,7 @@ mod resolved_sketch_tests {
                 ],
             }],
             terminal_scalar_frame: None,
-            tabulated_cylinder_frame: None,
+            tabulated_cylinder_frame,
             positional_cylinder_frame: None,
             split_cylinder_outline_bounds: None,
             positional_cone_frame: None,

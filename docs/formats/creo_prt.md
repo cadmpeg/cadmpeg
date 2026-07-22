@@ -585,8 +585,9 @@ Layouts whose second and fifth scalar prefixes are `46` require a first-axis
 intercept magnitude of 30, a zero second-axis intercept, and retain the stored
 sweep-axis sign. The
 `_ 42 _ _ 18 _` layout requires zero intercepts and retains the stored
-sweep-axis sign. Its first and fourth slots accept the complete first-coordinate
-scalar lane; its third and sixth slots accept the complete second-coordinate
+sweep-axis sign. The fifth-slot `18` is a one-byte zero bound and does not
+consume bytes from the sixth slot. Its first and fourth slots accept the
+complete first-coordinate scalar lane; its third and sixth slots accept the second-coordinate
 scalar lane. In the `_ 2d _ _ 2d _` layout, slots one and
 four also use the first-coordinate lane. Its directrix charts select exactly
 one of two forms: a zero-offset form retaining the sweep-axis sign, or a

@@ -3468,7 +3468,7 @@ fn axis_aligned_cylinder_from_corners(
     })
 }
 
-fn decode_tabulated_cylinder_frame(
+pub(super) fn decode_tabulated_cylinder_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<(TabulatedCylinderFrame, usize)> {
@@ -3479,7 +3479,9 @@ fn decode_tabulated_cylinder_frame(
     let mut prefixes = Vec::with_capacity(6);
     for slot in 0..6 {
         prefixes.push(*body.get(cursor)?);
-        let (value, next) = if matches!(slot, 0 | 3)
+        let (value, next) = if matches!(slot, 1 | 4) && body.get(cursor) == Some(&0x18) {
+            (0.0, cursor + 1)
+        } else if matches!(slot, 0 | 3)
             || (matches!(slot, 1 | 4) && body.get(cursor) == Some(&0x2d))
         {
             scalar::decode_tabulated_cylinder_first_frame_coordinate(body, cursor, cache)?
@@ -4799,6 +4801,22 @@ mod tests {
             ),
             Some(body.len() - 1)
         );
+    }
+
+    #[test]
+    fn tabulated_cylinder_zero_sweep_bound_does_not_consume_the_next_slot() {
+        let body = [
+            0x18, 0xe4, 0x0f, 0x00, 0x0c, 0x9a, 0x46, 0x15, 0x64, 0x7b, 0x0d, 0xc3, 0x21, 0xe2,
+            0x42, 0xb9, 0x99, 0x78, 0x6b, 0xf6, 0xdd, 0x26, 0xcc, 0x10, 0x4a, 0x14, 0x70, 0xf7,
+            0x8b, 0x00, 0x00, 0x18, 0x7b, 0x59, 0x2f, 0x66, 0xa2, 0x53, 0xc6,
+        ];
+
+        let (frame, end) = decode_tabulated_cylinder_frame(&body, &scalar::ScalarCache::default())
+            .expect("complete zero-bound frame");
+
+        assert_eq!(frame.prefixes, [0x46, 0x42, 0x78, 0x4a, 0x18, 0x7b]);
+        assert_eq!(frame.values[4], 0.0);
+        assert_eq!(end, body.len());
     }
 
     #[test]
