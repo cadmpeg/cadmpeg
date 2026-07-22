@@ -2134,7 +2134,7 @@ fn scalar_tokens(
 ) -> Vec<SurfaceParameterScalar> {
     let mut tokens = Vec::new();
     let reflected_plane_corners = (kind == SurfaceKind::Plane)
-        .then(|| reflected_plane_corner_tokens(body, cache))
+        .then(|| reflected_first_coordinate_plane_corner_tokens(body, cache))
         .flatten()
         .unwrap_or_default();
     let outline_markers = if kind == SurfaceKind::TorusOrSphere {
@@ -2223,7 +2223,7 @@ fn scalar_tokens(
     tokens
 }
 
-fn reflected_plane_corner_tokens(
+fn reflected_first_coordinate_plane_corner_tokens(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<Vec<SurfaceParameterScalar>> {
@@ -2237,8 +2237,6 @@ fn reflected_plane_corner_tokens(
             scalar::decode_in_surface_row_lane(body, first_end, cache)?;
         let (first_axial, repeated_start) =
             scalar::decode_in_surface_row_lane(body, second_start, cache)?;
-        (body.get(repeated_start..repeated_start + 7) == body.get(start..first_end))
-            .then_some(())?;
         let (repeated_held, second_other_start) =
             scalar::decode_tabulated_cylinder_first_coordinate(body, repeated_start, cache)?;
         let (second_other, second_axial_start) =
@@ -2254,8 +2252,10 @@ fn reflected_plane_corner_tokens(
                 second_axial,
             ]
             .iter()
-            .all(|value| value.is_finite()))
-        .then_some(())?;
+            .all(|value| value.is_finite())
+            && repeated_held < 0.0
+            && second_other_start == repeated_start + 7)
+            .then_some(())?;
         let slot = |value, offset, end| SurfaceParameterScalar {
             value: Some(value),
             raw: body[offset..end].to_vec(),
@@ -6265,16 +6265,40 @@ mod tests {
             }]
         );
 
-        let mut unequal = record;
-        unequal.body[31] = 0xdb;
+        let mut y_held = record.clone();
+        y_held.body = vec![
+            0x18, 0xe4, 0x2c, 0xbe, 0x45, 0xa8, 0x7a, 0xe1, 0x48, 0x00, 0x0c, 0x9a, 0xd1, 0xf1,
+            0x60, 0x5a, 0xa4, 0xd9, 0x00, 0x46, 0x1b, 0x1c, 0x28, 0x70, 0x5d, 0x7a, 0x9b, 0x2f,
+            0x20, 0x00, 0xd0, 0x0d, 0x05, 0xd2, 0xf6, 0xc4, 0x80, 0x46, 0x1b, 0x1c, 0x28, 0x70,
+            0x5d, 0x7a, 0x9b, 0x2e, 0x20, 0x33, 0xf7, 0x0c,
+        ];
+        y_held.scalar_tokens = scalar_tokens(
+            SurfaceKind::Plane,
+            &y_held.body,
+            &scalar::ScalarCache::default(),
+        );
+        y_held.scalar_frames = scalar_frames(&y_held.scalar_tokens);
+        assert_eq!(
+            positional_frame_planes(&[y_held], &[row.clone()]),
+            vec![OutlinePlane {
+                surface_id: 41,
+                origin: [0.0, 6.777_498_012_261_868, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                u_axis: [1.0, 0.0, 0.0],
+                offset: 23,
+            }]
+        );
+
+        let mut malformed = record;
+        malformed.body[31] = 0x00;
         let tokens = scalar_tokens(
             SurfaceKind::Plane,
-            &unequal.body,
+            &malformed.body,
             &scalar::ScalarCache::default(),
         );
         assert!(tokens.iter().all(|token| token.offset != 13));
-        unequal.scalar_frames = scalar_frames(&tokens);
-        assert!(positional_frame_planes(&[unequal], &[row]).is_empty());
+        malformed.scalar_frames = scalar_frames(&tokens);
+        assert!(positional_frame_planes(&[malformed], &[row]).is_empty());
     }
 
     #[test]

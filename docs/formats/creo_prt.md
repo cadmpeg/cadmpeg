@@ -841,14 +841,13 @@ seven scalars immediately before that terminator. The first scalar is
 auxiliary; the remaining six are the two XYZ corners. Control fields before the
 final frame do not participate in the corner coordinates.
 
-A reflected-held positional plane body ends with `f7 0c`. Immediately before
-that terminator it stores two XYZ corners as six contiguous scalars. The first
-coordinate of each corner uses the tabulated-cylinder first-coordinate DICT
-lane, the two seven-byte token images are identical, and their decoded values
-are negative. Negating that stored coordinate gives the held model-space X
-coordinate. The other four slots use the positional surface-row scalar lane.
-They give the two YZ coordinate pairs. This bounded form therefore defines the
-plane `x = -stored_x` with the positive X basis normal.
+A reflected-first-coordinate positional plane body ends with `f7 0c`.
+Immediately before that terminator it stores two XYZ corners as six contiguous
+scalars. The first coordinate of each corner uses a negative seven-byte token
+from the tabulated-cylinder first-coordinate DICT lane. Negating each stored
+value gives its model-space X coordinate. The other four slots use the
+positional surface-row scalar lane and give the two YZ coordinate pairs. The
+resulting corners use the unique-held-coordinate plane rule.
 
 For a generated section plane selected through the parent-datum rule, multiple
 held envelope coordinates are filtered against the orientation plane. The
