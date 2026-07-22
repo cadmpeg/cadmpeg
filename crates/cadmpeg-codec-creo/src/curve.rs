@@ -2192,10 +2192,8 @@ fn evaluate_creo_relation_function(
             let rounded = value.round();
             if rounded == 0.0 {
                 String(std::string::String::new())
-            } else if rounded >= i64::MIN as f64 && rounded <= i64::MAX as f64 {
-                String(format!("{rounded:.0}"))
             } else {
-                return None;
+                String(format!("{rounded:.0}"))
             }
         }
         (CreoMathFunction::Rtos, [Number(value)]) => {
@@ -4164,6 +4162,8 @@ mod tests {
             ("rtos(-0,3,YES)", ""),
             ("rtos(0.01234,2,TRUE)", "1.23e-02"),
             ("rel_model_type()", "part"),
+            ("itos(1e20)", "100000000000000000000"),
+            ("itos(-1e20)", "-100000000000000000000"),
         ];
         for (expression, expected) in cases {
             assert_eq!(
