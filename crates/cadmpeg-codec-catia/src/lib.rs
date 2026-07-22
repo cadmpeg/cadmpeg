@@ -48,6 +48,7 @@
 //! [`zero_entity`] modules expose record decoders for applications that need
 //! format-level access.
 
+pub(crate) mod analytic;
 pub mod b5;
 mod b5_transfer;
 pub mod catalog;

@@ -799,20 +799,13 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
 }
 
 fn e5_cylinder(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
-    let origin = f64_point(data, pos + 14)?;
-    let frame_u = f64_vector(data, pos + 38)?;
-    let frame_v = f64_vector(data, pos + 62)?;
-    let axis = frame_u.cross(frame_v).unit()?;
-    let radius = f64_le(data, pos + 86)?;
+    let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14);
+    let origin = c.point3()?;
+    let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
     if !radius.is_finite() || !(0.05..1e3).contains(&radius) {
         return None;
     }
-    Some(SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction: frame_u.unit()?,
-        radius,
-    })
+    Some(geometry)
 }
 
 /// A decoded common-form object-stream NURBS surface (`a8 03 34`).
@@ -4775,12 +4768,8 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
 }
 
 fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
-    let origin = f64_point(data, pos + 14)?;
-    let ref_direction = f64_vector(data, pos + 38)?.unit();
-    let axis = f64_vector(data, pos + 86)?.unit()?;
-    let stored_angle = f64_le(data, pos + 110)?;
-    let radius = f64_le(data, pos + 118)?;
-    let half_angle = std::f64::consts::FRAC_PI_2 - stored_angle;
+    let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14);
+    let (geometry, radius, half_angle) = crate::analytic::cone_ozra(&mut c)?;
     if !(radius > 0.0
         && radius < 1e6
         && half_angle > 0.0
@@ -4788,32 +4777,16 @@ fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     {
         return None;
     }
-    Some(SurfaceGeometry::Cone {
-        origin,
-        axis,
-        ref_direction: ref_direction?,
-        radius,
-        ratio: 1.0,
-        half_angle,
-    })
+    Some(geometry)
 }
 
 fn e5_torus(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
-    let center = f64_point(data, pos + 14)?;
-    let ref_direction = f64_vector(data, pos + 38)?.unit();
-    let axis = f64_vector(data, pos + 86)?.unit()?;
-    let major_radius = f64_le(data, pos + 110)?;
-    let minor_radius = f64_le(data, pos + 118)?;
+    let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14);
+    let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
     if !(major_radius > 0.0 && major_radius < 1e6 && minor_radius > 0.0 && minor_radius < 1e6) {
         return None;
     }
-    Some(SurfaceGeometry::Torus {
-        center,
-        axis,
-        ref_direction: ref_direction?,
-        major_radius,
-        minor_radius,
-    })
+    Some(geometry)
 }
 
 /// Decode analytic surface carriers in a zero-entity `a9 03` stream.  The
@@ -5042,28 +5015,21 @@ fn zero_entity_plane(payload: &[u8]) -> Option<SurfaceGeometry> {
 }
 
 fn zero_entity_cylinder(payload: &[u8]) -> Option<SurfaceGeometry> {
-    let origin = f64_point(payload, 8)?;
-    let row0 = f64_vector(payload, 33)?;
-    let row1 = f64_vector(payload, 57)?;
-    let radius = f64_le(payload, 81)?;
+    // The origin sits at offset 8; a one-byte gap separates it from the
+    // contiguous frame-row block at offset 33.
+    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8);
+    let origin = c.point3()?;
+    c.skip(1)?;
+    let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
     if !(radius.is_finite() && radius > 0.0 && radius < 1e6) {
         return None;
     }
-    Some(SurfaceGeometry::Cylinder {
-        origin,
-        axis: row0.cross(row1).unit()?,
-        ref_direction: row0.unit()?,
-        radius,
-    })
+    Some(geometry)
 }
 
 fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
-    let origin = f64_point(payload, 8)?;
-    let ref_direction = f64_vector(payload, 32)?.unit();
-    let axis = f64_vector(payload, 80)?.unit()?;
-    let stored_angle = f64_le(payload, 104)?;
-    let radius = f64_le(payload, 112)?;
-    let half_angle = std::f64::consts::FRAC_PI_2 - stored_angle;
+    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8);
+    let (geometry, radius, half_angle) = crate::analytic::cone_ozra(&mut c)?;
     if !(radius.is_finite()
         && radius > 0.0
         && radius < 1e6
@@ -5073,22 +5039,12 @@ fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
     {
         return None;
     }
-    Some(SurfaceGeometry::Cone {
-        origin,
-        axis,
-        ref_direction: ref_direction?,
-        radius,
-        ratio: 1.0,
-        half_angle,
-    })
+    Some(geometry)
 }
 
 fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
-    let center = f64_point(payload, 8)?;
-    let ref_direction = f64_vector(payload, 32)?.unit();
-    let axis = f64_vector(payload, 80)?.unit()?;
-    let major_radius = f64_le(payload, 104)?;
-    let minor_radius = f64_le(payload, 112)?;
+    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8);
+    let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
     if !(major_radius.is_finite()
         && major_radius > 0.0
         && major_radius < 1e6
@@ -5098,13 +5054,7 @@ fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     {
         return None;
     }
-    Some(SurfaceGeometry::Torus {
-        center,
-        axis,
-        ref_direction: ref_direction?,
-        major_radius,
-        minor_radius,
-    })
+    Some(geometry)
 }
 
 /// Decode the analytic parameters carried inline in a curved surface's kind
