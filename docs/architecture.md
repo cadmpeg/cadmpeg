@@ -29,7 +29,7 @@ Output and report files are written through a unique temporary file in the desti
 
 ## Loss reports
 
-Source decoders return `DecodeReport`, including `geometry_transferred`, notes, and attributable `LossNote` entries. Validation propagates supplied decode losses unchanged.
+Source decoders return `DecodeReport`, including `geometry_transferred`, a decode-coverage count census, notes, and attributable `LossNote` entries. Validation propagates supplied decode losses unchanged.
 
 Every encoder returns an `ExportReport` containing its format id, entity census, total entity count, loss notes, and informational notes. STEP reports reductions and omitted IR data. CADIR has no export losses. F3D and SLDPRT retain all-or-nothing rejection for unsupported input and report whether the source container was replayed or regenerated. Decode losses remain present in the command report when export or convert started from native CAD.
 

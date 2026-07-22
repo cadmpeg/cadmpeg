@@ -364,7 +364,7 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   part product and one root identity occurrence. The product owns every
   transferred body. Assembly component definitions, child occurrences,
   placements, and constraints remain open.
-- **Presentation and metadata: Partial.** Container attributes and geometry censuses transfer as source metadata. Materials and display data remain open.
+- **Presentation and metadata: Partial.** Container attributes transfer as source metadata; decode-coverage counts transfer as the decode report's coverage census. Materials and display data remain open.
 
 `geometry_transferred` is true when any complete model-space carrier transfers.
 

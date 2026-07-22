@@ -78,21 +78,26 @@ fixtures, claims above L1 remain unproven.
    negative and ambiguity cases.
 3. Record per-fixture geometry, topology, design, and configuration loss
    expectations and require no blocking loss through the claimed level.
-   Creo source metadata records unique, transferred, and untransferred visible
-   surface- and curve-row counts. Surface counts are partitioned by family;
-   curve counts are partitioned by raw type byte because the curve namespace
-   does not independently define geometric families. Duplicate native
-   identifiers are counted separately as ambiguous rows. Feature solver
-   metadata separately counts decoded, transferred, typed, and native
+   The decode report's coverage map records unique, transferred, and
+   untransferred visible surface- and curve-row counts. Surface counts are
+   partitioned by family; curve counts are partitioned by raw type byte because
+   the curve namespace does not independently define geometric families.
+   Duplicate native identifiers are counted separately as ambiguous rows.
+   Nonzero untransferred and ambiguous row counts each raise a decode loss note.
+   The coverage map separately counts decoded, transferred, typed, and native
    `relat_ptr` and `skamp_ptr` constraints.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, constraints,
-   dimensions, expressions, and configuration state. Source metadata counts
+   dimensions, expressions, and configuration state. The coverage map counts
    decoded and transferred section dimensions separately and counts dimensions
    whose scalar values resolve. It likewise counts decoded, transferred, and
    evaluated active curve-equation assignments separately and partitions them
    by active, inactive, and unresolved-conditional state. Prohibited active
-   records and their distinct prohibited construct kinds are counted separately.
+   records and their distinct prohibited construct kinds are counted separately,
+   and each nonzero prohibited count raises a decode loss note. Container and
+   census facts about the file — version line, layout, section table, namespace
+   array sizes, principal unit, family-table pointer, and configuration state —
+   remain in the source metadata attribute map.
 5. Run malformed-input and fuzz gates for every admitted parser family.
 
 The current public score remains L1 claimed. Capabilities above L1 are extras
