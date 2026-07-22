@@ -1395,7 +1395,15 @@ fn try_decode_geometry(
         active_body_selection = select_terminal_feature_bodies(&mut ir, scan);
     }
     classify_body_kinds(&mut ir);
-    attach_native_object_model(&mut ir, scan, &mut annotations, &mut unknowns).ok()?;
+    let native_model = crate::native::NativeModel::extract(&scan.container, &scan.streams);
+    attach_native_object_model(
+        &mut ir,
+        &native_model,
+        scan,
+        &mut annotations,
+        &mut unknowns,
+    )
+    .ok()?;
     prune_unreferenced_unknown_carriers(&mut ir);
     finalize_point_topology(&mut ir, &mut annotations);
     let referenced_pcurves: BTreeSet<_> = ir
@@ -7829,732 +7837,34 @@ pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
 
 fn attach_native_object_model(
     ir: &mut CadIr,
+    model: &crate::native::NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let segment_index_rows = crate::native::segment_index_rows(&scan.container);
-    let segment_om_links = crate::native::segment_om_links(&scan.container);
-    let segment_stream_links = crate::native::segment_stream_links(&scan.container, &scan.streams);
-    let segment_body_bindings =
-        crate::native::segment_body_bindings(&scan.container, &scan.streams);
-    let parasolid_blend_surface_records =
-        crate::native::parasolid_blend_surface_records(&scan.streams);
-    let parasolid_blend_bound_records = crate::native::parasolid_blend_bound_records(&scan.streams);
-    let parasolid_offset_surface_records =
-        crate::native::parasolid_offset_surface_records(&scan.streams);
-    let parasolid_trimmed_curve_records =
-        crate::native::parasolid_trimmed_curve_records(&scan.streams);
-    let parasolid_surface_curve_records =
-        crate::native::parasolid_surface_curve_records(&scan.streams);
-    let parasolid_intersection_records =
-        crate::native::parasolid_intersection_records(&scan.streams);
-    let parasolid_term_use_records = crate::native::parasolid_term_use_records(&scan.streams);
-    let parasolid_support_uv_records = crate::native::parasolid_support_uv_records(&scan.streams);
-    let parasolid_chart_records = crate::native::parasolid_chart_records(&scan.streams);
-    let parasolid_attribute_definitions =
-        crate::native::parasolid_attribute_definitions(&scan.streams);
-    let parasolid_entity_51_records = crate::native::parasolid_entity_51_records(&scan.streams);
-    let parasolid_entity_52_integer_records =
-        crate::native::parasolid_entity_52_integer_records(&scan.streams);
-    let parasolid_entity_53_double_records =
-        crate::native::parasolid_entity_53_double_records(&scan.streams);
-    let parasolid_entity_54_string_records =
-        crate::native::parasolid_entity_54_string_records(&scan.streams);
-    let parasolid_entity_51_numeric_uses = crate::native::parasolid_entity_51_numeric_uses(
-        &parasolid_entity_51_records,
-        &parasolid_entity_52_integer_records,
-        &parasolid_entity_53_double_records,
-    );
-    let parasolid_entity_51_string_uses = crate::native::parasolid_entity_51_string_uses(
-        &parasolid_entity_51_records,
-        &parasolid_entity_54_string_records,
-    );
-    let parasolid_attribute_class_uses = crate::native::parasolid_attribute_class_uses(
-        &parasolid_entity_51_records,
-        &parasolid_attribute_definitions,
-    );
-    let parasolid_topology_attribute_list_references =
-        crate::native::parasolid_topology_attribute_list_references(
-            &scan.streams,
-            &parasolid_entity_51_records,
-        );
-    let parasolid_topology_attribute_class_uses =
-        crate::native::parasolid_topology_attribute_class_uses(
-            &parasolid_topology_attribute_list_references,
-            &parasolid_attribute_class_uses,
-        );
-    let om_record_areas = crate::native::om_record_areas(&scan.container);
-    let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
-    let feature_operation_records = crate::native::feature_operation_records(&scan.container);
-    let feature_payload_strings = crate::native::feature_payload_strings(&scan.container);
-    let feature_simple_hole_templates = crate::native::feature_simple_hole_templates(
-        &feature_operation_labels,
-        &feature_operation_records,
-        &feature_payload_strings,
-    );
-    let feature_simple_hole_repeated_scalar_lanes =
-        crate::native::feature_simple_hole_repeated_scalar_lanes(&scan.container);
-    let feature_simple_hole_repeated_scalar_lane_block_references =
-        crate::native::feature_simple_hole_repeated_scalar_lane_block_references(&scan.container);
-    let feature_simple_hole_construction_groups =
-        crate::native::feature_simple_hole_construction_groups(
-            &feature_simple_hole_repeated_scalar_lanes,
-            &feature_simple_hole_repeated_scalar_lane_block_references,
-        );
-    let feature_body_references = crate::native::feature_body_references(&scan.container);
-    let feature_body_segment_uses =
-        crate::native::feature_body_segment_uses(&feature_body_references, &segment_body_bindings);
-    let feature_body_reference_occurrences =
-        crate::native::feature_body_reference_occurrences(&scan.container);
-    let feature_input_blocks = crate::native::feature_input_blocks(&scan.container);
-    let feature_input_block_identity_groups =
-        crate::native::feature_input_block_identity_groups(&feature_input_blocks);
-    let display_jt_indices = crate::native::display_jt_indices(&scan.container);
-    let display_jt_documents =
-        crate::native::display_jt_documents(&scan.container, &display_jt_indices);
-    let display_jt_segments =
-        crate::native::display_jt_segments(&scan.container, &display_jt_documents);
-    let display_jt_shape_lod_elements =
-        crate::native::display_jt_shape_lod_elements(&scan.container, &display_jt_segments);
-    let display_jt_tri_strip_lod_headers = crate::native::display_jt_tri_strip_lod_headers(
-        &scan.container,
-        &display_jt_shape_lod_elements,
-    );
-    let display_jt_initial_face_degree_symbols =
-        crate::native::display_jt_initial_face_degree_symbols(
-            &scan.container,
-            &display_jt_shape_lod_elements,
-        );
-    let (
-        display_jt_topology_packet_sequences,
-        display_jt_vertex_records_headers,
-        display_jt_coordinate_array_headers,
-    ) = crate::native::display_jt_topology_packet_sequences(
-        &scan.container,
-        &display_jt_shape_lod_elements,
-    );
-    let display_jt_vertex_coordinates = crate::native::display_jt_vertex_coordinates(
-        &scan.container,
-        &display_jt_coordinate_array_headers,
-    );
-    let display_jt_vertex_normals = crate::native::display_jt_vertex_normals(
-        &scan.container,
-        &display_jt_vertex_records_headers,
-        &display_jt_coordinate_array_headers,
-        &display_jt_vertex_coordinates,
-    );
-    let display_jt_vertex_colors = crate::native::display_jt_vertex_colors(
-        &scan.container,
-        &display_jt_vertex_records_headers,
-        &display_jt_coordinate_array_headers,
-        &display_jt_vertex_coordinates,
-        &display_jt_vertex_normals,
-    );
-    let display_jt_vertex_texture_coordinates =
-        crate::native::display_jt_vertex_texture_coordinates(
-            &scan.container,
-            &display_jt_vertex_records_headers,
-            &display_jt_coordinate_array_headers,
-            &display_jt_vertex_coordinates,
-            &display_jt_vertex_normals,
-            &display_jt_vertex_colors,
-        );
-    let display_jt_vertex_flags = crate::native::display_jt_vertex_flags(
-        &scan.container,
-        &display_jt_vertex_records_headers,
-        &display_jt_coordinate_array_headers,
-        &display_jt_vertex_coordinates,
-        &display_jt_vertex_normals,
-        &display_jt_vertex_colors,
-        &display_jt_vertex_texture_coordinates,
-    );
-    let display_jt_polygon_meshes = crate::native::display_jt_polygon_meshes(
-        &display_jt_topology_packet_sequences,
-        &display_jt_coordinate_array_headers,
-    );
-    let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
-        crate::native::display_jt_compressed_element_sequences(
-            &scan.container,
-            &display_jt_segments,
-        );
-    let display_jt_string_property_atoms =
-        crate::native::display_jt_string_property_atoms(&scan.container, &display_jt_segments);
-    let display_jt_shape_lod_bindings =
-        crate::native::display_jt_shape_lod_bindings(&scan.container, &display_jt_segments);
-    let display_jt_base_node_data = crate::native::display_jt_base_node_data(
-        &scan.container,
-        &display_jt_segments,
-        &display_jt_documents,
-    );
-    let display_jt_group_node_data = crate::native::display_jt_group_node_data(
-        &scan.container,
-        &display_jt_segments,
-        &display_jt_documents,
-    );
-    let display_jt_instance_nodes = crate::native::display_jt_instance_nodes(
-        &scan.container,
-        &display_jt_segments,
-        &display_jt_documents,
-    );
-    let display_jt_geometric_transform_attributes =
-        crate::native::display_jt_geometric_transform_attributes(
-            &scan.container,
-            &display_jt_segments,
-            &display_jt_documents,
-        );
-    let display_jt_partition_nodes = crate::native::display_jt_partition_nodes(
-        &scan.container,
-        &display_jt_segments,
-        &display_jt_documents,
-    );
-    let display_jt_range_lod_nodes = crate::native::display_jt_range_lod_nodes(
-        &scan.container,
-        &display_jt_segments,
-        &display_jt_documents,
-    );
-    let display_jt_tri_strip_shape_nodes = crate::native::display_jt_tri_strip_shape_nodes(
-        &scan.container,
-        &display_jt_segments,
-        &display_jt_documents,
-    );
-    let display_jt_tessellations = display_jt_tessellations(&DisplayJtTessellationInputs {
-        meshes: &display_jt_polygon_meshes,
-        coordinates: &display_jt_vertex_coordinates,
-        normals: &display_jt_vertex_normals,
-        colors: &display_jt_vertex_colors,
-        texture_coordinates: &display_jt_vertex_texture_coordinates,
-        vertex_flags: &display_jt_vertex_flags,
-        vertex_headers: &display_jt_vertex_records_headers,
-        coordinate_headers: &display_jt_coordinate_array_headers,
-        shape_elements: &display_jt_shape_lod_elements,
-        bindings: &display_jt_shape_lod_bindings,
-        shape_nodes: &display_jt_tri_strip_shape_nodes,
-        base_nodes: &display_jt_base_node_data,
-        group_nodes: &display_jt_group_node_data,
-        instance_nodes: &display_jt_instance_nodes,
-        transforms: &display_jt_geometric_transform_attributes,
-        compressed_elements: &display_jt_compressed_elements,
-    })
-    .unwrap_or_default();
-    let feature_datum_csys_constructions =
-        crate::native::feature_datum_csys_constructions(&scan.container);
-    let feature_datum_csys_payloads = crate::native::feature_datum_csys_payloads(
-        &scan.container,
-        &feature_datum_csys_constructions,
-    );
-    let feature_datum_csys_payload_scalar_pairs =
-        crate::native::feature_datum_csys_payload_scalar_pairs(
-            &scan.container,
-            &feature_datum_csys_payloads,
-        );
-    let feature_datum_csys_payload_fixed_pairs =
-        crate::native::feature_datum_csys_payload_fixed_pairs(
-            &scan.container,
-            &feature_datum_csys_payloads,
-        );
-    let feature_datum_csys_payload_scalars = crate::native::feature_datum_csys_payload_scalars(
-        &scan.container,
-        &feature_datum_csys_payloads,
-    );
-    let feature_datum_csys_descriptors = crate::native::feature_datum_csys_descriptors(
-        &scan.container,
-        &feature_datum_csys_constructions,
-    );
-    let feature_datum_plane_headers = crate::native::feature_datum_plane_headers(&scan.container);
-    let feature_datum_plane_block_uses = crate::native::feature_datum_plane_block_uses(
-        &feature_datum_plane_headers,
-        &feature_input_blocks,
-    );
-    let feature_datum_plane_payloads =
-        crate::native::feature_datum_plane_payloads(&scan.container, &feature_datum_plane_headers);
-    let feature_datum_plane_payload_scalar_pairs =
-        crate::native::feature_datum_plane_payload_scalar_pairs(
-            &scan.container,
-            &feature_datum_plane_payloads,
-        );
-    let feature_datum_plane_descriptors = crate::native::feature_datum_plane_descriptors(
-        &scan.container,
-        &feature_datum_plane_headers,
-    );
-    let feature_datum_plane_csys_identity_uses =
-        crate::native::feature_datum_plane_csys_identity_uses(
-            &feature_datum_plane_descriptors,
-            &feature_datum_csys_descriptors,
-        );
-    let feature_datum_csys_block_uses = crate::native::feature_datum_csys_block_uses(
-        &feature_datum_csys_constructions,
-        &feature_input_blocks,
-    );
-    let feature_sketch_references = crate::native::feature_sketch_references(&scan.container);
-    let feature_projected_curve_references =
-        crate::native::feature_projected_curve_references(&scan.container);
-    let feature_projected_curve_construction_payloads =
-        crate::native::feature_projected_curve_construction_payloads(
-            &scan.container,
-            &feature_operation_labels,
-            &feature_projected_curve_references,
-        );
-    let feature_projected_curve_construction_strings =
-        crate::native::feature_projected_curve_construction_strings(
-            &scan.container,
-            &feature_projected_curve_construction_payloads,
-        );
-    let feature_pattern_references = crate::native::feature_pattern_references(&scan.container);
-    let feature_pattern_construction_payloads =
-        crate::native::feature_pattern_construction_payloads(
-            &scan.container,
-            &feature_operation_labels,
-            &feature_pattern_references,
-        );
-    let feature_pattern_construction_strings = crate::native::feature_pattern_construction_strings(
-        &scan.container,
-        &feature_pattern_construction_payloads,
-    );
-    let feature_pattern_construction_fixed_lanes =
-        crate::native::feature_pattern_construction_fixed_lanes(
-            &scan.container,
-            &feature_pattern_construction_payloads,
-        );
-    let feature_pattern_transform_lanes =
-        crate::native::feature_pattern_transform_lanes(&scan.container);
-    let feature_point_construction_headers =
-        crate::native::feature_point_construction_headers(&scan.container);
-    let feature_point_construction_scalar_lanes =
-        crate::native::feature_point_construction_scalar_lanes(
-            &scan.container,
-            &feature_point_construction_headers,
-        );
-    let feature_draft_construction_references =
-        crate::native::feature_draft_construction_references(&scan.container);
-    let feature_draft_construction_index_lanes =
-        crate::native::feature_draft_construction_index_lanes(&scan.container);
-    let feature_draft_construction_payloads = crate::native::feature_draft_construction_payloads(
-        &scan.container,
-        &feature_draft_construction_index_lanes,
-    );
-    let feature_draft_construction_graph_payloads =
-        crate::native::feature_draft_construction_graph_payloads(
-            &scan.container,
-            &feature_draft_construction_index_lanes,
-            &feature_draft_construction_references,
-        );
-    let feature_draft_construction_fixed_lanes =
-        crate::native::feature_draft_construction_fixed_lanes(
-            &scan.container,
-            &feature_draft_construction_graph_payloads,
-        );
-    let feature_draft_construction_binary32_lanes =
-        crate::native::feature_draft_construction_binary32_lanes(
-            &scan.container,
-            &feature_draft_construction_graph_payloads,
-        );
-    let feature_draft_construction_graph_strings =
-        crate::native::feature_draft_construction_graph_strings(
-            &scan.container,
-            &feature_draft_construction_graph_payloads,
-        );
-    let feature_draft_construction_identity_frames =
-        crate::native::feature_draft_construction_identity_frames(
-            &scan.container,
-            &feature_draft_construction_payloads,
-        );
-    let feature_draft_construction_terminal_lanes =
-        crate::native::feature_draft_construction_terminal_lanes(&scan.container);
-    let feature_surface_construction_references =
-        crate::native::feature_surface_construction_references(&scan.container);
-    let feature_surface_construction_payloads =
-        crate::native::feature_surface_construction_payloads(
-            &scan.container,
-            &feature_surface_construction_references,
-        );
-    let feature_surface_construction_scalar_pairs =
-        crate::native::feature_surface_construction_scalar_pairs(
-            &scan.container,
-            &feature_surface_construction_payloads,
-        );
-    let feature_surface_construction_strings = crate::native::feature_surface_construction_strings(
-        &scan.container,
-        &feature_surface_construction_payloads,
-    );
-    let feature_surface_construction_branches =
-        crate::native::feature_surface_construction_branches(&scan.container);
-    let feature_extrude_profile_references =
-        crate::native::feature_extrude_profile_references(&scan.container);
-    let feature_extrude_payload_headers =
-        crate::native::feature_extrude_payload_headers(&scan.container);
-    let feature_extrude_payload_footers =
-        crate::native::feature_extrude_payload_footers(&scan.container);
-    let feature_operation_body_scalar_triples =
-        crate::native::feature_operation_body_scalar_triples(&scan.container);
-    let feature_operation_body_members =
-        crate::native::feature_operation_body_members(&scan.container);
-    let feature_operation_body_operands = crate::native::feature_operation_body_operands(
-        &feature_operation_body_members,
-        &feature_body_reference_occurrences,
-        &segment_body_bindings,
-    );
-    let feature_operation_body_11_continuations =
-        crate::native::feature_operation_body_11_continuations(&scan.container);
-    let feature_operation_body_reference_lanes =
-        crate::native::feature_operation_body_reference_lanes(&scan.container);
-    let feature_extrude_construction_profiles =
-        crate::native::feature_extrude_construction_profiles(
-            &feature_extrude_profile_references,
-            &feature_operation_body_reference_lanes,
-        );
-    let feature_extrude_payload_32_branches =
-        crate::native::feature_extrude_payload_32_branches(&scan.container);
-    let feature_extrude_32_constructions = crate::native::feature_extrude_32_constructions(
-        &feature_extrude_profile_references,
-        &feature_extrude_payload_32_branches,
-    );
-    let feature_block_construction_references =
-        crate::native::feature_block_construction_references(&scan.container);
-    let feature_block_constructions =
-        crate::native::feature_block_constructions(&feature_block_construction_references);
-    let feature_block_construction_payloads = crate::native::feature_block_construction_payloads(
-        &scan.container,
-        &feature_block_constructions,
-    );
-    let feature_block_payload_scalars = crate::native::feature_block_payload_scalars(
-        &scan.container,
-        &feature_block_construction_payloads,
-    );
-    let feature_block_payload_names = crate::native::feature_block_payload_names(
-        &scan.container,
-        &feature_block_construction_payloads,
-    );
-    let feature_block_payload_named_records = crate::native::feature_block_payload_named_records(
-        &feature_block_construction_payloads,
-        &feature_block_payload_names,
-        &feature_block_payload_scalars,
-    );
-    let feature_block_payload_points = crate::native::feature_block_payload_points(
-        &feature_block_payload_named_records,
-        &feature_block_payload_names,
-        &feature_block_payload_scalars,
-    );
-    let feature_block_payload_point_groups =
-        crate::native::feature_block_payload_point_groups(&feature_block_payload_points);
-    let feature_sketch_records = crate::native::feature_sketch_records(
-        &feature_operation_labels,
-        &feature_operation_records,
-        &feature_input_blocks,
-        &feature_sketch_references,
-    );
-    let feature_sketch_construction_inputs = crate::native::feature_sketch_construction_inputs(
-        &feature_sketch_records,
-        &feature_sketch_references,
-    );
-    let feature_sketch_construction_payloads = crate::native::feature_sketch_construction_payloads(
-        &scan.container,
-        &feature_sketch_construction_inputs,
-    );
-    let feature_sketch_payload_coordinate_pairs =
-        crate::native::feature_sketch_payload_coordinate_pairs(
-            &scan.container,
-            &feature_sketch_construction_payloads,
-        );
-    let feature_sketch_payload_fixed_pairs = crate::native::feature_sketch_payload_fixed_pairs(
-        &scan.container,
-        &feature_sketch_construction_payloads,
-    );
-    let feature_sketch_payload_scalars = crate::native::feature_sketch_payload_scalars(
-        &scan.container,
-        &feature_sketch_construction_inputs,
-    );
-    let feature_sketch_payload_names = crate::native::feature_sketch_payload_names(
-        &scan.container,
-        &feature_sketch_construction_inputs,
-    );
-    let feature_sketch_payload_named_records = crate::native::feature_sketch_payload_named_records(
-        &feature_sketch_construction_payloads,
-        &feature_sketch_payload_names,
-        &feature_sketch_payload_scalars,
-        &feature_sketch_payload_fixed_pairs,
-    );
-    let feature_sketch_fixed_points = crate::native::feature_sketch_fixed_points(
-        &feature_sketch_payload_named_records,
-        &feature_sketch_payload_names,
-        &feature_sketch_payload_fixed_pairs,
-    );
-    let feature_sketch_points = crate::native::feature_sketch_points(
-        &feature_sketch_payload_named_records,
-        &feature_sketch_payload_names,
-        &feature_sketch_payload_scalars,
-    );
-    let feature_sketch_point_groups =
-        crate::native::feature_sketch_point_groups(&feature_sketch_points);
-    let offset_store_named_points = crate::native::offset_store_named_points(&scan.container);
-    let feature_sketch_named_point_block_uses =
-        crate::native::feature_sketch_named_point_block_uses(
-            &feature_sketch_references,
-            &offset_store_named_points,
-        );
-    let feature_sketch_preceding_named_point_uses =
-        crate::native::feature_sketch_preceding_named_point_uses(
-            &feature_sketch_references,
-            &offset_store_named_points,
-        );
-    let feature_sketch_point_uses = crate::native::feature_sketch_point_uses(
-        &feature_sketch_point_groups,
-        &offset_store_named_points,
-        &feature_sketch_named_point_block_uses,
-    );
-    let feature_sketch_datum_csys_dependencies =
-        crate::native::feature_sketch_datum_csys_dependencies(
-            &feature_operation_labels,
-            &offset_store_named_points,
-            &feature_sketch_point_uses,
-            &feature_datum_csys_constructions,
-        );
-    let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
-    let segment_body_lineage_statuses = crate::native::segment_body_lineage_statuses(
-        &feature_operation_labels,
-        &feature_body_references,
-        &feature_boolean_operations,
-        &feature_operation_body_operands,
-        &segment_body_bindings,
-    )
-    .unwrap_or_default();
-    let expression_declarations = crate::native::expression_declarations(&scan.container);
-    let data_block_object_frames = crate::native::data_block_object_frames(&scan.container);
-    let expressions = crate::native::expressions(&scan.container);
-    let classes = crate::native::class_definitions(&scan.container);
-    let fields = crate::native::field_definitions(&scan.container);
-    let object_records = crate::native::object_records(&scan.container);
-    let (rmfastload_object_id_tables, rmfastload_object_ids) =
-        match crate::native::rmfastload_object_id_table(&scan.container) {
-            Some((table, object_ids)) => (vec![table], object_ids),
-            None => (Vec::new(), Vec::new()),
-        };
-    let data_blocks = crate::native::data_blocks(&scan.container);
-    let data_block_control_values = crate::native::data_block_control_values(&scan.container);
-    let data_block_control_class_references =
-        crate::native::data_block_control_class_references(&scan.container);
-    let data_block_control_index_values =
-        crate::native::data_block_control_index_values(&scan.container);
-    let data_block_control_references =
-        crate::native::data_block_control_references(&scan.container);
-    let data_block_control_handle_pairs =
-        crate::native::data_block_control_handle_pairs(&data_block_control_references);
-    let data_block_references = crate::native::data_block_references(&scan.container);
-    let data_block_counted_index_lanes =
-        crate::native::data_block_counted_index_lanes(&scan.container);
-    let data_block_abr_reference_lanes =
-        crate::native::data_block_abr_reference_lanes(&scan.container);
-    let data_block_index_rows = crate::native::data_block_index_rows(&scan.container);
-    let data_block_linked_index_rows = crate::native::data_block_linked_index_rows(&scan.container);
-    let data_block_target_index_rows = crate::native::data_block_target_index_rows(&scan.container);
-    let data_block_column_index_tables = crate::native::data_block_column_index_tables(
-        &data_block_linked_index_rows,
-        &data_block_target_index_rows,
-    );
-    let feature_input_column_row_uses = crate::native::feature_input_column_row_uses(
-        &feature_input_blocks,
-        &data_block_index_rows,
-        &data_block_linked_index_rows,
-        &data_block_target_index_rows,
-        &data_block_column_index_tables,
-    );
-    let feature_input_column_targets = crate::native::feature_input_column_targets(
-        &feature_input_blocks,
-        &feature_input_column_row_uses,
-        &data_block_linked_index_rows,
-        &data_block_target_index_rows,
-    );
-    let feature_parameter_bindings = crate::native::feature_parameter_bindings(
-        &feature_input_blocks,
-        &data_block_references,
-        &expressions,
-    );
-    let feature_parameter_uses = crate::native::feature_parameter_uses(&feature_parameter_bindings);
-    let feature_block_dimensions = crate::native::feature_block_dimensions(
-        &feature_block_constructions,
-        &feature_parameter_bindings,
-        &expression_declarations,
-        &expressions,
-    );
-    let store_headers = crate::native::store_headers(&scan.container);
-    let string_values = crate::native::string_values(&scan.container);
-    let object_references = crate::native::object_references(&scan.container);
-    let configurations = crate::native::configurations(&scan.container);
-    let part_attributes = crate::native::part_attributes(&scan.container);
-    let configuration_attribute_uses =
-        crate::native::configuration_attribute_uses(&configurations, &part_attributes);
-    let external_references = crate::native::external_references(&scan.container);
-    let external_reference_records = crate::native::external_reference_records(&scan.container);
-    let external_reference_indexed_records = crate::native::external_reference_indexed_records(
-        &scan.container,
-        &external_reference_records,
-    );
-    let external_reference_empty_records = crate::native::external_reference_empty_records(
-        &scan.container,
-        &external_reference_indexed_records,
-    );
-    let external_reference_tail_reference_pairs =
-        crate::native::external_reference_tail_reference_pairs(
-            &scan.container,
-            &external_reference_records,
-        );
-    let external_reference_record_string_uses =
-        crate::native::external_reference_record_string_uses(
-            &external_reference_records,
-            &external_references,
-        );
-    let external_reference_record_children = crate::native::external_reference_record_children(
-        &external_reference_records,
-        &external_references,
-        &external_reference_record_string_uses,
-    );
-    let material_texture_assets = crate::native::material_texture_assets(&scan.container);
-    let material_texture_catalog_entries =
-        crate::native::material_texture_catalog_entries(&scan.container, &material_texture_assets);
-    let persistent_handles = crate::native::persistent_handles(
-        &object_references,
-        &data_block_control_references,
-        &external_reference_records,
-        &external_reference_tail_reference_pairs,
-    );
     let object_sections = scan.container.indexed_om_sections();
-    if segment_index_rows.is_empty()
-        && segment_om_links.is_empty()
-        && segment_stream_links.is_empty()
-        && segment_body_bindings.is_empty()
-        && segment_body_lineage_statuses.is_empty()
-        && parasolid_blend_surface_records.is_empty()
-        && parasolid_blend_bound_records.is_empty()
-        && parasolid_offset_surface_records.is_empty()
-        && parasolid_trimmed_curve_records.is_empty()
-        && parasolid_surface_curve_records.is_empty()
-        && parasolid_intersection_records.is_empty()
-        && parasolid_term_use_records.is_empty()
-        && parasolid_support_uv_records.is_empty()
-        && parasolid_chart_records.is_empty()
-        && parasolid_attribute_definitions.is_empty()
-        && parasolid_entity_51_records.is_empty()
-        && parasolid_entity_52_integer_records.is_empty()
-        && parasolid_entity_53_double_records.is_empty()
-        && parasolid_entity_54_string_records.is_empty()
-        && parasolid_entity_51_numeric_uses.is_empty()
-        && parasolid_entity_51_string_uses.is_empty()
-        && parasolid_attribute_class_uses.is_empty()
-        && parasolid_topology_attribute_list_references.is_empty()
-        && om_record_areas.is_empty()
-        && feature_operation_labels.is_empty()
-        && feature_operation_records.is_empty()
-        && feature_payload_strings.is_empty()
-        && feature_simple_hole_templates.is_empty()
-        && feature_simple_hole_repeated_scalar_lanes.is_empty()
-        && feature_simple_hole_repeated_scalar_lane_block_references.is_empty()
-        && feature_simple_hole_construction_groups.is_empty()
-        && feature_body_references.is_empty()
-        && feature_input_blocks.is_empty()
-        && feature_input_block_identity_groups.is_empty()
-        && feature_datum_csys_constructions.is_empty()
-        && feature_datum_plane_headers.is_empty()
-        && feature_datum_plane_block_uses.is_empty()
-        && feature_datum_plane_payloads.is_empty()
-        && feature_datum_csys_block_uses.is_empty()
-        && feature_sketch_references.is_empty()
-        && feature_projected_curve_references.is_empty()
-        && feature_projected_curve_construction_payloads.is_empty()
-        && feature_projected_curve_construction_strings.is_empty()
-        && feature_pattern_references.is_empty()
-        && feature_pattern_construction_payloads.is_empty()
-        && feature_pattern_construction_strings.is_empty()
-        && feature_pattern_construction_fixed_lanes.is_empty()
-        && feature_pattern_transform_lanes.is_empty()
-        && feature_point_construction_headers.is_empty()
-        && feature_point_construction_scalar_lanes.is_empty()
-        && feature_draft_construction_references.is_empty()
-        && feature_draft_construction_index_lanes.is_empty()
-        && feature_draft_construction_payloads.is_empty()
-        && feature_draft_construction_graph_payloads.is_empty()
-        && feature_draft_construction_fixed_lanes.is_empty()
-        && feature_draft_construction_binary32_lanes.is_empty()
-        && feature_draft_construction_graph_strings.is_empty()
-        && feature_draft_construction_identity_frames.is_empty()
-        && feature_draft_construction_terminal_lanes.is_empty()
-        && feature_surface_construction_references.is_empty()
-        && feature_surface_construction_payloads.is_empty()
-        && feature_surface_construction_scalar_pairs.is_empty()
-        && feature_surface_construction_strings.is_empty()
-        && feature_surface_construction_branches.is_empty()
-        && feature_extrude_profile_references.is_empty()
-        && feature_extrude_payload_headers.is_empty()
-        && feature_extrude_payload_footers.is_empty()
-        && feature_operation_body_scalar_triples.is_empty()
-        && feature_operation_body_members.is_empty()
-        && feature_operation_body_operands.is_empty()
-        && feature_operation_body_11_continuations.is_empty()
-        && feature_operation_body_reference_lanes.is_empty()
-        && feature_extrude_construction_profiles.is_empty()
-        && feature_extrude_payload_32_branches.is_empty()
-        && feature_extrude_32_constructions.is_empty()
-        && feature_block_construction_references.is_empty()
-        && feature_block_constructions.is_empty()
-        && feature_block_construction_payloads.is_empty()
-        && feature_block_payload_scalars.is_empty()
-        && feature_block_payload_names.is_empty()
-        && feature_block_payload_named_records.is_empty()
-        && feature_block_payload_points.is_empty()
-        && feature_block_payload_point_groups.is_empty()
-        && feature_sketch_records.is_empty()
-        && feature_sketch_construction_inputs.is_empty()
-        && feature_sketch_construction_payloads.is_empty()
-        && feature_sketch_payload_scalars.is_empty()
-        && feature_sketch_payload_names.is_empty()
-        && feature_sketch_payload_fixed_pairs.is_empty()
-        && feature_sketch_payload_named_records.is_empty()
-        && feature_sketch_points.is_empty()
-        && feature_sketch_fixed_points.is_empty()
-        && feature_sketch_point_groups.is_empty()
-        && offset_store_named_points.is_empty()
-        && feature_sketch_named_point_block_uses.is_empty()
-        && feature_sketch_point_uses.is_empty()
-        && feature_sketch_datum_csys_dependencies.is_empty()
-        && feature_boolean_operations.is_empty()
-        && expression_declarations.is_empty()
-        && data_block_object_frames.is_empty()
-        && expressions.is_empty()
-        && classes.is_empty()
-        && fields.is_empty()
-        && object_records.is_empty()
-        && rmfastload_object_id_tables.is_empty()
-        && rmfastload_object_ids.is_empty()
-        && data_blocks.is_empty()
-        && data_block_control_values.is_empty()
-        && data_block_control_class_references.is_empty()
-        && data_block_control_index_values.is_empty()
-        && data_block_control_references.is_empty()
-        && data_block_control_handle_pairs.is_empty()
-        && data_block_references.is_empty()
-        && data_block_counted_index_lanes.is_empty()
-        && data_block_abr_reference_lanes.is_empty()
-        && feature_parameter_bindings.is_empty()
-        && feature_parameter_uses.is_empty()
-        && store_headers.is_empty()
-        && string_values.is_empty()
-        && object_references.is_empty()
-        && persistent_handles.is_empty()
-        && configurations.is_empty()
-        && part_attributes.is_empty()
-        && external_references.is_empty()
-        && external_reference_indexed_records.is_empty()
-        && external_reference_records.is_empty()
-        && external_reference_empty_records.is_empty()
-        && external_reference_tail_reference_pairs.is_empty()
-        && external_reference_record_string_uses.is_empty()
-        && external_reference_record_children.is_empty()
-        && material_texture_assets.is_empty()
-        && material_texture_catalog_entries.is_empty()
-        && object_sections.is_empty()
-        && display_jt_indices.is_empty()
-    {
+    if model.is_empty() && object_sections.is_empty() {
         return Ok(());
     }
+    let display_jt_tessellations = display_jt_tessellations(&DisplayJtTessellationInputs {
+        meshes: &model.display_jt.display_jt_polygon_meshes,
+        coordinates: &model.display_jt.display_jt_vertex_coordinates,
+        normals: &model.display_jt.display_jt_vertex_normals,
+        colors: &model.display_jt.display_jt_vertex_colors,
+        texture_coordinates: &model.display_jt.display_jt_vertex_texture_coordinates,
+        vertex_flags: &model.display_jt.display_jt_vertex_flags,
+        vertex_headers: &model.display_jt.display_jt_vertex_records_headers,
+        coordinate_headers: &model.display_jt.display_jt_coordinate_array_headers,
+        shape_elements: &model.display_jt.display_jt_shape_lod_elements,
+        bindings: &model.display_jt.display_jt_shape_lod_bindings,
+        shape_nodes: &model.display_jt.display_jt_tri_strip_shape_nodes,
+        base_nodes: &model.display_jt.display_jt_base_node_data,
+        group_nodes: &model.display_jt.display_jt_group_node_data,
+        instance_nodes: &model.display_jt.display_jt_instance_nodes,
+        transforms: &model.display_jt.display_jt_geometric_transform_attributes,
+        compressed_elements: &model.display_jt.display_jt_compressed_elements,
+    })
+    .unwrap_or_default();
     let annotation_stream = annotations.stream("nx:container");
     for (tessellation, source_offset) in display_jt_tessellations {
         annotations
@@ -8563,7 +7873,7 @@ fn attach_native_object_model(
         annotations.exactness(&tessellation.id, Exactness::Derived);
         ir.model.tessellations.push(tessellation);
     }
-    for index in &display_jt_indices {
+    for index in &model.display_jt.display_jt_indices {
         annotations
             .note(&index.id, annotation_stream, index.source_offset)
             .tag("DISPLAY_JT_INDEX");
@@ -8575,7 +7885,7 @@ fn attach_native_object_model(
             annotations.exactness(&row.id, Exactness::ByteExact);
         }
     }
-    for document in &display_jt_documents {
+    for document in &model.display_jt.display_jt_documents {
         annotations
             .note(&document.id, annotation_stream, document.source_offset)
             .tag("DISPLAY_JT_DOCUMENT");
@@ -8587,49 +7897,49 @@ fn attach_native_object_model(
             annotations.exactness(&entry.id, Exactness::ByteExact);
         }
     }
-    for segment in &display_jt_segments {
+    for segment in &model.display_jt.display_jt_segments {
         annotations
             .note(&segment.id, annotation_stream, segment.source_offset)
             .tag("DISPLAY_JT_SEGMENT");
         annotations.exactness(&segment.id, Exactness::ByteExact);
     }
-    for element in &display_jt_shape_lod_elements {
+    for element in &model.display_jt.display_jt_shape_lod_elements {
         annotations
             .note(&element.id, annotation_stream, element.source_offset)
             .tag("DISPLAY_JT_SHAPE_LOD_ELEMENT");
         annotations.exactness(&element.id, Exactness::ByteExact);
     }
-    for header in &display_jt_tri_strip_lod_headers {
+    for header in &model.display_jt.display_jt_tri_strip_lod_headers {
         annotations
             .note(&header.id, annotation_stream, header.source_offset)
             .tag("DISPLAY_JT_TRI_STRIP_LOD_HEADER");
         annotations.exactness(&header.id, Exactness::ByteExact);
     }
-    for symbols in &display_jt_initial_face_degree_symbols {
+    for symbols in &model.display_jt.display_jt_initial_face_degree_symbols {
         annotations
             .note(&symbols.id, annotation_stream, symbols.source_offset)
             .tag("DISPLAY_JT_INITIAL_FACE_DEGREE_SYMBOLS");
         annotations.exactness(&symbols.id, Exactness::ByteExact);
     }
-    for sequence in &display_jt_topology_packet_sequences {
+    for sequence in &model.display_jt.display_jt_topology_packet_sequences {
         annotations
             .note(&sequence.id, annotation_stream, sequence.source_offset)
             .tag("DISPLAY_JT_TOPOLOGY_PACKET_SEQUENCE");
         annotations.exactness(&sequence.id, Exactness::ByteExact);
     }
-    for header in &display_jt_vertex_records_headers {
+    for header in &model.display_jt.display_jt_vertex_records_headers {
         annotations
             .note(&header.id, annotation_stream, header.source_offset)
             .tag("DISPLAY_JT_VERTEX_RECORDS_HEADER");
         annotations.exactness(&header.id, Exactness::ByteExact);
     }
-    for header in &display_jt_coordinate_array_headers {
+    for header in &model.display_jt.display_jt_coordinate_array_headers {
         annotations
             .note(&header.id, annotation_stream, header.source_offset)
             .tag("DISPLAY_JT_COORDINATE_ARRAY_HEADER");
         annotations.exactness(&header.id, Exactness::ByteExact);
     }
-    for coordinates in &display_jt_vertex_coordinates {
+    for coordinates in &model.display_jt.display_jt_vertex_coordinates {
         annotations
             .note(
                 &coordinates.id,
@@ -8639,19 +7949,19 @@ fn attach_native_object_model(
             .tag("DISPLAY_JT_VERTEX_COORDINATES");
         annotations.exactness(&coordinates.id, Exactness::Derived);
     }
-    for normals in &display_jt_vertex_normals {
+    for normals in &model.display_jt.display_jt_vertex_normals {
         annotations
             .note(&normals.id, annotation_stream, normals.source_offset)
             .tag("DISPLAY_JT_VERTEX_NORMALS");
         annotations.exactness(&normals.id, Exactness::Derived);
     }
-    for colors in &display_jt_vertex_colors {
+    for colors in &model.display_jt.display_jt_vertex_colors {
         annotations
             .note(&colors.id, annotation_stream, colors.source_offset)
             .tag("DISPLAY_JT_VERTEX_COLORS");
         annotations.exactness(&colors.id, Exactness::Derived);
     }
-    for texture_coordinates in &display_jt_vertex_texture_coordinates {
+    for texture_coordinates in &model.display_jt.display_jt_vertex_texture_coordinates {
         annotations
             .note(
                 &texture_coordinates.id,
@@ -8661,144 +7971,144 @@ fn attach_native_object_model(
             .tag("DISPLAY_JT_VERTEX_TEXTURE_COORDINATES");
         annotations.exactness(&texture_coordinates.id, Exactness::Derived);
     }
-    for flags in &display_jt_vertex_flags {
+    for flags in &model.display_jt.display_jt_vertex_flags {
         annotations
             .note(&flags.id, annotation_stream, flags.source_offset)
             .tag("DISPLAY_JT_VERTEX_FLAGS");
         annotations.exactness(&flags.id, Exactness::Derived);
     }
-    for transform in &display_jt_geometric_transform_attributes {
+    for transform in &model.display_jt.display_jt_geometric_transform_attributes {
         annotations
             .note(&transform.id, annotation_stream, transform.source_offset)
             .tag("DISPLAY_JT_GEOMETRIC_TRANSFORM");
         annotations.exactness(&transform.id, Exactness::Derived);
     }
-    for mesh in &display_jt_polygon_meshes {
+    for mesh in &model.display_jt.display_jt_polygon_meshes {
         annotations
             .note(&mesh.id, annotation_stream, mesh.source_offset)
             .tag("DISPLAY_JT_POLYGON_MESH");
         annotations.exactness(&mesh.id, Exactness::Derived);
     }
-    for sequence in &display_jt_compressed_element_sequences {
+    for sequence in &model.display_jt.display_jt_compressed_element_sequences {
         annotations
             .note(&sequence.id, annotation_stream, sequence.source_offset)
             .tag("DISPLAY_JT_COMPRESSED_ELEMENT_SEQUENCE");
         annotations.exactness(&sequence.id, Exactness::ByteExact);
     }
-    for element in &display_jt_compressed_elements {
+    for element in &model.display_jt.display_jt_compressed_elements {
         annotations
             .note(&element.id, annotation_stream, element.source_offset)
             .tag("DISPLAY_JT_COMPRESSED_ELEMENT");
         annotations.exactness(&element.id, Exactness::ByteExact);
     }
-    for atom in &display_jt_string_property_atoms {
+    for atom in &model.display_jt.display_jt_string_property_atoms {
         annotations
             .note(&atom.id, annotation_stream, atom.source_offset)
             .tag("DISPLAY_JT_STRING_PROPERTY_ATOM");
         annotations.exactness(&atom.id, Exactness::ByteExact);
     }
-    for binding in &display_jt_shape_lod_bindings {
+    for binding in &model.display_jt.display_jt_shape_lod_bindings {
         annotations
             .note(&binding.id, annotation_stream, binding.source_offset)
             .tag("DISPLAY_JT_SHAPE_LOD_BINDING");
         annotations.exactness(&binding.id, Exactness::ByteExact);
     }
-    for node in &display_jt_base_node_data {
+    for node in &model.display_jt.display_jt_base_node_data {
         annotations
             .note(&node.id, annotation_stream, node.source_offset)
             .tag("DISPLAY_JT_BASE_NODE_DATA");
         annotations.exactness(&node.id, Exactness::ByteExact);
     }
-    for node in &display_jt_group_node_data {
+    for node in &model.display_jt.display_jt_group_node_data {
         annotations
             .note(&node.id, annotation_stream, node.source_offset)
             .tag("DISPLAY_JT_GROUP_NODE_DATA");
         annotations.exactness(&node.id, Exactness::ByteExact);
     }
-    for node in &display_jt_instance_nodes {
+    for node in &model.display_jt.display_jt_instance_nodes {
         annotations
             .note(&node.id, annotation_stream, node.source_offset)
             .tag("DISPLAY_JT_INSTANCE_NODE");
         annotations.exactness(&node.id, Exactness::ByteExact);
     }
-    for node in &display_jt_partition_nodes {
+    for node in &model.display_jt.display_jt_partition_nodes {
         annotations
             .note(&node.id, annotation_stream, node.source_offset)
             .tag("DISPLAY_JT_PARTITION_NODE");
         annotations.exactness(&node.id, Exactness::ByteExact);
     }
-    for node in &display_jt_range_lod_nodes {
+    for node in &model.display_jt.display_jt_range_lod_nodes {
         annotations
             .note(&node.id, annotation_stream, node.source_offset)
             .tag("DISPLAY_JT_RANGE_LOD_NODE");
         annotations.exactness(&node.id, Exactness::ByteExact);
     }
-    for node in &display_jt_tri_strip_shape_nodes {
+    for node in &model.display_jt.display_jt_tri_strip_shape_nodes {
         annotations
             .note(&node.id, annotation_stream, node.source_offset)
             .tag("DISPLAY_JT_TRI_STRIP_SHAPE_NODE");
         annotations.exactness(&node.id, Exactness::ByteExact);
     }
-    for row in &segment_index_rows {
+    for row in &model.segments.segment_index_rows {
         annotations
             .note(&row.id, annotation_stream, row.source_offset)
             .tag("UG_PART_SEGMENT_INDEX_ROW");
         annotations.exactness(&row.id, Exactness::ByteExact);
     }
-    for link in &segment_stream_links {
+    for link in &model.segments.segment_stream_links {
         annotations
             .note(&link.id, annotation_stream, link.source_offset)
             .tag("UG_PART_SEGMENT_STREAM_LINK");
         annotations.exactness(&link.id, Exactness::ByteExact);
     }
-    for binding in &segment_body_bindings {
+    for binding in &model.segments.segment_body_bindings {
         annotations
             .note(&binding.id, annotation_stream, binding.source_offset)
             .tag("UG_PART_SEGMENT_BODY_BINDING");
         annotations.exactness(&binding.id, Exactness::ByteExact);
     }
-    for status in &segment_body_lineage_statuses {
+    for status in &model.segments.segment_body_lineage_statuses {
         annotations
             .note(&status.id, annotation_stream, status.source_offset)
             .tag("SEGMENT_BODY_LINEAGE_STATUS");
         annotations.exactness(&status.id, Exactness::Derived);
     }
-    for record in &parasolid_blend_surface_records {
+    for record in &model.parasolid.parasolid_blend_surface_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("BLEND_SURF");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for record in &parasolid_blend_bound_records {
+    for record in &model.parasolid.parasolid_blend_bound_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("BLEND_BOUND");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for record in &parasolid_offset_surface_records {
+    for record in &model.parasolid.parasolid_offset_surface_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("OFFSET_SURF");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for record in &parasolid_trimmed_curve_records {
+    for record in &model.parasolid.parasolid_trimmed_curve_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("TRIMMED_CURVE");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for record in &parasolid_surface_curve_records {
+    for record in &model.parasolid.parasolid_surface_curve_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("SP_CURVE");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for record in &parasolid_intersection_records {
+    for record in &model.parasolid.parasolid_intersection_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
@@ -8809,78 +8119,80 @@ fn attach_native_object_model(
             });
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for record in &parasolid_term_use_records {
+    for record in &model.parasolid.parasolid_term_use_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("term_use");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for record in &parasolid_support_uv_records {
+    for record in &model.parasolid.parasolid_support_uv_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("values");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for record in &parasolid_chart_records {
+    for record in &model.parasolid.parasolid_chart_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("CHART_s");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for definition in &parasolid_attribute_definitions {
+    for definition in &model.parasolid.parasolid_attribute_definitions {
         let source_stream = annotations.stream(format!("nx:s{}", definition.stream_ordinal));
         annotations
             .note(&definition.id, source_stream, definition.inflated_offset)
             .tag("ATTRIBUTE_DEFINITION");
         annotations.exactness(&definition.id, Exactness::ByteExact);
     }
-    for record in &parasolid_entity_51_records {
+    for record in &model.parasolid.parasolid_entity_51_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("ENTITY_51");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for record in &parasolid_entity_52_integer_records {
+    for record in &model.parasolid.parasolid_entity_52_integer_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("ENTITY_52_INTEGERS");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for record in &parasolid_entity_53_double_records {
+    for record in &model.parasolid.parasolid_entity_53_double_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("ENTITY_53_DOUBLES");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for record in &parasolid_entity_54_string_records {
+    for record in &model.parasolid.parasolid_entity_54_string_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("ENTITY_54_STRING");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for block_use in &parasolid_entity_51_string_uses {
+    for block_use in &model.parasolid.parasolid_entity_51_string_uses {
         let source_stream = annotations.stream(format!("nx:s{}", block_use.stream_ordinal));
         annotations
             .note(&block_use.id, source_stream, block_use.inflated_offset)
             .tag("ENTITY_51_STRING_USE");
         annotations.exactness(&block_use.id, Exactness::ByteExact);
     }
-    for value_use in &parasolid_entity_51_numeric_uses {
+    for value_use in &model.parasolid.parasolid_entity_51_numeric_uses {
         let source_stream = annotations.stream(format!("nx:s{}", value_use.stream_ordinal));
         annotations
             .note(&value_use.id, source_stream, value_use.inflated_offset)
             .tag("ENTITY_51_NUMERIC_USE");
         annotations.exactness(&value_use.id, Exactness::ByteExact);
     }
-    for class_use in &parasolid_attribute_class_uses {
-        let entity = parasolid_entity_51_records
+    for class_use in &model.parasolid.parasolid_attribute_class_uses {
+        let entity = model
+            .parasolid
+            .parasolid_entity_51_records
             .iter()
             .find(|entity| entity.id == class_use.entity_51_record)
             .expect("class use owns a type-81 entity");
@@ -8890,20 +8202,24 @@ fn attach_native_object_model(
             .tag("ATTRIBUTE_CLASS_USE");
         annotations.exactness(&class_use.id, Exactness::Derived);
     }
-    for reference in &parasolid_topology_attribute_list_references {
+    for reference in &model.parasolid.parasolid_topology_attribute_list_references {
         let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
         annotations
             .note(&reference.id, source_stream, reference.inflated_offset)
             .tag("TOPOLOGY_ATTRIBUTE_LIST_REFERENCE");
         annotations.exactness(&reference.id, Exactness::ByteExact);
     }
-    for class_use in &parasolid_topology_attribute_class_uses {
-        let reference = parasolid_topology_attribute_list_references
+    for class_use in &model.parasolid.parasolid_topology_attribute_class_uses {
+        let reference = model
+            .parasolid
+            .parasolid_topology_attribute_list_references
             .iter()
             .find(|reference| reference.id == class_use.topology_attribute_reference)
             .expect("class use owns a topology attribute reference");
         let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
-        let entity = parasolid_entity_51_records
+        let entity = model
+            .parasolid
+            .parasolid_entity_51_records
             .iter()
             .find(|entity| entity.id == class_use.entity_51_record)
             .expect("class use owns a type-81 entity");
@@ -8912,31 +8228,31 @@ fn attach_native_object_model(
             .tag("TOPOLOGY_ATTRIBUTE_CLASS_USE");
         annotations.exactness(&class_use.id, Exactness::Derived);
     }
-    for frame in &data_block_object_frames {
+    for frame in &model.features.data_block_object_frames {
         annotations
             .note(&frame.id, annotation_stream, frame.source_offset)
             .tag("OFFSET_STORE_OBJECT_FRAME");
         annotations.exactness(&frame.id, Exactness::ByteExact);
     }
-    for point in &offset_store_named_points {
+    for point in &model.features.offset_store_named_points {
         annotations
             .note(&point.id, annotation_stream, point.source_offset)
             .tag("OFFSET_STORE_NAMED_POINT");
         annotations.exactness(&point.id, Exactness::ByteExact);
     }
-    for block_use in &feature_sketch_named_point_block_uses {
+    for block_use in &model.features.feature_sketch_named_point_block_uses {
         annotations
             .note(&block_use.id, annotation_stream, block_use.source_offset)
             .tag("SKETCH_NAMED_POINT_BLOCK_USE");
         annotations.exactness(&block_use.id, Exactness::ByteExact);
     }
-    for point_use in &feature_sketch_preceding_named_point_uses {
+    for point_use in &model.features.feature_sketch_preceding_named_point_uses {
         annotations
             .note(&point_use.id, annotation_stream, point_use.source_offset)
             .tag("SKETCH_PRECEDING_NAMED_POINT_USE");
         annotations.exactness(&point_use.id, Exactness::ByteExact);
     }
-    for point_use in &feature_sketch_point_uses {
+    for point_use in &model.features.feature_sketch_point_uses {
         annotations
             .note(
                 &point_use.id,
@@ -8946,97 +8262,97 @@ fn attach_native_object_model(
             .tag("SKETCH_POINT_USE");
         annotations.exactness(&point_use.id, Exactness::Derived);
     }
-    for dependency in &feature_sketch_datum_csys_dependencies {
+    for dependency in &model.features.feature_sketch_datum_csys_dependencies {
         annotations
             .note(&dependency.id, annotation_stream, dependency.source_offset)
             .tag("SKETCH_DATUM_CSYS_DEPENDENCY");
         annotations.exactness(&dependency.id, Exactness::Derived);
     }
-    for group in &feature_input_block_identity_groups {
+    for group in &model.features.feature_input_block_identity_groups {
         annotations
             .note(&group.id, annotation_stream, group.source_offsets[0])
             .tag("FEATURE_INPUT_BLOCK_IDENTITY_GROUP");
         annotations.exactness(&group.id, Exactness::ByteExact);
     }
-    for lane in &data_block_abr_reference_lanes {
+    for lane in &model.om.data_block_abr_reference_lanes {
         annotations
             .note(&lane.id, annotation_stream, lane.source_offset)
             .tag("OFFSET_STORE_ABR_REFERENCE_LANE");
         annotations.exactness(&lane.id, Exactness::ByteExact);
     }
-    for link in &segment_om_links {
+    for link in &model.segments.segment_om_links {
         annotations
             .note(&link.id, annotation_stream, link.source_offset)
             .tag("UG_PART_SEGMENT_OM_LINK");
         annotations.exactness(&link.id, Exactness::ByteExact);
     }
-    for area in &om_record_areas {
+    for area in &model.om.om_record_areas {
         annotations
             .note(&area.id, annotation_stream, area.source_offset)
             .tag("OM_RECORD_AREA");
         annotations.exactness(&area.id, Exactness::ByteExact);
     }
-    for label in &feature_operation_labels {
+    for label in &model.features.feature_operation_labels {
         annotations
             .note(&label.id, annotation_stream, label.source_offset)
             .tag("FEATURE_OPERATION_LABEL");
         annotations.exactness(&label.id, Exactness::ByteExact);
     }
-    for sketch in &feature_sketch_records {
+    for sketch in &model.features.feature_sketch_records {
         annotations
             .note(&sketch.id, annotation_stream, sketch.source_offset)
             .tag("FEATURE_SKETCH_RECORD");
         annotations.exactness(&sketch.id, Exactness::Derived);
     }
-    for pair in &feature_sketch_payload_fixed_pairs {
+    for pair in &model.features.feature_sketch_payload_fixed_pairs {
         annotations
             .note(&pair.id, annotation_stream, pair.source_offset)
             .tag("FEATURE_SKETCH_FIXED_PAIR");
         annotations.exactness(&pair.id, Exactness::ByteExact);
     }
-    for point in &feature_sketch_fixed_points {
+    for point in &model.features.feature_sketch_fixed_points {
         annotations
             .note(&point.id, annotation_stream, point.source_offset)
             .tag("FEATURE_SKETCH_FIXED_POINT");
         annotations.exactness(&point.id, Exactness::Derived);
     }
-    for record in &feature_operation_records {
+    for record in &model.features.feature_operation_records {
         annotations
             .note(&record.id, annotation_stream, record.source_offset)
             .tag("FEATURE_OPERATION_RECORD");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for value in &feature_payload_strings {
+    for value in &model.features.feature_payload_strings {
         annotations
             .note(&value.id, annotation_stream, value.source_offset)
             .tag("FEATURE_PAYLOAD_STRING");
         annotations.exactness(&value.id, Exactness::ByteExact);
     }
-    for reference in &feature_body_references {
+    for reference in &model.features.feature_body_references {
         annotations
             .note(&reference.id, annotation_stream, reference.source_offset)
             .tag("FEATURE_BODY_REFERENCE");
         annotations.exactness(&reference.id, Exactness::ByteExact);
     }
-    for reference in &feature_body_reference_occurrences {
+    for reference in &model.features.feature_body_reference_occurrences {
         annotations
             .note(&reference.id, annotation_stream, reference.source_offset)
             .tag("FEATURE_BODY_REFERENCE_OCCURRENCE");
         annotations.exactness(&reference.id, Exactness::ByteExact);
     }
-    for input in &feature_input_blocks {
+    for input in &model.features.feature_input_blocks {
         annotations
             .note(&input.id, annotation_stream, input.source_offset)
             .tag("FEATURE_INPUT_BLOCK");
         annotations.exactness(&input.id, Exactness::ByteExact);
     }
-    for operation in &feature_boolean_operations {
+    for operation in &model.features.feature_boolean_operations {
         annotations
             .note(&operation.id, annotation_stream, operation.source_offset)
             .tag("FEATURE_BOOLEAN_OPERATION");
         annotations.exactness(&operation.id, Exactness::ByteExact);
     }
-    for declaration in &expression_declarations {
+    for declaration in &model.om.expression_declarations {
         annotations
             .note(
                 &declaration.id,
@@ -9046,49 +8362,49 @@ fn attach_native_object_model(
             .tag("EXPRESSION_DECLARATION");
         annotations.exactness(&declaration.id, Exactness::ByteExact);
     }
-    for value in &data_block_control_values {
+    for value in &model.om.data_block_control_values {
         annotations
             .note(&value.id, annotation_stream, value.source_offset)
             .tag("OM_DATA_BLOCK_CONTROL_VALUE");
         annotations.exactness(&value.id, Exactness::ByteExact);
     }
-    for reference in &data_block_control_class_references {
+    for reference in &model.om.data_block_control_class_references {
         annotations
             .note(&reference.id, annotation_stream, reference.source_offset)
             .tag("OM_DATA_BLOCK_CONTROL_CLASS_REFERENCE");
         annotations.exactness(&reference.id, Exactness::ByteExact);
     }
-    for value in &data_block_control_index_values {
+    for value in &model.om.data_block_control_index_values {
         annotations
             .note(&value.id, annotation_stream, value.source_offset)
             .tag("OM_DATA_BLOCK_CONTROL_INDEX_VALUE");
         annotations.exactness(&value.id, Exactness::ByteExact);
     }
-    for reference in &data_block_control_references {
+    for reference in &model.om.data_block_control_references {
         annotations
             .note(&reference.id, annotation_stream, reference.source_offset)
             .tag("OM_DATA_BLOCK_CONTROL_REFERENCE");
         annotations.exactness(&reference.id, Exactness::ByteExact);
     }
-    for pair in &data_block_control_handle_pairs {
+    for pair in &model.om.data_block_control_handle_pairs {
         annotations
             .note(&pair.id, annotation_stream, pair.source_offset)
             .tag("OM_DATA_BLOCK_CONTROL_HANDLE_PAIR");
         annotations.exactness(&pair.id, Exactness::ByteExact);
     }
-    for reference in &data_block_references {
+    for reference in &model.om.data_block_references {
         annotations
             .note(&reference.id, annotation_stream, reference.source_offset)
             .tag("OM_DATA_BLOCK_REFERENCE");
         annotations.exactness(&reference.id, Exactness::ByteExact);
     }
-    for binding in &feature_parameter_bindings {
+    for binding in &model.features.feature_parameter_bindings {
         annotations
             .note(&binding.id, annotation_stream, binding.source_offset)
             .tag("FEATURE_PARAMETER_BINDING");
         annotations.exactness(&binding.id, Exactness::Derived);
     }
-    for parameter_use in &feature_parameter_uses {
+    for parameter_use in &model.features.feature_parameter_uses {
         annotations
             .note(
                 &parameter_use.id,
@@ -9098,19 +8414,19 @@ fn attach_native_object_model(
             .tag("FEATURE_PARAMETER_USE");
         annotations.exactness(&parameter_use.id, Exactness::Derived);
     }
-    for header in &store_headers {
+    for header in &model.om.store_headers {
         annotations
             .note(&header.id, annotation_stream, header.source_offset)
             .tag("OM_STORE_VERSION");
         annotations.exactness(&header.id, Exactness::ByteExact);
     }
-    for reference in &external_references {
+    for reference in &model.om.external_references {
         annotations
             .note(&reference.id, annotation_stream, reference.source_offset)
             .tag("EXTREFSTREAM_STRING");
         annotations.exactness(&reference.id, Exactness::ByteExact);
     }
-    for attribute in &part_attributes {
+    for attribute in &model.om.part_attributes {
         annotations
             .note(&attribute.id, annotation_stream, attribute.source_offset)
             .tag("Attribute");
@@ -9131,38 +8447,38 @@ fn attach_native_object_model(
     }
     attach_parasolid_topology_string_attributes(
         ir,
-        &parasolid_topology_attribute_list_references,
-        &parasolid_topology_attribute_class_uses,
-        &parasolid_attribute_definitions,
-        &parasolid_entity_51_string_uses,
-        &parasolid_entity_54_string_records,
+        &model.parasolid.parasolid_topology_attribute_list_references,
+        &model.parasolid.parasolid_topology_attribute_class_uses,
+        &model.parasolid.parasolid_attribute_definitions,
+        &model.parasolid.parasolid_entity_51_string_uses,
+        &model.parasolid.parasolid_entity_54_string_records,
         annotations,
     );
     attach_parasolid_topology_numeric_attributes(
         ir,
         &ParasolidNumericAttributeSources {
-            topology_references: &parasolid_topology_attribute_list_references,
-            class_uses: &parasolid_topology_attribute_class_uses,
-            definitions: &parasolid_attribute_definitions,
-            numeric_uses: &parasolid_entity_51_numeric_uses,
-            integers: &parasolid_entity_52_integer_records,
-            doubles: &parasolid_entity_53_double_records,
+            topology_references: &model.parasolid.parasolid_topology_attribute_list_references,
+            class_uses: &model.parasolid.parasolid_topology_attribute_class_uses,
+            definitions: &model.parasolid.parasolid_attribute_definitions,
+            numeric_uses: &model.parasolid.parasolid_entity_51_numeric_uses,
+            integers: &model.parasolid.parasolid_entity_52_integer_records,
+            doubles: &model.parasolid.parasolid_entity_53_double_records,
         },
         annotations,
     );
-    for record in &external_reference_records {
+    for record in &model.om.external_reference_records {
         annotations
             .note(&record.id, annotation_stream, record.source_offset)
             .tag("EXTREFSTREAM_RECORD");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
-    for asset in &material_texture_assets {
+    for asset in &model.om.material_texture_assets {
         annotations
             .note(&asset.id, annotation_stream, asset.source_offset)
             .tag("TIFF_MATERIAL_TEXTURE");
         annotations.exactness(&asset.id, Exactness::ByteExact);
     }
-    for entry in &material_texture_catalog_entries {
+    for entry in &model.om.material_texture_catalog_entries {
         annotations
             .note(&entry.id, annotation_stream, entry.source_offset)
             .tag("QAF_MATERIAL_TEXTURE_CATALOG_ENTRY");
@@ -9203,10 +8519,12 @@ fn attach_native_object_model(
             });
         }
     }
-    if !configurations.is_empty() {
-        for (ordinal, configuration) in configurations.iter().enumerate() {
+    if !model.om.configurations.is_empty() {
+        for (ordinal, configuration) in model.om.configurations.iter().enumerate() {
             let id = ConfigurationId(format!("nx:arrangements:configuration#{ordinal}"));
-            let active_attribute_use = configuration_attribute_uses
+            let active_attribute_use = model
+                .om
+                .configuration_attribute_uses
                 .iter()
                 .find(|relation| relation.configuration == configuration.id);
             let bodies = if active_attribute_use.is_some() {
@@ -9246,982 +8564,1246 @@ fn attach_native_object_model(
     }
     attach_expression_parameters(
         ir,
-        &expressions,
-        &expression_declarations,
-        &feature_parameter_uses,
+        &model.om.expressions,
+        &model.om.expression_declarations,
+        &model.features.feature_parameter_uses,
         annotations,
     );
     attach_feature_operations(
         ir,
-        &FeatureOperationSources {
-            labels: &feature_operation_labels,
-            booleans: &feature_boolean_operations,
-            body_references: &feature_body_references,
-            body_reference_occurrences: &feature_body_reference_occurrences,
-            input_blocks: &feature_input_blocks,
-            input_block_identity_groups: &feature_input_block_identity_groups,
-            datum_csys_constructions: &feature_datum_csys_constructions,
-            datum_csys_payloads: &feature_datum_csys_payloads,
-            datum_csys_block_uses: &feature_datum_csys_block_uses,
-            datum_plane_headers: &feature_datum_plane_headers,
-            datum_plane_block_uses: &feature_datum_plane_block_uses,
-            datum_plane_payloads: &feature_datum_plane_payloads,
-            datum_plane_csys_identity_uses: &feature_datum_plane_csys_identity_uses,
-            sketch_datum_csys_dependencies: &feature_sketch_datum_csys_dependencies,
-            sketch_references: &feature_sketch_references,
-            projected_curve_references: &feature_projected_curve_references,
-            projected_curve_construction_payloads: &feature_projected_curve_construction_payloads,
-            projected_curve_construction_strings: &feature_projected_curve_construction_strings,
-            pattern_references: &feature_pattern_references,
-            pattern_construction_payloads: &feature_pattern_construction_payloads,
-            pattern_construction_strings: &feature_pattern_construction_strings,
-            pattern_construction_fixed_lanes: &feature_pattern_construction_fixed_lanes,
-            pattern_transform_lanes: &feature_pattern_transform_lanes,
-            point_construction_headers: &feature_point_construction_headers,
-            point_construction_scalar_lanes: &feature_point_construction_scalar_lanes,
-            draft_construction_references: &feature_draft_construction_references,
-            draft_construction_index_lanes: &feature_draft_construction_index_lanes,
-            draft_construction_payloads: &feature_draft_construction_payloads,
-            draft_construction_graph_payloads: &feature_draft_construction_graph_payloads,
-            draft_construction_fixed_lanes: &feature_draft_construction_fixed_lanes,
-            draft_construction_binary32_lanes: &feature_draft_construction_binary32_lanes,
-            draft_construction_graph_strings: &feature_draft_construction_graph_strings,
-            draft_construction_identity_frames: &feature_draft_construction_identity_frames,
-            draft_construction_terminal_lanes: &feature_draft_construction_terminal_lanes,
-            surface_construction_references: &feature_surface_construction_references,
-            surface_construction_payloads: &feature_surface_construction_payloads,
-            surface_construction_scalar_pairs: &feature_surface_construction_scalar_pairs,
-            surface_construction_strings: &feature_surface_construction_strings,
-            surface_construction_branches: &feature_surface_construction_branches,
-            sketch_named_point_block_uses: &feature_sketch_named_point_block_uses,
-            sketch_preceding_named_point_uses: &feature_sketch_preceding_named_point_uses,
-            sketch_point_uses: &feature_sketch_point_uses,
-            sketch_point_groups: &feature_sketch_point_groups,
-            extrude_profile_references: &feature_extrude_profile_references,
-            extrude_construction_profiles: &feature_extrude_construction_profiles,
-            operation_body_operands: &feature_operation_body_operands,
-            sketch_construction_inputs: &feature_sketch_construction_inputs,
-            sketch_records: &feature_sketch_records,
-            sketch_construction_payloads: &feature_sketch_construction_payloads,
-            sketch_coordinate_pairs: &feature_sketch_payload_coordinate_pairs,
-            sketch_fixed_pairs: &feature_sketch_payload_fixed_pairs,
-            sketch_fixed_points: &feature_sketch_fixed_points,
-            block_constructions: &feature_block_constructions,
-            block_construction_payloads: &feature_block_construction_payloads,
-            block_dimensions: &feature_block_dimensions,
-            block_payload_points: &feature_block_payload_points,
-            block_payload_point_groups: &feature_block_payload_point_groups,
-            extrude_32_constructions: &feature_extrude_32_constructions,
-            extrude_payload_headers: &feature_extrude_payload_headers,
-            extrude_payload_footers: &feature_extrude_payload_footers,
-            extrude_payload_32_branches: &feature_extrude_payload_32_branches,
-            operation_body_scalar_triples: &feature_operation_body_scalar_triples,
-            operation_body_members: &feature_operation_body_members,
-            operation_body_11_continuations: &feature_operation_body_11_continuations,
-            operation_body_reference_lanes: &feature_operation_body_reference_lanes,
-            parameter_bindings: &feature_parameter_bindings,
-            parameter_uses: &feature_parameter_uses,
-            expressions: &expressions,
-            operation_records: &feature_operation_records,
-            payload_strings: &feature_payload_strings,
-            simple_hole_templates: &feature_simple_hole_templates,
-            simple_hole_repeated_scalar_lanes: &feature_simple_hole_repeated_scalar_lanes,
-            simple_hole_repeated_scalar_lane_block_references:
-                &feature_simple_hole_repeated_scalar_lane_block_references,
-            simple_hole_construction_groups: &feature_simple_hole_construction_groups,
-            body_bindings: &segment_body_bindings,
-        },
+        &model.features,
+        &model.om.expressions,
+        &model.segments.segment_body_bindings,
         annotations,
     );
-    attach_block_dimension_parameter_consumers(ir, &feature_block_dimensions, annotations);
+    attach_block_dimension_parameter_consumers(
+        ir,
+        &model.features.feature_block_dimensions,
+        annotations,
+    );
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
     namespace.version = namespace.version.max(155);
-    if !segment_index_rows.is_empty() {
-        namespace.set_arena("segment_index_rows", &segment_index_rows)?;
+    if !model.segments.segment_index_rows.is_empty() {
+        namespace.set_arena("segment_index_rows", &model.segments.segment_index_rows)?;
     }
-    if !segment_stream_links.is_empty() {
-        namespace.set_arena("segment_stream_links", &segment_stream_links)?;
+    if !model.segments.segment_stream_links.is_empty() {
+        namespace.set_arena("segment_stream_links", &model.segments.segment_stream_links)?;
     }
-    if !segment_body_bindings.is_empty() {
-        namespace.set_arena("segment_body_bindings", &segment_body_bindings)?;
+    if !model.segments.segment_body_bindings.is_empty() {
+        namespace.set_arena(
+            "segment_body_bindings",
+            &model.segments.segment_body_bindings,
+        )?;
     }
-    if !feature_body_segment_uses.is_empty() {
-        namespace.set_arena("feature_body_segment_uses", &feature_body_segment_uses)?;
+    if !model.features.feature_body_segment_uses.is_empty() {
+        namespace.set_arena(
+            "feature_body_segment_uses",
+            &model.features.feature_body_segment_uses,
+        )?;
     }
-    if !segment_body_lineage_statuses.is_empty() {
+    if !model.segments.segment_body_lineage_statuses.is_empty() {
         namespace.set_arena(
             "segment_body_lineage_statuses",
-            &segment_body_lineage_statuses,
+            &model.segments.segment_body_lineage_statuses,
         )?;
     }
-    if !parasolid_blend_surface_records.is_empty() {
+    if !model.parasolid.parasolid_blend_surface_records.is_empty() {
         namespace.set_arena(
             "parasolid_blend_surface_records",
-            &parasolid_blend_surface_records,
+            &model.parasolid.parasolid_blend_surface_records,
         )?;
     }
-    if !parasolid_blend_bound_records.is_empty() {
+    if !model.parasolid.parasolid_blend_bound_records.is_empty() {
         namespace.set_arena(
             "parasolid_blend_bound_records",
-            &parasolid_blend_bound_records,
+            &model.parasolid.parasolid_blend_bound_records,
         )?;
     }
-    if !parasolid_offset_surface_records.is_empty() {
+    if !model.parasolid.parasolid_offset_surface_records.is_empty() {
         namespace.set_arena(
             "parasolid_offset_surface_records",
-            &parasolid_offset_surface_records,
+            &model.parasolid.parasolid_offset_surface_records,
         )?;
     }
-    if !parasolid_trimmed_curve_records.is_empty() {
+    if !model.parasolid.parasolid_trimmed_curve_records.is_empty() {
         namespace.set_arena(
             "parasolid_trimmed_curve_records",
-            &parasolid_trimmed_curve_records,
+            &model.parasolid.parasolid_trimmed_curve_records,
         )?;
     }
-    if !parasolid_surface_curve_records.is_empty() {
+    if !model.parasolid.parasolid_surface_curve_records.is_empty() {
         namespace.set_arena(
             "parasolid_surface_curve_records",
-            &parasolid_surface_curve_records,
+            &model.parasolid.parasolid_surface_curve_records,
         )?;
     }
-    if !parasolid_intersection_records.is_empty() {
+    if !model.parasolid.parasolid_intersection_records.is_empty() {
         namespace.set_arena(
             "parasolid_intersection_records",
-            &parasolid_intersection_records,
+            &model.parasolid.parasolid_intersection_records,
         )?;
     }
-    if !parasolid_term_use_records.is_empty() {
-        namespace.set_arena("parasolid_term_use_records", &parasolid_term_use_records)?;
+    if !model.parasolid.parasolid_term_use_records.is_empty() {
+        namespace.set_arena(
+            "parasolid_term_use_records",
+            &model.parasolid.parasolid_term_use_records,
+        )?;
     }
-    if !parasolid_support_uv_records.is_empty() {
+    if !model.parasolid.parasolid_support_uv_records.is_empty() {
         namespace.set_arena(
             "parasolid_support_uv_records",
-            &parasolid_support_uv_records,
+            &model.parasolid.parasolid_support_uv_records,
         )?;
     }
-    if !parasolid_chart_records.is_empty() {
-        namespace.set_arena("parasolid_chart_records", &parasolid_chart_records)?;
+    if !model.parasolid.parasolid_chart_records.is_empty() {
+        namespace.set_arena(
+            "parasolid_chart_records",
+            &model.parasolid.parasolid_chart_records,
+        )?;
     }
-    if !parasolid_attribute_definitions.is_empty() {
+    if !model.parasolid.parasolid_attribute_definitions.is_empty() {
         namespace.set_arena(
             "parasolid_attribute_definitions",
-            &parasolid_attribute_definitions,
+            &model.parasolid.parasolid_attribute_definitions,
         )?;
     }
-    if !parasolid_entity_51_records.is_empty() {
-        namespace.set_arena("parasolid_entity_51_records", &parasolid_entity_51_records)?;
+    if !model.parasolid.parasolid_entity_51_records.is_empty() {
+        namespace.set_arena(
+            "parasolid_entity_51_records",
+            &model.parasolid.parasolid_entity_51_records,
+        )?;
     }
-    if !parasolid_entity_52_integer_records.is_empty() {
+    if !model
+        .parasolid
+        .parasolid_entity_52_integer_records
+        .is_empty()
+    {
         namespace.set_arena(
             "parasolid_entity_52_integer_records",
-            &parasolid_entity_52_integer_records,
+            &model.parasolid.parasolid_entity_52_integer_records,
         )?;
     }
-    if !parasolid_entity_53_double_records.is_empty() {
+    if !model
+        .parasolid
+        .parasolid_entity_53_double_records
+        .is_empty()
+    {
         namespace.set_arena(
             "parasolid_entity_53_double_records",
-            &parasolid_entity_53_double_records,
+            &model.parasolid.parasolid_entity_53_double_records,
         )?;
     }
-    if !parasolid_entity_54_string_records.is_empty() {
+    if !model
+        .parasolid
+        .parasolid_entity_54_string_records
+        .is_empty()
+    {
         namespace.set_arena(
             "parasolid_entity_54_string_records",
-            &parasolid_entity_54_string_records,
+            &model.parasolid.parasolid_entity_54_string_records,
         )?;
     }
-    if !parasolid_entity_51_string_uses.is_empty() {
+    if !model.parasolid.parasolid_entity_51_string_uses.is_empty() {
         namespace.set_arena(
             "parasolid_entity_51_string_uses",
-            &parasolid_entity_51_string_uses,
+            &model.parasolid.parasolid_entity_51_string_uses,
         )?;
     }
-    if !parasolid_entity_51_numeric_uses.is_empty() {
+    if !model.parasolid.parasolid_entity_51_numeric_uses.is_empty() {
         namespace.set_arena(
             "parasolid_entity_51_numeric_uses",
-            &parasolid_entity_51_numeric_uses,
+            &model.parasolid.parasolid_entity_51_numeric_uses,
         )?;
     }
-    if !parasolid_attribute_class_uses.is_empty() {
+    if !model.parasolid.parasolid_attribute_class_uses.is_empty() {
         namespace.set_arena(
             "parasolid_attribute_class_uses",
-            &parasolid_attribute_class_uses,
+            &model.parasolid.parasolid_attribute_class_uses,
         )?;
     }
-    if !parasolid_topology_attribute_list_references.is_empty() {
+    if !model
+        .parasolid
+        .parasolid_topology_attribute_list_references
+        .is_empty()
+    {
         namespace.set_arena(
             "parasolid_topology_attribute_list_references",
-            &parasolid_topology_attribute_list_references,
+            &model.parasolid.parasolid_topology_attribute_list_references,
         )?;
     }
-    if !parasolid_topology_attribute_class_uses.is_empty() {
+    if !model
+        .parasolid
+        .parasolid_topology_attribute_class_uses
+        .is_empty()
+    {
         namespace.set_arena(
             "parasolid_topology_attribute_class_uses",
-            &parasolid_topology_attribute_class_uses,
+            &model.parasolid.parasolid_topology_attribute_class_uses,
         )?;
     }
-    if !segment_om_links.is_empty() {
-        namespace.set_arena("segment_om_links", &segment_om_links)?;
+    if !model.segments.segment_om_links.is_empty() {
+        namespace.set_arena("segment_om_links", &model.segments.segment_om_links)?;
     }
-    if !om_record_areas.is_empty() {
-        namespace.set_arena("om_record_areas", &om_record_areas)?;
+    if !model.om.om_record_areas.is_empty() {
+        namespace.set_arena("om_record_areas", &model.om.om_record_areas)?;
     }
-    if !feature_operation_labels.is_empty() {
-        namespace.set_arena("feature_operation_labels", &feature_operation_labels)?;
+    if !model.features.feature_operation_labels.is_empty() {
+        namespace.set_arena(
+            "feature_operation_labels",
+            &model.features.feature_operation_labels,
+        )?;
     }
-    if !feature_operation_records.is_empty() {
-        namespace.set_arena("feature_operation_records", &feature_operation_records)?;
+    if !model.features.feature_operation_records.is_empty() {
+        namespace.set_arena(
+            "feature_operation_records",
+            &model.features.feature_operation_records,
+        )?;
     }
-    if !feature_payload_strings.is_empty() {
-        namespace.set_arena("feature_payload_strings", &feature_payload_strings)?;
+    if !model.features.feature_payload_strings.is_empty() {
+        namespace.set_arena(
+            "feature_payload_strings",
+            &model.features.feature_payload_strings,
+        )?;
     }
-    if !feature_simple_hole_templates.is_empty() {
+    if !model.features.feature_simple_hole_templates.is_empty() {
         namespace.set_arena(
             "feature_simple_hole_templates",
-            &feature_simple_hole_templates,
+            &model.features.feature_simple_hole_templates,
         )?;
     }
-    if !feature_simple_hole_repeated_scalar_lanes.is_empty() {
+    if !model
+        .features
+        .feature_simple_hole_repeated_scalar_lanes
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_simple_hole_repeated_scalar_lanes",
-            &feature_simple_hole_repeated_scalar_lanes,
+            &model.features.feature_simple_hole_repeated_scalar_lanes,
         )?;
     }
-    if !feature_simple_hole_repeated_scalar_lane_block_references.is_empty() {
+    if !model
+        .features
+        .feature_simple_hole_repeated_scalar_lane_block_references
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_simple_hole_repeated_scalar_lane_block_references",
-            &feature_simple_hole_repeated_scalar_lane_block_references,
+            &model
+                .features
+                .feature_simple_hole_repeated_scalar_lane_block_references,
         )?;
     }
-    if !feature_simple_hole_construction_groups.is_empty() {
+    if !model
+        .features
+        .feature_simple_hole_construction_groups
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_simple_hole_construction_groups",
-            &feature_simple_hole_construction_groups,
+            &model.features.feature_simple_hole_construction_groups,
         )?;
     }
-    if !feature_body_references.is_empty() {
-        namespace.set_arena("feature_body_references", &feature_body_references)?;
+    if !model.features.feature_body_references.is_empty() {
+        namespace.set_arena(
+            "feature_body_references",
+            &model.features.feature_body_references,
+        )?;
     }
-    if !feature_body_reference_occurrences.is_empty() {
+    if !model.features.feature_body_reference_occurrences.is_empty() {
         namespace.set_arena(
             "feature_body_reference_occurrences",
-            &feature_body_reference_occurrences,
+            &model.features.feature_body_reference_occurrences,
         )?;
     }
-    if !feature_input_blocks.is_empty() {
-        namespace.set_arena("feature_input_blocks", &feature_input_blocks)?;
+    if !model.features.feature_input_blocks.is_empty() {
+        namespace.set_arena("feature_input_blocks", &model.features.feature_input_blocks)?;
     }
-    if !feature_input_block_identity_groups.is_empty() {
+    if !model
+        .features
+        .feature_input_block_identity_groups
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_input_block_identity_groups",
-            &feature_input_block_identity_groups,
+            &model.features.feature_input_block_identity_groups,
         )?;
     }
-    if !display_jt_indices.is_empty() {
-        namespace.set_arena("display_jt_indices", &display_jt_indices)?;
+    if !model.display_jt.display_jt_indices.is_empty() {
+        namespace.set_arena("display_jt_indices", &model.display_jt.display_jt_indices)?;
     }
-    if !display_jt_documents.is_empty() {
-        namespace.set_arena("display_jt_documents", &display_jt_documents)?;
+    if !model.display_jt.display_jt_documents.is_empty() {
+        namespace.set_arena(
+            "display_jt_documents",
+            &model.display_jt.display_jt_documents,
+        )?;
     }
-    if !display_jt_segments.is_empty() {
-        namespace.set_arena("display_jt_segments", &display_jt_segments)?;
+    if !model.display_jt.display_jt_segments.is_empty() {
+        namespace.set_arena("display_jt_segments", &model.display_jt.display_jt_segments)?;
     }
-    if !display_jt_shape_lod_elements.is_empty() {
+    if !model.display_jt.display_jt_shape_lod_elements.is_empty() {
         namespace.set_arena(
             "display_jt_shape_lod_elements",
-            &display_jt_shape_lod_elements,
+            &model.display_jt.display_jt_shape_lod_elements,
         )?;
     }
-    if !display_jt_tri_strip_lod_headers.is_empty() {
+    if !model.display_jt.display_jt_tri_strip_lod_headers.is_empty() {
         namespace.set_arena(
             "display_jt_tri_strip_lod_headers",
-            &display_jt_tri_strip_lod_headers,
+            &model.display_jt.display_jt_tri_strip_lod_headers,
         )?;
     }
-    if !display_jt_initial_face_degree_symbols.is_empty() {
+    if !model
+        .display_jt
+        .display_jt_initial_face_degree_symbols
+        .is_empty()
+    {
         namespace.set_arena(
             "display_jt_initial_face_degree_symbols",
-            &display_jt_initial_face_degree_symbols,
+            &model.display_jt.display_jt_initial_face_degree_symbols,
         )?;
     }
-    if !display_jt_topology_packet_sequences.is_empty() {
+    if !model
+        .display_jt
+        .display_jt_topology_packet_sequences
+        .is_empty()
+    {
         namespace.set_arena(
             "display_jt_topology_packet_sequences",
-            &display_jt_topology_packet_sequences,
+            &model.display_jt.display_jt_topology_packet_sequences,
         )?;
     }
-    if !display_jt_vertex_records_headers.is_empty() {
+    if !model
+        .display_jt
+        .display_jt_vertex_records_headers
+        .is_empty()
+    {
         namespace.set_arena(
             "display_jt_vertex_records_headers",
-            &display_jt_vertex_records_headers,
+            &model.display_jt.display_jt_vertex_records_headers,
         )?;
     }
-    if !display_jt_coordinate_array_headers.is_empty() {
+    if !model
+        .display_jt
+        .display_jt_coordinate_array_headers
+        .is_empty()
+    {
         namespace.set_arena(
             "display_jt_coordinate_array_headers",
-            &display_jt_coordinate_array_headers,
+            &model.display_jt.display_jt_coordinate_array_headers,
         )?;
     }
-    if !display_jt_vertex_coordinates.is_empty() {
+    if !model.display_jt.display_jt_vertex_coordinates.is_empty() {
         namespace.set_arena(
             "display_jt_vertex_coordinates",
-            &display_jt_vertex_coordinates,
+            &model.display_jt.display_jt_vertex_coordinates,
         )?;
     }
-    if !display_jt_vertex_normals.is_empty() {
-        namespace.set_arena("display_jt_vertex_normals", &display_jt_vertex_normals)?;
+    if !model.display_jt.display_jt_vertex_normals.is_empty() {
+        namespace.set_arena(
+            "display_jt_vertex_normals",
+            &model.display_jt.display_jt_vertex_normals,
+        )?;
     }
-    if !display_jt_vertex_colors.is_empty() {
-        namespace.set_arena("display_jt_vertex_colors", &display_jt_vertex_colors)?;
+    if !model.display_jt.display_jt_vertex_colors.is_empty() {
+        namespace.set_arena(
+            "display_jt_vertex_colors",
+            &model.display_jt.display_jt_vertex_colors,
+        )?;
     }
-    if !display_jt_vertex_texture_coordinates.is_empty() {
+    if !model
+        .display_jt
+        .display_jt_vertex_texture_coordinates
+        .is_empty()
+    {
         namespace.set_arena(
             "display_jt_vertex_texture_coordinates",
-            &display_jt_vertex_texture_coordinates,
+            &model.display_jt.display_jt_vertex_texture_coordinates,
         )?;
     }
-    if !display_jt_vertex_flags.is_empty() {
-        namespace.set_arena("display_jt_vertex_flags", &display_jt_vertex_flags)?;
+    if !model.display_jt.display_jt_vertex_flags.is_empty() {
+        namespace.set_arena(
+            "display_jt_vertex_flags",
+            &model.display_jt.display_jt_vertex_flags,
+        )?;
     }
-    if !display_jt_geometric_transform_attributes.is_empty() {
+    if !model
+        .display_jt
+        .display_jt_geometric_transform_attributes
+        .is_empty()
+    {
         namespace.set_arena(
             "display_jt_geometric_transform_attributes",
-            &display_jt_geometric_transform_attributes,
+            &model.display_jt.display_jt_geometric_transform_attributes,
         )?;
     }
-    if !display_jt_polygon_meshes.is_empty() {
-        namespace.set_arena("display_jt_polygon_meshes", &display_jt_polygon_meshes)?;
+    if !model.display_jt.display_jt_polygon_meshes.is_empty() {
+        namespace.set_arena(
+            "display_jt_polygon_meshes",
+            &model.display_jt.display_jt_polygon_meshes,
+        )?;
     }
-    if !display_jt_compressed_element_sequences.is_empty() {
+    if !model
+        .display_jt
+        .display_jt_compressed_element_sequences
+        .is_empty()
+    {
         namespace.set_arena(
             "display_jt_compressed_element_sequences",
-            &display_jt_compressed_element_sequences,
+            &model.display_jt.display_jt_compressed_element_sequences,
         )?;
     }
-    if !display_jt_compressed_elements.is_empty() {
+    if !model.display_jt.display_jt_compressed_elements.is_empty() {
         namespace.set_arena(
             "display_jt_compressed_elements",
-            &display_jt_compressed_elements,
+            &model.display_jt.display_jt_compressed_elements,
         )?;
     }
-    if !display_jt_string_property_atoms.is_empty() {
+    if !model.display_jt.display_jt_string_property_atoms.is_empty() {
         namespace.set_arena(
             "display_jt_string_property_atoms",
-            &display_jt_string_property_atoms,
+            &model.display_jt.display_jt_string_property_atoms,
         )?;
     }
-    if !display_jt_shape_lod_bindings.is_empty() {
+    if !model.display_jt.display_jt_shape_lod_bindings.is_empty() {
         namespace.set_arena(
             "display_jt_shape_lod_bindings",
-            &display_jt_shape_lod_bindings,
+            &model.display_jt.display_jt_shape_lod_bindings,
         )?;
     }
-    if !display_jt_base_node_data.is_empty() {
-        namespace.set_arena("display_jt_base_node_data", &display_jt_base_node_data)?;
+    if !model.display_jt.display_jt_base_node_data.is_empty() {
+        namespace.set_arena(
+            "display_jt_base_node_data",
+            &model.display_jt.display_jt_base_node_data,
+        )?;
     }
-    if !display_jt_group_node_data.is_empty() {
-        namespace.set_arena("display_jt_group_node_data", &display_jt_group_node_data)?;
+    if !model.display_jt.display_jt_group_node_data.is_empty() {
+        namespace.set_arena(
+            "display_jt_group_node_data",
+            &model.display_jt.display_jt_group_node_data,
+        )?;
     }
-    if !display_jt_instance_nodes.is_empty() {
-        namespace.set_arena("display_jt_instance_nodes", &display_jt_instance_nodes)?;
+    if !model.display_jt.display_jt_instance_nodes.is_empty() {
+        namespace.set_arena(
+            "display_jt_instance_nodes",
+            &model.display_jt.display_jt_instance_nodes,
+        )?;
     }
-    if !display_jt_partition_nodes.is_empty() {
-        namespace.set_arena("display_jt_partition_nodes", &display_jt_partition_nodes)?;
+    if !model.display_jt.display_jt_partition_nodes.is_empty() {
+        namespace.set_arena(
+            "display_jt_partition_nodes",
+            &model.display_jt.display_jt_partition_nodes,
+        )?;
     }
-    if !display_jt_range_lod_nodes.is_empty() {
-        namespace.set_arena("display_jt_range_lod_nodes", &display_jt_range_lod_nodes)?;
+    if !model.display_jt.display_jt_range_lod_nodes.is_empty() {
+        namespace.set_arena(
+            "display_jt_range_lod_nodes",
+            &model.display_jt.display_jt_range_lod_nodes,
+        )?;
     }
-    if !display_jt_tri_strip_shape_nodes.is_empty() {
+    if !model.display_jt.display_jt_tri_strip_shape_nodes.is_empty() {
         namespace.set_arena(
             "display_jt_tri_strip_shape_nodes",
-            &display_jt_tri_strip_shape_nodes,
+            &model.display_jt.display_jt_tri_strip_shape_nodes,
         )?;
     }
-    if !feature_datum_csys_constructions.is_empty() {
+    if !model.features.feature_datum_csys_constructions.is_empty() {
         namespace.set_arena(
             "feature_datum_csys_constructions",
-            &feature_datum_csys_constructions,
+            &model.features.feature_datum_csys_constructions,
         )?;
     }
-    if !feature_datum_csys_payloads.is_empty() {
-        namespace.set_arena("feature_datum_csys_payloads", &feature_datum_csys_payloads)?;
+    if !model.features.feature_datum_csys_payloads.is_empty() {
+        namespace.set_arena(
+            "feature_datum_csys_payloads",
+            &model.features.feature_datum_csys_payloads,
+        )?;
     }
-    if !feature_datum_csys_payload_scalar_pairs.is_empty() {
+    if !model
+        .features
+        .feature_datum_csys_payload_scalar_pairs
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_datum_csys_payload_scalar_pairs",
-            &feature_datum_csys_payload_scalar_pairs,
+            &model.features.feature_datum_csys_payload_scalar_pairs,
         )?;
     }
-    if !feature_datum_csys_payload_fixed_pairs.is_empty() {
+    if !model
+        .features
+        .feature_datum_csys_payload_fixed_pairs
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_datum_csys_payload_fixed_pairs",
-            &feature_datum_csys_payload_fixed_pairs,
+            &model.features.feature_datum_csys_payload_fixed_pairs,
         )?;
     }
-    if !feature_datum_csys_payload_scalars.is_empty() {
+    if !model.features.feature_datum_csys_payload_scalars.is_empty() {
         namespace.set_arena(
             "feature_datum_csys_payload_scalars",
-            &feature_datum_csys_payload_scalars,
+            &model.features.feature_datum_csys_payload_scalars,
         )?;
     }
-    if !feature_datum_csys_descriptors.is_empty() {
+    if !model.features.feature_datum_csys_descriptors.is_empty() {
         namespace.set_arena(
             "feature_datum_csys_descriptors",
-            &feature_datum_csys_descriptors,
+            &model.features.feature_datum_csys_descriptors,
         )?;
     }
-    if !feature_datum_csys_block_uses.is_empty() {
+    if !model.features.feature_datum_csys_block_uses.is_empty() {
         namespace.set_arena(
             "feature_datum_csys_block_uses",
-            &feature_datum_csys_block_uses,
+            &model.features.feature_datum_csys_block_uses,
         )?;
     }
-    if !feature_datum_plane_headers.is_empty() {
-        namespace.set_arena("feature_datum_plane_headers", &feature_datum_plane_headers)?;
+    if !model.features.feature_datum_plane_headers.is_empty() {
+        namespace.set_arena(
+            "feature_datum_plane_headers",
+            &model.features.feature_datum_plane_headers,
+        )?;
     }
-    if !feature_datum_plane_block_uses.is_empty() {
+    if !model.features.feature_datum_plane_block_uses.is_empty() {
         namespace.set_arena(
             "feature_datum_plane_block_uses",
-            &feature_datum_plane_block_uses,
+            &model.features.feature_datum_plane_block_uses,
         )?;
     }
-    if !feature_datum_plane_payloads.is_empty() {
+    if !model.features.feature_datum_plane_payloads.is_empty() {
         namespace.set_arena(
             "feature_datum_plane_payloads",
-            &feature_datum_plane_payloads,
+            &model.features.feature_datum_plane_payloads,
         )?;
     }
-    if !feature_datum_plane_payload_scalar_pairs.is_empty() {
+    if !model
+        .features
+        .feature_datum_plane_payload_scalar_pairs
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_datum_plane_payload_scalar_pairs",
-            &feature_datum_plane_payload_scalar_pairs,
+            &model.features.feature_datum_plane_payload_scalar_pairs,
         )?;
     }
-    if !feature_datum_plane_descriptors.is_empty() {
+    if !model.features.feature_datum_plane_descriptors.is_empty() {
         namespace.set_arena(
             "feature_datum_plane_descriptors",
-            &feature_datum_plane_descriptors,
+            &model.features.feature_datum_plane_descriptors,
         )?;
     }
-    if !feature_datum_plane_csys_identity_uses.is_empty() {
+    if !model
+        .features
+        .feature_datum_plane_csys_identity_uses
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_datum_plane_csys_identity_uses",
-            &feature_datum_plane_csys_identity_uses,
+            &model.features.feature_datum_plane_csys_identity_uses,
         )?;
     }
-    if !feature_sketch_references.is_empty() {
-        namespace.set_arena("feature_sketch_references", &feature_sketch_references)?;
+    if !model.features.feature_sketch_references.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_references",
+            &model.features.feature_sketch_references,
+        )?;
     }
-    if !feature_projected_curve_references.is_empty() {
+    if !model.features.feature_projected_curve_references.is_empty() {
         namespace.set_arena(
             "feature_projected_curve_references",
-            &feature_projected_curve_references,
+            &model.features.feature_projected_curve_references,
         )?;
     }
-    if !feature_projected_curve_construction_payloads.is_empty() {
+    if !model
+        .features
+        .feature_projected_curve_construction_payloads
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_projected_curve_construction_payloads",
-            &feature_projected_curve_construction_payloads,
+            &model.features.feature_projected_curve_construction_payloads,
         )?;
     }
-    if !feature_projected_curve_construction_strings.is_empty() {
+    if !model
+        .features
+        .feature_projected_curve_construction_strings
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_projected_curve_construction_strings",
-            &feature_projected_curve_construction_strings,
+            &model.features.feature_projected_curve_construction_strings,
         )?;
     }
-    if !feature_pattern_references.is_empty() {
-        namespace.set_arena("feature_pattern_references", &feature_pattern_references)?;
+    if !model.features.feature_pattern_references.is_empty() {
+        namespace.set_arena(
+            "feature_pattern_references",
+            &model.features.feature_pattern_references,
+        )?;
     }
-    if !feature_pattern_construction_payloads.is_empty() {
+    if !model
+        .features
+        .feature_pattern_construction_payloads
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_pattern_construction_payloads",
-            &feature_pattern_construction_payloads,
+            &model.features.feature_pattern_construction_payloads,
         )?;
     }
-    if !feature_pattern_construction_strings.is_empty() {
+    if !model
+        .features
+        .feature_pattern_construction_strings
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_pattern_construction_strings",
-            &feature_pattern_construction_strings,
+            &model.features.feature_pattern_construction_strings,
         )?;
     }
-    if !feature_pattern_construction_fixed_lanes.is_empty() {
+    if !model
+        .features
+        .feature_pattern_construction_fixed_lanes
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_pattern_construction_fixed_lanes",
-            &feature_pattern_construction_fixed_lanes,
+            &model.features.feature_pattern_construction_fixed_lanes,
         )?;
     }
-    if !feature_pattern_transform_lanes.is_empty() {
+    if !model.features.feature_pattern_transform_lanes.is_empty() {
         namespace.set_arena(
             "feature_pattern_transform_lanes",
-            &feature_pattern_transform_lanes,
+            &model.features.feature_pattern_transform_lanes,
         )?;
     }
-    if !feature_point_construction_headers.is_empty() {
+    if !model.features.feature_point_construction_headers.is_empty() {
         namespace.set_arena(
             "feature_point_construction_headers",
-            &feature_point_construction_headers,
+            &model.features.feature_point_construction_headers,
         )?;
     }
-    if !feature_point_construction_scalar_lanes.is_empty() {
+    if !model
+        .features
+        .feature_point_construction_scalar_lanes
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_point_construction_scalar_lanes",
-            &feature_point_construction_scalar_lanes,
+            &model.features.feature_point_construction_scalar_lanes,
         )?;
     }
-    if !feature_draft_construction_references.is_empty() {
+    if !model
+        .features
+        .feature_draft_construction_references
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_draft_construction_references",
-            &feature_draft_construction_references,
+            &model.features.feature_draft_construction_references,
         )?;
     }
-    if !feature_draft_construction_index_lanes.is_empty() {
+    if !model
+        .features
+        .feature_draft_construction_index_lanes
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_draft_construction_index_lanes",
-            &feature_draft_construction_index_lanes,
+            &model.features.feature_draft_construction_index_lanes,
         )?;
     }
-    if !feature_draft_construction_payloads.is_empty() {
+    if !model
+        .features
+        .feature_draft_construction_payloads
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_draft_construction_payloads",
-            &feature_draft_construction_payloads,
+            &model.features.feature_draft_construction_payloads,
         )?;
     }
-    if !feature_draft_construction_graph_payloads.is_empty() {
+    if !model
+        .features
+        .feature_draft_construction_graph_payloads
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_draft_construction_graph_payloads",
-            &feature_draft_construction_graph_payloads,
+            &model.features.feature_draft_construction_graph_payloads,
         )?;
     }
-    if !feature_draft_construction_fixed_lanes.is_empty() {
+    if !model
+        .features
+        .feature_draft_construction_fixed_lanes
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_draft_construction_fixed_lanes",
-            &feature_draft_construction_fixed_lanes,
+            &model.features.feature_draft_construction_fixed_lanes,
         )?;
     }
-    if !feature_draft_construction_binary32_lanes.is_empty() {
+    if !model
+        .features
+        .feature_draft_construction_binary32_lanes
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_draft_construction_binary32_lanes",
-            &feature_draft_construction_binary32_lanes,
+            &model.features.feature_draft_construction_binary32_lanes,
         )?;
     }
-    if !feature_draft_construction_graph_strings.is_empty() {
+    if !model
+        .features
+        .feature_draft_construction_graph_strings
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_draft_construction_graph_strings",
-            &feature_draft_construction_graph_strings,
+            &model.features.feature_draft_construction_graph_strings,
         )?;
     }
-    if !feature_draft_construction_identity_frames.is_empty() {
+    if !model
+        .features
+        .feature_draft_construction_identity_frames
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_draft_construction_identity_frames",
-            &feature_draft_construction_identity_frames,
+            &model.features.feature_draft_construction_identity_frames,
         )?;
     }
-    if !feature_draft_construction_terminal_lanes.is_empty() {
+    if !model
+        .features
+        .feature_draft_construction_terminal_lanes
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_draft_construction_terminal_lanes",
-            &feature_draft_construction_terminal_lanes,
+            &model.features.feature_draft_construction_terminal_lanes,
         )?;
     }
-    if !feature_surface_construction_references.is_empty() {
+    if !model
+        .features
+        .feature_surface_construction_references
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_surface_construction_references",
-            &feature_surface_construction_references,
+            &model.features.feature_surface_construction_references,
         )?;
     }
-    if !feature_surface_construction_payloads.is_empty() {
+    if !model
+        .features
+        .feature_surface_construction_payloads
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_surface_construction_payloads",
-            &feature_surface_construction_payloads,
+            &model.features.feature_surface_construction_payloads,
         )?;
     }
-    if !feature_surface_construction_scalar_pairs.is_empty() {
+    if !model
+        .features
+        .feature_surface_construction_scalar_pairs
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_surface_construction_scalar_pairs",
-            &feature_surface_construction_scalar_pairs,
+            &model.features.feature_surface_construction_scalar_pairs,
         )?;
     }
-    if !feature_surface_construction_strings.is_empty() {
+    if !model
+        .features
+        .feature_surface_construction_strings
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_surface_construction_strings",
-            &feature_surface_construction_strings,
+            &model.features.feature_surface_construction_strings,
         )?;
     }
-    if !feature_surface_construction_branches.is_empty() {
+    if !model
+        .features
+        .feature_surface_construction_branches
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_surface_construction_branches",
-            &feature_surface_construction_branches,
+            &model.features.feature_surface_construction_branches,
         )?;
     }
-    if !feature_extrude_profile_references.is_empty() {
+    if !model.features.feature_extrude_profile_references.is_empty() {
         namespace.set_arena(
             "feature_extrude_profile_references",
-            &feature_extrude_profile_references,
+            &model.features.feature_extrude_profile_references,
         )?;
     }
-    if !feature_extrude_payload_headers.is_empty() {
+    if !model.features.feature_extrude_payload_headers.is_empty() {
         namespace.set_arena(
             "feature_extrude_payload_headers",
-            &feature_extrude_payload_headers,
+            &model.features.feature_extrude_payload_headers,
         )?;
     }
-    if !feature_extrude_payload_footers.is_empty() {
+    if !model.features.feature_extrude_payload_footers.is_empty() {
         namespace.set_arena(
             "feature_extrude_payload_footers",
-            &feature_extrude_payload_footers,
+            &model.features.feature_extrude_payload_footers,
         )?;
     }
-    if !feature_operation_body_scalar_triples.is_empty() {
+    if !model
+        .features
+        .feature_operation_body_scalar_triples
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_operation_body_scalar_triples",
-            &feature_operation_body_scalar_triples,
+            &model.features.feature_operation_body_scalar_triples,
         )?;
     }
-    if !feature_operation_body_members.is_empty() {
+    if !model.features.feature_operation_body_members.is_empty() {
         namespace.set_arena(
             "feature_operation_body_members",
-            &feature_operation_body_members,
+            &model.features.feature_operation_body_members,
         )?;
     }
-    if !feature_operation_body_operands.is_empty() {
+    if !model.features.feature_operation_body_operands.is_empty() {
         namespace.set_arena(
             "feature_operation_body_operands",
-            &feature_operation_body_operands,
+            &model.features.feature_operation_body_operands,
         )?;
     }
-    if !feature_operation_body_11_continuations.is_empty() {
+    if !model
+        .features
+        .feature_operation_body_11_continuations
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_operation_body_11_continuations",
-            &feature_operation_body_11_continuations,
+            &model.features.feature_operation_body_11_continuations,
         )?;
     }
-    if !feature_operation_body_reference_lanes.is_empty() {
+    if !model
+        .features
+        .feature_operation_body_reference_lanes
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_operation_body_reference_lanes",
-            &feature_operation_body_reference_lanes,
+            &model.features.feature_operation_body_reference_lanes,
         )?;
     }
-    if !feature_extrude_construction_profiles.is_empty() {
+    if !model
+        .features
+        .feature_extrude_construction_profiles
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_extrude_construction_profiles",
-            &feature_extrude_construction_profiles,
+            &model.features.feature_extrude_construction_profiles,
         )?;
     }
-    if !feature_extrude_payload_32_branches.is_empty() {
+    if !model
+        .features
+        .feature_extrude_payload_32_branches
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_extrude_payload_32_branches",
-            &feature_extrude_payload_32_branches,
+            &model.features.feature_extrude_payload_32_branches,
         )?;
     }
-    if !feature_extrude_32_constructions.is_empty() {
+    if !model.features.feature_extrude_32_constructions.is_empty() {
         namespace.set_arena(
             "feature_extrude_32_constructions",
-            &feature_extrude_32_constructions,
+            &model.features.feature_extrude_32_constructions,
         )?;
     }
-    if !feature_block_construction_references.is_empty() {
+    if !model
+        .features
+        .feature_block_construction_references
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_block_construction_references",
-            &feature_block_construction_references,
+            &model.features.feature_block_construction_references,
         )?;
     }
-    if !feature_block_constructions.is_empty() {
-        namespace.set_arena("feature_block_constructions", &feature_block_constructions)?;
+    if !model.features.feature_block_constructions.is_empty() {
+        namespace.set_arena(
+            "feature_block_constructions",
+            &model.features.feature_block_constructions,
+        )?;
     }
-    if !feature_block_construction_payloads.is_empty() {
+    if !model
+        .features
+        .feature_block_construction_payloads
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_block_construction_payloads",
-            &feature_block_construction_payloads,
+            &model.features.feature_block_construction_payloads,
         )?;
     }
-    if !feature_block_payload_scalars.is_empty() {
+    if !model.features.feature_block_payload_scalars.is_empty() {
         namespace.set_arena(
             "feature_block_payload_scalars",
-            &feature_block_payload_scalars,
+            &model.features.feature_block_payload_scalars,
         )?;
     }
-    if !feature_block_payload_names.is_empty() {
-        namespace.set_arena("feature_block_payload_names", &feature_block_payload_names)?;
+    if !model.features.feature_block_payload_names.is_empty() {
+        namespace.set_arena(
+            "feature_block_payload_names",
+            &model.features.feature_block_payload_names,
+        )?;
     }
-    if !feature_block_payload_named_records.is_empty() {
+    if !model
+        .features
+        .feature_block_payload_named_records
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_block_payload_named_records",
-            &feature_block_payload_named_records,
+            &model.features.feature_block_payload_named_records,
         )?;
     }
-    if !feature_block_payload_points.is_empty() {
+    if !model.features.feature_block_payload_points.is_empty() {
         namespace.set_arena(
             "feature_block_payload_points",
-            &feature_block_payload_points,
+            &model.features.feature_block_payload_points,
         )?;
     }
-    if !feature_block_payload_point_groups.is_empty() {
+    if !model.features.feature_block_payload_point_groups.is_empty() {
         namespace.set_arena(
             "feature_block_payload_point_groups",
-            &feature_block_payload_point_groups,
+            &model.features.feature_block_payload_point_groups,
         )?;
     }
-    if !feature_block_dimensions.is_empty() {
-        namespace.set_arena("feature_block_dimensions", &feature_block_dimensions)?;
+    if !model.features.feature_block_dimensions.is_empty() {
+        namespace.set_arena(
+            "feature_block_dimensions",
+            &model.features.feature_block_dimensions,
+        )?;
     }
-    if !feature_sketch_records.is_empty() {
-        namespace.set_arena("feature_sketch_records", &feature_sketch_records)?;
+    if !model.features.feature_sketch_records.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_records",
+            &model.features.feature_sketch_records,
+        )?;
     }
-    if !feature_sketch_construction_inputs.is_empty() {
+    if !model.features.feature_sketch_construction_inputs.is_empty() {
         namespace.set_arena(
             "feature_sketch_construction_inputs",
-            &feature_sketch_construction_inputs,
+            &model.features.feature_sketch_construction_inputs,
         )?;
     }
-    if !feature_sketch_construction_payloads.is_empty() {
+    if !model
+        .features
+        .feature_sketch_construction_payloads
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_sketch_construction_payloads",
-            &feature_sketch_construction_payloads,
+            &model.features.feature_sketch_construction_payloads,
         )?;
     }
-    if !feature_sketch_payload_coordinate_pairs.is_empty() {
+    if !model
+        .features
+        .feature_sketch_payload_coordinate_pairs
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_sketch_payload_coordinate_pairs",
-            &feature_sketch_payload_coordinate_pairs,
+            &model.features.feature_sketch_payload_coordinate_pairs,
         )?;
     }
-    if !feature_sketch_payload_fixed_pairs.is_empty() {
+    if !model.features.feature_sketch_payload_fixed_pairs.is_empty() {
         namespace.set_arena(
             "feature_sketch_payload_fixed_pairs",
-            &feature_sketch_payload_fixed_pairs,
+            &model.features.feature_sketch_payload_fixed_pairs,
         )?;
     }
-    if !feature_sketch_payload_scalars.is_empty() {
+    if !model.features.feature_sketch_payload_scalars.is_empty() {
         namespace.set_arena(
             "feature_sketch_payload_scalars",
-            &feature_sketch_payload_scalars,
+            &model.features.feature_sketch_payload_scalars,
         )?;
     }
-    if !feature_sketch_payload_names.is_empty() {
+    if !model.features.feature_sketch_payload_names.is_empty() {
         namespace.set_arena(
             "feature_sketch_payload_names",
-            &feature_sketch_payload_names,
+            &model.features.feature_sketch_payload_names,
         )?;
     }
-    if !feature_sketch_payload_named_records.is_empty() {
+    if !model
+        .features
+        .feature_sketch_payload_named_records
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_sketch_payload_named_records",
-            &feature_sketch_payload_named_records,
+            &model.features.feature_sketch_payload_named_records,
         )?;
     }
-    if !feature_sketch_points.is_empty() {
-        namespace.set_arena("feature_sketch_points", &feature_sketch_points)?;
+    if !model.features.feature_sketch_points.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_points",
+            &model.features.feature_sketch_points,
+        )?;
     }
-    if !feature_sketch_fixed_points.is_empty() {
-        namespace.set_arena("feature_sketch_fixed_points", &feature_sketch_fixed_points)?;
+    if !model.features.feature_sketch_fixed_points.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_fixed_points",
+            &model.features.feature_sketch_fixed_points,
+        )?;
     }
-    if !feature_sketch_point_groups.is_empty() {
-        namespace.set_arena("feature_sketch_point_groups", &feature_sketch_point_groups)?;
+    if !model.features.feature_sketch_point_groups.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_point_groups",
+            &model.features.feature_sketch_point_groups,
+        )?;
     }
-    if !offset_store_named_points.is_empty() {
-        namespace.set_arena("offset_store_named_points", &offset_store_named_points)?;
+    if !model.features.offset_store_named_points.is_empty() {
+        namespace.set_arena(
+            "offset_store_named_points",
+            &model.features.offset_store_named_points,
+        )?;
     }
-    if !feature_sketch_named_point_block_uses.is_empty() {
+    if !model
+        .features
+        .feature_sketch_named_point_block_uses
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_sketch_named_point_block_uses",
-            &feature_sketch_named_point_block_uses,
+            &model.features.feature_sketch_named_point_block_uses,
         )?;
     }
-    if !feature_sketch_preceding_named_point_uses.is_empty() {
+    if !model
+        .features
+        .feature_sketch_preceding_named_point_uses
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_sketch_preceding_named_point_uses",
-            &feature_sketch_preceding_named_point_uses,
+            &model.features.feature_sketch_preceding_named_point_uses,
         )?;
     }
-    if !feature_sketch_point_uses.is_empty() {
-        namespace.set_arena("feature_sketch_point_uses", &feature_sketch_point_uses)?;
+    if !model.features.feature_sketch_point_uses.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_point_uses",
+            &model.features.feature_sketch_point_uses,
+        )?;
     }
-    if !feature_sketch_datum_csys_dependencies.is_empty() {
+    if !model
+        .features
+        .feature_sketch_datum_csys_dependencies
+        .is_empty()
+    {
         namespace.set_arena(
             "feature_sketch_datum_csys_dependencies",
-            &feature_sketch_datum_csys_dependencies,
+            &model.features.feature_sketch_datum_csys_dependencies,
         )?;
     }
-    if !feature_boolean_operations.is_empty() {
-        namespace.set_arena("feature_boolean_operations", &feature_boolean_operations)?;
+    if !model.features.feature_boolean_operations.is_empty() {
+        namespace.set_arena(
+            "feature_boolean_operations",
+            &model.features.feature_boolean_operations,
+        )?;
     }
-    if !expression_declarations.is_empty() {
-        namespace.set_arena("expression_declarations", &expression_declarations)?;
+    if !model.om.expression_declarations.is_empty() {
+        namespace.set_arena("expression_declarations", &model.om.expression_declarations)?;
     }
-    if !data_block_object_frames.is_empty() {
-        namespace.set_arena("data_block_object_frames", &data_block_object_frames)?;
+    if !model.features.data_block_object_frames.is_empty() {
+        namespace.set_arena(
+            "data_block_object_frames",
+            &model.features.data_block_object_frames,
+        )?;
     }
-    if !expressions.is_empty() {
-        namespace.set_arena("expressions", &expressions)?;
+    if !model.om.expressions.is_empty() {
+        namespace.set_arena("expressions", &model.om.expressions)?;
     }
-    if !classes.is_empty() {
-        namespace.set_arena("class_definitions", &classes)?;
+    if !model.om.classes.is_empty() {
+        namespace.set_arena("class_definitions", &model.om.classes)?;
     }
-    if !fields.is_empty() {
-        namespace.set_arena("field_definitions", &fields)?;
+    if !model.om.fields.is_empty() {
+        namespace.set_arena("field_definitions", &model.om.fields)?;
     }
-    if !object_records.is_empty() {
-        namespace.set_arena("object_records", &object_records)?;
+    if !model.om.object_records.is_empty() {
+        namespace.set_arena("object_records", &model.om.object_records)?;
     }
-    if !rmfastload_object_id_tables.is_empty() {
-        namespace.set_arena("rmfastload_object_id_tables", &rmfastload_object_id_tables)?;
+    if !model.om.rmfastload_object_id_tables.is_empty() {
+        namespace.set_arena(
+            "rmfastload_object_id_tables",
+            &model.om.rmfastload_object_id_tables,
+        )?;
     }
-    if !rmfastload_object_ids.is_empty() {
-        namespace.set_arena("rmfastload_object_ids", &rmfastload_object_ids)?;
+    if !model.om.rmfastload_object_ids.is_empty() {
+        namespace.set_arena("rmfastload_object_ids", &model.om.rmfastload_object_ids)?;
     }
-    if !data_blocks.is_empty() {
-        namespace.set_arena("data_blocks", &data_blocks)?;
+    if !model.om.data_blocks.is_empty() {
+        namespace.set_arena("data_blocks", &model.om.data_blocks)?;
     }
-    if !data_block_control_values.is_empty() {
-        namespace.set_arena("data_block_control_values", &data_block_control_values)?;
+    if !model.om.data_block_control_values.is_empty() {
+        namespace.set_arena(
+            "data_block_control_values",
+            &model.om.data_block_control_values,
+        )?;
     }
-    if !data_block_control_class_references.is_empty() {
+    if !model.om.data_block_control_class_references.is_empty() {
         namespace.set_arena(
             "data_block_control_class_references",
-            &data_block_control_class_references,
+            &model.om.data_block_control_class_references,
         )?;
     }
-    if !data_block_control_index_values.is_empty() {
+    if !model.om.data_block_control_index_values.is_empty() {
         namespace.set_arena(
             "data_block_control_index_values",
-            &data_block_control_index_values,
+            &model.om.data_block_control_index_values,
         )?;
     }
-    if !data_block_control_references.is_empty() {
+    if !model.om.data_block_control_references.is_empty() {
         namespace.set_arena(
             "data_block_control_references",
-            &data_block_control_references,
+            &model.om.data_block_control_references,
         )?;
     }
-    if !data_block_control_handle_pairs.is_empty() {
+    if !model.om.data_block_control_handle_pairs.is_empty() {
         namespace.set_arena(
             "data_block_control_handle_pairs",
-            &data_block_control_handle_pairs,
+            &model.om.data_block_control_handle_pairs,
         )?;
     }
-    if !data_block_references.is_empty() {
-        namespace.set_arena("data_block_references", &data_block_references)?;
+    if !model.om.data_block_references.is_empty() {
+        namespace.set_arena("data_block_references", &model.om.data_block_references)?;
     }
-    if !data_block_counted_index_lanes.is_empty() {
+    if !model.om.data_block_counted_index_lanes.is_empty() {
         namespace.set_arena(
             "data_block_counted_index_lanes",
-            &data_block_counted_index_lanes,
+            &model.om.data_block_counted_index_lanes,
         )?;
     }
-    if !data_block_abr_reference_lanes.is_empty() {
+    if !model.om.data_block_abr_reference_lanes.is_empty() {
         namespace.set_arena(
             "data_block_abr_reference_lanes",
-            &data_block_abr_reference_lanes,
+            &model.om.data_block_abr_reference_lanes,
         )?;
     }
-    if !data_block_index_rows.is_empty() {
-        namespace.set_arena("data_block_index_rows", &data_block_index_rows)?;
+    if !model.om.data_block_index_rows.is_empty() {
+        namespace.set_arena("data_block_index_rows", &model.om.data_block_index_rows)?;
     }
-    if !data_block_linked_index_rows.is_empty() {
+    if !model.om.data_block_linked_index_rows.is_empty() {
         namespace.set_arena(
             "data_block_linked_index_rows",
-            &data_block_linked_index_rows,
+            &model.om.data_block_linked_index_rows,
         )?;
     }
-    if !data_block_target_index_rows.is_empty() {
+    if !model.om.data_block_target_index_rows.is_empty() {
         namespace.set_arena(
             "data_block_target_index_rows",
-            &data_block_target_index_rows,
+            &model.om.data_block_target_index_rows,
         )?;
     }
-    if !data_block_column_index_tables.is_empty() {
+    if !model.om.data_block_column_index_tables.is_empty() {
         namespace.set_arena(
             "data_block_column_index_tables",
-            &data_block_column_index_tables,
+            &model.om.data_block_column_index_tables,
         )?;
     }
-    if !feature_input_column_row_uses.is_empty() {
+    if !model.features.feature_input_column_row_uses.is_empty() {
         namespace.set_arena(
             "feature_input_column_row_uses",
-            &feature_input_column_row_uses,
+            &model.features.feature_input_column_row_uses,
         )?;
     }
-    if !feature_input_column_targets.is_empty() {
+    if !model.features.feature_input_column_targets.is_empty() {
         namespace.set_arena(
             "feature_input_column_targets",
-            &feature_input_column_targets,
+            &model.features.feature_input_column_targets,
         )?;
     }
-    if !feature_parameter_bindings.is_empty() {
-        namespace.set_arena("feature_parameter_bindings", &feature_parameter_bindings)?;
+    if !model.features.feature_parameter_bindings.is_empty() {
+        namespace.set_arena(
+            "feature_parameter_bindings",
+            &model.features.feature_parameter_bindings,
+        )?;
     }
-    if !feature_parameter_uses.is_empty() {
-        namespace.set_arena("feature_parameter_uses", &feature_parameter_uses)?;
+    if !model.features.feature_parameter_uses.is_empty() {
+        namespace.set_arena(
+            "feature_parameter_uses",
+            &model.features.feature_parameter_uses,
+        )?;
     }
-    if !store_headers.is_empty() {
-        namespace.set_arena("store_headers", &store_headers)?;
+    if !model.om.store_headers.is_empty() {
+        namespace.set_arena("store_headers", &model.om.store_headers)?;
     }
-    if !string_values.is_empty() {
-        namespace.set_arena("string_values", &string_values)?;
+    if !model.om.string_values.is_empty() {
+        namespace.set_arena("string_values", &model.om.string_values)?;
     }
-    if !object_references.is_empty() {
-        namespace.set_arena("object_references", &object_references)?;
+    if !model.om.object_references.is_empty() {
+        namespace.set_arena("object_references", &model.om.object_references)?;
     }
-    if !persistent_handles.is_empty() {
-        namespace.set_arena("persistent_handles", &persistent_handles)?;
+    if !model.om.persistent_handles.is_empty() {
+        namespace.set_arena("persistent_handles", &model.om.persistent_handles)?;
     }
-    if !configurations.is_empty() {
-        namespace.set_arena("configurations", &configurations)?;
+    if !model.om.configurations.is_empty() {
+        namespace.set_arena("configurations", &model.om.configurations)?;
     }
-    if !configuration_attribute_uses.is_empty() {
+    if !model.om.configuration_attribute_uses.is_empty() {
         namespace.set_arena(
             "configuration_attribute_uses",
-            &configuration_attribute_uses,
+            &model.om.configuration_attribute_uses,
         )?;
     }
-    if !part_attributes.is_empty() {
-        namespace.set_arena("part_attributes", &part_attributes)?;
+    if !model.om.part_attributes.is_empty() {
+        namespace.set_arena("part_attributes", &model.om.part_attributes)?;
     }
-    if !external_references.is_empty() {
-        namespace.set_arena("external_references", &external_references)?;
+    if !model.om.external_references.is_empty() {
+        namespace.set_arena("external_references", &model.om.external_references)?;
     }
-    if !external_reference_records.is_empty() {
-        namespace.set_arena("external_reference_records", &external_reference_records)?;
+    if !model.om.external_reference_records.is_empty() {
+        namespace.set_arena(
+            "external_reference_records",
+            &model.om.external_reference_records,
+        )?;
     }
-    if !external_reference_indexed_records.is_empty() {
+    if !model.om.external_reference_indexed_records.is_empty() {
         namespace.set_arena(
             "external_reference_indexed_records",
-            &external_reference_indexed_records,
+            &model.om.external_reference_indexed_records,
         )?;
     }
-    if !external_reference_empty_records.is_empty() {
+    if !model.om.external_reference_empty_records.is_empty() {
         namespace.set_arena(
             "external_reference_empty_records",
-            &external_reference_empty_records,
+            &model.om.external_reference_empty_records,
         )?;
     }
-    if !external_reference_tail_reference_pairs.is_empty() {
+    if !model.om.external_reference_tail_reference_pairs.is_empty() {
         namespace.set_arena(
             "external_reference_tail_reference_pairs",
-            &external_reference_tail_reference_pairs,
+            &model.om.external_reference_tail_reference_pairs,
         )?;
     }
-    if !external_reference_record_string_uses.is_empty() {
+    if !model.om.external_reference_record_string_uses.is_empty() {
         namespace.set_arena(
             "external_reference_record_string_uses",
-            &external_reference_record_string_uses,
+            &model.om.external_reference_record_string_uses,
         )?;
     }
-    if !external_reference_record_children.is_empty() {
+    if !model.om.external_reference_record_children.is_empty() {
         namespace.set_arena(
             "external_reference_record_children",
-            &external_reference_record_children,
+            &model.om.external_reference_record_children,
         )?;
     }
-    if !material_texture_assets.is_empty() {
-        namespace.set_arena("material_texture_assets", &material_texture_assets)?;
+    if !model.om.material_texture_assets.is_empty() {
+        namespace.set_arena("material_texture_assets", &model.om.material_texture_assets)?;
     }
-    if !material_texture_catalog_entries.is_empty() {
+    if !model.om.material_texture_catalog_entries.is_empty() {
         namespace.set_arena(
             "material_texture_catalog_entries",
-            &material_texture_catalog_entries,
+            &model.om.material_texture_catalog_entries,
         )?;
     }
     Ok(())
@@ -10515,89 +10097,6 @@ pub(crate) fn attach_parasolid_topology_numeric_attributes(
         .sort_by(|first, second| first.id.0.cmp(&second.id.0));
 }
 
-#[derive(Clone, Copy)]
-struct FeatureOperationSources<'a> {
-    labels: &'a [crate::native::FeatureOperationLabel],
-    booleans: &'a [crate::native::FeatureBooleanOperation],
-    body_references: &'a [crate::native::FeatureBodyReference],
-    body_reference_occurrences: &'a [crate::native::FeatureBodyReferenceOccurrence],
-    input_blocks: &'a [crate::native::FeatureInputBlock],
-    input_block_identity_groups: &'a [crate::native::FeatureInputBlockIdentityGroup],
-    datum_csys_constructions: &'a [crate::native::FeatureDatumCsysConstruction],
-    datum_csys_payloads: &'a [crate::native::FeatureDatumCsysPayload],
-    datum_csys_block_uses: &'a [crate::native::FeatureDatumCsysBlockUse],
-    datum_plane_headers: &'a [crate::native::FeatureDatumPlaneHeader],
-    datum_plane_block_uses: &'a [crate::native::FeatureDatumPlaneBlockUse],
-    datum_plane_payloads: &'a [crate::native::FeatureDatumPlanePayload],
-    datum_plane_csys_identity_uses: &'a [crate::native::FeatureDatumPlaneCsysIdentityUse],
-    sketch_datum_csys_dependencies: &'a [crate::native::FeatureSketchDatumCsysDependency],
-    sketch_references: &'a [crate::native::FeatureSketchReference],
-    projected_curve_references: &'a [crate::native::FeatureProjectedCurveReference],
-    projected_curve_construction_payloads:
-        &'a [crate::native::FeatureProjectedCurveConstructionPayload],
-    projected_curve_construction_strings:
-        &'a [crate::native::FeatureProjectedCurveConstructionString],
-    pattern_references: &'a [crate::native::FeaturePatternReference],
-    pattern_construction_payloads: &'a [crate::native::FeaturePatternConstructionPayload],
-    pattern_construction_strings: &'a [crate::native::FeaturePatternConstructionString],
-    pattern_construction_fixed_lanes: &'a [crate::native::FeaturePatternConstructionFixedLane],
-    pattern_transform_lanes: &'a [crate::native::FeaturePatternTransformLane],
-    point_construction_headers: &'a [crate::native::FeaturePointConstructionHeader],
-    point_construction_scalar_lanes: &'a [crate::native::FeaturePointConstructionScalarLane],
-    draft_construction_references: &'a [crate::native::FeatureDraftConstructionReference],
-    draft_construction_index_lanes: &'a [crate::native::FeatureDraftConstructionIndexLane],
-    draft_construction_payloads: &'a [crate::native::FeatureDraftConstructionPayload],
-    draft_construction_graph_payloads: &'a [crate::native::FeatureDraftConstructionGraphPayload],
-    draft_construction_fixed_lanes: &'a [crate::native::FeatureDraftConstructionFixedLane],
-    draft_construction_binary32_lanes: &'a [crate::native::FeatureDraftConstructionBinary32Lane],
-    draft_construction_graph_strings: &'a [crate::native::FeatureDraftConstructionGraphString],
-    draft_construction_identity_frames:
-        &'a [crate::native::FeatureDraftConstructionIdentityFrame],
-    draft_construction_terminal_lanes: &'a [crate::native::FeatureDraftConstructionTerminalLane],
-    surface_construction_references: &'a [crate::native::FeatureSurfaceConstructionReference],
-    surface_construction_payloads: &'a [crate::native::FeatureSurfaceConstructionPayload],
-    surface_construction_scalar_pairs: &'a [crate::native::FeatureSurfaceConstructionScalarPair],
-    surface_construction_strings: &'a [crate::native::FeatureSurfaceConstructionString],
-    surface_construction_branches: &'a [crate::native::FeatureSurfaceConstructionBranch],
-    sketch_named_point_block_uses: &'a [crate::native::FeatureSketchNamedPointBlockUse],
-    sketch_preceding_named_point_uses: &'a [crate::native::FeatureSketchPrecedingNamedPointUse],
-    sketch_point_uses: &'a [crate::native::FeatureSketchPointUse],
-    sketch_point_groups: &'a [crate::native::FeatureSketchPointGroup],
-    extrude_profile_references: &'a [crate::native::FeatureExtrudeProfileReference],
-    extrude_construction_profiles: &'a [crate::native::FeatureExtrudeConstructionProfile],
-    operation_body_operands: &'a [crate::native::FeatureOperationBodyOperand],
-    sketch_construction_inputs: &'a [crate::native::FeatureSketchConstructionInputs],
-    sketch_records: &'a [crate::native::FeatureSketchRecord],
-    sketch_construction_payloads: &'a [crate::native::FeatureSketchConstructionPayload],
-    sketch_coordinate_pairs: &'a [crate::native::FeatureSketchPayloadCoordinatePair],
-    sketch_fixed_pairs: &'a [crate::native::FeatureSketchPayloadFixedPair],
-    sketch_fixed_points: &'a [crate::native::FeatureSketchFixedPoint],
-    block_constructions: &'a [crate::native::FeatureBlockConstruction],
-    block_construction_payloads: &'a [crate::native::FeatureBlockConstructionPayload],
-    block_dimensions: &'a [crate::native::FeatureBlockDimensions],
-    block_payload_points: &'a [crate::native::FeatureBlockPayloadPoint],
-    block_payload_point_groups: &'a [crate::native::FeatureBlockPayloadPointGroup],
-    extrude_32_constructions: &'a [crate::native::FeatureExtrude32Construction],
-    extrude_payload_headers: &'a [crate::native::FeatureExtrudePayloadHeader],
-    extrude_payload_footers: &'a [crate::native::FeatureExtrudePayloadFooter],
-    extrude_payload_32_branches: &'a [crate::native::FeatureExtrudePayload32Branch],
-    operation_body_scalar_triples: &'a [crate::native::FeatureOperationBodyScalarTriple],
-    operation_body_members: &'a [crate::native::FeatureOperationBodyMember],
-    operation_body_11_continuations: &'a [crate::native::FeatureOperationBody11Continuation],
-    operation_body_reference_lanes: &'a [crate::native::FeatureOperationBodyReferenceLane],
-    parameter_bindings: &'a [crate::native::FeatureParameterBinding],
-    parameter_uses: &'a [crate::native::FeatureParameterUse],
-    expressions: &'a [crate::native::Expression],
-    operation_records: &'a [crate::native::FeatureOperationRecord],
-    payload_strings: &'a [crate::native::FeaturePayloadString],
-    simple_hole_templates: &'a [crate::native::FeatureSimpleHoleTemplate],
-    simple_hole_repeated_scalar_lanes: &'a [crate::native::FeatureSimpleHoleRepeatedScalarLane],
-    simple_hole_repeated_scalar_lane_block_references:
-        &'a [crate::native::FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
-    simple_hole_construction_groups: &'a [crate::native::FeatureSimpleHoleConstructionGroup],
-    body_bindings: &'a [crate::native::SegmentBodyBinding],
-}
-
 pub(crate) fn preceding_operation_dependency(
     operation: &str,
     consumer_position: usize,
@@ -10631,86 +10130,110 @@ pub(crate) fn projects_neutral_feature(label: &str) -> bool {
 
 fn attach_feature_operations(
     ir: &mut CadIr,
-    sources: &FeatureOperationSources<'_>,
+    features: &crate::native::FeatureRecords,
+    expressions: &[crate::native::Expression],
+    body_bindings: &[crate::native::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
 ) {
-    let FeatureOperationSources {
-        labels,
-        booleans,
-        body_references,
-        body_reference_occurrences,
-        input_blocks,
-        input_block_identity_groups,
-        datum_csys_constructions,
-        datum_csys_payloads,
-        datum_csys_block_uses,
-        datum_plane_headers,
-        datum_plane_block_uses,
-        datum_plane_payloads,
-        datum_plane_csys_identity_uses,
-        sketch_datum_csys_dependencies,
-        sketch_references,
-        projected_curve_references,
-        projected_curve_construction_payloads,
-        projected_curve_construction_strings,
-        pattern_references,
-        pattern_construction_payloads,
-        pattern_construction_strings,
-        pattern_construction_fixed_lanes,
-        pattern_transform_lanes,
-        point_construction_headers,
-        point_construction_scalar_lanes,
-        draft_construction_references,
-        draft_construction_index_lanes,
-        draft_construction_payloads,
-        draft_construction_graph_payloads,
-        draft_construction_fixed_lanes,
-        draft_construction_binary32_lanes,
-        draft_construction_graph_strings,
-        draft_construction_identity_frames,
-        draft_construction_terminal_lanes,
-        surface_construction_references,
-        surface_construction_payloads,
-        surface_construction_scalar_pairs,
-        surface_construction_strings,
-        surface_construction_branches,
-        sketch_named_point_block_uses,
-        sketch_preceding_named_point_uses,
-        sketch_point_uses,
-        sketch_point_groups,
-        extrude_profile_references,
-        extrude_construction_profiles,
-        operation_body_operands,
-        sketch_construction_inputs,
-        sketch_records,
-        sketch_construction_payloads,
-        sketch_coordinate_pairs,
-        sketch_fixed_pairs,
-        sketch_fixed_points,
-        block_constructions,
-        block_construction_payloads,
-        block_dimensions,
-        block_payload_points,
-        block_payload_point_groups,
-        extrude_32_constructions,
-        extrude_payload_headers,
-        extrude_payload_footers,
-        extrude_payload_32_branches,
-        operation_body_scalar_triples,
-        operation_body_members,
-        operation_body_11_continuations,
-        operation_body_reference_lanes,
-        parameter_bindings,
-        parameter_uses,
-        expressions,
-        operation_records,
-        payload_strings,
-        simple_hole_templates,
-        simple_hole_repeated_scalar_lanes,
-        simple_hole_repeated_scalar_lane_block_references,
-        simple_hole_construction_groups,
-        body_bindings,
-    } = *sources;
+    let labels = features.feature_operation_labels.as_slice();
+    let booleans = features.feature_boolean_operations.as_slice();
+    let body_references = features.feature_body_references.as_slice();
+    let body_reference_occurrences = features.feature_body_reference_occurrences.as_slice();
+    let input_blocks = features.feature_input_blocks.as_slice();
+    let input_block_identity_groups = features.feature_input_block_identity_groups.as_slice();
+    let datum_csys_constructions = features.feature_datum_csys_constructions.as_slice();
+    let datum_csys_payloads = features.feature_datum_csys_payloads.as_slice();
+    let datum_csys_block_uses = features.feature_datum_csys_block_uses.as_slice();
+    let datum_plane_headers = features.feature_datum_plane_headers.as_slice();
+    let datum_plane_block_uses = features.feature_datum_plane_block_uses.as_slice();
+    let datum_plane_payloads = features.feature_datum_plane_payloads.as_slice();
+    let datum_plane_csys_identity_uses = features.feature_datum_plane_csys_identity_uses.as_slice();
+    let sketch_datum_csys_dependencies = features.feature_sketch_datum_csys_dependencies.as_slice();
+    let sketch_references = features.feature_sketch_references.as_slice();
+    let projected_curve_references = features.feature_projected_curve_references.as_slice();
+    let projected_curve_construction_payloads = features
+        .feature_projected_curve_construction_payloads
+        .as_slice();
+    let projected_curve_construction_strings = features
+        .feature_projected_curve_construction_strings
+        .as_slice();
+    let pattern_references = features.feature_pattern_references.as_slice();
+    let pattern_construction_payloads = features.feature_pattern_construction_payloads.as_slice();
+    let pattern_construction_strings = features.feature_pattern_construction_strings.as_slice();
+    let pattern_construction_fixed_lanes =
+        features.feature_pattern_construction_fixed_lanes.as_slice();
+    let pattern_transform_lanes = features.feature_pattern_transform_lanes.as_slice();
+    let point_construction_headers = features.feature_point_construction_headers.as_slice();
+    let point_construction_scalar_lanes =
+        features.feature_point_construction_scalar_lanes.as_slice();
+    let draft_construction_references = features.feature_draft_construction_references.as_slice();
+    let draft_construction_index_lanes = features.feature_draft_construction_index_lanes.as_slice();
+    let draft_construction_payloads = features.feature_draft_construction_payloads.as_slice();
+    let draft_construction_graph_payloads = features
+        .feature_draft_construction_graph_payloads
+        .as_slice();
+    let draft_construction_fixed_lanes = features.feature_draft_construction_fixed_lanes.as_slice();
+    let draft_construction_binary32_lanes = features
+        .feature_draft_construction_binary32_lanes
+        .as_slice();
+    let draft_construction_graph_strings =
+        features.feature_draft_construction_graph_strings.as_slice();
+    let draft_construction_identity_frames = features
+        .feature_draft_construction_identity_frames
+        .as_slice();
+    let draft_construction_terminal_lanes = features
+        .feature_draft_construction_terminal_lanes
+        .as_slice();
+    let surface_construction_references =
+        features.feature_surface_construction_references.as_slice();
+    let surface_construction_payloads = features.feature_surface_construction_payloads.as_slice();
+    let surface_construction_scalar_pairs = features
+        .feature_surface_construction_scalar_pairs
+        .as_slice();
+    let surface_construction_strings = features.feature_surface_construction_strings.as_slice();
+    let surface_construction_branches = features.feature_surface_construction_branches.as_slice();
+    let sketch_named_point_block_uses = features.feature_sketch_named_point_block_uses.as_slice();
+    let sketch_preceding_named_point_uses = features
+        .feature_sketch_preceding_named_point_uses
+        .as_slice();
+    let sketch_point_uses = features.feature_sketch_point_uses.as_slice();
+    let sketch_point_groups = features.feature_sketch_point_groups.as_slice();
+    let extrude_profile_references = features.feature_extrude_profile_references.as_slice();
+    let extrude_construction_profiles = features.feature_extrude_construction_profiles.as_slice();
+    let operation_body_operands = features.feature_operation_body_operands.as_slice();
+    let sketch_construction_inputs = features.feature_sketch_construction_inputs.as_slice();
+    let sketch_records = features.feature_sketch_records.as_slice();
+    let sketch_construction_payloads = features.feature_sketch_construction_payloads.as_slice();
+    let sketch_coordinate_pairs = features.feature_sketch_payload_coordinate_pairs.as_slice();
+    let sketch_fixed_pairs = features.feature_sketch_payload_fixed_pairs.as_slice();
+    let sketch_fixed_points = features.feature_sketch_fixed_points.as_slice();
+    let block_constructions = features.feature_block_constructions.as_slice();
+    let block_construction_payloads = features.feature_block_construction_payloads.as_slice();
+    let block_dimensions = features.feature_block_dimensions.as_slice();
+    let block_payload_points = features.feature_block_payload_points.as_slice();
+    let block_payload_point_groups = features.feature_block_payload_point_groups.as_slice();
+    let extrude_32_constructions = features.feature_extrude_32_constructions.as_slice();
+    let extrude_payload_headers = features.feature_extrude_payload_headers.as_slice();
+    let extrude_payload_footers = features.feature_extrude_payload_footers.as_slice();
+    let extrude_payload_32_branches = features.feature_extrude_payload_32_branches.as_slice();
+    let operation_body_scalar_triples = features.feature_operation_body_scalar_triples.as_slice();
+    let operation_body_members = features.feature_operation_body_members.as_slice();
+    let operation_body_11_continuations =
+        features.feature_operation_body_11_continuations.as_slice();
+    let operation_body_reference_lanes = features.feature_operation_body_reference_lanes.as_slice();
+    let parameter_bindings = features.feature_parameter_bindings.as_slice();
+    let parameter_uses = features.feature_parameter_uses.as_slice();
+    let operation_records = features.feature_operation_records.as_slice();
+    let payload_strings = features.feature_payload_strings.as_slice();
+    let simple_hole_templates = features.feature_simple_hole_templates.as_slice();
+    let simple_hole_repeated_scalar_lanes = features
+        .feature_simple_hole_repeated_scalar_lanes
+        .as_slice();
+    let simple_hole_repeated_scalar_lane_block_references = features
+        .feature_simple_hole_repeated_scalar_lane_block_references
+        .as_slice();
+    let simple_hole_construction_groups =
+        features.feature_simple_hole_construction_groups.as_slice();
     let stream = annotations.stream("nx:container");
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
@@ -14176,8 +13699,15 @@ fn build_metadata_ir(
             unknowns.push(unknown);
         }
     }
-    attach_native_object_model(&mut ir, scan, &mut annotations, &mut unknowns)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    let native_model = crate::native::NativeModel::extract(&scan.container, &scan.streams);
+    attach_native_object_model(
+        &mut ir,
+        &native_model,
+        scan,
+        &mut annotations,
+        &mut unknowns,
+    )
+    .map_err(|error| CodecError::Malformed(error.to_string()))?;
     Ok((ir, annotations.build(), unknowns))
 }
 

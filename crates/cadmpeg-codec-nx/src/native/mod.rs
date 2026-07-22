@@ -13,12 +13,14 @@ use crate::parasolid::{Stream, StreamKind};
 
 mod display_jt;
 mod features;
+mod model;
 mod om;
 mod parasolid;
 mod segments;
 
 pub use display_jt::*;
 pub use features::*;
+pub(crate) use model::*;
 pub use om::*;
 pub use parasolid::*;
 pub use segments::*;
