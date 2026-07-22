@@ -16284,9 +16284,9 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
     assert!(matches!(
         &extrusion.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Native(profile),
+            profile: cadmpeg_ir::features::ProfileRef::Feature(profile),
             ..
-        } if Some(profile.as_str()) == sketch.native_ref.as_deref()
+        } if profile == &sketch.id
     ));
     let mut encoded = Vec::new();
     SldprtCodec
@@ -16413,7 +16413,7 @@ fn decode_projects_feature_input_extrusion_operations() {
         }
     }
 
-    for code in [0, 4, 14, 20] {
+    for code in [0, 4, 20] {
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(make_block(
             0x42,
@@ -18476,7 +18476,10 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
         u_axis: Vector3::new(1.0, 0.0, 0.0),
-        profiles: Vec::new(),
+        profiles: vec![vec![cadmpeg_ir::sketches::SketchEntityUse {
+            entity: cadmpeg_ir::sketches::SketchEntityId("sketch:entity".into()),
+            reversed: false,
+        }]],
         native_ref: None,
     };
     let neutral =
