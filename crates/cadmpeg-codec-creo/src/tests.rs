@@ -5035,12 +5035,10 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     assert_eq!(parameters[2].value, None);
     assert_eq!(native.fields["assignments"][2]["value"]["value"], 2_000.0);
     assert_eq!(native.fields["assignments"][2]["value"]["length_power"], -1);
-    assert_eq!(
-        parameters[3].value,
-        Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle(2.0f64.atan())
-        ))
-    );
+    let Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) = &parameters[3].value else {
+        panic!("angle parameter");
+    };
+    assert!((angle.0 - 2.0f64.atan()).abs() < 1e-12);
     assert_eq!(parameters[4].properties["declared_unit"], "C");
     assert_eq!(
         parameters[4].properties["evaluated_dimension"],

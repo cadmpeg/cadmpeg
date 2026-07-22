@@ -4292,14 +4292,14 @@ mod tests {
                 "{expression}"
             );
         }
-        assert_eq!(
-            evaluate_relation_expression(
-                "atan2(1[cm],5[mm])",
-                &values,
-                RelationEvaluationContext::default(),
-            ),
-            Some(CurveExpressionValue::Angle(2.0f64.atan().to_degrees()))
-        );
+        let Some(CurveExpressionValue::Angle(angle)) = evaluate_relation_expression(
+            "atan2(1[cm],5[mm])",
+            &values,
+            RelationEvaluationContext::default(),
+        ) else {
+            panic!("dimensioned atan2 angle");
+        };
+        assert!((angle - 2.0f64.atan().to_degrees()).abs() < 1e-12);
         for incompatible in [
             "if(1,1[mm],1[s])",
             "bound(1[mm],0[s],2[mm])",
