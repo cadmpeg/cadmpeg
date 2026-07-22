@@ -825,6 +825,13 @@ When exactly one coordinate is held constant across both corners, its axis is th
 The held coordinate establishes only the plane equation. It does not establish
 the parameter-chart origin or either parameter direction.
 
+A compound-close positional plane body can carry the two model-space outline
+corners as one contiguous six-scalar frame immediately after `00 0c 9a`, even
+when structural bytes separate earlier scalar frames. Slots zero through two are the first XYZ corner and
+slots three through five are the second. Exactly one equal coordinate defines
+the held axis and offset under the same plane rule. Zero or multiple equal
+coordinates leave the plane unresolved.
+
 For a generated section plane selected through the parent-datum rule, multiple
 held envelope coordinates are filtered against the orientation plane. The
 unique perpendicular held axis defines the section plane.

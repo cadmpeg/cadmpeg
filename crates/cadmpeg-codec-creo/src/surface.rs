@@ -1295,6 +1295,80 @@ pub fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
     result
 }
 
+/// Derive axis-aligned plane equations from complete six-scalar positional
+/// corner frames owned by uniquely identified plane rows.
+#[must_use]
+pub fn positional_frame_planes(
+    parameters: &[SurfaceParameterRecord],
+    rows: &[SurfaceRow],
+) -> Vec<OutlinePlane> {
+    let mut result = Vec::new();
+    for record in parameters {
+        if record.boundary != SurfaceBodyBoundary::CompoundClose
+            || unique_surface_parameter(parameters, record.surface_id) != Some(record)
+            || unique_surface_row(rows, record.surface_id)
+                .is_none_or(|row| row.kind != SurfaceKind::Plane)
+        {
+            continue;
+        }
+        let mut candidates = record
+            .scalar_frames
+            .iter()
+            .filter(|frame| frame.slots.len() == 6)
+            .filter(|frame| {
+                frame.offset >= 3
+                    && record.body.get(frame.offset - 3..frame.offset) == Some(&[0x00, 0x0c, 0x9a])
+            })
+            .filter_map(|frame| {
+                let values = frame
+                    .slots
+                    .iter()
+                    .map(|slot| slot.value)
+                    .collect::<Option<Vec<_>>>()?;
+                values.iter().all(|value| value.is_finite()).then_some(())?;
+                let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
+                let equal = std::array::from_fn::<_, 3, _>(|axis| {
+                    (values[axis] - values[axis + 3]).abs() <= 1e-9 * scale
+                });
+                let held = equal
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(axis, equal)| equal.then_some(axis))
+                    .collect::<Vec<_>>();
+                let [axis] = held.as_slice() else {
+                    return None;
+                };
+                let mut origin = [0.0; 3];
+                origin[*axis] = values[*axis];
+                let mut normal = [0.0; 3];
+                normal[*axis] = 1.0;
+                let u_axis = if *axis == 0 {
+                    [0.0, 1.0, 0.0]
+                } else {
+                    [1.0, 0.0, 0.0]
+                };
+                Some(OutlinePlane {
+                    surface_id: record.surface_id,
+                    origin,
+                    normal,
+                    u_axis,
+                    offset: record.body_offset + frame.offset,
+                })
+            })
+            .collect::<Vec<_>>();
+        candidates.dedup_by(|first, second| {
+            first.origin == second.origin
+                && first.normal == second.normal
+                && first.u_axis == second.u_axis
+        });
+        if let [candidate] = candidates.as_slice() {
+            result.push(candidate.clone());
+        }
+    }
+    result.sort_by_key(|plane| plane.offset);
+    result
+}
+
 /// Place axis-aligned plane outlines whose support frame selects one proven
 /// held coordinate even when other outline-coordinate relations are unresolved.
 #[must_use]
@@ -5772,6 +5846,68 @@ mod tests {
                 offset: 20,
             }]
         );
+    }
+
+    #[test]
+    fn derives_plane_from_unique_six_scalar_positional_frame() {
+        let slot = |value, offset| SurfaceParameterScalar {
+            value: Some(value),
+            raw: vec![offset as u8],
+            offset,
+            length: 1,
+        };
+        let record = SurfaceParameterRecord {
+            surface_id: 41,
+            body: vec![0x00, 0x0c, 0x9a],
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: vec![SurfaceParameterScalarFrame {
+                offset: 3,
+                slots: [8.0, 2.0, -3.0, 8.0, 5.0, 4.0]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(offset, value)| slot(value, offset))
+                    .collect(),
+            }],
+            terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: None,
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: None,
+            boundary: SurfaceBodyBoundary::CompoundClose,
+            offset: 3,
+            body_offset: 11,
+        };
+        let row = SurfaceRow {
+            id: 41,
+            type_byte: SurfaceKind::Plane.canonical_type_byte(),
+            kind: SurfaceKind::Plane,
+            feature_id: 17,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 3,
+        };
+
+        assert_eq!(
+            positional_frame_planes(&[record.clone()], &[row.clone()]),
+            vec![OutlinePlane {
+                surface_id: 41,
+                origin: [8.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                u_axis: [0.0, 1.0, 0.0],
+                offset: 14,
+            }]
+        );
+
+        let mut unmarked = record.clone();
+        unmarked.body[2] = 0x99;
+        assert!(positional_frame_planes(&[unmarked], &[row.clone()]).is_empty());
+
+        let mut ambiguous = record;
+        ambiguous.scalar_frames[0].slots[4].value = Some(2.0);
+        assert!(positional_frame_planes(&[ambiguous], &[row]).is_empty());
     }
 
     #[test]

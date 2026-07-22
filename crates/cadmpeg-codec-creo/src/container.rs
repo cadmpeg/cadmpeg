@@ -245,6 +245,8 @@ pub struct ContainerScan {
     pub cross_section_plane_envelopes: Vec<PlaneEnvelopeRecord>,
     /// Axis-aligned placed planes derived from unambiguous outline corners.
     pub outline_planes: Vec<OutlinePlane>,
+    /// Axis-aligned planes from marker-bound six-scalar positional frames.
+    pub positional_frame_planes: Vec<OutlinePlane>,
     /// Placed planes derived inside the DEPDB cross-section namespace.
     pub cross_section_outline_planes: Vec<OutlinePlane>,
     /// Labeled surface prototypes with fully decoded scalar fields.
@@ -1684,6 +1686,19 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let plane_envelopes = plane_envelopes(&data, &model_geometry_sections);
     let cross_section_plane_envelopes = cross_section_plane_envelopes(&data, &sections);
     let outline_planes = surface::placed_outline_planes(&plane_envelopes, &plane_local_systems);
+    let positional_frame_planes =
+        surface::positional_frame_planes(&surface_parameters, &surface_rows);
+    let mut placement_outline_planes = outline_planes.clone();
+    placement_outline_planes.extend(
+        positional_frame_planes
+            .iter()
+            .filter(|plane| {
+                !outline_planes
+                    .iter()
+                    .any(|outline| outline.surface_id == plane.surface_id)
+            })
+            .cloned(),
+    );
     let cross_section_outline_planes = surface::placed_outline_planes(
         &cross_section_plane_envelopes,
         &cross_section_plane_local_systems,
@@ -1810,7 +1825,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
             datums: &datum_planes,
             surface_rows: &surface_rows,
             model_planes: &plane_local_systems,
-            outline_planes: &outline_planes,
+            outline_planes: &placement_outline_planes,
             plane_envelopes: &plane_envelopes,
             surface_parameters: &surface_parameters,
             geometry_tables: &feature_geometry_tables,
@@ -1852,6 +1867,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         plane_envelopes,
         cross_section_plane_envelopes,
         outline_planes,
+        positional_frame_planes,
         cross_section_outline_planes,
         surface_prototypes,
         surface_prototype_records,

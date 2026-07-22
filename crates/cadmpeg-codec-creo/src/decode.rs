@@ -26875,6 +26875,26 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                 offset: envelope.offset,
             });
     }
+    for plane in &scan.positional_frame_planes {
+        if candidates.contains_key(&plane.surface_id) {
+            continue;
+        }
+        candidates.insert(
+            plane.surface_id,
+            vec![PlaneCandidate {
+                equation: PlaneEquation {
+                    origin: plane.origin,
+                    normal: plane.normal,
+                },
+                chart: Some(PlaneChart {
+                    origin: plane.origin,
+                    normal: plane.normal,
+                    u_axis: plane.u_axis,
+                }),
+                offset: plane.offset,
+            }],
+        );
+    }
     candidates
         .into_iter()
         .filter(|(id, _)| {
@@ -34309,6 +34329,12 @@ fn build_ir(
             continue;
         }
         let tag = if scan
+            .positional_frame_planes
+            .iter()
+            .any(|plane| plane.surface_id == surface_id && plane.offset == offset)
+        {
+            "plane_positional_corner_frame"
+        } else if scan
             .outline_planes
             .iter()
             .any(|outline| outline.surface_id == surface_id && outline.offset == offset)
@@ -35423,6 +35449,16 @@ fn build_ir(
         namespace.version = 1;
         namespace.set_arena("outline_planes", &outline_planes)?;
     }
+    let positional_frame_planes = outline_plane_records(
+        scan,
+        &scan.positional_frame_planes,
+        "creo:surface:positional_frame_plane",
+    );
+    if !positional_frame_planes.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("positional_frame_planes", &positional_frame_planes)?;
+    }
     let cross_section_outline_planes = outline_plane_records(
         scan,
         &scan.cross_section_outline_planes,
@@ -35939,6 +35975,10 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         scan.outline_planes.len().to_string(),
     );
     attributes.insert(
+        "decoded_positional_frame_plane_count".to_string(),
+        scan.positional_frame_planes.len().to_string(),
+    );
+    attributes.insert(
         "decoded_cross_section_outline_plane_count".to_string(),
         scan.cross_section_outline_planes.len().to_string(),
     );
@@ -36317,6 +36357,11 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         .map(|frame| frame.surface_id)
         .collect::<BTreeSet<_>>();
     placed_plane_ids.extend(scan.outline_planes.iter().map(|plane| plane.surface_id));
+    placed_plane_ids.extend(
+        scan.positional_frame_planes
+            .iter()
+            .map(|plane| plane.surface_id),
+    );
     let placed_plane_count = placed_plane_ids.len();
     let first_instance_prototype_surface_count = ir
         .source
