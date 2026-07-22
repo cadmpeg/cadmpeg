@@ -39,6 +39,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::container::{self, ContainerScan};
 use crate::geometry;
 use crate::native::{cgm_source, CatiaNative};
+use crate::solve::UnionFind;
 use crate::topology;
 use crate::variant::Variant;
 
@@ -407,16 +408,16 @@ fn transfer_zero_entity_topology(
     {
         return false;
     }
-    let mut face_parents: Vec<usize> = (0..topology.faces.len()).collect();
+    let mut face_parents = UnionFind::new(topology.faces.len());
     for edge in &edges {
         let left = loop_owner[edge.occurrences[0].loop_index];
         let right = loop_owner[edge.occurrences[1].loop_index];
-        union_indices(&mut face_parents, left, right);
+        face_parents.union(left, right);
     }
     let mut component_by_root = BTreeMap::<usize, usize>::new();
     let mut face_components = Vec::with_capacity(topology.faces.len());
     for face_index in 0..topology.faces.len() {
-        let root = index_root(&mut face_parents, face_index);
+        let root = face_parents.find(face_index);
         let next = component_by_root.len();
         let component = *component_by_root.entry(root).or_insert(next);
         face_components.push(component);
@@ -433,7 +434,7 @@ fn transfer_zero_entity_topology(
                 .iter()
                 .enumerate()
                 .filter_map(|(index, existing)| {
-                    (point_distance(point, *existing) <= TOLERANCE).then_some(index)
+                    (point.distance(*existing) <= TOLERANCE).then_some(index)
                 })
                 .collect();
             pair[slot] = match matches.as_slice() {
@@ -820,14 +821,13 @@ fn transfer_zero_entity_topology(
             let (edge_index, side) = occurrence_edges[&(loop_index, member)];
             let edge = &edges[edge_index];
             let occurrence = edge.occurrence_endpoints[side];
-            let reversed = point_distance(
-                Point3::new(occurrence[0][0], occurrence[0][1], occurrence[0][2]),
-                Point3::new(
+            let reversed = Point3::new(occurrence[0][0], occurrence[0][1], occurrence[0][2])
+                .distance(Point3::new(
                     edge.endpoints[1][0],
                     edge.endpoints[1][1],
                     edge.endpoints[1][2],
-                ),
-            ) <= TOLERANCE;
+                ))
+                <= TOLERANCE;
             let radial = edge.occurrences[1 - side];
             annotate(
                 annotations,
@@ -1205,7 +1205,7 @@ fn solve_e5_plane_frame(
         let Some(v_axis) = unit_vector(v_axis) else {
             continue;
         };
-        if residual > 2e-3 || scalar_product(u_axis, v_axis).abs() > 1e-6 {
+        if residual > 2e-3 || u_axis.dot(v_axis).abs() > 1e-6 {
             continue;
         }
         let Some(normal) = unit_vector(Vector3::new(
@@ -1215,14 +1215,13 @@ fn solve_e5_plane_frame(
         )) else {
             continue;
         };
-        if expected_normal
-            .is_some_and(|expected| scalar_product(normal, expected).abs() < 1.0 - 1e-6)
-        {
+        if expected_normal.is_some_and(|expected| normal.dot(expected).abs() < 1.0 - 1e-6) {
             continue;
         }
-        if !candidates.iter().any(|(_, existing): &(Vector3, Vector3)| {
-            scalar_product(*existing, u_axis) > 1.0 - 1e-8
-        }) {
+        if !candidates
+            .iter()
+            .any(|(_, existing): &(Vector3, Vector3)| (*existing).dot(u_axis) > 1.0 - 1e-8)
+        {
             candidates.push((normal, u_axis));
         }
     }
@@ -1373,10 +1372,6 @@ fn plane_frame_residual(
     })
 }
 
-fn scalar_product(left: Vector3, right: Vector3) -> f64 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
 #[cfg(test)]
 mod chart_tests {
     use super::{
@@ -1386,7 +1381,7 @@ mod chart_tests {
         e5_boundary_curve, e5_occurrence_intersection_context, e5_ownership_plan,
         e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes,
         include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
-        neutral_model_is_admissible, ordered_range, parameter_ranges_reversed, point_distance,
+        neutral_model_is_admissible, ordered_range, parameter_ranges_reversed,
         point_on_known_surface, point_on_standard_face, quintic_jet_pcurve, rational_pcurve_arc,
         resolve_standard_endpoint_pairs, reverse_e5_pcurve_geometry,
         standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
@@ -2063,8 +2058,8 @@ mod chart_tests {
                 3.0
             ))
         );
-        assert!(point_distance(endpoints[0], Point3::new(2.0, 0.0, 3.0)) < 1e-12);
-        assert!(point_distance(endpoints[1], Point3::new(0.0, 2.0, 3.0)) < 1e-12);
+        assert!(endpoints[0].distance(Point3::new(2.0, 0.0, 3.0)) < 1e-12);
+        assert!(endpoints[1].distance(Point3::new(0.0, 2.0, 3.0)) < 1e-12);
     }
 
     #[test]
@@ -2102,8 +2097,8 @@ mod chart_tests {
         let expected = [Point2::new(2.4, 2.0), Point2::new(2.0, 3.0)].map(|uv| {
             cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v).expect("torus point")
         });
-        assert!(point_distance(endpoints[0], expected[0]) < 1e-12);
-        assert!(point_distance(endpoints[1], expected[1]) < 1e-12);
+        assert!(endpoints[0].distance(expected[0]) < 1e-12);
+        assert!(endpoints[1].distance(expected[1]) < 1e-12);
     }
 
     #[test]
@@ -3100,10 +3095,12 @@ fn transfer_e5_topology(
                 ) else {
                     return false;
                 };
-                let forward =
-                    point_distance(endpoints[0], *start).max(point_distance(endpoints[1], *end));
-                let reverse_error =
-                    point_distance(endpoints[0], *end).max(point_distance(endpoints[1], *start));
+                let forward = endpoints[0]
+                    .distance(*start)
+                    .max(endpoints[1].distance(*end));
+                let reverse_error = endpoints[0]
+                    .distance(*end)
+                    .max(endpoints[1].distance(*start));
                 let reversed = e5_stored_pcurve_reversed(topology, edge_ref, pcurve_ref, range)
                     .or_else(|| {
                         ((forward - reverse_error).abs() > 1e-9).then_some(reverse_error < forward)
@@ -3205,10 +3202,12 @@ fn transfer_e5_topology(
             else {
                 continue;
             };
-            let forward =
-                point_distance(endpoints[0], *start).max(point_distance(endpoints[1], *end));
-            let reverse_error =
-                point_distance(endpoints[0], *end).max(point_distance(endpoints[1], *start));
+            let forward = endpoints[0]
+                .distance(*start)
+                .max(endpoints[1].distance(*end));
+            let reverse_error = endpoints[0]
+                .distance(*end)
+                .max(endpoints[1].distance(*start));
             let reversed = e5_stored_pcurve_reversed(topology, edge_ref, *pcurve_ref, range)
                 .or_else(|| {
                     ((forward - reverse_error).abs() > 1e-9).then_some(reverse_error < forward)
@@ -3858,12 +3857,10 @@ fn e5_boundary_curve(
         crate::e5::E5Pcurve::Circle { center, radius, .. },
     ) = (surface, native_pcurve)
     {
-        let v_axis = cross_vector(*normal, *u_axis);
-        let center = add_scaled_point(
-            add_scaled_point(*origin, *u_axis, center[0]),
-            v_axis,
-            center[1],
-        );
+        let v_axis = (*normal).cross(*u_axis);
+        let center = (*origin)
+            .translated(*u_axis, center[0])
+            .translated(v_axis, center[1]);
         return Some((
             CurveGeometry::Circle {
                 center,
@@ -3890,7 +3887,7 @@ fn e5_boundary_curve(
         },
     ) = (surface, native_pcurve, pcurve)
     {
-        let v_axis = cross_vector(*normal, *u_axis);
+        let v_axis = (*normal).cross(*u_axis);
         return Some((
             CurveGeometry::Nurbs(NurbsCurve {
                 degree: *degree,
@@ -3898,11 +3895,9 @@ fn e5_boundary_curve(
                 control_points: control_points
                     .iter()
                     .map(|point| {
-                        add_scaled_point(
-                            add_scaled_point(*origin, *u_axis, point.u),
-                            v_axis,
-                            point.v,
-                        )
+                        (*origin)
+                            .translated(*u_axis, point.u)
+                            .translated(v_axis, point.v)
                     })
                     .collect(),
                 weights: weights.clone(),
@@ -3929,7 +3924,7 @@ fn e5_boundary_curve(
         None
     };
     if let Some((center, radius, axis)) = circle {
-        let candidates = [axis, scale_vector(axis, -1.0)]
+        let candidates = [axis, axis.scale(-1.0)]
             .into_iter()
             .filter_map(|axis| {
                 let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
@@ -3974,12 +3969,12 @@ fn e5_boundary_curve(
     {
         return None;
     }
-    let delta = point_delta(endpoints[1], endpoints[0]);
-    let length = vector_norm(delta);
+    let delta = endpoints[1].vector_from(endpoints[0]);
+    let length = delta.norm();
     (length > f64::EPSILON).then_some((
         CurveGeometry::Line {
             origin: endpoints[0],
-            direction: scale_vector(delta, 1.0 / length),
+            direction: delta.scale(1.0 / length),
         },
         [0.0, length],
     ))
@@ -3994,8 +3989,8 @@ fn reverse_e5_boundary_curve(
             let length = range[1] - range[0];
             (length >= 0.0).then_some((
                 CurveGeometry::Line {
-                    origin: add_scaled_point(*origin, *direction, range[1]),
-                    direction: scale_vector(*direction, -1.0),
+                    origin: (*origin).translated(*direction, range[1]),
+                    direction: (*direction).scale(-1.0),
                 },
                 [0.0, length],
             ))
@@ -4010,16 +4005,13 @@ fn reverse_e5_boundary_curve(
             if sweep < 0.0 {
                 return None;
             }
-            let tangent = cross_vector(*axis, *ref_direction);
+            let tangent = (*axis).cross(*ref_direction);
             let end = range[1];
-            let ref_direction = add_vectors(
-                scale_vector(*ref_direction, end.cos()),
-                scale_vector(tangent, end.sin()),
-            );
+            let ref_direction = (*ref_direction).scale(end.cos()) + tangent.scale(end.sin());
             Some((
                 CurveGeometry::Circle {
                     center: *center,
-                    axis: scale_vector(*axis, -1.0),
+                    axis: (*axis).scale(-1.0),
                     ref_direction,
                     radius: *radius,
                 },
@@ -4134,8 +4126,8 @@ fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> 
                 direction: right_direction,
             },
         ) => {
-            point_distance(*left_origin, *right_origin) <= 2e-3
-                && axis_dot(*left_direction, *right_direction).abs() >= 1.0 - 1e-9
+            (*left_origin).distance(*right_origin) <= 2e-3
+                && (*left_direction).dot(*right_direction).abs() >= 1.0 - 1e-9
         }
         (
             CurveGeometry::Circle {
@@ -4151,9 +4143,9 @@ fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> 
                 ..
             },
         ) => {
-            point_distance(*left_center, *right_center) <= 2e-3
+            (*left_center).distance(*right_center) <= 2e-3
                 && (left_radius - right_radius).abs() <= 2e-3
-                && axis_dot(*left_axis, *right_axis).abs() >= 1.0 - 1e-9
+                && (*left_axis).dot(*right_axis).abs() >= 1.0 - 1e-9
         }
         (CurveGeometry::Nurbs(left), CurveGeometry::Nurbs(right)) => left == right,
         _ => false,
@@ -4167,7 +4159,7 @@ fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f6
             axis,
             radius,
             ..
-        } => Some((add_scaled_point(*origin, *axis, v), *radius, *axis)),
+        } => Some(((*origin).translated(*axis, v), *radius, *axis)),
         SurfaceGeometry::Cone {
             origin,
             axis,
@@ -4175,7 +4167,7 @@ fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f6
             half_angle,
             ..
         } => Some((
-            add_scaled_point(*origin, *axis, v),
+            (*origin).translated(*axis, v),
             (radius + v * half_angle.tan()).abs(),
             *axis,
         )),
@@ -4185,7 +4177,7 @@ fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f6
             radius,
             ..
         } => Some((
-            add_scaled_point(*center, *axis, radius * v.sin()),
+            (*center).translated(*axis, radius * v.sin()),
             radius * v.cos().abs(),
             *axis,
         )),
@@ -4196,7 +4188,7 @@ fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f6
             minor_radius,
             ..
         } => Some((
-            add_scaled_point(*center, *axis, minor_radius * v.sin()),
+            (*center).translated(*axis, minor_radius * v.sin()),
             (major_radius + minor_radius * v.cos()).abs(),
             *axis,
         )),
@@ -4212,12 +4204,9 @@ fn e5_constant_u_circle(surface: &SurfaceGeometry, u: f64) -> Option<(Point3, f6
             radius,
             ref_direction,
         } => {
-            let tangent = cross_vector(*axis, *ref_direction);
-            let radial = add_vectors(
-                scale_vector(*ref_direction, u.cos()),
-                scale_vector(tangent, u.sin()),
-            );
-            Some((*center, *radius, cross_vector(*axis, radial)))
+            let tangent = (*axis).cross(*ref_direction);
+            let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
+            Some((*center, *radius, (*axis).cross(radial)))
         }
         SurfaceGeometry::Torus {
             center,
@@ -4226,31 +4215,16 @@ fn e5_constant_u_circle(surface: &SurfaceGeometry, u: f64) -> Option<(Point3, f6
             major_radius,
             minor_radius,
         } => {
-            let tangent = cross_vector(*axis, *ref_direction);
-            let radial = add_vectors(
-                scale_vector(*ref_direction, u.cos()),
-                scale_vector(tangent, u.sin()),
-            );
+            let tangent = (*axis).cross(*ref_direction);
+            let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
             Some((
-                add_scaled_point(*center, radial, *major_radius),
+                (*center).translated(radial, *major_radius),
                 *minor_radius,
-                cross_vector(*axis, radial),
+                (*axis).cross(radial),
             ))
         }
         _ => None,
     }
-}
-
-fn add_scaled_point(point: Point3, vector: Vector3, scale: f64) -> Point3 {
-    Point3::new(
-        point.x + scale * vector.x,
-        point.y + scale * vector.y,
-        point.z + scale * vector.z,
-    )
-}
-
-fn add_vectors(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(left.x + right.x, left.y + right.y, left.z + right.z)
 }
 
 fn rational_pcurve_arc(center: [f64; 2], radius: f64, range: [f64; 2]) -> Option<PcurveGeometry> {
@@ -4382,7 +4356,7 @@ fn e5_ownership_plan(
             if face_indices.len() != faces.len() {
                 return None;
             }
-            let mut parents: Vec<usize> = (0..faces.len()).collect();
+            let mut parents = UnionFind::new(faces.len());
             let mut first_face_by_edge = HashMap::<u32, usize>::new();
             for face in topology
                 .faces
@@ -4392,7 +4366,7 @@ fn e5_ownership_plan(
                 let face_index = face_indices[&face.record_id];
                 for edge in face.loops.iter().flat_map(|loop_| &loop_.edge_uses) {
                     if let Some(other) = first_face_by_edge.insert(*edge, face_index) {
-                        union_indices(&mut parents, face_index, other);
+                        parents.union(face_index, other);
                     }
                 }
             }
@@ -4400,7 +4374,7 @@ fn e5_ownership_plan(
             let mut components = Vec::<Vec<u32>>::new();
             let mut face_components = Vec::with_capacity(faces.len());
             for (face_index, face) in faces.iter().copied().enumerate() {
-                let root = index_root(&mut parents, face_index);
+                let root = parents.find(face_index);
                 let next = labels.len();
                 let component = *labels.entry(root).or_insert(next);
                 face_components.push(component);
@@ -4434,24 +4408,6 @@ fn e5_ownership_plan(
             Some(E5BodyOwnership { kind, components })
         })
         .collect()
-}
-
-fn point_distance(a: Point3, b: Point3) -> f64 {
-    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
-}
-
-fn index_root(parents: &mut [usize], mut index: usize) -> usize {
-    while parents[index] != index {
-        parents[index] = parents[parents[index]];
-        index = parents[index];
-    }
-    index
-}
-
-fn union_indices(parents: &mut [usize], left: usize, right: usize) {
-    let left = index_root(parents, left);
-    let right = index_root(parents, right);
-    parents[left] = right;
 }
 
 fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
@@ -7200,20 +7156,19 @@ fn resolve_standard_endpoint_pairs(
                     end_point.y - start_point.y,
                     end_point.z - start_point.z,
                 );
-                let segment_norm = axis_dot(segment, segment).sqrt();
+                let segment_norm = segment.dot(segment).sqrt();
                 let midpoint = Point3::new(
                     (start_point.x + end_point.x) * 0.5,
                     (start_point.y + end_point.y) * 0.5,
                     (start_point.z + end_point.z) * 0.5,
                 );
                 let follows_direction = direction.is_none_or(|direction| {
-                    let direction_norm = axis_dot(direction, direction).sqrt();
+                    let direction_norm = direction.dot(direction).sqrt();
                     direction_norm > f64::EPSILON
-                        && axis_dot(
-                            cross_vector(segment, direction),
-                            cross_vector(segment, direction),
-                        )
-                        .sqrt()
+                        && segment
+                            .cross(direction)
+                            .dot(segment.cross(direction))
+                            .sqrt()
                             <= 1e-2 * segment_norm * direction_norm
                 });
                 if segment_norm > f64::EPSILON
@@ -7275,8 +7230,7 @@ fn standard_circle_endpoint_candidates(
         .iter()
         .enumerate()
         .filter_map(|(index, point)| {
-            let on_circle =
-                (point_distance_squared(point.position, center).sqrt() - radius).abs() <= 1e-3;
+            let on_circle = (point.position.distance_squared(center).sqrt() - radius).abs() <= 1e-3;
             let incident = surfaces.is_none_or(|(left, right)| {
                 point_on_known_surface(point.position, left)
                     && point_on_known_surface(point.position, right)
@@ -7406,11 +7360,10 @@ fn unique_native_identity_points(
                 .iter()
                 .enumerate()
                 .filter_map(|(index, point)| {
-                    (point_distance_squared(
-                        point.position,
-                        Point3::new(coordinate[0], coordinate[1], coordinate[2]),
-                    )
-                    .sqrt()
+                    (point
+                        .position
+                        .distance_squared(Point3::new(coordinate[0], coordinate[1], coordinate[2]))
+                        .sqrt()
                         <= tolerance)
                         .then_some(index)
                 })
@@ -7430,12 +7383,12 @@ fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) 
             SurfaceGeometry::Plane { normal: left, .. },
             SurfaceGeometry::Plane { normal: right, .. },
         ) => {
-            let direction = cross_vector(*left, *right);
-            (axis_dot(direction, direction) > f64::EPSILON).then_some(direction)
+            let direction = (*left).cross(*right);
+            (direction.dot(direction) > f64::EPSILON).then_some(direction)
         }
         (SurfaceGeometry::Plane { normal, .. }, SurfaceGeometry::Cylinder { axis, .. })
         | (SurfaceGeometry::Cylinder { axis, .. }, SurfaceGeometry::Plane { normal, .. }) => {
-            (axis_dot(*normal, *axis).abs() <= ANGULAR_TOLERANCE).then_some(*axis)
+            ((*normal).dot(*axis).abs() <= ANGULAR_TOLERANCE).then_some(*axis)
         }
         (
             SurfaceGeometry::Cylinder {
@@ -7444,8 +7397,7 @@ fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) 
             SurfaceGeometry::Cylinder {
                 axis: right_axis, ..
             },
-        ) => (vector_norm(cross_vector(*left_axis, *right_axis)) <= ANGULAR_TOLERANCE)
-            .then_some(*left_axis),
+        ) => ((*left_axis).cross(*right_axis).norm() <= ANGULAR_TOLERANCE).then_some(*left_axis),
         _ => None,
     }
 }
@@ -7466,11 +7418,11 @@ fn standard_plane_normal_from_circle_centers(
             }
         })
         .collect::<Vec<_>>();
-    let mut distinct = Vec::new();
+    let mut distinct: Vec<Point3> = Vec::new();
     for center in centers {
         if !distinct
             .iter()
-            .any(|stored| point_distance_squared(*stored, center) <= TOLERANCE.powi(2))
+            .any(|stored| (*stored).distance_squared(center) <= TOLERANCE.powi(2))
         {
             distinct.push(center);
         }
@@ -7482,17 +7434,16 @@ fn standard_plane_normal_from_circle_centers(
         .enumerate()
         .flat_map(|(left, &left_center)| {
             centers[left + 2..].iter().map(move |&right_center| {
-                cross_vector(
-                    point_delta(left_center, origin),
-                    point_delta(right_center, origin),
-                )
+                left_center
+                    .vector_from(origin)
+                    .cross(right_center.vector_from(origin))
             })
         })
-        .find(|normal| vector_norm(*normal) > TOLERANCE)?;
-    let norm = vector_norm(normal);
+        .find(|normal| (*normal).norm() > TOLERANCE)?;
+    let norm = normal.norm();
     let mut normal = [normal.x / norm, normal.y / norm, normal.z / norm];
     if centers.iter().any(|center| {
-        let offset = point_delta(*center, origin);
+        let offset = (*center).vector_from(origin);
         (offset.x * normal[0] + offset.y * normal[1] + offset.z * normal[2]).abs() > TOLERANCE
     }) {
         return None;
@@ -7526,7 +7477,7 @@ fn standard_plane_normal_from_adjacent_circle_carriers(
         circle_axis_from_carrier(*center, *radius, surfaces.get(adjacent)?.as_ref()?)
     });
     let axis = axes.next()?;
-    if axes.any(|other| axis_dot(axis, other).abs() < 0.9999) {
+    if axes.any(|other| axis.dot(other).abs() < 0.9999) {
         return None;
     }
     let mut normal = [axis.x, axis.y, axis.z];
@@ -7610,10 +7561,10 @@ fn standard_pcurve_geometry(
                 origin.y + apex_offset * axis.y,
                 origin.z + apex_offset * axis.z,
             );
-            if point_distance_squared(start, apex) <= 1e-6 {
+            if start.distance_squared(apex) <= 1e-6 {
                 uv[0].u = uv[1].u;
             }
-            if point_distance_squared(end, apex) <= 1e-6 {
+            if end.distance_squared(apex) <= 1e-6 {
                 uv[1].u = uv[0].u;
             }
         }
@@ -7646,18 +7597,17 @@ fn standard_pcurve_geometry(
     let midpoint = cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v)?;
     let on_curve = match &support.geometry {
         geometry::StandardCurveGeometry::Line => {
-            let chord = point_delta(end, start);
-            let offset = point_delta(midpoint, start);
-            vector_norm(cross_vector(chord, offset)) <= 2e-3 * vector_norm(chord).max(1.0)
+            let chord = end.vector_from(start);
+            let offset = midpoint.vector_from(start);
+            chord.cross(offset).norm() <= 2e-3 * chord.norm().max(1.0)
         }
         geometry::StandardCurveGeometry::Circle { center, radius } => {
-            (point_distance_squared(midpoint, *center).sqrt() - radius).abs() <= 2e-3
+            (midpoint.distance_squared(*center).sqrt() - radius).abs() <= 2e-3
         }
         geometry::StandardCurveGeometry::Bspline => match edge_curve {
             Some(CurveGeometry::Line { origin, direction }) => {
-                let offset = point_delta(midpoint, *origin);
-                vector_norm(cross_vector(*direction, offset))
-                    <= 2e-3 * vector_norm(*direction).max(1.0)
+                let offset = midpoint.vector_from(*origin);
+                (*direction).cross(offset).norm() <= 2e-3 * (*direction).norm().max(1.0)
             }
             _ => false,
         },
@@ -7725,8 +7675,7 @@ fn witnessed_surface_circle_end(
                 0.5 * (uv[0].u + candidate.u),
                 0.5 * (uv[0].v + candidate.v),
             )?;
-            ((point_distance_squared(midpoint, center).sqrt() - radius).abs() <= 2e-3)
-                .then_some(candidate)
+            ((midpoint.distance_squared(center).sqrt() - radius).abs() <= 2e-3).then_some(candidate)
         })
         .collect::<Vec<_>>();
     <[Point2; 1]>::try_from(candidates).ok().map(|[end]| end)
@@ -7747,12 +7696,9 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
             normal,
             u_axis,
         } => {
-            let offset = point_delta(point, *origin);
-            let v_axis = cross_vector(*normal, *u_axis);
-            Some(Point2::new(
-                axis_dot(offset, *u_axis),
-                axis_dot(offset, v_axis),
-            ))
+            let offset = point.vector_from(*origin);
+            let v_axis = (*normal).cross(*u_axis);
+            Some(Point2::new(offset.dot(*u_axis), offset.dot(v_axis)))
         }
         SurfaceGeometry::Cylinder {
             origin,
@@ -7760,11 +7706,11 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
             ref_direction,
             ..
         } => {
-            let offset = point_delta(point, *origin);
-            let tangent = cross_vector(*axis, *ref_direction);
+            let offset = point.vector_from(*origin);
+            let tangent = (*axis).cross(*ref_direction);
             Some(Point2::new(
-                axis_dot(offset, tangent).atan2(axis_dot(offset, *ref_direction)),
-                axis_dot(offset, *axis),
+                offset.dot(tangent).atan2(offset.dot(*ref_direction)),
+                offset.dot(*axis),
             ))
         }
         SurfaceGeometry::Cone {
@@ -7777,11 +7723,11 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
             if ratio.abs() <= f64::EPSILON {
                 return None;
             }
-            let offset = point_delta(point, *origin);
-            let tangent = cross_vector(*axis, *ref_direction);
+            let offset = point.vector_from(*origin);
+            let tangent = (*axis).cross(*ref_direction);
             Some(Point2::new(
-                (axis_dot(offset, tangent) / ratio).atan2(axis_dot(offset, *ref_direction)),
-                axis_dot(offset, *axis),
+                (offset.dot(tangent) / ratio).atan2(offset.dot(*ref_direction)),
+                offset.dot(*axis),
             ))
         }
         SurfaceGeometry::Sphere {
@@ -7793,11 +7739,11 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
             if *radius <= f64::EPSILON {
                 return None;
             }
-            let offset = point_delta(point, *center);
-            let tangent = cross_vector(*axis, *ref_direction);
+            let offset = point.vector_from(*center);
+            let tangent = (*axis).cross(*ref_direction);
             Some(Point2::new(
-                axis_dot(offset, tangent).atan2(axis_dot(offset, *ref_direction)),
-                (axis_dot(offset, *axis) / radius).clamp(-1.0, 1.0).asin(),
+                offset.dot(tangent).atan2(offset.dot(*ref_direction)),
+                (offset.dot(*axis) / radius).clamp(-1.0, 1.0).asin(),
             ))
         }
         SurfaceGeometry::Torus {
@@ -7807,9 +7753,9 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
             major_radius,
             ..
         } => {
-            let offset = point_delta(point, *center);
-            let tangent = cross_vector(*axis, *ref_direction);
-            let u = axis_dot(offset, tangent).atan2(axis_dot(offset, *ref_direction));
+            let offset = point.vector_from(*center);
+            let tangent = (*axis).cross(*ref_direction);
+            let u = offset.dot(tangent).atan2(offset.dot(*ref_direction));
             let radial = Vector3::new(
                 u.cos() * ref_direction.x + u.sin() * tangent.x,
                 u.cos() * ref_direction.y + u.sin() * tangent.y,
@@ -7817,7 +7763,7 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
             );
             Some(Point2::new(
                 u,
-                axis_dot(offset, *axis).atan2(axis_dot(offset, radial) - major_radius),
+                offset.dot(*axis).atan2(offset.dot(radial) - major_radius),
             ))
         }
         _ => None,
@@ -7846,7 +7792,7 @@ fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
     const TOLERANCE: f64 = 1e-3;
     let residual = match surface {
         SurfaceGeometry::Plane { origin, normal, .. } => {
-            dot_point_vector(point, *origin, *normal).abs()
+            point.vector_from(*origin).dot(*normal).abs()
         }
         SurfaceGeometry::Cylinder {
             origin,
@@ -7854,8 +7800,8 @@ fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
             radius,
             ..
         } => {
-            let axial = dot_point_vector(point, *origin, *axis);
-            let radial = point_distance_squared(point, *origin) - axial * axial;
+            let axial = point.vector_from(*origin).dot(*axis);
+            let radial = point.distance_squared(*origin) - axial * axial;
             (radial.max(0.0).sqrt() - *radius).abs()
         }
         SurfaceGeometry::Cone {
@@ -7865,14 +7811,14 @@ fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
             half_angle,
             ..
         } => {
-            let axial = dot_point_vector(point, *origin, *axis);
-            let radial = (point_distance_squared(point, *origin) - axial * axial)
+            let axial = point.vector_from(*origin).dot(*axis);
+            let radial = (point.distance_squared(*origin) - axial * axial)
                 .max(0.0)
                 .sqrt();
             (radial - (radius + axial * half_angle.tan()).abs()).abs()
         }
         SurfaceGeometry::Sphere { center, radius, .. } => {
-            (point_distance_squared(point, *center).sqrt() - *radius).abs()
+            (point.distance_squared(*center).sqrt() - *radius).abs()
         }
         SurfaceGeometry::Torus {
             center,
@@ -7881,8 +7827,8 @@ fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
             minor_radius,
             ..
         } => {
-            let axial = dot_point_vector(point, *center, *axis);
-            let radial = (point_distance_squared(point, *center) - axial * axial)
+            let axial = point.vector_from(*center).dot(*axis);
+            let radial = (point.distance_squared(*center) - axial * axial)
                 .max(0.0)
                 .sqrt();
             (((radial - major_radius).powi(2) + axial * axial).sqrt() - *minor_radius).abs()
@@ -7893,16 +7839,6 @@ fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
         | SurfaceGeometry::Unknown { .. } => return false,
     };
     residual <= TOLERANCE
-}
-
-fn dot_point_vector(point: Point3, origin: Point3, vector: Vector3) -> f64 {
-    (point.x - origin.x) * vector.x
-        + (point.y - origin.y) * vector.y
-        + (point.z - origin.z) * vector.z
-}
-
-fn point_distance_squared(left: Point3, right: Point3) -> f64 {
-    (left.x - right.x).powi(2) + (left.y - right.y).powi(2) + (left.z - right.z).powi(2)
 }
 
 fn standard_spline_plane_line(
@@ -7933,8 +7869,8 @@ fn standard_spline_plane_line(
     else {
         return None;
     };
-    let intersection = cross_vector(*left_normal, *right_normal);
-    let intersection_norm = vector_norm(intersection);
+    let intersection = (*left_normal).cross(*right_normal);
+    let intersection_norm = intersection.norm();
     if !intersection_norm.is_finite() || intersection_norm <= f64::EPSILON {
         return None;
     }
@@ -7947,13 +7883,13 @@ fn standard_spline_plane_line(
     {
         return None;
     }
-    let direction = point_delta(end, start);
-    let length = vector_norm(direction);
+    let direction = end.vector_from(start);
+    let length = direction.norm();
     if !length.is_finite() || length <= f64::EPSILON {
         return None;
     }
-    let intersection = scale_vector(intersection, 1.0 / intersection_norm);
-    if vector_norm(cross_vector(direction, intersection)) > TOLERANCE {
+    let intersection = intersection.scale(1.0 / intersection_norm);
+    if direction.cross(intersection).norm() > TOLERANCE {
         return None;
     }
     Some(CurveGeometry::Line {
@@ -7976,7 +7912,7 @@ fn build_standard_edge_curve(
             let start = ir.model.points[points[0]].position;
             let end = ir.model.points[points[1]].position;
             let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
-            let length = axis_dot(delta, delta).sqrt();
+            let length = delta.dot(delta).sqrt();
             if length <= f64::EPSILON {
                 return (None, None);
             }
@@ -8003,11 +7939,11 @@ fn build_standard_edge_curve(
             if axes
                 .iter()
                 .skip(1)
-                .any(|other| axis_dot(axis, *other).abs() < 0.9999)
+                .any(|other| axis.dot(*other).abs() < 0.9999)
             {
                 return (None, None);
             }
-            let candidates = [axis, scale_vector(axis, -1.0)]
+            let candidates = [axis, axis.scale(-1.0)]
                 .into_iter()
                 .filter_map(|axis| {
                     let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
@@ -8170,11 +8106,11 @@ fn standard_circle_pair_solution_is_simple(
         if axes
             .iter()
             .skip(1)
-            .any(|other| axis_dot(axis, *other).abs() < 0.9999)
+            .any(|other| axis.dot(*other).abs() < 0.9999)
         {
             return false;
         }
-        let candidates = [axis, scale_vector(axis, -1.0)]
+        let candidates = [axis, axis.scale(-1.0)]
             .into_iter()
             .filter_map(|axis| {
                 let reference = cadmpeg_ir::geometry::derive_reference_direction(axis);
@@ -8296,10 +8232,10 @@ fn circle_parameter_range_from_surface_branch(
     pcurve_origin: Point2,
     pcurve_direction: Point2,
 ) -> Option<[f64; 2]> {
-    let tangent = cross_vector(axis, ref_direction);
+    let tangent = axis.cross(ref_direction);
     let angle = |point: Point3| {
-        let offset = point_delta(point, center);
-        axis_dot(offset, tangent).atan2(axis_dot(offset, ref_direction))
+        let offset = point.vector_from(center);
+        offset.dot(tangent).atan2(offset.dot(ref_direction))
     };
     let start = angle(start);
     let short_end = unwrap_angle(angle(end), start);
@@ -8325,7 +8261,7 @@ fn circle_parameter_range_from_surface_branch(
                 center.z
                     + radius * (parameter.cos() * ref_direction.z + parameter.sin() * tangent.z),
             );
-            point_distance_squared(circle_midpoint, surface_midpoint).sqrt() <= 2e-3
+            circle_midpoint.distance_squared(surface_midpoint).sqrt() <= 2e-3
         })
         .collect::<Vec<_>>();
     <[f64; 1]>::try_from(candidates)
@@ -8360,7 +8296,7 @@ fn attach_standard_circles(
         if axes
             .iter()
             .skip(1)
-            .any(|other| axis_dot(axis, *other).abs() < 0.9999)
+            .any(|other| axis.dot(*other).abs() < 0.9999)
         {
             continue;
         }
@@ -8395,7 +8331,7 @@ fn circle_axis_from_carrier(
 ) -> Option<Vector3> {
     match surface {
         SurfaceGeometry::Plane { origin, normal, .. } => {
-            close_length(dot_point_vector(center, *origin, *normal), 0.0).then_some(*normal)
+            close_length(center.vector_from(*origin).dot(*normal), 0.0).then_some(*normal)
         }
         SurfaceGeometry::Cylinder {
             origin,
@@ -8403,10 +8339,10 @@ fn circle_axis_from_carrier(
             radius,
             ..
         } => {
-            let offset = point_delta(center, *origin);
-            let axial = axis_dot(offset, *axis);
-            let radial = subtract_vector(offset, scale_vector(*axis, axial));
-            (close_length(vector_norm(radial), 0.0) && close_length(circle_radius, *radius))
+            let offset = center.vector_from(*origin);
+            let axial = offset.dot(*axis);
+            let radial = offset - (*axis).scale(axial);
+            (close_length(radial.norm(), 0.0) && close_length(circle_radius, *radius))
                 .then_some(*axis)
         }
         SurfaceGeometry::Cone {
@@ -8416,11 +8352,11 @@ fn circle_axis_from_carrier(
             half_angle,
             ..
         } => {
-            let offset = point_delta(center, *origin);
-            let axial = axis_dot(offset, *axis);
-            let radial = subtract_vector(offset, scale_vector(*axis, axial));
+            let offset = center.vector_from(*origin);
+            let axial = offset.dot(*axis);
+            let radial = offset - (*axis).scale(axial);
             let section_radius = (radius + axial * half_angle.tan()).abs();
-            (close_length(vector_norm(radial), 0.0) && close_length(circle_radius, section_radius))
+            (close_length(radial.norm(), 0.0) && close_length(circle_radius, section_radius))
                 .then_some(*axis)
         }
         SurfaceGeometry::Sphere {
@@ -8428,14 +8364,14 @@ fn circle_axis_from_carrier(
             radius: sphere_radius,
             ..
         } => {
-            let offset = point_delta(center, *sphere_center);
-            let distance = vector_norm(offset);
+            let offset = center.vector_from(*sphere_center);
+            let distance = offset.norm();
             (distance > f64::EPSILON
                 && close_squared(
                     distance * distance + circle_radius * circle_radius,
                     sphere_radius * sphere_radius,
                 ))
-            .then(|| scale_vector(offset, 1.0 / distance))
+            .then(|| offset.scale(1.0 / distance))
         }
         SurfaceGeometry::Torus {
             center: torus_center,
@@ -8444,15 +8380,15 @@ fn circle_axis_from_carrier(
             minor_radius,
             ..
         } => {
-            let offset = point_delta(center, *torus_center);
-            let axial = axis_dot(offset, *axis);
-            let radial = subtract_vector(offset, scale_vector(*axis, axial));
-            let radial_distance = vector_norm(radial);
+            let offset = center.vector_from(*torus_center);
+            let axial = offset.dot(*axis);
+            let radial = offset - (*axis).scale(axial);
+            let radial_distance = radial.norm();
             if close_length(axial, 0.0)
                 && close_length(radial_distance, *major_radius)
                 && close_length(circle_radius, *minor_radius)
             {
-                unit_vector(cross_vector(*axis, radial))
+                unit_vector((*axis).cross(radial))
             } else if close_length(radial_distance, 0.0)
                 && close_squared(
                     (circle_radius - major_radius).powi(2) + axial * axial,
@@ -8471,25 +8407,9 @@ fn circle_axis_from_carrier(
     }
 }
 
-fn point_delta(left: Point3, right: Point3) -> Vector3 {
-    Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
-}
-
-fn subtract_vector(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
-}
-
-fn scale_vector(vector: Vector3, scalar: f64) -> Vector3 {
-    Vector3::new(vector.x * scalar, vector.y * scalar, vector.z * scalar)
-}
-
-fn vector_norm(vector: Vector3) -> f64 {
-    axis_dot(vector, vector).sqrt()
-}
-
 fn unit_vector(vector: Vector3) -> Option<Vector3> {
-    let norm = vector_norm(vector);
-    (norm > f64::EPSILON).then(|| scale_vector(vector, 1.0 / norm))
+    let norm = vector.norm();
+    (norm > f64::EPSILON).then(|| vector.scale(1.0 / norm))
 }
 
 fn close_length(left: f64, right: f64) -> bool {
@@ -8573,10 +8493,6 @@ mod circle_axis_tests {
     }
 }
 
-fn axis_dot(a: Vector3, b: Vector3) -> f64 {
-    a.x * b.x + a.y * b.y + a.z * b.z
-}
-
 fn attach_standard_lines(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -8590,19 +8506,19 @@ fn attach_standard_lines(
         let Some((origin_b, normal_b)) = plane_for_face(ir, bindings, line.faces[1]) else {
             continue;
         };
-        let direction = cross_vector(normal_a, normal_b);
-        let denom = axis_dot(direction, direction);
+        let direction = normal_a.cross(normal_b);
+        let denom = direction.dot(direction);
         if denom <= f64::EPSILON {
             continue;
         }
-        let d_a = axis_dot(normal_a, Vector3::new(origin_a.x, origin_a.y, origin_a.z));
-        let d_b = axis_dot(normal_b, Vector3::new(origin_b.x, origin_b.y, origin_b.z));
+        let d_a = normal_a.dot(Vector3::new(origin_a.x, origin_a.y, origin_a.z));
+        let d_b = normal_b.dot(Vector3::new(origin_b.x, origin_b.y, origin_b.z));
         let numerator = Vector3::new(
             d_a * normal_b.x - d_b * normal_a.x,
             d_a * normal_b.y - d_b * normal_a.y,
             d_a * normal_b.z - d_b * normal_a.z,
         );
-        let point = cross_vector(numerator, direction);
+        let point = numerator.cross(direction);
         let index = ir.model.curves.len();
         let id = CurveId(format!("catia:standard:line#{index}"));
         annotate(
@@ -8650,14 +8566,6 @@ fn plane_for_face(
         SurfaceGeometry::Plane { origin, normal, .. } => Some((*origin, *normal)),
         _ => None,
     }
-}
-
-fn cross_vector(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
 }
 
 /// Counts of each typed analytic surface kind decoded.

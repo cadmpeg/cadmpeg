@@ -22,6 +22,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::b5::{loop_chain_senses, B5Graph, B5Pcurve, B5Profile, B5Surface};
 use crate::native::cgm_source;
+use crate::solve::UnionFind;
 
 const POINT_TOLERANCE: f64 = 1.5e-3;
 
@@ -2449,7 +2450,7 @@ fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         .vertex_points
         .len()
         .checked_add(graph.logical_vertex_points.len())?;
-    let mut parents: Vec<usize> = (0..graph.faces.len()).collect();
+    let mut parents = UnionFind::new(graph.faces.len());
     let mut first_face_by_edge = HashMap::<u32, usize>::new();
     let mut edge_uses = HashMap::<u32, usize>::new();
     for (loop_id, loop_) in &graph.loops {
@@ -2461,7 +2462,7 @@ fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
             }
             *edge_uses.entry(*edge).or_default() += 1;
             if let Some(other_face) = first_face_by_edge.insert(*edge, face) {
-                union_faces(&mut parents, face, other_face);
+                parents.union(face, other_face);
             }
         }
     }
@@ -2469,7 +2470,7 @@ fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     let mut labels = HashMap::<usize, usize>::new();
     let mut face_components = Vec::with_capacity(graph.faces.len());
     for face in 0..graph.faces.len() {
-        let root = face_root(&mut parents, face);
+        let root = parents.find(face);
         let next = labels.len();
         face_components.push(*labels.entry(root).or_insert(next));
     }
@@ -2591,19 +2592,6 @@ fn orient_loop_members(
         );
     }
     Some(oriented)
-}
-
-fn union_faces(parents: &mut [usize], left: usize, right: usize) {
-    let left = face_root(parents, left);
-    let right = face_root(parents, right);
-    parents[left] = right;
-}
-
-fn face_root(parents: &mut [usize], index: usize) -> usize {
-    if parents[index] != index {
-        parents[index] = face_root(parents, parents[index]);
-    }
-    parents[index]
 }
 
 fn annotate(

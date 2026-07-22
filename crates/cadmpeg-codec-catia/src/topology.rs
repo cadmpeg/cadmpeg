@@ -9,6 +9,8 @@ use std::{
 
 use cadmpeg_ir::topology::BodyKind;
 
+use crate::solve::UnionFind;
+
 const FBB_ROW: [u8; 4] = [0x30, 0x04, 0x04, 0xff];
 const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
@@ -11810,52 +11812,6 @@ fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -
         });
     }
     Some(Boundary { coedges })
-}
-
-#[derive(Debug, Clone)]
-struct UnionFind {
-    parents: Vec<usize>,
-}
-
-impl UnionFind {
-    fn new(length: usize) -> Self {
-        Self {
-            parents: (0..length).collect(),
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.parents.len()
-    }
-
-    fn push(&mut self) -> usize {
-        let index = self.parents.len();
-        self.parents.push(index);
-        index
-    }
-
-    fn find(&mut self, node: usize) -> usize {
-        let parent = self.parents[node];
-        if parent != node {
-            self.parents[node] = self.find(parent);
-        }
-        self.parents[node]
-    }
-
-    fn root(&self, mut node: usize) -> usize {
-        while self.parents[node] != node {
-            node = self.parents[node];
-        }
-        node
-    }
-
-    fn union(&mut self, left: usize, right: usize) {
-        let left = self.find(left);
-        let right = self.find(right);
-        if left != right {
-            self.parents[right] = left;
-        }
-    }
 }
 
 #[cfg(test)]

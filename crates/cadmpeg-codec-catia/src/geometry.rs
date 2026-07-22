@@ -654,14 +654,14 @@ pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
                 (origin, frame_u, frame_v, radius)
             {
                 if radius > 0.05 && radius < 1e3 {
-                    if let Some(axis) = unit(cross(frame_u, frame_v)) {
+                    if let Some(axis) = frame_u.cross(frame_v).unit() {
                         out.push(E5Circle {
                             pos,
                             record_id: u32_le(data, pos + 9).unwrap_or(0),
                             geometry: CurveGeometry::Circle {
                                 center: origin,
                                 axis,
-                                ref_direction: unit(frame_u).unwrap_or_else(|| {
+                                ref_direction: frame_u.unit().unwrap_or_else(|| {
                                     cadmpeg_ir::geometry::derive_reference_direction(axis)
                                 }),
                                 radius,
@@ -802,7 +802,7 @@ fn e5_cylinder(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     let origin = f64_point(data, pos + 14)?;
     let frame_u = f64_vector(data, pos + 38)?;
     let frame_v = f64_vector(data, pos + 62)?;
-    let axis = unit(cross(frame_u, frame_v))?;
+    let axis = frame_u.cross(frame_v).unit()?;
     let radius = f64_le(data, pos + 86)?;
     if !radius.is_finite() || !(0.05..1e3).contains(&radius) {
         return None;
@@ -810,7 +810,7 @@ fn e5_cylinder(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Cylinder {
         origin,
         axis,
-        ref_direction: unit(frame_u)?,
+        ref_direction: frame_u.unit()?,
         radius,
     })
 }
@@ -2432,7 +2432,7 @@ fn support_points(
                 .iter()
                 .map(|&[u, v]| {
                     let partials = nurbs_surface_partials(surface, u, v)?;
-                    let normal = unit(cross(partials.du, partials.dv))?;
+                    let normal = partials.du.cross(partials.dv).unit()?;
                     Some(Point3::new(
                         partials.point.x + offset * normal.x,
                         partials.point.y + offset * normal.y,
@@ -2466,7 +2466,7 @@ fn nurbs_carrier_offset(
             offsets.push(0.0);
             continue;
         }
-        let normal = unit(cross(partials.du, partials.dv))?;
+        let normal = partials.du.cross(partials.dv).unit()?;
         let distance = residual.x * normal.x + residual.y * normal.y + residual.z * normal.z;
         let perpendicular_squared = residual_length.powi(2) - distance.powi(2);
         if perpendicular_squared > 1e-12 {
@@ -2568,7 +2568,7 @@ fn b2_cylinder_point(cylinder: &B2Cylinder, uv: [f64; 2]) -> Option<Point3> {
         return None;
     }
     let angle = uv[0] / radius;
-    let perpendicular = cross(*axis, *ref_direction);
+    let perpendicular = (*axis).cross(*ref_direction);
     Some(Point3::new(
         origin.x
             + uv[1] * axis.x
@@ -4776,8 +4776,8 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
 
 fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     let origin = f64_point(data, pos + 14)?;
-    let ref_direction = unit(f64_vector(data, pos + 38)?);
-    let axis = unit(f64_vector(data, pos + 86)?)?;
+    let ref_direction = f64_vector(data, pos + 38)?.unit();
+    let axis = f64_vector(data, pos + 86)?.unit()?;
     let stored_angle = f64_le(data, pos + 110)?;
     let radius = f64_le(data, pos + 118)?;
     let half_angle = std::f64::consts::FRAC_PI_2 - stored_angle;
@@ -4800,8 +4800,8 @@ fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
 
 fn e5_torus(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     let center = f64_point(data, pos + 14)?;
-    let ref_direction = unit(f64_vector(data, pos + 38)?);
-    let axis = unit(f64_vector(data, pos + 86)?)?;
+    let ref_direction = f64_vector(data, pos + 38)?.unit();
+    let axis = f64_vector(data, pos + 86)?.unit()?;
     let major_radius = f64_le(data, pos + 110)?;
     let minor_radius = f64_le(data, pos + 118)?;
     if !(major_radius > 0.0 && major_radius < 1e6 && minor_radius > 0.0 && minor_radius < 1e6) {
@@ -5036,8 +5036,8 @@ fn zero_entity_plane(payload: &[u8]) -> Option<SurfaceGeometry> {
     let row1 = f64_vector(payload, 58)?;
     Some(SurfaceGeometry::Plane {
         origin,
-        normal: unit(cross(row0, row1))?,
-        u_axis: unit(row0)?,
+        normal: row0.cross(row1).unit()?,
+        u_axis: row0.unit()?,
     })
 }
 
@@ -5051,16 +5051,16 @@ fn zero_entity_cylinder(payload: &[u8]) -> Option<SurfaceGeometry> {
     }
     Some(SurfaceGeometry::Cylinder {
         origin,
-        axis: unit(cross(row0, row1))?,
-        ref_direction: unit(row0)?,
+        axis: row0.cross(row1).unit()?,
+        ref_direction: row0.unit()?,
         radius,
     })
 }
 
 fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
     let origin = f64_point(payload, 8)?;
-    let ref_direction = unit(f64_vector(payload, 32)?);
-    let axis = unit(f64_vector(payload, 80)?)?;
+    let ref_direction = f64_vector(payload, 32)?.unit();
+    let axis = f64_vector(payload, 80)?.unit()?;
     let stored_angle = f64_le(payload, 104)?;
     let radius = f64_le(payload, 112)?;
     let half_angle = std::f64::consts::FRAC_PI_2 - stored_angle;
@@ -5085,8 +5085,8 @@ fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
 
 fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     let center = f64_point(payload, 8)?;
-    let ref_direction = unit(f64_vector(payload, 32)?);
-    let axis = unit(f64_vector(payload, 80)?)?;
+    let ref_direction = f64_vector(payload, 32)?.unit();
+    let axis = f64_vector(payload, 80)?.unit()?;
     let major_radius = f64_le(payload, 104)?;
     let minor_radius = f64_le(payload, 112)?;
     if !(major_radius.is_finite()
@@ -5269,19 +5269,6 @@ fn f64_vector(bytes: &[u8], at: usize) -> Option<Vector3> {
         f64_le(bytes, at + 8)?,
         f64_le(bytes, at + 16)?,
     ))
-}
-
-fn cross(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
-}
-
-fn unit(v: Vector3) -> Option<Vector3> {
-    let length = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
-    (length > f64::EPSILON).then(|| Vector3::new(v.x / length, v.y / length, v.z / length))
 }
 
 fn f64_run_to_one(bytes: &[u8], mut at: usize) -> Option<(Vec<f64>, usize)> {

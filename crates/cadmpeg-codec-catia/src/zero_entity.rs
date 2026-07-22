@@ -336,21 +336,21 @@ fn lift_cylinder_helix(
     {
         return None;
     }
-    let tangent = cross(*axis, *ref_direction);
+    let tangent = (*axis).cross(*ref_direction);
     let radial = Vector3::new(
         ref_direction.x * uv[0].u.cos() + tangent.x * uv[0].u.sin(),
         ref_direction.y * uv[0].u.cos() + tangent.y * uv[0].u.sin(),
         ref_direction.z * uv[0].u.cos() + tangent.z * uv[0].u.sin(),
     );
-    let radial_tangent = cross(*axis, radial);
+    let radial_tangent = (*axis).cross(radial);
     let direction = delta_u.signum();
     let sweep = delta_u.abs();
     let construction = ProceduralCurveDefinition::Helix {
         angle_range: [0.0, sweep],
-        center: translate(*origin, *axis, uv[0].v),
-        major: scale(radial, *radius),
-        minor: scale(radial_tangent, radius * direction),
-        pitch: scale(*axis, delta_v / sweep * 2.0 * std::f64::consts::PI),
+        center: (*origin).translated(*axis, uv[0].v),
+        major: radial.scale(*radius),
+        minor: radial_tangent.scale(radius * direction),
+        pitch: (*axis).scale(delta_v / sweep * 2.0 * std::f64::consts::PI),
         apex_factor: 0.0,
         axis: *axis,
     };
@@ -409,13 +409,13 @@ fn orient_direct_support_curve(
             let [Some(start), Some(end)] = points else {
                 return None;
             };
-            let delta = point_vector(start, end);
+            let delta = end.vector_from(start);
             let length = delta.norm();
             if !length.is_finite() || length <= f64::EPSILON {
                 return None;
             }
             *origin = start;
-            *direction = scale(delta, length.recip());
+            *direction = delta.scale(length.recip());
             Some([0.0, length])
         }
         _ => None,
@@ -523,15 +523,15 @@ fn conic_parameter(curve: &CurveGeometry, point: Point3) -> Option<f64> {
         ),
         _ => return None,
     };
-    let offset = point_vector(center, point);
-    let tangent = cross(axis, reference);
-    Some((dot(offset, tangent) / minor).atan2(dot(offset, reference) / major))
+    let offset = point.vector_from(center);
+    let tangent = axis.cross(reference);
+    Some((offset.dot(tangent) / minor).atan2(offset.dot(reference) / major))
 }
 
 fn reverse_conic_axis(curve: &mut CurveGeometry) -> Option<()> {
     match curve {
         CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => {
-            *axis = scale(*axis, -1.0);
+            *axis = (*axis).scale(-1.0);
             Some(())
         }
         _ => None,
@@ -565,7 +565,7 @@ fn conic_point(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
         center,
         reference,
         major * parameter.cos(),
-        cross(axis, reference),
+        axis.cross(reference),
         minor * parameter.sin(),
     ))
 }
@@ -628,15 +628,17 @@ fn orient_nurbs_to_endpoints(
     let [Some(start), Some(end)] = evaluated else {
         return None;
     };
-    let forward = point_vector(expected[0], start)
+    let forward = start
+        .vector_from(expected[0])
         .norm()
-        .max(point_vector(expected[1], end).norm());
+        .max(end.vector_from(expected[1]).norm());
     if forward <= TOLERANCE {
         return Some(range);
     }
-    let reverse = point_vector(expected[1], start)
+    let reverse = start
+        .vector_from(expected[1])
         .norm()
-        .max(point_vector(expected[0], end).norm());
+        .max(end.vector_from(expected[0]).norm());
     if reverse > TOLERANCE {
         return None;
     }
@@ -773,18 +775,18 @@ fn degenerate_parallel_plane_cylinder_intersection(
     else {
         unreachable!();
     };
-    if dot(*normal, *axis).abs() > 1e-10 || *radius <= 0.0 {
+    if (*normal).dot(*axis).abs() > 1e-10 || *radius <= 0.0 {
         return None;
     }
-    let signed_axis_offset = dot(point_vector(*origin, *axis_origin), *normal);
+    let signed_axis_offset = (*axis_origin).vector_from(*origin).dot(*normal);
     if signed_axis_offset.abs() > *radius {
         return None;
     }
-    let transverse = normalize(cross(*axis, *normal))?;
+    let transverse = normalize((*axis).cross(*normal))?;
     let transverse_offset = (radius.powi(2) - signed_axis_offset.powi(2))
         .max(0.0)
         .sqrt();
-    let base = translate(*axis_origin, *normal, -signed_axis_offset);
+    let base = (*axis_origin).translated(*normal, -signed_axis_offset);
     let signs = if transverse_offset <= 1e-12 {
         &[1.0][..]
     } else {
@@ -796,11 +798,11 @@ fn degenerate_parallel_plane_cylinder_intersection(
     let matching = signs
         .iter()
         .filter_map(|sign| {
-            let line_origin = translate(base, transverse, sign * transverse_offset);
+            let line_origin = base.translated(transverse, sign * transverse_offset);
             let residuals = endpoint_points.map(|point| {
-                let offset = point_vector(line_origin, point);
-                let axial = dot(offset, *axis);
-                let projected = translate(line_origin, *axis, axial);
+                let offset = point.vector_from(line_origin);
+                let axial = offset.dot(*axis);
+                let projected = line_origin.translated(*axis, axial);
                 (
                     point_distance(
                         [point.x, point.y, point.z],
@@ -893,18 +895,18 @@ fn degenerate_plane_torus_intersection(
     else {
         unreachable!();
     };
-    if dot(*normal, *axis).abs() > 1e-10 || *major_radius <= 0.0 || *minor_radius <= 0.0 {
+    if (*normal).dot(*axis).abs() > 1e-10 || *major_radius <= 0.0 || *minor_radius <= 0.0 {
         return None;
     }
-    let transverse = normalize(cross(*axis, *normal))?;
-    let plane_offset = dot(point_vector(*center, *origin), *normal);
+    let transverse = normalize((*axis).cross(*normal))?;
+    let plane_offset = (*origin).vector_from(*center).dot(*normal);
     let endpoint_data = edge.endpoints.map(|point| {
         let point = Point3::new(point[0], point[1], point[2]);
-        let relative = point_vector(*center, point);
-        let transverse_coordinate = dot(relative, transverse);
+        let relative = point.vector_from(*center);
+        let transverse_coordinate = relative.dot(transverse);
         let radial = (transverse_coordinate.powi(2) + plane_offset.powi(2)).sqrt();
         (
-            (dot(relative, *axis)).atan2(radial - major_radius),
+            (relative.dot(*axis)).atan2(radial - major_radius),
             transverse_coordinate,
         )
     });
@@ -1000,9 +1002,9 @@ fn plane_torus_section_point(
     let radial = major_radius + minor_radius * minor_angle.cos();
     let transverse_coordinate = branch_sign * (radial.powi(2) - plane_offset.powi(2)).sqrt();
     transverse_coordinate.is_finite().then(|| {
-        let point = translate(center, normal, plane_offset);
-        let point = translate(point, transverse, transverse_coordinate);
-        translate(point, axis, minor_radius * minor_angle.sin())
+        let point = center.translated(normal, plane_offset);
+        let point = point.translated(transverse, transverse_coordinate);
+        point.translated(axis, minor_radius * minor_angle.sin())
     })
 }
 
@@ -1211,7 +1213,7 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
             normal,
             u_axis,
         } => {
-            let v_axis = cross(*normal, *u_axis);
+            let v_axis = (*normal).cross(*u_axis);
             let PcurveGeometry::Nurbs {
                 degree,
                 knots,
@@ -1248,7 +1250,7 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
             } else {
                 let v = constant_coordinate(controls, |point| point.v)?;
                 Some(CurveGeometry::Circle {
-                    center: translate(*origin, *axis, v),
+                    center: (*origin).translated(*axis, v),
                     axis: *axis,
                     ref_direction: *ref_direction,
                     radius: *radius,
@@ -1264,7 +1266,7 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
             half_angle,
         } => {
             if let Some(u) = constant_coordinate(controls, |point| point.u) {
-                let tangent = cross(*axis, *ref_direction);
+                let tangent = (*axis).cross(*ref_direction);
                 let radial = Vector3::new(
                     ref_direction.x * u.cos() + tangent.x * ratio * u.sin(),
                     ref_direction.y * u.cos() + tangent.y * ratio * u.sin(),
@@ -1285,17 +1287,17 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
                 let sign = local_radius.signum();
                 let major_radius = local_radius.abs();
                 (major_radius > 0.0).then_some(())?;
-                let reference = scale(*ref_direction, sign);
+                let reference = (*ref_direction).scale(sign);
                 if (*ratio - 1.0).abs() <= 1e-12 {
                     Some(CurveGeometry::Circle {
-                        center: translate(*origin, *axis, v),
+                        center: (*origin).translated(*axis, v),
                         axis: *axis,
                         ref_direction: reference,
                         radius: major_radius,
                     })
                 } else {
                     Some(CurveGeometry::Ellipse {
-                        center: translate(*origin, *axis, v),
+                        center: (*origin).translated(*axis, v),
                         axis: *axis,
                         major_direction: reference,
                         major_radius,
@@ -1312,15 +1314,15 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
             minor_radius,
         } => {
             if let Some(u) = constant_coordinate(controls, |point| point.u) {
-                let tangent = cross(*axis, *ref_direction);
+                let tangent = (*axis).cross(*ref_direction);
                 let radial = Vector3::new(
                     ref_direction.x * u.cos() + tangent.x * u.sin(),
                     ref_direction.y * u.cos() + tangent.y * u.sin(),
                     ref_direction.z * u.cos() + tangent.z * u.sin(),
                 );
                 Some(CurveGeometry::Circle {
-                    center: translate(*center, radial, *major_radius),
-                    axis: cross(radial, *axis),
+                    center: (*center).translated(radial, *major_radius),
+                    axis: radial.cross(*axis),
                     ref_direction: radial,
                     radius: *minor_radius,
                 })
@@ -1329,9 +1331,9 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
                 let ring_radius = major_radius + minor_radius * v.cos();
                 (ring_radius.abs() > 0.0).then_some(())?;
                 Some(CurveGeometry::Circle {
-                    center: translate(*center, *axis, minor_radius * v.sin()),
+                    center: (*center).translated(*axis, minor_radius * v.sin()),
                     axis: *axis,
-                    ref_direction: scale(*ref_direction, ring_radius.signum()),
+                    ref_direction: (*ref_direction).scale(ring_radius.signum()),
                     radius: ring_radius.abs(),
                 })
             }
@@ -1343,7 +1345,7 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
             radius,
         } => {
             if let Some(u) = constant_coordinate(controls, |point| point.u) {
-                let tangent = cross(*axis, *ref_direction);
+                let tangent = (*axis).cross(*ref_direction);
                 let radial = Vector3::new(
                     ref_direction.x * u.cos() + tangent.x * u.sin(),
                     ref_direction.y * u.cos() + tangent.y * u.sin(),
@@ -1353,8 +1355,8 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
                 (sign != 0.0).then_some(())?;
                 Some(CurveGeometry::Circle {
                     center: *center,
-                    axis: cross(radial, *axis),
-                    ref_direction: scale(radial, sign),
+                    axis: radial.cross(*axis),
+                    ref_direction: radial.scale(sign),
                     radius: radius.abs(),
                 })
             } else {
@@ -1362,9 +1364,9 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
                 let latitude_radius = radius * v.cos();
                 (latitude_radius.abs() > 1e-12 * (1.0 + radius.abs())).then_some(())?;
                 Some(CurveGeometry::Circle {
-                    center: translate(*center, *axis, radius * v.sin()),
+                    center: (*center).translated(*axis, radius * v.sin()),
                     axis: *axis,
-                    ref_direction: scale(*ref_direction, latitude_radius.signum()),
+                    ref_direction: (*ref_direction).scale(latitude_radius.signum()),
                     radius: latitude_radius.abs(),
                 })
             }
@@ -1394,7 +1396,7 @@ fn lift_parameter_line(
         u_axis,
     } = surface
     {
-        let v_axis = cross(*normal, *u_axis);
+        let v_axis = (*normal).cross(*u_axis);
         let model_direction = Vector3::new(
             u_axis.x * direction.u + v_axis.x * direction.v,
             u_axis.y * direction.u + v_axis.y * direction.v,
@@ -1427,34 +1429,6 @@ fn constant_coordinate(points: &[Point2], coordinate: impl Fn(&Point2) -> f64) -
         .then_some(first)
 }
 
-fn cross(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
-}
-
-fn dot(left: Vector3, right: Vector3) -> f64 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-fn point_vector(origin: Point3, point: Point3) -> Vector3 {
-    Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z)
-}
-
-fn scale(vector: Vector3, factor: f64) -> Vector3 {
-    Vector3::new(vector.x * factor, vector.y * factor, vector.z * factor)
-}
-
-fn translate(point: Point3, vector: Vector3, factor: f64) -> Point3 {
-    Point3::new(
-        point.x + vector.x * factor,
-        point.y + vector.y * factor,
-        point.z + vector.z * factor,
-    )
-}
-
 fn offset(origin: Point3, u: Vector3, a: f64, v: Vector3, b: f64) -> Point3 {
     Point3::new(
         origin.x + u.x * a + v.x * b,
@@ -1465,7 +1439,7 @@ fn offset(origin: Point3, u: Vector3, a: f64, v: Vector3, b: f64) -> Point3 {
 
 fn normalize(vector: Vector3) -> Option<Vector3> {
     let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0).then(|| scale(vector, norm.recip()))
+    (norm.is_finite() && norm > 0.0).then(|| vector.scale(norm.recip()))
 }
 
 /// Resolve the reference-closed subset of zero-entity edge occurrences.

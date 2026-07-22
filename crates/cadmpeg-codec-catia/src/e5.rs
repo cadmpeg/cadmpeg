@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::le::{take_f64s, take_u32 as read_u32, u32_at};
 
+use crate::wire;
+
 /// Resolved graph of an E5 `0D 03` record stream: bodies, faces, edges, and
 /// the geometry records they reference. Produced by [`parse_topology`], which
 /// walks every class-tagged record, resolves cross-record references, and
@@ -433,7 +435,7 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
 }
 
 fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
-    let (pcurves, mut position) = counted_references(record.payload)?;
+    let (pcurves, mut position) = wire::counted_refs(record.payload, false)?;
     let expected = if record.class == 0xc0 { 1 } else { 2 };
     if pcurves.len() != expected || record.payload.get(position) != Some(&0x81) {
         return None;
@@ -476,7 +478,7 @@ fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
 }
 
 fn parse_bounds(record: &Record<'_>) -> Option<E5Bounds> {
-    let (representations, mut position) = counted_references(record.payload)?;
+    let (representations, mut position) = wire::counted_refs(record.payload, false)?;
     if record.payload.get(position)
         != Some(&(0x80u8.checked_add(u8::try_from(representations.len()).ok()?)?))
     {
@@ -514,7 +516,7 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
         return None;
     }
     let mut position = 1;
-    let surface = reference(record.payload, &mut position)?;
+    let surface = wire::object_ref(record.payload, &mut position, false)?;
     match record.class {
         0x96 => {
             let values = take_f64s(record.payload, &mut position, 6)?;
@@ -724,7 +726,7 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
         .iter()
         .filter(|record| record.class == 0x01)
         .map(|record| {
-            let (roots, end) = counted_references(record.payload)?;
+            let (roots, end) = wire::counted_refs(record.payload, false)?;
             if roots.len() != 1 || end != record.payload.len() {
                 return None;
             }
@@ -732,7 +734,7 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
             if root.class != 0x08 {
                 return None;
             }
-            let (faces, mut position) = counted_references(root.payload)?;
+            let (faces, mut position) = wire::counted_refs(root.payload, false)?;
             if root.payload.get(position)
                 != Some(&(0x80u8.checked_add(u8::try_from(faces.len()).ok()?)?))
             {
@@ -762,16 +764,6 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
             })
         })
         .collect()
-}
-
-fn counted_references(payload: &[u8]) -> Option<(Vec<u32>, usize)> {
-    let count = usize::from(payload.first()?.checked_sub(0x80)?);
-    let mut position = 1;
-    let mut references = Vec::with_capacity(count);
-    for _ in 0..count {
-        references.push(reference(payload, &mut position)?);
-    }
-    Some((references, position))
 }
 
 fn records(bytes: &[u8]) -> Vec<Record<'_>> {
@@ -809,10 +801,10 @@ fn parse_face(record: &Record<'_>) -> Option<RawFace> {
         return None;
     }
     let mut position = 1;
-    let surface = reference(record.payload, &mut position)?;
+    let surface = wire::object_ref(record.payload, &mut position, false)?;
     let mut loops = Vec::with_capacity(count);
     for _ in 0..count {
-        loops.push(reference(record.payload, &mut position)?);
+        loops.push(wire::object_ref(record.payload, &mut position, false)?);
     }
     let trailer_sign = i16::from_le_bytes(
         record
@@ -841,10 +833,10 @@ fn parse_loop(record: &Record<'_>) -> Option<RawLoop> {
     let mut pcurves = Vec::with_capacity(member_count / 2);
     let mut edges = Vec::with_capacity(member_count / 2);
     for _ in 0..member_count / 2 {
-        pcurves.push(reference(record.payload, &mut position)?);
-        edges.push(reference(record.payload, &mut position)?);
+        pcurves.push(wire::object_ref(record.payload, &mut position, false)?);
+        edges.push(wire::object_ref(record.payload, &mut position, false)?);
     }
-    let surface = reference(record.payload, &mut position)?;
+    let surface = wire::object_ref(record.payload, &mut position, false)?;
     let (outer, orientation_signs) =
         parse_loop_signs(record.payload.get(position..)?, member_count / 2)?;
     Some(RawLoop {
@@ -882,11 +874,11 @@ fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
         return None;
     }
     let mut position = 1;
-    let support = reference(record.payload, &mut position)?;
-    let start_vertex = reference(record.payload, &mut position)?;
-    let end_vertex = reference(record.payload, &mut position)?;
-    let parameter_start = reference(record.payload, &mut position)?;
-    let parameter_end = reference(record.payload, &mut position)?;
+    let support = wire::object_ref(record.payload, &mut position, false)?;
+    let start_vertex = wire::object_ref(record.payload, &mut position, false)?;
+    let end_vertex = wire::object_ref(record.payload, &mut position, false)?;
+    let parameter_start = wire::object_ref(record.payload, &mut position, false)?;
+    let parameter_end = wire::object_ref(record.payload, &mut position, false)?;
     let tail = record.payload[position..].to_vec();
     Some(E5Edge {
         record_id: record.id,
@@ -897,34 +889,6 @@ fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
         parameter_end,
         tail,
     })
-}
-
-fn reference(bytes: &[u8], position: &mut usize) -> Option<u32> {
-    let lead = *bytes.get(*position)?;
-    let (value, width) = match lead {
-        0x38 => (
-            u32::from_le_bytes([
-                *bytes.get(*position + 1)?,
-                *bytes.get(*position + 2)?,
-                *bytes.get(*position + 3)?,
-                0,
-            ]),
-            4,
-        ),
-        0x18 => (
-            u32::from(u16::from_le_bytes([
-                *bytes.get(*position + 1)?,
-                *bytes.get(*position + 2)?,
-            ])),
-            3,
-        ),
-        0x10 => (u32::from(*bytes.get(*position + 1)?) << 8, 2),
-        0x08 => (u32::from(*bytes.get(*position + 1)?), 2),
-        value if value >= 0x80 => (u32::from(value - 0x80), 1),
-        _ => return None,
-    };
-    *position += width;
-    Some(value)
 }
 
 fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<Vec<bool>> {

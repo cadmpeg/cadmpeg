@@ -57,9 +57,11 @@ pub mod e5;
 pub mod geometry;
 pub mod native;
 pub mod object_graph;
+pub(crate) mod solve;
 pub mod topology;
 pub mod value_block;
 pub mod variant;
+pub(crate) mod wire;
 pub mod zero_entity;
 
 /// Maximum number of exact rational-quadratic spans materialized for one

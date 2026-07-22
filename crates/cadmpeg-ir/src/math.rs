@@ -24,6 +24,31 @@ impl Point3 {
     pub fn new(x: f64, y: f64, z: f64) -> Self {
         Point3 { x, y, z }
     }
+
+    /// Euclidean distance to another point.
+    pub fn distance(self, other: Point3) -> f64 {
+        self.distance_squared(other).sqrt()
+    }
+
+    /// Squared Euclidean distance to another point (no square root).
+    pub fn distance_squared(self, other: Point3) -> f64 {
+        (self.x - other.x).powi(2) + (self.y - other.y).powi(2) + (self.z - other.z).powi(2)
+    }
+
+    /// Displacement from `origin` to `self`, i.e. `self - origin`.
+    pub fn vector_from(self, origin: Point3) -> Vector3 {
+        Vector3::new(self.x - origin.x, self.y - origin.y, self.z - origin.z)
+    }
+
+    /// Point translated by `scale * vector`.
+    #[must_use]
+    pub fn translated(self, vector: Vector3, scale: f64) -> Point3 {
+        Point3::new(
+            self.x + scale * vector.x,
+            self.y + scale * vector.y,
+            self.z + scale * vector.z,
+        )
+    }
 }
 
 /// A 3D vector. Depending on context this may be a direction (often but not
@@ -47,6 +72,52 @@ impl Vector3 {
     /// Euclidean length.
     pub fn norm(&self) -> f64 {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
+    }
+
+    /// Dot product with another vector.
+    pub fn dot(self, other: Vector3) -> f64 {
+        self.x * other.x + self.y * other.y + self.z * other.z
+    }
+
+    /// Cross product with another vector.
+    #[must_use]
+    pub fn cross(self, other: Vector3) -> Vector3 {
+        Vector3::new(
+            self.y * other.z - self.z * other.y,
+            self.z * other.x - self.x * other.z,
+            self.x * other.y - self.y * other.x,
+        )
+    }
+
+    /// Vector scaled by a factor.
+    #[must_use]
+    pub fn scale(self, factor: f64) -> Vector3 {
+        Vector3::new(self.x * factor, self.y * factor, self.z * factor)
+    }
+
+    /// Unit vector in the same direction, or `None` when the length is
+    /// within [`f64::EPSILON`] of zero (degenerate direction).
+    #[must_use]
+    pub fn unit(self) -> Option<Vector3> {
+        let length = self.norm();
+        (length > f64::EPSILON)
+            .then(|| Vector3::new(self.x / length, self.y / length, self.z / length))
+    }
+}
+
+impl std::ops::Add for Vector3 {
+    type Output = Vector3;
+
+    fn add(self, other: Vector3) -> Vector3 {
+        Vector3::new(self.x + other.x, self.y + other.y, self.z + other.z)
+    }
+}
+
+impl std::ops::Sub for Vector3 {
+    type Output = Vector3;
+
+    fn sub(self, other: Vector3) -> Vector3 {
+        Vector3::new(self.x - other.x, self.y - other.y, self.z - other.z)
     }
 }
 

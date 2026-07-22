@@ -8,6 +8,8 @@ use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeo
 use cadmpeg_ir::le::f64_at;
 use cadmpeg_ir::math::Point2;
 
+use crate::wire;
+
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
 /// surfaces bound through the in-stream `object_id` map ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)),
 /// together with the `05 08 01` vertex points used to bind edge endpoints.
@@ -740,7 +742,7 @@ fn parse_edge_refs(record: &B5Record) -> Option<[u32; 5]> {
     (record.class == 0x5e && record.payload.first() == Some(&0x85)).then_some(())?;
     let mut position = 1;
     let references: [u32; 5] = (0..5)
-        .map(|_| reference(&record.payload, &mut position, record.object_id))
+        .map(|_| wire::object_ref(&record.payload, &mut position, true))
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()?;
@@ -798,18 +800,14 @@ fn incidence_vertex_coordinates(
 fn vertex_incidence_ref(record: &B5Record) -> Option<u32> {
     (record.class == 0x5d && record.payload.first() == Some(&0x81)).then_some(())?;
     let mut position = 1;
-    let incidence = reference(&record.payload, &mut position, record.object_id)?;
+    let incidence = wire::object_ref(&record.payload, &mut position, true)?;
     (record.payload.get(position) == Some(&0x00) && position + 1 == record.payload.len())
         .then_some(incidence)
 }
 
 fn counted_references(record: &B5Record, class: u8) -> Option<Vec<u32>> {
     (record.class == class).then_some(())?;
-    let count = usize::from(record.payload.first()?.checked_sub(0x80)?);
-    let mut position = 1;
-    let references = (0..count)
-        .map(|_| reference(&record.payload, &mut position, record.object_id))
-        .collect::<Option<Vec<_>>>()?;
+    let (references, position) = wire::counted_refs(&record.payload, true)?;
     (position == record.payload.len()).then_some(references)
 }
 
@@ -818,7 +816,7 @@ fn parameter_incidence(record: &B5Record) -> Option<B5ParameterIncidence> {
     let count = usize::from(record.payload.first()?.checked_sub(0x80)?);
     let mut position = 1;
     let references = (0..count)
-        .map(|_| reference(&record.payload, &mut position, record.object_id))
+        .map(|_| wire::object_ref(&record.payload, &mut position, true))
         .collect::<Option<Vec<_>>>()?;
     (record.payload.get(position) == Some(&(0x80u8.checked_add(u8::try_from(count).ok()?)?)))
         .then_some(())?;
@@ -832,7 +830,7 @@ fn parameter_incidence(record: &B5Record) -> Option<B5ParameterIncidence> {
         }
         parameters.push(parameter);
         position += 8;
-        controls.push(compact(&record.payload, &mut position)?);
+        controls.push(wire::compact_uint(&record.payload, &mut position)?);
     }
     (position == record.payload.len()).then_some(B5ParameterIncidence {
         object_id: record.object_id,
@@ -1391,7 +1389,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
         }
         0x2d => {
             let mut position = 1;
-            let profile_curve = reference(&record.payload, &mut position, record.object_id)?;
+            let profile_curve = wire::object_ref(&record.payload, &mut position, true)?;
             let gauge_radius = scalar(&record.payload, position.checked_add(130)?)?;
             (gauge_radius.abs() > f64::EPSILON).then_some(B5Surface::Revolution {
                 profile_curve,
@@ -1431,7 +1429,7 @@ fn surface_alias_target(record: &B5Record) -> Option<u32> {
     if record.payload.first() == Some(&0x81) {
         position += 1;
     }
-    let target = reference(&record.payload, &mut position, record.object_id)?;
+    let target = wire::object_ref(&record.payload, &mut position, true)?;
     (position == record.payload.len()).then_some(target)
 }
 
@@ -1444,8 +1442,8 @@ fn parse_offset_surface(
     (record.family == 0xb5 && record.class == 0x30 && record.payload.first() == Some(&0x82))
         .then_some(())?;
     let mut position = 1;
-    let carrier_surface = reference(&record.payload, &mut position, record.object_id)?;
-    let source_surface = reference(&record.payload, &mut position, record.object_id)?;
+    let carrier_surface = wire::object_ref(&record.payload, &mut position, true)?;
+    let source_surface = wire::object_ref(&record.payload, &mut position, true)?;
     let distance = scalar(&record.payload, position)?;
     position += 8;
     let carrier_kind = *record.payload.get(position)?;
@@ -1531,7 +1529,7 @@ fn parse_offset_cache(record: &B5Record) -> Option<B5OffsetCache> {
     (record.family == 0xb5 && record.class == 0x31 && record.payload.first() == Some(&0x81))
         .then_some(())?;
     let mut position = 1;
-    let source_surface = reference(&record.payload, &mut position, record.object_id)?;
+    let source_surface = wire::object_ref(&record.payload, &mut position, true)?;
     let [distance, u0, v0, u1, v1] = line_values::<5>(&record.payload, position)?;
     position += 40;
     (position == record.payload.len() && u0 < u1 && v0 < v1).then_some(B5OffsetCache {
@@ -1578,7 +1576,7 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
     (record.family == 0xb5 && record.class == 0x2c && record.payload.first() == Some(&0x81))
         .then_some(())?;
     let mut position = 1;
-    let directrix_id = reference(&record.payload, &mut position, record.object_id)?;
+    let directrix_id = wire::object_ref(&record.payload, &mut position, true)?;
     let values = line_values::<9>(&record.payload, position)?;
     position += 72;
     (record.payload.get(position..) == Some(&[0x05, 0x05])
@@ -1602,8 +1600,8 @@ fn parse_extrusion_directrix(
     (record.family == 0xa8 && record.class == 0x25 && record.payload.first() == Some(&0x82))
         .then_some(())?;
     let mut position = 1;
-    let wrapper_id = reference(&record.payload, &mut position, record.object_id)?;
-    let second_pcurve = reference(&record.payload, &mut position, record.object_id)?;
+    let wrapper_id = wire::object_ref(&record.payload, &mut position, true)?;
+    let second_pcurve = wire::object_ref(&record.payload, &mut position, true)?;
     let tail = record.payload.len().checked_sub(25)?;
     (position < tail).then_some(())?;
     let parameter_range = line_values::<2>(&record.payload, tail)?;
@@ -1618,7 +1616,7 @@ fn parse_extrusion_directrix(
     (wrapper.family == 0xb5 && wrapper.class == 0x24 && wrapper.payload.first() == Some(&0x81))
         .then_some(())?;
     let mut wrapper_position = 1;
-    let first_pcurve = reference(&wrapper.payload, &mut wrapper_position, wrapper.object_id)?;
+    let first_pcurve = wire::object_ref(&wrapper.payload, &mut wrapper_position, true)?;
     if wrapper.payload.get(wrapper_position..wrapper_position + 2) != Some(&[0x81, 0x01]) {
         return None;
     }
@@ -1652,7 +1650,7 @@ fn parse_extrusion_directrix(
 fn pcurve_surface_reference(record: &B5Record) -> Option<u32> {
     (matches!(record.class, 0x18..=0x21)).then_some(())?;
     let mut position = usize::from(record.payload.first() == Some(&0x81));
-    reference(&record.payload, &mut position, record.object_id)
+    wire::object_ref(&record.payload, &mut position, true)
 }
 
 fn analytic_pcurve_range(record: &B5Record) -> Option<[f64; 2]> {
@@ -1680,7 +1678,7 @@ fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
     .then_some(())?;
     let mut position = 1;
     let references: [u32; 5] = (0..5)
-        .map(|_| reference(&record.payload, &mut position, record.object_id))
+        .map(|_| wire::object_ref(&record.payload, &mut position, true))
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()?;
@@ -1722,7 +1720,7 @@ fn supported_surface_pcurves_match(
             };
             let mut position = 1;
             pcurve.payload.first() == Some(&0x81)
-                && reference(&pcurve.payload, &mut position, pcurve.object_id) == Some(support_id)
+                && wire::object_ref(&pcurve.payload, &mut position, true) == Some(support_id)
         })
 }
 
@@ -1924,15 +1922,15 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         return None;
     }
     let mut position = 1;
-    let surface = reference(&record.payload, &mut position, record.object_id)?;
+    let surface = wire::object_ref(&record.payload, &mut position, true)?;
     if record.payload.get(position) != Some(&0x01) {
         return None;
     }
     position += 1;
-    let degree = compact(&record.payload, &mut position)?;
+    let degree = wire::compact_uint(&record.payload, &mut position)?;
     position = position.checked_add(2)?;
     record.payload.get(..position)?;
-    let knot_count = usize::try_from(compact(&record.payload, &mut position)?).ok()?;
+    let knot_count = usize::try_from(wire::compact_uint(&record.payload, &mut position)?).ok()?;
     if !(2..=4096).contains(&knot_count) {
         return None;
     }
@@ -1962,7 +1960,7 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     }
     let mut multiplicities = Vec::with_capacity(knot_count);
     for _ in 0..knot_count {
-        multiplicities.push(compact(&record.payload, &mut position)?);
+        multiplicities.push(wire::compact_uint(&record.payload, &mut position)?);
     }
     let pole_count = multiplicities
         .iter()
@@ -2015,7 +2013,7 @@ fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         return None;
     }
     let mut position = 1;
-    let surface = reference(&record.payload, &mut position, record.object_id)?;
+    let surface = wire::object_ref(&record.payload, &mut position, true)?;
     if record.payload.len() != position.checked_add(58)? {
         return None;
     }
@@ -2091,7 +2089,7 @@ fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
         return None;
     }
     let mut position = 1;
-    let surface = reference(&record.payload, &mut position, record.object_id)?;
+    let surface = wire::object_ref(&record.payload, &mut position, true)?;
     match record.class {
         0x1a => {
             (record.payload.len() == position.checked_add(74)?).then_some(())?;
@@ -2145,7 +2143,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         return None;
     }
     let mut position = 1;
-    let surface = reference(&record.payload, &mut position, record.object_id)?;
+    let surface = wire::object_ref(&record.payload, &mut position, true)?;
     let mode = *record.payload.get(position)?;
     position += 1;
     let (start, end, control_points) = match mode {
@@ -2198,31 +2196,6 @@ fn line_values<const N: usize>(payload: &[u8], mut position: usize) -> Option<[f
         position += 8;
     }
     Some(values)
-}
-
-fn compact(bytes: &[u8], position: &mut usize) -> Option<u32> {
-    let lead = *bytes.get(*position)?;
-    if lead % 4 == 1 {
-        *position += 1;
-        Some(u32::from((lead - 1) / 4))
-    } else if lead != 0 && lead % 4 == 0 {
-        let width = usize::from(lead / 4);
-        if width > 4 {
-            return None;
-        }
-        let mut value = 0u32;
-        for (shift, byte) in bytes
-            .get(*position + 1..*position + 1 + width)?
-            .iter()
-            .enumerate()
-        {
-            value |= u32::from(*byte) << (8 * shift);
-        }
-        *position += width + 1;
-        Some(value)
-    } else {
-        None
-    }
 }
 
 fn records(bytes: &[u8]) -> Vec<B5Record> {
@@ -2384,7 +2357,7 @@ fn record_references(record: &B5Record) -> Vec<u32> {
         return Vec::new();
     };
     (0..count)
-        .map_while(|_| reference(&record.payload, &mut position, record.object_id))
+        .map_while(|_| wire::object_ref(&record.payload, &mut position, true))
         .collect()
 }
 
@@ -2492,14 +2465,14 @@ fn face_references(record: &B5Record) -> Option<Vec<u32>> {
     {
         let mut position = 1;
         let references = (0..count)
-            .map(|_| reference(&record.payload, &mut position, record.object_id))
+            .map(|_| wire::object_ref(&record.payload, &mut position, true))
             .collect::<Option<Vec<_>>>()?;
         if position < record.payload.len() && record.payload[position] != 0x05 {
             return None;
         }
         Some(references)
     } else {
-        uncounted_references(&record.payload, record.object_id)
+        uncounted_references(&record.payload)
     }
 }
 
@@ -2515,7 +2488,7 @@ pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
             if position == 1 && record.payload[0] == 0x80 {
                 return None;
             }
-            let surface = reference(&record.payload, &mut position, record.object_id)?;
+            let surface = wire::object_ref(&record.payload, &mut position, true)?;
             Some((record.object_id, surface))
         })
         .collect()
@@ -2564,7 +2537,7 @@ fn loop_references(record: &B5Record) -> Option<Vec<u32>> {
         return None;
     }
     let references = (0..count)
-        .map(|_| reference(&record.payload, &mut position, record.object_id))
+        .map(|_| wire::object_ref(&record.payload, &mut position, true))
         .collect::<Option<Vec<_>>>()?;
     let edge_count = (count - 1) / 2;
     if position < record.payload.len()
@@ -2582,57 +2555,17 @@ fn counted_cardinality(bytes: &[u8], position: &mut usize) -> Option<usize> {
         *position += 1;
         Some(usize::from(lead - 0x80))
     } else {
-        usize::try_from(reference(bytes, position, 0)?).ok()
+        usize::try_from(wire::object_ref(bytes, position, true)?).ok()
     }
 }
 
-fn uncounted_references(bytes: &[u8], anchor: u32) -> Option<Vec<u32>> {
+fn uncounted_references(bytes: &[u8]) -> Option<Vec<u32>> {
     let mut position = 0;
     let mut references = Vec::new();
     while position < bytes.len() {
-        references.push(reference(bytes, &mut position, anchor)?);
+        references.push(wire::object_ref(bytes, &mut position, true)?);
     }
     Some(references)
-}
-
-fn reference(bytes: &[u8], position: &mut usize, _anchor: u32) -> Option<u32> {
-    let lead = *bytes.get(*position)?;
-    let (value, width) = match lead {
-        0x38 => (
-            u32::from_le_bytes([
-                *bytes.get(*position + 1)?,
-                *bytes.get(*position + 2)?,
-                *bytes.get(*position + 3)?,
-                0,
-            ]),
-            4,
-        ),
-        0x30 => (
-            u32::from(u16::from_le_bytes([
-                *bytes.get(*position + 1)?,
-                *bytes.get(*position + 2)?,
-            ])) << 8,
-            3,
-        ),
-        0x28 => (
-            u32::from(*bytes.get(*position + 1)?) | (u32::from(*bytes.get(*position + 2)?) << 16),
-            3,
-        ),
-        0x20 => (u32::from(*bytes.get(*position + 1)?) << 16, 2),
-        0x18 => (
-            u32::from(u16::from_le_bytes([
-                *bytes.get(*position + 1)?,
-                *bytes.get(*position + 2)?,
-            ])),
-            3,
-        ),
-        0x10 => (u32::from(*bytes.get(*position + 1)?) << 8, 2),
-        0x08 => (u32::from(*bytes.get(*position + 1)?), 2),
-        0x80..=0xff => (u32::from(lead - 0x80), 1),
-        _ => return None,
-    };
-    *position += width;
-    Some(value)
 }
 
 #[cfg(test)]
@@ -2708,15 +2641,18 @@ mod tests {
     fn sparse_reference_tokens_fill_selected_id_bytes() {
         let mut position = 0;
         assert_eq!(
-            reference(&[0x28, 0x34, 0x02], &mut position, 0x02_0033),
+            wire::object_ref(&[0x28, 0x34, 0x02], &mut position, true),
             Some(0x02_0034)
         );
         assert_eq!(position, 3);
         position = 0;
-        assert_eq!(reference(&[0x20, 0x07], &mut position, 0), Some(0x07_0000));
+        assert_eq!(
+            wire::object_ref(&[0x20, 0x07], &mut position, true),
+            Some(0x07_0000)
+        );
         assert_eq!(position, 2);
         position = 0;
-        assert_eq!(reference(&[0x8b], &mut position, 0), Some(11));
+        assert_eq!(wire::object_ref(&[0x8b], &mut position, true), Some(11));
         assert_eq!(position, 1);
     }
 
