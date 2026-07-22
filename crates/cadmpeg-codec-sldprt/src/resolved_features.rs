@@ -678,6 +678,9 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     if let Some(coordinates) = legacy_linked_coordinates(payload, offset) {
         return Some(coordinates);
     }
+    if let Some(coordinates) = legacy_line_handle_coordinates(payload, offset) {
+        return Some(coordinates);
+    }
     if let Some([center, _, _]) = legacy_inline_arc_coordinates(payload, offset) {
         return Some(center);
     }
@@ -734,10 +737,34 @@ fn legacy_inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[f64;
     let end = finite_coordinate_pair(payload, offset + 112)?;
     let start_radius = (start[0] - center[0]).hypot(start[1] - center[1]);
     let end_radius = (end[0] - center[0]).hypot(end[1] - center[1]);
-    (start != end
-        && start_radius > 0.0
-        && same_dimension_length(start_radius, end_radius))
-    .then_some([center, start, end])
+    (start != end && start_radius > 0.0 && same_dimension_length(start_radius, end_radius))
+        .then_some([center, start, end])
+}
+
+fn legacy_line_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(0)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
+        || payload.get(offset + 74..offset + 84)
+            != Some(&[0x00, 0x00, 0x03, 0x00, 0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
+        || payload.get(offset + 84..offset + 96) != Some(b"sgLineHandle")
+        || payload.get(offset + 96..offset + 106)
+            != Some(&[0x03, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
+        || payload.get(offset + 110..offset + 114) != Some(&[0xff; 4])
+        || payload.get(offset + 114..offset + 118) != Some(&[0; 4])
+        || payload.get(offset + 118..offset + 124) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        || payload.get(offset + 124..offset + 166) != Some(&[0; 42])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(170)?)
+    {
+        return None;
+    }
+    finite_coordinate_pair(payload, offset + 58)
 }
 
 fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
@@ -964,8 +991,8 @@ mod marker_tests {
         inline_surface_reference_at, legacy_compact_diameter_arc_center,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
-        legacy_feature_input_section, legacy_inline_arc_coordinates, legacy_linked_coordinates,
-        legacy_reference_axis_triads,
+        legacy_feature_input_section, legacy_inline_arc_coordinates,
+        legacy_line_handle_coordinates, legacy_linked_coordinates, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
         marker_coordinates, marker_is_geometry_locus, marker_is_selected_construction_line,
         marker_local_id, marker_local_links, marker_object_index, marker_spatial_coordinates,
@@ -4162,8 +4189,7 @@ mod marker_tests {
         payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         payload[17..21].copy_from_slice(&2u32.to_le_bytes());
         payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
-        payload[31..39]
-            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
         payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
         payload[64..66].copy_from_slice(&[0x1a, 0x00]);
         payload[66..74].copy_from_slice(&2.0f64.to_le_bytes());
@@ -4189,6 +4215,43 @@ mod marker_tests {
 
         payload[120..128].copy_from_slice(&5.0f64.to_le_bytes());
         assert_eq!(legacy_inline_arc_coordinates(&payload, 0), None);
+    }
+
+    #[test]
+    fn legacy_line_handle_marker_decodes_its_planar_coordinate() {
+        let mut payload = vec![0; 170 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+        payload[58..66].copy_from_slice(&0.045f64.to_le_bytes());
+        payload[66..74].copy_from_slice(&(-0.0225f64).to_le_bytes());
+        payload[74..84]
+            .copy_from_slice(&[0x00, 0x00, 0x03, 0x00, 0xff, 0xff, 0x01, 0x00, 0x0c, 0x00]);
+        payload[84..96].copy_from_slice(b"sgLineHandle");
+        payload[96..106]
+            .copy_from_slice(&[0x03, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00]);
+        payload[106..108].copy_from_slice(&[0x2d, 0x82]);
+        payload[108..110].copy_from_slice(&4u16.to_le_bytes());
+        payload[110..114].fill(0xff);
+        payload[118..124].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        payload[170..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(
+            legacy_line_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
+        );
+        assert_eq!(marker_coordinates(&payload, 0), Some([0.045, -0.0225]));
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+
+        payload[84] = b'x';
+        assert_eq!(legacy_line_handle_coordinates(&payload, 0), None);
     }
 
     #[test]
@@ -4416,8 +4479,7 @@ mod marker_tests {
         payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         payload[17..21].copy_from_slice(&2u32.to_le_bytes());
         payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x02, 0x00]);
-        payload[31..39]
-            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
         payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
         payload[64..66].copy_from_slice(&7u16.to_le_bytes());
         payload[66..68].copy_from_slice(&8u16.to_le_bytes());
@@ -8928,12 +8990,7 @@ fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
                 })
             })
             .flat_map(|curve| {
-                marker_curve_endpoint_markers(
-                    &lane.native_payload,
-                    curve,
-                    &markers_by_id,
-                    &markers,
-                )
+                marker_curve_endpoint_markers(&lane.native_payload, curve, &markers_by_id, &markers)
             })
             .filter(|marker| marker.coordinates_m.is_some())
             .map(|marker| marker.id.clone())
