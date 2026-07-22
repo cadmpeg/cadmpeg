@@ -2855,7 +2855,9 @@ The named entity in `ent_list(conic)` declares compact `id`, `type`, and
 `flip` fields; model-coordinate arrays `end1 f8 03` and `end2 f8 03`; scalar
 fields `t0`, `t1`, `c1`, and `c2`; and a twelve-slot
 `local_sys f9 04 03` body. The endpoint arrays use the model-reference
-coordinate lane. A `t1` body consisting of the single compact byte `11` stores
+coordinate lane. No schema field occurs more than once; duplicate identifiers,
+endpoints, parameters, coefficients, or local systems make the named conic
+ambiguous. A `t1` body consisting of the single compact byte `11` stores
 `t0 + pi`; it has no independent scalar payload and requires a decoded `t0`.
 Within the local-system body, `4a` is the positive seven-byte
 frame-coordinate form, and `18 e5` expands to the three

@@ -293,6 +293,27 @@ fn find_in(data: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize
         .map(|relative| start + relative)
 }
 
+fn unique_find_in(data: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
+    (start <= end && end <= data.len()).then_some(())?;
+    let mut matches = data[start..end]
+        .windows(needle.len())
+        .enumerate()
+        .filter_map(|(relative, window)| (window == needle).then_some(start + relative));
+    let offset = matches.next()?;
+    matches.next().is_none().then_some(offset)
+}
+
+fn occurs_more_than_once(data: &[u8], needle: &[u8], start: usize, end: usize) -> bool {
+    start <= end
+        && end <= data.len()
+        && data[start..end]
+            .windows(needle.len())
+            .filter(|window| *window == needle)
+            .take(2)
+            .count()
+            > 1
+}
+
 fn named_coordinate(
     data: &[u8],
     label: &[u8],
@@ -300,7 +321,7 @@ fn named_coordinate(
     end: usize,
     cache: &ScalarCache,
 ) -> Option<f64> {
-    let label_offset = find_in(data, label, start, end)?;
+    let label_offset = unique_find_in(data, label, start, end)?;
     coordinate(data, label_offset + label.len(), cache).map(|(value, _)| value)
 }
 
@@ -311,7 +332,7 @@ fn named_point(
     end: usize,
     cache: &ScalarCache,
 ) -> Option<[f64; 3]> {
-    let label_offset = find_in(data, label, start, end)?;
+    let label_offset = unique_find_in(data, label, start, end)?;
     let opener = label_offset + label.len();
     (data.get(opener) == Some(&crate::psb::token::ARRAY_OPEN)).then_some(())?;
     let (count, mut cursor) = crate::psb::compact_int(data, opener + 1);
@@ -374,6 +395,12 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
     const ID: &[u8] = b"\xe0\x01id\0";
     const TYPE: &[u8] = b"\xe0\x01type\0";
     const FLIP: &[u8] = b"\xe0\x01flip\0";
+    const END1: &[u8] = b"\xe0\x02end1\0";
+    const END2: &[u8] = b"\xe0\x02end2\0";
+    const T0: &[u8] = b"\xe0\x02t0\0";
+    const T1: &[u8] = b"\xe0\x02t1\0";
+    const C1: &[u8] = b"\xe0\x02c1\0";
+    const C2: &[u8] = b"\xe0\x02c2\0";
     let cache = ScalarCache::from_section(payload);
     let mut result = Vec::new();
     let mut search = 0;
@@ -381,22 +408,35 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
         let fields_start = offset + LIST.len();
         let block_end =
             find_in(payload, NEXT_LIST, fields_start, payload.len()).unwrap_or(payload.len());
-        let Some(id_label) = find_in(payload, ID, fields_start, block_end) else {
+        if [ID, TYPE, FLIP, END1, END2, T0, T1, C1, C2, LOCAL_SYSTEM]
+            .into_iter()
+            .any(|label| occurs_more_than_once(payload, label, fields_start, block_end))
+        {
+            search = block_end.max(fields_start);
+            continue;
+        }
+        let Some(id_label) = unique_find_in(payload, ID, fields_start, block_end) else {
             search = block_end.max(fields_start);
             continue;
         };
         let (entity_id, after_id) = crate::psb::compact_int(payload, id_label + ID.len());
-        let Some(type_label) = find_in(payload, TYPE, after_id, block_end) else {
+        let Some(type_label) = unique_find_in(payload, TYPE, fields_start, block_end)
+            .filter(|label| *label >= after_id)
+        else {
             search = block_end.max(fields_start);
             continue;
         };
         let (type_id, after_type) = crate::psb::compact_int(payload, type_label + TYPE.len());
-        let Some(flip_label) = find_in(payload, FLIP, after_type, block_end) else {
+        let Some(flip_label) = unique_find_in(payload, FLIP, fields_start, block_end)
+            .filter(|label| *label >= after_type)
+        else {
             search = block_end.max(fields_start);
             continue;
         };
         let (flip, after_flip) = crate::psb::compact_int(payload, flip_label + FLIP.len());
-        let Some(local_label) = find_in(payload, LOCAL_SYSTEM, after_flip, block_end) else {
+        let Some(local_label) = unique_find_in(payload, LOCAL_SYSTEM, fields_start, block_end)
+            .filter(|label| *label >= after_flip)
+        else {
             search = block_end.max(fields_start);
             continue;
         };
@@ -408,12 +448,10 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
             block_end,
         )
         .unwrap_or(block_end);
-        let start = named_point(payload, b"\xe0\x02end1\0", after_flip, local_label, &cache);
-        let end = named_point(payload, b"\xe0\x02end2\0", after_flip, local_label, &cache);
-        let coefficient_1 =
-            named_coordinate(payload, b"\xe0\x02c1\0", after_flip, local_label, &cache);
-        let coefficient_2 =
-            named_coordinate(payload, b"\xe0\x02c2\0", after_flip, local_label, &cache);
+        let start = named_point(payload, END1, after_flip, local_label, &cache);
+        let end = named_point(payload, END2, after_flip, local_label, &cache);
+        let coefficient_1 = named_coordinate(payload, C1, after_flip, local_label, &cache);
+        let coefficient_2 = named_coordinate(payload, C2, after_flip, local_label, &cache);
         let (Some(start), Some(end), Some(coefficient_1), Some(coefficient_2)) =
             (start, end, coefficient_1, coefficient_2)
         else {
@@ -424,11 +462,10 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
             search = block_end.max(fields_start);
             continue;
         }
-        let parameter_start =
-            named_coordinate(payload, b"\xe0\x02t0\0", after_flip, local_label, &cache);
+        let parameter_start = named_coordinate(payload, T0, after_flip, local_label, &cache);
         let parameter_end =
-            find_in(payload, b"\xe0\x02t1\0", after_flip, local_label).and_then(|label| {
-                let value_offset = label + b"\xe0\x02t1\0".len();
+            unique_find_in(payload, T1, after_flip, local_label).and_then(|label| {
+                let value_offset = label + T1.len();
                 if payload.get(value_offset) == Some(&0x11) {
                     parameter_start.map(|value| value + std::f64::consts::PI)
                 } else {
@@ -951,6 +988,20 @@ mod tests {
             conic.local_system,
             Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         );
+    }
+
+    #[test]
+    fn named_conic_withholds_duplicate_optional_parameter_fields() {
+        let payload = b"ent_list(conic)\0\
+            \xe0\x01id\0\x2a\xe0\x01type\0\x1e\xe0\x01flip\0\x01\
+            \xe0\x02end1\0\xf8\x03\xe4\x0f\x0f\
+            \xe0\x02end2\0\xf8\x03\x43\xf0\x00\x0f\x0f\
+            \xe0\x02t0\0\x0f\xe0\x02t0\0\x0f\
+            \xe0\x02c1\0\x43\xf0\x00\xe0\x02c2\0\xe4\
+            \xe0\x02local_sys\0\xf9\x04\x03\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6\
+            \xf2\xf7\x0e\xe3";
+
+        assert!(named_conics(payload).is_empty());
     }
 
     #[test]
