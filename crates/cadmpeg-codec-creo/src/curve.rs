@@ -521,9 +521,9 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
                 .map(|mut assignment| {
                     assignment.value = evaluate_expression(&assignment.expression, &values);
                     if let Some(value) = assignment.value {
-                        values.insert(assignment.name.clone(), value);
+                        values.insert(expression_identifier_key(&assignment.name), value);
                     } else {
-                        values.remove(&assignment.name);
+                        values.remove(&expression_identifier_key(&assignment.name));
                     }
                     assignment
                 })
@@ -557,7 +557,7 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
     if !valid_name || expression.is_empty() {
         return None;
     }
-    let mut dependencies = Vec::new();
+    let mut dependencies = Vec::<String>::new();
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
@@ -592,22 +592,22 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
             }
         } else if bytes[cursor] == b'_' || bytes[cursor].is_ascii_alphabetic() {
             let start = cursor;
-            cursor += 1;
-            while cursor < bytes.len()
-                && (bytes[cursor] == b'_'
-                    || bytes[cursor].is_ascii_alphabetic()
-                    || bytes[cursor].is_ascii_digit())
-            {
-                cursor += 1;
-            }
+            cursor = expression_identifier_end(bytes, start)?;
             let dependency = &expression[start..cursor];
             let mut following = cursor;
             while bytes.get(following).is_some_and(u8::is_ascii_whitespace) {
                 following += 1;
             }
-            let function =
-                bytes.get(following) == Some(&b'(') && creo_math_function(dependency).is_some();
-            if !function && !dependencies.iter().any(|existing| existing == dependency) {
+            let function = bytes.get(following) == Some(&b'(')
+                && !dependency.contains(':')
+                && creo_math_function(dependency).is_some();
+            let constant = dependency.eq_ignore_ascii_case("pi");
+            if !function
+                && !constant
+                && !dependencies
+                    .iter()
+                    .any(|existing| existing.eq_ignore_ascii_case(dependency))
+            {
                 dependencies.push(dependency.to_owned());
             }
         } else {
@@ -621,6 +621,37 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
         value: None,
         offset: line.offset,
     })
+}
+
+pub(crate) fn expression_identifier_key(name: &str) -> String {
+    name.to_ascii_lowercase()
+}
+
+fn expression_identifier_end(source: &[u8], start: usize) -> Option<usize> {
+    source
+        .get(start)
+        .is_some_and(|byte| *byte == b'_' || byte.is_ascii_alphabetic())
+        .then_some(())?;
+    let mut cursor = start + 1;
+    while source
+        .get(cursor)
+        .is_some_and(|byte| *byte == b'_' || byte.is_ascii_alphabetic() || byte.is_ascii_digit())
+    {
+        cursor += 1;
+    }
+    while source.get(cursor) == Some(&b':')
+        && source.get(cursor + 1).is_some_and(|byte| {
+            *byte == b'_' || byte.is_ascii_alphabetic() || byte.is_ascii_digit()
+        })
+    {
+        cursor += 2;
+        while source.get(cursor).is_some_and(|byte| {
+            *byte == b'_' || byte.is_ascii_alphabetic() || byte.is_ascii_digit()
+        }) {
+            cursor += 1;
+        }
+    }
+    Some(cursor)
 }
 
 trait ExpressionValue: Copy {
@@ -1006,17 +1037,16 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
 
     fn identifier_or_function(&mut self) -> Option<V> {
         let start = self.cursor;
-        self.cursor += 1;
-        while self.source.get(self.cursor).is_some_and(|byte| {
-            byte.is_ascii_alphabetic() || byte.is_ascii_digit() || *byte == b'_'
-        }) {
-            self.cursor += 1;
-        }
+        self.cursor = expression_identifier_end(self.source, start)?;
         let name = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
         self.whitespace();
         if self.source.get(self.cursor) != Some(&b'(') {
-            return self.values.get(name).copied();
+            if name.eq_ignore_ascii_case("pi") {
+                return Some(V::number(std::f64::consts::PI));
+            }
+            return self.values.get(&expression_identifier_key(name)).copied();
         }
+        (!name.contains(':')).then_some(())?;
         (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
         let function = creo_math_function(name)?;
         self.cursor += 1;
@@ -1200,9 +1230,9 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
     )]);
     for assignment in &record.assignments {
         if let Some(value) = evaluate_affine_expression(&assignment.expression, &values) {
-            values.insert(assignment.name.clone(), value);
+            values.insert(expression_identifier_key(&assignment.name), value);
         } else {
-            values.remove(&assignment.name);
+            values.remove(&expression_identifier_key(&assignment.name));
         }
     }
     values
@@ -2383,6 +2413,24 @@ mod tests {
         assert_eq!(evaluate_expression(&excessive_power_depth, &values), None);
         let long_unary_chain = format!("{}1", "-".repeat(1024));
         assert_eq!(evaluate_expression(&long_unary_chain, &values), Some(1.0));
+    }
+
+    #[test]
+    fn binds_relation_symbols_case_insensitively_and_preserves_scoped_dependencies() {
+        let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x0aexpression\0\xf8\x04Radius=5\0q=radius+PI\0\
+            external=d1:2+PARAM:FID_20\0RADIUS=7\0";
+        let assignments = &expression_records(payload)[0].assignments;
+
+        assert_eq!(assignments[1].dependencies, ["radius"]);
+        assert_eq!(assignments[1].value, Some(5.0 + std::f64::consts::PI));
+        assert_eq!(assignments[2].dependencies, ["d1:2", "PARAM:FID_20"]);
+        assert_eq!(assignments[2].value, None);
+        assert_eq!(assignments[3].value, Some(7.0));
+        assert_eq!(
+            evaluate_expression("pi", &BTreeMap::new()),
+            Some(std::f64::consts::PI)
+        );
     }
 
     #[test]

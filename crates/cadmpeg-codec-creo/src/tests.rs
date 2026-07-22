@@ -4667,7 +4667,7 @@ fn decode_preserves_counted_curve_expression_programs() {
 #[test]
 fn decode_binds_unique_forward_curve_expression_dependencies() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x0aexpression\0\xf8\x04r=a\0a=5\0theta=t*360\0z=1\0"
+        \xe0\x0aexpression\0\xf8\x04r=A\0a=5\0theta=T*360\0z=1\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
@@ -4682,7 +4682,7 @@ fn decode_binds_unique_forward_curve_expression_dependencies() {
     assert_eq!(r.dependencies, std::slice::from_ref(&a.id));
     assert_eq!(a.ordinal, 0);
     assert!(!r.properties.contains_key("external_dependencies"));
-    assert_eq!(theta.properties["independent_variables"], "t");
+    assert_eq!(theta.properties["independent_variables"], "T");
     assert_eq!(
         result.ir.model.features[0].source_content,
         result
@@ -4699,6 +4699,38 @@ fn decode_binds_unique_forward_curve_expression_dependencies() {
     );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn decode_retains_complete_scoped_curve_expression_dependencies() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01value=d1:2+PARAM:FID_20+PI\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let [parameter] = result.ir.model.parameters.as_slice() else {
+        panic!("one curve-expression parameter");
+    };
+
+    assert_eq!(
+        parameter.properties["external_dependencies"],
+        "d1:2,PARAM:FID_20"
+    );
+    assert!(!parameter.properties.contains_key("ambiguous_dependencies"));
+    let source = result.ir.source.as_ref().expect("source metadata");
+    assert_eq!(
+        source.attributes["decoded_active_curve_expression_assignment_count"],
+        "1"
+    );
+    assert_eq!(
+        source.attributes["transferred_curve_expression_parameter_count"],
+        "1"
+    );
+    assert_eq!(
+        source.attributes["evaluated_active_curve_expression_assignment_count"],
+        "0"
+    );
 }
 
 #[test]
@@ -4724,7 +4756,7 @@ fn decode_retains_cyclic_curve_expression_dependencies_without_invalid_edges() {
 #[test]
 fn decode_transfers_reassigned_curve_expression_names_without_identity_collisions() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x0aexpression\0\xf8\x04r=1\0r=2\0theta=t*360\0z=r\0"
+        \xe0\x0aexpression\0\xf8\x04r=1\0R=2\0theta=t*360\0z=r\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
@@ -4738,14 +4770,14 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
             .iter()
             .map(|parameter| (parameter.name.as_str(), parameter.ordinal))
             .collect::<Vec<_>>(),
-        [("r#1", 0), ("r#2", 1), ("theta", 2), ("z", 3)]
+        [("r#1", 0), ("R#2", 1), ("theta", 2), ("z", 3)]
     );
     assert_eq!(result.ir.model.parameters[0].properties["source_name"], "r");
     assert_eq!(
         result.ir.model.parameters[0].properties["source_assignment_ordinal"],
         "0"
     );
-    assert_eq!(result.ir.model.parameters[1].properties["source_name"], "r");
+    assert_eq!(result.ir.model.parameters[1].properties["source_name"], "R");
     assert_eq!(
         result.ir.model.parameters[3].properties["ambiguous_dependencies"],
         "r"
@@ -4756,7 +4788,7 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
         .contains_key("external_dependencies"));
     assert_eq!(
         result.ir.model.features[0].source_text.as_deref(),
-        Some("r=1\nr=2\ntheta=t*360\nz=r")
+        Some("r=1\nR=2\ntheta=t*360\nz=r")
     );
     assert_eq!(
         result

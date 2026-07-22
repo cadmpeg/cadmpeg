@@ -2845,7 +2845,11 @@ fn curve_expression_parameter_order(
             assignment
                 .dependencies
                 .iter()
-                .filter_map(|name| unique_assignment_indices.get(name).copied())
+                .filter_map(|name| {
+                    unique_assignment_indices
+                        .get(&crate::curve::expression_identifier_key(name))
+                        .copied()
+                })
                 .filter(|index| seen.insert(*index))
                 .collect::<Vec<_>>()
         })
@@ -2880,19 +2884,20 @@ fn curve_expression_parameter_names(
     let counts = assignments
         .iter()
         .fold(BTreeMap::new(), |mut counts, assignment| {
-            *counts.entry(assignment.name.as_str()).or_insert(0usize) += 1;
+            *counts
+                .entry(crate::curve::expression_identifier_key(&assignment.name))
+                .or_insert(0usize) += 1;
             counts
         });
     let mut occurrences = BTreeMap::new();
     assignments
         .iter()
         .map(|assignment| {
-            if counts[assignment.name.as_str()] == 1 {
+            let key = crate::curve::expression_identifier_key(&assignment.name);
+            if counts[&key] == 1 {
                 return assignment.name.clone();
             }
-            let occurrence = occurrences
-                .entry(assignment.name.as_str())
-                .or_insert(0usize);
+            let occurrence = occurrences.entry(key).or_insert(0usize);
             *occurrence += 1;
             format!("{}#{occurrence}", assignment.name)
         })
@@ -2903,7 +2908,7 @@ fn transfer_curve_expression_features(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> usize {
     let ordinal_base = ir
         .model
         .features
@@ -2911,6 +2916,7 @@ fn transfer_curve_expression_features(
         .map(|feature| feature.ordinal)
         .max()
         .map_or(0, |value| value + 1);
+    let mut transferred_assignment_count = 0;
     for (expression_ordinal, record) in scan
         .curve_expressions
         .iter()
@@ -2925,7 +2931,7 @@ fn transfer_curve_expression_features(
         let mut assignment_indices_by_name = BTreeMap::<String, Option<usize>>::new();
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
             assignment_indices_by_name
-                .entry(assignment.name.clone())
+                .entry(crate::curve::expression_identifier_key(&assignment.name))
                 .and_modify(|index| *index = None)
                 .or_insert(Some(assignment_ordinal));
         }
@@ -2955,7 +2961,11 @@ fn transfer_curve_expression_features(
             let dependencies = assignment
                 .dependencies
                 .iter()
-                .filter_map(|name| unique_assignment_indices.get(name).copied())
+                .filter_map(|name| {
+                    unique_assignment_indices
+                        .get(&crate::curve::expression_identifier_key(name))
+                        .copied()
+                })
                 .filter(|dependency| !cyclic_edges.contains(&(assignment_ordinal, *dependency)))
                 .scan(BTreeSet::new(), |seen, dependency| {
                     seen.insert(dependency).then_some(dependency)
@@ -2971,20 +2981,27 @@ fn transfer_curve_expression_features(
                 .dependencies
                 .iter()
                 .filter(|name| {
-                    name.as_str() != "t" && !assignment_indices_by_name.contains_key(*name)
+                    let key = crate::curve::expression_identifier_key(name);
+                    key != "t" && !assignment_indices_by_name.contains_key(&key)
                 })
                 .cloned()
                 .collect::<Vec<_>>();
             let ambiguous_dependencies = assignment
                 .dependencies
                 .iter()
-                .filter(|name| matches!(assignment_indices_by_name.get(*name), Some(None)))
+                .filter(|name| {
+                    matches!(
+                        assignment_indices_by_name
+                            .get(&crate::curve::expression_identifier_key(name)),
+                        Some(None)
+                    )
+                })
                 .cloned()
                 .collect::<Vec<_>>();
             let intrinsic_dependencies = assignment
                 .dependencies
                 .iter()
-                .filter(|name| name.as_str() == "t")
+                .filter(|name| crate::curve::expression_identifier_key(name) == "t")
                 .cloned()
                 .collect::<Vec<_>>();
             let mut properties = BTreeMap::new();
@@ -3017,8 +3034,9 @@ fn transfer_curve_expression_features(
                 .dependencies
                 .iter()
                 .filter_map(|name| {
+                    let key = crate::curve::expression_identifier_key(name);
                     unique_assignment_indices
-                        .get(name)
+                        .get(&key)
                         .filter(|dependency| {
                             cyclic_edges.contains(&(assignment_ordinal, **dependency))
                         })
@@ -3055,6 +3073,7 @@ fn transfer_curve_expression_features(
                 pmi: None,
                 native_ref: Some(curve_expression_record_id(record)),
             });
+            transferred_assignment_count += 1;
             source_content.push(FeatureSourceContent::Parameter(parameter_id.clone()));
         }
         annotate(
@@ -3148,6 +3167,7 @@ fn transfer_curve_expression_features(
             native_ref: Some(curve_expression_record_id(record)),
         });
     }
+    transferred_assignment_count
 }
 
 fn feature_definition_has_sketch_design(definition: &crate::feature::FeatureDefinition) -> bool {
@@ -34775,10 +34795,35 @@ fn build_ir(
     }
     link_feature_sketch_history(scan, &mut ir);
     reconcile_feature_links(scan, &mut ir);
-    transfer_curve_expression_features(scan, &mut ir, &mut annotations);
+    let transferred_curve_expression_assignment_count =
+        transfer_curve_expression_features(scan, &mut ir, &mut annotations);
     let transferred_feature_dimension_count =
         transfer_feature_dimensions(scan, &mut ir, &mut annotations);
     if let Some(source) = &mut ir.source {
+        let active_expressions = scan
+            .curve_expressions
+            .iter()
+            .filter(|record| !record.backup);
+        let decoded_curve_expression_assignment_count = active_expressions
+            .clone()
+            .map(|record| record.assignments.len())
+            .sum::<usize>();
+        let evaluated_curve_expression_assignment_count = active_expressions
+            .flat_map(|record| &record.assignments)
+            .filter(|assignment| assignment.value.is_some())
+            .count();
+        source.attributes.insert(
+            "decoded_active_curve_expression_assignment_count".to_string(),
+            decoded_curve_expression_assignment_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_curve_expression_parameter_count".to_string(),
+            transferred_curve_expression_assignment_count.to_string(),
+        );
+        source.attributes.insert(
+            "evaluated_active_curve_expression_assignment_count".to_string(),
+            evaluated_curve_expression_assignment_count.to_string(),
+        );
         let (decoded_dimension_count, resolved_dimension_count) = scan
             .feature_definitions
             .iter()
@@ -36522,7 +36567,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              or native design records. Curve-equation assignments transfer with their source, \
              dependencies, and closed scalar operator and standard mathematical-function values. \
              Full neutral operation semantics\
-             {configuration_gap}, remaining expression families, materials, and display data \
+             {configuration_gap}, non-scalar relation statements, materials, and display data \
              remain untransferred."
         ),
         provenance: None,

@@ -38,8 +38,10 @@ fixtures, claims above L1 remain unproven.
 - Holes and rounds transfer typed operation definitions where their affected
   geometry, edge identities, radii, and extents resolve uniquely.
 - Curve-equation assignments retain source order and dependency identity;
-  closed scalar operator and standard mathematical-function values transfer, and
-  affine cylindrical-coordinate programs transfer as helices.
+  closed scalar operator and standard mathematical-function values transfer.
+  Local bindings are case-insensitive, scoped external symbols remain whole,
+  the reserved `PI` constant evaluates, and affine cylindrical-coordinate
+  programs transfer as helices.
 - Feature rows, parent/input tables, affected geometry and edge identifiers,
   recipe effects, saved sections, and operation states retain stable native
   identities when neutral semantics remain incomplete.
@@ -63,9 +65,10 @@ fixtures, claims above L1 remain unproven.
    `relat_ptr` and `skamp_ptr` constraints.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, constraints,
-   dimensions, expressions, and configuration state. Source
-   metadata counts decoded and transferred section dimensions separately and
-   counts dimensions whose scalar values resolve.
+   dimensions, expressions, and configuration state. Source metadata counts
+   decoded and transferred section dimensions separately and counts dimensions
+   whose scalar values resolve. It likewise counts decoded, transferred, and
+   evaluated active curve-equation assignments separately.
 5. Run malformed-input and fuzz gates for every admitted parser family.
 
 The current public score remains L1 claimed. Capabilities above L1 are extras
