@@ -260,7 +260,7 @@ An `moTempAxisRef_w` declaration stores two `c7 cf ff ff` handle words at declar
 
 The Hole Wizard `moTempAxisRef_w` form stores the handle pair at declaration offsets `+267` and `+271`, a zero u32 at `+275`, and a nonzero stream address at `+279`. Seven little-endian f64 values begin at `+299`: the first is the hole depth in metres, the next xyz triple is an axis point in metres, and the final xyz triple is the unit operation direction. The scalar record ends at `+355`; at most 24 zero bytes separate it from the next class declaration or typed high-bit token.
 
-An `moRevolution_c` object's Boolean form is the little-endian u32 followed by four zero bytes immediately before its declared class marker or compact object-name token. Form `6` creates a new body. Form `8` joins existing bodies. Other forms have unresolved Boolean semantics.
+An `moRevolution_c` object's Boolean form is the little-endian u32 followed by four zero bytes immediately before its declared class marker or compact object-name token. Forms `5`, `6`, `11`, `60`, `20322`, and `22016` create a new body. Form `8` joins existing bodies. Other forms have unresolved Boolean semantics.
 
 An `moRevolution_c` or `moRevCut_c` object consumes the immediately preceding profile feature-input object as its profile. When profile objects and revolution objects form separate ordered groups, the line-reference source identifies the consumed profile object. A profile history record without an XML source ID uses its unique feature-input object ID. A non-unique display name does not establish object identity.
 

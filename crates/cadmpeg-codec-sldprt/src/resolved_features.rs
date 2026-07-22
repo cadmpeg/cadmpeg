@@ -7684,10 +7684,12 @@ mod marker_tests {
 
     #[test]
     fn revolution_form_words_distinguish_new_body_and_join() {
-        assert_eq!(
-            revolution_operation(Some("moRevolution_c"), 6),
-            Some(BooleanOp::NewBody)
-        );
+        for code in [5, 6, 11, 60, 20_322, 22_016] {
+            assert_eq!(
+                revolution_operation(Some("moRevolution_c"), code),
+                Some(BooleanOp::NewBody)
+            );
+        }
         assert_eq!(
             revolution_operation(Some("moRevolution_c"), 8),
             Some(BooleanOp::Join)
@@ -17450,7 +17452,9 @@ fn feature_operation_code(
 
 fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     match (class, code) {
-        (Some("moRevolution_c"), 6) => Some(BooleanOp::NewBody),
+        (Some("moRevolution_c"), 5 | 6 | 11 | 60 | 20_322 | 22_016) => {
+            Some(BooleanOp::NewBody)
+        }
         (Some("moRevolution_c"), 8) => Some(BooleanOp::Join),
         (Some("moRevCut_c"), _) => Some(BooleanOp::Cut),
         _ => None,
