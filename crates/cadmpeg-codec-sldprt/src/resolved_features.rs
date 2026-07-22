@@ -791,21 +791,18 @@ fn indexed_profile_coordinate_candidate(payload: &[u8], offset: usize) -> bool {
     }
     let record_sizes: &[usize] = match payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) {
         Some(prefix) if prefix == LEGACY_SKETCH_MARKER => &[134, 138, 146, 150, 154, 161, 162],
-        Some(prefix)
-            if prefix == LEGACY_EXTENDED_SKETCH_MARKER
-                && marker_native_code(payload, offset) == Some(0) =>
-        {
+        Some(prefix) if prefix == LEGACY_EXTENDED_SKETCH_MARKER => {
             if marker_profile_curve_role(payload, offset) != Some(1)
+                || !matches!(marker_native_code(payload, offset), Some(0..=2))
                 || marker_object_index(payload, offset).is_none()
             {
                 return false;
             }
             &[134, 138, 140]
         }
-        Some(prefix)
-            if prefix == SKETCH_MARKER && marker_native_code(payload, offset) == Some(0) =>
-        {
+        Some(prefix) if prefix == SKETCH_MARKER => {
             if marker_profile_curve_role(payload, offset) != Some(1)
+                || !matches!(marker_native_code(payload, offset), Some(0..=2))
                 || marker_object_index(payload, offset).is_none()
             {
                 return false;
@@ -3614,6 +3611,30 @@ mod marker_tests {
             payload.resize(size + LEGACY_SKETCH_MARKER.len(), 0);
             payload[size..].copy_from_slice(LEGACY_SKETCH_MARKER);
             assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+        }
+    }
+
+    #[test]
+    fn extended_geometry_values_share_the_coordinate_record_layout() {
+        let offset = 4;
+        let mut payload = vec![0; offset + 134 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        payload[..offset].copy_from_slice(&7u32.to_le_bytes());
+        payload[offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[offset + 5..offset + 13].fill(0xff);
+        payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[offset + 23..offset + 29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[offset + 31..offset + 39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[offset + 56..offset + 58].copy_from_slice(&[0x1e, 0x00]);
+        payload[offset + 58..offset + 66].copy_from_slice(&1.25f64.to_le_bytes());
+        payload[offset + 66..offset + 74].copy_from_slice(&(-2.5f64).to_le_bytes());
+        payload[offset + 134..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+
+        for native_code in 0u32..=2 {
+            payload[offset + 17..offset + 21].copy_from_slice(&native_code.to_le_bytes());
+            assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
         }
     }
 
