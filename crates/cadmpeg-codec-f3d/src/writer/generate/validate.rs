@@ -417,7 +417,25 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
     Ok(())
 }
 
-pub(crate) fn validate_source_less_design_bindings(native: &F3dNative) -> Result<(), CodecError> {
+/// Proof that [`validate_source_less_design_bindings`] ran against the borrowed
+/// `F3dNative`. The private field keeps construction inside this module, so an
+/// encoder that reads binding-validated fields (material physical tokens) cannot
+/// be reached without the check having run on the very native it will read.
+#[derive(Clone, Copy)]
+pub(crate) struct DesignBindingsValidated<'a> {
+    native: &'a F3dNative,
+}
+
+impl<'a> DesignBindingsValidated<'a> {
+    /// The native whose design bindings were validated.
+    pub(super) fn native(self) -> &'a F3dNative {
+        self.native
+    }
+}
+
+pub(crate) fn validate_source_less_design_bindings(
+    native: &F3dNative,
+) -> Result<DesignBindingsValidated<'_>, CodecError> {
     let mut by_key = BTreeMap::new();
     let mut by_suffix = BTreeMap::new();
     let mut insert = |key: u64, suffix: u64, id: &str| -> Result<(), CodecError> {
@@ -465,7 +483,7 @@ pub(crate) fn validate_source_less_design_bindings(native: &F3dNative) -> Result
             &visibility.id,
         )?;
     }
-    Ok(())
+    Ok(DesignBindingsValidated { native })
 }
 
 pub(crate) fn validate_source_less_act(native: &F3dNative) -> Result<(), CodecError> {
@@ -1085,4 +1103,61 @@ pub(crate) fn validate_source_less_body_kinds(
         }
     }
     Ok(())
+}
+
+/// Proof that [`validate_source_less_wire_vertices`] ran against the borrowed
+/// `CadIr`. The private field keeps construction inside this module, so the wire
+/// encoder that maps free vertices to record ordinals cannot be reached without
+/// the check having established that every free vertex exists in the model.
+#[derive(Clone, Copy)]
+pub(crate) struct WireVerticesValidated<'a> {
+    target: &'a CadIr,
+}
+
+impl<'a> WireVerticesValidated<'a> {
+    /// The `CadIr` whose wire vertices were validated.
+    pub(super) fn target(self) -> &'a CadIr {
+        self.target
+    }
+}
+
+pub(crate) fn validate_source_less_wire_vertices(
+    target: &CadIr,
+) -> Result<WireVerticesValidated<'_>, CodecError> {
+    let model = &target.model;
+    let vertex_ids = model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.id.clone())
+        .collect::<BTreeSet<_>>();
+    let edge_vertex_ids = model
+        .edges
+        .iter()
+        .flat_map(|edge| [&edge.start, &edge.end])
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut free_vertex_ids = BTreeSet::new();
+    for vertex in model.shells.iter().flat_map(|shell| &shell.free_vertices) {
+        if !vertex_ids.contains(vertex) {
+            return Err(CodecError::Malformed(format!(
+                "wire references missing free vertex {vertex}"
+            )));
+        }
+        if edge_vertex_ids.contains(vertex) {
+            return Err(CodecError::Malformed(format!(
+                "wire vertex {vertex} is both free and an edge endpoint"
+            )));
+        }
+        if !free_vertex_ids.insert(vertex.clone()) {
+            return Err(CodecError::Malformed(format!(
+                "free vertex {vertex} belongs to more than one wire"
+            )));
+        }
+    }
+    if vertex_ids != edge_vertex_ids.union(&free_vertex_ids).cloned().collect() {
+        return Err(CodecError::Malformed(
+            "source-less F3D vertices must be edge endpoints or free wire vertices".into(),
+        ));
+    }
+    Ok(WireVerticesValidated { target })
 }

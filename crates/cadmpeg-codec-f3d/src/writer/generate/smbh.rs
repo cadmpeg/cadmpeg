@@ -2,7 +2,7 @@
 //! SMBH body encoders and edge/vertex/point normalization for source-less
 //! generation.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -26,7 +26,9 @@ use super::native_geometry::{
     native_ref_pcurve_companion, native_smbh_header, pcurve_uses_ref_form,
 };
 use super::records::{native_tolerant_coedge_extension, tolerant_coedge_range};
-use super::validate::validate_source_less_body_kinds;
+use super::validate::{
+    validate_source_less_body_kinds, validate_source_less_wire_vertices, WireVerticesValidated,
+};
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{f3d_native, native_bool, normalized_face_sense_to_native};
 
@@ -43,7 +45,7 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
         return encode_wire_body_smbh(target);
     }
     validate_source_less_body_kinds(model)?;
-    validate_source_less_wire_vertices(model)?;
+    let wire_vertices = validate_source_less_wire_vertices(target)?;
     if model.faces.len() > 1
         || model.loops.len() > 1
         || model.surfaces.len() > 1
@@ -57,7 +59,7 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
             .any(|body| body.color.is_some() || body.transform.is_some())
         || model.faces.iter().any(|face| face.color.is_some())
     {
-        return encode_multi_face_shell_smbh(target);
+        return encode_multi_face_shell_smbh(target, wire_vertices);
     }
     if model.bodies.is_empty()
         || model.regions.is_empty()
@@ -755,54 +757,15 @@ fn source_less_wire_record_for_shell(
     native_record_index(wire_start, wire_ordinal)
 }
 
-fn validate_source_less_wire_vertices(
-    model: &cadmpeg_ir::document::Model,
-) -> Result<(), CodecError> {
-    let vertex_ids = model
-        .vertices
-        .iter()
-        .map(|vertex| vertex.id.clone())
-        .collect::<BTreeSet<_>>();
-    let edge_vertex_ids = model
-        .edges
-        .iter()
-        .flat_map(|edge| [&edge.start, &edge.end])
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let mut free_vertex_ids = BTreeSet::new();
-    for vertex in model.shells.iter().flat_map(|shell| &shell.free_vertices) {
-        if !vertex_ids.contains(vertex) {
-            return Err(CodecError::Malformed(format!(
-                "wire references missing free vertex {vertex}"
-            )));
-        }
-        if edge_vertex_ids.contains(vertex) {
-            return Err(CodecError::Malformed(format!(
-                "wire vertex {vertex} is both free and an edge endpoint"
-            )));
-        }
-        if !free_vertex_ids.insert(vertex.clone()) {
-            return Err(CodecError::Malformed(format!(
-                "free vertex {vertex} belongs to more than one wire"
-            )));
-        }
-    }
-    if vertex_ids != edge_vertex_ids.union(&free_vertex_ids).cloned().collect() {
-        return Err(CodecError::Malformed(
-            "source-less F3D vertices must be edge endpoints or free wire vertices".into(),
-        ));
-    }
-    Ok(())
-}
-
 fn encode_source_less_wires(
     records: &mut Vec<u8>,
-    target: &CadIr,
+    wire_vertices: WireVerticesValidated<'_>,
     wire_start: i64,
     wire_coedge_start: i64,
     shell_start: i64,
     vertex_start: i64,
 ) -> Result<BTreeMap<VertexId, i64>, CodecError> {
+    let target = wire_vertices.target();
     let model = &target.model;
     let vertex_ordinals = model
         .vertices
@@ -949,7 +912,7 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             "source-less F3D wire ownership is inconsistent".into(),
         ));
     }
-    validate_source_less_wire_vertices(model)?;
+    let wire_vertices = validate_source_less_wire_vertices(target)?;
     let body_start = 1i64;
     let region_start = native_record_index(body_start, model.bodies.len())?;
     let shell_start = native_record_index(region_start, model.regions.len())?;
@@ -1102,7 +1065,7 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     }
     let free_vertex_owners = encode_source_less_wires(
         &mut records,
-        target,
+        wire_vertices,
         wire_start,
         wire_coedge_start,
         shell_start,
@@ -1279,7 +1242,10 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
     Ok(())
 }
 
-fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
+fn encode_multi_face_shell_smbh(
+    target: &CadIr,
+    wire_vertices: WireVerticesValidated<'_>,
+) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
     let model = &target.model;
@@ -1536,7 +1502,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
 
     let free_vertex_owners = encode_source_less_wires(
         &mut records,
-        target,
+        wire_vertices,
         wire_start,
         wire_coedge_start,
         shell_start,

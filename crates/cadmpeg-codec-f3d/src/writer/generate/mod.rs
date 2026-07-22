@@ -38,16 +38,19 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target)?;
     validate_source_less_auxiliary_geometry(target)?;
-    if let Some(native) = &native {
+    let design_bindings = if let Some(native) = &native {
         validate_configuration_projection(target, native)?;
         validate_source_less_history_graph(target, native)?;
         validate_source_less_act(native)?;
-        validate_source_less_design_bindings(native)?;
+        let design_bindings = validate_source_less_design_bindings(native)?;
         validate_source_less_design_ownership(native)?;
         validate_source_less_sketch_graph(native)?;
         validate_source_less_recipes(native)?;
         validate_source_less_design_links(target, native)?;
-    }
+        Some(design_bindings)
+    } else {
+        None
+    };
     let smbh = encode_planar_triangle_smbh(target)?;
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
@@ -116,13 +119,15 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             })?;
         archive.write_all(&bulk_stream)?;
     }
-    if let Some(meta_stream) = encode_design_metastream(target)? {
-        archive
-            .start_file("FusionAssetName[Active]/Design1/MetaStream.dat", options)
-            .map_err(|error| {
-                CodecError::Malformed(format!("cannot create F3D Design MetaStream: {error}"))
-            })?;
-        archive.write_all(&meta_stream)?;
+    if let Some(design_bindings) = design_bindings {
+        if let Some(meta_stream) = encode_design_metastream(design_bindings)? {
+            archive
+                .start_file("FusionAssetName[Active]/Design1/MetaStream.dat", options)
+                .map_err(|error| {
+                    CodecError::Malformed(format!("cannot create F3D Design MetaStream: {error}"))
+                })?;
+            archive.write_all(&meta_stream)?;
+        }
     }
     if let Some(act_stream) = encode_act_bulkstream(target)? {
         archive
