@@ -92,6 +92,7 @@ pub enum B5Profile {
 
 /// A resolved `b5 03` surface node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum B5Surface {
     /// A NURBS surface whose parameter lattice is decoded but whose pole
     /// representation remains opaque.

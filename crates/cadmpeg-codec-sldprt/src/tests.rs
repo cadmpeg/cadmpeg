@@ -2018,7 +2018,7 @@ fn metadata_fallback_binds_resolved_feature_scalars() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("metadata D1 parameter");
     assert_eq!(
         parameter.value,
@@ -2101,13 +2101,14 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved("native:missing-owner".into()),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Blind {
                 length: Length(10.0),
             },
             op: BooleanOp::Join,
             draft: None,
-            reverse_draft: None,
+            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
@@ -2311,8 +2312,12 @@ fn encoder_writes_source_less_line_sketches() {
             allow_multi_profile_faces: None,
         },
         FeatureDefinition::Loft {
-            profiles: vec![profile.clone(), profile.clone()],
+            sections: vec![
+                cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
+                cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
+            ],
             guides: vec![path],
+            centerline: None,
             op: BooleanOp::NewBody,
             closed: false,
             solid: true,
@@ -2363,13 +2368,16 @@ fn encoder_writes_source_less_line_sketches() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id),
-            direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(
+                0.0, 0.0, 1.0,
+            )),
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Blind {
                 length: Length(12.0),
             },
             op: BooleanOp::Join,
             draft: None,
-            reverse_draft: None,
+            second_draft: None,
             direction_source: None,
             solid: Some(true),
             face_maker: None,
@@ -2990,7 +2998,7 @@ fn encoder_writes_source_less_curved_sketches() {
     ] {
         ir.model.parameters.push(DesignParameter {
             id,
-            owner: feature_id.clone(),
+            owner: Some(feature_id.clone()),
             ordinal,
             name: name.into(),
             expression: expression.into(),
@@ -3606,21 +3614,26 @@ fn encoder_writes_source_less_native_features() {
     });
     let definitions = vec![
         FeatureDefinition::Fillet {
-            edges: EdgeSelection::Resolved {
-                edges: vec![ir.model.edges[0].id.clone()],
-                native: "edge-a,edge-b".into(),
-            },
-            radius: RadiusSpec::Constant {
-                radius: Length(3.0),
-            },
+            groups: vec![cadmpeg_ir::features::FilletGroup {
+                edges: EdgeSelection::Resolved {
+                    edges: vec![ir.model.edges[0].id.clone()],
+                    native: "edge-a,edge-b".into(),
+                },
+                radius: RadiusSpec::Constant {
+                    radius: Length(3.0),
+                },
+                tangency_weight: None,
+            }],
         },
         FeatureDefinition::Chamfer {
-            edges: EdgeSelection::Native("edge-c".into()),
-            spec: ChamferSpec::TwoDistances {
-                first: Length(1.0),
-                second: Length(2.0),
-            },
-            flip_direction: Some(false),
+            groups: vec![cadmpeg_ir::features::ChamferGroup {
+                edges: EdgeSelection::Native("edge-c".into()),
+                spec: ChamferSpec::TwoDistances {
+                    first: Length(1.0),
+                    second: Length(2.0),
+                },
+            }],
+            flip_direction: false,
         },
         FeatureDefinition::Shell {
             removed_faces: FaceSelection::Resolved {
@@ -4082,13 +4095,15 @@ fn decode_retains_nonfinite_feature_dimensions_as_native() {
         FeatureDefinition::Native { .. }
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        &decoded.ir.model.features[1].definition,
         FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
                 form: Some(cadmpeg_ir::features::RadiusForm::Constant),
             },
             ..
-        }
+        }])
     ));
     assert!(matches!(
         decoded.ir.model.features[2].definition,
@@ -4148,13 +4163,15 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
         FeatureDefinition::Native { .. }
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        &decoded.ir.model.features[1].definition,
         FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
                 form: Some(cadmpeg_ir::features::RadiusForm::Constant),
             },
             ..
-        }
+        }])
     ));
     assert!(matches!(
         decoded.ir.model.features[2].definition,
@@ -4186,13 +4203,16 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[5].definition,
+        &decoded.ir.model.features[5].definition,
         FeatureDefinition::Chamfer {
+            ref groups,
+            ..
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
                 form: Some(cadmpeg_ir::features::ChamferForm::Distance),
             },
             ..
-        }
+        }])
     ));
 }
 
@@ -4253,13 +4273,16 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[3].definition,
+        &decoded.ir.model.features[3].definition,
         FeatureDefinition::Chamfer {
+            ref groups,
+            ..
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
                 form: Some(cadmpeg_ir::features::ChamferForm::DistanceAngle),
             },
             ..
-        }
+        }])
     ));
     for index in [2, 5] {
         assert!(matches!(
@@ -4564,6 +4587,8 @@ fn encoder_writes_source_less_neutral_configurations() {
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![ir.model.bodies[0].id.clone()]),
         parameter_values: BTreeMap::new(),
+        suppressed_features: Vec::new(),
+        parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
@@ -4577,6 +4602,8 @@ fn encoder_writes_source_less_neutral_configurations() {
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
+        suppressed_features: Vec::new(),
+        parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
@@ -4802,6 +4829,8 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             properties: BTreeMap::new(),
             bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![body.clone()]),
             parameter_values: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: None,
         })
@@ -5183,7 +5212,7 @@ fn encoder_writes_source_less_neutral_parameters() {
     });
     ir.model.parameters.push(DesignParameter {
         id: ParameterId("sldprt:model:parameter#generated:equation:0".into()),
-        owner: feature_id,
+        owner: Some(feature_id),
         ordinal: 0,
         name: "Pitch".into(),
         expression: "D1@Sketch1 * 2".into(),
@@ -7682,7 +7711,8 @@ fn decode_extracts_parametric_history() {
         &neutral.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(profile),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: cadmpeg_ir::features::Extent::Blind {
                 length: cadmpeg_ir::features::Length(12.5),
             },
@@ -8612,7 +8642,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     assert_eq!(value("Ratio"), Some(&ParameterValue::Real(1.25)));
     assert!(parameters
         .iter()
-        .all(|parameter| parameter.owner == decoded.ir.model.features[0].id));
+        .all(|parameter| parameter.owner.as_ref() == Some(&decoded.ir.model.features[0].id)));
 
     let radius = decoded
         .ir
@@ -9186,7 +9216,7 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == sketch1.id && parameter.name == "D1")
+        .find(|parameter| parameter.owner.as_ref() == Some(&sketch1.id) && parameter.name == "D1")
         .unwrap()
         .id
         .clone();
@@ -10299,9 +10329,10 @@ fn decode_resolves_feature_topology_selections() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Fillet {
-            edges: EdgeSelection::Resolved { edges, native },
-            ..
-        } if edges == &[base.ir.model.edges[0].id.clone()] && native == edge
+            groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+            edges: EdgeSelection::Resolved { edges, native }, ..
+        }] if edges == &[base.ir.model.edges[0].id.clone()] && native == edge)
     ));
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
@@ -10324,6 +10355,7 @@ fn decode_resolves_feature_topology_selections() {
             profile: ProfileRef::Faces(profile_faces),
             extent: Extent::ToFace {
                 face: FaceSelection::Resolved { faces, native },
+                ..
             },
             ..
         } if profile_faces == &[base.ir.model.faces[0].id.clone()]
@@ -10345,8 +10377,8 @@ fn decode_resolves_feature_topology_selections() {
         } if faces == &[face_id.clone()] && edges == &[edge_id.clone()]
     ));
 
-    if let FeatureDefinition::Fillet { edges, .. } = &mut decoded.ir.model.features[0].definition {
-        *edges = EdgeSelection::Edges(vec![edge_id.clone()]);
+    if let FeatureDefinition::Fillet { groups } = &mut decoded.ir.model.features[0].definition {
+        groups[0].edges = EdgeSelection::Edges(vec![edge_id.clone()]);
     }
     if let FeatureDefinition::DeleteFace { faces, .. } =
         &mut decoded.ir.model.features[1].definition
@@ -10360,7 +10392,7 @@ fn decode_resolves_feature_topology_selections() {
         *tools = BodySelection::Bodies(vec![body_id.clone()]);
     }
     if let FeatureDefinition::Extrude {
-        extent: Extent::ToFace { face },
+        extent: Extent::ToFace { face, .. },
         ..
     } = &mut decoded.ir.model.features[3].definition
     {
@@ -10526,13 +10558,15 @@ fn decode_dispatches_typed_features_by_xml_family() {
         FeatureDefinition::DatumPoint { .. }
     ));
     assert!(matches!(
-        decoded.ir.model.features[2].definition,
+        &decoded.ir.model.features[2].definition,
         FeatureDefinition::Fillet {
+            groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: RadiusSpec::Constant {
                 radius: Length(2.0),
             },
             ..
-        }
+        }])
     ));
     assert_eq!(
         decoded.ir.model.features[2].dependencies,
@@ -10546,13 +10580,16 @@ fn decode_dispatches_typed_features_by_xml_family() {
         "RollingBall"
     );
     assert!(matches!(
-        decoded.ir.model.features[3].definition,
+        &decoded.ir.model.features[3].definition,
         FeatureDefinition::Chamfer {
+            groups,
+            ..
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: ChamferSpec::Distance {
                 distance: Length(3.0),
             },
             ..
-        }
+        }])
     ));
     assert!(matches!(
         decoded.ir.model.features[4].definition,
@@ -10563,12 +10600,11 @@ fn decode_dispatches_typed_features_by_xml_family() {
         }
     ));
 
-    let FeatureDefinition::Fillet {
-        radius: RadiusSpec::Constant { radius },
-        ..
-    } = &mut decoded.ir.model.features[2].definition
-    else {
+    let FeatureDefinition::Fillet { groups } = &mut decoded.ir.model.features[2].definition else {
         panic!("typed custom fillet");
+    };
+    let RadiusSpec::Constant { radius } = &mut groups[0].radius else {
+        panic!("constant fillet");
     };
     *radius = Length(2.5);
     decoded.ir.model.features[2]
@@ -10628,7 +10664,8 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         &decoded.ir.model.features[1].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Feature(profile),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Blind { length: Length(2.0) },
             op: BooleanOp::Join,
             draft: None,
@@ -10638,7 +10675,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert!(matches!(
         decoded.ir.model.features[2].definition,
         FeatureDefinition::Extrude {
-            direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
             extent: Extent::Symmetric { length: Length(4.0) },
             op: BooleanOp::NewBody,
             draft: Some(Angle(value)),
@@ -10659,7 +10696,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert!(matches!(
         decoded.ir.model.features[4].definition,
         FeatureDefinition::Extrude {
-            direction: Some(Vector3 {
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3 {
                 x: 0.0,
                 y: 1.0,
                 z: 0.0
@@ -10679,7 +10716,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     else {
         panic!("typed extrusion");
     };
-    *direction = Some(Vector3::new(1.0, 0.0, 0.0));
+    *direction = cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(1.0, 0.0, 0.0));
     *extent = Extent::TwoSided {
         first: Length(8.0),
         second: Length(9.0),
@@ -10695,7 +10732,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     else {
         panic!("typed extrusion");
     };
-    *direction = None;
+    *direction = cadmpeg_ir::features::ExtrudeDirection::ProfileNormal;
     *extent = Extent::ThroughAll;
     *draft = None;
 
@@ -10739,11 +10776,13 @@ fn semantic_writer_round_trips_extrusion_to_face() {
     assert_eq!(
         extent,
         &Extent::ToFace {
-            face: FaceSelection::Native("face:12".into())
+            face: FaceSelection::Native("face:12".into()),
+            offset: None,
         }
     );
     *extent = Extent::ToFace {
         face: FaceSelection::Native("face:13".into()),
+        offset: None,
     };
 
     let mut encoded = Vec::new();
@@ -10760,7 +10799,8 @@ fn semantic_writer_round_trips_extrusion_to_face() {
         &regenerated.ir.model.features[1].definition,
         FeatureDefinition::Extrude {
             extent: Extent::ToFace {
-                face: FaceSelection::Native(face)
+                face: FaceSelection::Native(face),
+                ..
             },
             ..
         } if face == "face:13"
@@ -10792,22 +10832,27 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        &decoded.ir.model.features[0].definition,
         FeatureDefinition::Fillet {
+            groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: RadiusSpec::Unresolved {
                 form: Some(RadiusForm::Constant),
             },
             ..
-        }
+        }])
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        &decoded.ir.model.features[1].definition,
         FeatureDefinition::Chamfer {
+            groups,
+            ..
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: ChamferSpec::Unresolved {
                 form: Some(ChamferForm::Distance),
             },
             ..
-        }
+        }])
     ));
 
     let mut detached = decoded.ir.clone();
@@ -10853,22 +10898,25 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
+            groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Native(selection),
             radius: cadmpeg_ir::features::RadiusSpec::Constant {
                 radius: cadmpeg_ir::features::Length(2.0),
             },
-        } if selection == "edge:1,edge:2"
+            ..
+        }] if selection == "edge:1,edge:2")
     ));
 
-    let cadmpeg_ir::features::FeatureDefinition::Fillet { edges, radius } =
+    let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } =
         &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed fillet feature");
     };
-    *radius = cadmpeg_ir::features::RadiusSpec::Constant {
+    groups[0].radius = cadmpeg_ir::features::RadiusSpec::Constant {
         radius: cadmpeg_ir::features::Length(3.5),
     };
-    *edges = cadmpeg_ir::features::EdgeSelection::Native("edge:3".into());
+    groups[0].edges = cadmpeg_ir::features::EdgeSelection::Native("edge:3".into());
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -10888,11 +10936,13 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
     assert!(matches!(
         &regenerated.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
+            groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: cadmpeg_ir::features::RadiusSpec::Constant {
                 radius: cadmpeg_ir::features::Length(3.5),
             },
             ..
-        }
+        }])
     ));
 }
 
@@ -10924,42 +10974,46 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        &decoded.ir.model.features[0].definition,
         FeatureDefinition::Fillet {
+            groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Constant {
                 radius: Length(1.0)
-            }
-        }
+            }, ..
+        }])
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        &decoded.ir.model.features[1].definition,
         FeatureDefinition::Chamfer {
+            groups,
+            ..
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             edges: EdgeSelection::Unresolved,
             spec: ChamferSpec::DistanceAngle {
                 distance: Length(0.3),
                 angle: Angle(angle),
             },
-            ..
-        } if (angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12
+        }] if (angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12)
     ));
     assert_eq!(
         decoded.ir.model.parameters[1].value,
         Some(ParameterValue::Length(Length(0.3)))
     );
 
-    let FeatureDefinition::Fillet { radius, .. } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Fillet { groups, .. } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed positional fillet");
     };
-    *radius = RadiusSpec::Constant {
+    groups[0].radius = RadiusSpec::Constant {
         radius: Length(2.5),
     };
-    let FeatureDefinition::Chamfer { spec, .. } = &mut decoded.ir.model.features[1].definition
+    let FeatureDefinition::Chamfer { groups, .. } = &mut decoded.ir.model.features[1].definition
     else {
         panic!("typed positional chamfer");
     };
-    *spec = ChamferSpec::DistanceAngle {
+    groups[0].spec = ChamferSpec::DistanceAngle {
         distance: Length(0.6),
         angle: Angle(30.0_f64.to_radians()),
     };
@@ -10980,23 +11034,28 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
     assert!(!native[1].parameters.contains_key("Distance"));
     assert!(!native[1].parameters.contains_key("Angle"));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        &regenerated.ir.model.features[0].definition,
         FeatureDefinition::Fillet {
+            groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: RadiusSpec::Constant {
                 radius: Length(2.5)
             },
             ..
-        }
+        }])
     ));
     assert!(matches!(
-        regenerated.ir.model.features[1].definition,
+        &regenerated.ir.model.features[1].definition,
         FeatureDefinition::Chamfer {
+            groups,
+            ..
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: ChamferSpec::DistanceAngle {
                 distance: Length(0.6),
                 angle: Angle(angle),
             },
             ..
-        } if (angle - 30.0_f64.to_radians()).abs() < 1e-12
+        }] if (angle - 30.0_f64.to_radians()).abs() < 1e-12)
     ));
 }
 
@@ -11018,20 +11077,21 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Fillet {
+            groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: EdgeSelection::Unresolved,
-            radius: RadiusSpec::Variable { points },
-        } if points == &vec![
+            radius: RadiusSpec::Variable { points }, ..
+        }] if points == &vec![
             VariableRadius { parameter: 0.0, radius: Length(2.0) },
             VariableRadius { parameter: 0.5, radius: Length(4.0) },
             VariableRadius { parameter: 1.0, radius: Length(3.0) },
-        ]
+        ])
     ));
-    let FeatureDefinition::Fillet {
-        radius: RadiusSpec::Variable { points },
-        ..
-    } = &mut decoded.ir.model.features[0].definition
-    else {
+    let FeatureDefinition::Fillet { groups } = &mut decoded.ir.model.features[0].definition else {
         panic!("variable fillet");
+    };
+    let RadiusSpec::Variable { points } = &mut groups[0].radius else {
+        panic!("variable fillet radius")
     };
     points[1].parameter = 0.4;
     points[1].radius = Length(5.0);
@@ -11053,11 +11113,11 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         "5mm"
     );
 
-    let FeatureDefinition::Fillet { radius, .. } = &mut regenerated.ir.model.features[0].definition
+    let FeatureDefinition::Fillet { groups, .. } = &mut regenerated.ir.model.features[0].definition
     else {
         panic!("variable fillet after regeneration");
     };
-    *radius = RadiusSpec::Constant {
+    groups[0].radius = RadiusSpec::Constant {
         radius: Length(6.0),
     };
     let mut encoded = Vec::new();
@@ -11097,32 +11157,41 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Chamfer {
+            groups,
+            ..
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             edges: EdgeSelection::Native(edges),
             spec: ChamferSpec::Distance {
                 distance: Length(2.0),
             },
             ..
-        } if edges == "edge:1"
+        }] if edges == "edge:1")
     ));
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
         FeatureDefinition::Chamfer {
+            groups,
+            ..
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: ChamferSpec::TwoDistances {
                 first: Length(3.0),
                 second: Length(6.35),
             },
             ..
-        }
+        }])
     ));
     assert!(matches!(
         &decoded.ir.model.features[2].definition,
         FeatureDefinition::Chamfer {
+            groups,
+            ..
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: ChamferSpec::DistanceAngle {
                 distance: Length(4.0),
                 angle,
             },
             ..
-        } if (angle.0 - std::f64::consts::FRAC_PI_4).abs() < 1e-12
+        }] if (angle.0 - std::f64::consts::FRAC_PI_4).abs() < 1e-12)
     ));
 
     let replacements = [
@@ -11146,11 +11215,11 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         .zip(replacements)
         .enumerate()
     {
-        let FeatureDefinition::Chamfer { edges, spec, .. } = &mut feature.definition else {
+        let FeatureDefinition::Chamfer { groups, .. } = &mut feature.definition else {
             panic!("typed chamfer feature");
         };
-        *spec = replacement;
-        *edges = EdgeSelection::Native(format!("edge:{}", index + 4));
+        groups[0].spec = replacement;
+        groups[0].edges = EdgeSelection::Native(format!("edge:{}", index + 4));
     }
 
     let mut encoded = Vec::new();
@@ -11716,9 +11785,11 @@ fn semantic_writer_preserves_absent_feature_selections() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Chamfer {
-            edges: EdgeSelection::Unresolved,
+            groups,
             ..
-        }
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+            edges: EdgeSelection::Unresolved, ..
+        }])
     ));
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
@@ -11736,11 +11807,11 @@ fn semantic_writer_preserves_absent_feature_selections() {
         }
     ));
 
-    let FeatureDefinition::Chamfer { spec, .. } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Chamfer { groups, .. } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed chamfer");
     };
-    *spec = ChamferSpec::Distance {
+    groups[0].spec = ChamferSpec::Distance {
         distance: Length(2.5),
     };
     let FeatureDefinition::Shell { thickness, .. } = &mut decoded.ir.model.features[1].definition
@@ -13683,7 +13754,7 @@ fn semantic_writer_round_trips_filled_surface() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::FilledSurface {
-            boundary: EdgeSelection::Resolved { edges, native: edge_native },
+            boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Resolved { edges, native: edge_native }),
             support_faces: FaceSelection::Resolved { faces, native: face_native },
             continuity: Some(SurfaceContinuity::Tangent),
             merge_result: Some(false),
@@ -13700,7 +13771,8 @@ fn semantic_writer_round_trips_filled_surface() {
     else {
         panic!("typed filled surface");
     };
-    *boundary = EdgeSelection::Edges(vec![edge_id.clone()]);
+    *boundary =
+        cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![edge_id.clone()]));
     *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
     *continuity = Some(SurfaceContinuity::Curvature);
     *merge_result = Some(true);
@@ -15557,20 +15629,20 @@ fn semantic_writer_round_trips_typed_loft() {
     assert!(matches!(
         &decoded.ir.model.features[5].definition,
         FeatureDefinition::Loft {
-            profiles,
+            sections,
             guides,
             op: BooleanOp::NewBody,
             closed: false,
             ..
-        } if profiles == &vec![
-            ProfileRef::Feature(feature_refs[0].clone()),
-            ProfileRef::Feature(feature_refs[1].clone()),
-            ProfileRef::Feature(feature_refs[2].clone()),
+        } if sections == &vec![
+            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Feature(feature_refs[0].clone())),
+            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Feature(feature_refs[1].clone())),
+            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Feature(feature_refs[2].clone())),
         ] && guides == &vec![PathRef::Native(native_refs[3].clone())]
     ));
 
     let FeatureDefinition::Loft {
-        profiles,
+        sections,
         guides,
         op,
         closed,
@@ -15579,7 +15651,7 @@ fn semantic_writer_round_trips_typed_loft() {
     else {
         panic!("typed loft");
     };
-    profiles.swap(0, 2);
+    sections.swap(0, 2);
     *guides = vec![PathRef::Native(native_refs[4].clone())];
     *op = BooleanOp::Join;
     *closed = true;
@@ -15615,12 +15687,12 @@ fn semantic_writer_retains_unresolved_native_loft_construction() {
     assert!(matches!(
         decoded.ir.model.features[0].definition,
         FeatureDefinition::Loft {
-            ref profiles,
+            ref sections,
             ref guides,
             op: BooleanOp::Unresolved,
             closed: false,
             ..
-        } if profiles.is_empty() && guides.is_empty()
+        } if sections.is_empty() && guides.is_empty()
     ));
     decoded.ir.model.features[0].name = Some("Renamed loft".into());
 
@@ -15669,14 +15741,14 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
     assert!(matches!(
         &decoded.ir.model.features[2].definition,
         FeatureDefinition::Loft {
-            profiles,
+            sections,
             guides,
             op: BooleanOp::Join,
             closed: false,
             ..
-        } if profiles == &vec![
-            ProfileRef::Feature(refs[0].clone()),
-            ProfileRef::Feature(refs[1].clone()),
+        } if sections == &vec![
+            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Feature(refs[0].clone())),
+            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Feature(refs[1].clone())),
         ] && guides.is_empty()
     ));
     assert!(matches!(
@@ -15689,12 +15761,12 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
     ));
 
     let FeatureDefinition::Loft {
-        profiles, closed, ..
+        sections, closed, ..
     } = &mut decoded.ir.model.features[2].definition
     else {
         panic!("typed boundary loft");
     };
-    profiles.reverse();
+    sections.reverse();
     *closed = true;
 
     let mut encoded = Vec::new();
@@ -16504,7 +16576,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected D1 parameter");
     assert_eq!(parameter.expression, "25mm");
     assert_eq!(
@@ -17022,7 +17094,7 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected sketch D1 parameter");
     assert_eq!(parameter.expression, "25mm");
     assert_eq!(
@@ -17076,7 +17148,7 @@ fn decode_projects_owned_native_sketch_relation() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected relation parameter");
     assert_eq!(parameter.expression, "25mm");
     assert_eq!(
@@ -17104,6 +17176,7 @@ fn decode_projects_owned_native_sketch_relation() {
             entities,
             parameter: Some(relation_parameter),
             operands,
+            ..
         } if native_kind == "sgPntPntDist"
             && entities.is_empty()
             && relation_parameter == &parameter.id
@@ -18241,7 +18314,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == decoded.ir.model.features[0].id)
+        .find(|parameter| parameter.owner.as_ref() == Some(&decoded.ir.model.features[0].id))
         .expect("PMI extrusion parameter");
     assert_eq!(parameter.name, "D1");
     assert_eq!(parameter.expression, "25mm");
@@ -18277,7 +18350,7 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected D1 parameter");
     assert_eq!(parameter.expression, "25mm");
     assert_eq!(
@@ -18400,15 +18473,15 @@ fn decode_preserves_configuration_local_parameter_values() {
     edited.model.configurations[1]
         .parameter_values
         .insert(dependent_id, ParameterValue::Length(Length(150.0)));
-    let FeatureDefinition::Fillet { radius, .. } = &mut edited.model.configurations[1]
+    let FeatureDefinition::Fillet { groups, .. } = &mut edited.model.configurations[1]
         .feature_states
-        .get_mut(&feature_id)
+        .get_mut(feature_id.as_ref().expect("feature-owned parameter"))
         .unwrap()
         .definition
     else {
         panic!("configuration fillet state");
     };
-    *radius = RadiusSpec::Constant {
+    groups[0].radius = RadiusSpec::Constant {
         radius: Length(75.0),
     };
 
@@ -18465,11 +18538,13 @@ fn decode_preserves_configuration_local_parameter_values() {
     assert!(matches!(
         regenerated.ir.model.configurations[1].feature_states[&regenerated_feature.id].definition,
         FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: RadiusSpec::Constant {
                 radius: Length(75.0)
             },
             ..
-        }
+        }])
     ));
 }
 
@@ -18514,7 +18589,7 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected D1 parameter");
     assert_eq!(parameter.expression, "2.5");
     assert_eq!(parameter.value, Some(ParameterValue::Length(Length(25.0))));
@@ -18907,11 +18982,12 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             "native-consumer",
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("native-alias".into()),
-                direction: None,
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                 extent: Extent::Unresolved,
                 draft: None,
                 op: BooleanOp::Join,
-                reverse_draft: None,
+                second_draft: None,
                 direction_source: None,
                 solid: None,
                 face_maker: None,

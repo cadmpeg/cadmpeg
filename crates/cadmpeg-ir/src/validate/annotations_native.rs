@@ -4,11 +4,14 @@
 
 use super::*;
 use crate::drawings::Drawing;
-use crate::features::{DesignConfiguration, DesignParameter};
+use crate::features::{DesignConfiguration, DesignParameter, FeatureInputTopology};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Component, Occurrence};
 use crate::semantic_annotations::SemanticAnnotation;
-use crate::sketches::{Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchEntity};
+use crate::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
+    SpatialSketchEntity,
+};
 use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 
@@ -236,6 +239,18 @@ pub(super) fn check_native_links(
             }
         }
     }
+    for sketch in &ir.model.spatial_sketches {
+        if let Some(target) = &sketch.native_ref {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("native_ref `{target}` does not resolve"),
+                    entity: Some(sketch.id.0.clone()),
+                });
+            }
+        }
+    }
     for constraint in &ir.model.sketch_constraints {
         if let Some(target) = &constraint.native_ref {
             if !native_ids.contains(target.as_str()) {
@@ -248,6 +263,34 @@ pub(super) fn check_native_links(
             }
         }
         if let crate::sketches::SketchConstraintDefinition::Native { operands, .. } =
+            &constraint.definition
+        {
+            for operand in operands {
+                if let Some(target) = &operand.native_ref {
+                    if !native_ids.contains(target.as_str()) {
+                        findings.push(Finding {
+                            check: Check::NativeLinks,
+                            severity: Severity::Error,
+                            message: format!("operand native_ref `{target}` does not resolve"),
+                            entity: Some(constraint.id.0.clone()),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    for constraint in &ir.model.spatial_sketch_constraints {
+        if let Some(target) = &constraint.native_ref {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("native_ref `{target}` does not resolve"),
+                    entity: Some(constraint.id.0.clone()),
+                });
+            }
+        }
+        if let crate::sketches::SpatialSketchConstraintDefinition::Native { operands, .. } =
             &constraint.definition
         {
             for operand in operands {

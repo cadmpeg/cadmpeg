@@ -441,9 +441,14 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 if *owner == &parameter.owner {
                     return *ordinal >= parameter.ordinal;
                 }
+                let (Some(owner), Some(parameter_owner)) =
+                    (owner.as_ref(), parameter.owner.as_ref())
+                else {
+                    return true;
+                };
                 feature_ordinals
-                    .get(*owner)
-                    .zip(feature_ordinals.get(&parameter.owner))
+                    .get(owner)
+                    .zip(feature_ordinals.get(parameter_owner))
                     .is_none_or(|(dependency_owner, consumer_owner)| {
                         dependency_owner >= consumer_owner
                     })
@@ -650,7 +655,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     !parameters.insert(parameter)
                         || parameter_owners
                             .get(parameter)
-                            .is_none_or(|owner| *owner != &feature.id)
+                            .is_none_or(|owner| owner.as_ref() != Some(&feature.id))
                 }
                 FeatureSourceContent::Feature(child) => {
                     !children.insert(child)
@@ -777,22 +782,35 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
 
     let incomplete_edge_selection = |selection: &EdgeSelection| match selection {
         EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => edges.is_empty(),
+        EdgeSelection::Historical { edges, .. } => edges.is_empty(),
+        EdgeSelection::HistoricalPartial {
+            edges, unresolved, ..
+        } => edges.is_empty() || !unresolved.is_empty(),
         EdgeSelection::Generated { edges, .. } => edges.is_empty(),
         EdgeSelection::All => false,
         EdgeSelection::Unresolved | EdgeSelection::Native(_) => true,
     };
     let incomplete_face_selection = |selection: &FaceSelection| match selection {
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces.is_empty(),
+        FaceSelection::Historical { faces, .. } => faces.is_empty(),
+        FaceSelection::HistoricalPartial {
+            faces, unresolved, ..
+        } => faces.is_empty() || !unresolved.is_empty(),
         FaceSelection::Generated { faces, .. } => faces.is_empty(),
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
     };
     let incomplete_optional_face_selection = |selection: &FaceSelection| match selection {
         FaceSelection::Faces(_) | FaceSelection::Resolved { .. } => false,
+        FaceSelection::Historical { faces, .. } => faces.is_empty(),
+        FaceSelection::HistoricalPartial {
+            faces, unresolved, ..
+        } => faces.is_empty() || !unresolved.is_empty(),
         FaceSelection::Generated { faces, .. } => faces.is_empty(),
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
     };
     let incomplete_body_selection = |selection: &BodySelection| match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
+        BodySelection::Historical { bodies, .. } => bodies.is_empty(),
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) => true,
@@ -800,18 +818,26 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     let incomplete_profile = |profile: &ProfileRef| match profile {
         ProfileRef::Faces(faces) => faces.is_empty(),
         ProfileRef::Generated { curves, .. } => curves.is_empty(),
+        ProfileRef::SketchProfiles { profiles, .. }
+        | ProfileRef::SpatialSketchProfiles { profiles, .. } => profiles.is_empty(),
+        ProfileRef::SketchRegions { regions, .. } => regions.is_empty(),
+        ProfileRef::SketchSelection { selections, .. }
+        | ProfileRef::SpatialSketchSelection { selections, .. } => selections.is_empty(),
+        ProfileRef::HistoricalFaces { faces, .. } => faces.is_empty(),
         ProfileRef::Unresolved(_) | ProfileRef::Native(_) => true,
         ProfileRef::Sketch(_) | ProfileRef::Feature(_) => false,
     };
     let incomplete_path = |path: &PathRef| match path {
         PathRef::Edges(edges) => edges.is_empty(),
         PathRef::Curves(curves) => curves.is_empty(),
-        PathRef::Unresolved | PathRef::Native(_) => true,
+        PathRef::HistoricalEdges { edges, .. } => edges.is_empty(),
+        PathRef::SpatialSketchSelection { selections, .. } => selections.is_empty(),
+        PathRef::Unresolved(_) | PathRef::Native(_) => true,
         PathRef::Sketch(_) => false,
     };
     let incomplete_extent = |extent: &Extent| {
         matches!(extent, Extent::Unresolved)
-            || matches!(extent, Extent::ToFace { face } if incomplete_face_selection(face))
+            || matches!(extent, Extent::ToFace { face, .. } if incomplete_face_selection(face))
     };
     let incomplete_typed_features = evaluated_feature_states
         .iter()
@@ -887,13 +913,17 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Solid { op } if *op == BooleanOp::Unresolved)
             }
             FeatureDefinition::Loft {
-                profiles,
+                sections,
                 guides,
                 op,
                 ..
             } => {
-                profiles.len() < 2
-                    || profiles.iter().any(incomplete_profile)
+                sections.len() < 2
+                    || sections.iter().any(|section| match section {
+                        cadmpeg_ir::features::LoftSection::Profile(profile) => incomplete_profile(profile),
+                        cadmpeg_ir::features::LoftSection::Point(cadmpeg_ir::features::LoftPointSection::Native(_)) => true,
+                        cadmpeg_ir::features::LoftSection::Point(_) => false,
+                    })
                     || guides.iter().any(incomplete_path)
                     || *op == BooleanOp::Unresolved
             }
@@ -905,12 +935,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || matches!(construction.draft, cadmpeg_ir::features::RibDraft::Unresolved)
                     || *op == BooleanOp::Unresolved
             }
-            FeatureDefinition::Fillet { edges, radius } => {
-                incomplete_edge_selection(edges) || matches!(radius, RadiusSpec::Unresolved { .. })
-            }
-            FeatureDefinition::Chamfer { edges, spec, .. } => {
-                incomplete_edge_selection(edges) || matches!(spec, ChamferSpec::Unresolved { .. })
-            }
+            FeatureDefinition::Fillet { groups } => groups.is_empty() || groups.iter().any(|group| {
+                incomplete_edge_selection(&group.edges) || matches!(group.radius, RadiusSpec::Unresolved { .. })
+            }),
+            FeatureDefinition::Chamfer { groups, .. } => groups.is_empty() || groups.iter().any(|group| {
+                incomplete_edge_selection(&group.edges) || matches!(group.spec, ChamferSpec::Unresolved { .. })
+            }),
             FeatureDefinition::Shell {
                 removed_faces,
                 thickness,
@@ -935,7 +965,10 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 continuity,
                 ..
             } => {
-                incomplete_edge_selection(boundary)
+                (match boundary {
+                    cadmpeg_ir::features::SurfaceBoundary::Edges(edges) => incomplete_edge_selection(edges),
+                    cadmpeg_ir::features::SurfaceBoundary::Path(path) => incomplete_path(path),
+                })
                     || if *continuity
                         == Some(cadmpeg_ir::features::SurfaceContinuity::Contact)
                     {
@@ -1655,6 +1688,7 @@ fn build_geometry_ir(
                 schema: Some("entity-53".into()),
                 category: None,
                 base_color: Some(face_color.color),
+                textures: Vec::new(),
                 properties: BTreeMap::new(),
             });
         }
@@ -1704,6 +1738,7 @@ fn build_geometry_ir(
             schema: Some("moVisualProperties_c".to_string()),
             category: None,
             base_color: Some(material.color),
+            textures: Vec::new(),
             properties: BTreeMap::new(),
         });
         if unique_material {
@@ -2506,6 +2541,8 @@ fn assign_configuration_bodies(
                 properties: std::collections::BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Resolved(bodies),
                 parameter_values: std::collections::BTreeMap::new(),
+                suppressed_features: Vec::new(),
+                parameter_overrides: BTreeMap::new(),
                 feature_states: std::collections::BTreeMap::new(),
                 native_ref: None,
             });
@@ -2848,10 +2885,12 @@ mod design_loss_tests {
                 properties: BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
                 parameter_values: BTreeMap::new(),
+                suppressed_features: Vec::new(),
+                parameter_overrides: BTreeMap::new(),
                 feature_states: BTreeMap::from([(
                     feature_id.clone(),
                     ConfigurationFeatureState {
-                        suppressed: Some(false),
+                        suppressed: false,
                         dependencies: (ordinal == 0)
                             .then(|| FeatureId("missing-dependency".into()))
                             .into_iter()
@@ -2914,7 +2953,7 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: ParameterId("parameter".into()),
-            owner: feature_id,
+            owner: Some(feature_id),
             ordinal: 0,
             name: "D1".into(),
             expression: "1".into(),
@@ -2935,6 +2974,8 @@ mod design_loss_tests {
             properties: BTreeMap::new(),
             bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: None,
         });
@@ -3039,10 +3080,13 @@ mod design_loss_tests {
             feature(
                 0,
                 FeatureDefinition::Fillet {
-                    edges: EdgeSelection::Edges(Vec::new()),
-                    radius: RadiusSpec::Constant {
-                        radius: Length(1.0),
-                    },
+                    groups: vec![cadmpeg_ir::features::FilletGroup {
+                        edges: EdgeSelection::Edges(Vec::new()),
+                        radius: RadiusSpec::Constant {
+                            radius: Length(1.0),
+                        },
+                        tangency_weight: None,
+                    }],
                 },
             ),
             feature(
@@ -3081,7 +3125,9 @@ mod design_loss_tests {
             feature(
                 5,
                 FeatureDefinition::FilledSurface {
-                    boundary: EdgeSelection::Edges(vec![EdgeId("boundary".into())]),
+                    boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(
+                        vec![EdgeId("boundary".into())],
+                    )),
                     support_faces: FaceSelection::Faces(Vec::new()),
                     continuity: Some(SurfaceContinuity::Contact),
                     merge_result: Some(false),
@@ -3141,7 +3187,7 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: ParameterId("base-parameter".into()),
-            owner: owner.clone(),
+            owner: Some(owner.clone()),
             ordinal: 0,
             name: "D0".into(),
             expression: "1mm".into(),
@@ -3154,7 +3200,7 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: ParameterId("parameter".into()),
-            owner: owner.clone(),
+            owner: Some(owner.clone()),
             ordinal: 1,
             name: "D1".into(),
             expression: "\"D0@Boss-Extrude1\" + Missing@Sketch1".into(),
@@ -3167,7 +3213,7 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: ParameterId("bare-reference".into()),
-            owner: owner.clone(),
+            owner: Some(owner.clone()),
             ordinal: 2,
             name: "D2".into(),
             expression: "D99 + 1".into(),
@@ -3180,7 +3226,7 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: ParameterId("malformed-reference".into()),
-            owner: owner.clone(),
+            owner: Some(owner.clone()),
             ordinal: 3,
             name: "D3".into(),
             expression: "\"D0@Boss-Extrude1".into(),
@@ -3194,7 +3240,7 @@ mod design_loss_tests {
         let future = ParameterId("future".into());
         ir.model.parameters.push(DesignParameter {
             id: ParameterId("forward-reference".into()),
-            owner: owner.clone(),
+            owner: Some(owner.clone()),
             ordinal: 4,
             name: "D4".into(),
             expression: "D5".into(),
@@ -3207,7 +3253,7 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: future,
-            owner: owner.clone(),
+            owner: Some(owner.clone()),
             ordinal: 5,
             name: "D5".into(),
             expression: "1".into(),
@@ -3220,7 +3266,7 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: ParameterId("omitted-dependency".into()),
-            owner: owner.clone(),
+            owner: Some(owner.clone()),
             ordinal: 6,
             name: "D6".into(),
             expression: "D0 + 1mm".into(),
@@ -3233,7 +3279,7 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: ParameterId("cached-unsupported-expression".into()),
-            owner: owner.clone(),
+            owner: Some(owner.clone()),
             ordinal: 7,
             name: "D7".into(),
             expression: "unsupported(1)".into(),
@@ -3252,7 +3298,7 @@ mod design_loss_tests {
         ] {
             ir.model.parameters.push(DesignParameter {
                 id: ParameterId(format!("identity:{id}")),
-                owner: owner.clone(),
+                owner: Some(owner.clone()),
                 ordinal,
                 name: name.into(),
                 expression: "1".into(),
@@ -3413,6 +3459,8 @@ mod design_loss_tests {
             properties: BTreeMap::new(),
             bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: Some(format!("native:{id}")),
         };
@@ -3458,6 +3506,8 @@ mod design_loss_tests {
                 properties: BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
                 parameter_values: BTreeMap::new(),
+                suppressed_features: Vec::new(),
+                parameter_overrides: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
                 native_ref: Some(format!("native:{id}")),
             });
@@ -3496,6 +3546,8 @@ mod design_loss_tests {
                 properties: BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
                 parameter_values: BTreeMap::new(),
+                suppressed_features: Vec::new(),
+                parameter_overrides: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
                 native_ref: Some(format!("native:{position}")),
             });
@@ -3537,6 +3589,8 @@ mod design_loss_tests {
             properties: BTreeMap::new(),
             bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: Some("native:configuration".into()),
         });
@@ -3571,6 +3625,8 @@ mod design_loss_tests {
             properties: BTreeMap::new(),
             bodies,
             parameter_values: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: Some(format!("native:{id}")),
         };
@@ -3921,7 +3977,7 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: ParameterId("parameter".into()),
-            owner,
+            owner: Some(owner),
             ordinal: 0,
             name: "D1".into(),
             expression: "1".into(),

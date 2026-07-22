@@ -1120,6 +1120,7 @@ fn emit_e5_curves_and_edges(
                     parameter_range: *range,
                     discontinuities: std::array::from_fn(|_| Vec::new()),
                 },
+                tail: None,
             },
             cache_fit_tolerance: None,
         });
@@ -1375,7 +1376,10 @@ fn emit_e5_faces_loops_coedges(
                     pcurves: vec![cadmpeg_ir::topology::PcurveUse {
                         pcurve: PcurveId(format!("catia:e5:pcurve#{pcurve_ref}")),
                         isoparametric: None,
+                        parameter_range: None,
                     }],
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
         }

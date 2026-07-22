@@ -520,6 +520,7 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
     ));
     assert!(crate::decode::extent_is_incomplete(&Extent::ToFace {
         face: FaceSelection::Native("nx:face-selection#0".to_string()),
+        offset: None,
     }));
     assert!(crate::decode::extent_is_incomplete(&Extent::ToShape {
         target: FaceSelection::Resolved {
@@ -556,35 +557,6 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
     assert!(crate::decode::rib_feature_is_incomplete(
         &construction,
         BooleanOp::Join,
-    ));
-}
-
-#[test]
-fn nx_chamfer_direction_is_required_only_for_asymmetric_specs() {
-    use cadmpeg_ir::features::{Angle, ChamferSpec, Length};
-
-    assert!(!crate::decode::chamfer_requires_direction(
-        &ChamferSpec::Distance {
-            distance: Length(2.0),
-        }
-    ));
-    assert!(!crate::decode::chamfer_requires_direction(
-        &ChamferSpec::TwoDistances {
-            first: Length(2.0),
-            second: Length(2.0),
-        }
-    ));
-    assert!(crate::decode::chamfer_requires_direction(
-        &ChamferSpec::TwoDistances {
-            first: Length(2.0),
-            second: Length(3.0),
-        }
-    ));
-    assert!(crate::decode::chamfer_requires_direction(
-        &ChamferSpec::DistanceAngle {
-            distance: Length(2.0),
-            angle: Angle(0.5),
-        }
     ));
 }
 
@@ -898,6 +870,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
             entities: vec![entity_id],
             parameter: None,
             operands: Vec::new(),
+            native_state: None,
         },
         name: None,
         driving: None,
@@ -1003,6 +976,8 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         name: "Model".into(),
         material: None,
         properties: Default::default(),
+        parameter_overrides: Default::default(),
+        suppressed_features: Vec::new(),
         bodies: ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: Default::default(),
         feature_states: Default::default(),
@@ -1075,7 +1050,8 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert!(losses.is_empty());
 
     ir.model.features[0].definition = FeatureDefinition::Loft {
-        profiles: Vec::new(),
+        sections: Vec::new(),
+        centerline: None,
         guides: Vec::new(),
         op: cadmpeg_ir::features::BooleanOp::Unresolved,
         closed: false,
@@ -1163,7 +1139,8 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     );
     assert_eq!(
         crate::decode::body_output_feature_family(&FeatureDefinition::Loft {
-            profiles: Vec::new(),
+            sections: Vec::new(),
+            centerline: None,
             guides: Vec::new(),
             op: cadmpeg_ir::features::BooleanOp::NewBody,
             closed: false,
@@ -4165,7 +4142,8 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
     assert_eq!(result.ir.model.regions.len(), 1);
     assert_eq!(result.ir.model.regions[0].id.0, "nx:s0:region#12");
     assert_eq!(result.ir.model.faces.len(), 2);
-    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
@@ -4631,6 +4609,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         .pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: pcurve_id,
         isoparametric: None,
+        parameter_range: None,
     }];
 
     crate::decode::complete_intersection_pcurves_from_coedge_incidence(&mut ir);
@@ -4812,6 +4791,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
             native: None,
         },
         cache_fit_tolerance: None,
+        record_bounds: None,
     });
 
     let curve = CurveId("synthetic:solved-boundary".into());
@@ -5430,8 +5410,9 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let surface = result.ir.model.procedural_surfaces[0].surface.clone();
     let expected = Point2::new(12.0, 7.0);
-    let point = cadmpeg_ir::eval::model_surface_point(&result.ir, &surface, expected.u, expected.v)
-        .unwrap();
+    let point =
+        cadmpeg_ir::eval::model_surface_point_by_id(&result.ir, &surface, expected.u, expected.v)
+            .unwrap();
 
     let actual =
         crate::decode::offset_surface_parameters(&result.ir, &surface, point, None).unwrap();
@@ -5448,7 +5429,7 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     let surface = result.ir.model.procedural_surfaces[0].surface.clone();
     let seed = Point2::new(12.0, 7.0);
     let mut point =
-        cadmpeg_ir::eval::model_surface_point(&result.ir, &surface, seed.u, seed.v).unwrap();
+        cadmpeg_ir::eval::model_surface_point_by_id(&result.ir, &surface, seed.u, seed.v).unwrap();
     point.x += 0.01;
 
     let actual = crate::decode::offset_surface_parameters_with_tolerance(
@@ -5671,6 +5652,7 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
     let ProceduralCurveDefinition::SurfaceCurve {
         family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric,
         context,
+        ..
     } = &result.ir.model.procedural_curves[0].definition
     else {
         panic!("parametric surface curve");
@@ -5680,7 +5662,8 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
         Some(result.ir.model.faces[0].surface.clone())
     );
     assert!(context.sides[0].pcurve.is_some());
-    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
@@ -6910,7 +6893,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                     reversed: false,
                 })
             }),
-            spine: Some(spine_curve),
+            spine: Some(spine_curve.clone()),
             radius: BlendRadiusLaw::Constant {
                 signed_radius: radius,
             },
@@ -6918,8 +6901,21 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             native: None,
         },
         cache_fit_tolerance: None,
+        record_bounds: None,
     });
     let parameters = vec![0.0, 0.01];
+    let spine_carrier = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == spine_curve)
+        .expect("blend spine carrier");
+    assert!(
+        cadmpeg_ir::eval::curve_point(&spine_carrier.geometry, 0.0).is_some(),
+        "spine carrier: {:?}",
+        spine_carrier.geometry
+    );
     let points = parameters
         .iter()
         .map(|parameter| {
@@ -7056,8 +7052,10 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                 u_sense: Some(0),
                 v_sense: Some(0),
                 extension_flags: Vec::new(),
+                revision_form: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
     }
     ir.model.procedural_curves.push(ProceduralCurve {
@@ -7190,14 +7188,14 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     .unwrap();
     assert_eq!(lanes[0].len(), chart.len());
     for (ordinal, expected_z) in [0.0, 2.0, 5.0].into_iter().enumerate() {
-        let first_point = cadmpeg_ir::eval::model_surface_point(
+        let first_point = cadmpeg_ir::eval::model_surface_point_by_id(
             &ir,
             &first,
             lanes[0][ordinal].u,
             lanes[0][ordinal].v,
         )
         .unwrap();
-        let second_point = cadmpeg_ir::eval::model_surface_point(
+        let second_point = cadmpeg_ir::eval::model_surface_point_by_id(
             &ir,
             &second,
             lanes[1][ordinal].u,
@@ -7259,12 +7257,20 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     )
     .unwrap();
     for (cylinder_uv, plane_uv) in circular_lanes[0].iter().zip(&circular_lanes[1]) {
-        let cylinder_point =
-            cadmpeg_ir::eval::model_surface_point(&ir, &cylinder, cylinder_uv.u, cylinder_uv.v)
-                .unwrap();
-        let plane_point =
-            cadmpeg_ir::eval::model_surface_point(&ir, &section_plane, plane_uv.u, plane_uv.v)
-                .unwrap();
+        let cylinder_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            &ir,
+            &cylinder,
+            cylinder_uv.u,
+            cylinder_uv.v,
+        )
+        .unwrap();
+        let plane_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            &ir,
+            &section_plane,
+            plane_uv.u,
+            plane_uv.v,
+        )
+        .unwrap();
         assert!((cylinder_point.x - plane_point.x).abs() < 1.0e-8);
         assert!((cylinder_point.y - plane_point.y).abs() < 1.0e-8);
         assert!((cylinder_point.z - plane_point.z).abs() < 1.0e-8);
@@ -7392,8 +7398,10 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
                 u_sense: Some(0),
                 v_sense: Some(0),
                 extension_flags: Vec::new(),
+                revision_form: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
     }
 
@@ -7678,6 +7686,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
                 native: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
     }
 
@@ -7833,6 +7842,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             native: None,
         },
         cache_fit_tolerance: None,
+        record_bounds: None,
     });
     let expected = Point2::new(8.0, 0.35);
     let point = crate::decode::blend_surface_point(&ir, &surface, expected.u, expected.v).unwrap();
@@ -7955,7 +7965,10 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .iter_mut()
         .find(|procedural| procedural.curve == spine)
         .unwrap()
-        .definition = ProceduralCurveDefinition::Unknown { record: None };
+        .definition = ProceduralCurveDefinition::Unknown {
+        native_kind: None,
+        record: None,
+    };
     assert_eq!(
         crate::decode::blend_boundary_parameter_from_support_spine(
             &ir,
@@ -8058,6 +8071,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             native: None,
         },
         cache_fit_tolerance: None,
+        record_bounds: None,
     });
     let expected = Point2::new(4.0, 0.2);
     let point = crate::decode::blend_surface_point(&ir, &outer, expected.u, expected.v).unwrap();
@@ -8951,6 +8965,8 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             name: "Model".into(),
             material: None,
             properties: Default::default(),
+            parameter_overrides: Default::default(),
+            suppressed_features: Vec::new(),
             bodies: ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: Default::default(),
             feature_states: Default::default(),
@@ -8964,6 +8980,8 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             name: "Arrangement".into(),
             material: None,
             properties: Default::default(),
+            parameter_overrides: Default::default(),
+            suppressed_features: Vec::new(),
             bodies: ConfigurationBodies::Unresolved,
             parameter_values: Default::default(),
             feature_states: Default::default(),

@@ -665,6 +665,7 @@ pub(super) fn project(
                         PcurveUse {
                             pcurve: id,
                             isoparametric: None,
+                                    parameter_range: None,
                         }
                     })
                     .collect();
@@ -679,6 +680,8 @@ pub(super) fn project(
                     radial_next: coedge_id,
                     sense: item.segment.sense,
                     pcurves: pcurve_uses,
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
             candidate.model.loops.push(Loop {

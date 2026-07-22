@@ -4335,6 +4335,7 @@ mod tests {
             ir.model.coedges[coedge].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: id,
                 isoparametric: None,
+                parameter_range: None,
             }];
         }
         for version in [
@@ -4390,6 +4391,7 @@ mod tests {
         ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
             isoparametric: None,
+            parameter_range: None,
         }];
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
@@ -4421,6 +4423,7 @@ mod tests {
         ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
             isoparametric: None,
+            parameter_range: None,
         }];
         for version in [
             RhinoArchiveVersion::V5,
@@ -5017,6 +5020,8 @@ mod tests {
                 radial_next: coedge_ids[index].clone(),
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
         }
         ir.finalize();
@@ -5099,6 +5104,8 @@ mod tests {
                 radial_next: coedge_ids[index].clone(),
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
         }
         ir.finalize();
@@ -5274,6 +5281,8 @@ mod tests {
                 radial_next: coedge_ids[radial_next].clone(),
                 sense,
                 pcurves: Vec::new(),
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
         }
         ir.finalize();
@@ -5455,6 +5464,8 @@ mod tests {
                     radial_next: coedge_ids[index].clone(),
                     sense: face_uses[face][offset].1,
                     pcurves: Vec::new(),
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
         }
@@ -5551,6 +5562,7 @@ mod tests {
             ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: id,
                 isoparametric: None,
+                parameter_range: None,
             }];
         }
         ir.finalize();
@@ -5634,6 +5646,7 @@ mod tests {
             ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: id,
                 isoparametric: None,
+                parameter_range: None,
             }];
         }
         ir.finalize();
@@ -5696,6 +5709,7 @@ mod tests {
             ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: id,
                 isoparametric: None,
+                parameter_range: None,
             }];
         }
         ir.finalize();

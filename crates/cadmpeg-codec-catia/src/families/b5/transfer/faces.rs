@@ -366,9 +366,12 @@ pub(super) fn emit_faces(
                         .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
                             pcurve: pcurve.clone(),
                             isoparametric: None,
+                            parameter_range: None,
                         })
                         .into_iter()
                         .collect(),
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
         }

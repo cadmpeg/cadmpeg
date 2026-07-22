@@ -446,6 +446,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                             surface: support_id.clone(),
                             definition,
                             cache_fit_tolerance: None,
+                            record_bounds: None,
                         });
                         procedural_supports.insert(support_object_id, support_id.clone());
                         support_id
@@ -462,6 +463,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                         u_sense: Some(0),
                         v_sense: Some(0),
                         extension_flags: Vec::new(),
+                        revision_form: None,
                     },
                     Exactness::Derived,
                 )
@@ -497,6 +499,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             surface,
             definition,
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
     }
 
@@ -608,6 +611,7 @@ pub(crate) struct StandardObjectEvidence {
 }
 
 #[derive(Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum StandardSurfaceProcedure {
     RollingBall {
         carrier_object_id: u32,
@@ -623,6 +627,7 @@ pub(crate) enum StandardSurfaceProcedure {
 }
 
 #[derive(PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum StandardSurfaceEvidence {
     Geometry(SurfaceGeometry),
     Procedural(StandardSurfaceProcedure),
@@ -1895,9 +1900,12 @@ fn emit_standard_topology(
                         .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
                             pcurve,
                             isoparametric: None,
+                            parameter_range: None,
                         })
                         .into_iter()
                         .collect(),
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
             annotate(

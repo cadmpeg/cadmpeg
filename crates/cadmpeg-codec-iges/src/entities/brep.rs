@@ -140,6 +140,7 @@ fn project_pcurve_uses(
             Some(PcurveUse {
                 pcurve: id,
                 isoparametric: Some(*isoparametric),
+                parameter_range: None,
             })
         })
         .collect()
@@ -930,6 +931,8 @@ pub(super) fn project(
                             radial_next: coedge_id.clone(),
                             sense: *sense,
                             pcurves: projected,
+                            use_curve: None,
+                            use_curve_parameter_range: None,
                         });
                     }
                     if !valid {

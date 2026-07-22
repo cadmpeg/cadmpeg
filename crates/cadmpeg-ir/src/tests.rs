@@ -6,12 +6,15 @@
 use crate::annotations::{ExactnessNote, Provenance};
 use crate::document::Model;
 use crate::examples::unit_cube;
+use crate::features::ExtrudeDirection;
 use crate::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralSurface,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SplineSurfaceParameters, SurfaceGeometry,
 };
-use crate::ids::{CoedgeId, CurveId, EdgeId, PcurveId, ProceduralSurfaceId, SubdId, UnknownId};
-use crate::math::{Point2, Point3, Vector3};
+use crate::ids::{
+    CoedgeId, CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SubdId, UnknownId,
+};
+use crate::math::{Point3, Vector3};
 use crate::native::NativeRecord;
 use crate::provenance::{Exactness, SourceObjectAssociation};
 use crate::report::{Check, LossCategory, LossNote, Severity};
@@ -23,7 +26,6 @@ use crate::tessellation::TessellationChannel;
 use crate::topology::Color;
 use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 use crate::validate::validate;
-use crate::ConfigurationBodies;
 use crate::{diff, CadIr, LossProvenance};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
@@ -165,6 +167,105 @@ fn unknown_surface_without_record_is_legal() {
 }
 
 #[test]
+fn procedural_surface_carrier_requires_its_exact_owner() {
+    let mut ir = unit_cube();
+    let surface = ir.model.surfaces[0].id.clone();
+    let construction = ProceduralSurfaceId("synthetic:cube:procedural-surface#0".into());
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+        construction: construction.clone(),
+    };
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: construction.clone(),
+        surface: surface.clone(),
+        definition: ProceduralSurfaceDefinition::Exact {
+            parameters: SplineSurfaceParameters::OrderedRanges {
+                ranges: [[0.0, 1.0], [0.0, 1.0]],
+            },
+            extension: 0,
+            revision_form: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+    let report = validate(&ir, Vec::new());
+    assert!(report.is_ok(), "{:?}", report.findings);
+
+    ir.model.procedural_surfaces[0].cache_fit_tolerance = Some(0.01);
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding
+            .message
+            .contains("construction-backed surface cannot carry a cache-fit tolerance")
+    }));
+    ir.model.procedural_surfaces[0].cache_fit_tolerance = None;
+
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+        construction: ProceduralSurfaceId("synthetic:missing".into()),
+    };
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding
+            .message
+            .contains("references missing procedural surface construction")
+    }));
+
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural { construction };
+    ir.model.procedural_surfaces[0].surface = ir.model.surfaces[1].id.clone();
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("does not produce surface")));
+}
+
+#[test]
+fn procedural_curve_carrier_requires_its_exact_owner() {
+    let mut ir = unit_cube();
+    let curve = ir.model.curves[0].id.clone();
+    let construction = ProceduralCurveId("synthetic:cube:procedural-curve#0".into());
+    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+        construction: construction.clone(),
+    };
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: construction.clone(),
+        curve: curve.clone(),
+        definition: ProceduralCurveDefinition::Helix {
+            angle_range: [0.0, std::f64::consts::TAU],
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(1.0, 0.0, 0.0),
+            minor: Vector3::new(0.0, 1.0, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 1.0),
+            apex_factor: 0.0,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        },
+        cache_fit_tolerance: None,
+    });
+    let report = validate(&ir, Vec::new());
+    assert!(report.is_ok(), "{:?}", report.findings);
+
+    ir.model.procedural_curves[0].cache_fit_tolerance = Some(0.01);
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding
+            .message
+            .contains("construction-backed curve cannot carry a cache-fit tolerance")
+    }));
+    ir.model.procedural_curves[0].cache_fit_tolerance = None;
+
+    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+        construction: ProceduralCurveId("synthetic:missing".into()),
+    };
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding
+            .message
+            .contains("references missing procedural curve construction")
+    }));
+
+    ir.model.curves[0].geometry = CurveGeometry::Procedural { construction };
+    ir.model.procedural_curves[0].curve = ir.model.curves[1].id.clone();
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("does not produce curve")));
+}
+
+#[test]
 fn unknown_surface_dangling_record_is_flagged() {
     let mut ir = unit_cube();
     // Link a record id that is not in the unknowns arena.
@@ -286,15 +387,11 @@ fn current_json_without_sketch_arenas_defaults_to_empty() {
     model.remove("sketches");
     model.remove("sketch_entities");
     model.remove("sketch_constraints");
-    model.remove("spatial_sketches");
-    model.remove("spatial_sketch_entities");
 
     let decoded: CadIr = serde_json::from_value(value).unwrap();
     assert!(decoded.model.sketches.is_empty());
     assert!(decoded.model.sketch_entities.is_empty());
     assert!(decoded.model.sketch_constraints.is_empty());
-    assert!(decoded.model.spatial_sketches.is_empty());
-    assert!(decoded.model.spatial_sketch_entities.is_empty());
 }
 
 #[test]
@@ -393,12 +490,90 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
 }
 
 #[test]
+fn polygon_constraints_round_trip_and_require_distinct_members() {
+    use crate::math::{Point2, Point3, Vector3};
+    use crate::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchGeometry, SketchId,
+    };
+
+    let mut ir = unit_cube();
+    let sketch = SketchId("synthetic:test:sketch#polygon".into());
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    let members = (0..3)
+        .map(|ordinal| SketchEntityId(format!("synthetic:test:polygon-point#{ordinal}")))
+        .collect::<Vec<_>>();
+    ir.model.sketch_entities.extend(
+        members
+            .iter()
+            .enumerate()
+            .map(|(ordinal, id)| SketchEntity {
+                id: id.clone(),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: Point2::new(ordinal as f64, 0.0),
+                },
+            }),
+    );
+    let constraint = SketchConstraintId("synthetic:test:polygon-constraint#0".into());
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: constraint.clone(),
+        sketch,
+        definition: SketchConstraintDefinition::Polygon {
+            entities: members.clone(),
+        },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    });
+    ir.finalize();
+    assert!(validate(&ir, Vec::new()).is_ok());
+    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
+    assert_eq!(
+        round_trip.model.sketch_constraints,
+        ir.model.sketch_constraints
+    );
+
+    ir.model.sketch_constraints[0].definition = SketchConstraintDefinition::Polygon {
+        entities: vec![members[0].clone(), members[1].clone(), members[0].clone()],
+    };
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(constraint.0.as_str())
+            && finding.message.contains("three distinct members")
+    }));
+}
+
+#[test]
 fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
-    use crate::features::ParameterId;
+    use crate::features::{Length, ParameterId};
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-        SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+        SketchDistanceMeasurement, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+        SketchLocus, SketchOffsetPair,
     };
 
     let entity = SketchEntityId("synthetic:test:entity#0".into());
@@ -411,11 +586,6 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
                 SketchLocus::Center(entity.clone()),
             ],
         },
-        SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(entity.clone()),
-            second: SketchLocus::End(entity.clone()),
-            axis: SketchCoordinateAxis::V,
-        },
         SketchConstraintDefinition::PointOnObject {
             point: SketchLocus::Start(entity.clone()),
             entity: entity.clone(),
@@ -424,20 +594,21 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             point: SketchLocus::End(entity.clone()),
             entity: entity.clone(),
         },
-        SketchConstraintDefinition::AtIntersection {
-            point: SketchLocus::Center(entity.clone()),
+        SketchConstraintDefinition::Offset {
+            pairs: vec![SketchOffsetPair {
+                source: entity.clone(),
+                result: entity.clone(),
+                source_reversed: false,
+            }],
+            distance: Length(2.0),
+            parameter: Some(parameter.clone()),
+            parameter_factor: Some(-1.0),
+        },
+        SketchConstraintDefinition::Concentric {
             first: entity.clone(),
             second: entity.clone(),
         },
-        SketchConstraintDefinition::HorizontalPoints {
-            first: SketchLocus::Start(entity.clone()),
-            second: SketchLocus::End(entity.clone()),
-        },
-        SketchConstraintDefinition::VerticalPoints {
-            first: SketchLocus::Start(entity.clone()),
-            second: SketchLocus::End(entity.clone()),
-        },
-        SketchConstraintDefinition::Concentric {
+        SketchConstraintDefinition::Curvature {
             first: entity.clone(),
             second: entity.clone(),
         },
@@ -449,19 +620,6 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
             axis: entity.clone(),
-        },
-        SketchConstraintDefinition::PointSymmetric {
-            first: SketchLocus::Start(entity.clone()),
-            second: SketchLocus::End(entity.clone()),
-            center: SketchLocus::Center(entity.clone()),
-        },
-        SketchConstraintDefinition::TangentLoci {
-            first: SketchLocus::Start(entity.clone()),
-            second: SketchLocus::End(entity.clone()),
-        },
-        SketchConstraintDefinition::ArcAngle {
-            entity: entity.clone(),
-            angle: crate::features::Angle(std::f64::consts::FRAC_PI_2),
         },
         SketchConstraintDefinition::Radius {
             entity: entity.clone(),
@@ -481,9 +639,24 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             second: SketchLocus::End(entity.clone()),
             parameter: parameter.clone(),
         },
+        SketchConstraintDefinition::HorizontalLoci {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
+        },
         SketchConstraintDefinition::VerticalDistance {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
+            parameter: parameter.clone(),
+        },
+        SketchConstraintDefinition::VerticalLoci {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
+        },
+        SketchConstraintDefinition::RepeatedDistance {
+            measurements: vec![SketchDistanceMeasurement::Horizontal {
+                first: SketchLocus::Start(entity.clone()),
+                second: SketchLocus::End(entity.clone()),
+            }],
             parameter,
         },
         SketchConstraintDefinition::SnellsLaw {
@@ -570,93 +743,6 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
             && finding.check == Check::GeometricConsistency
-    }));
-}
-
-#[test]
-fn fixed_arc_angles_validate_against_solved_wraparound_geometry() {
-    use crate::features::{Angle, Length};
-    use crate::math::{Point2, Point3, Vector3};
-    use crate::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchId,
-    };
-
-    let mut ir = unit_cube();
-    let sketch = SketchId("synthetic:test:sketch#arc-angle".into());
-    let arc = SketchEntityId("synthetic:test:entity#arc-angle".into());
-    let constraint = SketchConstraintId("synthetic:test:constraint#arc-angle".into());
-    ir.model.sketches.push(Sketch {
-        id: sketch.clone(),
-        name: None,
-        configuration: None,
-        placement: crate::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
-        native_ref: None,
-    });
-    ir.model.sketch_entities.push(SketchEntity {
-        id: arc.clone(),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Arc {
-            center: Point2::new(0.0, 0.0),
-            radius: Length(1.0),
-            start_angle: Angle(5.5),
-            end_angle: Angle((5.5 + std::f64::consts::FRAC_PI_2) - std::f64::consts::TAU),
-        },
-    });
-    ir.model.sketch_constraints.push(SketchConstraint {
-        id: constraint.clone(),
-        sketch,
-        definition: SketchConstraintDefinition::ArcAngle {
-            entity: arc,
-            angle: Angle(std::f64::consts::FRAC_PI_2),
-        },
-        name: None,
-        driving: None,
-        active: None,
-        virtual_space: None,
-        visible: None,
-        orientation: None,
-        label_distance: None,
-        label_position: None,
-        metadata: None,
-        native_ref: None,
-    });
-    ir.finalize();
-    let report = validate(&ir, Vec::new());
-    assert!(!report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(constraint.0.as_str())
-            && finding.message.contains("arc angle")
-    }));
-
-    if let SketchConstraintDefinition::ArcAngle { angle, .. } =
-        &mut ir.model.sketch_constraints[0].definition
-    {
-        *angle = Angle(std::f64::consts::PI);
-    }
-    let report = validate(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(constraint.0.as_str())
-            && finding.message.contains("does not match solved geometry")
-    }));
-
-    if let SketchConstraintDefinition::ArcAngle { angle, .. } =
-        &mut ir.model.sketch_constraints[0].definition
-    {
-        *angle = Angle(0.0);
-    }
-    let report = validate(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(constraint.0.as_str())
-            && finding.check == Check::ParameterDomain
     }));
 }
 
@@ -773,13 +859,14 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
     let definitions = [
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch.clone()),
-            direction: None,
+            direction: ExtrudeDirection::ProfileNormal,
+            start: crate::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Blind {
                 length: Length(10.0),
             },
             op: BooleanOp::NewBody,
             draft: None,
-            reverse_draft: None,
+            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
@@ -868,15 +955,17 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         outputs: vec![BodyId("synthetic:test:body#missing".into())],
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Faces(vec![FaceId("synthetic:test:face#profile-missing".into())]),
-            direction: None,
+            direction: ExtrudeDirection::ProfileNormal,
+            start: crate::features::ExtrudeStart::ProfilePlane,
             extent: Extent::ToFace {
                 face: FaceSelection::Faces(vec![FaceId(
                     "synthetic:test:face#termination-missing".into(),
                 )]),
+                offset: None,
             },
             op: BooleanOp::NewBody,
             draft: None,
-            reverse_draft: None,
+            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
@@ -930,93 +1019,6 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
 }
 
 #[test]
-fn datum_plane_references_follow_graph_not_serialized_order() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId, Length, PrincipalPlane};
-    use crate::math::{Point3, Vector3};
-
-    let mut ir = unit_cube();
-    let principal = FeatureId("synthetic:test:feature#principal".into());
-    let constructed = FeatureId("synthetic:test:feature#constructed".into());
-    let feature = |id: &str, ordinal: u64, definition: FeatureDefinition| Feature {
-        id: FeatureId(id.into()),
-        ordinal,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: std::collections::BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
-        native_ref: None,
-    };
-    ir.model.features.push(feature(
-        "synthetic:test:feature#offset",
-        0,
-        FeatureDefinition::DatumOffsetPlane {
-            reference: Some(principal.clone()),
-            distance: Length(25.0),
-        },
-    ));
-    ir.model.features.push(feature(
-        "synthetic:test:feature#second-offset",
-        1,
-        FeatureDefinition::DatumOffsetPlane {
-            reference: Some(constructed.clone()),
-            distance: Length(10.0),
-        },
-    ));
-    ir.model.features.push(feature(
-        &constructed.0,
-        2,
-        FeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(1.0, 0.0, 0.0),
-            u_axis: Vector3::new(0.0, 1.0, 0.0),
-        },
-    ));
-    ir.model.features.push(feature(
-        &principal.0,
-        3,
-        FeatureDefinition::DatumPrincipalPlane {
-            plane: PrincipalPlane::Right,
-        },
-    ));
-
-    let findings = validate(&ir, Vec::new()).findings;
-    assert!(!findings.iter().any(|finding| {
-        finding.message.contains("reference plane")
-            || finding.message.contains("datum-plane reference cycle")
-    }));
-
-    let first = FeatureId("synthetic:test:feature#cycle-a".into());
-    let second = FeatureId("synthetic:test:feature#cycle-b".into());
-    let mut cyclic = unit_cube();
-    cyclic.model.features.push(feature(
-        &first.0,
-        0,
-        FeatureDefinition::DatumOffsetPlane {
-            reference: Some(second.clone()),
-            distance: Length(1.0),
-        },
-    ));
-    cyclic.model.features.push(feature(
-        &second.0,
-        1,
-        FeatureDefinition::DatumOffsetPlane {
-            reference: Some(first),
-            distance: Length(1.0),
-        },
-    ));
-    assert!(validate(&cyclic, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "datum-plane reference cycle"));
-}
-
-#[test]
 fn feature_parameters_require_unique_names_and_ordinals() {
     use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
     use std::collections::BTreeMap;
@@ -1045,7 +1047,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
     for (index, name) in ["Width", "Width"].into_iter().enumerate() {
         ir.model.parameters.push(DesignParameter {
             id: ParameterId(format!("synthetic:test:parameter#{index}")),
-            owner: owner.clone(),
+            owner: Some(owner.clone()),
             ordinal: 0,
             name: name.into(),
             expression: "1mm".into(),
@@ -1107,7 +1109,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
     ] {
         ir.model.parameters.push(DesignParameter {
             id,
-            owner: owner.clone(),
+            owner: Some(owner.clone()),
             ordinal,
             name: format!("P{ordinal}"),
             expression: String::new(),
@@ -1128,6 +1130,63 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
             .message
             .contains("parameter dependency `synthetic:test:parameter#missing`")
     }));
+}
+
+#[test]
+fn document_parameters_can_feed_feature_parameters() {
+    use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
+    use std::collections::BTreeMap;
+
+    let mut ir = unit_cube();
+    let owner = FeatureId("synthetic:test:feature#consumer".into());
+    ir.model.features.push(Feature {
+        id: owner.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Native {
+            kind: "Test".into(),
+            parameters: BTreeMap::new(),
+            properties: BTreeMap::new(),
+        },
+        native_ref: None,
+    });
+    let document = ParameterId("synthetic:test:parameter#document".into());
+    ir.model.parameters.push(DesignParameter {
+        id: document.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "Width".into(),
+        expression: "60 mm".into(),
+        display: None,
+        value: None,
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model.parameters.push(DesignParameter {
+        id: ParameterId("synthetic:test:parameter#owned".into()),
+        owner: Some(owner),
+        ordinal: 0,
+        name: "Distance".into(),
+        expression: "Width / 2".into(),
+        display: None,
+        value: None,
+        dependencies: vec![document],
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.finalize();
+    assert!(validate(&ir, Vec::new()).findings.is_empty());
 }
 
 #[test]
@@ -1196,24 +1255,39 @@ fn tessellation_counts_must_be_consistent() {
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
     use crate::features::{
-        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, FeatureDefinition,
-        FeatureId, FeatureTreeNodeRole, ParameterId, ParameterValue,
+        ConfigurationId, DesignConfiguration, DesignParameter, FeatureId, ParameterId,
     };
     use crate::ids::BodyId;
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
     let configuration_id = ConfigurationId("synthetic:test:configuration#0".into());
+    let parameter_id = ParameterId("synthetic:test:parameter#width".into());
     let body = ir.model.bodies[0].id.clone();
+    ir.model.parameters.push(DesignParameter {
+        id: parameter_id.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "width".into(),
+        expression: "10 mm".into(),
+        display: None,
+        value: None,
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
     ir.model.configurations.push(DesignConfiguration {
         id: configuration_id.clone(),
         ordinal: 0,
-        active: true,
+        active: false,
         source_index: Some(7),
         name: "Default".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(vec![body.clone()]),
+        parameter_overrides: BTreeMap::from([(parameter_id.clone(), "25 mm".into())]),
+        suppressed_features: Vec::new(),
+        bodies: crate::features::ConfigurationBodies::Resolved(vec![body.clone()]),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -1221,51 +1295,33 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.finalize();
     assert!(validate(&ir, Vec::new()).is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
+    assert_eq!(round_trip.model.configurations[0].bodies, vec![body]);
     assert_eq!(
-        round_trip.model.configurations[0].bodies.resolved(),
-        Some([body].as_slice())
+        round_trip.model.configurations[0].parameter_overrides[&parameter_id],
+        "25 mm"
     );
 
-    let missing_parameter = ParameterId("synthetic:test:parameter#missing".into());
-    ir.model.configurations[0]
-        .parameter_values
-        .insert(missing_parameter, ParameterValue::Real(f64::NAN));
+    ir.model.configurations[0].parameter_overrides = BTreeMap::from([(
+        ParameterId("synthetic:test:parameter#missing".into()),
+        "30 mm".into(),
+    )]);
     let report = validate(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("missing configuration parameter")
+            && finding.message.contains("configuration parameter override")
     }));
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("non-finite value")
-    }));
-    ir.model.configurations[0].parameter_values.clear();
+    ir.model.configurations[0].parameter_overrides.clear();
 
-    ir.model.configurations[0].feature_states.insert(
-        FeatureId("synthetic:test:feature#missing".into()),
-        ConfigurationFeatureState {
-            suppressed: Some(false),
-            dependencies: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::TreeNode {
-                role: FeatureTreeNodeRole::History,
-                children: Vec::new(),
-                active_child: None,
-            },
-        },
-    );
+    ir.model.configurations[0].suppressed_features =
+        vec![FeatureId("synthetic:test:feature#missing".into())];
     let report = validate(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("missing configuration feature")
+            && finding.message.contains("configuration suppressed feature")
     }));
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("feature state is incomplete")
-    }));
-    ir.model.configurations[0].feature_states.clear();
+    ir.model.configurations[0].suppressed_features.clear();
 
-    ir.model.configurations[0].bodies = ConfigurationBodies::Resolved(vec![
+    ir.model.configurations[0].bodies = crate::features::ConfigurationBodies::Resolved(vec![
         BodyId("synthetic:test:body#missing".into()),
         BodyId("synthetic:test:body#missing".into()),
     ]);
@@ -1287,7 +1343,9 @@ fn configuration_body_membership_round_trips_and_validates() {
         name: "Alternate".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(Vec::new()),
+        parameter_overrides: BTreeMap::new(),
+        suppressed_features: Vec::new(),
+        bodies: crate::features::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -1303,227 +1361,10 @@ fn configuration_body_membership_round_trips_and_validates() {
     assert!(report
         .findings
         .iter()
-        .any(|finding| finding.message.contains("at most one active configuration")));
+        .any(|finding| finding.message.contains("multiple active configurations")));
     assert!(report.findings.iter().any(|finding| finding
         .message
         .contains("repeats configuration source index")));
-
-    ir.model.configurations[0].active = false;
-    ir.model.configurations[1].active = false;
-    ir.model.configurations[0].name.clear();
-    ir.model.configurations[1].name.clear();
-    let report = validate(&ir, Vec::new());
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("configuration has an empty name")));
-    assert!(!report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("at most one active configuration")));
-
-    ir.model.configurations[0].name = "Default".into();
-    ir.model.configurations[1].name = "Default".into();
-    let report = validate(&ir, Vec::new());
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("repeats configuration name")));
-}
-
-#[test]
-fn configuration_feature_definitions_use_global_feature_validation() {
-    use crate::features::{
-        BooleanOp, ConfigurationFeatureState, ConfigurationId, DesignConfiguration, Extent,
-        Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ProfileRef,
-    };
-    use crate::ids::BodyId;
-    use std::collections::BTreeMap;
-
-    let mut ir = unit_cube();
-    let feature_id = FeatureId("synthetic:test:feature#configured".into());
-    ir.model.features.push(Feature {
-        id: feature_id.clone(),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::History,
-            children: Vec::new(),
-            active_child: None,
-        },
-        native_ref: None,
-    });
-    ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("synthetic:test:configuration#configured".into()),
-        ordinal: 0,
-        active: true,
-        source_index: None,
-        name: "Configured".into(),
-        material: None,
-        properties: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(Vec::new()),
-        parameter_values: BTreeMap::new(),
-        feature_states: BTreeMap::from([(
-            feature_id,
-            ConfigurationFeatureState {
-                suppressed: Some(false),
-                dependencies: vec![FeatureId("synthetic:test:feature#missing".into())],
-                outputs: vec![BodyId("synthetic:test:body#missing".into())],
-                definition: FeatureDefinition::Extrude {
-                    profile: ProfileRef::Unresolved("native-profile".into()),
-                    direction: None,
-                    extent: Extent::Blind {
-                        length: Length(f64::NAN),
-                    },
-                    op: BooleanOp::NewBody,
-                    draft: None,
-                    reverse_draft: None,
-                    direction_source: None,
-                    solid: None,
-                    face_maker: None,
-                    inner_wire_taper: None,
-                    first_offset: None,
-                    second_offset: None,
-                    length_along_profile_normal: None,
-                    allow_multi_profile_faces: None,
-                },
-            },
-        )]),
-        native_ref: None,
-    });
-    ir.finalize();
-
-    let report = validate(&ir, Vec::new());
-    for message in [
-        "missing dependency feature",
-        "missing output body",
-        "feature extent magnitude is invalid",
-    ] {
-        assert!(report.findings.iter().any(|finding| {
-            finding.message.starts_with("configuration `Configured`:")
-                && finding.message.contains(message)
-        }));
-    }
-}
-
-#[test]
-fn parameter_dimensional_kinds_are_consistent_across_design_graphs() {
-    use crate::features::{
-        Angle, ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay, Feature,
-        FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
-    };
-    use crate::sketches::{
-        SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntityId, SketchId,
-    };
-    use std::collections::BTreeMap;
-
-    let mut ir = unit_cube();
-    let owner = FeatureId("synthetic:test:feature#parameters".into());
-    ir.model.features.push(Feature {
-        id: owner.clone(),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::History,
-            children: Vec::new(),
-            active_child: None,
-        },
-        native_ref: None,
-    });
-    let distance = ParameterId("synthetic:test:parameter#distance".into());
-    let radial = ParameterId("synthetic:test:parameter#radial".into());
-    ir.model.parameters.extend([
-        DesignParameter {
-            id: distance.clone(),
-            owner: owner.clone(),
-            ordinal: 0,
-            name: "D1".into(),
-            expression: "1mm".into(),
-            display: None,
-            value: Some(ParameterValue::Length(Length(1.0))),
-            dependencies: Vec::new(),
-            properties: BTreeMap::new(),
-            pmi: None,
-            native_ref: None,
-        },
-        DesignParameter {
-            id: radial,
-            owner,
-            ordinal: 1,
-            name: "D2".into(),
-            expression: "90deg".into(),
-            display: Some(DimensionDisplay::Radius),
-            value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))),
-            dependencies: Vec::new(),
-            properties: BTreeMap::new(),
-            pmi: None,
-            native_ref: None,
-        },
-    ]);
-    ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("synthetic:test:constraint#angle-kind".into()),
-        sketch: SketchId("synthetic:test:sketch#missing".into()),
-        definition: SketchConstraintDefinition::Angle {
-            first: SketchEntityId("synthetic:test:entity#first".into()),
-            second: SketchEntityId("synthetic:test:entity#second".into()),
-            parameter: distance.clone(),
-        },
-        name: None,
-        driving: None,
-        active: None,
-        virtual_space: None,
-        visible: None,
-        orientation: None,
-        label_distance: None,
-        label_position: None,
-        metadata: None,
-        native_ref: None,
-    });
-    ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("synthetic:test:configuration#kinds".into()),
-        ordinal: 0,
-        active: true,
-        source_index: None,
-        name: "Kinds".into(),
-        material: None,
-        properties: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(Vec::new()),
-        parameter_values: BTreeMap::from([(
-            distance,
-            ParameterValue::Angle(Angle(std::f64::consts::PI)),
-        )]),
-        feature_states: BTreeMap::new(),
-        native_ref: None,
-    });
-    ir.finalize();
-
-    let findings = validate(&ir, Vec::new()).findings;
-    for context in [
-        "radial display semantics",
-        "sketch dimension",
-        "configuration parameter value",
-    ] {
-        assert!(findings.iter().any(|finding| {
-            finding.message.contains(context)
-                && finding.message.contains("incompatible dimensional kinds")
-        }));
-    }
 }
 
 #[test]
@@ -1619,8 +1460,35 @@ fn json_round_trips_and_is_deterministic() {
 }
 
 #[test]
+fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
+    // Byte-backed writers compare parsed documents against fresh decodes with
+    // exact f64 equality, so JSON parsing must be correctly rounded. The
+    // values one to a few ULPs below 1.0 are the ones a fast non-roundtrip
+    // float parser misparses by one ULP.
+    let mut ir = unit_cube();
+    let edge_values: Vec<f64> = (1..40)
+        .map(|n| 1.0f64 - f64::from(n) * f64::EPSILON / 2.0)
+        .collect();
+    for (point, value) in ir.model.points.iter_mut().zip(edge_values.iter().cycle()) {
+        point.position.x = *value;
+    }
+    let json = ir.to_canonical_json().unwrap();
+    let parsed = crate::CadIr::from_json(&json).unwrap();
+    for (before, after) in ir.model.points.iter().zip(&parsed.model.points) {
+        assert_eq!(
+            before.position.x.to_bits(),
+            after.position.x.to_bits(),
+            "JSON round-trip changed {} by at least one ULP",
+            before.position.x
+        );
+    }
+}
+
+#[test]
 fn appearance_asset_and_binding_round_trip() {
-    use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use crate::appearance::{
+        Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
+    };
     use crate::ids::AppearanceId;
 
     let mut ir = unit_cube();
@@ -1640,6 +1508,33 @@ fn appearance_asset_and_binding_round_trip() {
             a: 1.0,
         }),
         properties: std::collections::BTreeMap::new(),
+        textures: vec![TextureRef {
+            asset_guid: "texture-guid".into(),
+            slot: "generic_bump_map".into(),
+            schema: "BumpMapSchema".into(),
+            paths: vec!["cloud/resource/texture.png".into()],
+            urn: Some("adsk.raas:asset.name:texture".into()),
+            mapping: TextureMap2d {
+                map_channel: 1,
+                uvw_source: 0,
+                u_offset: 0.25,
+                v_offset: -0.5,
+                u_scale: 2.0,
+                v_scale: 3.0,
+                rotation: std::f64::consts::FRAC_PI_2,
+                repeat_u: true,
+                repeat_v: false,
+                real_world_offset_x: 12.7,
+                real_world_offset_y: 25.4,
+                real_world_scale_x: 304.8,
+                real_world_scale_y: 609.6,
+            },
+            bump: Some(BumpMap {
+                normal_map: true,
+                depth: 2.54,
+                normal_scale: 0.75,
+            }),
+        }],
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "synthetic:test:appearance-binding#0".into(),
@@ -1686,6 +1581,22 @@ fn dangling_reference_is_flagged() {
         .iter()
         .any(|f| f.check == Check::ReferentialIntegrity));
     assert!(!report.is_ok());
+}
+
+#[test]
+fn coedge_use_curve_requires_a_resolved_carrier_and_interval() {
+    let mut ir = unit_cube();
+    ir.model.coedges[0].use_curve = Some(CurveId("missing:use-curve#0".into()));
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity && finding.message.contains("coedge use curve")
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ParameterDomain
+            && finding
+                .message
+                .contains("use curve and parameter range must occur together")
+    }));
 }
 
 #[test]
@@ -1760,70 +1671,6 @@ fn degenerate_plane_normal_is_flagged() {
 }
 
 #[test]
-fn analytic_frames_must_be_orthonormal() {
-    let mut ir = unit_cube();
-    let surface_id = ir.model.surfaces[0].id.0.clone();
-    let curve_id = ir.model.curves[0].id.0.clone();
-    if let SurfaceGeometry::Plane { normal, u_axis, .. } = &mut ir.model.surfaces[0].geometry {
-        *normal = Vector3::new(0.0, 0.0, 2.0);
-        *u_axis = Vector3::new(0.0, 0.0, 1.0);
-    }
-    if let CurveGeometry::Line { direction, .. } = &mut ir.model.curves[0].geometry {
-        *direction = Vector3::new(2.0, 0.0, 0.0);
-    }
-
-    let report = validate(&ir, Vec::new());
-
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(surface_id.as_str())
-            && finding.message == "plane frame is not orthonormal"
-    }));
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(curve_id.as_str())
-            && finding.message == "line direction is not unit length"
-    }));
-}
-
-#[test]
-fn nurbs_payloads_require_complete_finite_nonzero_weight_contracts() {
-    let mut ir = unit_cube();
-    let surface_id = ir.model.surfaces[0].id.0.clone();
-    let curve_id = ir.model.curves[0].id.0.clone();
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![Point3::new(0.0, 0.0, 0.0); 4],
-        weights: Some(vec![1.0, 0.0, 1.0, 1.0]),
-        u_periodic: false,
-        v_periodic: false,
-    });
-    ir.model.curves[0].geometry = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0); 2],
-        weights: Some(vec![1.0, 1.0]),
-        periodic: false,
-    });
-
-    let report = validate(&ir, Vec::new());
-
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(surface_id.as_str())
-            && finding.message
-                == "NURBS surface degree, poles, weights, or knot cardinality is invalid"
-    }));
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(curve_id.as_str())
-            && finding.message
-                == "NURBS curve degree, poles, weights, or knot cardinality is invalid"
-    }));
-}
-
-#[test]
 fn new_topology_references_are_validated() {
     let mut ir = unit_cube();
     ir.model.shells[0]
@@ -1853,25 +1700,7 @@ fn new_topology_references_are_validated() {
 fn topology_tolerance_and_new_conics_are_bounds_checked() {
     let mut ir = unit_cube();
     let edge_id = ir.model.edges[0].id.0.clone();
-    let pcurve_id = "synthetic:test:pcurve#bad-circle".to_string();
     ir.model.edges[0].tolerance = Some(-1.0);
-    ir.model.pcurves.push(Pcurve {
-        id: PcurveId(pcurve_id.clone()),
-        geometry: PcurveGeometry::Circle {
-            center: Point2::new(0.0, 0.0),
-            x_axis: Point2::new(1.0, 0.0),
-            y_axis: Point2::new(0.0, 1.0),
-            radius: -1.0,
-        },
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: None,
-        fit_tolerance: None,
-    });
-    ir.model.coedges[0].pcurves = vec![crate::topology::PcurveUse {
-        pcurve: PcurveId(pcurve_id.clone()),
-        isoparametric: None,
-    }];
     ir.model.curves.push(Curve {
         id: CurveId("synthetic:test:curve#bad-parabola".into()),
         geometry: CurveGeometry::Parabola {
@@ -1897,7 +1726,6 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
     let report = validate(&ir, Vec::new());
     for entity in [
         edge_id.as_str(),
-        pcurve_id.as_str(),
         "synthetic:test:curve#bad-parabola",
         "synthetic:test:curve#bad-hyperbola",
     ] {
@@ -1957,62 +1785,15 @@ fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
 }
 
 #[test]
-fn explicit_migration_upgrades_previous_sketch_placement() {
-    let mut current = unit_cube();
-    current.model.sketches.push(crate::Sketch {
-        id: crate::SketchId("sketch:migration".into()),
-        name: None,
-        configuration: None,
-        placement: crate::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
-        native_ref: None,
-    });
+fn explicit_migration_upgrades_previous_version_without_semantic_changes() {
+    let current = unit_cube();
     let mut legacy = serde_json::to_value(&current).unwrap();
     legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
-    let sketch = legacy["model"]["sketches"][0]
-        .as_object_mut()
-        .expect("legacy sketch object");
-    let placement = sketch
-        .remove("placement")
-        .expect("current sketch placement");
-    sketch.insert("origin".into(), placement["origin"].clone());
-    sketch.insert("normal".into(), placement["normal"].clone());
-    sketch.insert("u_axis".into(), placement["u_axis"].clone());
     let legacy = serde_json::to_string(&legacy).unwrap();
 
     assert!(CadIr::from_json(&legacy).is_err());
     let migrated = CadIr::migrate_json(&legacy).expect("previous-version migration");
     assert_eq!(migrated, current);
-}
-
-#[test]
-fn previous_spatial_sketch_discriminator_migrates_to_its_own_feature_kind() {
-    let mut legacy = serde_json::to_value(unit_cube()).unwrap();
-    legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
-    legacy["model"]["features"] = serde_json::json!([{
-        "id": "synthetic:test:feature#migrated-spatial-sketch",
-        "ordinal": 0,
-        "definition": {
-            "definition": "sketch",
-            "space": "spatial",
-            "sketch": "synthetic:test:spatial-sketch#migrated"
-        }
-    }]);
-
-    let migrated = CadIr::migrate_json(&serde_json::to_string(&legacy).unwrap())
-        .expect("spatial sketch migration");
-    assert_eq!(
-        migrated.model.features[0].definition,
-        crate::features::FeatureDefinition::SpatialSketch {
-            sketch: Some(crate::sketches::SpatialSketchId(
-                "synthetic:test:spatial-sketch#migrated".into()
-            )),
-        }
-    );
 }
 
 #[test]
@@ -2172,8 +1953,10 @@ fn revolution_rejects_equal_intervals() {
             angular_interval: [1.0, 1.0],
             parameter_interval: Some([0.0, 1.0]),
             transposed: false,
+            revision_form: None,
         },
         cache_fit_tolerance: None,
+        record_bounds: None,
     });
     assert!(validate(&ir, Vec::new())
         .findings
@@ -2400,59 +2183,6 @@ fn empty_shell_is_reported() {
 }
 
 #[test]
-fn disconnected_shell_faces_are_reported() {
-    let mut ir = unit_cube();
-    let face_edges = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| {
-            let loops = face.loops.iter().collect::<std::collections::HashSet<_>>();
-            let edges = ir
-                .model
-                .coedges
-                .iter()
-                .filter(|coedge| loops.contains(&coedge.owner_loop))
-                .map(|coedge| coedge.edge.clone())
-                .collect::<std::collections::HashSet<_>>();
-            (face.id.clone(), edges)
-        })
-        .collect::<Vec<_>>();
-    let (first, second) = face_edges
-        .iter()
-        .enumerate()
-        .find_map(|(index, (first, first_edges))| {
-            face_edges[index + 1..]
-                .iter()
-                .find(|(_, second_edges)| first_edges.is_disjoint(second_edges))
-                .map(|(second, _)| (first.clone(), second.clone()))
-        })
-        .expect("cube has opposite faces");
-
-    let mut disconnected = ir.model.shells[0].clone();
-    disconnected.id.0 = "synthetic:test:shell#disconnected".into();
-    disconnected.faces = vec![first.clone(), second.clone()];
-    ir.model.shells[0]
-        .faces
-        .retain(|face| face != &first && face != &second);
-    for face in &mut ir.model.faces {
-        if face.id == first || face.id == second {
-            face.shell = disconnected.id.clone();
-        }
-    }
-    ir.model.regions[0].shells.push(disconnected.id.clone());
-    ir.model.shells.push(disconnected.clone());
-    ir.finalize();
-
-    let findings = validate(&ir, Vec::new()).findings;
-    assert!(findings.iter().any(|finding| {
-        finding.check == Check::ShellTopology
-            && finding.entity.as_deref() == Some(disconnected.id.0.as_str())
-            && finding.message == "shell faces are disconnected through shared edges"
-    }));
-}
-
-#[test]
 fn orphan_carrier_is_flagged() {
     let mut ir = unit_cube();
     let mut orphan = ir.model.curves[0].clone();
@@ -2518,7 +2248,9 @@ fn parameter_native_ref_must_resolve() {
     let id = crate::features::ParameterId("synthetic:test:parameter#native-ref".into());
     ir.model.parameters.push(crate::features::DesignParameter {
         id: id.clone(),
-        owner: crate::features::FeatureId("synthetic:test:feature#missing".into()),
+        owner: Some(crate::features::FeatureId(
+            "synthetic:test:feature#missing".into(),
+        )),
         ordinal: 0,
         name: "D1".into(),
         expression: "1mm".into(),
@@ -2559,10 +2291,13 @@ fn sketch_constraint_native_ref_must_resolve() {
             sketch: crate::sketches::SketchId("synthetic:test:sketch#missing".into()),
             definition: crate::sketches::SketchConstraintDefinition::Native {
                 native_kind: "test".into(),
+                native_state: None,
                 entities: Vec::new(),
                 parameter: None,
                 operands: vec![crate::sketches::SketchNativeOperand {
                     native_kind: "test".into(),
+                    native_field: None,
+                    native_role: None,
                     object_index: 0,
                     native_ref: Some("native:missing-operand#0".into()),
                 }],
@@ -2589,50 +2324,14 @@ fn sketch_constraint_native_ref_must_resolve() {
             && finding.entity.as_deref() == Some(id.0.as_str())
             && finding.message.contains("native:missing-operand#0")
     }));
-}
-
-#[test]
-fn source_backed_native_sketch_constraint_may_have_opaque_arity() {
-    let mut ir = unit_cube();
-    let backed = crate::sketches::SketchConstraintId(
-        "synthetic:test:sketch-constraint#source-backed".into(),
-    );
-    let source_less =
-        crate::sketches::SketchConstraintId("synthetic:test:sketch-constraint#source-less".into());
-    for (id, native_ref) in [
-        (backed.clone(), Some("native:relation#0".into())),
-        (source_less.clone(), None),
-    ] {
-        ir.model
-            .sketch_constraints
-            .push(crate::sketches::SketchConstraint {
-                id,
-                sketch: crate::sketches::SketchId("synthetic:test:sketch#missing".into()),
-                definition: crate::sketches::SketchConstraintDefinition::Native {
-                    native_kind: "opaque-relation".into(),
-                    entities: Vec::new(),
-                    parameter: None,
-                    operands: Vec::new(),
-                },
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref,
-            });
-    }
-
-    let findings = validate(&ir, Vec::new()).findings;
-    assert!(!findings.iter().any(|finding| {
-        finding.check == Check::Counts && finding.entity.as_deref() == Some(backed.0.as_str())
-    }));
-    assert!(findings.iter().any(|finding| {
-        finding.check == Check::Counts && finding.entity.as_deref() == Some(source_less.0.as_str())
+    let crate::sketches::SketchConstraintDefinition::Native { operands, .. } =
+        &mut ir.model.sketch_constraints[0].definition
+    else {
+        unreachable!("test constraint is native")
+    };
+    operands[0].native_role = Some(7);
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::Counts && finding.entity.as_deref() == Some(id.0.as_str())
     }));
 }
 
@@ -2656,10 +2355,33 @@ fn periodic_curve_parameter_domain_is_checked() {
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
+
+    ir.model.edges[0].param_range = Some([-std::f64::consts::PI, std::f64::consts::PI]);
+    assert!(!validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ParameterDomain));
 }
 
 #[test]
-fn ellipse_radius_order_is_checked() {
+fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
+    let nurbs = crate::geometry::NurbsCurve {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ],
+        weights: None,
+        periodic: true,
+    };
+    let geometry = CurveGeometry::Nurbs(nurbs.clone());
+    assert_eq!(
+        crate::eval::curve_point(&geometry, 0.5),
+        crate::eval::curve_point(&geometry, 2.5)
+    );
+
     let mut ir = unit_cube();
     let curve_id = ir.model.edges[0].curve.clone().unwrap();
     ir.model
@@ -2667,59 +2389,35 @@ fn ellipse_radius_order_is_checked() {
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .unwrap()
-        .geometry = CurveGeometry::Ellipse {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 1.0,
-        minor_radius: 2.0,
-    };
+        .geometry = geometry;
+    ir.model.edges[0].param_range = Some([0.5, 2.5]);
+    assert!(!validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ParameterDomain));
 
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.check == Check::Bounds
-            && finding.message == "ellipse major radius is smaller than its minor radius"
-    }));
-}
+    ir.model.edges[0].param_range = Some([0.5, 2.500_001]);
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ParameterDomain));
 
-#[test]
-fn analytic_carrier_locations_and_scalars_must_be_finite() {
-    let mut ir = unit_cube();
-    let surface_id = ir.model.faces[0].surface.clone();
-    ir.model
-        .surfaces
-        .iter_mut()
-        .find(|surface| surface.id == surface_id)
-        .unwrap()
-        .geometry = SurfaceGeometry::Cone {
-        origin: Point3::new(f64::NAN, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: f64::INFINITY,
-        ratio: 1.0,
-        half_angle: f64::NAN,
-    };
-    let curve_id = ir.model.edges[0].curve.clone().unwrap();
-    ir.model
+    let CurveGeometry::Nurbs(nurbs) = &mut ir
+        .model
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .unwrap()
-        .geometry = CurveGeometry::Circle {
-        center: Point3::new(0.0, f64::INFINITY, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
+        .geometry
+    else {
+        unreachable!()
     };
-
-    let findings = validate(&ir, Vec::new()).findings;
-    for message in [
-        "cone origin is not finite",
-        "cone radius is negative or not finite",
-        "cone half-angle is not finite",
-        "circle center is not finite",
-    ] {
-        assert!(findings.iter().any(|finding| finding.message == message));
-    }
+    nurbs.periodic = false;
+    ir.model.edges[0].param_range = Some([0.5, 2.5]);
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ParameterDomain));
 }
 
 #[test]
@@ -2819,6 +2517,44 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
 }
 
 #[test]
+fn rational_pcurve_membership_finds_interior_points_without_sampling() {
+    use crate::math::Point2;
+
+    let weight = 0.5_f64.sqrt();
+    let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    let controls = [
+        Point2::new(5.0, 0.0),
+        Point2::new(5.0, 5.0),
+        Point2::new(0.0, 5.0),
+    ];
+    let weights = [1.0, weight, 1.0];
+    let interior =
+        crate::eval::nurbs_pcurve_uv(2, &knots, &controls, Some(&weights), 0.375).unwrap();
+    assert_eq!(
+        crate::eval::nurbs_pcurve_contains_point(
+            2,
+            &knots,
+            &controls,
+            Some(&weights),
+            interior,
+            1.0e-9,
+        ),
+        Some(true)
+    );
+    assert_eq!(
+        crate::eval::nurbs_pcurve_contains_point(
+            2,
+            &knots,
+            &controls,
+            Some(&weights),
+            Point2::new(4.0, 4.0),
+            1.0e-6,
+        ),
+        Some(false)
+    );
+}
+
+#[test]
 fn analytic_parabola_and_hyperbola_use_step_parameterization() {
     let axis = Vector3::new(0.0, 0.0, 1.0);
     let major = Vector3::new(1.0, 0.0, 0.0);
@@ -2881,18 +2617,11 @@ fn pcurve_surface_mismatch_is_flagged() {
     // derived u/v frame maps `(u, v) -> (u, -v, 0)`. Edge #0 runs from
     // `(0,0,0)` to `(10,0,0)`, so its parameter image is the line
     // `(0,0) -> (10,0)`.
-    let good = |u_end: f64, v_end: f64, line: bool| {
+    let good = |u_end: f64, v_end: f64| {
         let mut ir = unit_cube();
-        let geometry = if line {
-            crate::geometry::PcurveGeometry::Trimmed {
-                parameter_range: [0.0, 1.0],
-                basis: Box::new(crate::geometry::PcurveGeometry::Line {
-                    origin: crate::math::Point2::new(0.0, 0.0),
-                    direction: crate::math::Point2::new(u_end, v_end),
-                }),
-            }
-        } else {
-            crate::geometry::PcurveGeometry::Nurbs {
+        ir.model.pcurves.push(crate::geometry::Pcurve {
+            id: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
+            geometry: crate::geometry::PcurveGeometry::Nurbs {
                 degree: 1,
                 knots: vec![0.0, 0.0, 1.0, 1.0],
                 control_points: vec![
@@ -2901,11 +2630,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                 ],
                 weights: None,
                 periodic: false,
-            }
-        };
-        ir.model.pcurves.push(crate::geometry::Pcurve {
-            id: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
-            geometry,
+            },
             wrapper_reversed: None,
             native_tail_flags: None,
             parameter_range: None,
@@ -2922,11 +2647,12 @@ fn pcurve_surface_mismatch_is_flagged() {
         coedge.pcurves = vec![crate::topology::PcurveUse {
             pcurve: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
             isoparametric: None,
+            parameter_range: None,
         }];
         validate(&ir, Vec::new())
     };
 
-    let consistent = good(10.0, 0.0, false);
+    let consistent = good(10.0, 0.0);
     assert!(
         !consistent
             .findings
@@ -2936,7 +2662,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         consistent.findings
     );
 
-    let inconsistent = good(10.0, 5.0, false);
+    let inconsistent = good(10.0, 5.0);
     assert!(
         inconsistent
             .findings
@@ -2947,39 +2673,15 @@ fn pcurve_surface_mismatch_is_flagged() {
         inconsistent.findings
     );
 
-    let consistent_line = good(10.0, 0.0, true);
-    assert!(
-        !consistent_line
-            .findings
-            .iter()
-            .any(|f| f.check == Check::GeometricConsistency),
-        "matching bounded line pcurve must validate, got: {:?}",
-        consistent_line.findings
-    );
-
-    let inconsistent_line = good(10.0, 5.0, true);
-    assert!(
-        inconsistent_line
-            .findings
-            .iter()
-            .any(|f| f.check == Check::GeometricConsistency
-                && f.entity.as_deref().is_some_and(|e| e.contains("coedge"))),
-        "off-surface-image bounded line pcurve must be flagged, got: {:?}",
-        inconsistent_line.findings
-    );
-}
-
-#[test]
-fn pcurve_nurbs_rejects_non_finite_knots() {
-    let mut ir = unit_cube();
-    ir.model.pcurves.push(crate::geometry::Pcurve {
-        id: crate::ids::PcurveId("synthetic:cube:pcurve#non-finite-knot".into()),
+    let mut procedural = unit_cube();
+    procedural.model.pcurves.push(crate::geometry::Pcurve {
+        id: crate::ids::PcurveId("synthetic:cube:pcurve#procedural".into()),
         geometry: crate::geometry::PcurveGeometry::Nurbs {
             degree: 1,
-            knots: vec![0.0, f64::NAN, 1.0, 1.0],
+            knots: vec![0.0, 0.0, 1.0, 1.0],
             control_points: vec![
                 crate::math::Point2::new(0.0, 0.0),
-                crate::math::Point2::new(1.0, 0.0),
+                crate::math::Point2::new(10.0, 5.0),
             ],
             weights: None,
             periodic: false,
@@ -2989,11 +2691,113 @@ fn pcurve_nurbs_rejects_non_finite_knots() {
         parameter_range: None,
         fit_tolerance: None,
     });
+    let coedge = procedural
+        .model
+        .coedges
+        .iter_mut()
+        .find(|coedge| coedge.id.0.contains("bottom") && coedge.edge.0 == "synthetic:cube:edge#0")
+        .expect("bottom face uses edge #0");
+    coedge.pcurves = vec![crate::topology::PcurveUse {
+        pcurve: crate::ids::PcurveId("synthetic:cube:pcurve#procedural".into()),
+        isoparametric: None,
+        parameter_range: None,
+    }];
+    let owner_loop = coedge.owner_loop.clone();
+    let face = procedural
+        .model
+        .loops
+        .iter()
+        .find(|lp| lp.id == owner_loop)
+        .and_then(|lp| {
+            procedural
+                .model
+                .faces
+                .iter()
+                .find(|face| face.id == lp.face)
+        })
+        .expect("coedge owner face");
+    procedural
+        .model
+        .procedural_surfaces
+        .push(ProceduralSurface {
+            id: ProceduralSurfaceId("synthetic:cube:procedural-surface#0".into()),
+            surface: face.surface.clone(),
+            definition: ProceduralSurfaceDefinition::Revolution {
+                directrix: procedural.model.curves[0].id.clone(),
+                axis_origin: Point3::new(0.0, 0.0, 0.0),
+                axis_direction: Vector3::new(0.0, 0.0, 1.0),
+                angular_interval: [0.0, std::f64::consts::TAU],
+                parameter_interval: Some([0.0, 1.0]),
+                transposed: false,
+                revision_form: None,
+            },
+            cache_fit_tolerance: Some(0.01),
+            record_bounds: None,
+        });
+    let procedural_report = validate(&procedural, Vec::new());
+    assert!(
+        !procedural_report
+            .findings
+            .iter()
+            .any(|finding| finding.check == Check::GeometricConsistency),
+        "procedural UVs must not be evaluated on the solved cache, got: {:?}",
+        procedural_report.findings
+    );
 
-    let report = validate(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some("synthetic:cube:pcurve#non-finite-knot")
-            && finding.message.contains("non-finite")
+    let mut negative_parameterization = unit_cube();
+    negative_parameterization
+        .model
+        .pcurves
+        .push(crate::geometry::Pcurve {
+            id: crate::ids::PcurveId("synthetic:cube:pcurve#negative".into()),
+            geometry: crate::geometry::PcurveGeometry::Nurbs {
+                degree: 1,
+                knots: vec![-10.0, -10.0, 0.0, 0.0],
+                control_points: vec![
+                    crate::math::Point2::new(10.0, 0.0),
+                    crate::math::Point2::new(0.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        });
+    let coedge = negative_parameterization
+        .model
+        .coedges
+        .iter_mut()
+        .find(|coedge| coedge.id.0.contains("bottom") && coedge.edge.0 == "synthetic:cube:edge#0")
+        .expect("bottom face uses edge #0");
+    coedge.pcurves = vec![crate::topology::PcurveUse {
+        pcurve: crate::ids::PcurveId("synthetic:cube:pcurve#negative".into()),
+        isoparametric: None,
+        parameter_range: Some([-10.0, 0.0]),
+    }];
+    let ranged_coedge_id = coedge.id.clone();
+    let negative = validate(&negative_parameterization, Vec::new());
+    assert!(
+        !negative
+            .findings
+            .iter()
+            .any(|finding| finding.check == Check::GeometricConsistency),
+        "opposite-sign pcurve parameterization must validate, got: {:?}",
+        negative.findings
+    );
+
+    negative_parameterization
+        .model
+        .coedges
+        .iter_mut()
+        .find(|coedge| coedge.id == ranged_coedge_id)
+        .expect("ranged coedge")
+        .pcurves[0]
+        .parameter_range = Some([-11.0, 0.0]);
+    let invalid_range = validate(&negative_parameterization, Vec::new());
+    assert!(invalid_range.findings.iter().any(|finding| {
+        finding.check == Check::ParameterDomain && finding.message.contains("coedge pcurve range")
     }));
 }
 
@@ -3057,10 +2861,12 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
         crate::topology::PcurveUse {
             pcurve: crate::ids::PcurveId("test:pcurve#first".into()),
             isoparametric: Some(true),
+            parameter_range: None,
         },
         crate::topology::PcurveUse {
             pcurve: crate::ids::PcurveId("test:pcurve#second".into()),
             isoparametric: Some(false),
+            parameter_range: Some([0.0, 1.0]),
         },
     ];
     let json = serde_json::to_string(&uses).unwrap();
@@ -3076,7 +2882,6 @@ fn feature_extents_round_trip_through_json() {
     use crate::ids::FaceId;
 
     let extents = vec![
-        Extent::Unresolved,
         Extent::Blind {
             length: Length(12.5),
         },
@@ -3090,6 +2895,7 @@ fn feature_extents_round_trip_through_json() {
         Extent::ThroughAll,
         Extent::ToFace {
             face: FaceSelection::Faces(vec![FaceId("synthetic:test:face#0".into())]),
+            offset: None,
         },
         Extent::Angle {
             angle: Angle(std::f64::consts::PI),
@@ -3138,11 +2944,12 @@ fn feature_extent_magnitudes_are_validated() {
             outputs: Vec::new(),
             definition: FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("profile".into()),
-                direction: None,
+                direction: ExtrudeDirection::ProfileNormal,
+                start: crate::features::ExtrudeStart::ProfilePlane,
                 extent,
                 op: BooleanOp::NewBody,
                 draft: None,
-                reverse_draft: None,
+                second_draft: None,
                 direction_source: None,
                 solid: None,
                 face_maker: None,
@@ -3159,6 +2966,196 @@ fn feature_extent_magnitudes_are_validated() {
             .iter()
             .any(|finding| finding.message == "feature extent magnitude is invalid"));
     }
+}
+
+#[test]
+fn explicit_extrusion_direction_must_be_nonzero() {
+    use crate::features::{
+        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+    };
+
+    let mut ir = unit_cube();
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#invalid-extrude-direction".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Extrude {
+            profile: ProfileRef::Native("profile".into()),
+            direction: ExtrudeDirection::Explicit(Vector3::new(0.0, 0.0, 0.0)),
+            start: crate::features::ExtrudeStart::ProfilePlane,
+            extent: Extent::Blind {
+                length: Length(1.0),
+            },
+            op: BooleanOp::NewBody,
+            draft: None,
+            second_draft: None,
+            direction_source: None,
+            solid: None,
+            face_maker: None,
+            inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
+        },
+        native_ref: None,
+    });
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == "extrusion direction is invalid"));
+}
+
+#[test]
+fn loft_sections_accept_legacy_profiles_and_preserve_profile_shape() {
+    use crate::features::{BooleanOp, FeatureDefinition, LoftSection, ProfileRef};
+
+    let legacy = serde_json::json!({
+        "definition": "loft",
+        "profiles": [{"kind": "native", "value": "native:section"}],
+        "op": "new_body",
+        "closed": false
+    });
+    let definition: FeatureDefinition = serde_json::from_value(legacy).unwrap();
+    assert!(matches!(
+        &definition,
+        FeatureDefinition::Loft {
+            sections,
+            guides,
+            centerline: None,
+            op: BooleanOp::NewBody,
+            closed: false,
+            ..
+        } if sections == &vec![LoftSection::Profile(ProfileRef::Native("native:section".into()))]
+            && guides.is_empty()
+    ));
+    let encoded = serde_json::to_value(definition).unwrap();
+    assert_eq!(
+        encoded["sections"][0],
+        serde_json::json!({"kind": "native", "value": "native:section"})
+    );
+}
+
+#[test]
+fn opposite_side_extrusion_draft_requires_a_valid_two_sided_extent() {
+    use crate::features::{
+        Angle, BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+    };
+
+    for (extent, second_draft, expected_message) in [
+        (
+            Extent::TwoSided {
+                first: Length(1.0),
+                second: Length(2.0),
+            },
+            Some(Angle(0.25)),
+            None,
+        ),
+        (
+            Extent::Blind {
+                length: Length(1.0),
+            },
+            Some(Angle(0.25)),
+            Some("opposite-side extrusion draft requires a two-sided extent"),
+        ),
+        (
+            Extent::TwoSided {
+                first: Length(1.0),
+                second: Length(2.0),
+            },
+            Some(Angle(f64::NAN)),
+            Some("extrusion draft is invalid"),
+        ),
+    ] {
+        let mut ir = unit_cube();
+        ir.model.features.push(Feature {
+            id: FeatureId("synthetic:test:feature#opposite-draft".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Extrude {
+                profile: ProfileRef::Native("profile".into()),
+                direction: ExtrudeDirection::ProfileNormal,
+                start: crate::features::ExtrudeStart::ProfilePlane,
+                extent,
+                op: BooleanOp::NewBody,
+                draft: None,
+                second_draft,
+                direction_source: None,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                first_offset: None,
+                second_offset: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            },
+            native_ref: None,
+        });
+        let findings = validate(&ir, Vec::new()).findings;
+        let has_opposite_draft_finding = findings.iter().any(|finding| {
+            matches!(
+                finding.message.as_str(),
+                "extrusion draft is invalid"
+                    | "opposite-side extrusion draft requires a two-sided extent"
+            )
+        });
+        assert_eq!(has_opposite_draft_finding, expected_message.is_some());
+        if let Some(expected_message) = expected_message {
+            assert!(findings
+                .iter()
+                .any(|finding| finding.message == expected_message));
+        }
+    }
+}
+
+#[test]
+fn extrude_second_draft_reads_the_reverse_draft_alias() {
+    use crate::features::{
+        Angle, BooleanOp, Extent, ExtrudeStart, FeatureDefinition, Length, ProfileRef,
+    };
+
+    let definition = FeatureDefinition::Extrude {
+        profile: ProfileRef::Native("profile".into()),
+        direction: ExtrudeDirection::ProfileNormal,
+        start: ExtrudeStart::ProfilePlane,
+        extent: Extent::TwoSided {
+            first: Length(1.0),
+            second: Length(2.0),
+        },
+        op: BooleanOp::NewBody,
+        draft: None,
+        second_draft: Some(Angle(0.25)),
+        direction_source: None,
+        solid: None,
+        face_maker: None,
+        inner_wire_taper: None,
+        first_offset: None,
+        second_offset: None,
+        length_along_profile_normal: None,
+        allow_multi_profile_faces: None,
+    };
+    let mut encoded = serde_json::to_value(&definition).unwrap();
+    let object = encoded.as_object_mut().unwrap();
+    let angle = object.remove("second_draft").unwrap();
+    object.insert("reverse_draft".into(), angle);
+    let decoded: FeatureDefinition = serde_json::from_value(encoded).expect("alias deserializes");
+    assert_eq!(decoded, definition);
 }
 
 #[test]
@@ -3196,13 +3193,14 @@ fn sketch_feature_ownership_and_order_are_validated() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id.clone()),
-            direction: None,
+            direction: ExtrudeDirection::ProfileNormal,
+            start: crate::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Blind {
                 length: Length(1.0),
             },
             op: BooleanOp::NewBody,
             draft: None,
-            reverse_draft: None,
+            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
@@ -3244,39 +3242,170 @@ fn sketch_feature_ownership_and_order_are_validated() {
 }
 
 #[test]
-fn spatial_sketch_line_round_trips_and_validates() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId};
-    use crate::sketches::{
-        SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
-        SpatialSketchId,
+fn sketch_profile_subselections_are_bounds_checked() {
+    use crate::features::{
+        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+        SketchProfileRegion,
     };
+    use crate::sketches::{Sketch, SketchId};
 
     let mut ir = unit_cube();
-    let sketch_id = SpatialSketchId("synthetic:test:spatial-sketch#line".into());
-    let entity_id = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
+    let sketch_id = SketchId("synthetic:test:sketch#selection".into());
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    let feature = |suffix: &str, ordinal, profile| Feature {
+        id: FeatureId(format!("synthetic:test:feature#{suffix}")),
+        ordinal,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Extrude {
+            profile,
+            direction: ExtrudeDirection::ProfileNormal,
+            start: crate::features::ExtrudeStart::ProfilePlane,
+            extent: Extent::Blind {
+                length: Length(1.0),
+            },
+            op: BooleanOp::NewBody,
+            draft: None,
+            second_draft: None,
+            direction_source: None,
+            solid: None,
+            face_maker: None,
+            inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
+        },
+        native_ref: None,
+    };
+    ir.model.features.push(feature(
+        "invalid-profile-index",
+        1,
+        ProfileRef::SketchProfiles {
+            sketch: sketch_id.clone(),
+            profiles: vec![0, 0],
+        },
+    ));
+    ir.model.features.push(feature(
+        "invalid-region",
+        2,
+        ProfileRef::SketchRegions {
+            sketch: sketch_id.clone(),
+            regions: vec![SketchProfileRegion::Loops {
+                outer: 0,
+                holes: vec![0, 0],
+            }],
+        },
+    ));
+    ir.model.features.push(feature(
+        "empty-native-selection",
+        3,
+        ProfileRef::SketchSelection {
+            sketch: sketch_id,
+            selections: Vec::new(),
+        },
+    ));
+
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(findings.iter().any(|finding| {
+        finding.message == "sketch profile indices are empty, repeated, or out of range"
+    }));
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.message
+                == "native sketch profile selections are empty or repeated")
+    );
+    assert!(findings.iter().any(|finding| {
+        finding.message
+            == "sketch regions have empty, repeated, invalid, or out-of-range boundaries"
+    }));
+}
+
+#[test]
+fn sketch_regions_round_trip_with_explicit_boundary_roles() {
+    use crate::features::{ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+    use crate::sketches::{SketchEntityId, SketchId};
+
+    let profile = ProfileRef::SketchRegions {
+        sketch: SketchId("synthetic:test:sketch#region".into()),
+        regions: vec![
+            SketchProfileRegion::Loops {
+                outer: 2,
+                holes: vec![3, 5],
+            },
+            SketchProfileRegion::Loops {
+                outer: 8,
+                holes: Vec::new(),
+            },
+            SketchProfileRegion::Trimmed {
+                outer_boundary: vec![SketchProfileBoundaryUse {
+                    entity: SketchEntityId("synthetic:test:sketch-entity#curve".into()),
+                    parameter_range: [0.25, 0.75],
+                    reversed: true,
+                }],
+                hole_boundaries: Vec::new(),
+            },
+        ],
+    };
+    let json = serde_json::to_value(&profile).expect("serialize sketch regions");
+    assert_eq!(json["kind"], "sketch_regions");
+    assert_eq!(json["value"]["regions"][0]["outer"], 2);
+    assert_eq!(
+        json["value"]["regions"][0]["holes"],
+        serde_json::json!([3, 5])
+    );
+    assert!(json["value"]["regions"][1].get("holes").is_none());
+    assert_eq!(
+        json["value"]["regions"][2]["outer_boundary"][0]["parameter_range"],
+        serde_json::json!([0.25, 0.75])
+    );
+    assert_eq!(
+        json["value"]["regions"][2]["outer_boundary"][0]["reversed"],
+        true
+    );
+    assert_eq!(
+        serde_json::from_value::<ProfileRef>(json).expect("deserialize sketch regions"),
+        profile
+    );
+}
+
+#[test]
+fn spatial_sketch_feature_owns_spatial_geometry() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId};
+    use crate::sketches::{SpatialSketch, SpatialSketchId};
+
+    let mut ir = unit_cube();
+    let sketch_id = SpatialSketchId("synthetic:test:spatial-sketch#owned".into());
     ir.model.spatial_sketches.push(SpatialSketch {
         id: sketch_id.clone(),
-        name: Some("Path".into()),
+        name: None,
         configuration: None,
         profiles: Vec::new(),
         native_ref: None,
     });
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: entity_id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line {
-            start: Point3::new(1.0, 2.0, 3.0),
-            end: Point3::new(4.0, 5.0, 6.0),
-        },
-    });
     ir.model.features.push(Feature {
         id: FeatureId("synthetic:test:feature#spatial-sketch".into()),
         ordinal: 0,
-        name: Some("Path".into()),
+        name: None,
         suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
@@ -3291,34 +3420,296 @@ fn spatial_sketch_line_round_trips_and_validates() {
         native_ref: None,
     });
 
-    let json = serde_json::to_string(&ir).unwrap();
-    let decoded: crate::CadIr = serde_json::from_str(&json).unwrap();
-    assert!(validate(&decoded, Vec::new()).findings.is_empty());
+    assert!(validate(&ir, Vec::new()).findings.is_empty());
+    let mut duplicate = ir.model.features.last().expect("spatial owner").clone();
+    duplicate.id = FeatureId("synthetic:test:feature#duplicate-spatial-sketch".into());
+    duplicate.ordinal = 1;
+    ir.model.features.push(duplicate);
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("has multiple owning features")));
+}
+
+#[test]
+fn spatial_sketch_geometry_round_trips_and_validates() {
+    use crate::features::{DesignParameter, Length, ParameterId, ParameterValue};
+    use crate::sketches::{
+        SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
+        SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
+        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
+    };
+
+    let mut ir = unit_cube();
+    let sketch = SpatialSketchId("synthetic:test:spatial-sketch#one".into());
+    let circle = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#circle".into());
+    ir.model.spatial_sketches.push(SpatialSketch {
+        id: sketch.clone(),
+        name: Some("3D path".into()),
+        configuration: None,
+        profiles: vec![SpatialSketchProfile {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            boundary: vec![SpatialSketchEntityUse {
+                entity: circle.clone(),
+                reversed: false,
+            }],
+        }],
+        native_ref: None,
+    });
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: circle.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            reference_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: Length(4.0),
+        },
+    });
+    let parallel_line =
+        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#parallel-line".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: parallel_line.clone(),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Line {
+            start: Point3::new(0.0, 2.0f64.sqrt(), -2.0f64.sqrt()),
+            end: Point3::new(1.0, 1.0 + 2.0f64.sqrt(), 1.0 - 2.0f64.sqrt()),
+        },
+    });
+    let distance = ParameterId("synthetic:test:parameter#spatial-distance".into());
+    ir.model.parameters.push(DesignParameter {
+        id: distance.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "spatial_distance".into(),
+        expression: "2 mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(Length(2.0))),
+        dependencies: Vec::new(),
+        properties: Default::default(),
+        pmi: None,
+        native_ref: None,
+    });
+    let surface = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#surface".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: surface.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+        },
+    });
+    let surface_point =
+        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#surface-point".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: surface_point.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Point {
+            position: Point3::new(0.5, 0.5, 0.0),
+        },
+    });
+    let line = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: line.clone(),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Line {
+            start: Point3::new(0.0, 0.0, 0.0),
+            end: Point3::new(1.0, 1.0, 1.0),
+        },
+    });
+    let point = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#point".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: point.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Point {
+            position: Point3::new(0.5, 0.5, 0.5),
+        },
+    });
+    let coincident_point =
+        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#coincident-point".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: coincident_point.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Point {
+            position: Point3::new(0.5, 0.5, 0.5),
+        },
+    });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#group".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::SplineGroup {
+                entities: vec![line.clone(), circle.clone()],
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#point-surface".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::PointOnSurface {
+                point: surface_point,
+                surface,
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#coincident".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::Coincident {
+                first: point.clone(),
+                second: coincident_point,
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#midpoint".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::Midpoint {
+                point,
+                entity: line.clone(),
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#direction".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::ParallelToDirection {
+                entity: line.clone(),
+                direction: Vector3::new(
+                    1.0 / 3.0f64.sqrt(),
+                    1.0 / 3.0f64.sqrt(),
+                    1.0 / 3.0f64.sqrt(),
+                ),
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#distance".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::ParallelLineDistance {
+                first: line.clone(),
+                second: parallel_line,
+                parameter: distance.clone(),
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#tangent".into()),
+            sketch,
+            definition: SpatialSketchConstraintDefinition::Tangent {
+                first: line,
+                second: circle,
+            },
+            native_ref: None,
+        });
+    ir.finalize();
+    assert!(validate(&ir, Vec::new()).findings.is_empty());
+    let mut invalid_distance = ir.clone();
+    invalid_distance
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == distance)
+        .expect("spatial distance parameter")
+        .value = Some(ParameterValue::Length(Length(3.0)));
+    assert!(validate(&invalid_distance, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding
+            .message
+            .contains("spatial distance requires parallel lines")));
+    let json = ir.to_canonical_json().expect("serialize spatial sketch");
+    let decoded = CadIr::from_json(&json).expect("deserialize spatial sketch");
+    assert_eq!(decoded.model.spatial_sketches, ir.model.spatial_sketches);
+    assert_eq!(
+        decoded.model.spatial_sketch_entities,
+        ir.model.spatial_sketch_entities
+    );
+    assert_eq!(
+        decoded.model.spatial_sketch_constraints,
+        ir.model.spatial_sketch_constraints
+    );
 }
 
 #[test]
 fn feature_operation_geometry_is_validated() {
     use crate::features::{
         BooleanOp, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, RibConstruction, RibDraft, RibSide,
-        ScaleCenter, ScaleFactors, ThickenSide, VariableRadius,
+        FilletGroup, HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, RibConstruction,
+        RibDraft, RibSide, ScaleCenter, ScaleFactors, ThickenSide, VariableRadius,
     };
 
     let definitions = vec![
+        FeatureDefinition::Form { cages: Vec::new() },
+        FeatureDefinition::Form {
+            cages: vec![crate::ids::SubdId("synthetic:test:subd#missing".into())],
+        },
         FeatureDefinition::Fillet {
-            edges: EdgeSelection::Unresolved,
-            radius: RadiusSpec::Variable {
-                points: vec![
-                    VariableRadius {
-                        parameter: 0.5,
-                        radius: Length(2.0),
-                    },
-                    VariableRadius {
-                        parameter: 0.25,
-                        radius: Length(-1.0),
-                    },
-                ],
-            },
+            groups: vec![FilletGroup {
+                edges: EdgeSelection::Unresolved,
+                radius: RadiusSpec::Variable {
+                    points: vec![
+                        VariableRadius {
+                            parameter: 0.5,
+                            radius: Length(2.0),
+                        },
+                        VariableRadius {
+                            parameter: 0.25,
+                            radius: Length(-1.0),
+                        },
+                    ],
+                },
+                tangency_weight: None,
+            }],
         },
         FeatureDefinition::Rib {
             construction: RibConstruction {
@@ -3336,14 +3727,14 @@ fn feature_operation_geometry_is_validated() {
             face: Some(FaceSelection::Unresolved),
             position: None,
             direction: None,
-            placements: Vec::new(),
             kind: HoleKind::Simple,
+            exit_kind: None,
             diameter: Some(Length(0.0)),
             extent: Some(Extent::ThroughAll),
-            exit_kind: None,
             bottom: None,
             taper_angle: None,
             specification: None,
+            placements: Vec::new(),
             allow_multi_profile_faces: None,
         },
         FeatureDefinition::Thicken {
@@ -3416,7 +3807,7 @@ fn feature_operation_geometry_is_validated() {
             radius: Length(-1.0),
             pitch: Length(f64::NAN),
             revolutions: 0.0,
-            start_angle: crate::features::Angle(f64::NAN),
+            start_angle: crate::features::Angle(0.0),
             clockwise: false,
             radial_growth: None,
             cone_angle: None,
@@ -3425,11 +3816,23 @@ fn feature_operation_geometry_is_validated() {
         },
         FeatureDefinition::HelixNativeAxis {
             axis_native_ref: String::new(),
-            axial_rise: Length(-1.0),
+            axial_rise: Length(f64::NAN),
             pitch: Length(f64::NAN),
             revolutions: 0.0,
             start_angle: crate::features::Angle(f64::NAN),
             clockwise: false,
+        },
+        FeatureDefinition::Sphere {
+            center: Point3::new(0.0, f64::NAN, 0.0),
+            radius: Length(0.0),
+            op: BooleanOp::NewBody,
+        },
+        FeatureDefinition::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 0.0),
+            major_radius: Length(10.0),
+            minor_radius: Length(-1.0),
+            op: BooleanOp::NewBody,
         },
         FeatureDefinition::HelicalSweep {
             construction: crate::features::HelicalSweepConstruction {
@@ -3552,6 +3955,8 @@ fn feature_operation_geometry_is_validated() {
         },
     ];
     let expected = [
+        "Form operation has no control cage",
+        "references missing Form control cage `synthetic:test:subd#missing`",
         "fillet radius is invalid",
         "rib geometry is invalid",
         "hole geometry is invalid",
@@ -3566,6 +3971,8 @@ fn feature_operation_geometry_is_validated() {
         "projection direction is invalid",
         "composite curve is empty",
         "helix geometry is invalid",
+        "sphere primitive is invalid",
+        "torus primitive is invalid",
         "helical sweep is invalid",
         "binder construction is invalid",
         "wrap depth is invalid",
@@ -3645,8 +4052,8 @@ fn flex_modes_round_trip_and_validate() {
 
 #[test]
 fn edge_selections_round_trip_through_json() {
-    use crate::features::{EdgeSelection, FeatureId, GeneratedEdgeRef};
-    use crate::ids::EdgeId;
+    use crate::features::EdgeSelection;
+    use crate::ids::{EdgeId, FeatureInputTopologyId, HistoricalEdgeId};
 
     let selections = vec![
         EdgeSelection::Unresolved,
@@ -3655,12 +4062,16 @@ fn edge_selections_round_trip_through_json() {
             edges: vec![EdgeId("synthetic:test:edge#0".into())],
             native: "edge:10".into(),
         },
-        EdgeSelection::Generated {
-            edges: vec![GeneratedEdgeRef {
-                feature: FeatureId("synthetic:test:feature#4".into()),
-                local_id: "7".into(),
-            }],
-            native: "persistent:4:7".into(),
+        EdgeSelection::Historical {
+            state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+            edges: vec![HistoricalEdgeId("synthetic:history-input:edge#0".into())],
+            native: "edge:9".into(),
+        },
+        EdgeSelection::HistoricalPartial {
+            state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+            edges: vec![HistoricalEdgeId("synthetic:history-input:edge#0".into())],
+            unresolved: vec!["native:edge-operand#1".into()],
+            native: "edge:9".into(),
         },
         EdgeSelection::Native("sldprt:history:feature#10:0".into()),
     ];
@@ -3672,9 +4083,39 @@ fn edge_selections_round_trip_through_json() {
 }
 
 #[test]
+fn historical_edge_paths_round_trip_through_json() {
+    use crate::features::PathRef;
+    use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
+
+    let path = PathRef::HistoricalEdges {
+        state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+        edges: vec![
+            HistoricalEdgeId("synthetic:history-input:edge#0".into()),
+            HistoricalEdgeId("synthetic:history-input:edge#1".into()),
+        ],
+        native: "native:path#0".into(),
+    };
+    let json = serde_json::to_string(&path).unwrap();
+    assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
+}
+
+#[test]
+fn spatial_sketch_paths_round_trip_through_json() {
+    use crate::features::PathRef;
+    use crate::sketches::SpatialSketchId;
+
+    let path = PathRef::SpatialSketchSelection {
+        sketch: SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
+        selections: vec!["native:path-selection#0".into()],
+    };
+    let json = serde_json::to_string(&path).unwrap();
+    assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
+}
+
+#[test]
 fn face_selections_round_trip_through_json() {
-    use crate::features::{FaceSelection, FeatureId, GeneratedFaceRef};
-    use crate::ids::FaceId;
+    use crate::features::FaceSelection;
+    use crate::ids::{FaceId, FeatureInputTopologyId, HistoricalFaceId};
 
     let selections = vec![
         FaceSelection::Unresolved,
@@ -3683,12 +4124,16 @@ fn face_selections_round_trip_through_json() {
             faces: vec![FaceId("synthetic:test:face#0".into())],
             native: "face:14".into(),
         },
-        FaceSelection::Generated {
-            faces: vec![GeneratedFaceRef {
-                feature: FeatureId("synthetic:test:feature#4".into()),
-                local_id: "7".into(),
-            }],
-            native: "persistent:4:7".into(),
+        FaceSelection::Historical {
+            state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+            faces: vec![HistoricalFaceId("synthetic:history-input:face#0".into())],
+            native: "face:13".into(),
+        },
+        FaceSelection::HistoricalPartial {
+            state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+            faces: vec![HistoricalFaceId("synthetic:history-input:face#0".into())],
+            unresolved: vec!["native:face-operand#1".into()],
+            native: "face:12".into(),
         },
         FaceSelection::Native("sldprt:history:feature#14:0".into()),
     ];
@@ -3700,9 +4145,23 @@ fn face_selections_round_trip_through_json() {
 }
 
 #[test]
+fn historical_face_profiles_round_trip_through_json() {
+    use crate::features::ProfileRef;
+    use crate::ids::{FeatureInputTopologyId, HistoricalFaceId};
+
+    let profile = ProfileRef::HistoricalFaces {
+        state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+        faces: vec![HistoricalFaceId("synthetic:history-input:face#0".into())],
+        native: vec!["native:profile-group#0".into()],
+    };
+    let json = serde_json::to_string(&profile).unwrap();
+    assert_eq!(serde_json::from_str::<ProfileRef>(&json).unwrap(), profile);
+}
+
+#[test]
 fn body_selections_round_trip_through_json() {
-    use crate::features::{BodySelection, FeatureId, GeneratedBodyRef};
-    use crate::ids::BodyId;
+    use crate::features::BodySelection;
+    use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalBodyId};
 
     let selections = vec![
         BodySelection::Unresolved,
@@ -3711,16 +4170,10 @@ fn body_selections_round_trip_through_json() {
             bodies: vec![BodyId("synthetic:test:body#0".into())],
             native: "body:17".into(),
         },
-        BodySelection::Generated {
-            bodies: vec![GeneratedBodyRef {
-                feature: FeatureId("synthetic:test:feature#4".into()),
-                local_id: "6,0,7,1,5".into(),
-            }],
-            native: "persistent:4:6,0,7,1,5".into(),
-        },
-        BodySelection::Local {
-            bodies: vec!["287".into(), "115".into()],
-            native: "feature-input:287,115".into(),
+        BodySelection::Historical {
+            state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+            bodies: vec![HistoricalBodyId("synthetic:history-input:body#0".into())],
+            native: "body:16".into(),
         },
         BodySelection::Native("body:17,body:18".into()),
     ];
@@ -3728,37 +4181,6 @@ fn body_selections_round_trip_through_json() {
     assert_eq!(
         serde_json::from_str::<Vec<BodySelection>>(&json).unwrap(),
         selections
-    );
-}
-
-#[test]
-fn pattern_seeds_round_trip_through_json() {
-    use crate::features::{
-        BodySelection, FaceSelection, FeatureId, GeneratedBodyRef, GeneratedFaceRef, PatternSeed,
-    };
-
-    let feature = FeatureId("synthetic:test:feature#4".into());
-    let seeds = vec![
-        PatternSeed::Feature(feature.clone()),
-        PatternSeed::Faces(FaceSelection::Generated {
-            faces: vec![GeneratedFaceRef {
-                feature: feature.clone(),
-                local_id: "7".into(),
-            }],
-            native: "persistent-face:4:7".into(),
-        }),
-        PatternSeed::Bodies(BodySelection::Generated {
-            bodies: vec![GeneratedBodyRef {
-                feature,
-                local_id: "6,0,7,1,5".into(),
-            }],
-            native: "persistent-body:4:6,0,7,1,5".into(),
-        }),
-    ];
-    let json = serde_json::to_string(&seeds).unwrap();
-    assert_eq!(
-        serde_json::from_str::<Vec<PatternSeed>>(&json).unwrap(),
-        seeds
     );
 }
 
@@ -3826,6 +4248,6 @@ fn current_document_excludes_source_byte_accounting() {
     let ir = CadIr::empty(crate::units::Units::default());
     let json = serde_json::to_value(&ir).unwrap();
 
-    assert_eq!(json["ir_version"], crate::IR_VERSION);
+    assert_eq!(json["ir_version"], "55");
     assert!(json.get("byte_ledger").is_none());
 }

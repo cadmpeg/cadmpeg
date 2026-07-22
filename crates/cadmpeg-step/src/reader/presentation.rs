@@ -223,6 +223,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
                     schema: Some("step_surface_style".into()),
                     category: None,
                     base_color: Some(color),
+                    textures: Vec::new(),
                     properties: BTreeMap::new(),
                 });
                 id

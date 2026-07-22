@@ -200,6 +200,8 @@ pub(crate) fn attach(
                         BTreeMap::from([("active_attribute_use".to_string(), relation.id.clone())])
                     })
                     .unwrap_or_default(),
+                parameter_overrides: BTreeMap::new(),
+                suppressed_features: Vec::new(),
                 bodies,
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
@@ -2160,7 +2162,7 @@ fn text_semantic_annotation(
 }
 
 pub(crate) fn parameter_owner_dependencies(
-    parameter_owners: &BTreeMap<ParameterId, FeatureId>,
+    parameter_owners: &BTreeMap<ParameterId, Option<FeatureId>>,
     source_content: &[FeatureSourceContent],
 ) -> Vec<FeatureId> {
     let mut dependencies = Vec::new();
@@ -2168,7 +2170,7 @@ pub(crate) fn parameter_owner_dependencies(
         FeatureSourceContent::Parameter(parameter) => Some(parameter),
         FeatureSourceContent::Text(_) | FeatureSourceContent::Feature(_) => None,
     }) {
-        let Some(owner) = parameter_owners.get(parameter_id) else {
+        let Some(owner) = parameter_owners.get(parameter_id).and_then(Option::as_ref) else {
             continue;
         };
         if !dependencies.contains(owner) {
@@ -2192,11 +2194,12 @@ fn extrude_feature_definition(
     };
     Some(FeatureDefinition::Extrude {
         profile: ProfileRef::Native((*construction).to_string()),
-        direction: None,
+        direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+        start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent: Extent::Unresolved,
         op,
         draft: None,
-        reverse_draft: None,
+        second_draft: None,
         direction_source: None,
         solid: None,
         face_maker: None,
@@ -2412,8 +2415,11 @@ fn blend_feature_definition(
         });
     let unresolved = match family {
         NxBlendFamily::Edge => FeatureDefinition::Fillet {
-            edges: EdgeSelection::Unresolved,
-            radius,
+            groups: vec![cadmpeg_ir::features::FilletGroup {
+                edges: EdgeSelection::Unresolved,
+                radius,
+                tangency_weight: None,
+            }],
         },
         NxBlendFamily::Face => FeatureDefinition::FaceBlend {
             first_faces: FaceSelection::Unresolved,
@@ -3046,14 +3052,14 @@ fn non_boolean_feature_definition_with_parameters(
         "Studio Surface" => FeatureDefinition::FreeformSurfaceUnresolved,
         "DRAFT" => FeatureDefinition::DraftUnresolved,
         "CPROJ" | "CPROJ_CMB" => FeatureDefinition::ProjectedCurve {
-            source: PathRef::Unresolved,
+            source: PathRef::Unresolved("nx:unresolved".into()),
             target_faces: FaceSelection::Unresolved,
             direction: CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved),
             bidirectional: None,
         },
         "TRIMMED_SH" => FeatureDefinition::TrimSurface {
             faces: FaceSelection::Unresolved,
-            tool: PathRef::Unresolved,
+            tool: PathRef::Unresolved("nx:unresolved".into()),
             keep: TrimRegion::Unresolved,
         },
         "EXTEND_SHEET" => FeatureDefinition::ExtendSurface {
@@ -3134,13 +3140,18 @@ fn non_boolean_feature_definition_with_parameters(
             op: BooleanOp::Unresolved,
         },
         "CHAMFER" => FeatureDefinition::Chamfer {
-            edges: EdgeSelection::Unresolved,
-            spec: ChamferSpec::Unresolved { form: None },
-            flip_direction: None,
+            groups: vec![cadmpeg_ir::features::ChamferGroup {
+                edges: EdgeSelection::Unresolved,
+                spec: ChamferSpec::Unresolved { form: None },
+            }],
+            flip_direction: false,
         },
         "BLEND" => FeatureDefinition::Fillet {
-            edges: EdgeSelection::Unresolved,
-            radius: RadiusSpec::Unresolved { form: None },
+            groups: vec![cadmpeg_ir::features::FilletGroup {
+                edges: EdgeSelection::Unresolved,
+                radius: RadiusSpec::Unresolved { form: None },
+                tangency_weight: None,
+            }],
         },
         "FACE_BLEND" => FeatureDefinition::FaceBlend {
             first_faces: FaceSelection::Unresolved,
@@ -3158,11 +3169,12 @@ fn non_boolean_feature_definition_with_parameters(
         },
         "EXTRUDE" => FeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(kind.to_string()),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            start: cadmpeg_ir::features::ExtrudeStart::default(),
             extent: Extent::Unresolved,
             op: BooleanOp::Unresolved,
             draft: None,
-            reverse_draft: None,
+            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
@@ -3796,6 +3808,7 @@ fn atomic_disjoint_body_selections(
         }
         BodySelection::Bodies(bodies) => BodySelection::Bodies(bodies),
         BodySelection::Generated { .. }
+        | BodySelection::Historical { .. }
         | BodySelection::Local { .. }
         | BodySelection::Unresolved => BodySelection::Unresolved,
     };
@@ -4109,7 +4122,7 @@ pub(crate) fn attach_expression_parameters(
             }
             ir.model.parameters.push(DesignParameter {
                 id,
-                owner: feature_id.clone(),
+                owner: Some(feature_id.clone()),
                 ordinal: ordinal as u32,
                 name: expression.name.clone(),
                 expression: expression.expression.clone(),
@@ -4343,11 +4356,12 @@ mod tests {
             super::extrude_feature_definition(Some("nx:profile#1"), None, BooleanOp::NewBody,),
             Some(FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("nx:profile#1".to_string()),
-                direction: None,
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
                 extent: Extent::Unresolved,
                 op: BooleanOp::NewBody,
                 draft: None,
-                reverse_draft: None,
+                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                second_draft: None,
                 direction_source: None,
                 solid: None,
                 face_maker: None,
@@ -4902,8 +4916,11 @@ mod tests {
         assert_eq!(
             super::non_boolean_feature_definition("BLEND", &[], None, None, None),
             FeatureDefinition::Fillet {
-                edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Unresolved { form: None },
+                groups: vec![cadmpeg_ir::features::FilletGroup {
+                    edges: EdgeSelection::Unresolved,
+                    radius: RadiusSpec::Unresolved { form: None },
+                    tangency_weight: None,
+                }],
             }
         );
         assert_eq!(
@@ -4918,7 +4935,7 @@ mod tests {
             assert_eq!(
                 super::non_boolean_feature_definition(kind, &[], None, None, None),
                 FeatureDefinition::ProjectedCurve {
-                    source: cadmpeg_ir::features::PathRef::Unresolved,
+                    source: cadmpeg_ir::features::PathRef::Unresolved("nx:unresolved".into()),
                     target_faces: FaceSelection::Unresolved,
                     direction: cadmpeg_ir::features::CurveProjectionDirection::State(
                         cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved,
@@ -4931,7 +4948,7 @@ mod tests {
             super::non_boolean_feature_definition("TRIMMED_SH", &[], None, None, None),
             FeatureDefinition::TrimSurface {
                 faces: FaceSelection::Unresolved,
-                tool: cadmpeg_ir::features::PathRef::Unresolved,
+                tool: cadmpeg_ir::features::PathRef::Unresolved("nx:unresolved".into()),
                 keep: cadmpeg_ir::features::TrimRegion::Unresolved,
             }
         );
@@ -4946,10 +4963,12 @@ mod tests {
         assert!(matches!(
             super::non_boolean_feature_definition("CHAMFER", &[], None, None, None),
             FeatureDefinition::Chamfer {
+                groups,
+                flip_direction: false,
+            } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
                 edges: EdgeSelection::Unresolved,
                 spec: ChamferSpec::Unresolved { form: None },
-                flip_direction: None,
-            }
+            }])
         ));
         assert_eq!(
             super::non_boolean_feature_definition("SEW", &[], None, None, None),
@@ -4970,11 +4989,12 @@ mod tests {
             super::non_boolean_feature_definition("EXTRUDE", &[], None, None, None),
             FeatureDefinition::Extrude {
                 profile: cadmpeg_ir::features::ProfileRef::Unresolved("EXTRUDE".into()),
-                direction: None,
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
                 extent: cadmpeg_ir::features::Extent::Unresolved,
                 op: BooleanOp::Unresolved,
                 draft: None,
-                reverse_draft: None,
+                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                second_draft: None,
                 direction_source: None,
                 solid: None,
                 face_maker: None,
@@ -5357,6 +5377,8 @@ mod tests {
                     radial_next: coedge,
                     sense: Sense::Forward,
                     pcurves: Vec::new(),
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
         }
@@ -5730,6 +5752,8 @@ mod tests {
                         radial_next: coedge,
                         sense: Sense::Forward,
                         pcurves: Vec::new(),
+                        use_curve: None,
+                        use_curve_parameter_range: None,
                     });
                 }
             }
@@ -5824,8 +5848,10 @@ mod tests {
                 u_sense: Some(1),
                 v_sense: Some(1),
                 extension_flags: Vec::new(),
+                revision_form: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         };
         for ordinal in 0..2 {
             let procedural = make_offset(ordinal, 30.0);
@@ -5943,8 +5969,10 @@ mod tests {
                 u_sense: Some(1),
                 v_sense: Some(1),
                 extension_flags: Vec::new(),
+                revision_form: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         };
         for ordinal in 0..2 {
             let procedural = make_offset(ordinal, -12.5);
@@ -6050,8 +6078,10 @@ mod tests {
                 u_sense: Some(1),
                 v_sense: Some(1),
                 extension_flags: Vec::new(),
+                revision_form: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         };
         for (ordinal, distance) in [(0, -6.25), (1, 6.25)] {
             let procedural = make_offset(ordinal, support.clone(), distance);
@@ -6148,6 +6178,7 @@ mod tests {
                 native: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         };
         let first = make_blend(0, BlendRadiusLaw::Constant { signed_radius: 5.0 });
         attach_test_body_surface(&mut ir, &output, first.surface.clone());
@@ -6171,11 +6202,11 @@ mod tests {
         assert!(matches!(
             definition,
             FeatureDefinition::Fillet {
-                radius: RadiusSpec::Constant {
-                    radius: cadmpeg_ir::features::Length(5.0)
-                },
+                groups
+            } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+                radius: RadiusSpec::Constant { radius: cadmpeg_ir::features::Length(5.0) },
                 ..
-            }
+            }])
         ));
         let (definition, _) = super::blend_feature_definition(
             &ir,
@@ -6246,11 +6277,11 @@ mod tests {
         assert!(matches!(
             definition,
             FeatureDefinition::Fillet {
-                radius: RadiusSpec::Constant {
-                    radius: cadmpeg_ir::features::Length(5.0)
-                },
+                groups
+            } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+                radius: RadiusSpec::Constant { radius: cadmpeg_ir::features::Length(5.0) },
                 ..
-            }
+            }])
         ));
         ir.model.procedural_surfaces.pop();
 
@@ -6262,11 +6293,11 @@ mod tests {
         assert!(matches!(
             definition,
             FeatureDefinition::Fillet {
-                radius: RadiusSpec::Unresolved {
-                    form: Some(RadiusForm::Constant)
-                },
+                groups
+            } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+                radius: RadiusSpec::Unresolved { form: Some(RadiusForm::Constant) },
                 ..
-            }
+            }])
         ));
         assert!(super::blend_feature_definition(&ir, &[], super::NxBlendFamily::Edge,).is_none());
 
@@ -6281,6 +6312,7 @@ mod tests {
                 native: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         };
         attach_test_body_surface(
             &mut ir,

@@ -520,7 +520,7 @@ fn append_spreadsheet(
         }
         parameters.push(DesignParameter {
             id,
-            owner: feature_id(object),
+            owner: Some(feature_id(object)),
             ordinal: index as u32,
             name: name.to_owned(),
             expression: content.to_owned(),
@@ -703,7 +703,7 @@ fn append_operation_parameters(
         .filter(|property| NAMES.contains(&property.name.as_str()))
     {
         if parameters.iter().any(|parameter| {
-            parameter.owner == feature_id(object) && parameter.name == property.name
+            parameter.owner.as_ref() == Some(&feature_id(object)) && parameter.name == property.name
         }) {
             continue;
         }
@@ -721,7 +721,7 @@ fn append_operation_parameters(
                 "fcstd:design:parameter#{}:{}",
                 object.name, property.name
             )),
-            owner: feature_id(object),
+            owner: Some(feature_id(object)),
             ordinal: property.order as u32,
             name: property.name.clone(),
             expression: expression.map_or_else(
@@ -1213,7 +1213,7 @@ fn parse_constraints(
                     }
                     parameters.push(DesignParameter {
                         id: id.clone(),
-                        owner: feature_id(object),
+                        owner: Some(feature_id(object)),
                         ordinal: index as u32,
                         name: node
                             .attribute("Name")
@@ -1294,6 +1294,7 @@ fn parse_constraints(
             .or_else(|| neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved))
             .unwrap_or_else(|| SketchConstraintDefinition::Native {
                 native_kind: constraint_kind(type_code).into(),
+                native_state: None,
                 entities: resolved.iter().map(locus_entity).cloned().collect(),
                 parameter,
                 operands: operands
@@ -1302,6 +1303,8 @@ fn parse_constraints(
                         if *entity < 0 || resolve_operand(*entity, *position, entities).is_none() {
                             Some(SketchNativeOperand {
                                 native_kind: format!("position:{position}"),
+                                native_field: None,
+                                native_role: None,
                                 object_index: u32::try_from(*entity).unwrap_or(u32::MAX),
                                 native_ref: None,
                             })
@@ -1394,6 +1397,7 @@ fn bind_parameter_dependencies(parameters: &mut [DesignParameter], objects: &[Ob
     let mut local = HashMap::<(FeatureId, String), ParameterId>::new();
     let mut qualified = HashMap::<String, ParameterId>::new();
     for (id, owner, name) in &candidates {
+        let Some(owner) = owner else { continue };
         local.insert((owner.clone(), name.clone()), id.clone());
         if let Some(object) = object_names.get(owner) {
             qualified.insert(format!("{object}.{name}"), id.clone());
@@ -1402,9 +1406,12 @@ fn bind_parameter_dependencies(parameters: &mut [DesignParameter], objects: &[Ob
     for parameter in parameters {
         let mut dependencies = BTreeSet::new();
         for identifier in expression_identifiers(&parameter.expression) {
-            let dependency = qualified
-                .get(identifier)
-                .or_else(|| local.get(&(parameter.owner.clone(), identifier.to_owned())));
+            let dependency = qualified.get(identifier).or_else(|| {
+                parameter
+                    .owner
+                    .as_ref()
+                    .and_then(|owner| local.get(&(owner.clone(), identifier.to_owned())))
+            });
             if let Some(dependency) = dependency.filter(|id| **id != parameter.id) {
                 dependencies.insert(dependency.clone());
             }
@@ -2015,6 +2022,7 @@ fn revolution_definition(
                 face: cadmpeg_ir::features::FaceSelection::Native(
                     property(properties, "UpToFace")?.id.clone(),
                 ),
+                offset: None,
             },
             4 => Extent::TwoSidedAngles {
                 first: angle()?,
@@ -2372,11 +2380,12 @@ fn extrusion_definition(
         };
         return Some(FeatureDefinition::Extrude {
             profile,
-            direction: Some(direction),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent,
             op: BooleanOp::NewBody,
             draft: (draft != 0.0).then_some(cadmpeg_ir::features::Angle(draft.to_radians())),
-            reverse_draft: (reverse_draft != 0.0)
+            second_draft: (reverse_draft != 0.0)
                 .then_some(cadmpeg_ir::features::Angle(reverse_draft.to_radians())),
             direction_source: Some(direction_source),
             solid: Some(bool_property(properties, "Solid").unwrap_or(false)),
@@ -2414,6 +2423,7 @@ fn extrusion_definition(
                 face: cadmpeg_ir::features::FaceSelection::Native(
                     property(properties, &face_name)?.id.clone(),
                 ),
+                offset: None,
             }),
             5 => Some(Extent::ToShape {
                 target: cadmpeg_ir::features::FaceSelection::Native(
@@ -2520,7 +2530,8 @@ fn extrusion_definition(
     };
     Some(FeatureDefinition::Extrude {
         profile,
-        direction: Some(direction),
+        direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
         extent,
         op: if kind.contains("Pocket") {
             BooleanOp::Cut
@@ -2528,7 +2539,7 @@ fn extrusion_definition(
             BooleanOp::Join
         },
         draft,
-        reverse_draft,
+        second_draft: reverse_draft,
         direction_source: Some(direction_source),
         solid: Some(true),
         face_maker: None,
@@ -2600,10 +2611,13 @@ fn fillet_definition(
         scalar_named(properties, "Radius").filter(|radius| radius.is_finite() && *radius > 0.0)?
     };
     Some(FeatureDefinition::Fillet {
-        edges,
-        radius: RadiusSpec::Constant {
-            radius: Length(radius),
-        },
+        groups: vec![cadmpeg_ir::features::FilletGroup {
+            edges,
+            radius: RadiusSpec::Constant {
+                radius: Length(radius),
+            },
+            tangency_weight: None,
+        }],
     })
 }
 
@@ -2641,9 +2655,8 @@ fn chamfer_definition(
         chamfer_spec(properties)?
     };
     Some(FeatureDefinition::Chamfer {
-        edges,
-        spec,
-        flip_direction: Some(bool_property(properties, "FlipDirection").unwrap_or(false)),
+        groups: vec![cadmpeg_ir::features::ChamferGroup { edges, spec }],
+        flip_direction: bool_property(properties, "FlipDirection").unwrap_or(false),
     })
 }
 
@@ -3178,8 +3191,12 @@ fn loft_definition(
         None
     };
     Some(FeatureDefinition::Loft {
-        profiles,
+        sections: profiles
+            .into_iter()
+            .map(cadmpeg_ir::features::LoftSection::Profile)
+            .collect(),
         guides: Vec::new(),
+        centerline: None,
         op: operation_boolean(kind),
         closed: bool_property(properties, "Closed").unwrap_or(false),
         solid: kind.starts_with("PartDesign::")

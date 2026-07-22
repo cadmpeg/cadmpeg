@@ -1498,7 +1498,7 @@ fn transfer_curve_expression_features(
             );
             ir.model.parameters.push(DesignParameter {
                 id: parameter_id.clone(),
-                owner: feature_id.clone(),
+                owner: Some(feature_id.clone()),
                 ordinal,
                 name: parameter_names[assignment_ordinal].clone(),
                 expression: assignment.expression.clone(),
@@ -5920,6 +5920,7 @@ fn transfer_feature_extrusion_surfaces(
                     native_position: None,
                 },
                 cache_fit_tolerance: None,
+                record_bounds: None,
             });
             transferred += 1;
         }
@@ -6919,7 +6920,10 @@ fn transfer_resolved_revolution_breps(
                     pcurves: vec![PcurveUse {
                         pcurve,
                         isoparametric: None,
+                        parameter_range: None,
                     }],
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
                 loops.push(loop_id);
             }
@@ -7128,7 +7132,10 @@ fn transfer_resolved_circular_extrusion_breps(
                 pcurves: vec![PcurveUse {
                     pcurve: cap_pcurve,
                     isoparametric: None,
+                    parameter_range: None,
                 }],
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
             ir.model.faces.push(Face {
                 id: cap_face.clone(),
@@ -7195,7 +7202,10 @@ fn transfer_resolved_circular_extrusion_breps(
                 pcurves: vec![PcurveUse {
                     pcurve,
                     isoparametric: None,
+                    parameter_range: None,
                 }],
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
             side_loops.push(loop_id);
         }
@@ -7665,7 +7675,10 @@ fn transfer_resolved_extrusion_breps(
                     pcurves: vec![PcurveUse {
                         pcurve: bottom_pcurve,
                         isoparametric: None,
+                        parameter_range: None,
                     }],
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
                 let id = top_coedges[ring_index].clone();
                 let (geometry, reversed, start, end) = &profile[ring_index];
@@ -7691,7 +7704,10 @@ fn transfer_resolved_extrusion_breps(
                     pcurves: vec![PcurveUse {
                         pcurve: top_pcurve,
                         isoparametric: None,
+                        parameter_range: None,
                     }],
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
 
@@ -7783,7 +7799,10 @@ fn transfer_resolved_extrusion_breps(
                         pcurves: vec![PcurveUse {
                             pcurve,
                             isoparametric: None,
+                            parameter_range: None,
                         }],
+                        use_curve: None,
+                        use_curve_parameter_range: None,
                     });
                 }
                 ir.model.faces.push(Face {
@@ -8098,6 +8117,7 @@ fn reconcile_constraint_entity_references(
         SketchConstraintDefinition::Group { elements }
         | SketchConstraintDefinition::Text { elements, .. } => elements.iter().all(locus_emitted),
         SketchConstraintDefinition::Disabled => true,
+        _ => true,
     }
 }
 
@@ -8151,6 +8171,7 @@ fn reconcile_constraint_parameter_reference(
         | SketchConstraintDefinition::InternalAlignment { .. }
         | SketchConstraintDefinition::Group { .. }
         | SketchConstraintDefinition::Text { .. } => true,
+        _ => true,
     }
 }
 
@@ -8601,10 +8622,13 @@ fn section_dimension_constraints(
             let constraint_definition =
                 typed.unwrap_or_else(|| SketchConstraintDefinition::Native {
                     native_kind: format!("creo:relation:{}", relation.relation_type),
+                    native_state: None,
                     entities: incidence_entities,
                     parameter,
                     operands: vec![SketchNativeOperand {
                         native_kind: "relat_ptr".to_string(),
+                        native_field: None,
+                        native_role: None,
                         object_index: relation.relation_id,
                         native_ref: Some(sketch_native_ref(sketch)),
                     }],
@@ -9158,6 +9182,7 @@ fn section_skamp_constraints_for_geometry(
                     .collect::<Vec<_>>();
                 Some(SketchConstraintDefinition::Native {
                     native_kind: format!("creo:skamp:{}", skamp.kind),
+                    native_state: None,
                     entities,
                     parameter: None,
                     operands: skamp
@@ -9165,6 +9190,8 @@ fn section_skamp_constraints_for_geometry(
                         .iter()
                         .map(|item| SketchNativeOperand {
                             native_kind: format!("sense:{}", item.sense),
+                            native_field: None,
+                            native_role: None,
                             object_index: item.entity_id,
                             native_ref: None,
                         })
@@ -11446,8 +11473,10 @@ fn transfer_resolved_revolution_surfaces(
                     ]
                     .into(),
                     transposed: false,
+                    revision_form: None,
                 },
                 cache_fit_tolerance: None,
+                record_bounds: None,
             });
             transferred += 1;
         }
@@ -11839,7 +11868,7 @@ fn transfer_feature_dimensions(
         });
         ir.model.parameters.push(DesignParameter {
             id: id.clone(),
-            owner: owner_id.clone(),
+            owner: Some(owner_id.clone()),
             ordinal,
             name,
             expression,
@@ -13292,17 +13321,22 @@ fn schema_feature_definition(
             },
         );
         return IrFeatureDefinition::Fillet {
-            edges: feature_edge_selection(scan, ir, feature_id)
-                .unwrap_or(EdgeSelection::Unresolved),
-            radius,
+            groups: vec![cadmpeg_ir::features::FilletGroup {
+                edges: feature_edge_selection(scan, ir, feature_id)
+                    .unwrap_or(EdgeSelection::Unresolved),
+                radius,
+                tangency_weight: None,
+            }],
         };
     }
     if schema_class == 914 {
         return IrFeatureDefinition::Chamfer {
-            edges: feature_edge_selection(scan, ir, feature_id)
-                .unwrap_or(EdgeSelection::Unresolved),
-            spec: ChamferSpec::Unresolved { form: None },
-            flip_direction: Some(false),
+            groups: vec![cadmpeg_ir::features::ChamferGroup {
+                edges: feature_edge_selection(scan, ir, feature_id)
+                    .unwrap_or(EdgeSelection::Unresolved),
+                spec: ChamferSpec::Unresolved { form: None },
+            }],
+            flip_direction: false,
         };
     }
     if schema_class == 927 {
@@ -13437,7 +13471,11 @@ fn schema_feature_definition(
         let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
         return IrFeatureDefinition::Extrude {
             profile,
-            direction,
+            direction: direction.map_or(
+                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                cadmpeg_ir::features::ExtrudeDirection::Explicit,
+            ),
+            start: cadmpeg_ir::features::ExtrudeStart::default(),
             extent,
             op: section_sweep_boolean_operation(
                 feature_recipe_effect(scan, feature_id),
@@ -13446,7 +13484,7 @@ fn schema_feature_definition(
                 preceding_features_establish_body(ir),
             ),
             draft: None,
-            reverse_draft: None,
+            second_draft: None,
             direction_source: None,
             solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
             face_maker: None,
@@ -13667,11 +13705,12 @@ fn unresolved_extrude_feature_definition_with_op(
 ) -> IrFeatureDefinition {
     IrFeatureDefinition::Extrude {
         profile: ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")),
-        direction: None,
+        direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+        start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent: Extent::Unresolved,
         op,
         draft: None,
-        reverse_draft: None,
+        second_draft: None,
         direction_source: None,
         solid: None,
         face_maker: None,
@@ -13698,7 +13737,7 @@ fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition>
         return Some(unresolved_surface_merge_feature_definition());
     }
     numbered_feature_name_has_family(kind, "Fill").then_some(IrFeatureDefinition::FilledSurface {
-        boundary: EdgeSelection::Unresolved,
+        boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
         support_faces: FaceSelection::Unresolved,
         continuity: None,
         merge_result: None,
@@ -14528,15 +14567,16 @@ fn circular_sweep_feature_definition(
 ) -> IrFeatureDefinition {
     IrFeatureDefinition::Extrude {
         profile,
-        direction: Some(Vector3::new(
+        direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(
             sweep.direction[0],
             sweep.direction[1],
             sweep.direction[2],
         )),
+        start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent: sweep.extent.clone(),
         op,
         draft: None,
-        reverse_draft: None,
+        second_draft: None,
         direction_source: None,
         solid,
         face_maker: None,
@@ -19126,6 +19166,7 @@ fn transfer_native_brep(
                             PcurveUse {
                                 pcurve,
                                 isoparametric: None,
+                                parameter_range: None,
                             }
                         })
                         .into_iter()
@@ -19144,6 +19185,8 @@ fn transfer_native_brep(
                             Sense::Reversed
                         },
                         pcurves,
+                        use_curve: None,
+                        use_curve_parameter_range: None,
                     });
                 }
             }
@@ -19859,6 +19902,7 @@ fn transfer_positional_line_extrusion_planes(
                 native_position: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         transferred += 1;
     }
@@ -19975,6 +20019,7 @@ fn transfer_tabulated_cylinder_spline_extrusions(
                 native_position: None,
             },
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         transferred += 1;
     }

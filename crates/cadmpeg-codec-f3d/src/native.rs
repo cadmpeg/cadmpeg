@@ -7,15 +7,23 @@ use serde::{Deserialize, Serialize};
 use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
-    CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignEntityHeader,
-    DesignMaterialAssignment, DesignObject, DesignRecordHeader, EdgeContinuity, EdgeOwnership,
-    FaceSidedness, LostEdgeReference, PersistentDesignLink, PersistentReference,
-    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters,
-    TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
+    CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
+    DesignBodyRecipeOperand, DesignConfiguration, DesignConstructionOperandGroup,
+    DesignConstructionOperandIdentity, DesignDimensionAnnotationFrame, DesignDimensionLocusGroup,
+    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
+    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
+    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
+    DesignFilletRadiusGroup, DesignMaterialAssignment, DesignObject, DesignParameter,
+    DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+    DesignSketchPlacement, EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference,
+    MeshSurfaceSentinel, PersistentDesignLink, PersistentReference, PersistentSubentityTag,
+    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, SketchSurface, SketchText,
+    TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
+    VertexOwnership, WireTopology, XrefDesign, XrefReference,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
-pub const F3D_NATIVE_VERSION: u32 = 1;
+pub const F3D_NATIVE_VERSION: u32 = 5;
 
 pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "act_entities",
@@ -30,27 +38,56 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "body_visibilities",
     "construction_recipes",
     "creation_timestamps",
+    "design_body_bindings",
+    "design_body_bounds",
     "design_body_members",
+    "design_body_recipe_operands",
     "design_configurations",
+    "design_construction_operand_groups",
+    "design_construction_operand_identities",
+    "design_dimension_annotation_frames",
+    "design_dimension_locus_groups",
+    "design_dimension_locus_pairs",
+    "design_dimension_null_locus_pairs",
+    "design_dimension_recipe_records",
+    "design_edge_identity_operands",
+    "design_edge_operands",
     "design_entity_headers",
+    "design_entity_selection_operands",
+    "design_extrude_selection_groups",
+    "design_extrude_selection_members",
+    "design_face_operands",
+    "design_fillet_radius_groups",
     "design_material_assignments",
     "design_objects",
+    "design_parameter_companions",
+    "design_parameter_owners",
+    "design_parameter_scopes",
+    "design_parameters",
     "design_record_headers",
+    "design_sketch_placements",
     "edge_continuities",
     "edge_ownerships",
     "face_sidedness",
     "lost_edge_references",
+    "mesh_surface_sentinels",
     "persistent_design_links",
     "persistent_references",
+    "persistent_subentity_tags",
     "sketch_curve_identities",
     "sketch_curve_links",
     "sketch_points",
     "sketch_relations",
+    "sketch_surfaces",
+    "sketch_texts",
     "tolerant_coedge_parameters",
+    "tolerant_edge_tails",
     "tolerant_vertex_tails",
     "transform_hints",
     "vertex_ownerships",
     "wire_topologies",
+    "xref_designs",
+    "xref_references",
 ];
 
 macro_rules! f3d_arenas {
@@ -62,8 +99,30 @@ macro_rules! f3d_arenas {
             body_native_keys: BodyNativeKey;
             body_visibilities: BodyVisibility;
             design_objects: DesignObject;
+            design_body_recipe_operands: DesignBodyRecipeOperand;
+            design_dimension_annotation_frames: DesignDimensionAnnotationFrame;
+            design_dimension_locus_groups: DesignDimensionLocusGroup;
+            design_dimension_locus_pairs: DesignDimensionLocusPair;
+            design_dimension_null_locus_pairs: DesignDimensionNullLocusPair;
+            design_dimension_recipe_records: DesignDimensionRecipeRecord;
+            design_edge_operands: DesignEdgeOperand;
+            design_edge_identity_operands: DesignEdgeIdentityOperand;
+            design_entity_selection_operands: DesignEntitySelectionOperand;
+            design_face_operands: DesignFaceOperand;
+            design_construction_operand_groups: DesignConstructionOperandGroup;
+            design_construction_operand_identities: DesignConstructionOperandIdentity;
+            design_extrude_selection_groups: DesignExtrudeSelectionGroup;
+            design_extrude_selection_members: DesignExtrudeSelectionMember;
+            design_fillet_radius_groups: DesignFilletRadiusGroup;
+            design_parameter_companions: DesignParameterCompanion;
+            design_parameter_owners: DesignParameterOwner;
+            design_parameter_scopes: DesignParameterScope;
+            design_parameters: DesignParameter;
             design_entity_headers: DesignEntityHeader;
             design_record_headers: DesignRecordHeader;
+            design_sketch_placements: DesignSketchPlacement;
+            design_body_bindings: DesignBodyBinding;
+            design_body_bounds: DesignBodyBounds;
             design_body_members: DesignBodyMember;
             design_configurations: DesignConfiguration;
             design_material_assignments: DesignMaterialAssignment;
@@ -74,16 +133,23 @@ macro_rules! f3d_arenas {
             creation_timestamps: CreationTimestamp;
             persistent_design_links: PersistentDesignLink;
             persistent_references: PersistentReference;
+            persistent_subentity_tags: PersistentSubentityTag;
             sketch_curve_links: SketchCurveLink;
             sketch_relations: SketchRelation;
             sketch_points: SketchPoint;
             sketch_curve_identities: SketchCurveIdentity;
+            sketch_surfaces: SketchSurface;
+            sketch_texts: SketchText;
             lost_edge_references: LostEdgeReference;
+            mesh_surface_sentinels: MeshSurfaceSentinel;
             vertex_ownerships: VertexOwnership;
             tolerant_coedge_parameters: TolerantCoedgeParameters;
+            tolerant_edge_tails: TolerantEdgeTail;
             tolerant_vertex_tails: TolerantVertexTail;
             transform_hints: TransformHints;
             wire_topologies: WireTopology;
+            xref_designs: XrefDesign;
+            xref_references: XrefReference;
             asm_histories: AsmHistory;
         }
     };
@@ -155,6 +221,66 @@ pub struct F3dNative {
     /// Design `MetaStream` object-table records.
     #[serde(default)]
     pub design_objects: Vec<DesignObject>,
+    /// Whole-body operands joined to persistent body construction recipes.
+    #[serde(default)]
+    pub design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
+    /// Annotated paired dimension frames governing parameter companions.
+    #[serde(default)]
+    pub design_dimension_annotation_frames: Vec<DesignDimensionAnnotationFrame>,
+    /// Typed paired loci recovered from dimensional companion graphs.
+    #[serde(default)]
+    pub design_dimension_locus_pairs: Vec<DesignDimensionLocusPair>,
+    /// Counted typed loci recovered from dimensional companion graphs.
+    #[serde(default)]
+    pub design_dimension_locus_groups: Vec<DesignDimensionLocusGroup>,
+    /// Null-plus-typed loci recovered from dimensional companion graphs.
+    #[serde(default)]
+    pub design_dimension_null_locus_pairs: Vec<DesignDimensionNullLocusPair>,
+    /// Indexed records containing dimension-owned construction recipes.
+    #[serde(default)]
+    pub design_dimension_recipe_records: Vec<DesignDimensionRecipeRecord>,
+    /// Edge-selection operands recovered from Fillet and Chamfer scopes.
+    #[serde(default)]
+    pub design_edge_operands: Vec<DesignEdgeOperand>,
+    /// Persistent selection identities recovered from Fillet and Chamfer groups.
+    #[serde(default)]
+    pub design_edge_identity_operands: Vec<DesignEdgeIdentityOperand>,
+    /// Face-selection operands recovered from Extrude construction groups.
+    #[serde(default)]
+    pub design_face_operands: Vec<DesignFaceOperand>,
+    /// Counted construction-operand groups owned by feature parameter scopes.
+    #[serde(default)]
+    pub design_construction_operand_groups: Vec<DesignConstructionOperandGroup>,
+    /// Persistent identity frames named by construction-operand groups.
+    #[serde(default)]
+    pub design_construction_operand_identities: Vec<DesignConstructionOperandIdentity>,
+    /// Counted selection groups owned by Extrude parameter scopes.
+    #[serde(default)]
+    pub design_extrude_selection_groups: Vec<DesignExtrudeSelectionGroup>,
+    /// Fixed-width members named by Extrude selection groups.
+    #[serde(default)]
+    pub design_extrude_selection_members: Vec<DesignExtrudeSelectionMember>,
+    /// Nested persistent-entity operands named by counted construction groups.
+    #[serde(default)]
+    pub design_entity_selection_operands: Vec<DesignEntitySelectionOperand>,
+    /// Radius parameters paired with counted Fillet edge groups.
+    #[serde(default)]
+    pub design_fillet_radius_groups: Vec<DesignFilletRadiusGroup>,
+    /// Fixed prefixes of indexed records paired with parameter owners.
+    #[serde(default)]
+    pub design_parameter_companions: Vec<DesignParameterCompanion>,
+    /// Fixed-width owner frames for indexed Design parameters.
+    #[serde(default)]
+    pub design_parameter_owners: Vec<DesignParameterOwner>,
+    /// Sketch and construction-operation records that scope parameters.
+    #[serde(default)]
+    pub design_parameter_scopes: Vec<DesignParameterScope>,
+    /// Indexed Design parameter and expression records.
+    #[serde(default)]
+    pub design_parameters: Vec<DesignParameter>,
+    /// Local-to-model placement frames for Design sketches.
+    #[serde(default)]
+    pub design_sketch_placements: Vec<DesignSketchPlacement>,
     /// Self-validating per-entity headers from the Design `BulkStream`.
     #[serde(default)]
     pub design_entity_headers: Vec<DesignEntityHeader>,
@@ -164,6 +290,12 @@ pub struct F3dNative {
     /// `BodiesRoot` list members from the Design `BulkStream`.
     #[serde(default)]
     pub design_body_members: Vec<DesignBodyMember>,
+    /// Ordered BREP body-map pairs from Design streams.
+    #[serde(default)]
+    pub design_body_bindings: Vec<DesignBodyBinding>,
+    /// Triplicated axis-aligned bounds cached by Design body containers.
+    #[serde(default)]
+    pub design_body_bounds: Vec<DesignBodyBounds>,
     /// Design configuration tables and rules with complete JSON payloads.
     #[serde(default)]
     pub design_configurations: Vec<DesignConfiguration>,
@@ -191,6 +323,9 @@ pub struct F3dNative {
     /// Persistent point/curve references from Design construction records.
     #[serde(default)]
     pub persistent_references: Vec<PersistentReference>,
+    /// Variable-width persistent tag groups attached to solved faces and edges.
+    #[serde(default)]
+    pub persistent_subentity_tags: Vec<PersistentSubentityTag>,
     /// Provenance links from sketch curves to generated B-rep coedges.
     #[serde(default)]
     pub sketch_curve_links: Vec<SketchCurveLink>,
@@ -203,15 +338,27 @@ pub struct F3dNative {
     /// Persistent identity pairs attached to source sketch-curve records.
     #[serde(default)]
     pub sketch_curve_identities: Vec<SketchCurveIdentity>,
+    /// Persistent tensor-product surfaces owned by spatial sketches.
+    #[serde(default)]
+    pub sketch_surfaces: Vec<SketchSurface>,
+    /// Persistent text entities owned by planar sketches.
+    #[serde(default)]
+    pub sketch_texts: Vec<SketchText>,
     /// Construction-history edge selections that Fusion could not re-resolve.
     #[serde(default)]
     pub lost_edge_references: Vec<LostEdgeReference>,
+    /// Zero-payload ASM mesh-surface sentinels linked to unknown exact surfaces.
+    #[serde(default)]
+    pub mesh_surface_sentinels: Vec<MeshSurfaceSentinel>,
     /// Native owner-edge and endpoint-slot fields stored on ASM vertices.
     #[serde(default)]
     pub vertex_ownerships: Vec<VertexOwnership>,
     /// Native parameter intervals stored on tolerant ASM coedges.
     #[serde(default)]
     pub tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
+    /// Native trailing LONG slots stored on tolerant ASM edges.
+    #[serde(default)]
+    pub tolerant_edge_tails: Vec<TolerantEdgeTail>,
     /// Native trailing f32 slots stored on tolerant ASM vertices.
     #[serde(default)]
     pub tolerant_vertex_tails: Vec<TolerantVertexTail>,
@@ -221,6 +368,14 @@ pub struct F3dNative {
     /// Native wire records and their side classifications.
     #[serde(default)]
     pub wire_topologies: Vec<WireTopology>,
+    /// Container external-reference design entries
+    /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+    #[serde(default)]
+    pub xref_designs: Vec<XrefDesign>,
+    /// Container outgoing XREF placements
+    /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+    #[serde(default)]
+    pub xref_references: Vec<XrefReference>,
     /// ASM construction-history containers and their linked delta states.
     #[serde(default)]
     pub asm_histories: Vec<AsmHistory>,
@@ -236,9 +391,31 @@ impl Default for F3dNative {
             body_native_keys: Vec::new(),
             body_visibilities: Vec::new(),
             design_objects: Vec::new(),
+            design_body_recipe_operands: Vec::new(),
+            design_dimension_annotation_frames: Vec::new(),
+            design_dimension_locus_pairs: Vec::new(),
+            design_dimension_locus_groups: Vec::new(),
+            design_dimension_null_locus_pairs: Vec::new(),
+            design_dimension_recipe_records: Vec::new(),
+            design_edge_operands: Vec::new(),
+            design_edge_identity_operands: Vec::new(),
+            design_face_operands: Vec::new(),
+            design_construction_operand_groups: Vec::new(),
+            design_construction_operand_identities: Vec::new(),
+            design_extrude_selection_groups: Vec::new(),
+            design_extrude_selection_members: Vec::new(),
+            design_entity_selection_operands: Vec::new(),
+            design_fillet_radius_groups: Vec::new(),
+            design_parameter_companions: Vec::new(),
+            design_parameter_owners: Vec::new(),
+            design_parameter_scopes: Vec::new(),
+            design_parameters: Vec::new(),
+            design_sketch_placements: Vec::new(),
             design_entity_headers: Vec::new(),
             design_record_headers: Vec::new(),
             design_body_members: Vec::new(),
+            design_body_bindings: Vec::new(),
+            design_body_bounds: Vec::new(),
             design_configurations: Vec::new(),
             design_material_assignments: Vec::new(),
             edge_continuities: Vec::new(),
@@ -248,16 +425,23 @@ impl Default for F3dNative {
             creation_timestamps: Vec::new(),
             persistent_design_links: Vec::new(),
             persistent_references: Vec::new(),
+            persistent_subentity_tags: Vec::new(),
             sketch_curve_links: Vec::new(),
             sketch_relations: Vec::new(),
             sketch_points: Vec::new(),
             sketch_curve_identities: Vec::new(),
+            sketch_surfaces: Vec::new(),
+            sketch_texts: Vec::new(),
             lost_edge_references: Vec::new(),
+            mesh_surface_sentinels: Vec::new(),
             vertex_ownerships: Vec::new(),
             tolerant_coedge_parameters: Vec::new(),
+            tolerant_edge_tails: Vec::new(),
             tolerant_vertex_tails: Vec::new(),
             transform_hints: Vec::new(),
             wire_topologies: Vec::new(),
+            xref_designs: Vec::new(),
+            xref_references: Vec::new(),
             asm_histories: Vec::new(),
         }
     }

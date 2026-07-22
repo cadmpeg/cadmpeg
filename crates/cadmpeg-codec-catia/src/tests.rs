@@ -3236,6 +3236,7 @@ fn decode_standard_transfers_exact_offset_construction() {
         u_sense,
         v_sense,
         extension_flags,
+        ..
     } = &procedural.definition
     else {
         panic!("offset construction");

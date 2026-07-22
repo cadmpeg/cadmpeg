@@ -2797,37 +2797,6 @@ impl<'a> Builder<'a> {
             .procedural_surfaces
             .iter()
             .filter(|procedural| !self.written_procedural_surfaces.contains(&procedural.id.0))
-            .filter(|procedural| match &procedural.definition {
-                ProceduralSurfaceDefinition::Exact { .. }
-                | ProceduralSurfaceDefinition::Compound { .. }
-                | ProceduralSurfaceDefinition::Taper { .. }
-                | ProceduralSurfaceDefinition::Loft { .. }
-                | ProceduralSurfaceDefinition::CompoundLoft { .. }
-                | ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
-                | ProceduralSurfaceDefinition::Skin { .. }
-                | ProceduralSurfaceDefinition::Net { .. }
-                | ProceduralSurfaceDefinition::G2Blend { .. }
-                | ProceduralSurfaceDefinition::VariableBlend { .. }
-                | ProceduralSurfaceDefinition::VertexBlend { .. }
-                | ProceduralSurfaceDefinition::Extrusion { .. }
-                | ProceduralSurfaceDefinition::LinearSweep { .. }
-                | ProceduralSurfaceDefinition::Revolution { .. }
-                | ProceduralSurfaceDefinition::AxisRevolution { .. }
-                | ProceduralSurfaceDefinition::Sum { .. }
-                | ProceduralSurfaceDefinition::Sweep { .. }
-                | ProceduralSurfaceDefinition::Helix { .. }
-                | ProceduralSurfaceDefinition::Deformable { .. }
-                | ProceduralSurfaceDefinition::TSpline { .. }
-                | ProceduralSurfaceDefinition::Offset { .. }
-                | ProceduralSurfaceDefinition::Subset { .. }
-                | ProceduralSurfaceDefinition::ParallelOffset { .. }
-                | ProceduralSurfaceDefinition::DegenerateTorus { .. }
-                | ProceduralSurfaceDefinition::CurveBounded { .. }
-                | ProceduralSurfaceDefinition::Ruled { .. }
-                | ProceduralSurfaceDefinition::Blend { .. }
-                | ProceduralSurfaceDefinition::RollingBallJet { .. }
-                | ProceduralSurfaceDefinition::Unknown { .. } => true,
-            })
             .count();
         let procedural_curve_count = self
             .ir

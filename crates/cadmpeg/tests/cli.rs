@@ -577,7 +577,7 @@ fn rhino_forced_input_format_and_3dm_alias_bypass_detection() {
 }
 
 #[test]
-fn rhino_full_band_empty_archive_decodes_to_current_ir_v13() {
+fn rhino_full_band_empty_archive_decodes_to_current_ir() {
     let dir = tempdir().unwrap();
     for version in ["50", "60", "70", "80"] {
         let input = minimal_rhino_archive(dir.path(), &format!("empty-{version}.3dm"), version);

@@ -112,6 +112,7 @@
             "curve": "nx:s0:intersection-crv#0",
             "definition": {
               "kind": "unknown",
+              "native_kind": "nx:intersection",
               "record": "nx:container:parasolid#0"
             },
             "id": "nx:s0:intersection#0"

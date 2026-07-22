@@ -4,11 +4,14 @@
 
 use super::*;
 use crate::drawings::Drawing;
-use crate::features::{DesignConfiguration, DesignParameter};
+use crate::features::{DesignConfiguration, DesignParameter, FeatureInputTopology};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Component, Occurrence};
 use crate::semantic_annotations::SemanticAnnotation;
-use crate::sketches::{Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchEntity};
+use crate::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
+    SpatialSketchEntity,
+};
 use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 
@@ -156,14 +159,6 @@ pub(super) fn entity_counts(ir: &CadIr) -> BTreeMap<String, usize> {
             .surfaces
             .iter()
             .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
-            .count(),
-    );
-    counts.insert(
-        "surfaces_procedural_geometry".into(),
-        ir.model
-            .surfaces
-            .iter()
-            .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Procedural { .. }))
             .count(),
     );
     for loss in ir.native.loss_counts() {

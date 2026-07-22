@@ -205,7 +205,19 @@ fn assign_configuration_indices(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
 ) -> Result<(), CodecError> {
     let mut used = HashSet::new();
+    let mut names = HashSet::new();
     for configuration in configurations.iter() {
+        if configuration.name.trim().is_empty() {
+            return Err(CodecError::Malformed(
+                "SLDPRT configuration has an empty name".into(),
+            ));
+        }
+        if !names.insert(configuration.name.as_str()) {
+            return Err(CodecError::Malformed(format!(
+                "SLDPRT repeats configuration name {:?}",
+                configuration.name
+            )));
+        }
         if let Some(index) = configuration.source_index {
             if !used.insert(index) {
                 return Err(CodecError::Malformed(format!(

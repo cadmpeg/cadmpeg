@@ -625,9 +625,12 @@ fn build(
                             .map(|pcurve| PcurveUse {
                                 pcurve,
                                 isoparametric: None,
+                                parameter_range: None,
                             })
                             .into_iter()
                             .collect(),
+                        use_curve: None,
+                        use_curve_parameter_range: None,
                     });
                     radial
                         .entry(o.edge)

@@ -216,12 +216,14 @@ mod tests {
             name: "Default".into(),
             material: None,
             properties: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            suppressed_features: Vec::new(),
             bodies: crate::features::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id,
                 ConfigurationFeatureState {
-                    suppressed: Some(false),
+                    suppressed: false,
                     dependencies: Vec::new(),
                     outputs: Vec::new(),
                     definition: FeatureDefinition::Sketch {

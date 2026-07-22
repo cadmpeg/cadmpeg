@@ -433,10 +433,14 @@ fn geometry_signal_excludes_opaque_carriers() {
         id: ProceduralSurfaceId("procedural".to_string()),
         surface: surface_id,
         definition: ProceduralSurfaceDefinition::Exact {
-            parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
+            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges {
+                ranges: [[0.0, 1.0], [0.0, 1.0]],
+            },
             extension: 0,
+            revision_form: None,
         },
         cache_fit_tolerance: None,
+        record_bounds: None,
     });
 
     assert!(has_transferred_geometry(&ir));
@@ -988,6 +992,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
             native_position: None,
         },
         cache_fit_tolerance: None,
+        record_bounds: None,
     }];
 
     let coverage = surface_transfer_coverage(&rows, &surfaces, &procedural_surfaces);
@@ -1080,6 +1085,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
                 entities: vec![entity.clone()],
                 parameter: None,
                 operands: Vec::new(),
+                native_state: None,
             },
         ),
         constraint(
@@ -1421,7 +1427,7 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
     assert!(matches!(
         reference_named_feature_definition("Fill 1"),
         Some(IrFeatureDefinition::FilledSurface {
-            boundary: EdgeSelection::Unresolved,
+            boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
             support_faces: FaceSelection::Unresolved,
             continuity: None,
             merge_result: None,
@@ -1441,7 +1447,7 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
         unresolved_extrude_feature_definition(42),
         IrFeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: Extent::Unresolved,
             op: BooleanOp::Unresolved,
             solid: None,
@@ -1516,9 +1522,11 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     let mut ir = CadIr::empty(Units::default());
     ir.model.features.push(feature(
         IrFeatureDefinition::Chamfer {
-            edges: EdgeSelection::Unresolved,
-            spec: ChamferSpec::Unresolved { form: None },
-            flip_direction: Some(false),
+            groups: vec![cadmpeg_ir::features::ChamferGroup {
+                edges: EdgeSelection::Unresolved,
+                spec: ChamferSpec::Unresolved { form: None },
+            }],
+            flip_direction: false,
         },
         Vec::new(),
     ));
@@ -1530,13 +1538,14 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     ir.model.features[0] = feature(
         IrFeatureDefinition::Extrude {
             profile: ProfileRef::Native("creo:section#1".to_string()),
-            direction: None,
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: Extent::Blind {
                 length: Length(1.0),
             },
             op: BooleanOp::NewBody,
             draft: None,
-            reverse_draft: None,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+            second_draft: None,
             direction_source: None,
             solid: Some(true),
             face_maker: None,
@@ -1626,13 +1635,16 @@ fn circular_sweep_projects_profile_direction_and_extent() {
         ),
         IrFeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string())),
-            direction: Some(Vector3::new(0.0, 0.0, -1.0)),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(
+                0.0, 0.0, -1.0
+            )),
             extent: Extent::Blind {
                 length: Length(6.5),
             },
             op: BooleanOp::Join,
             draft: None,
-            reverse_draft: None,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+            second_draft: None,
             direction_source: None,
             solid: Some(true),
             face_maker: None,
@@ -2380,6 +2392,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         entities: vec![first.clone(), second],
         parameter: None,
         operands: Vec::new(),
+        native_state: None,
     };
     assert!(reconcile_constraint_entity_references(
         &mut native,
@@ -2414,6 +2427,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         entities: Vec::new(),
         parameter: Some(ParameterId("missing".to_string())),
         operands: Vec::new(),
+        native_state: None,
     };
     assert!(reconcile_constraint_parameter_reference(
         &mut native_parameter,
@@ -5865,12 +5879,15 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         constraints[2].0.definition,
         SketchConstraintDefinition::Native {
             native_kind: "creo:skamp:7".to_string(),
+            native_state: None,
             entities: vec![SketchEntityId(
                 "creo:featdefs:sketch_entity#917:12".to_string()
             )],
             parameter: None,
             operands: vec![SketchNativeOperand {
                 native_kind: "sense:4".to_string(),
+                native_field: None,
+                native_role: None,
                 object_index: 12,
                 native_ref: None,
             }],
@@ -6669,10 +6686,13 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .definition,
         SketchConstraintDefinition::Native {
             native_kind: "creo:relation:0".to_string(),
+            native_state: None,
             entities: Vec::new(),
             parameter: None,
             operands: vec![SketchNativeOperand {
                 native_kind: "relat_ptr".to_string(),
+                native_field: None,
+                native_role: None,
                 object_index: 8,
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }],
@@ -7068,12 +7088,15 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .definition,
         SketchConstraintDefinition::Native {
             native_kind: "creo:relation:0".to_string(),
+            native_state: None,
             entities: vec![SketchEntityId(
                 "creo:featdefs:sketch_entity#917:12".to_string()
             )],
             parameter: Some(ParameterId("creo:featdefs:parameter#917:42".to_string())),
             operands: vec![SketchNativeOperand {
                 native_kind: "relat_ptr".to_string(),
+                native_field: None,
+                native_role: None,
                 object_index: 8,
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }],
@@ -7180,10 +7203,13 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         relations[0].0.definition,
         SketchConstraintDefinition::Native {
             native_kind: "creo:relation:99".to_string(),
+            native_state: None,
             entities: Vec::new(),
             parameter: Some(ParameterId("creo:featdefs:parameter#917:42".to_string(),)),
             operands: vec![SketchNativeOperand {
                 native_kind: "relat_ptr".to_string(),
+                native_field: None,
+                native_role: None,
                 object_index: 8,
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }],

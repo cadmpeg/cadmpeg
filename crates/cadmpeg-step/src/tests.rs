@@ -2512,6 +2512,8 @@ fn edgeless_doc() -> CadIr {
         radial_next: CoedgeId("ce0".into()),
         sense: Sense::Forward,
         pcurves: Vec::new(),
+        use_curve: None,
+        use_curve_parameter_range: None,
     });
     ir.model.loops.push(Loop {
         id: LoopId("lp0".into()),
@@ -3257,6 +3259,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
             a: 1.0,
         }),
         properties: Default::default(),
+        textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#face".to_string(),
@@ -3315,6 +3318,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
             a: 1.0,
         }),
         properties: Default::default(),
+        textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#face".to_string(),

@@ -175,6 +175,9 @@ pub struct PcurveUse {
     /// Whether the source declares this curve isoparametric on the face surface.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isoparametric: Option<bool>,
+    /// Interval on the pcurve's own parameterization used by this coedge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_range: Option<[f64; 2]>,
 }
 
 /// One pole-vertex occurrence in a loop traversal.
@@ -213,6 +216,12 @@ pub struct Coedge {
     /// Ordered parameter-space images of this coedge on the face surface.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<PcurveUse>,
+    /// Optional coedge-local 3D carrier used instead of the shared edge curve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_curve: Option<CurveId>,
+    /// Interval on the coedge-local 3D carrier in loop-traversal order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_curve_parameter_range: Option<[f64; 2]>,
 }
 
 /// An edge: a bounded segment of a 3D curve between two vertices.

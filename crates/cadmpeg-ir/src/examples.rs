@@ -180,6 +180,8 @@ pub fn unit_cube() -> CadIr {
                     Sense::Reversed
                 },
                 pcurves: Vec::new(),
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
             edge_to_coedges
                 .entry(*edge_index)
@@ -286,8 +288,10 @@ pub fn directed_subd_sum() -> CadIr {
             first: CurveId("synthetic:v2:curve#u".into()),
             second: CurveId("synthetic:v2:curve#v".into()),
             basepoint: Vector3::new(0.0, 0.0, 0.0),
+            revision_form: None,
         },
         cache_fit_tolerance: Some(1.0e-9),
+        record_bounds: None,
     });
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:v2:subd#directed".into()),
