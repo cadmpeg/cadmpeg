@@ -727,6 +727,15 @@ axis points from `y0-opposite` to `y0`, its reference direction points from
 `r1` to `r0`, its radius is half the radial span, and its finite length is the
 first axial span. The model-reference scalar does not contribute geometry.
 
+An axial-endpoint radial-sample type-24 cylinder body has two seven-byte
+leading scalars separated by `18`, followed by `0e`, then `<x-radial> <y0>
+<aux-radial> <radius> <y1> <z-radial> f7 19`. The leading scalars and auxiliary
+radial coordinate are finite. The radius and Y span are nonzero, the auxiliary
+radial magnitude does not exceed the radius, and `(x-radial,z-radial)` lies on
+the stored circle. The cylinder origin is `(0,y0,0)`, its axis points from `y0`
+to `y1`, its reference direction points opposite the X-radial sign, its radius
+is the stored radius, and its finite length is the Y span.
+
 A held-coordinate type-24 round envelope has three contiguous scalar frames
 with slot counts two, two, and five. The first frame starts at the body with a
 zero slot and ends before control bytes `78 ac`; the second starts immediately

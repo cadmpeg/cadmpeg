@@ -2623,6 +2623,7 @@ fn decode_positional_cylinder_frame(
         .or_else(|| decode_signed_radial_envelope_cylinder_frame(body, cache))
         .or_else(|| decode_xz_axis_y_radial_cylinder_frame(body, cache))
         .or_else(|| decode_symmetric_revolution_cylinder_frame(body, cache))
+        .or_else(|| decode_axial_endpoint_radial_sample_cylinder_frame(body, cache))
         .or_else(|| decode_precise_center_edge_cylinder_frame(body, cache))
         .or_else(|| decode_precise_held_center_cylinder_frame(body, cache))
         .or_else(|| decode_local_system_suffix_cylinder_frame(body, cache))
@@ -2677,6 +2678,61 @@ fn decode_xz_axis_y_radial_cylinder_frame(
         origin: [x0, f64::midpoint(y0, y1), z0],
         axis: axis_vector.map(|value| value / length),
         ref_direction: [0.0, (y1 - y0).signum(), 0.0],
+        radius,
+        length: Some(length),
+    })
+}
+
+fn decode_axial_endpoint_radial_sample_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    let (first_leading, first_end) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, 0, cache)?;
+    (first_end == 7 && body.get(first_end) == Some(&0x18)).then_some(())?;
+    let (second_leading, second_end) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, first_end + 1, cache)?;
+    (second_end == 15 && body.get(second_end) == Some(&0x0e)).then_some(())?;
+    let (radial_x, mut cursor) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, second_end + 1, cache)?;
+    let (axial_start, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    let (auxiliary_radial, next) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+    cursor = next;
+    let (radius, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    let (axial_end, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    let (radial_z, next) = scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+    (body.get(next..) == Some(&[0xf7, 0x19])).then_some(())?;
+
+    let values = [
+        first_leading,
+        second_leading,
+        radial_x,
+        axial_start,
+        auxiliary_radial,
+        radius,
+        axial_end,
+        radial_z,
+    ];
+    values.into_iter().all(f64::is_finite).then_some(())?;
+    let scale = values.into_iter().map(f64::abs).fold(1.0, f64::max);
+    let tolerance = 1e-9 * scale;
+    let length = (axial_end - axial_start).abs();
+    (radius > 1e-12 * scale
+        && length > 1e-12 * scale
+        && radial_x.abs() > 1e-12 * scale
+        && auxiliary_radial.abs() <= radius + tolerance
+        && (radial_x * radial_x + radial_z * radial_z - radius * radius).abs()
+            <= tolerance * radius.max(1.0))
+    .then_some(())?;
+
+    Some(PositionalCylinderFrame {
+        origin: [0.0, axial_start, 0.0],
+        axis: [0.0, (axial_end - axial_start).signum(), 0.0],
+        ref_direction: [-radial_x.signum(), 0.0, 0.0],
         radius,
         length: Some(length),
     })
@@ -5804,6 +5860,42 @@ mod tests {
         mismatched_repetition[31..34].copy_from_slice(&[0x2e, 0x1b, 0x99]);
         assert!(decode_positional_cylinder_frame(&mismatched_repetition, &cache).is_none());
         let mut trailing = direct.to_vec();
+        trailing.push(0x18);
+        assert!(decode_positional_cylinder_frame(&trailing, &cache).is_none());
+    }
+
+    #[test]
+    fn positional_cylinder_frame_decodes_axial_endpoint_radial_samples() {
+        let cache = scalar::ScalarCache::default();
+        let radius_three_and_half = [
+            143, 30, 205, 113, 196, 112, 70, 24, 153, 33, 34, 156, 96, 224, 107, 14, 145, 174, 119,
+            80, 63, 61, 215, 47, 49, 128, 210, 95, 146, 245, 61, 0, 232, 47, 12, 0, 47, 50, 0, 139,
+            106, 254, 253, 38, 131, 216, 247, 25,
+        ];
+        let radius_three = [
+            143, 30, 205, 113, 196, 112, 70, 24, 153, 33, 34, 156, 96, 224, 108, 14, 142, 112, 248,
+            141, 237, 16, 111, 47, 49, 128, 207, 17, 142, 54, 177, 184, 109, 47, 8, 0, 47, 50, 0,
+            135, 37, 34, 214, 139, 43, 42, 247, 25,
+        ];
+        for (body, expected_radius) in [
+            (radius_three_and_half.as_slice(), 3.5),
+            (radius_three.as_slice(), 3.0),
+        ] {
+            let frame = decode_positional_cylinder_frame(body, &cache)
+                .expect("complete axial-endpoint radial-sample cylinder");
+            assert_eq!(frame.origin, [0.0, 17.5, 0.0]);
+            assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+            assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
+            assert!((frame.radius - expected_radius).abs() < 1e-12);
+            assert!(frame
+                .length
+                .is_some_and(|length| (length - 0.5).abs() < 1e-12));
+        }
+
+        let mut off_circle = radius_three;
+        off_circle[33..36].copy_from_slice(&[0x2f, 0x0a, 0x00]);
+        assert!(decode_positional_cylinder_frame(&off_circle, &cache).is_none());
+        let mut trailing = radius_three_and_half.to_vec();
         trailing.push(0x18);
         assert!(decode_positional_cylinder_frame(&trailing, &cache).is_none());
     }
