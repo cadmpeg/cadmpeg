@@ -39,6 +39,27 @@ fn canonical_intcurve_kind(name: &[u8]) -> &str {
     }
 }
 
+/// Byte offset of the first subtype-definition opening whose name matches one of
+/// `names`, together with the matched name. A definition opens as `0x0f`, a
+/// `0x0d`/`0x0e` name token, the name length, then the name bytes. Names are
+/// tried in order; the first name with a hit wins.
+pub(crate) fn find_subtype_marker<'n>(
+    bytes: &[u8],
+    names: &[&'n [u8]],
+) -> Option<(usize, &'n [u8])> {
+    names.iter().copied().find_map(|name| {
+        bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name))
+    })
+}
+
 pub(crate) fn find_intcurve_subtype(bytes: &[u8], modern: &[u8]) -> Option<(usize, usize)> {
     let legacy: &[u8] = match modern {
         b"blend_int_cur" => b"bldcur",
@@ -57,20 +78,11 @@ pub(crate) fn find_intcurve_subtype(bytes: &[u8], modern: &[u8]) -> Option<(usiz
         b"subset_int_cur" => b"subsetintcur",
         _ => b"",
     };
-    [modern, legacy]
+    let candidates: Vec<&[u8]> = [modern, legacy]
         .into_iter()
         .filter(|name| !name.is_empty())
-        .find_map(|name| {
-            bytes
-                .windows(name.len() + 3)
-                .position(|window| {
-                    window[0] == 0x0f
-                        && matches!(window[1], 0x0d | 0x0e)
-                        && usize::from(window[2]) == name.len()
-                        && &window[3..] == name
-                })
-                .map(|marker| (marker, name.len()))
-        })
+        .collect();
+    find_subtype_marker(bytes, &candidates).map(|(marker, name)| (marker, name.len()))
 }
 
 pub(crate) fn decode_cache_resolving_refs<T>(

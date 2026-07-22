@@ -21,7 +21,9 @@ use crate::nurbs::reader::{
     take_native_string, take_native_vec3, take_optional_range_value, take_tagged_int, unit_vector,
     INT_WIDTHS, LEN_TO_MM,
 };
-use crate::nurbs::subtypes::{first_construction_subtype, next_token, subtype_span, SubtypeTables};
+use crate::nurbs::subtypes::{
+    find_subtype_marker, first_construction_subtype, next_token, subtype_span, SubtypeTables,
+};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, SurfaceGeometry,
 };
@@ -40,17 +42,7 @@ pub(crate) fn decode_cyl_spl_sur_at(
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"cyl_spl_sur", b"cylsur"];
-    let (start, name) = names.into_iter().find_map(|name| {
-        record_bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == name
-            })
-            .map(|start| (start, name))
-    })?;
+    let (start, name) = find_subtype_marker(record_bytes, &names)?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let directrix = decode_curve_cache_at(span, int_width)?;
 
@@ -1137,17 +1129,8 @@ pub(crate) fn decode_vertex_blend_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"VBL_SURF", b"vertexblendsur"];
-    let (start, name_len) = names.into_iter().find_map(|name| {
-        record_bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == name
-            })
-            .map(|start| (start, name.len()))
-    })?;
+    let (start, name_len) =
+        find_subtype_marker(record_bytes, &names).map(|(start, name)| (start, name.len()))?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     // The revision-gated layout stores the revision integer before the
@@ -1199,25 +1182,17 @@ pub(crate) fn decode_full_rb_blend_spl_sur(
     active_bytes: &[u8],
     tables: &SubtypeTables,
 ) -> Option<DecodedProceduralSurface> {
-    let names: [(&[u8], bool); 6] = [
-        (b"rb_blend_spl_sur", false),
-        (b"rbblnsur", false),
-        (b"pipe_spl_sur", false),
-        (b"pipesur", false),
-        (b"sss_blend_spl_sur", true),
-        (b"sssblndsur", true),
+    let names: [&[u8]; 6] = [
+        b"rb_blend_spl_sur",
+        b"rbblnsur",
+        b"pipe_spl_sur",
+        b"pipesur",
+        b"sss_blend_spl_sur",
+        b"sssblndsur",
     ];
-    let (start, name_len, has_third) = names.into_iter().find_map(|(name, has_third)| {
-        record_bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == name
-            })
-            .map(|start| (start, name.len(), has_third))
-    })?;
+    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let name_len = name.len();
+    let has_third = name == b"sss_blend_spl_sur" || name == b"sssblndsur";
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     let definition_index = take_tagged_int(span, &mut position, 0x04, int_width)?;
@@ -1323,17 +1298,8 @@ pub(crate) fn decode_rb_blend_spl_sur_fallback(
         b"pipe_spl_sur",
         b"pipesur",
     ];
-    let (start, header_len) = names.into_iter().find_map(|name| {
-        record_bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == name
-            })
-            .map(|start| (start, name.len() + 3))
-    })?;
+    let (start, header_len) =
+        find_subtype_marker(record_bytes, &names).map(|(start, name)| (start, name.len() + 3))?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let cache = marker_positions(span)
         .into_iter()
