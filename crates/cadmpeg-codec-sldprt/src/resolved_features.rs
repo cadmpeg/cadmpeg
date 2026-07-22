@@ -4885,6 +4885,48 @@ mod marker_tests {
     }
 
     #[test]
+    fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
+        let sketch = SketchId("sketch".into());
+        let point = |id: &str, offset: u64, position| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: Some(format!("native:{offset}")),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point { position },
+        };
+        let mut entities = vec![
+            point("start", 100, Point2::new(1.0, 0.0)),
+            point("center", 200, Point2::new(0.0, 0.0)),
+            point("end", 300, Point2::new(0.0, 1.0)),
+            cadmpeg_ir::sketches::SketchEntity {
+                id: SketchEntityId("arc".into()),
+                sketch,
+                construction: false,
+                native_ref: Some("native:400".into()),
+                geometry_ref: None,
+                endpoint_refs: vec!["native:100".into(), "native:300".into()],
+                geometry: SketchGeometry::Native {
+                    native_kind: "sldprt:marker-geometry:2".into(),
+                },
+            },
+        ];
+
+        super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+
+        assert_eq!(
+            entities[3].geometry,
+            SketchGeometry::Arc {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(1.0),
+                start_angle: Angle(0.0),
+                end_angle: Angle(std::f64::consts::FRAC_PI_2),
+            }
+        );
+    }
+
+    #[test]
     fn every_principal_plane_has_a_sketch_frame() {
         use cadmpeg_ir::features::PrincipalPlane;
 
@@ -16721,6 +16763,60 @@ fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) 
             _ => None,
         })
         .collect::<HashMap<_, _>>();
+    let point_records = entities
+        .iter()
+        .filter_map(|entity| match entity.geometry {
+            SketchGeometry::Point { position } => Some((
+                entity.sketch.clone(),
+                entity.native_ref.as_deref()?,
+                entity
+                    .native_ref
+                    .as_deref()?
+                    .rsplit_once(':')?
+                    .1
+                    .parse::<u64>()
+                    .ok()?,
+                position,
+            )),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let roster_replacements = entities
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entity)| {
+            if !matches!(
+                entity.geometry,
+                SketchGeometry::Native { ref native_kind }
+                    if native_kind == "sldprt:marker-geometry:2"
+            ) {
+                return None;
+            }
+            let [start_ref, end_ref] = entity.endpoint_refs.as_slice() else {
+                return None;
+            };
+            let start = points.get(start_ref).copied()?;
+            let end = points.get(end_ref).copied()?;
+            let start_offset = start_ref.rsplit_once(':')?.1.parse::<u64>().ok()?;
+            let end_offset = end_ref.rsplit_once(':')?.1.parse::<u64>().ok()?;
+            let (lower, upper) = if start_offset < end_offset {
+                (start_offset, end_offset)
+            } else {
+                (end_offset, start_offset)
+            };
+            let mut between = point_records.iter().filter(|(sketch, _, offset, _)| {
+                sketch == &entity.sketch && *offset > lower && *offset < upper
+            });
+            let (_, _, _, center) = between.next()?;
+            if between.next().is_some() {
+                return None;
+            }
+            minor_arc_geometry(start, end, *center, tolerance).map(|geometry| (index, geometry))
+        })
+        .collect::<Vec<_>>();
+    for (index, geometry) in roster_replacements {
+        entities[index].geometry = geometry;
+    }
     let arcs = entities
         .iter()
         .enumerate()
