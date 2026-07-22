@@ -26,9 +26,9 @@ fn standard_torus_major_sign_selects_the_axis_hemisphere() {
     for value in [0.0_f32, 0.0, 7.0, 0.0, 0.0, -20.0, 5.0] {
         bytes.extend_from_slice(&value.to_be_bytes());
     }
-    let surface = crate::geometry::decode_curved(
+    let surface = crate::families::standard::records::decode_curved(
         &bytes,
-        &crate::geometry::SurfacePrefix {
+        &crate::families::standard::records::SurfacePrefix {
             pos: 0,
             target: 0,
             kind: 0x38,
@@ -226,10 +226,10 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
     }
 
     assert_eq!(
-        crate::geometry::object_stream_vertices(&bytes),
+        crate::families::consolidated::records::object_stream_vertices(&bytes),
         [cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)]
     );
-    assert!(crate::geometry::object_stream_vertices(&bytes[5..]).is_empty());
+    assert!(crate::families::consolidated::records::object_stream_vertices(&bytes[5..]).is_empty());
 
     let mut b5 = Vec::new();
     let mut payload = vec![0x05, 0x08, 0x01];
@@ -243,7 +243,7 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
         b5.extend_from_slice(&le_f32(value));
     }
     assert_eq!(
-        crate::geometry::object_stream_vertices(&b5),
+        crate::families::consolidated::records::object_stream_vertices(&b5),
         [cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)]
     );
 }
@@ -789,7 +789,7 @@ fn standard_vertex_roster_preserves_native_identity_order() {
     bytes.extend_from_slice(&[0x54, 0x01, 0x00, 0x00, 0, 0, 0]);
 
     assert_eq!(
-        crate::geometry::standard_vertex_roster(&bytes, 3),
+        crate::families::standard::records::standard_vertex_roster(&bytes, 3),
         Some(vec![0x01_0203, 0x01_0206, 0x01_0209])
     );
 }
@@ -879,15 +879,15 @@ fn standard_curve_support_table_recovers_leading_spline_and_widened_faces() {
     bytes.extend_from_slice(&260u32.to_le_bytes());
     bytes.push(2);
 
-    let rows = crate::geometry::standard_curve_supports(&bytes, 300);
+    let rows = crate::families::standard::records::standard_curve_supports(&bytes, 300);
     assert_eq!(rows.len(), 2);
     assert!(matches!(
         rows[0].geometry,
-        crate::geometry::StandardCurveGeometry::Bspline
+        crate::families::standard::records::StandardCurveGeometry::Bspline
     ));
     assert!(matches!(
         rows[1].geometry,
-        crate::geometry::StandardCurveGeometry::Line
+        crate::families::standard::records::StandardCurveGeometry::Line
     ));
     assert_eq!(rows[0].faces, [260, 1]);
     assert_eq!(rows[1].faces, [260, 2]);
@@ -2951,7 +2951,7 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
 #[test]
 fn e5_circle_parser_reads_framed_carrier() {
     let stream = e5_circle_stream();
-    let circles = crate::geometry::e5_circles(&stream);
+    let circles = crate::families::e5::records::e5_circles(&stream);
     assert_eq!(circles.len(), 1);
     match &circles[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Circle {
@@ -2966,7 +2966,7 @@ fn e5_circle_parser_reads_framed_carrier() {
         }
         other => panic!("expected circle, got {other:?}"),
     }
-    let surfaces = crate::geometry::e5_surfaces(&stream);
+    let surfaces = crate::families::e5::records::e5_surfaces(&stream);
     assert!(matches!(
         surfaces[0].geometry,
         SurfaceGeometry::Cylinder { radius: 2.5, .. }
@@ -2984,7 +2984,7 @@ fn e5_edge_parser_reads_u24_reference_tokens() {
     record[5..7].copy_from_slice(&(payload.len() as u16).to_le_bytes());
     record.extend_from_slice(&payload);
 
-    let edges = crate::geometry::e5_edges(&record);
+    let edges = crate::families::e5::records::e5_edges(&record);
     assert_eq!(edges.len(), 1);
     assert_eq!(edges[0].support_id, 0x03_0201);
     assert_eq!(edges[0].start_vertex_id, 0x06_0504);
@@ -3262,12 +3262,12 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
 fn standard_circle_parser_rejects_non_support_marker() {
     let mut bytes = vec![0x61, 0, 0, 0, 0, 0x12, 0, 0x33, 0x37];
     bytes.extend_from_slice(&[0; 18]);
-    assert!(crate::geometry::standard_circles(&bytes, 1).is_empty());
+    assert!(crate::families::standard::records::standard_circles(&bytes, 1).is_empty());
 }
 
 #[test]
 fn standard_surface_roster_walks_freeform_and_analytic_records() {
-    use crate::geometry::StandardSurfaceRecord;
+    use crate::families::standard::records::StandardSurfaceRecord;
 
     let mut bytes = vec![0x34, 0x12, 0, 0, 0, 0];
     for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
@@ -3280,7 +3280,8 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
     bytes.push(0xff);
     bytes.push(0x60);
 
-    let records = crate::geometry::standard_surface_records(&bytes, 2).expect("surface roster");
+    let records = crate::families::standard::records::standard_surface_records(&bytes, 2)
+        .expect("surface roster");
     assert!(matches!(
         records[0],
         StandardSurfaceRecord::Freeform {
@@ -3345,7 +3346,7 @@ fn plane_bounds_bind_normals_by_persistent_carrier_tag() {
         (0x010203, [1.0, 0.0, 0.0]),
         (0x070809, [0.0, 0.0, 1.0]),
     ]);
-    let planes = crate::geometry::plane_params(&bytes, &normals);
+    let planes = crate::families::standard::records::plane_params(&bytes, &normals);
 
     assert_eq!(planes.len(), 3);
     assert_eq!(planes[0].target, 0x010203);
@@ -3367,11 +3368,11 @@ fn standard_face_witness_requires_an_analytic_marker() {
         record[32 + index * 4..36 + index * 4].copy_from_slice(&value.to_le_bytes());
     }
     assert_eq!(
-        crate::geometry::standard_face_witness(&record, 5),
+        crate::families::standard::records::standard_face_witness(&record, 5),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
     record[6] = 0x32;
-    assert!(crate::geometry::standard_face_witness(&record, 5).is_none());
+    assert!(crate::families::standard::records::standard_face_witness(&record, 5).is_none());
 }
 
 #[test]
@@ -3388,7 +3389,7 @@ fn standard_curve_supports_begin_after_the_surface_roster() {
         0x60, 2, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 0, // roster-adjacent row
     ]);
 
-    let rows = crate::geometry::standard_curve_supports(&bytes, 1);
+    let rows = crate::families::standard::records::standard_curve_supports(&bytes, 1);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].tag, 2);
 }
@@ -3894,7 +3895,9 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
 
 #[test]
 fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
-    use crate::geometry::{StandardCurveGeometry, StandardCurveSupport, StandardSurfaceRecord};
+    use crate::families::standard::records::{
+        StandardCurveGeometry, StandardCurveSupport, StandardSurfaceRecord,
+    };
 
     let mut edge_faces = vec![[0, 0]];
     let supports = vec![StandardCurveSupport {
@@ -3906,7 +3909,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
     let records = [10u32, 20]
         .into_iter()
         .map(|target| {
-            StandardSurfaceRecord::Analytic(crate::geometry::SurfacePrefix {
+            StandardSurfaceRecord::Analytic(crate::families::standard::records::SurfacePrefix {
                 pos: 0,
                 target,
                 kind: 0x33,
@@ -3924,7 +3927,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
     let mut ambiguous = vec![[0, 0]];
     let mut repeated_records = records;
     repeated_records.push(StandardSurfaceRecord::Analytic(
-        crate::geometry::SurfacePrefix {
+        crate::families::standard::records::SurfacePrefix {
             pos: 0,
             target: 20,
             kind: 0x33,
@@ -3942,7 +3945,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
 #[test]
 fn standard_line_parser_reads_face_incidence() {
     let bytes = [0x60, 1, 2, 3, 0, 2, 0, 0x33, 0x36, 0, 1];
-    let lines = crate::geometry::standard_lines(&bytes, 2);
+    let lines = crate::families::standard::records::standard_lines(&bytes, 2);
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0].tag, 0x03_0201);
     assert_eq!(lines[0].faces, [0, 1]);
@@ -3950,7 +3953,7 @@ fn standard_line_parser_reads_face_incidence() {
 
 #[test]
 fn e5_surface_parser_reads_framed_torus() {
-    let surfaces = crate::geometry::e5_surfaces(&e5_torus_stream());
+    let surfaces = crate::families::e5::records::e5_surfaces(&e5_torus_stream());
     assert_eq!(surfaces.len(), 1);
     match &surfaces[0].geometry {
         SurfaceGeometry::Torus {
@@ -3974,7 +3977,7 @@ fn e5_surface_parser_reads_framed_torus() {
 
 #[test]
 fn e5_plane_parser_preserves_origin_and_natural_bounds_without_fabricating_axes() {
-    let planes = crate::geometry::e5_planes(&e5_plane_stream());
+    let planes = crate::families::e5::records::e5_planes(&e5_plane_stream());
     assert_eq!(planes.len(), 1);
     assert_eq!(planes[0].record_id, 42);
     assert_eq!(planes[0].origin, [1.0, 2.0, 3.0]);
@@ -3984,7 +3987,8 @@ fn e5_plane_parser_preserves_origin_and_natural_bounds_without_fabricating_axes(
 
 #[test]
 fn e5_plane_parser_reads_terminal_bounds_after_extended_transform_lane() {
-    let planes = crate::geometry::e5_planes(&e5_plane_stream_with_transform_scalars(5));
+    let planes =
+        crate::families::e5::records::e5_planes(&e5_plane_stream_with_transform_scalars(5));
     assert_eq!(planes.len(), 1);
     assert_eq!(planes[0].origin, [1.0, 2.0, 3.0]);
     assert_eq!(planes[0].u_range, [-4.0, 7.0]);
@@ -3993,7 +3997,7 @@ fn e5_plane_parser_reads_terminal_bounds_after_extended_transform_lane() {
 
 #[test]
 fn a8_surface_parser_reads_common_form_nurbs() {
-    let surfaces = crate::geometry::a8_surfaces(&a8_surface_stream());
+    let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_surface_stream());
     assert_eq!(surfaces.len(), 1);
     assert_eq!(surfaces[0].object_id, 0xdeca_fbad);
     match &surfaces[0].geometry {
@@ -4010,8 +4014,8 @@ fn a8_surface_parser_reads_common_form_nurbs() {
 fn a8_surface_header_survives_an_opaque_pole_representation() {
     let mut bytes = a8_surface_stream();
     bytes[59..67].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(crate::geometry::a8_surfaces(&bytes).is_empty());
-    let headers = crate::geometry::a8_surface_headers(&bytes);
+    assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
+    let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
     assert_eq!(headers.len(), 1);
     assert_eq!(headers[0].object_id, 0xdeca_fbad);
     assert_eq!((headers[0].u_degree, headers[0].v_degree), (2, 2));
@@ -4031,8 +4035,8 @@ fn a8_surface_header_identifies_an_elided_pole_grid() {
     bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0, 1, 0, 0, 0]);
     let payload_len = u32::try_from(bytes.len() - 11).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert!(crate::geometry::a8_surfaces(&bytes).is_empty());
-    let headers = crate::geometry::a8_surface_headers(&bytes);
+    assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
+    let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
     assert_eq!(headers.len(), 1);
     assert!(headers[0].poles_elided);
 }
@@ -4041,10 +4045,10 @@ fn a8_surface_header_identifies_an_elided_pole_grid() {
 fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
     let bytes = a8_elided_surface_stream();
 
-    let [header] = crate::geometry::a8_surface_headers(&bytes)
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
         .try_into()
         .expect("one elided header");
-    let surface = crate::geometry::a8_surface_from_external_grid(&bytes, &header)
+    let surface = crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, &header)
         .expect("unique external pole allocation");
     let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
         panic!("NURBS surface");
@@ -4052,7 +4056,7 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
     assert_eq!(surface.control_points.len(), 9);
     assert_eq!(surface.control_points[8], Point3::new(8.0, 2.0, 2.0));
 
-    let [resolved] = crate::geometry::resolved_a8_surfaces(&bytes)
+    let [resolved] = crate::families::a5a8::records::resolved_a8_surfaces(&bytes)
         .try_into()
         .expect("one resolved surface");
     assert_eq!(resolved.object_id, 0xdeca_fbad);
@@ -4078,7 +4082,7 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
 
 #[test]
 fn a8_pcurve_parser_reads_degree5_uv_jet() {
-    let pcurves = crate::geometry::a8_pcurves(&a8_pcurve_stream());
+    let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
     assert_eq!(
         (pcurves[0].object_id, pcurves[0].support_id),
@@ -4089,28 +4093,28 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
     assert_eq!(pcurves[0].mode, 0x01);
     let mut wrong_degree = a8_pcurve_stream();
     wrong_degree[15] = 17;
-    assert!(crate::geometry::a8_pcurves(&wrong_degree).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&wrong_degree).is_empty());
 
     let mut repeated_knot = a8_pcurve_stream();
     repeated_knot[28..36].copy_from_slice(&le_f64(0.0));
-    assert!(crate::geometry::a8_pcurves(&repeated_knot).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&repeated_knot).is_empty());
 
     let mut wrong_endpoint_multiplicity = a8_pcurve_stream();
     wrong_endpoint_multiplicity[36] = 21;
-    assert!(crate::geometry::a8_pcurves(&wrong_endpoint_multiplicity).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&wrong_endpoint_multiplicity).is_empty());
 
     let mut trailing_byte = a8_pcurve_stream();
     trailing_byte.push(0);
     let payload_len = u32::try_from(trailing_byte.len() - 11).unwrap();
     trailing_byte[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert!(crate::geometry::a8_pcurves(&trailing_byte).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&trailing_byte).is_empty());
 }
 
 #[test]
 fn a8_pcurve_parser_retains_mode_five_uv_jet() {
     let mut bytes = a8_pcurve_stream();
     bytes[39] = 0x05;
-    let pcurves = crate::geometry::a8_pcurves(&bytes);
+    let pcurves = crate::families::a5a8::records::a8_pcurves(&bytes);
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].mode, 0x05);
     assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
@@ -4134,7 +4138,7 @@ fn b5_pcurve_parser_reads_degree5_uv_jet() {
     b5.extend_from_slice(&0x5678u32.to_le_bytes());
     b5.extend_from_slice(payload);
 
-    let pcurves = crate::geometry::object_stream_pcurves(&b5);
+    let pcurves = crate::families::a5a8::records::object_stream_pcurves(&b5);
 
     assert_eq!(pcurves.len(), 1);
     assert_eq!(
@@ -4153,7 +4157,7 @@ fn b5_pcurve_parser_accepts_split_24_bit_support_reference() {
     b5.extend_from_slice(&0x5678u32.to_le_bytes());
     b5.extend_from_slice(&payload);
 
-    let pcurves = crate::geometry::object_stream_pcurves(&b5);
+    let pcurves = crate::families::a5a8::records::object_stream_pcurves(&b5);
 
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x0012_0034);
@@ -4161,7 +4165,7 @@ fn b5_pcurve_parser_accepts_split_24_bit_support_reference() {
 
 #[test]
 fn a5_pcurve_parser_reads_compact_support_and_uv_jet() {
-    let pcurves = crate::geometry::a5_pcurves(&a5_pcurve_stream());
+    let pcurves = crate::families::a5a8::records::a5_pcurves(&a5_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x1234);
     assert_eq!(pcurves[0].extrapolation_sites, 2);
@@ -4173,13 +4177,16 @@ fn a5_pcurve_parser_reads_compact_support_and_uv_jet() {
     padded.push(0);
     let payload_len = u32::try_from(padded.len() - 8).unwrap();
     padded[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert_eq!(crate::geometry::a5_pcurves(&padded)[0].tail, [0x07, 0]);
+    assert_eq!(
+        crate::families::a5a8::records::a5_pcurves(&padded)[0].tail,
+        [0x07, 0]
+    );
 
     let mut trailing = padded;
     trailing.push(1);
     let payload_len = u32::try_from(trailing.len() - 8).unwrap();
     trailing[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert!(crate::geometry::a5_pcurves(&trailing).is_empty());
+    assert!(crate::families::a5a8::records::a5_pcurves(&trailing).is_empty());
 }
 
 #[test]
@@ -4581,7 +4588,7 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
 
 #[test]
 fn consolidated_pcurve_parser_reads_width2_frame() {
-    let pcurves = crate::geometry::a5_pcurves(&a6_pcurve_stream());
+    let pcurves = crate::families::a5a8::records::a5_pcurves(&a6_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x1234);
     assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
@@ -4589,7 +4596,7 @@ fn consolidated_pcurve_parser_reads_width2_frame() {
 
 #[test]
 fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
-    let pcurves = crate::geometry::b2_pcurves(&b2_pcurve_stream());
+    let pcurves = crate::families::b2::records::b2_pcurves(&b2_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x1234);
     assert_eq!(pcurves[0].degree, 5);
@@ -4598,9 +4605,9 @@ fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
 
 #[test]
 fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
-    use crate::geometry::B2ParameterPoint;
+    use crate::families::b2::records::B2ParameterPoint;
 
-    let points = crate::geometry::b2_parameter_points(&b2_parameter_point_stream());
+    let points = crate::families::b2::records::b2_parameter_points(&b2_parameter_point_stream());
     assert_eq!(points.len(), 3);
     assert!(matches!(
         points[0],
@@ -4619,16 +4626,16 @@ fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
 
 #[test]
 fn b2_reference_list_parser_reads_compact_refs_and_unit_tail() {
-    let records = crate::geometry::b2_reference_lists(&b2_reference_list_stream());
+    let records = crate::families::b2::records::b2_reference_lists(&b2_reference_list_stream());
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].references, (0u32..26).collect::<Vec<_>>());
 }
 
 #[test]
 fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
-    use crate::geometry::B2OwnerReferenceEncoding;
+    use crate::families::b2::records::B2OwnerReferenceEncoding;
 
-    let packets = crate::geometry::b2_owner_packets(&b2_owner_packet_stream());
+    let packets = crate::families::b2::records::b2_owner_packets(&b2_owner_packet_stream());
     assert_eq!(packets.len(), 1);
     assert_eq!(packets[0].header_token, 5);
     assert_eq!(
@@ -4641,7 +4648,8 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
     );
     assert_eq!(packets[0].numeric_tail, std::array::from_fn(|i| i as u8));
 
-    let packets = crate::geometry::b2_owner_packets(&b2_width_coded_owner_packet_stream());
+    let packets =
+        crate::families::b2::records::b2_owner_packets(&b2_width_coded_owner_packet_stream());
     assert_eq!(packets.len(), 1);
     assert_eq!(
         packets[0].reference_encoding,
@@ -4655,7 +4663,7 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
 
 #[test]
 fn b2_counted_61_parser_separates_references_from_tail() {
-    let records = crate::geometry::b2_counted_61(&b2_counted_61_stream());
+    let records = crate::families::b2::records::b2_counted_61(&b2_counted_61_stream());
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].header_token, 5);
     assert_eq!(records[0].references, [1300, 1294, 30, 74]);
@@ -4664,7 +4672,7 @@ fn b2_counted_61_parser_separates_references_from_tail() {
 
 #[test]
 fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
-    let records = crate::geometry::b2_long_61(&b2_long_61_stream());
+    let records = crate::families::b2::records::b2_long_61(&b2_long_61_stream());
     assert_eq!(records.len(), 1);
     assert_eq!(
         records[0].prefix,
@@ -4680,7 +4688,7 @@ fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
     let mut short = vec![0xb2, 0x03, 0x61, 27, 0x05];
     short.extend_from_slice(&[0; 27]);
     short[13] = 0x06;
-    assert!(crate::geometry::b2_long_61(&short).is_empty());
+    assert!(crate::families::b2::records::b2_long_61(&short).is_empty());
 }
 
 #[test]
@@ -4695,7 +4703,7 @@ fn b2_link_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
         bytes.extend_from_slice(&[0xb2, 0x03, 0x5f, u8::try_from(payload.len()).unwrap(), 0x05]);
         bytes.extend_from_slice(payload);
     }
-    let links = crate::geometry::b2_links_5f(&bytes);
+    let links = crate::families::b2::records::b2_links_5f(&bytes);
     assert_eq!(links.len(), 4);
     assert!(links.iter().all(|link| link.header_token == 5));
     assert_eq!(
@@ -4706,12 +4714,12 @@ fn b2_link_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
     let malformed = [
         0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x04, 0x5d, 0x00, 0x03, 0x05,
     ];
-    assert!(crate::geometry::b2_links_5f(&malformed).is_empty());
+    assert!(crate::families::b2::records::b2_links_5f(&malformed).is_empty());
 }
 
 #[test]
 fn b2_linked_owner_requires_adjacency_and_successor_identity() {
-    let pairs = crate::geometry::b2_linked_owners(&b2_linked_owner_stream());
+    let pairs = crate::families::b2::records::b2_linked_owners(&b2_linked_owner_stream());
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].link.target, 1003);
     assert_eq!(pairs[0].owner.references[8], 1004);
@@ -4719,30 +4727,30 @@ fn b2_linked_owner_requires_adjacency_and_successor_identity() {
     let mut separated = b2_link_5f_stream();
     separated.extend_from_slice(&[0xb2, 0x03, 0x2e, 0x01, 0x05, 0x05]);
     separated.extend_from_slice(&b2_owner_packet_stream());
-    assert!(crate::geometry::b2_linked_owners(&separated).is_empty());
+    assert!(crate::families::b2::records::b2_linked_owners(&separated).is_empty());
 }
 
 #[test]
 fn b2_counted_owner_closes_variable_reference_lane_and_successor_link() {
     let bytes = b2_linked_counted_owner_stream();
-    let owners = crate::geometry::b2_counted_owners(&bytes);
+    let owners = crate::families::b2::records::b2_counted_owners(&bytes);
     assert_eq!(owners.len(), 1);
     assert_eq!(owners[0].references, [911, 7, 263, 258, 281, 276, 917]);
     assert_eq!(owners[0].tail, [0x83, 0x41, 0x92, 0x00, 0x01]);
 
-    let linked = crate::geometry::b2_linked_counted_owners(&bytes);
+    let linked = crate::families::b2::records::b2_linked_counted_owners(&bytes);
     assert_eq!(linked.len(), 1);
     assert_eq!(linked[0].link.target, 916);
     assert_eq!(linked[0].owner.references.last(), Some(&917));
 
     let mut wrong_successor = bytes;
     wrong_successor[35] = 0x99;
-    assert!(crate::geometry::b2_linked_counted_owners(&wrong_successor).is_empty());
+    assert!(crate::families::b2::records::b2_linked_counted_owners(&wrong_successor).is_empty());
 }
 
 #[test]
 fn b2_cone_face_parser_reads_refs_scale_and_half_angle() {
-    let records = crate::geometry::b2_cone_faces(&b2_cone_face_stream());
+    let records = crate::families::b2::records::b2_cone_faces(&b2_cone_face_stream());
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].references.len(), 16);
     assert_eq!(records[0].angular_scale, 1.5);
@@ -4751,11 +4759,11 @@ fn b2_cone_face_parser_reads_refs_scale_and_half_angle() {
 
 #[test]
 fn b2_topology_metadata_parser_preserves_refs_and_sense_code() {
-    use crate::geometry::B2UseSense;
+    use crate::families::b2::records::B2UseSense;
 
     let bytes = b2_topology_metadata_stream();
-    let edges = crate::geometry::b2_edge_metadata(&bytes);
-    let uses = crate::geometry::b2_use_metadata(&bytes);
+    let edges = crate::families::b2::records::b2_edge_metadata(&bytes);
+    let uses = crate::families::b2::records::b2_use_metadata(&bytes);
     assert_eq!(edges[0].references, vec![0x1234, 0x5678]);
     assert_eq!(edges[0].payload, [0x0a, 0x34, 0x12, 0x0a, 0x78, 0x56, 0]);
     assert_eq!(uses[0].sense, Some(B2UseSense::Sense88));
@@ -4765,7 +4773,7 @@ fn b2_topology_metadata_parser_preserves_refs_and_sense_code() {
 
 #[test]
 fn b2_edge_node_parser_reads_compact_native_vertex_identities() {
-    let nodes = crate::geometry::b2_edge_nodes(&b2_edge_node_stream());
+    let nodes = crate::families::b2::records::b2_edge_nodes(&b2_edge_node_stream());
     assert_eq!(nodes.len(), 1);
     assert_eq!(nodes[0].header_token, 5);
     assert_eq!(nodes[0].curve_ref, 216);
@@ -4784,7 +4792,7 @@ fn b2_edge_node_parser_reads_tagged_and_raw_vertex_identities() {
     bytes.extend_from_slice(&[
         0xb2, 0x03, 0x5e, 0x06, 0x05, 0x0d, 0xcf, 0xe7, 0x09, 0x05, 0x01,
     ]);
-    let nodes = crate::geometry::b2_edge_nodes(&bytes);
+    let nodes = crate::families::b2::records::b2_edge_nodes(&bytes);
     assert_eq!(nodes.len(), 2);
     assert_eq!(nodes[0].curve_ref, 3);
     assert_eq!(nodes[0].start_vertex_ref, 139);
@@ -4801,7 +4809,7 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
     for reference_token in [0x08, 0x0a] {
         let mut stream = b2_revolution_stream();
         stream[5] = reference_token;
-        let records = crate::geometry::b2_revolutions(&stream);
+        let records = crate::families::b2::records::b2_revolutions(&stream);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].profile_curve_id, 0x1234);
         assert_eq!(records[0].origin, [1.0, 2.0, 3.0]);
@@ -4813,8 +4821,8 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
 #[test]
 fn b2_group_parser_reads_separator_and_typed_opener() {
     let bytes = b2_group_stream();
-    let separators = crate::geometry::b2_group_separators(&bytes);
-    let groups = crate::geometry::b2_groups(&bytes);
+    let separators = crate::families::b2::records::b2_group_separators(&bytes);
+    let groups = crate::families::b2::records::b2_groups(&bytes);
     assert_eq!(separators.len(), 1);
     assert_eq!(separators[0].token, 0x05);
     assert_eq!(groups.len(), 1);
@@ -4824,7 +4832,7 @@ fn b2_group_parser_reads_separator_and_typed_opener() {
 
 #[test]
 fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
-    let offsets = crate::geometry::b2_offset_supports(&b2_offset_support_stream());
+    let offsets = crate::families::b2::records::b2_offset_supports(&b2_offset_support_stream());
     assert_eq!(offsets.len(), 1);
     assert_eq!(offsets[0].support_id, 0x1234);
     assert_eq!(offsets[0].distance, 2.5);
@@ -4833,7 +4841,7 @@ fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
 
 #[test]
 fn offset_support_binds_by_native_domain_knot_limits() {
-    let mut carriers = crate::geometry::a5_surfaces(&a5_surface_stream());
+    let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
     let mut decoy = carriers[0].clone();
     let SurfaceGeometry::Nurbs(surface) = &mut decoy.geometry else {
         panic!("NURBS fixture");
@@ -4845,7 +4853,7 @@ fn offset_support_binds_by_native_domain_knot_limits() {
     let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
         panic!("NURBS fixture");
     };
-    let offset = crate::geometry::B2OffsetSupport {
+    let offset = crate::families::b2::records::B2OffsetSupport {
         pos: 0,
         support_id: 7,
         distance: 2.0,
@@ -4858,7 +4866,7 @@ fn offset_support_binds_by_native_domain_knot_limits() {
     };
 
     assert_eq!(
-        crate::geometry::offset_support_carriers(&[offset], &carriers),
+        crate::families::b2::records::offset_support_carriers(&[offset], &carriers),
         [Some(0)]
     );
 }
@@ -4866,7 +4874,7 @@ fn offset_support_binds_by_native_domain_knot_limits() {
 #[test]
 fn decode_standard_transfers_exact_offset_construction() {
     let surface_bytes = a5_surface_stream();
-    let carriers = crate::geometry::a5_surfaces(&surface_bytes);
+    let carriers = crate::families::a5a8::records::a5_surfaces(&surface_bytes);
     let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
         panic!("NURBS fixture");
     };
@@ -4913,7 +4921,7 @@ fn decode_standard_transfers_exact_offset_construction() {
 #[test]
 fn decode_standard_transfers_construction_use_offset() {
     let surface_bytes = a5_surface_stream();
-    let carriers = crate::geometry::a5_surfaces(&surface_bytes);
+    let carriers = crate::families::a5a8::records::a5_surfaces(&surface_bytes);
     let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
         panic!("NURBS fixture");
     };
@@ -4981,7 +4989,7 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
 
 #[test]
 fn consolidated_offset_support_parser_reads_width2_frame() {
-    let offsets = crate::geometry::b2_offset_supports(&b3_offset_support_stream());
+    let offsets = crate::families::b2::records::b2_offset_supports(&b3_offset_support_stream());
     assert_eq!(offsets.len(), 1);
     assert_eq!(offsets[0].support_id, 0x1234);
     assert_eq!(offsets[0].distance, 2.5);
@@ -4989,7 +4997,7 @@ fn consolidated_offset_support_parser_reads_width2_frame() {
 
 #[test]
 fn b2_edge_parameter_parser_validates_repeated_range_packet() {
-    let packets = crate::geometry::b2_edge_parameters(&b2_edge_parameter_stream());
+    let packets = crate::families::b2::records::b2_edge_parameters(&b2_edge_parameter_stream());
     assert_eq!(packets.len(), 1);
     assert_eq!(packets[0].range, [2.0, 7.0]);
     assert_eq!(packets[0].tolerance, 1e-6);
@@ -4997,7 +5005,8 @@ fn b2_edge_parameter_parser_validates_repeated_range_packet() {
 
 #[test]
 fn a5_edge_block_parser_groups_two_coparametric_pcurves_and_packet() {
-    let blocks = crate::geometry::consolidated_edge_blocks(&a5_edge_block_stream());
+    let blocks =
+        crate::families::consolidated::records::consolidated_edge_blocks(&a5_edge_block_stream());
     assert_eq!(blocks.len(), 1);
     assert!(blocks[0].co_parametric);
     assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
@@ -5007,7 +5016,8 @@ fn a5_edge_block_parser_groups_two_coparametric_pcurves_and_packet() {
 
 #[test]
 fn consolidated_edge_block_groups_b_family_pcurves() {
-    let blocks = crate::geometry::consolidated_edge_blocks(&b2_edge_block_stream());
+    let blocks =
+        crate::families::consolidated::records::consolidated_edge_blocks(&b2_edge_block_stream());
     assert_eq!(blocks.len(), 1);
     assert!(blocks[0].co_parametric);
     assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
@@ -5016,10 +5026,11 @@ fn consolidated_edge_block_groups_b_family_pcurves() {
 
 #[test]
 fn consolidated_edge_use_run_is_independent_of_pcurve_availability() {
-    use crate::geometry::B2UseSense;
+    use crate::families::b2::records::B2UseSense;
 
-    let runs =
-        crate::geometry::consolidated_edge_use_runs(&a5_native_edge_identity_stream(6, 139, 142));
+    let runs = crate::families::consolidated::records::consolidated_edge_use_runs(
+        &a5_native_edge_identity_stream(6, 139, 142),
+    );
     let [run] = runs.as_slice() else {
         panic!("one standalone edge-use run");
     };
@@ -5032,12 +5043,12 @@ fn consolidated_edge_use_run_is_independent_of_pcurve_availability() {
 
 #[test]
 fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
-    use crate::geometry::ConsolidatedEdgeDefinitionData;
+    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 
     let mut bytes = vec![0xb2, 0x03, 0x24, 0x04, 0x05, 0x81, 0x05, 0x0f, 0x87];
     bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
 
-    let runs = crate::geometry::consolidated_edge_use_runs(&bytes);
+    let runs = crate::families::consolidated::records::consolidated_edge_use_runs(&bytes);
     let [run] = runs.as_slice() else {
         panic!("one edge-use run");
     };
@@ -5070,14 +5081,14 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
 
 #[test]
 fn consolidated_edge_definition_decodes_general_scalar_layout() {
-    use crate::geometry::ConsolidatedEdgeDefinitionData;
+    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 
     let mut payload = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
     for value in [0.0_f64, 2.0, 1e-6, 0.5, 1.5, 1.0, -0.5, 1e-6] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
     assert_eq!(
-        crate::geometry::consolidated_edge_definition_data(0x24, &payload),
+        crate::families::consolidated::records::consolidated_edge_definition_data(0x24, &payload),
         Some(ConsolidatedEdgeDefinitionData::Scalar {
             operands: [1, 2, 3463],
             values: vec![0.0, 2.0, 1e-6, 0.5, 1.5, 1.0, -0.5, 1e-6],
@@ -5086,15 +5097,22 @@ fn consolidated_edge_definition_decodes_general_scalar_layout() {
     let mut class24_nine_scalars = payload.clone();
     class24_nine_scalars.extend_from_slice(&1e-6_f64.to_le_bytes());
     assert!(
-        crate::geometry::consolidated_edge_definition_data(0x24, &class24_nine_scalars).is_none()
+        crate::families::consolidated::records::consolidated_edge_definition_data(
+            0x24,
+            &class24_nine_scalars
+        )
+        .is_none()
     );
     payload.pop();
-    assert!(crate::geometry::consolidated_edge_definition_data(0x24, &payload).is_none());
+    assert!(
+        crate::families::consolidated::records::consolidated_edge_definition_data(0x24, &payload)
+            .is_none()
+    );
 }
 
 #[test]
 fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
-    use crate::geometry::ConsolidatedEdgeDefinitionData;
+    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 
     let operands = [0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
     let mut plain = operands.to_vec();
@@ -5102,7 +5120,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         plain.extend_from_slice(&value.to_le_bytes());
     }
     assert_eq!(
-        crate::geometry::consolidated_edge_definition_data(0x25, &plain),
+        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &plain),
         Some(ConsolidatedEdgeDefinitionData::Scalar25 {
             operands: [1, 0xe7, 3463],
             persistent_lead: Some(0x0a),
@@ -5119,7 +5137,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         segmented.extend_from_slice(&value.to_le_bytes());
     }
     assert!(matches!(
-        crate::geometry::consolidated_edge_definition_data(0x25, &segmented),
+        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &segmented),
         Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
             operands: [1, 0xe7, 3463],
             persistent_lead: Some(0x0a),
@@ -5129,13 +5147,16 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         }) if trailing.len() == 6
     ));
     segmented[46] = 0x84;
-    assert!(crate::geometry::consolidated_edge_definition_data(0x25, &segmented).is_none());
+    assert!(
+        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &segmented)
+            .is_none()
+    );
 
     let mut odd_lead = plain.clone();
     odd_lead[3] = 0x0b;
     odd_lead.drain(odd_lead.len() - 8..);
     assert!(matches!(
-        crate::geometry::consolidated_edge_definition_data(0x25, &odd_lead),
+        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &odd_lead),
         Some(ConsolidatedEdgeDefinitionData::Scalar25 {
             persistent_lead: Some(0x0b),
             ref values,
@@ -5152,7 +5173,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         long_segment.extend_from_slice(&f64::from(value).to_le_bytes());
     }
     assert!(matches!(
-        crate::geometry::consolidated_edge_definition_data(0x25, &long_segment),
+        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &long_segment),
         Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
             marker: 0x89,
             ref trailing,
@@ -5184,7 +5205,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     let mut described = vec![0xb2, 0x03, 0x18, descriptor_payload.len() as u8, 0x05];
     described.extend_from_slice(&descriptor_payload);
     described.extend_from_slice(&bytes);
-    let runs = crate::geometry::consolidated_class25_edge_runs(&described);
+    let runs = crate::families::consolidated::records::consolidated_class25_edge_runs(&described);
     let [run] = runs.as_slice() else {
         panic!("one described class-25 edge run");
     };
@@ -5227,7 +5248,8 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     bytes.extend_from_slice(&record(0x23, 0x05, &definition));
     bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
 
-    let runs = crate::geometry::consolidated_analytic_circle_edge_runs(&bytes);
+    let runs =
+        crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(&bytes);
     let [run] = runs.as_slice() else {
         panic!("one analytic-circle edge run");
     };
@@ -5249,14 +5271,19 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     let mut broken = bytes[..circle_end].to_vec();
     broken.extend_from_slice(&record(0x05, 0x05, &[0x00]));
     broken.extend_from_slice(&bytes[circle_end..]);
-    assert!(crate::geometry::consolidated_analytic_circle_edge_runs(&broken).is_empty());
+    assert!(
+        crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(&broken)
+            .is_empty()
+    );
 }
 
 #[test]
 fn a5_topology_edge_run_preserves_uses_and_native_endpoint_identities() {
-    use crate::geometry::B2UseSense;
+    use crate::families::b2::records::B2UseSense;
 
-    let runs = crate::geometry::consolidated_topology_edge_runs(&a5_topology_edge_run_stream());
+    let runs = crate::families::consolidated::records::consolidated_topology_edge_runs(
+        &a5_topology_edge_run_stream(),
+    );
     assert_eq!(runs.len(), 1);
     assert!(runs[0].edge.co_parametric);
     assert_eq!(runs[0].uses[0].sense, Some(B2UseSense::Sense84));
@@ -5270,7 +5297,9 @@ fn a5_topology_edge_run_preserves_uses_and_native_endpoint_identities() {
 
 #[test]
 fn consolidated_topology_edge_run_accepts_b_family_pcurves() {
-    let runs = crate::geometry::consolidated_topology_edge_runs(&b2_topology_edge_run_stream());
+    let runs = crate::families::consolidated::records::consolidated_topology_edge_runs(
+        &b2_topology_edge_run_stream(),
+    );
     assert_eq!(runs.len(), 1);
     assert_eq!(runs[0].edge.pcurves[0].support_id, 0x1234);
     assert_eq!(runs[0].node.start_vertex_ref, 889);
@@ -5283,7 +5312,8 @@ fn consolidated_native_edge_graph_uses_persistent_endpoint_incidence() {
     bytes.extend_from_slice(&a5_native_edge_run_stream(3, 10, 11));
     bytes.extend_from_slice(&a5_native_edge_run_stream(6, 11, 12));
     bytes.extend_from_slice(&a5_native_edge_run_stream(9, 12, 10));
-    let graph = crate::geometry::consolidated_native_edge_graph(&bytes).expect("native edge graph");
+    let graph = crate::families::consolidated::records::consolidated_native_edge_graph(&bytes)
+        .expect("native edge graph");
     assert_eq!(graph.vertex_identities, [10, 11, 12]);
     assert_eq!(
         graph
@@ -5304,7 +5334,8 @@ fn consolidated_native_edge_graph_uses_persistent_endpoint_incidence() {
 fn consolidated_native_edge_graph_treats_curve_references_as_run_local() {
     let mut bytes = a5_native_edge_run_stream(3, 10, 11);
     bytes.extend_from_slice(&a5_native_edge_run_stream(3, 20, 21));
-    let graph = crate::geometry::consolidated_native_edge_graph(&bytes).expect("native edge graph");
+    let graph = crate::families::consolidated::records::consolidated_native_edge_graph(&bytes)
+        .expect("native edge graph");
     assert_eq!(graph.edges.len(), 2);
     assert_eq!(graph.components, [vec![0], vec![1]]);
 }
@@ -5315,15 +5346,16 @@ fn a5_edge_block_does_not_cross_an_intervening_framed_record() {
     bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x01, 0x05, 0x84]);
     bytes.extend_from_slice(&a5_pcurve_stream());
     bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
-    assert!(crate::geometry::consolidated_edge_blocks(&bytes).is_empty());
+    assert!(crate::families::consolidated::records::consolidated_edge_blocks(&bytes).is_empty());
 }
 
 #[test]
 fn a5_edge_binding_resolves_cylinder_by_endpoint_lifts() {
-    use crate::geometry::ConsolidatedSupportBinding;
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
 
-    let blocks =
-        crate::geometry::resolve_consolidated_edge_blocks(&a5_cylinder_bound_edge_stream());
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &a5_cylinder_bound_edge_stream(),
+    );
     assert_eq!(blocks.len(), 1);
     assert!(matches!(
         blocks[0].supports[0],
@@ -5338,10 +5370,11 @@ fn a5_edge_binding_resolves_cylinder_by_endpoint_lifts() {
 
 #[test]
 fn a5_edge_binding_resolves_partner_nurbs_carrier() {
-    use crate::geometry::ConsolidatedSupportBinding;
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
 
-    let blocks =
-        crate::geometry::resolve_consolidated_edge_blocks(&a5_nurbs_bound_edge_stream(0.0));
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &a5_nurbs_bound_edge_stream(0.0),
+    );
     assert!(matches!(
         blocks[0].supports[0],
         Some(ConsolidatedSupportBinding::Cylinder { .. })
@@ -5356,10 +5389,11 @@ fn a5_edge_binding_resolves_partner_nurbs_carrier() {
 
 #[test]
 fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
-    use crate::geometry::ConsolidatedSupportBinding;
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
 
-    let blocks =
-        crate::geometry::resolve_consolidated_edge_blocks(&a5_nurbs_bound_edge_stream(1.25));
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &a5_nurbs_bound_edge_stream(1.25),
+    );
     assert!(matches!(
         blocks[0].supports[1],
         Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if (offset.abs() - 1.25).abs() < 1e-6
@@ -5370,9 +5404,11 @@ fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
 
 #[test]
 fn a5_edge_binding_resolves_circle_by_constant_v_and_arc_range() {
-    use crate::geometry::ConsolidatedSupportBinding;
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
 
-    let blocks = crate::geometry::resolve_consolidated_edge_blocks(&a5_circle_bound_edge_stream());
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &a5_circle_bound_edge_stream(),
+    );
     assert!(matches!(
         blocks[0].supports[0],
         Some(ConsolidatedSupportBinding::Circle { .. })
@@ -5381,9 +5417,11 @@ fn a5_edge_binding_resolves_circle_by_constant_v_and_arc_range() {
 
 #[test]
 fn a5_edge_binding_resolves_cone_by_endpoint_lifts() {
-    use crate::geometry::ConsolidatedSupportBinding;
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
 
-    let blocks = crate::geometry::resolve_consolidated_edge_blocks(&a5_cone_bound_edge_stream());
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &a5_cone_bound_edge_stream(),
+    );
     assert!(matches!(
         blocks[0].supports[0],
         Some(ConsolidatedSupportBinding::Cone { .. })
@@ -5393,7 +5431,7 @@ fn a5_edge_binding_resolves_cone_by_endpoint_lifts() {
 
 #[test]
 fn b2_circle_parser_reads_arc_length_parameterization() {
-    let circles = crate::geometry::b2_circles(&b2_circle_stream());
+    let circles = crate::families::b2::records::b2_circles(&b2_circle_stream());
     assert_eq!(circles.len(), 1);
     assert_eq!(circles[0].record_id, 0x1234);
     assert_eq!(circles[0].center_pair, [4.0, -2.0]);
@@ -5403,7 +5441,7 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
 
 #[test]
 fn b2_cylinder_parser_reads_arc_length_carrier() {
-    let cylinders = crate::geometry::b2_cylinders(&b2_cylinder_stream());
+    let cylinders = crate::families::b2::records::b2_cylinders(&b2_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
     assert_eq!(cylinders[0].u_range, [0.0, 4.0 * std::f64::consts::PI]);
     assert_eq!(cylinders[0].v_range, [-4.0, 5.0]);
@@ -5424,7 +5462,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
 
 #[test]
 fn consolidated_cylinder_parser_reads_width2_frame() {
-    let cylinders = crate::geometry::b2_cylinders(&b3_cylinder_stream());
+    let cylinders = crate::families::b2::records::b2_cylinders(&b3_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
     assert_eq!(cylinders[0].layout, 0x5a);
     assert!(cylinders[0].geometry.is_some());
@@ -5436,19 +5474,25 @@ fn consolidated_frame_width_and_flag_are_independent() {
     width1_flag13[1] = 0x13;
     let mut width2_flag83 = b3_cylinder_stream();
     width2_flag83[1] = 0x83;
-    assert_eq!(crate::geometry::b2_cylinders(&width1_flag13).len(), 1);
-    assert_eq!(crate::geometry::b2_cylinders(&width2_flag83).len(), 1);
+    assert_eq!(
+        crate::families::b2::records::b2_cylinders(&width1_flag13).len(),
+        1
+    );
+    assert_eq!(
+        crate::families::b2::records::b2_cylinders(&width2_flag83).len(),
+        1
+    );
 }
 
 #[test]
 fn consolidated_record_walk_inventory_preserves_width_flag_and_boundaries() {
-    use crate::geometry::ConsolidatedFamily;
+    use crate::families::consolidated::records::ConsolidatedFamily;
 
     let first = a6_pcurve_stream();
     let second = b3_cylinder_stream();
     let mut bytes = first.clone();
     bytes.extend_from_slice(&second);
-    let records = crate::geometry::consolidated_records(&bytes);
+    let records = crate::families::consolidated::records::consolidated_records(&bytes);
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].family, ConsolidatedFamily::A);
     assert_eq!(
@@ -5468,7 +5512,7 @@ fn consolidated_record_walk_suppresses_payload_records_and_resumes_after_parent(
     let sibling_start = outer.len();
     outer.extend_from_slice(&[0xb2, 0x03, 0x20, 1, 2, 0xbb]);
 
-    let records = crate::geometry::consolidated_records(&outer);
+    let records = crate::families::consolidated::records::consolidated_records(&outer);
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].range, 0..sibling_start);
     assert_eq!(records[1].range, sibling_start..outer.len());
@@ -5476,7 +5520,7 @@ fn consolidated_record_walk_suppresses_payload_records_and_resumes_after_parent(
 
 #[test]
 fn b2_cylinder_parser_reads_implicit_axis_layout() {
-    let cylinders = crate::geometry::b2_cylinders(&b2_implicit_axis_cylinder_stream());
+    let cylinders = crate::families::b2::records::b2_cylinders(&b2_implicit_axis_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
     assert_eq!(cylinders[0].layout, 0x52);
     assert!(matches!(
@@ -5487,7 +5531,7 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
 
 #[test]
 fn b2_cylinder_parser_preserves_phase_tailed_layout_raw() {
-    let cylinders = crate::geometry::b2_cylinders(&b2_phase_tailed_cylinder_stream());
+    let cylinders = crate::families::b2::records::b2_cylinders(&b2_phase_tailed_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
     assert_eq!(cylinders[0].layout, 0x62);
     assert!(cylinders[0].geometry.is_none());
@@ -5497,13 +5541,13 @@ fn b2_cylinder_parser_preserves_phase_tailed_layout_raw() {
     for range in [30..38, 46..54, 95..103] {
         let mut malformed = b2_phase_tailed_cylinder_stream();
         malformed[range].copy_from_slice(&f64::NAN.to_le_bytes());
-        assert!(crate::geometry::b2_cylinders(&malformed).is_empty());
+        assert!(crate::families::b2::records::b2_cylinders(&malformed).is_empty());
     }
 }
 
 #[test]
 fn b2_cone_parser_reads_orthonormal_slant_chart() {
-    let cones = crate::geometry::b2_cones(&b2_cone_stream());
+    let cones = crate::families::b2::records::b2_cones(&b2_cone_stream());
     assert_eq!(cones.len(), 1);
     assert_eq!(cones[0].apex, [1.0, 2.0, 3.0]);
     assert_eq!(cones[0].axis, [0.0, 0.0, 1.0]);
@@ -5514,13 +5558,13 @@ fn b2_cone_parser_reads_orthonormal_slant_chart() {
 
 #[test]
 fn b2_construction_use_parser_reorders_offset_domain() {
-    let uses = crate::geometry::b2_construction_uses(&b2_construction_use_stream());
+    let uses = crate::families::b2::records::b2_construction_uses(&b2_construction_use_stream());
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].support_id, 0x1234);
     assert_eq!(uses[0].distance, -2.0);
     assert_eq!(uses[0].kind, 0x01);
     assert_eq!(uses[0].domain, Some([0.0, -1.0, 4.0, 3.0]));
-    let offsets = crate::geometry::b2_offset_supports(&b2_construction_use_stream());
+    let offsets = crate::families::b2::records::b2_offset_supports(&b2_construction_use_stream());
     assert_eq!(offsets.len(), 1);
     assert_eq!(offsets[0].support_id, 0x1234);
     assert_eq!(offsets[0].distance, -2.0);
@@ -5532,15 +5576,16 @@ fn b2_offset_support_parser_ignores_other_construction_kinds() {
     let mut record = b2_construction_use_stream();
     record[17] = 0x19;
 
-    let uses = crate::geometry::b2_construction_uses(&record);
+    let uses = crate::families::b2::records::b2_construction_uses(&record);
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].kind, 0x19);
-    assert!(crate::geometry::b2_offset_supports(&record).is_empty());
+    assert!(crate::families::b2::records::b2_offset_supports(&record).is_empty());
 }
 
 #[test]
 fn b2_composite_parser_reads_embedded_cylinder_frame() {
-    let cylinders = crate::geometry::b2_embedded_cylinders(&b2_embedded_cylinder_stream());
+    let cylinders =
+        crate::families::b2::records::b2_embedded_cylinders(&b2_embedded_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
     assert_eq!(cylinders[0].object_id, 0x5678);
     assert_eq!(cylinders[0].wrapper_pos, 0);
@@ -7162,7 +7207,7 @@ fn e5_vertices_exclude_marker_like_record_payload_bytes() {
     }
     append_e5_record(&mut stream, 0xfe, 2, &[]);
 
-    let vertices = crate::geometry::e5_vertices(&stream, 1);
+    let vertices = crate::families::e5::records::e5_vertices(&stream, 1);
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0], cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
 }
@@ -7179,7 +7224,7 @@ fn e5_vertices_reject_multiple_matching_coordinate_runs() {
     }
     append_e5_record(&mut stream, 0xfe, 3, &[]);
 
-    assert!(crate::geometry::e5_vertices(&stream, 1).is_empty());
+    assert!(crate::families::e5::records::e5_vertices(&stream, 1).is_empty());
 }
 
 #[test]
@@ -7196,7 +7241,7 @@ fn e5_vertices_concatenate_a_complete_split_roster() {
     }
     append_e5_record(&mut stream, 0xfe, 3, &[]);
 
-    let vertices = crate::geometry::e5_vertices(&stream, 4);
+    let vertices = crate::families::e5::records::e5_vertices(&stream, 4);
     assert_eq!(
         vertices.iter().map(|point| point.x).collect::<Vec<_>>(),
         vec![1.0, 2.0, 3.0, 4.0]
@@ -7205,7 +7250,7 @@ fn e5_vertices_concatenate_a_complete_split_roster() {
 
 #[test]
 fn a8_surface_parser_reads_rational_weight_grid() {
-    let surfaces = crate::geometry::a8_surfaces(&a8_rational_surface_stream());
+    let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_rational_surface_stream());
     match &surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => assert_eq!(surface.weights, Some(vec![2.0; 9])),
         other => panic!("expected NURBS surface, got {other:?}"),
@@ -7214,7 +7259,7 @@ fn a8_surface_parser_reads_rational_weight_grid() {
 
 #[test]
 fn a5_surface_parser_reads_consolidated_nurbs() {
-    let surfaces = crate::geometry::a5_surfaces(&a5_surface_stream());
+    let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
     assert_eq!(surfaces.len(), 1);
     match &surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => {
@@ -7228,7 +7273,7 @@ fn a5_surface_parser_reads_consolidated_nurbs() {
 
 #[test]
 fn consolidated_surface_parser_reads_width2_frame() {
-    let surfaces = crate::geometry::a5_surfaces(&a6_surface_stream());
+    let surfaces = crate::families::a5a8::records::a5_surfaces(&a6_surface_stream());
     assert_eq!(surfaces.len(), 1);
     match &surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => assert_eq!((surface.u_count, surface.v_count), (2, 2)),
@@ -7238,7 +7283,7 @@ fn consolidated_surface_parser_reads_width2_frame() {
 
 #[test]
 fn a5_surface_parser_reads_rational_weight_program() {
-    let surfaces = crate::geometry::a5_surfaces(&a5_rational_surface_stream());
+    let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_rational_surface_stream());
     match &surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => assert_eq!(surface.weights, Some(vec![2.0; 4])),
         other => panic!("expected NURBS surface, got {other:?}"),
@@ -7247,7 +7292,7 @@ fn a5_surface_parser_reads_rational_weight_program() {
 
 #[test]
 fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
-    let curves = crate::geometry::a5_freeform_curves(&a5_freeform_curve_stream());
+    let curves = crate::families::a5a8::records::a5_freeform_curves(&a5_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].degree, 5);
     assert_eq!(curves[0].knots, vec![0.0, 1.0]);
@@ -7256,12 +7301,12 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
 
     let mut wrong_degree = a5_freeform_curve_stream();
     wrong_degree[9] = 17;
-    assert!(crate::geometry::a5_freeform_curves(&wrong_degree).is_empty());
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&wrong_degree).is_empty());
 }
 
 #[test]
 fn consolidated_curve_parser_reads_width2_frame() {
-    let curves = crate::geometry::a5_freeform_curves(&a6_freeform_curve_stream());
+    let curves = crate::families::a5a8::records::a5_freeform_curves(&a6_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].degree, 5);
     assert_eq!(curves[0].sites[1].radius, 2.0);
@@ -7269,7 +7314,7 @@ fn consolidated_curve_parser_reads_width2_frame() {
 
 #[test]
 fn guide_curve_parser_reads_position_and_unit_direction_jet() {
-    let curves = crate::geometry::a5_guide_curves(&a5_guide_curve_stream());
+    let curves = crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].degree, 5);
     assert_eq!(curves[0].sites[0].point, [0.0, 0.0, 0.0]);
@@ -7281,7 +7326,7 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
         .map(|site| site.point)
         .collect::<Vec<_>>();
     let derivatives = vec![[0.0; 3]; 2];
-    let (knots, controls) = crate::geometry::quintic_jet_bspline3(
+    let (knots, controls) = crate::nurbs::quintic_jet_bspline3(
         curves[0].degree,
         &curves[0].knots,
         &points,
@@ -7320,7 +7365,7 @@ fn standard_decode_transfers_consolidated_guide_curve() {
 
 #[test]
 fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
-    let curves = crate::geometry::a8_freeform_curves(&a8_freeform_curve_stream());
+    let curves = crate::families::a5a8::records::a8_freeform_curves(&a8_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].object_id, 0x1234_5678);
     assert_eq!(curves[0].degree, 5);
@@ -7330,11 +7375,14 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
 
     let mut repeated_knot = a8_freeform_curve_stream();
     repeated_knot[26..34].copy_from_slice(&le_f64(0.0));
-    assert!(crate::geometry::a8_freeform_curves(&repeated_knot).is_empty());
+    assert!(crate::families::a5a8::records::a8_freeform_curves(&repeated_knot).is_empty());
 
     let mut invalid_endpoint_multiplicity = a8_freeform_curve_stream();
     invalid_endpoint_multiplicity[34] = 21;
-    assert!(crate::geometry::a8_freeform_curves(&invalid_endpoint_multiplicity).is_empty());
+    assert!(
+        crate::families::a5a8::records::a8_freeform_curves(&invalid_endpoint_multiplicity)
+            .is_empty()
+    );
 }
 
 #[test]
@@ -7606,8 +7654,8 @@ fn decode_e5_stream_binds_file_level_vertex_run() {
 
     let record_range = crate::container::e5_record_stream(&file).expect("coherent E5 walk");
     assert!(!record_range.contains(&vertex_file_start));
-    assert!(crate::geometry::e5_vertices(&file[record_range], 4).is_empty());
-    assert_eq!(crate::geometry::e5_vertices(&file, 4).len(), 4);
+    assert!(crate::families::e5::records::e5_vertices(&file[record_range], 4).is_empty());
+    assert_eq!(crate::families::e5::records::e5_vertices(&file, 4).len(), 4);
     let scan = crate::container::scan_bytes(file.clone());
     assert_eq!(scan.variant, Variant::E5Stream);
 

@@ -9,7 +9,6 @@ use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::catalog;
 use crate::container;
-use crate::geometry;
 use crate::object_graph::{
     self, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField, PayloadSubtype,
 };
@@ -804,11 +803,11 @@ impl Default for CatiaNative {
 }
 
 fn consolidated_pcurves(bytes: &[u8]) -> Vec<CatiaConsolidatedPcurve> {
-    let mut pcurves = geometry::a5_pcurves(bytes)
+    let mut pcurves = crate::families::a5a8::records::a5_pcurves(bytes)
         .into_iter()
         .map(|pcurve| (pcurve, CatiaConsolidatedFamily::A))
         .chain(
-            geometry::b2_pcurves(bytes)
+            crate::families::b2::records::b2_pcurves(bytes)
                 .into_iter()
                 .map(|pcurve| (pcurve, CatiaConsolidatedFamily::B)),
         )
@@ -843,7 +842,7 @@ fn consolidated_edge_runs(
         .iter()
         .map(|pcurve| (pcurve.byte_offset, pcurve.id.clone()))
         .collect::<HashMap<_, _>>();
-    let resolved = geometry::resolve_consolidated_edge_blocks(bytes)
+    let resolved = crate::families::consolidated::records::resolve_consolidated_edge_blocks(bytes)
         .into_iter()
         .map(|block| (block.block.pcurves[0].pos, block))
         .collect::<HashMap<_, _>>();
@@ -851,7 +850,7 @@ fn consolidated_edge_runs(
         .iter()
         .map(|node| (node.byte_offset, node))
         .collect::<HashMap<_, _>>();
-    geometry::consolidated_topology_edge_runs(bytes)
+    crate::families::consolidated::records::consolidated_topology_edge_runs(bytes)
         .into_iter()
         .filter_map(|run| {
             if !run.edge.co_parametric || !run.identity_chain_consistent {
@@ -893,12 +892,15 @@ fn consolidated_edge_runs(
 }
 
 fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
-    let frames = geometry::consolidated_records(bytes)
+    let frames = crate::families::consolidated::records::consolidated_records(bytes)
         .into_iter()
-        .filter(|record| record.family == geometry::ConsolidatedFamily::B && record.class == 0x5e)
+        .filter(|record| {
+            record.family == crate::families::consolidated::records::ConsolidatedFamily::B
+                && record.class == 0x5e
+        })
         .map(|record| (record.range.start, (record.width, record.flag)))
         .collect::<HashMap<_, _>>();
-    let use_runs = geometry::consolidated_edge_use_runs(bytes)
+    let use_runs = crate::families::consolidated::records::consolidated_edge_use_runs(bytes)
         .into_iter()
         .filter_map(|run| {
             if !run.identity_chain_consistent {
@@ -913,32 +915,34 @@ fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
             ))
         })
         .collect::<HashMap<_, _>>();
-    let analytic_circles = geometry::consolidated_analytic_circle_edge_runs(bytes)
-        .into_iter()
-        .filter(|run| run.identity_chain_consistent)
-        .map(|run| {
-            (
-                run.node.pos,
-                native_consolidated_analytic_circle(&run.descriptor, &run.circle),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    let class25_descriptors = geometry::consolidated_class25_edge_runs(bytes)
-        .into_iter()
-        .filter(|run| run.identity_chain_consistent)
-        .map(|run| {
-            (
-                run.node.pos,
-                CatiaConsolidatedClass25Descriptor {
-                    byte_offset: run.descriptor.pos as u64,
-                    record_id: run.descriptor.record_id,
-                    control: run.descriptor.control,
-                    values: run.descriptor.values,
-                },
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    geometry::b2_edge_nodes(bytes)
+    let analytic_circles =
+        crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(bytes)
+            .into_iter()
+            .filter(|run| run.identity_chain_consistent)
+            .map(|run| {
+                (
+                    run.node.pos,
+                    native_consolidated_analytic_circle(&run.descriptor, &run.circle),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+    let class25_descriptors =
+        crate::families::consolidated::records::consolidated_class25_edge_runs(bytes)
+            .into_iter()
+            .filter(|run| run.identity_chain_consistent)
+            .map(|run| {
+                (
+                    run.node.pos,
+                    CatiaConsolidatedClass25Descriptor {
+                        byte_offset: run.descriptor.pos as u64,
+                        record_id: run.descriptor.record_id,
+                        control: run.descriptor.control,
+                        values: run.descriptor.values,
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+    crate::families::b2::records::b2_edge_nodes(bytes)
         .into_iter()
         .enumerate()
         .filter_map(|(index, node)| {
@@ -964,8 +968,8 @@ fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
 }
 
 fn native_consolidated_analytic_circle(
-    descriptor: &geometry::ConsolidatedAnalyticCircleDescriptor,
-    circle: &geometry::B2Circle,
+    descriptor: &crate::families::consolidated::records::ConsolidatedAnalyticCircleDescriptor,
+    circle: &crate::families::b2::records::B2Circle,
 ) -> CatiaConsolidatedAnalyticCircleCarrier {
     CatiaConsolidatedAnalyticCircleCarrier {
         descriptor: CatiaConsolidatedAnalyticCircleDescriptor {
@@ -986,7 +990,7 @@ fn native_consolidated_analytic_circle(
 }
 
 fn native_consolidated_edge_definition(
-    definition: geometry::ConsolidatedEdgeDefinition,
+    definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition,
 ) -> CatiaConsolidatedEdgeDefinition {
     CatiaConsolidatedEdgeDefinition {
         byte_offset: definition.pos as u64,
@@ -1002,16 +1006,16 @@ fn native_consolidated_edge_definition(
 }
 
 fn native_consolidated_edge_definition_data(
-    data: geometry::ConsolidatedEdgeDefinitionData,
+    data: crate::families::consolidated::records::ConsolidatedEdgeDefinitionData,
 ) -> CatiaConsolidatedEdgeDefinitionData {
     match data {
-        geometry::ConsolidatedEdgeDefinitionData::Compact24 { operand } => {
+        crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Compact24 { operand } => {
             CatiaConsolidatedEdgeDefinitionData::Compact24 { operand }
         }
-        geometry::ConsolidatedEdgeDefinitionData::Scalar { operands, values } => {
+        crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Scalar { operands, values } => {
             CatiaConsolidatedEdgeDefinitionData::Scalar { operands, values }
         }
-        geometry::ConsolidatedEdgeDefinitionData::Scalar25 {
+        crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Scalar25 {
             operands,
             persistent_lead,
             values,
@@ -1020,7 +1024,7 @@ fn native_consolidated_edge_definition_data(
             persistent_lead,
             values,
         },
-        geometry::ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
+        crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
             operands,
             persistent_lead,
             leading,
@@ -1037,7 +1041,7 @@ fn native_consolidated_edge_definition_data(
 }
 
 fn native_consolidated_edge_uses(
-    uses: &[geometry::B2UseMetadata; 2],
+    uses: &[crate::families::b2::records::B2UseMetadata; 2],
 ) -> Option<CatiaConsolidatedEdgeUses> {
     let references = uses
         .iter()
@@ -1048,8 +1052,8 @@ fn native_consolidated_edge_uses(
     let senses = uses
         .each_ref()
         .map(|use_| match use_.sense? {
-            geometry::B2UseSense::Sense84 => Some(0x84),
-            geometry::B2UseSense::Sense88 => Some(0x88),
+            crate::families::b2::records::B2UseSense::Sense84 => Some(0x84),
+            crate::families::b2::records::B2UseSense::Sense88 => Some(0x88),
         })
         .into_iter()
         .collect::<Option<Vec<_>>>()?
@@ -1089,36 +1093,38 @@ fn point_coordinates(point: &cadmpeg_ir::math::Point3) -> [f64; 3] {
 }
 
 fn native_consolidated_support_binding(
-    binding: &geometry::ConsolidatedSupportBinding,
+    binding: &crate::families::consolidated::records::ConsolidatedSupportBinding,
 ) -> CatiaConsolidatedSupportBinding {
     match binding {
-        geometry::ConsolidatedSupportBinding::Cylinder { pos } => {
+        crate::families::consolidated::records::ConsolidatedSupportBinding::Cylinder { pos } => {
             CatiaConsolidatedSupportBinding::Cylinder {
                 byte_offset: *pos as u64,
             }
         }
-        geometry::ConsolidatedSupportBinding::EmbeddedCylinder { pos, wrapper_pos } => {
-            CatiaConsolidatedSupportBinding::EmbeddedCylinder {
-                byte_offset: *pos as u64,
-                wrapper_byte_offset: *wrapper_pos as u64,
-            }
-        }
-        geometry::ConsolidatedSupportBinding::Circle { pos } => {
+        crate::families::consolidated::records::ConsolidatedSupportBinding::EmbeddedCylinder {
+            pos,
+            wrapper_pos,
+        } => CatiaConsolidatedSupportBinding::EmbeddedCylinder {
+            byte_offset: *pos as u64,
+            wrapper_byte_offset: *wrapper_pos as u64,
+        },
+        crate::families::consolidated::records::ConsolidatedSupportBinding::Circle { pos } => {
             CatiaConsolidatedSupportBinding::Circle {
                 byte_offset: *pos as u64,
             }
         }
-        geometry::ConsolidatedSupportBinding::Cone { pos } => {
+        crate::families::consolidated::records::ConsolidatedSupportBinding::Cone { pos } => {
             CatiaConsolidatedSupportBinding::Cone {
                 byte_offset: *pos as u64,
             }
         }
-        geometry::ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
-            CatiaConsolidatedSupportBinding::NurbsCarrier {
-                byte_offset: *pos as u64,
-                offset: *offset,
-            }
-        }
+        crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier {
+            pos,
+            offset,
+        } => CatiaConsolidatedSupportBinding::NurbsCarrier {
+            byte_offset: *pos as u64,
+            offset: *offset,
+        },
     }
 }
 
@@ -1186,8 +1192,11 @@ fn validate_consolidated_edge_runs(
         let definition_valid = node.definition.as_ref().is_none_or(|definition| {
             let token_limit = 1u32.checked_shl(u32::from(definition.width) * 8);
             let expected_data =
-                geometry::consolidated_edge_definition_data(definition.class, &definition.payload)
-                    .map(native_consolidated_edge_definition_data);
+                crate::families::consolidated::records::consolidated_edge_definition_data(
+                    definition.class,
+                    &definition.payload,
+                )
+                .map(native_consolidated_edge_definition_data);
             node.uses.is_some()
                 && matches!(definition.width, 1..=3)
                 && matches!(definition.flag, 0x03 | 0x13 | 0x83)

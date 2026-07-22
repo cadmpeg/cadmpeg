@@ -3,6 +3,7 @@
 //! `wire` owns the checked [`Cursor`] and the compact-int / reference-token
 //! readers that were previously duplicated across the `b5` and `e5` families.
 
+pub(crate) mod bytes;
 pub(crate) mod cursor;
 pub(crate) mod tokens;
 

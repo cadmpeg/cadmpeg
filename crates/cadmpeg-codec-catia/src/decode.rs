@@ -37,7 +37,6 @@ use cadmpeg_ir::SourceFidelity;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::container::{self, ContainerScan};
-use crate::geometry;
 use crate::native::{cgm_source, CatiaNative};
 use crate::solve::UnionFind;
 use crate::topology;
@@ -181,7 +180,7 @@ type ProjectedDecode = (
 );
 
 fn try_decode_zero_entity(scan: &ContainerScan) -> Option<ProjectedDecode> {
-    let decoded = geometry::zero_entity_surfaces(&scan.data);
+    let decoded = crate::families::zero_entity::records::zero_entity_surfaces(&scan.data);
     let points = crate::zero_entity::unframed_vertices(&scan.data);
     let topology = crate::zero_entity::parse(&scan.data);
     if decoded.is_empty() && points.is_empty() && topology.is_none() {
@@ -907,12 +906,12 @@ fn unique_index_owners(groups: &[Vec<usize>], member_count: usize) -> Option<Vec
 fn try_decode_e5(scan: &ContainerScan) -> Option<ProjectedDecode> {
     let stream_range = container::e5_record_stream(&scan.data)?;
     let stream = &scan.data[stream_range];
-    let circles = geometry::e5_circles(stream);
-    let mut surfaces = geometry::e5_surfaces(stream);
+    let circles = crate::families::e5::records::e5_circles(stream);
+    let mut surfaces = crate::families::e5::records::e5_surfaces(stream);
     let topology = crate::e5::parse_topology(stream);
     let vertex_count = topology.as_ref().map_or_else(
         || {
-            geometry::e5_edges(stream)
+            crate::families::e5::records::e5_edges(stream)
                 .into_iter()
                 .flat_map(|edge| [edge.start_vertex_id, edge.end_vertex_id])
                 .collect::<HashSet<_>>()
@@ -920,7 +919,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<ProjectedDecode> {
         },
         |topology| topology.vertex_refs.len(),
     );
-    let points = geometry::e5_vertices(&scan.data, vertex_count);
+    let points = crate::families::e5::records::e5_vertices(&scan.data, vertex_count);
     if let Some(topology) = &topology {
         append_e5_planes(stream, topology, &points, &mut surfaces);
     }
@@ -1065,7 +1064,7 @@ fn append_e5_planes(
     stream: &[u8],
     topology: &crate::e5::E5Topology,
     points: &[Point3],
-    surfaces: &mut Vec<geometry::E5Surface>,
+    surfaces: &mut Vec<crate::families::e5::records::E5Surface>,
 ) {
     let carrier_axes: HashMap<u32, Vector3> = surfaces
         .iter()
@@ -1079,7 +1078,7 @@ fn append_e5_planes(
             Some((surface.record_id, axis))
         })
         .collect();
-    for plane in geometry::e5_planes(stream) {
+    for plane in crate::families::e5::records::e5_planes(stream) {
         let mut normal: Option<Vector3> = None;
         let mut consistent = true;
         for face in topology
@@ -1133,7 +1132,7 @@ fn append_e5_planes(
         ) else {
             continue;
         };
-        surfaces.push(geometry::E5Surface {
+        surfaces.push(crate::families::e5::records::E5Surface {
             pos: plane.pos,
             record_id: plane.record_id,
             geometry: SurfaceGeometry::Plane {
@@ -1390,7 +1389,9 @@ mod chart_tests {
         unique_native_identity_points, unresolved_carrier_counts, UnknownRecord,
     };
     use crate::e5::{E5Edge, E5Face, E5Loop, E5Topology};
-    use crate::geometry::{FreeformFaceBounds, StandardCurveGeometry, StandardCurveSupport};
+    use crate::families::standard::records::{
+        FreeformFaceBounds, StandardCurveGeometry, StandardCurveSupport,
+    };
     use crate::zero_entity::pcurve_parameter_range;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
@@ -2020,7 +2021,7 @@ mod chart_tests {
 
     #[test]
     fn e5_nonplanar_jet_normalizes_positions_and_derivatives() {
-        let surface = crate::geometry::E5Surface {
+        let surface = crate::families::e5::records::E5Surface {
             pos: 0,
             record_id: 7,
             geometry: SurfaceGeometry::Cylinder {
@@ -2064,7 +2065,7 @@ mod chart_tests {
 
     #[test]
     fn e5_nonplanar_circle_scales_its_rational_uv_control_net() {
-        let surface = crate::geometry::E5Surface {
+        let surface = crate::families::e5::records::E5Surface {
             pos: 0,
             record_id: 7,
             geometry: SurfaceGeometry::Torus {
@@ -2474,7 +2475,7 @@ mod chart_tests {
     #[test]
     fn canonical_periodic_range_snaps_roundoff_at_the_turn_seam() {
         let tau = std::f64::consts::TAU;
-        let range = crate::geometry::canonical_periodic_range([tau - 1e-14, tau + 0.25])
+        let range = crate::nurbs::canonical_periodic_range([tau - 1e-14, tau + 0.25])
             .expect("canonical seam range");
         assert_eq!(range[0], 0.0);
         assert!((range[1] - 0.25).abs() < 2e-14);
@@ -3024,7 +3025,7 @@ fn transfer_e5_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     topology: &crate::e5::E5Topology,
-    decoded_surfaces: &[geometry::E5Surface],
+    decoded_surfaces: &[crate::families::e5::records::E5Surface],
 ) -> bool {
     if topology.vertex_refs.len() != ir.model.vertices.len()
         || topology.vertex_refs.len() != ir.model.points.len()
@@ -3037,16 +3038,17 @@ fn transfer_e5_topology(
         annotations.remove_entity(&curve.id);
     }
 
-    let surface_for_ref: HashMap<u32, (SurfaceId, &geometry::E5Surface)> = decoded_surfaces
-        .iter()
-        .enumerate()
-        .map(|(index, surface)| {
-            (
-                surface.record_id,
-                (SurfaceId(format!("catia:e5:surf#{index}")), surface),
-            )
-        })
-        .collect();
+    let surface_for_ref: HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)> =
+        decoded_surfaces
+            .iter()
+            .enumerate()
+            .map(|(index, surface)| {
+                (
+                    surface.record_id,
+                    (SurfaceId(format!("catia:e5:surf#{index}")), surface),
+                )
+            })
+            .collect();
     let vertex_for_ref: HashMap<u32, VertexId> = topology
         .vertex_refs
         .iter()
@@ -3720,7 +3722,7 @@ fn parameter_ranges_reversed(parameters: [f64; 2], native_range: [f64; 2]) -> Op
 
 fn e5_pcurve_on_surface(
     pcurve: &crate::e5::E5Pcurve,
-    decoded_surface: &geometry::E5Surface,
+    decoded_surface: &crate::families::e5::records::E5Surface,
 ) -> Option<(PcurveGeometry, [f64; 2], [Point3; 2])> {
     let surface = &decoded_surface.geometry;
     match pcurve {
@@ -3868,7 +3870,7 @@ fn e5_boundary_curve(
                 ref_direction: *u_axis,
                 radius: *radius,
             },
-            geometry::canonical_periodic_range(range)?,
+            crate::nurbs::canonical_periodic_range(range)?,
         ));
     }
     if let (
@@ -3942,7 +3944,7 @@ fn e5_boundary_curve(
                 Some((
                     axis,
                     ref_direction,
-                    geometry::canonical_periodic_range(range)?,
+                    crate::nurbs::canonical_periodic_range(range)?,
                 ))
             })
             .collect::<Vec<_>>();
@@ -4288,7 +4290,7 @@ fn quintic_jet_pcurve(
     second: &[[f64; 2]],
 ) -> Option<PcurveGeometry> {
     let (full_knots, controls) =
-        geometry::quintic_jet_bspline(degree, knots, points, first, second)?;
+        crate::nurbs::quintic_jet_bspline(degree, knots, points, first, second)?;
     Some(PcurveGeometry::Nurbs {
         degree,
         knots: full_knots,
@@ -4301,7 +4303,7 @@ fn quintic_jet_pcurve(
     })
 }
 
-fn e5_surface_uv(surface: &geometry::E5Surface, raw: [f64; 2]) -> Point2 {
+fn e5_surface_uv(surface: &crate::families::e5::records::E5Surface, raw: [f64; 2]) -> Point2 {
     Point2::new(raw[0] * surface.uv_scale[0], raw[1] * surface.uv_scale[1])
 }
 
@@ -4528,7 +4530,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<ProjectedDecode>
         .is_none()
         .then(|| freeform_surface_carriers(&scan.data));
     if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
-        && geometry::a8_freeform_curves(&scan.data).is_empty()
+        && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
     {
         return None;
     }
@@ -4619,13 +4621,13 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<ProjectedDecode>
 
 fn freeform_surface_carriers(data: &[u8]) -> Vec<(usize, u32, SurfaceGeometry, &'static str)> {
     let mut surfaces: Vec<(usize, u32, SurfaceGeometry, &str)> =
-        geometry::resolved_a8_surfaces(data)
+        crate::families::a5a8::records::resolved_a8_surfaces(data)
             .into_iter()
-            .chain(geometry::a5_surfaces(data))
+            .chain(crate::families::a5a8::records::a5_surfaces(data))
             .map(|surface| (surface.pos, surface.object_id, surface.geometry, "freeform"))
             .collect();
     surfaces.extend(
-        geometry::b2_cylinders(data)
+        crate::families::b2::records::b2_cylinders(data)
             .into_iter()
             .filter_map(|surface| {
                 surface
@@ -4634,7 +4636,7 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<(usize, u32, SurfaceGeometry, &
             }),
     );
     surfaces.extend(
-        geometry::b2_embedded_cylinders(data)
+        crate::families::b2::records::b2_embedded_cylinders(data)
             .into_iter()
             .filter_map(|surface| {
                 surface
@@ -4643,20 +4645,24 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<(usize, u32, SurfaceGeometry, &
                     .map(|geometry| (surface.pos, surface.object_id, geometry, "b2_03_60"))
             }),
     );
-    surfaces.extend(geometry::b2_cones(data).into_iter().map(|surface| {
-        (
-            surface.pos,
-            0,
-            geometry::b2_cone_geometry(&surface),
-            "b2_03_29",
-        )
-    }));
+    surfaces.extend(
+        crate::families::b2::records::b2_cones(data)
+            .into_iter()
+            .map(|surface| {
+                (
+                    surface.pos,
+                    0,
+                    crate::families::b2::records::b2_cone_geometry(&surface),
+                    "b2_03_29",
+                )
+            }),
+    );
     surfaces
 }
 
 fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
-    let mut surfaces = geometry::resolved_a8_surfaces(data);
-    surfaces.extend(geometry::a5_surfaces(data));
+    let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data);
+    surfaces.extend(crate::families::a5a8::records::a5_surfaces(data));
     let mut carrier_ids = Vec::with_capacity(surfaces.len());
     for surface in &surfaces {
         let index = ir.model.surfaces.len();
@@ -4677,8 +4683,8 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
         });
     }
 
-    let offsets = geometry::b2_offset_supports(data);
-    let bindings = geometry::offset_support_carriers(&offsets, &surfaces);
+    let offsets = crate::families::b2::records::b2_offset_supports(data);
+    let bindings = crate::families::b2::records::offset_support_carriers(&offsets, &surfaces);
     for (offset, carrier) in offsets
         .iter()
         .zip(bindings)
@@ -4726,7 +4732,7 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
         });
     }
 
-    for guide in geometry::a5_guide_curves(data) {
+    for guide in crate::families::a5a8::records::a5_guide_curves(data) {
         let points = guide
             .sites
             .iter()
@@ -4742,9 +4748,13 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
             .iter()
             .map(|value| [value[0], value[1], value[2]])
             .collect::<Vec<_>>();
-        let Some((knots, control_points)) =
-            geometry::quintic_jet_bspline3(guide.degree, &guide.knots, &points, &first, &second)
-        else {
+        let Some((knots, control_points)) = crate::nurbs::quintic_jet_bspline3(
+            guide.degree,
+            &guide.knots,
+            &points,
+            &first,
+            &second,
+        ) else {
             continue;
         };
         let id = CurveId(format!("catia:guide:curve#{}", ir.model.curves.len()));
@@ -4772,7 +4782,7 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
         });
     }
 
-    for jet in geometry::a5_freeform_curves(data) {
+    for jet in crate::families::a5a8::records::a5_freeform_curves(data) {
         let sites = jet
             .sites
             .iter()
@@ -4845,8 +4855,12 @@ enum ConsolidatedCarrierKey {
 
 enum ConsolidatedCarrierChart<'a> {
     Identity,
-    Cylinder { radius: f64 },
-    Cone { cone: &'a geometry::B2Cone },
+    Cylinder {
+        radius: f64,
+    },
+    Cone {
+        cone: &'a crate::families::b2::records::B2Cone,
+    },
 }
 
 impl ConsolidatedCarrierChart<'_> {
@@ -4871,7 +4885,7 @@ impl ConsolidatedCarrierChart<'_> {
 }
 
 fn consolidated_jet_pcurve(
-    pcurve: &geometry::ConsolidatedPcurve,
+    pcurve: &crate::families::consolidated::records::ConsolidatedPcurve,
     chart: &ConsolidatedCarrierChart<'_>,
 ) -> Option<PcurveGeometry> {
     let points = pcurve
@@ -4899,30 +4913,31 @@ fn append_resolved_consolidated_surface_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
-    freeform_surfaces: &[geometry::A8Surface],
+    freeform_surfaces: &[crate::families::a5a8::records::A8Surface],
     freeform_surface_ids: &[SurfaceId],
 ) {
-    let standalone = geometry::b2_cylinders(data)
+    let standalone = crate::families::b2::records::b2_cylinders(data)
         .into_iter()
         .map(|cylinder| (cylinder.pos, cylinder))
         .collect::<HashMap<_, _>>();
-    let embedded = geometry::b2_embedded_cylinders(data)
+    let embedded = crate::families::b2::records::b2_embedded_cylinders(data)
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<HashMap<_, _>>();
-    let cones = geometry::b2_cones(data)
+    let cones = crate::families::b2::records::b2_cones(data)
         .into_iter()
         .map(|cone| (cone.pos, cone))
         .collect::<HashMap<_, _>>();
-    let complete_runs = geometry::consolidated_topology_edge_runs(data)
-        .into_iter()
-        .filter(|run| run.edge.co_parametric && run.identity_chain_consistent)
-        .map(|run| (run.edge.pcurves[0].pos, run))
-        .collect::<HashMap<_, _>>();
+    let complete_runs =
+        crate::families::consolidated::records::consolidated_topology_edge_runs(data)
+            .into_iter()
+            .filter(|run| run.edge.co_parametric && run.identity_chain_consistent)
+            .map(|run| (run.edge.pcurves[0].pos, run))
+            .collect::<HashMap<_, _>>();
 
     let mut surface_ids = HashMap::<ConsolidatedCarrierKey, SurfaceId>::new();
 
-    for resolved in geometry::resolve_consolidated_edge_blocks(data) {
+    for resolved in crate::families::consolidated::records::resolve_consolidated_edge_blocks(data) {
         let Some(run) = complete_runs.get(&resolved.block.pcurves[0].pos) else {
             continue;
         };
@@ -4932,8 +4947,12 @@ fn append_resolved_consolidated_surface_curves(
             pcurve_parameter_range: None,
         });
         for (side, binding) in resolved.supports.iter().enumerate() {
-            if let Some(geometry::ConsolidatedSupportBinding::NurbsCarrier { pos, offset }) =
-                binding
+            if let Some(
+                crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier {
+                    pos,
+                    offset,
+                },
+            ) = binding
             {
                 let Some((carrier_index, _)) = freeform_surfaces
                     .iter()
@@ -5010,7 +5029,7 @@ fn append_resolved_consolidated_surface_curves(
                 continue;
             }
             let (key, carrier, source_object, chart, annotation_kind, id_kind) = match binding {
-                Some(geometry::ConsolidatedSupportBinding::Cylinder { pos }) => {
+                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cylinder { pos }) => {
                     let Some(cylinder) = standalone.get(pos) else {
                         continue;
                     };
@@ -5032,7 +5051,7 @@ fn append_resolved_consolidated_surface_curves(
                         "cylinder",
                     )
                 }
-                Some(geometry::ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. }) => {
+                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. }) => {
                     let Some(value) = embedded.get(pos) else {
                         continue;
                     };
@@ -5054,7 +5073,7 @@ fn append_resolved_consolidated_surface_curves(
                         "cylinder",
                     )
                 }
-                Some(geometry::ConsolidatedSupportBinding::Cone { pos }) => {
+                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cone { pos }) => {
                     let Some(cone) = cones.get(pos) else {
                         continue;
                     };
@@ -5066,7 +5085,7 @@ fn append_resolved_consolidated_surface_curves(
                     }
                     (
                         ConsolidatedCarrierKey::Cone(*pos),
-                        geometry::b2_cone_geometry(cone),
+                        crate::families::b2::records::b2_cone_geometry(cone),
                         None,
                         ConsolidatedCarrierChart::Cone { cone },
                         "consolidated_b2_03_29_cone",
@@ -5074,8 +5093,8 @@ fn append_resolved_consolidated_surface_curves(
                     )
                 }
                 Some(
-                    geometry::ConsolidatedSupportBinding::Circle { .. }
-                    | geometry::ConsolidatedSupportBinding::NurbsCarrier { .. },
+                    crate::families::consolidated::records::ConsolidatedSupportBinding::Circle { .. }
+                    | crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier { .. },
                 )
                 | None => continue,
             };
@@ -5180,8 +5199,9 @@ fn append_resolved_consolidated_surface_curves(
 }
 
 fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
-    for jet in geometry::a8_freeform_curves(data) {
-        let Some(definition) = geometry::rolling_ball_jet_definition(&jet) else {
+    for jet in crate::families::a5a8::records::a8_freeform_curves(data) {
+        let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
+        else {
             continue;
         };
         let surface_id = SurfaceId(format!(
@@ -5341,23 +5361,32 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         .into_iter()
         .map(|[x, y, z]| Point3::new(x, y, z))
         .collect::<Vec<_>>();
-    let vertex_roster = geometry::standard_vertex_roster(&scan.data, points.len());
+    let vertex_roster =
+        crate::families::standard::records::standard_vertex_roster(&scan.data, points.len());
     let face_count = topology::standard_face_count(brep).unwrap_or_default();
-    let records = geometry::standard_surface_records(brep, face_count).unwrap_or_else(|| {
-        geometry::surface_prefixes(brep)
-            .into_iter()
-            .map(geometry::StandardSurfaceRecord::Analytic)
-            .collect()
-    });
+    let records = crate::families::standard::records::standard_surface_records(brep, face_count)
+        .unwrap_or_else(|| {
+            crate::families::standard::records::surface_prefixes(brep)
+                .into_iter()
+                .map(crate::families::standard::records::StandardSurfaceRecord::Analytic)
+                .collect()
+        });
     let analytic_record_count = records
         .iter()
-        .filter(|record| matches!(record, geometry::StandardSurfaceRecord::Analytic(_)))
+        .filter(|record| {
+            matches!(
+                record,
+                crate::families::standard::records::StandardSurfaceRecord::Analytic(_)
+            )
+        })
         .count();
     let freeform_tags = records
         .iter()
         .filter_map(|record| match record {
-            geometry::StandardSurfaceRecord::Freeform { tag, .. } => Some(*tag),
-            geometry::StandardSurfaceRecord::Analytic(_) => None,
+            crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } => {
+                Some(*tag)
+            }
+            crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
         })
         .collect::<HashSet<_>>();
     let object_evidence = standard_object_evidence(scan, &freeform_tags);
@@ -5368,29 +5397,33 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         .filter(|record| {
             matches!(
                 record,
-                geometry::StandardSurfaceRecord::Freeform { tag, .. }
+                crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. }
                     if !freeform_geometries.contains_key(tag)
                         && !freeform_procedural_surfaces.contains_key(tag)
             )
         })
         .count();
     let face_frame_vectors = topology::standard_face_frame_vectors(brep);
-    let curve_supports = geometry::standard_curve_supports(brep, face_count);
+    let curve_supports =
+        crate::families::standard::records::standard_curve_supports(brep, face_count);
     let curved_surfaces = records
         .iter()
         .map(|record| match record {
-            geometry::StandardSurfaceRecord::Analytic(prefix) if prefix.kind != 0x32 => {
-                geometry::decode_curved(brep, prefix)
+            crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix)
+                if prefix.kind != 0x32 =>
+            {
+                crate::families::standard::records::decode_curved(brep, prefix)
             }
-            geometry::StandardSurfaceRecord::Analytic(_)
-            | geometry::StandardSurfaceRecord::Freeform { .. } => None,
+            crate::families::standard::records::StandardSurfaceRecord::Analytic(_)
+            | crate::families::standard::records::StandardSurfaceRecord::Freeform { .. } => None,
         })
         .collect::<Vec<_>>();
     let mut plane_normal_candidates = HashMap::<u32, Option<[f64; 3]>>::new();
     let mut derived_plane_targets = HashSet::new();
     let mut exact_plane_targets = HashSet::new();
     for (face, record) in records.iter().enumerate() {
-        let geometry::StandardSurfaceRecord::Analytic(prefix) = record else {
+        let crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) = record
+        else {
             continue;
         };
         if prefix.kind != 0x32 {
@@ -5427,10 +5460,11 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         .into_iter()
         .filter_map(|(target, normal)| Some((target, normal?)))
         .collect::<HashMap<_, _>>();
-    let planes: HashMap<u32, geometry::PlaneParams> = geometry::plane_params(brep, &plane_normals)
-        .into_iter()
-        .map(|plane| (plane.target, plane))
-        .collect();
+    let planes: HashMap<u32, crate::families::standard::records::PlaneParams> =
+        crate::families::standard::records::plane_params(brep, &plane_normals)
+            .into_iter()
+            .map(|plane| (plane.target, plane))
+            .collect();
 
     let mut surfaces = Vec::new();
     let mut surface_annotations = Vec::new();
@@ -5440,9 +5474,13 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
     let mut plane_faces = 0usize;
     let mut typed = TypedCounts::default();
     for (i, record) in records.iter().enumerate() {
-        let geometry::StandardSurfaceRecord::Analytic(prefix) = record else {
-            let geometry::StandardSurfaceRecord::Freeform {
-                pos, tag, forward, ..
+        let crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) = record
+        else {
+            let crate::families::standard::records::StandardSurfaceRecord::Freeform {
+                pos,
+                tag,
+                forward,
+                ..
             } = record
             else {
                 unreachable!()
@@ -5481,7 +5519,9 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
             continue;
         }
         let decoded = if prefix.kind == 0x32 {
-            planes.get(&prefix.target).map(geometry::decode_plane)
+            planes
+                .get(&prefix.target)
+                .map(crate::families::standard::records::decode_plane)
         } else {
             curved_surfaces[i].clone()
         };
@@ -5489,7 +5529,8 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
             Some(geom) => {
                 typed.record(&geom);
                 let id = SurfaceId(format!("catia:standard:surf#{i}"));
-                if let Some(forward) = geometry::face_sense(brep, prefix) {
+                if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
+                {
                     face_bindings.push((id.clone(), forward, prefix.pos));
                 }
                 surface_annotations.push((
@@ -5515,7 +5556,8 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
                     plane_faces += 1;
                 }
                 let id = SurfaceId(format!("catia:standard:surf#{i}"));
-                if let Some(forward) = geometry::face_sense(brep, prefix) {
+                if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
+                {
                     face_bindings.push((id.clone(), forward, prefix.pos));
                 }
                 surface_annotations.push((
@@ -6223,8 +6265,8 @@ fn partition_standard_face_components(
 
 pub(crate) fn apply_standard_native_edge_faces(
     edge_faces: &mut [[usize; 2]],
-    supports: &[geometry::StandardCurveSupport],
-    records: &[geometry::StandardSurfaceRecord],
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    records: &[crate::families::standard::records::StandardSurfaceRecord],
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
 ) {
     if edge_faces.len() != supports.len() {
@@ -6233,8 +6275,10 @@ pub(crate) fn apply_standard_native_edge_faces(
     let mut face_by_carrier = HashMap::<u32, Option<usize>>::new();
     for (face, record) in records.iter().enumerate() {
         let carrier = match record {
-            geometry::StandardSurfaceRecord::Analytic(prefix) => prefix.target,
-            geometry::StandardSurfaceRecord::Freeform { tag, .. } => *tag,
+            crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) => {
+                prefix.target
+            }
+            crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } => *tag,
         };
         face_by_carrier
             .entry(carrier)
@@ -6263,13 +6307,14 @@ fn attach_standard_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
-    records: &[geometry::StandardSurfaceRecord],
+    records: &[crate::families::standard::records::StandardSurfaceRecord],
     brep: &[u8],
     source: &[u8],
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
 ) -> bool {
     let face_count = ir.model.faces.len();
-    let mut supports = geometry::standard_curve_supports(brep, face_count);
+    let mut supports =
+        crate::families::standard::records::standard_curve_supports(brep, face_count);
     if supports.is_empty() {
         return false;
     }
@@ -6296,8 +6341,11 @@ fn attach_standard_topology(
         records
             .iter()
             .map(|record| match record {
-                geometry::StandardSurfaceRecord::Freeform { bounds, .. } => Some(*bounds),
-                geometry::StandardSurfaceRecord::Analytic(_) => None,
+                crate::families::standard::records::StandardSurfaceRecord::Freeform {
+                    bounds,
+                    ..
+                } => Some(*bounds),
+                crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
             })
             .collect::<Vec<_>>()
     });
@@ -6312,15 +6360,17 @@ fn attach_standard_topology(
             return false;
         };
         let candidates = match &support.geometry {
-            geometry::StandardCurveGeometry::Circle { center, radius } => {
-                standard_circle_endpoint_candidates(
-                    &ir.model.points,
-                    *center,
-                    *radius,
-                    Some((&surface0.geometry, &surface1.geometry)),
-                )
-            }
-            geometry::StandardCurveGeometry::Line | geometry::StandardCurveGeometry::Bspline => {
+            crate::families::standard::records::StandardCurveGeometry::Circle {
+                center,
+                radius,
+            } => standard_circle_endpoint_candidates(
+                &ir.model.points,
+                *center,
+                *radius,
+                Some((&surface0.geometry, &surface1.geometry)),
+            ),
+            crate::families::standard::records::StandardCurveGeometry::Line
+            | crate::families::standard::records::StandardCurveGeometry::Bspline => {
                 let mut faces = support.faces;
                 faces.sort_unstable();
                 for (face, surface) in [
@@ -6373,11 +6423,11 @@ fn attach_standard_topology(
                 candidate_faces == support_faces
                     && match (&candidate.geometry, &support.geometry) {
                         (
-                            geometry::StandardCurveGeometry::Circle {
+                            crate::families::standard::records::StandardCurveGeometry::Circle {
                                 center: left_center,
                                 radius: left_radius,
                             },
-                            geometry::StandardCurveGeometry::Circle {
+                            crate::families::standard::records::StandardCurveGeometry::Circle {
                                 center: right_center,
                                 radius: right_radius,
                             },
@@ -6388,8 +6438,8 @@ fn attach_standard_topology(
                                 && left_radius.to_bits() == right_radius.to_bits()
                         }
                         (
-                            geometry::StandardCurveGeometry::Line,
-                            geometry::StandardCurveGeometry::Line,
+                            crate::families::standard::records::StandardCurveGeometry::Line,
+                            crate::families::standard::records::StandardCurveGeometry::Line,
                         ) => true,
                         _ => false,
                     }
@@ -6408,24 +6458,25 @@ fn attach_standard_topology(
         .iter()
         .copied()
         .collect::<Option<Vec<_>>>();
-    let roster_endpoint_pairs = geometry::standard_vertex_roster(source, ir.model.points.len())
-        .map(|roster| {
-            let point_by_identity = roster
-                .into_iter()
-                .enumerate()
-                .map(|(point, identity)| (identity, point))
-                .collect::<HashMap<_, _>>();
-            supports
-                .iter()
-                .map(|support| {
-                    let identities = native_edges.get(&support.tag)?;
-                    Some([
-                        *point_by_identity.get(&identities[0])?,
-                        *point_by_identity.get(&identities[1])?,
-                    ])
-                })
-                .collect::<Vec<_>>()
-        });
+    let roster_endpoint_pairs =
+        crate::families::standard::records::standard_vertex_roster(source, ir.model.points.len())
+            .map(|roster| {
+                let point_by_identity = roster
+                    .into_iter()
+                    .enumerate()
+                    .map(|(point, identity)| (identity, point))
+                    .collect::<HashMap<_, _>>();
+                supports
+                    .iter()
+                    .map(|support| {
+                        let identities = native_edges.get(&support.tag)?;
+                        Some([
+                            *point_by_identity.get(&identities[0])?,
+                            *point_by_identity.get(&identities[1])?,
+                        ])
+                    })
+                    .collect::<Vec<_>>()
+            });
     let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
         graph_endpoint_pairs.as_deref(),
         roster_endpoint_pairs.as_deref(),
@@ -6540,7 +6591,10 @@ fn attach_standard_topology(
     if let Some(options) = &mut endpoint_options {
         for (edge, pairs) in options.iter_mut().enumerate() {
             let support = &supports[edge];
-            if matches!(support.geometry, geometry::StandardCurveGeometry::Bspline) {
+            if matches!(
+                support.geometry,
+                crate::families::standard::records::StandardCurveGeometry::Bspline
+            ) {
                 continue;
             }
             let unfiltered = pairs.clone();
@@ -6560,7 +6614,10 @@ fn attach_standard_topology(
                         support,
                         start,
                         end,
-                        geometry::standard_face_witness(brep, bindings[face].2),
+                        crate::families::standard::records::standard_face_witness(
+                            brep,
+                            bindings[face].2,
+                        ),
                         None,
                     )
                     .is_some()
@@ -6772,12 +6829,11 @@ fn attach_standard_topology(
         .iter()
         .zip(&endpoint_candidates)
         .map(|(support, candidates)| match &support.geometry {
-            geometry::StandardCurveGeometry::Circle { .. } => {
+            crate::families::standard::records::StandardCurveGeometry::Circle { .. } => {
                 <[usize; 2]>::try_from(candidates.as_slice()).ok()
             }
-            geometry::StandardCurveGeometry::Line | geometry::StandardCurveGeometry::Bspline => {
-                None
-            }
+            crate::families::standard::records::StandardCurveGeometry::Line
+            | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
         })
         .collect();
     let motif_topology = topology::parse_standard_motif(brep, &edge_faces, &circle_anchors);
@@ -6787,7 +6843,7 @@ fn attach_standard_topology(
         .map(|(edge, support)| {
             matches!(
                 support.geometry,
-                geometry::StandardCurveGeometry::Circle { .. }
+                crate::families::standard::records::StandardCurveGeometry::Circle { .. }
             ) && constrained_endpoint_options
                 .as_ref()
                 .is_some_and(|options| options[edge].len() > 1)
@@ -6968,7 +7024,10 @@ fn attach_standard_topology(
                     support,
                     start,
                     end,
-                    geometry::standard_face_witness(brep, bindings[face_index].2),
+                    crate::families::standard::records::standard_face_witness(
+                        brep,
+                        bindings[face_index].2,
+                    ),
                     edge_curve,
                 )
                 .map(|(geometry, range)| {
@@ -7074,7 +7133,7 @@ fn resolve_standard_endpoint_pairs(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
-    supports: &[geometry::StandardCurveSupport],
+    supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &[Vec<usize>],
 ) -> Option<Vec<Vec<[usize; 2]>>> {
     const MAX_PAIR_RELATIONS_PER_EDGE: usize = 65_536;
@@ -7091,7 +7150,7 @@ fn resolve_standard_endpoint_pairs(
         if resolved[edge].is_empty()
             && matches!(
                 support.geometry,
-                geometry::StandardCurveGeometry::Circle { .. }
+                crate::families::standard::records::StandardCurveGeometry::Circle { .. }
             )
         {
             let count = candidates[edge].len();
@@ -7120,15 +7179,15 @@ fn resolve_standard_endpoint_pairs(
         let mut faces = support.faces;
         faces.sort_unstable();
         let line_like = match support.geometry {
-            geometry::StandardCurveGeometry::Line => true,
-            geometry::StandardCurveGeometry::Bspline => {
+            crate::families::standard::records::StandardCurveGeometry::Line => true,
+            crate::families::standard::records::StandardCurveGeometry::Bspline => {
                 let surfaces = faces.map(|face| {
                     face_surface(ir, bindings, surface_indices, face)
                         .map(|surface| &surface.geometry)
                 });
                 matches!(surfaces, [Some(left), Some(right)] if intersection_line_direction(left, right).is_some())
             }
-            geometry::StandardCurveGeometry::Circle { .. } => false,
+            crate::families::standard::records::StandardCurveGeometry::Circle { .. } => false,
         };
         if line_like {
             line_groups.entry(faces).or_default().push(edge);
@@ -7242,7 +7301,7 @@ fn standard_circle_endpoint_candidates(
 
 fn standard_native_graph_endpoint_pairs(
     source: &[u8],
-    supports: &[geometry::StandardCurveSupport],
+    supports: &[crate::families::standard::records::StandardCurveSupport],
     native_edges: &BTreeMap<u32, [u32; 2]>,
     points: &[Point],
 ) -> Option<Vec<Option<[usize; 2]>>> {
@@ -7403,7 +7462,7 @@ fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) 
 }
 
 fn standard_plane_normal_from_circle_centers(
-    supports: &[geometry::StandardCurveSupport],
+    supports: &[crate::families::standard::records::StandardCurveSupport],
     face: usize,
 ) -> Option<[f64; 3]> {
     const TOLERANCE: f64 = 1e-5;
@@ -7412,10 +7471,11 @@ fn standard_plane_normal_from_circle_centers(
         .iter()
         .filter(|support| support.faces.contains(&face))
         .filter_map(|support| match &support.geometry {
-            geometry::StandardCurveGeometry::Circle { center, .. } => Some(*center),
-            geometry::StandardCurveGeometry::Line | geometry::StandardCurveGeometry::Bspline => {
-                None
-            }
+            crate::families::standard::records::StandardCurveGeometry::Circle {
+                center, ..
+            } => Some(*center),
+            crate::families::standard::records::StandardCurveGeometry::Line
+            | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
         })
         .collect::<Vec<_>>();
     let mut distinct: Vec<Point3> = Vec::new();
@@ -7459,12 +7519,14 @@ fn standard_plane_normal_from_circle_centers(
 }
 
 fn standard_plane_normal_from_adjacent_circle_carriers(
-    supports: &[geometry::StandardCurveSupport],
+    supports: &[crate::families::standard::records::StandardCurveSupport],
     surfaces: &[Option<SurfaceGeometry>],
     face: usize,
 ) -> Option<[f64; 3]> {
     let mut axes = supports.iter().filter_map(|support| {
-        let geometry::StandardCurveGeometry::Circle { center, radius } = &support.geometry else {
+        let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } =
+            &support.geometry
+        else {
             return None;
         };
         let adjacent = if support.faces[0] == face {
@@ -7508,7 +7570,7 @@ fn point_on_known_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
 fn point_on_standard_face(
     point: Point3,
     surface: &SurfaceGeometry,
-    bounds: Option<geometry::FreeformFaceBounds>,
+    bounds: Option<crate::families::standard::records::FreeformFaceBounds>,
 ) -> bool {
     const TOLERANCE: f64 = 2e-3;
 
@@ -7532,7 +7594,7 @@ fn point_on_standard_face(
 
 fn standard_pcurve_geometry(
     surface: &SurfaceGeometry,
-    support: &geometry::StandardCurveSupport,
+    support: &crate::families::standard::records::StandardCurveSupport,
     start: Point3,
     end: Point3,
     witness: Option<Point3>,
@@ -7572,8 +7634,10 @@ fn standard_pcurve_geometry(
     let reference_uv = uv[0];
     unwrap_standard_uv(surface, &mut uv[1], reference_uv);
 
-    if let (geometry::StandardCurveGeometry::Circle { center, radius }, Some(witness)) =
-        (&support.geometry, witness)
+    if let (
+        crate::families::standard::records::StandardCurveGeometry::Circle { center, radius },
+        Some(witness),
+    ) = (&support.geometry, witness)
     {
         if let Some(end) = witnessed_surface_circle_end(surface, *center, *radius, uv, witness) {
             uv[1] = end;
@@ -7582,7 +7646,7 @@ fn standard_pcurve_geometry(
 
     if let (
         SurfaceGeometry::Plane { .. },
-        geometry::StandardCurveGeometry::Circle { center, radius },
+        crate::families::standard::records::StandardCurveGeometry::Circle { center, radius },
     ) = (surface, &support.geometry)
     {
         let center_uv = analytic_surface_uv(surface, *center)?;
@@ -7596,15 +7660,15 @@ fn standard_pcurve_geometry(
     let midpoint_uv = Point2::new(uv[0].u + 0.5 * direction.u, uv[0].v + 0.5 * direction.v);
     let midpoint = cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v)?;
     let on_curve = match &support.geometry {
-        geometry::StandardCurveGeometry::Line => {
+        crate::families::standard::records::StandardCurveGeometry::Line => {
             let chord = end.vector_from(start);
             let offset = midpoint.vector_from(start);
             chord.cross(offset).norm() <= 2e-3 * chord.norm().max(1.0)
         }
-        geometry::StandardCurveGeometry::Circle { center, radius } => {
+        crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } => {
             (midpoint.distance_squared(*center).sqrt() - radius).abs() <= 2e-3
         }
-        geometry::StandardCurveGeometry::Bspline => match edge_curve {
+        crate::families::standard::records::StandardCurveGeometry::Bspline => match edge_curve {
             Some(CurveGeometry::Line { origin, direction }) => {
                 let offset = midpoint.vector_from(*origin);
                 (*direction).cross(offset).norm() <= 2e-3 * (*direction).norm().max(1.0)
@@ -7845,7 +7909,7 @@ fn standard_spline_plane_line(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
-    support: &geometry::StandardCurveSupport,
+    support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Option<CurveGeometry> {
     const TOLERANCE: f64 = 2e-3;
@@ -7904,11 +7968,11 @@ fn build_standard_edge_curve(
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     brep: &[u8],
-    support: &geometry::StandardCurveSupport,
+    support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> (Option<CurveId>, Option<[f64; 2]>) {
     let (geometry, mut param_range) = match &support.geometry {
-        geometry::StandardCurveGeometry::Line => {
+        crate::families::standard::records::StandardCurveGeometry::Line => {
             let start = ir.model.points[points[0]].position;
             let end = ir.model.points[points[1]].position;
             let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
@@ -7924,7 +7988,7 @@ fn build_standard_edge_curve(
                 Some([0.0, length]),
             )
         }
-        geometry::StandardCurveGeometry::Circle { center, radius } => {
+        crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } => {
             let start = ir.model.points[points[0]].position;
             let end = ir.model.points[points[1]].position;
             let axes: Vec<Vector3> = support
@@ -7963,7 +8027,7 @@ fn build_standard_edge_curve(
                     Some((
                         axis,
                         ref_direction,
-                        geometry::canonical_periodic_range(range)?,
+                        crate::nurbs::canonical_periodic_range(range)?,
                     ))
                 })
                 .collect::<Vec<_>>();
@@ -7985,7 +8049,7 @@ fn build_standard_edge_curve(
                 param_range,
             )
         }
-        geometry::StandardCurveGeometry::Bspline => (
+        crate::families::standard::records::StandardCurveGeometry::Bspline => (
             standard_spline_plane_line(ir, bindings, surface_indices, support, points).unwrap_or(
                 CurveGeometry::Unknown {
                     record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
@@ -8003,7 +8067,9 @@ fn build_standard_edge_curve(
         "curve_support_60",
         match (&support.geometry, &geometry) {
             (_, CurveGeometry::Unknown { .. }) => Exactness::Unknown,
-            (geometry::StandardCurveGeometry::Bspline, _) => Exactness::Derived,
+            (crate::families::standard::records::StandardCurveGeometry::Bspline, _) => {
+                Exactness::Derived
+            }
             _ => Exactness::ByteExact,
         },
     );
@@ -8013,7 +8079,7 @@ fn build_standard_edge_curve(
             .derived(&id, "geometry.direction");
     } else if matches!(
         &support.geometry,
-        geometry::StandardCurveGeometry::Circle { .. }
+        crate::families::standard::records::StandardCurveGeometry::Circle { .. }
     ) {
         annotations.derived(&id, "geometry.axis");
     }
@@ -8022,7 +8088,10 @@ fn build_standard_edge_curve(
         geometry,
         source_object: Some(cgm_source("edge-support", support.tag)),
     });
-    if matches!(&support.geometry, geometry::StandardCurveGeometry::Bspline) {
+    if matches!(
+        &support.geometry,
+        crate::families::standard::records::StandardCurveGeometry::Bspline
+    ) {
         let sides = support.faces.map(|face| {
             let surface = bindings
                 .get(face)
@@ -8071,7 +8140,7 @@ fn standard_circle_pair_solution_is_simple(
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     brep: &[u8],
-    supports: &[geometry::StandardCurveSupport],
+    supports: &[crate::families::standard::records::StandardCurveSupport],
     endpoint_options: &[Vec<[usize; 2]>],
     pairs: &[Option<[usize; 2]>],
 ) -> bool {
@@ -8085,7 +8154,9 @@ fn standard_circle_pair_solution_is_simple(
         if options.len() <= 1 {
             continue;
         }
-        let geometry::StandardCurveGeometry::Circle { center, radius } = &support.geometry else {
+        let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } =
+            &support.geometry
+        else {
             continue;
         };
         let Some(start) = ir.model.points.get(pair[0]).map(|point| point.position) else {
@@ -8127,7 +8198,7 @@ fn standard_circle_pair_solution_is_simple(
                     start,
                     end,
                 )?;
-                geometry::canonical_periodic_range(range)
+                crate::nurbs::canonical_periodic_range(range)
             })
             .collect::<Vec<_>>();
         let [range] = candidates.as_slice() else {
@@ -8184,7 +8255,7 @@ fn standard_circle_param_range(
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     brep: &[u8],
-    support: &geometry::StandardCurveSupport,
+    support: &crate::families::standard::records::StandardCurveSupport,
     center: Point3,
     radius: f64,
     axis: Vector3,
@@ -8194,7 +8265,10 @@ fn standard_circle_param_range(
 ) -> Option<[f64; 2]> {
     let mut ranges = support.faces.iter().filter_map(|face| {
         let surface = face_surface(ir, bindings, surface_indices, *face)?;
-        let witness = geometry::standard_face_witness(brep, bindings.get(*face)?.2)?;
+        let witness = crate::families::standard::records::standard_face_witness(
+            brep,
+            bindings.get(*face)?.2,
+        )?;
         let (PcurveGeometry::Line { origin, direction }, _) =
             standard_pcurve_geometry(&surface.geometry, support, start, end, Some(witness), None)?
         else {
@@ -8275,7 +8349,7 @@ fn attach_standard_circles(
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
 ) {
-    for circle in geometry::standard_circles(brep, bindings.len()) {
+    for circle in crate::families::standard::records::standard_circles(brep, bindings.len()) {
         let axes: Vec<Vector3> = circle
             .faces
             .iter()
@@ -8499,7 +8573,7 @@ fn attach_standard_lines(
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
 ) {
-    for line in geometry::standard_lines(brep, bindings.len()) {
+    for line in crate::families::standard::records::standard_lines(brep, bindings.len()) {
         let Some((origin_a, normal_a)) = plane_for_face(ir, bindings, line.faces[0]) else {
             continue;
         };

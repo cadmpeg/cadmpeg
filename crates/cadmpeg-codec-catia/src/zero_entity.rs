@@ -354,7 +354,7 @@ fn lift_cylinder_helix(
         apex_factor: 0.0,
         axis: *axis,
     };
-    let cache = crate::geometry::circular_helix_cache(&construction, FIT_TOLERANCE)?;
+    let cache = crate::nurbs::circular_helix_cache(&construction, FIT_TOLERANCE)?;
     Some(ZeroDirectCurve {
         geometry: CurveGeometry::Nurbs(cache.curve),
         parameter_range: Some([0.0, sweep]),
@@ -476,7 +476,7 @@ fn orient_conic_interval(
     }
     let start = if span < 0.0 { -start } else { start };
     let sweep = span.abs();
-    let range = crate::geometry::canonical_periodic_range([start, start + sweep])?;
+    let range = crate::nurbs::canonical_periodic_range([start, start + sweep])?;
     let expected_end = conic_point(curve, range[1])?;
     (point_distance(
         [expected_end.x, expected_end.y, expected_end.z],
@@ -1373,10 +1373,10 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
         }
         SurfaceGeometry::Nurbs(surface) => {
             if let Some(u) = constant_coordinate(controls, |point| point.u) {
-                crate::geometry::nurbs_surface_isocurve(surface, u, true).map(CurveGeometry::Nurbs)
+                crate::nurbs::nurbs_surface_isocurve(surface, u, true).map(CurveGeometry::Nurbs)
             } else {
                 let v = constant_coordinate(controls, |point| point.v)?;
-                crate::geometry::nurbs_surface_isocurve(surface, v, false).map(CurveGeometry::Nurbs)
+                crate::nurbs::nurbs_surface_isocurve(surface, v, false).map(CurveGeometry::Nurbs)
             }
         }
         SurfaceGeometry::Polygonal { .. }
@@ -1670,14 +1670,16 @@ pub fn unframed_vertices(bytes: &[u8]) -> Vec<Point3> {
     let mut region_start = 0usize;
     for record in &records {
         if region_start <= record.offset {
-            vertices.extend(crate::geometry::scan_vertex_records(
+            vertices.extend(crate::families::standard::records::scan_vertex_records(
                 &bytes[region_start..record.offset],
             ));
         }
         let logical_len = support_logical_len(record.tag).unwrap_or(record.bytes.len());
         region_start = record.offset.saturating_add(logical_len).min(bytes.len());
     }
-    vertices.extend(crate::geometry::scan_vertex_records(&bytes[region_start..]));
+    vertices.extend(crate::families::standard::records::scan_vertex_records(
+        &bytes[region_start..],
+    ));
     vertices
 }
 
@@ -1858,7 +1860,10 @@ fn parse_carrier_runs(
             continue;
         }
         let carrier = position;
-        let geometry = crate::geometry::zero_entity_surface_at(bytes, records[carrier].offset);
+        let geometry = crate::families::zero_entity::records::zero_entity_surface_at(
+            bytes,
+            records[carrier].offset,
+        );
         position += 1;
         let mut support_ordinals = Vec::new();
         while position < records.len() && records[position].tag[0] == 0x21 {

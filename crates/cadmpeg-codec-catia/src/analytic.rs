@@ -9,7 +9,7 @@
 //! family and must stay at the call site).
 //!
 //! These readers are little-endian. The big-endian inline analytic block
-//! decoded by `geometry::decode_curved` has a different layout, endianness,
+//! decoded by `crate::families::standard::records::decode_curved` has a different layout, endianness,
 //! and axis reconstruction, and keeps its own reader.
 
 use cadmpeg_ir::geometry::SurfaceGeometry;

@@ -96,7 +96,7 @@ pub enum B5Surface {
     /// representation remains opaque.
     UnresolvedNurbs {
         /// Decoded degree, knot, multiplicity, and pole-cardinality fields.
-        header: crate::geometry::A8SurfaceHeader,
+        header: crate::families::a5a8::records::A8SurfaceHeader,
         /// Exact source payload, including the opaque pole representation.
         payload: Vec<u8>,
     },
@@ -185,7 +185,7 @@ pub enum B5Surface {
         gauge_radius: f64,
     },
     /// An `a8 03 34` inline-pole B-spline surface, resolved through
-    /// [`crate::geometry::a8_surfaces`] and merged into the same
+    /// [`crate::families::a5a8::records::a8_surfaces`] and merged into the same
     /// `object_id` namespace.
     Nurbs(NurbsSurface),
     /// An `a8 03 32` rolling-ball result carrier, resolved through its exact
@@ -379,8 +379,8 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     if records.is_empty() || by_id.len() != records.len() {
         return None;
     }
-    let a8_headers: BTreeMap<u32, crate::geometry::A8SurfaceHeader> =
-        crate::geometry::a8_surface_headers(bytes)
+    let a8_headers: BTreeMap<u32, crate::families::a5a8::records::A8SurfaceHeader> =
+        crate::families::a5a8::records::a8_surface_headers(bytes)
             .into_iter()
             .map(|header| (header.object_id, header))
             .collect();
@@ -410,13 +410,14 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             },
         );
     }
-    for surface in crate::geometry::resolved_a8_surfaces(bytes) {
+    for surface in crate::families::a5a8::records::resolved_a8_surfaces(bytes) {
         if let SurfaceGeometry::Nurbs(nurbs) = surface.geometry {
             surfaces.insert(surface.object_id, B5Surface::Nurbs(nurbs));
         }
     }
-    for jet in crate::geometry::a8_freeform_curves(bytes) {
-        if let Some(definition) = crate::geometry::rolling_ball_jet_definition(&jet) {
+    for jet in crate::families::a5a8::records::a8_freeform_curves(bytes) {
+        if let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
+        {
             surfaces.insert(
                 jet.object_id,
                 B5Surface::RollingBall {
@@ -434,7 +435,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             surfaces.insert(record.object_id, surface);
         }
     }
-    let object_stream_pcurves = crate::geometry::object_stream_pcurves(bytes)
+    let object_stream_pcurves = crate::families::a5a8::records::object_stream_pcurves(bytes)
         .into_iter()
         .map(|pcurve| (pcurve.object_id, (pcurve.support_id, pcurve.range)))
         .collect();
@@ -523,7 +524,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             pcurves.entry(object_id).or_insert(candidate);
         }
     }
-    for jet in crate::geometry::object_stream_pcurves(bytes) {
+    for jet in crate::families::a5a8::records::object_stream_pcurves(bytes) {
         let directrix_reference = extrusion_pcurves.contains(&jet.object_id);
         if !directrix_reference
             && by_id
@@ -532,7 +533,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         {
             continue;
         }
-        let Some((_, control_points)) = crate::geometry::quintic_jet_bspline(
+        let Some((_, control_points)) = crate::nurbs::quintic_jet_bspline(
             jet.degree,
             &jet.knots,
             &jet.points,
@@ -593,7 +594,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     if faces.is_empty() || loops.is_empty() {
         return None;
     }
-    let vertex_points = crate::geometry::object_stream_vertices(bytes)
+    let vertex_points = crate::families::consolidated::records::object_stream_vertices(bytes)
         .into_iter()
         .map(|point| [point.x, point.y, point.z])
         .collect::<Vec<_>>();
@@ -1404,7 +1405,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
 
 fn surface_node(
     record: &B5Record,
-    header: Option<&crate::geometry::A8SurfaceHeader>,
+    header: Option<&crate::families::a5a8::records::A8SurfaceHeader>,
 ) -> Option<B5Surface> {
     parse_surface(record).or_else(|| {
         (record.family == 0xa8 && record.class == 0x34).then(|| {

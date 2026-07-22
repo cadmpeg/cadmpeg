@@ -1259,7 +1259,7 @@ fn oriented_circle_plan(
     } else {
         angles
     };
-    let parameter_range = crate::geometry::canonical_periodic_range(oriented_angles)?;
+    let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
     let geometry = CurveGeometry::Circle {
         center: *center,
         axis,
@@ -1579,9 +1579,9 @@ fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<Curve
 
 fn nurbs_isocurve(pcurve: &B5Pcurve, surface: &NurbsSurface) -> Option<NurbsCurve> {
     if let Some(u) = constant_coordinate(&pcurve.control_points, 0) {
-        crate::geometry::nurbs_surface_isocurve(surface, u, true)
+        crate::nurbs::nurbs_surface_isocurve(surface, u, true)
     } else if let Some(v) = constant_coordinate(&pcurve.control_points, 1) {
-        crate::geometry::nurbs_surface_isocurve(surface, v, false)
+        crate::nurbs::nurbs_surface_isocurve(surface, v, false)
     } else {
         None
     }
@@ -1682,7 +1682,7 @@ fn cylinder_helix(
         apex_factor: 0.0,
         axis: vector(*axis),
     };
-    let cache = crate::geometry::circular_helix_cache(&definition, FIT_TOLERANCE)?;
+    let cache = crate::nurbs::circular_helix_cache(&definition, FIT_TOLERANCE)?;
     let cache_start = cache.curve.control_points.first()?;
     let cache_end = cache.curve.control_points.last()?;
     if distance([cache_start.x, cache_start.y, cache_start.z], edge_start) > POINT_TOLERANCE
@@ -3808,8 +3808,7 @@ mod tests {
             u_periodic: false,
             v_periodic: false,
         };
-        let curve =
-            crate::geometry::nurbs_surface_isocurve(&surface, 0.25, true).expect("u isocurve");
+        let curve = crate::nurbs::nurbs_surface_isocurve(&surface, 0.25, true).expect("u isocurve");
         assert_eq!(curve.degree, 1);
         assert_eq!(curve.knots, surface.v_knots);
         assert_eq!(curve.control_points[0], Point3::new(0.5, 0.0, 0.0));
