@@ -507,7 +507,7 @@ fn current_geometry_locus_profile_line(payload: &[u8], offset: usize, code: u32)
         && marker_profile_curve_role(payload, offset) == Some(1)
 }
 
-pub(crate) fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
+fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
     if !sketch_marker_prefix_at(payload, offset) {
         return false;
     }
@@ -995,7 +995,7 @@ pub(crate) fn marker_object_index(payload: &[u8], offset: usize) -> Option<u32> 
     (index != u32::MAX).then_some(index)
 }
 
-pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
+fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
     payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00])
 }
 
@@ -12612,7 +12612,7 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     resolved
 }
 
-pub(crate) fn resolve_operand_marker<'a>(
+fn resolve_operand_marker<'a>(
     entities: impl IntoIterator<Item = &'a SketchInputEntity>,
     kind: FeatureInputOperandKind,
     address: u16,
@@ -13328,7 +13328,7 @@ fn compact_sketch_surface_component_path_at(
     compact_heterogeneous_component_path(payload, marker + 18, 3).map(|(components, _)| components)
 }
 
-pub(crate) fn compact_surface_selection_at(
+fn compact_surface_selection_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
@@ -14235,10 +14235,7 @@ fn unique_marker_candidate(candidates: &[(String, bool)]) -> Option<&str> {
     Some(id)
 }
 
-pub(crate) fn operand_accepts_marker(
-    kind: FeatureInputOperandKind,
-    marker: SketchInputKind,
-) -> bool {
+fn operand_accepts_marker(kind: FeatureInputOperandKind, marker: SketchInputKind) -> bool {
     match kind {
         FeatureInputOperandKind::D6
         | FeatureInputOperandKind::Native(
@@ -20697,10 +20694,7 @@ pub(crate) fn enrich_history_combine_selections(
     }
 }
 
-pub(crate) fn compact_combine_operation_at(
-    payload: &[u8],
-    name_offset: usize,
-) -> Option<&'static str> {
+fn compact_combine_operation_at(payload: &[u8], name_offset: usize) -> Option<&'static str> {
     if payload.get(name_offset..name_offset + 5)? != [0x04, 0x80, 0xff, 0xfe, 0xff] {
         return None;
     }
@@ -21035,7 +21029,7 @@ pub(crate) fn compact_body_path_at(payload: &[u8], marker: usize) -> Option<Vec<
         })
 }
 
-pub(crate) fn compact_body_component_path_at(
+fn compact_body_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
@@ -21181,21 +21175,21 @@ pub(crate) fn project_compact_combine_paths(
     }
 }
 
-pub(crate) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {
     compact_extrusion_end_spec_header(payload, offset, 1)
         && (compact_extrusion_traversal_tail_at(payload, offset)
             || (payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
                 && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()))
 }
 
-pub(crate) fn compact_extrusion_blind_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_blind_at(payload: &[u8], offset: usize) -> bool {
     compact_extrusion_end_spec_header(payload, offset, 0)
         && ((payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
             && compact_extrusion_dimension_child_at(payload, offset + 26).is_some())
             || compact_extrusion_dimension_child_at(payload, offset + 22).is_some())
 }
 
-pub(crate) fn compact_extrusion_through_next_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_through_next_at(payload: &[u8], offset: usize) -> bool {
     compact_extrusion_end_spec_header(payload, offset, 2)
         && compact_extrusion_traversal_tail_at(payload, offset)
 }
@@ -21204,7 +21198,7 @@ pub(crate) fn compact_extrusion_through_next_at(payload: &[u8], offset: usize) -
 /// traversal code `1` with second-direction code `1` and the shared traversal
 /// tail, and the dedicated code `9` whose second-direction word is `1` and
 /// whose retained blind dimension child follows immediately.
-pub(crate) fn compact_extrusion_through_all_both_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_through_all_both_at(payload: &[u8], offset: usize) -> bool {
     (compact_extrusion_two_direction_header(payload, offset, 1)
         && payload.get(offset + 26..offset + 30) == Some(&[0, 0, 0, 0])
         && compact_extrusion_traversal_body_at(payload, offset))
@@ -21215,7 +21209,7 @@ pub(crate) fn compact_extrusion_through_all_both_at(payload: &[u8], offset: usiz
 /// Blind first direction with a through-all second direction: a code `0`
 /// header whose second-direction word is `1`, owning the blind dimension
 /// child.
-pub(crate) fn compact_extrusion_blind_through_all_second_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_blind_through_all_second_at(payload: &[u8], offset: usize) -> bool {
     compact_end_spec_identity_at(payload, offset)
         && payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
         && payload
@@ -21281,7 +21275,7 @@ fn compact_extrusion_traversal_body_from(payload: &[u8], start: usize) -> bool {
         })
 }
 
-pub(crate) fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> bool {
     compact_extrusion_end_spec_header(payload, offset, 6)
         && payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
         && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()
@@ -21328,7 +21322,7 @@ pub(crate) enum CompactPointReferenceKind {
     EdgeEndpoint,
 }
 
-pub(crate) fn compact_extrusion_to_vertex_at(
+fn compact_extrusion_to_vertex_at(
     payload: &[u8],
     offset: usize,
 ) -> Option<(usize, CompactPointReferenceKind)> {
@@ -21371,7 +21365,7 @@ pub(crate) fn compact_extrusion_to_vertex_at(
         .map(|marker| (marker, kind))
 }
 
-pub(crate) fn compact_extrusion_offset_from_face_at(
+fn compact_extrusion_offset_from_face_at(
     payload: &[u8],
     offset: usize,
     end: usize,
@@ -21410,7 +21404,7 @@ pub(crate) fn compact_extrusion_offset_from_face_at(
     None
 }
 
-pub(crate) fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> {
+fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> {
     // Older end-spec streams encode the `moEndSpec_c` class as the fixed
     // two-byte token `03 00`; their remaining header and child grammar is
     // identical. Keep that token scoped to the to-face form whose required
@@ -21761,7 +21755,7 @@ fn compact_termination_reference_at(payload: &[u8], marker: usize) -> bool {
 /// grammar and may additionally carry a leading identifier-less component
 /// cell, `a0 86 01 00` filler words, or an `01 00 00 00` slot word between
 /// counted entries.
-pub(crate) fn compact_termination_reference_path_at(
+fn compact_termination_reference_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
@@ -22318,7 +22312,7 @@ pub(crate) fn project_dissected_sketches(
     }
 }
 
-pub(crate) fn compact_edge_selection_value(local_edge_ids: &[u32]) -> String {
+fn compact_edge_selection_value(local_edge_ids: &[u32]) -> String {
     let mut value = String::from("sldprt:feature-input:edge-ids:");
     for (index, edge_id) in local_edge_ids.iter().enumerate() {
         if index != 0 {
