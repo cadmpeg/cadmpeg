@@ -573,8 +573,9 @@ and extrusion bounds. Slots zero and three use the first directrix-coordinate
 lane, slots two and five use the second directrix-coordinate lane, and slots one
 and four store the sweep bounds. In a first-coordinate frame slot,
 `4a <tail6>` reconstructs as the positive `40 <tail6> 00` exception. When exactly two
-frame-axis spans equal the ranges of the first and second control-point
-coordinates, those axes define the directrix chart. Each directrix axis is a
+frame-axis spans equal the first-to-last control-point spans of the two
+directrix coordinates, those axes define the directrix chart. Interior control
+points do not widen these spans. Each directrix axis is a
 signed unit-slope affine map selected by the frame bounds and the layout's
 required intercept magnitude. A missing or non-unique map leaves the frame
 opaque. The remaining axis defines the extrusion vector. The four placed

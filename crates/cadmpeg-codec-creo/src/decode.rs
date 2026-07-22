@@ -7273,27 +7273,12 @@ fn placed_tabulated_cylinder_directrix(
     };
     let first = [*a0, *a1, *a2];
     let second = [*b0, *b1, *b2];
-    let local_min = [
-        points
-            .iter()
-            .map(|point| point[0])
-            .fold(f64::INFINITY, f64::min),
-        points
-            .iter()
-            .map(|point| point[1])
-            .fold(f64::INFINITY, f64::min),
+    let local_start = points.first()?;
+    let local_end = points.last()?;
+    let local_span = [
+        (local_end[0] - local_start[0]).abs(),
+        (local_end[1] - local_start[1]).abs(),
     ];
-    let local_max = [
-        points
-            .iter()
-            .map(|point| point[0])
-            .fold(f64::NEG_INFINITY, f64::max),
-        points
-            .iter()
-            .map(|point| point[1])
-            .fold(f64::NEG_INFINITY, f64::max),
-    ];
-    let local_span = [local_max[0] - local_min[0], local_max[1] - local_min[1]];
     if local_span
         .iter()
         .any(|span| !span.is_finite() || *span <= 0.0)
@@ -7308,7 +7293,7 @@ fn placed_tabulated_cylinder_directrix(
             close((second[axis] - first[axis]).abs(), local_span[coordinate])
         }
         FrameLayout::SignedPlanar { first_offset, .. } => signed_unit_chart(
-            [local_min[coordinate], local_max[coordinate]],
+            [local_start[coordinate], local_end[coordinate]],
             [first[axis], second[axis]],
             if coordinate == 0 { first_offset } else { 0.0 },
         )
@@ -7321,7 +7306,7 @@ fn placed_tabulated_cylinder_directrix(
             };
             offsets.iter().any(|offset| {
                 signed_unit_chart(
-                    [local_min[coordinate], local_max[coordinate]],
+                    [local_start[coordinate], local_end[coordinate]],
                     [first[axis], second[axis]],
                     *offset,
                 )
@@ -7351,12 +7336,12 @@ fn placed_tabulated_cylinder_directrix(
         } => (
             Some((
                 signed_unit_chart(
-                    [local_min[0], local_max[0]],
+                    [local_start[0], local_end[0]],
                     [first[*first_axis], second[*first_axis]],
                     first_offset,
                 )?,
                 signed_unit_chart(
-                    [local_min[1], local_max[1]],
+                    [local_start[1], local_end[1]],
                     [first[*second_axis], second[*second_axis]],
                     0.0,
                 )?,
@@ -7370,12 +7355,12 @@ fn placed_tabulated_cylinder_directrix(
                     Some((
                         (
                             signed_unit_chart(
-                                [local_min[0], local_max[0]],
+                                [local_start[0], local_end[0]],
                                 [first[*first_axis], second[*first_axis]],
                                 first_offset,
                             )?,
                             signed_unit_chart(
-                                [local_min[1], local_max[1]],
+                                [local_start[1], local_end[1]],
                                 [first[*second_axis], second[*second_axis]],
                                 0.0,
                             )?,
@@ -7406,9 +7391,9 @@ fn placed_tabulated_cylinder_directrix(
                 }
                 None => {
                     let chart_first =
-                        first[*first_axis].max(second[*first_axis]) - (point[0] - local_min[0]);
+                        first[*first_axis].max(second[*first_axis]) - (point[0] - local_start[0]);
                     let chart_second =
-                        first[*second_axis].min(second[*second_axis]) + (point[1] - local_min[1]);
+                        first[*second_axis].min(second[*second_axis]) + (point[1] - local_start[1]);
                     placed[*first_axis] = if *first_axis < 2 {
                         -chart_first
                     } else {
@@ -16460,7 +16445,7 @@ mod resolved_sketch_tests {
 
     #[test]
     fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
-        let replay = crate::surface::TabulatedCylinderCurveReplay {
+        let mut replay = crate::surface::TabulatedCylinderCurveReplay {
             surface_id: 7,
             curve_id: 9,
             curve_type: 0x13,
@@ -16538,9 +16523,11 @@ mod resolved_sketch_tests {
                 values: [29.0, 5.0, 2.0, -26.0, 10.0, 4.0],
                 prefixes: [0x4a, 0x46, 0x2f, 0x46, 0x46, 0x2e],
             });
+        replay.control_points[1] = Some([10.0, -5.0]);
         let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame)
             .expect("independently signed offset placement");
         assert_eq!(curve.control_points[0], Point3::new(-29.0, 5.0, 2.0));
+        assert_eq!(curve.control_points[1], Point3::new(-20.0, 5.0, -5.0));
         assert_eq!(curve.control_points[3], Point3::new(-26.0, 5.0, 4.0));
         assert_eq!(sweep, [0.0, 5.0, 0.0]);
     }
@@ -16639,11 +16626,11 @@ mod resolved_sketch_tests {
             .expect("zero-offset directrix placement");
         assert_eq!(
             curve.control_points[0],
-            Point3::new(2.603_530_729_189_511_6, 6.634_758_301_120_719, 4.78)
+            Point3::new(-2.603_530_729_189_511_6, 6.634_758_301_120_719, 4.78)
         );
         assert_eq!(
             curve.control_points[3],
-            Point3::new(2.355_057_866_495_792, 6.440_596_814_034_794, 4.78)
+            Point3::new(-2.355_057_866_495_792, 6.440_596_814_034_794, 4.78)
         );
         assert_eq!(sweep, [0.0, 0.0, 0.099_999_999_999_999_64]);
     }
