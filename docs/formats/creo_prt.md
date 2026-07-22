@@ -2510,12 +2510,18 @@ A curve-from-equation entity stores `expression f8 <count>` followed by exactly 
 Square brackets following a numeric literal or parameter expression contain a
 unit expression. Identifiers inside the brackets are unit symbols, not relation
 dependencies. Length symbols `mm`, `cm`, `m`, `in`, `inch`, `ft`, `foot`, and
-`micron` convert to millimeters. Angle symbols `deg`, `degree`, `rad`, and
-`radian` convert to relation degrees. Addition, subtraction, and comparison
-require equal dimensions. Multiplication by and division by a dimensionless
-scalar retain the quantity dimension; dividing equal dimensions produces a
-dimensionless scalar. Circular trigonometric functions accept angular
-quantities. Evaluated length and angle assignments retain their dimensions.
+`micron` convert to millimeters. Mass symbols `kg`, `g`, `lb`, and `lbm`
+convert to kilograms. Time symbols `s`, `sec`, `second`, `min`, `minute`, `hr`,
+and `hour` convert to seconds. Force symbols `N`, `newton`, and `lbf` convert to
+kilogram-millimeters per square second. Angle symbols `deg`, `degree`, `rad`,
+and `radian` convert to relation degrees. Unit multiplication, division,
+parentheses, and signed integer powers form compound dimensions. Addition,
+subtraction, and comparison require equal dimensions. Multiplication and
+division add and subtract base-dimension powers. An integer power multiplies
+the powers, and `sqrt` divides even powers by two. `abs`, `min`, `max`, `near`,
+`dbl_in_tol`, and `pow` preserve or validate dimensions. Circular trigonometric
+functions accept angular quantities. Evaluated assignments retain their
+physical dimensions.
 An assignment target may append a bracketed unit expression only when that
 assignment creates the parameter. A dimensionless right-hand value is
 interpreted in the declared unit; an explicitly dimensioned right-hand value

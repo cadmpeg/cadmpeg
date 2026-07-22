@@ -4908,13 +4908,14 @@ fn decode_evaluates_relation_model_name_from_unique_counted_header() {
 #[test]
 fn decode_transfers_new_relation_parameter_unit_declarations() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x0aexpression\0\xf8\x02span[inch]=2\0copy=span+25.4[mm]\0"
+        \xe0\x0aexpression\0\xf8\x03span[inch]=2\0copy=span+25.4[mm]\0\
+        stress[N/mm^2]=2\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let parameters = &result.ir.model.parameters;
-    assert_eq!(parameters.len(), 2);
+    assert_eq!(parameters.len(), 3);
     assert_eq!(parameters[0].name, "span");
     assert_eq!(parameters[0].properties["declared_unit"], "inch");
     assert_eq!(
@@ -4930,6 +4931,18 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
     assert_eq!(native.fields["assignments"][0]["name"], "span");
     assert_eq!(native.fields["assignments"][0]["declared_unit"], "inch");
+    assert_eq!(parameters[2].properties["declared_unit"], "N/mm^2");
+    assert_eq!(
+        parameters[2].properties["evaluated_canonical_value"],
+        "2000"
+    );
+    assert_eq!(
+        parameters[2].properties["evaluated_dimension"],
+        "length:-1,mass:1,time:-2,angle:0"
+    );
+    assert_eq!(parameters[2].value, None);
+    assert_eq!(native.fields["assignments"][2]["value"]["value"], 2_000.0);
+    assert_eq!(native.fields["assignments"][2]["value"]["length_power"], -1);
 }
 
 #[test]

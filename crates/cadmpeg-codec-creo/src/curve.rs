@@ -107,6 +107,8 @@ pub enum CurveExpressionValue {
     Length(f64),
     /// Angle in relation degrees.
     Angle(f64),
+    /// Quantity whose physical dimension has no dedicated neutral value type.
+    Quantity(CurveExpressionQuantity),
     /// UTF-8 string value.
     String(String),
 }
@@ -115,7 +117,33 @@ impl CurveExpressionValue {
     fn truth(&self) -> Option<bool> {
         match self {
             Self::Number(value) => Some(*value != 0.0),
-            Self::Length(_) | Self::Angle(_) | Self::String(_) => None,
+            Self::Length(_) | Self::Angle(_) | Self::Quantity(_) | Self::String(_) => None,
+        }
+    }
+}
+
+/// Canonically scaled relation quantity represented by physical base powers.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct CurveExpressionQuantity {
+    /// Numeric value in canonical millimeter-kilogram-second-degree units.
+    pub value: f64,
+    /// Power of length.
+    pub length_power: i8,
+    /// Power of mass.
+    pub mass_power: i8,
+    /// Power of time.
+    pub time_power: i8,
+    /// Power of plane angle.
+    pub angle_power: i8,
+}
+
+impl CurveExpressionQuantity {
+    fn dimension(self) -> RelationDimension {
+        RelationDimension {
+            length: self.length_power,
+            mass: self.mass_power,
+            time: self.time_power,
+            angle: self.angle_power,
         }
     }
 }
@@ -931,19 +959,24 @@ fn evaluate_expression_program(
                     .and_then(|value| match assignment.declared_unit.as_deref() {
                         None => Some(value),
                         Some(unit) => {
-                            let (scale, dimension) = relation_unit(unit)?;
-                            match (value, dimension) {
-                                (CurveExpressionValue::Number(value), dimension) => {
-                                    CurveExpressionValue::Number(value).with_unit(scale, dimension)
+                            let unit = relation_unit(unit)?;
+                            match (value, unit.dimension) {
+                                (CurveExpressionValue::Number(value), _) => {
+                                    CurveExpressionValue::Number(value).with_unit(unit)
                                 }
                                 (
                                     value @ CurveExpressionValue::Length(_),
-                                    RelationDimension::Length,
+                                    RelationDimension::LENGTH,
                                 )
                                 | (
                                     value @ CurveExpressionValue::Angle(_),
-                                    RelationDimension::Angle,
+                                    RelationDimension::ANGLE,
                                 ) => Some(value),
+                                (CurveExpressionValue::Quantity(value), dimension)
+                                    if value.dimension() == dimension =>
+                                {
+                                    Some(CurveExpressionValue::Quantity(value))
+                                }
                                 _ => None,
                             }
                         }
@@ -970,24 +1003,221 @@ struct RelationEvaluationContext<'a> {
     existing_symbols: Option<&'a BTreeSet<String>>,
 }
 
-#[derive(Clone, Copy)]
-enum RelationDimension {
-    Length,
-    Angle,
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct RelationDimension {
+    length: i8,
+    mass: i8,
+    time: i8,
+    angle: i8,
 }
 
-fn relation_unit(unit: &str) -> Option<(f64, RelationDimension)> {
-    match unit.trim().to_ascii_lowercase().as_str() {
-        "mm" => Some((1.0, RelationDimension::Length)),
-        "cm" => Some((10.0, RelationDimension::Length)),
-        "m" => Some((1_000.0, RelationDimension::Length)),
-        "in" | "inch" => Some((25.4, RelationDimension::Length)),
-        "ft" | "foot" => Some((304.8, RelationDimension::Length)),
-        "micron" => Some((0.001, RelationDimension::Length)),
-        "deg" | "degree" => Some((1.0, RelationDimension::Angle)),
-        "rad" | "radian" => Some((180.0 / std::f64::consts::PI, RelationDimension::Angle)),
-        _ => None,
+impl RelationDimension {
+    const LENGTH: Self = Self {
+        length: 1,
+        mass: 0,
+        time: 0,
+        angle: 0,
+    };
+    const MASS: Self = Self {
+        length: 0,
+        mass: 1,
+        time: 0,
+        angle: 0,
+    };
+    const TIME: Self = Self {
+        length: 0,
+        mass: 0,
+        time: 1,
+        angle: 0,
+    };
+    const ANGLE: Self = Self {
+        length: 0,
+        mass: 0,
+        time: 0,
+        angle: 1,
+    };
+    const FORCE: Self = Self {
+        length: 1,
+        mass: 1,
+        time: -2,
+        angle: 0,
+    };
+
+    fn combine(self, right: Self, subtract: bool) -> Option<Self> {
+        let sign = if subtract { -1 } else { 1 };
+        Some(Self {
+            length: self.length.checked_add(right.length.checked_mul(sign)?)?,
+            mass: self.mass.checked_add(right.mass.checked_mul(sign)?)?,
+            time: self.time.checked_add(right.time.checked_mul(sign)?)?,
+            angle: self.angle.checked_add(right.angle.checked_mul(sign)?)?,
+        })
     }
+
+    fn scale(self, exponent: i8) -> Option<Self> {
+        Some(Self {
+            length: self.length.checked_mul(exponent)?,
+            mass: self.mass.checked_mul(exponent)?,
+            time: self.time.checked_mul(exponent)?,
+            angle: self.angle.checked_mul(exponent)?,
+        })
+    }
+
+    fn root(self, degree: i8) -> Option<Self> {
+        (degree > 0
+            && self.length % degree == 0
+            && self.mass % degree == 0
+            && self.time % degree == 0
+            && self.angle % degree == 0)
+            .then_some(Self {
+                length: self.length / degree,
+                mass: self.mass / degree,
+                time: self.time / degree,
+                angle: self.angle / degree,
+            })
+    }
+}
+
+#[derive(Clone, Copy)]
+struct RelationUnit {
+    scale: f64,
+    dimension: RelationDimension,
+}
+
+impl RelationUnit {
+    fn combine(self, right: Self, divide: bool) -> Option<Self> {
+        let scale = if divide {
+            self.scale / right.scale
+        } else {
+            self.scale * right.scale
+        };
+        scale.is_finite().then_some(Self {
+            scale,
+            dimension: self.dimension.combine(right.dimension, divide)?,
+        })
+    }
+
+    fn power(self, exponent: i8) -> Option<Self> {
+        let scale = self.scale.powi(i32::from(exponent));
+        scale.is_finite().then_some(Self {
+            scale,
+            dimension: self.dimension.scale(exponent)?,
+        })
+    }
+}
+
+fn relation_unit(source: &str) -> Option<RelationUnit> {
+    let mut parser = RelationUnitParser {
+        source: source.as_bytes(),
+        cursor: 0,
+        nesting: 0,
+    };
+    let unit = parser.expression()?;
+    parser.whitespace();
+    (parser.cursor == parser.source.len()).then_some(unit)
+}
+
+struct RelationUnitParser<'a> {
+    source: &'a [u8],
+    cursor: usize,
+    nesting: usize,
+}
+
+impl RelationUnitParser<'_> {
+    fn expression(&mut self) -> Option<RelationUnit> {
+        let mut unit = self.power()?;
+        loop {
+            self.whitespace();
+            let divide = match self.source.get(self.cursor) {
+                Some(b'*') => false,
+                Some(b'/') => true,
+                _ => return Some(unit),
+            };
+            self.cursor += 1;
+            unit = unit.combine(self.power()?, divide)?;
+        }
+    }
+
+    fn power(&mut self) -> Option<RelationUnit> {
+        let unit = self.primary()?;
+        self.whitespace();
+        if self.source.get(self.cursor) != Some(&b'^') {
+            return Some(unit);
+        }
+        self.cursor += 1;
+        self.whitespace();
+        let negative = self.source.get(self.cursor) == Some(&b'-');
+        if negative || self.source.get(self.cursor) == Some(&b'+') {
+            self.cursor += 1;
+        }
+        let start = self.cursor;
+        while self.source.get(self.cursor).is_some_and(u8::is_ascii_digit) {
+            self.cursor += 1;
+        }
+        let magnitude = std::str::from_utf8(self.source.get(start..self.cursor)?)
+            .ok()?
+            .parse::<i16>()
+            .ok()?;
+        let exponent = if negative { -magnitude } else { magnitude };
+        unit.power(i8::try_from(exponent).ok()?)
+    }
+
+    fn primary(&mut self) -> Option<RelationUnit> {
+        self.whitespace();
+        if self.source.get(self.cursor) == Some(&b'(') {
+            (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
+            self.cursor += 1;
+            self.nesting += 1;
+            let unit = self.expression()?;
+            self.nesting -= 1;
+            self.whitespace();
+            (self.source.get(self.cursor) == Some(&b')')).then_some(())?;
+            self.cursor += 1;
+            return Some(unit);
+        }
+        let start = self.cursor;
+        while self
+            .source
+            .get(self.cursor)
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+        {
+            self.cursor += 1;
+        }
+        let symbol = std::str::from_utf8(self.source.get(start..self.cursor)?).ok()?;
+        relation_unit_symbol(symbol)
+    }
+
+    fn whitespace(&mut self) {
+        while self
+            .source
+            .get(self.cursor)
+            .is_some_and(u8::is_ascii_whitespace)
+        {
+            self.cursor += 1;
+        }
+    }
+}
+
+fn relation_unit_symbol(symbol: &str) -> Option<RelationUnit> {
+    let (scale, dimension) = match symbol.to_ascii_lowercase().as_str() {
+        "mm" => (1.0, RelationDimension::LENGTH),
+        "cm" => (10.0, RelationDimension::LENGTH),
+        "m" => (1_000.0, RelationDimension::LENGTH),
+        "in" | "inch" => (25.4, RelationDimension::LENGTH),
+        "ft" | "foot" => (304.8, RelationDimension::LENGTH),
+        "micron" => (0.001, RelationDimension::LENGTH),
+        "kg" => (1.0, RelationDimension::MASS),
+        "g" => (0.001, RelationDimension::MASS),
+        "lb" | "lbm" => (0.453_592_37, RelationDimension::MASS),
+        "s" | "sec" | "second" => (1.0, RelationDimension::TIME),
+        "min" | "minute" => (60.0, RelationDimension::TIME),
+        "hr" | "hour" => (3_600.0, RelationDimension::TIME),
+        "deg" | "degree" => (1.0, RelationDimension::ANGLE),
+        "rad" | "radian" => (180.0 / std::f64::consts::PI, RelationDimension::ANGLE),
+        "n" | "newton" => (1_000.0, RelationDimension::FORCE),
+        "lbf" => (4_448.221_615_260_5, RelationDimension::FORCE),
+        _ => return None,
+    };
+    Some(RelationUnit { scale, dimension })
 }
 
 trait ExpressionValue: Clone {
@@ -995,7 +1225,7 @@ trait ExpressionValue: Clone {
     fn string(_value: String) -> Option<Self> {
         None
     }
-    fn with_unit(self, scale: f64, dimension: RelationDimension) -> Option<Self>;
+    fn with_unit(self, unit: RelationUnit) -> Option<Self>;
     fn add(self, right: Self) -> Option<Self>;
     fn subtract(self, right: Self) -> Option<Self>;
     fn multiply(self, right: Self) -> Option<Self>;
@@ -1023,8 +1253,8 @@ impl ExpressionValue for f64 {
         Some(self + right)
     }
 
-    fn with_unit(self, scale: f64, _dimension: RelationDimension) -> Option<Self> {
-        Some(self * scale)
+    fn with_unit(self, unit: RelationUnit) -> Option<Self> {
+        Some(self * unit.scale)
     }
 
     fn subtract(self, right: Self) -> Option<Self> {
@@ -1097,10 +1327,10 @@ impl ExpressionValue for AffineValue {
         })
     }
 
-    fn with_unit(self, scale: f64, _dimension: RelationDimension) -> Option<Self> {
+    fn with_unit(self, unit: RelationUnit) -> Option<Self> {
         Some(Self {
-            constant: self.constant * scale,
-            linear: self.linear * scale,
+            constant: self.constant * unit.scale,
+            linear: self.linear * unit.scale,
         })
     }
 
@@ -1190,14 +1420,11 @@ impl ExpressionValue for CurveExpressionValue {
         Some(Self::String(value))
     }
 
-    fn with_unit(self, scale: f64, dimension: RelationDimension) -> Option<Self> {
+    fn with_unit(self, unit: RelationUnit) -> Option<Self> {
         let Self::Number(value) = self else {
             return None;
         };
-        Some(match dimension {
-            RelationDimension::Length => Self::Length(value * scale),
-            RelationDimension::Angle => Self::Angle(value * scale),
-        })
+        Some(quantity_value(value * unit.scale, unit.dimension))
     }
 
     fn add(self, right: Self) -> Option<Self> {
@@ -1206,53 +1433,63 @@ impl ExpressionValue for CurveExpressionValue {
                 left.push_str(&right);
                 Some(Self::String(left))
             }
-            (left, right) => quantity_additive(left, right, |left, right| left + right),
+            (left, right) => quantity_additive(&left, &right, |left, right| left + right),
         }
     }
 
     fn subtract(self, right: Self) -> Option<Self> {
-        quantity_additive(self, right, |left, right| left - right)
+        quantity_additive(&self, &right, |left, right| left - right)
     }
 
     fn multiply(self, right: Self) -> Option<Self> {
-        match (self, right) {
-            (Self::Number(left), Self::Number(right)) => Some(Self::Number(left * right)),
-            (Self::Number(scale), Self::Length(value))
-            | (Self::Length(value), Self::Number(scale)) => Some(Self::Length(value * scale)),
-            (Self::Number(scale), Self::Angle(value))
-            | (Self::Angle(value), Self::Number(scale)) => Some(Self::Angle(value * scale)),
-            _ => None,
-        }
+        let (left, left_dimension) = quantity_parts_ref(&self)?;
+        let (right, right_dimension) = quantity_parts_ref(&right)?;
+        Some(quantity_value(
+            left * right,
+            left_dimension.combine(right_dimension, false)?,
+        ))
     }
 
     fn divide(self, right: Self) -> Option<Self> {
-        match (self, right) {
-            (Self::Number(left), Self::Number(right)) => Some(Self::Number(left / right)),
-            (Self::Length(value), Self::Number(scale)) => Some(Self::Length(value / scale)),
-            (Self::Angle(value), Self::Number(scale)) => Some(Self::Angle(value / scale)),
-            (Self::Length(left), Self::Length(right)) | (Self::Angle(left), Self::Angle(right)) => {
-                Some(Self::Number(left / right))
-            }
-            _ => None,
-        }
+        let (left, left_dimension) = quantity_parts_ref(&self)?;
+        let (right, right_dimension) = quantity_parts_ref(&right)?;
+        Some(quantity_value(
+            left / right,
+            left_dimension.combine(right_dimension, true)?,
+        ))
     }
 
     fn power(self, right: Self) -> Option<Self> {
-        numeric_binary(self, right, f64::powf)
+        let Self::Number(exponent) = right else {
+            return None;
+        };
+        let (value, dimension) = quantity_parts_ref(&self)?;
+        if dimension == RelationDimension::default() {
+            return Some(Self::Number(value.powf(exponent)));
+        }
+        let integer = exponent.trunc();
+        (integer == exponent).then_some(())?;
+        let exponent = i8::try_from(integer as i16).ok()?;
+        Some(quantity_value(
+            value.powi(i32::from(exponent)),
+            dimension.scale(exponent)?,
+        ))
     }
 
     fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
         let result = match (self, right) {
             (Self::Number(left), Self::Number(right)) => operator.evaluate(left, right),
-            (Self::Length(left), Self::Length(right)) | (Self::Angle(left), Self::Angle(right)) => {
-                operator.evaluate(left, right)
-            }
             (Self::String(left), Self::String(right)) => match operator {
                 ComparisonOperator::Equal => left == right,
                 ComparisonOperator::NotEqual => left != right,
                 _ => return None,
             },
-            _ => return None,
+            (left, right) => {
+                let (left, left_dimension) = quantity_parts_ref(&left)?;
+                let (right, right_dimension) = quantity_parts_ref(&right)?;
+                (left_dimension == right_dimension).then_some(())?;
+                operator.evaluate(left, right)
+            }
         };
         Some(Self::Number(f64::from(result)))
     }
@@ -1289,6 +1526,10 @@ impl ExpressionValue for CurveExpressionValue {
             Self::Number(value) => Some(Self::Number(-value)),
             Self::Length(value) => Some(Self::Length(-value)),
             Self::Angle(value) => Some(Self::Angle(-value)),
+            Self::Quantity(mut value) => {
+                value.value = -value.value;
+                Some(Self::Quantity(value))
+            }
             Self::String(_) => None,
         }
     }
@@ -1296,27 +1537,48 @@ impl ExpressionValue for CurveExpressionValue {
     fn finite(self) -> bool {
         match self {
             Self::Number(value) | Self::Length(value) | Self::Angle(value) => value.is_finite(),
+            Self::Quantity(value) => value.value.is_finite(),
             Self::String(_) => true,
         }
     }
 }
 
 fn quantity_additive(
-    left: CurveExpressionValue,
-    right: CurveExpressionValue,
+    left: &CurveExpressionValue,
+    right: &CurveExpressionValue,
     operation: impl FnOnce(f64, f64) -> f64,
 ) -> Option<CurveExpressionValue> {
-    match (left, right) {
-        (CurveExpressionValue::Number(left), CurveExpressionValue::Number(right)) => {
-            Some(CurveExpressionValue::Number(operation(left, right)))
-        }
-        (CurveExpressionValue::Length(left), CurveExpressionValue::Length(right)) => {
-            Some(CurveExpressionValue::Length(operation(left, right)))
-        }
-        (CurveExpressionValue::Angle(left), CurveExpressionValue::Angle(right)) => {
-            Some(CurveExpressionValue::Angle(operation(left, right)))
-        }
-        _ => None,
+    let (left, left_dimension) = quantity_parts_ref(left)?;
+    let (right, right_dimension) = quantity_parts_ref(right)?;
+    (left_dimension == right_dimension).then_some(())?;
+    Some(quantity_value(operation(left, right), left_dimension))
+}
+
+fn quantity_parts_ref(value: &CurveExpressionValue) -> Option<(f64, RelationDimension)> {
+    match value {
+        CurveExpressionValue::Number(value) => Some((*value, RelationDimension::default())),
+        CurveExpressionValue::Length(value) => Some((*value, RelationDimension::LENGTH)),
+        CurveExpressionValue::Angle(value) => Some((*value, RelationDimension::ANGLE)),
+        CurveExpressionValue::Quantity(value) => Some((value.value, value.dimension())),
+        CurveExpressionValue::String(_) => None,
+    }
+}
+
+fn quantity_value(value: f64, dimension: RelationDimension) -> CurveExpressionValue {
+    if dimension == RelationDimension::default() {
+        CurveExpressionValue::Number(value)
+    } else if dimension == RelationDimension::LENGTH {
+        CurveExpressionValue::Length(value)
+    } else if dimension == RelationDimension::ANGLE {
+        CurveExpressionValue::Angle(value)
+    } else {
+        CurveExpressionValue::Quantity(CurveExpressionQuantity {
+            value,
+            length_power: dimension.length,
+            mass_power: dimension.mass,
+            time_power: dimension.time,
+            angle_power: dimension.angle,
+        })
     }
 }
 
@@ -1524,8 +1786,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 .position(|byte| *byte == b']')?;
             let unit_end = unit_start + unit_length;
             let unit = std::str::from_utf8(&self.source[unit_start..unit_end]).ok()?;
-            let (scale, dimension) = relation_unit(unit)?;
-            value = value.with_unit(scale, dimension)?;
+            value = value.with_unit(relation_unit(unit)?)?;
             self.cursor = unit_end + 1;
         }
         Some(value)
@@ -1791,7 +2052,7 @@ fn evaluate_creo_relation_function(
     arguments: &[CurveExpressionValue],
     context: RelationEvaluationContext<'_>,
 ) -> Option<CurveExpressionValue> {
-    use CurveExpressionValue::{Angle, Length, Number, String};
+    use CurveExpressionValue::{Angle, Length, Number, Quantity, String};
     let value = match (name, arguments) {
         (CreoMathFunction::Itos, [Number(value)]) if value.is_finite() => {
             let rounded = value.round();
@@ -1855,12 +2116,44 @@ fn evaluate_creo_relation_function(
             name @ (CreoMathFunction::Sin | CreoMathFunction::Cos | CreoMathFunction::Tan),
             [Angle(value)],
         ) => Number(evaluate_creo_math_function(name, &[*value])?),
+        (CreoMathFunction::Pow, [base, Number(exponent)]) => {
+            base.clone().power(Number(*exponent))?
+        }
+        (CreoMathFunction::Sqrt, [argument]) => {
+            let (value, dimension) = quantity_parts_ref(argument)?;
+            (value >= 0.0).then_some(())?;
+            quantity_value(value.sqrt(), dimension.root(2)?)
+        }
+        (CreoMathFunction::Abs, [argument]) => {
+            let (value, dimension) = quantity_parts_ref(argument)?;
+            quantity_value(value.abs(), dimension)
+        }
+        (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
+            let (left_value, left_dimension) = quantity_parts_ref(left)?;
+            let (right_value, right_dimension) = quantity_parts_ref(right)?;
+            (left_dimension == right_dimension).then_some(())?;
+            if matches!(name, CreoMathFunction::Min) == (left_value <= right_value) {
+                left.clone()
+            } else {
+                right.clone()
+            }
+        }
+        (CreoMathFunction::Near | CreoMathFunction::DblInTol, [left, right, tolerance]) => {
+            let (left, left_dimension) = quantity_parts_ref(left)?;
+            let (right, right_dimension) = quantity_parts_ref(right)?;
+            let (tolerance, tolerance_dimension) = quantity_parts_ref(tolerance)?;
+            (left_dimension == right_dimension
+                && left_dimension == tolerance_dimension
+                && tolerance >= 0.0)
+                .then_some(())?;
+            Number(f64::from((left - right).abs() <= tolerance))
+        }
         _ => {
             let numbers = arguments
                 .iter()
                 .map(|argument| match argument {
                     Number(value) => Some(*value),
-                    Length(_) | Angle(_) | String(_) => None,
+                    Length(_) | Angle(_) | Quantity(_) | String(_) => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
             Number(evaluate_creo_math_function(name, &numbers)?)
@@ -1993,10 +2286,7 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
                         assignment
                             .declared_unit
                             .as_deref()
-                            .map_or(Some(value), |unit| {
-                                let (scale, dimension) = relation_unit(unit)?;
-                                value.with_unit(scale, dimension)
-                            })
+                            .map_or(Some(value), |unit| value.with_unit(relation_unit(unit)?))
                     });
                 if let Some(value) = value {
                     values.insert(key, value);
@@ -3353,6 +3643,92 @@ mod tests {
             ),
             None
         );
+
+        let pressure = evaluate_relation_expression(
+            "1[N/mm^2]",
+            &values,
+            RelationEvaluationContext::default(),
+        );
+        assert_eq!(
+            pressure,
+            Some(CurveExpressionValue::Quantity(CurveExpressionQuantity {
+                value: 1_000.0,
+                length_power: -1,
+                mass_power: 1,
+                time_power: -2,
+                angle_power: 0,
+            }))
+        );
+        assert_eq!(
+            evaluate_relation_expression(
+                "1[(N/mm^2)]",
+                &values,
+                RelationEvaluationContext::default(),
+            ),
+            pressure
+        );
+        assert_eq!(
+            evaluate_relation_expression(
+                "1[N/mm^2]/1[N/mm^2]",
+                &values,
+                RelationEvaluationContext::default(),
+            ),
+            Some(CurveExpressionValue::Number(1.0))
+        );
+        assert_eq!(
+            evaluate_relation_expression("2[mm]^2", &values, RelationEvaluationContext::default(),),
+            Some(CurveExpressionValue::Quantity(CurveExpressionQuantity {
+                value: 4.0,
+                length_power: 2,
+                mass_power: 0,
+                time_power: 0,
+                angle_power: 0,
+            }))
+        );
+        assert_eq!(
+            evaluate_relation_expression(
+                "sqrt(4[mm^2])",
+                &values,
+                RelationEvaluationContext::default(),
+            ),
+            Some(CurveExpressionValue::Length(2.0))
+        );
+        assert_eq!(
+            evaluate_relation_expression(
+                "min(abs(-2[cm]),30[mm])",
+                &values,
+                RelationEvaluationContext::default(),
+            ),
+            Some(CurveExpressionValue::Length(20.0))
+        );
+        assert_eq!(
+            evaluate_relation_expression(
+                "near(1[inch],25[mm],1[mm])",
+                &values,
+                RelationEvaluationContext::default(),
+            ),
+            Some(CurveExpressionValue::Number(1.0))
+        );
+        let force_ratio = evaluate_relation_expression(
+            "1[lbf]/1[N]",
+            &values,
+            RelationEvaluationContext::default(),
+        );
+        let Some(CurveExpressionValue::Number(force_ratio)) = force_ratio else {
+            panic!("force ratio");
+        };
+        assert!((force_ratio - 4.448_221_615_260_5).abs() < 1e-12);
+        for malformed in ["1[N/mm^]", "1[N//mm]", "1[N^128]"] {
+            assert_eq!(
+                evaluate_relation_expression(
+                    malformed,
+                    &values,
+                    RelationEvaluationContext::default(),
+                ),
+                None,
+                "{malformed}"
+            );
+        }
     }
 
     #[test]

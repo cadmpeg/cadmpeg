@@ -3046,6 +3046,23 @@ fn transfer_curve_expression_features(
             if let Some(unit) = &assignment.declared_unit {
                 properties.insert("declared_unit".to_string(), unit.clone());
             }
+            if let Some(crate::curve::CurveExpressionValue::Quantity(quantity)) = &assignment.value
+            {
+                properties.insert(
+                    "evaluated_canonical_value".to_string(),
+                    quantity.value.to_string(),
+                );
+                properties.insert(
+                    "evaluated_dimension".to_string(),
+                    format!(
+                        "length:{},mass:{},time:{},angle:{}",
+                        quantity.length_power,
+                        quantity.mass_power,
+                        quantity.time_power,
+                        quantity.angle_power
+                    ),
+                );
+            }
             if parameter_names[assignment_ordinal] != assignment.name {
                 properties.insert("source_name".to_string(), assignment.name.clone());
             }
@@ -3092,18 +3109,19 @@ fn transfer_curve_expression_features(
                 name: parameter_names[assignment_ordinal].clone(),
                 expression: assignment.expression.clone(),
                 display: None,
-                value: assignment.value.as_ref().map(|value| match value {
+                value: assignment.value.as_ref().and_then(|value| match value {
                     crate::curve::CurveExpressionValue::Number(value) => {
-                        ParameterValue::Real(*value)
+                        Some(ParameterValue::Real(*value))
                     }
                     crate::curve::CurveExpressionValue::Length(value) => {
-                        ParameterValue::Length(cadmpeg_ir::features::Length(*value))
+                        Some(ParameterValue::Length(cadmpeg_ir::features::Length(*value)))
                     }
-                    crate::curve::CurveExpressionValue::Angle(value) => {
-                        ParameterValue::Angle(cadmpeg_ir::features::Angle(value.to_radians()))
-                    }
+                    crate::curve::CurveExpressionValue::Angle(value) => Some(
+                        ParameterValue::Angle(cadmpeg_ir::features::Angle(value.to_radians())),
+                    ),
+                    crate::curve::CurveExpressionValue::Quantity(_) => None,
                     crate::curve::CurveExpressionValue::String(value) => {
-                        ParameterValue::String(value.clone())
+                        Some(ParameterValue::String(value.clone()))
                     }
                 }),
                 dependencies,

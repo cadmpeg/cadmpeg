@@ -47,8 +47,11 @@ fixtures, claims above L1 remain unproven.
   and decoded `d<external_id>` section-dimension identities. Unambiguous
   decoded dimension values initialize those relation symbols in millimeters or
   degrees; conflicting and unresolved occurrences remain symbolic. Explicit
-  length and angle units convert to those canonical relation units, propagate
-  through dimensionally valid arithmetic, and transfer as typed neutral values.
+  length, mass, time, force, and angle units convert to canonical relation
+  units and compound exponent vectors propagate through dimensionally valid
+  arithmetic. Length and angle results transfer as typed neutral values; other
+  dimensions remain evaluated native values because the neutral parameter
+  model has no corresponding scalar types.
   Unit declarations on newly created assignment targets define typed parameter
   values and remain separate from parameter identity.
   A unique transferred dimension identity becomes the neutral parameter
