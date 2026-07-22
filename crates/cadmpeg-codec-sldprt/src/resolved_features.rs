@@ -304,7 +304,26 @@ fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
             prefix
                 if prefix == SKETCH_MARKER
                     && marker_native_code(payload, offset) == Some(0)
-                    && matches!(locus, [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+                    && matches!(
+                        locus,
+                        [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00]
+                    )
+                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+            {
+                (offset.checked_add(66)?, true)
+            }
+            prefix
+                if prefix == SKETCH_MARKER
+                    && marker_native_code(payload, offset) == Some(0)
+                    && locus == [0x05, 0x00, 0x01, 0x00]
+                    && payload.get(offset + 56..offset + 58) == Some(&[0x0e, 0x00]) =>
+            {
+                (offset.checked_add(58)?, true)
+            }
+            prefix
+                if prefix == SKETCH_MARKER
+                    && marker_native_code(payload, offset) == Some(1)
+                    && locus == [0x05, 0x00, 0x01, 0x00]
                     && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
             {
                 (offset.checked_add(66)?, true)
@@ -322,7 +341,7 @@ fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
             prefix
                 if prefix == LEGACY_SKETCH_MARKER
                     && matches!(marker_native_code(payload, offset), Some(0 | 2))
-                    && locus == [0x04, 0x00, 0x02, 0x00]
+                    && matches!(locus, [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
                     && marker_object_index(payload, offset).is_some()
                     && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
             {
@@ -1262,8 +1281,36 @@ mod marker_tests {
             marker_spatial_coordinates(&payload, offset),
             Some(Point3::new(125.0, -250.0, 375.0))
         );
+        payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        assert_eq!(
+            marker_spatial_coordinates(&payload, offset),
+            Some(Point3::new(125.0, -250.0, 375.0))
+        );
         payload[offset + 4] = 3;
         assert_eq!(marker_spatial_coordinates(&payload, offset), None);
+    }
+
+    #[test]
+    fn current_spatial_point_variants_decode_model_coordinates() {
+        for (kind, marker, coordinates) in [(0_u32, 56, 58), (1_u32, 64, 66)] {
+            let mut payload = vec![0; 90];
+            payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+            payload[5..13].fill(0xff);
+            payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+            payload[17..21].copy_from_slice(&kind.to_le_bytes());
+            payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+            payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+            payload[marker..marker + 2].copy_from_slice(&[0x0e, 0x00]);
+            for (index, value) in [0.125_f64, -0.25, 0.375].into_iter().enumerate() {
+                let start = coordinates + index * 8;
+                payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+            }
+
+            assert_eq!(
+                marker_spatial_coordinates(&payload, 0),
+                Some(Point3::new(125.0, -250.0, 375.0))
+            );
+        }
     }
 
     #[test]
