@@ -1231,7 +1231,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             && parameter
                                 .unit
                                 .as_deref()
-                                .is_some_and(design::design_length_unit)
+                                .is_some_and(design::feature_project::design_length_unit)
                             && parameter.evaluated_value > 0.0
                             && parameter.evaluated_value.is_finite()
                     })
@@ -1244,7 +1244,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             && parameter
                                 .unit
                                 .as_deref()
-                                .is_some_and(design::design_length_unit)
+                                .is_some_and(design::feature_project::design_length_unit)
                             && parameter.evaluated_value > 0.0
                             && parameter.evaluated_value.is_finite()
                     },
@@ -1262,7 +1262,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                     && parameter
                                         .unit
                                         .as_deref()
-                                        .is_some_and(design::design_length_unit)
+                                        .is_some_and(design::feature_project::design_length_unit)
                                     && parameter.evaluated_value.is_finite()
                                     && parameter.evaluated_value >= 0.0
                             })
@@ -1820,18 +1820,21 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .map(|recipe| i64::from(recipe.record_index))
             .filter(|value| *value >= 0)
             .map(|design_reference| {
-                design::edge_operand_candidate_faces(
+                design::decode::operands::edge_operand_candidate_faces(
                     design_reference,
                     &native.persistent_subentity_tags,
                 )
             })
             .unwrap_or_default();
-        let mut expected_references = design::decode_recipe_references(
+        let mut expected_references = design::decode::dimensions::decode_recipe_references(
             &operand.recipe_prefix_bytes,
             operand.recipe_prefix_offset,
         );
         for reference in &mut expected_references {
-            design::bind_recipe_reference_candidates(reference, &native.persistent_subentity_tags);
+            design::decode::dimensions::bind_recipe_reference_candidates(
+                reference,
+                &native.persistent_subentity_tags,
+            );
         }
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -1874,7 +1877,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     && recipe.byte_offset > operand.recipe_record_byte_offset
                     && recipe.byte_offset < operand.next_byte_offset
             })
-            && design::edge_recipe_structure(&operand.recipe_program) == operand.recipe_structure
+            && design::decode::operands::edge_recipe_structure(&operand.recipe_program)
+                == operand.recipe_structure
             && expected_faces == operand.candidate_faces
             && expected_edge_operands.get(operand.id.as_str()) == Some(&operand)
             && edge_operand_slots.insert((
@@ -1982,12 +1986,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .unwrap_or_default();
         expected_faces.sort_by(|left, right| left.0.cmp(&right.0));
         expected_faces.dedup();
-        let mut expected_references = design::decode_recipe_references(
+        let mut expected_references = design::decode::dimensions::decode_recipe_references(
             &operand.recipe_prefix_bytes,
             operand.recipe_prefix_offset,
         );
         for reference in &mut expected_references {
-            design::bind_recipe_reference_candidates(reference, &native.persistent_subentity_tags);
+            design::decode::dimensions::bind_recipe_reference_candidates(
+                reference,
+                &native.persistent_subentity_tags,
+            );
         }
         let recipe_design_reference = recipe
             .map(|recipe| i64::from(recipe.record_index))
@@ -2032,42 +2039,42 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     .chain(std::iter::once(operand.next_byte_offset)),
             )
             .collect::<Vec<_>>();
-        let valid_program = match design::face_recipe_program_kind(&operand.recipe_program) {
-            Some(design::FaceRecipeProgramKind::Terminal) => {
-                operand.recipe_node_offsets.is_empty() && operand.recipe_nodes.is_empty()
-            }
-            Some(design::FaceRecipeProgramKind::Counted { .. }) => {
-                operand.recipe_node_offsets == expected_node_offsets
-                    && operand.recipe_nodes.len() == expected_nodes.len()
-                    && operand.recipe_nodes.iter().zip(expected_nodes).all(
-                        |(node, (start, end))| {
-                            node.byte_offset == start
-                                && node.end_byte_offset == end
-                                && node.program.get(0..3) == Some(&[-1, -1, 2])
-                                && node.recipe_structure
-                                    == node
-                                        .program
-                                        .get(3..)
-                                        .and_then(design::face_recipe_structure)
-                                && u64::try_from(node.program.len()).ok().is_some_and(|words| {
-                                    start.saturating_add(words.saturating_mul(4)) == end
-                                })
-                        },
-                    )
-                    && (if operand.recipe_nodes.is_empty() {
-                        operand.recipe_node_offsets.is_empty()
-                    } else {
-                        operand
-                            .recipe_nodes
-                            .iter()
-                            .flat_map(|node| node.program.iter().copied())
-                            .eq(operand.recipe_program.iter().copied().skip(3))
-                            && operand.recipe_node_offsets.first()
-                                == Some(&operand.recipe_program_offset.saturating_add(12))
-                    })
-            }
-            None => false,
-        };
+        let valid_program =
+            match design::decode::operands::face_recipe_program_kind(&operand.recipe_program) {
+                Some(design::decode::operands::FaceRecipeProgramKind::Terminal) => {
+                    operand.recipe_node_offsets.is_empty() && operand.recipe_nodes.is_empty()
+                }
+                Some(design::decode::operands::FaceRecipeProgramKind::Counted { .. }) => {
+                    operand.recipe_node_offsets == expected_node_offsets
+                        && operand.recipe_nodes.len() == expected_nodes.len()
+                        && operand.recipe_nodes.iter().zip(expected_nodes).all(
+                            |(node, (start, end))| {
+                                node.byte_offset == start
+                                    && node.end_byte_offset == end
+                                    && node.program.get(0..3) == Some(&[-1, -1, 2])
+                                    && node.recipe_structure
+                                        == node.program.get(3..).and_then(
+                                            design::decode::operands::face_recipe_structure,
+                                        )
+                                    && u64::try_from(node.program.len()).ok().is_some_and(|words| {
+                                        start.saturating_add(words.saturating_mul(4)) == end
+                                    })
+                            },
+                        )
+                        && (if operand.recipe_nodes.is_empty() {
+                            operand.recipe_node_offsets.is_empty()
+                        } else {
+                            operand
+                                .recipe_nodes
+                                .iter()
+                                .flat_map(|node| node.program.iter().copied())
+                                .eq(operand.recipe_program.iter().copied().skip(3))
+                                && operand.recipe_node_offsets.first()
+                                    == Some(&operand.recipe_program_offset.saturating_add(12))
+                        })
+                }
+                None => false,
+            };
         let expected_history = expected_face_operands.get(operand.id.as_str());
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -2295,7 +2302,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && frame_valid
-            && design::valid_sketch_transform(&placement.transform)
+            && design::decode::sketch::valid_sketch_transform(&placement.transform)
             && unique_record
             && unique_scope;
         if !valid {
@@ -2439,17 +2446,22 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let program_end = record
             .program_offset
             .checked_add((record.program.len() as u64).saturating_mul(4));
-        let mut decoded_references =
-            design::decode_recipe_references(&record.prefix_bytes, record.prefix_offset);
+        let mut decoded_references = design::decode::dimensions::decode_recipe_references(
+            &record.prefix_bytes,
+            record.prefix_offset,
+        );
         for reference in &mut decoded_references {
-            design::bind_recipe_reference_candidates(reference, &native.persistent_subentity_tags);
+            design::decode::dimensions::bind_recipe_reference_candidates(
+                reference,
+                &native.persistent_subentity_tags,
+            );
         }
         let valid = record.class_tag.len() == 3
             && record.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && record.frame_length >= 11
             && !record.prefix_bytes.is_empty()
             && decoded_references == record.references
-            && design::dimension_recipe_matching_edge_operand_ids(
+            && design::decode::dimensions::dimension_recipe_matching_edge_operand_ids(
                 record,
                 &native.design_edge_operands,
             ) == record.matching_edge_operand_ids
@@ -2526,12 +2538,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 })
                 .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
         });
-        let governs_following_dimension = design::following_dimension_companion_record_index(
-            &pair.id,
-            pair.paired_byte_offset,
-            &native.design_parameter_owners,
-            &native.design_parameters,
-        ) == Some(pair.governing_companion_record_index);
+        let governs_following_dimension =
+            design::decode::dimensions::following_dimension_companion_record_index(
+                &pair.id,
+                pair.paired_byte_offset,
+                &native.design_parameter_owners,
+                &native.design_parameters,
+            ) == Some(pair.governing_companion_record_index);
         let valid = pair.class_tag.len() == 3
             && pair.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && pair.paired_class_tag.len() == 3
@@ -2735,7 +2748,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         locus_members.sort_unstable();
         return_members.sort_unstable();
         let (expected_kinds, expected_unknown) =
-            design::decode_constraint_kinds(u64::from(group.state));
+            design::decode::sketch::decode_constraint_kinds(u64::from(group.state));
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(group.owner_reference)))
             .is_some_and(|entity| entity.object_kind == Some(records::DesignObjectKind::Sketch));
@@ -2806,12 +2819,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 })
                 .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
         });
-        let governs_following_dimension = design::following_dimension_companion_record_index(
-            &pair.id,
-            pair.paired_byte_offset,
-            &native.design_parameter_owners,
-            &native.design_parameters,
-        ) == Some(pair.governing_companion_record_index);
+        let governs_following_dimension =
+            design::decode::dimensions::following_dimension_companion_record_index(
+                &pair.id,
+                pair.paired_byte_offset,
+                &native.design_parameter_owners,
+                &native.design_parameters,
+            ) == Some(pair.governing_companion_record_index);
         let companion_has_typed_frame = locus_pair_companions
             .contains(&(native_stream, pair.companion_record_index))
             || locus_group_companions.contains(&(native_stream, pair.companion_record_index));
@@ -2886,7 +2900,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && parameter.unit.as_ref().is_none_or(|unit| !unit.is_empty())
             && parameter.unit.is_some() == parameter.unit_offset.is_some()
             && parameter.evaluated_value.is_finite()
-            && design::valid_design_parameter_prefix(
+            && design::decode::parameters::valid_design_parameter_prefix(
                 parameter.prefix_value,
                 &parameter.source_kind,
             )
@@ -2961,7 +2975,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for relation in &native.sketch_relations {
         let native_stream = design_stream(&relation.id);
         let (constraint_kinds, unknown_constraint_bits) =
-            design::decode_constraint_kinds(relation.state);
+            design::decode::sketch::decode_constraint_kinds(relation.state);
         let offsets_fit = relation
             .member_offsets
             .iter()

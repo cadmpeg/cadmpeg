@@ -695,7 +695,10 @@ pub(crate) fn bind_feature_body_selections(
         };
         let prefix = feature_input_prefix(&feature.id, previous_state_id);
         *bodies = BodySelection::Historical {
-            state: crate::design::feature_input_topology_id(&feature.id, previous_state_id),
+            state: crate::design::edge_resolve::feature_input_topology_id(
+                &feature.id,
+                previous_state_id,
+            ),
             bodies: vec![crate::ids::history_input_body_id(&prefix, body)],
             native: group_id.clone(),
         };
@@ -754,7 +757,10 @@ fn bind_body_recipe_body_selection(
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
     *selection = BodySelection::Historical {
-        state: crate::design::feature_input_topology_id(feature_id, previous_state_id),
+        state: crate::design::edge_resolve::feature_input_topology_id(
+            feature_id,
+            previous_state_id,
+        ),
         bodies: body_slots
             .into_iter()
             .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
@@ -1053,7 +1059,10 @@ fn bind_entity_selection_path(
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
     *path = PathRef::HistoricalEdges {
-        state: crate::design::feature_input_topology_id(feature_id, previous_state_id),
+        state: crate::design::edge_resolve::feature_input_topology_id(
+            feature_id,
+            previous_state_id,
+        ),
         edges: edge_slots
             .into_iter()
             .map(|slot| crate::ids::history_input_edge_id(&prefix, slot))
@@ -1105,7 +1114,10 @@ pub(crate) fn project_feature_input_topologies(
             let topology = state.topology.as_ref()?;
             let prefix = feature_input_prefix(&feature.id, previous_state_id);
             Some(FeatureInputTopology {
-                id: crate::design::feature_input_topology_id(&feature.id, previous_state_id),
+                id: crate::design::edge_resolve::feature_input_topology_id(
+                    &feature.id,
+                    previous_state_id,
+                ),
                 input_of: feature.id.clone(),
                 bodies: topology
                     .bodies
@@ -1186,8 +1198,10 @@ pub(crate) fn bind_face_operand_history_candidates(
         else {
             continue;
         };
-        operand.preceding_candidate_faces =
-            faces_in_topology(crate::design::face_operand_candidates(operand), topology);
+        operand.preceding_candidate_faces = faces_in_topology(
+            crate::design::face_resolve::face_operand_candidates(operand),
+            topology,
+        );
         operand.changed_candidate_faces = operand
             .preceding_candidate_faces
             .iter()
@@ -1195,7 +1209,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             .cloned()
             .collect();
         operand.historical_support_contexts = historical_face_support_contexts(
-            crate::design::face_operand_candidates(operand),
+            crate::design::face_resolve::face_operand_candidates(operand),
             histories,
             topology,
             &changed_faces,
@@ -1208,14 +1222,14 @@ pub(crate) fn bind_face_operand_history_candidates(
                     &changed_faces,
                 );
                 if direct.is_empty() {
-                    crate::design::resolve_face_operand_history_candidates(operand)
+                    crate::design::face_resolve::resolve_face_operand_history_candidates(operand)
                         .into_iter()
                         .collect()
                 } else {
                     direct
                 }
             }
-            _ => crate::design::resolve_face_operand_history_candidates(operand)
+            _ => crate::design::face_resolve::resolve_face_operand_history_candidates(operand)
                 .into_iter()
                 .collect(),
         };
@@ -1302,8 +1316,8 @@ fn resolve_bounded_face_recipe_target(
     result: &crate::history_records::AsmHistoricalTopology,
     inserted_bodies: &[i64],
 ) -> Option<i64> {
-    let crate::design::FaceRecipeProgramKind::Counted { header_value } =
-        crate::design::face_recipe_program_kind(&operand.recipe_program)?
+    let crate::design::decode::operands::FaceRecipeProgramKind::Counted { header_value } =
+        crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program)?
     else {
         return None;
     };
@@ -1646,7 +1660,7 @@ fn bind_profile_face_group_cardinality(
         if indices.iter().any(|index| {
             let operand = &operands[*index];
             !operand.resolved_face_slots.is_empty()
-                || !crate::design::face_operand_candidates(operand).is_empty()
+                || !crate::design::face_resolve::face_operand_candidates(operand).is_empty()
                 || operand.recipe_references.iter().any(|reference| {
                     !reference.candidate_faces.is_empty()
                         || !reference.alternate_selector_faces.is_empty()
@@ -2295,10 +2309,11 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 .collect::<Vec<_>>();
             operand.recipe_selectors =
                 recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
-            operand.resolved_edge_slot = crate::design::resolved_edge_candidate_intersection(
-                &operand.recipe_selectors,
-                reference_edge_sets.iter().map(Vec::as_slice),
-            );
+            operand.resolved_edge_slot =
+                crate::design::edge_resolve::resolved_edge_candidate_intersection(
+                    &operand.recipe_selectors,
+                    reference_edge_sets.iter().map(Vec::as_slice),
+                );
             if let Some((origin, direction)) = operand
                 .resolved_edge_slot
                 .and_then(|edge| historical_edge_axis(edge, topology))
@@ -2317,7 +2332,8 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .collect::<Vec<_>>();
         operand.recipe_selectors =
             recipe_selector_candidates(operand.recipe_structure.as_ref(), &changed_edge_contexts);
-        operand.resolved_edge_slot = crate::design::resolve_edge_operand_candidates(operand);
+        operand.resolved_edge_slot =
+            crate::design::edge_resolve::resolve_edge_operand_candidates(operand);
         if operand.resolved_edge_slot.is_none()
             && stream.is_some_and(|stream| {
                 scope_operand_counts.get(&(stream.to_owned(), operand.scope_record_index))
@@ -2377,7 +2393,7 @@ fn bind_active_edge_operand_candidates(
             .iter()
             .map(|faces| face_boundary_edges(&faces_in_topology(faces, topology), topology))
             .collect::<Vec<_>>();
-        let edge = crate::design::resolved_edge_candidate_intersection(
+        let edge = crate::design::edge_resolve::resolved_edge_candidate_intersection(
             &selectors,
             reference_edge_sets.iter().map(Vec::as_slice),
         );
@@ -2786,7 +2802,9 @@ fn bind_face_selection(
         return;
     };
     if native == &scope.id {
-        if let Some(resolved) = crate::design::direct_face_selection(scope, operands) {
+        if let Some(resolved) =
+            crate::design::feature_project::direct_face_selection(scope, operands)
+        {
             if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
                 *selection = resolved;
             }
@@ -2897,7 +2915,10 @@ fn bind_body_recipe_face_selection(
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
     *selection = FaceSelection::Historical {
-        state: crate::design::feature_input_topology_id(feature_id, previous_state_id),
+        state: crate::design::edge_resolve::feature_input_topology_id(
+            feature_id,
+            previous_state_id,
+        ),
         faces: slots
             .into_iter()
             .map(|slot| crate::ids::history_input_face_id(&prefix, slot))

@@ -4886,8 +4886,9 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         native.design_configurations[0].payload["configurations"]["narrow"] =
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
     });
-    retained.model.configurations =
-        crate::design::project_configurations(&f3d_native(&retained).design_configurations);
+    retained.model.configurations = crate::design::configurations::project_configurations(
+        &f3d_native(&retained).design_configurations,
+    );
     let expected_retained = f3d_native(&retained).design_configurations;
     let mut retained_bytes = Vec::new();
     F3dCodec
@@ -5417,7 +5418,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             evaluated_value: 6.0,
             evaluated_value_offset: 150,
         });
-    let (_, parameters) = crate::design::project_parameter_design(
+    let (_, parameters) = crate::design::feature_project::project_parameter_design(
         &f3d_native(&source_less).design_parameters,
         &[],
         &[],
@@ -8582,7 +8583,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     second_owner.entity_suffix = 278;
     second_owner.entity_id = "0_278".into();
     entities.push(second_owner);
-    let error = crate::design::bind_sketch_graph(
+    let error = crate::design::decode::sketch::bind_sketch_graph(
         &entities,
         &mut points,
         &mut curves,
@@ -9338,14 +9339,14 @@ fn validation_requires_one_exact_extrude_profile_group() {
 
 #[test]
 fn sketch_constraint_mask_decodes_equal_length_bit() {
-    let (kinds, unknown) = crate::design::decode_constraint_kinds(0x0000_0008);
+    let (kinds, unknown) = crate::design::decode::sketch::decode_constraint_kinds(0x0000_0008);
     assert_eq!(kinds, [crate::records::SketchConstraintKind::EqualLength]);
     assert_eq!(unknown, 0);
 }
 
 #[test]
 fn zero_sketch_constraint_state_decodes_as_coincident() {
-    let (kinds, unknown) = crate::design::decode_constraint_kinds(0);
+    let (kinds, unknown) = crate::design::decode::sketch::decode_constraint_kinds(0);
     assert_eq!(kinds, [crate::records::SketchConstraintKind::Coincident]);
     assert_eq!(unknown, 0);
 }
@@ -20654,7 +20655,7 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
 
     let mut cursor = Cursor::new(bytes);
     let scan = container::scan(&mut cursor).unwrap();
-    let visibility = crate::design::decode_all_body_visibility(&scan).unwrap();
+    let visibility = crate::design::decode::body::decode_all_body_visibility(&scan).unwrap();
     assert_eq!(
         visibility
             .get(&("BREP.synthetic.smbh".into(), 3))

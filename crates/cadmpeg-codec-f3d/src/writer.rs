@@ -199,15 +199,22 @@ fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<(), CodecEr
 
 fn validate_configuration_projection(target: &CadIr, native: &F3dNative) -> Result<(), CodecError> {
     for configuration in &native.design_configurations {
-        crate::design::validate_configuration_payload(
+        crate::design::configurations::validate_configuration_payload(
             &configuration.entry_name,
             configuration.kind,
             &configuration.payload,
         )?;
     }
-    let mut projected = crate::design::project_configurations(&native.design_configurations);
-    crate::design::bind_configuration_parameter_overrides(&mut projected, &target.model.parameters);
-    crate::design::bind_configuration_suppressed_features(&mut projected, &target.model.features);
+    let mut projected =
+        crate::design::configurations::project_configurations(&native.design_configurations);
+    crate::design::configurations::bind_configuration_parameter_overrides(
+        &mut projected,
+        &target.model.parameters,
+    );
+    crate::design::configurations::bind_configuration_suppressed_features(
+        &mut projected,
+        &target.model.features,
+    );
     if target.model.configurations != projected {
         return Err(CodecError::Malformed(
             "neutral F3D configurations must equal the projection of native configuration tables"
@@ -269,7 +276,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
                     configuration.entry_name
                 )));
             }
-            crate::design::validate_configuration_payload(
+            crate::design::configurations::validate_configuration_payload(
                 &configuration.entry_name,
                 configuration.kind,
                 &configuration.payload,
@@ -478,7 +485,8 @@ fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), Codec
     let mut parameter_indices = BTreeSet::new();
     let mut parameter_ordinals = BTreeSet::new();
     for parameter in &native.design_parameters {
-        let expected_prefix = crate::design::design_parameter_prefix(&parameter.source_kind);
+        let expected_prefix =
+            crate::design::decode::parameters::design_parameter_prefix(&parameter.source_kind);
         if parameter.prefix_value != expected_prefix {
             return Err(CodecError::Malformed(format!(
                 "F3D Design parameter {} has discriminator {}, expected {expected_prefix} for {}",
@@ -1391,18 +1399,19 @@ fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
 
 fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
     let native = f3d_native(target)?.unwrap_or_default();
-    let (_, projected_parameters) = crate::design::project_parameter_design_with_edge_identities(
-        &native.design_parameters,
-        &native.design_parameter_owners,
-        &native.design_parameter_scopes,
-        &native.design_construction_operand_groups,
-        &native.design_fillet_radius_groups,
-        &native.design_edge_operands,
-        &native.design_edge_identity_operands,
-        &native.design_face_operands,
-        &native.design_sketch_placements,
-        &native.design_body_bindings,
-    );
+    let (_, projected_parameters) =
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            &native.design_parameters,
+            &native.design_parameter_owners,
+            &native.design_parameter_scopes,
+            &native.design_construction_operand_groups,
+            &native.design_fillet_radius_groups,
+            &native.design_edge_operands,
+            &native.design_edge_identity_operands,
+            &native.design_face_operands,
+            &native.design_sketch_placements,
+            &native.design_body_bindings,
+        );
     if target.model.parameters != projected_parameters {
         return Err(CodecError::Malformed(
             "neutral F3D parameters must equal the projection of native Design parameters".into(),
@@ -1893,7 +1902,7 @@ fn encode_sketch_nurbs(
 
 fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
     validate_dynamic_class_tag(&text.class_tag, "sketch text")?;
-    let decoded = crate::design::decode_sketch_text_record(
+    let decoded = crate::design::decode::sketch::decode_sketch_text_record(
         &text.raw_bytes,
         "Design/BulkStream.dat",
         text.class_tag.clone(),
@@ -1929,7 +1938,7 @@ fn encode_sketch_relation(
     relation: &crate::records::SketchRelation,
 ) -> Result<(), CodecError> {
     let (constraint_kinds, unknown_constraint_bits) =
-        crate::design::decode_constraint_kinds(relation.state);
+        crate::design::decode::sketch::decode_constraint_kinds(relation.state);
     if constraint_kinds != relation.constraint_kinds
         || unknown_constraint_bits != relation.unknown_constraint_bits
     {
@@ -15084,7 +15093,8 @@ fn validate_sketch_relation_edits(
         {
             continue;
         }
-        let (kinds, unknown) = crate::design::decode_constraint_kinds(relation.state);
+        let (kinds, unknown) =
+            crate::design::decode::sketch::decode_constraint_kinds(relation.state);
         if kinds != relation.constraint_kinds || unknown != relation.unknown_constraint_bits {
             return Err(CodecError::Malformed(format!(
                 "F3D sketch relation {} has a mask inconsistent with its typed constraint kinds",

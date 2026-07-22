@@ -1200,7 +1200,7 @@ fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
 }
 
 fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize, usize)> {
-    crate::design::body_bindings(bytes)
+    crate::design::decode::body::body_bindings(bytes)
         .into_iter()
         .map(|binding| {
             (
