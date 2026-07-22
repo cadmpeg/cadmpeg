@@ -374,6 +374,7 @@ struct CreoCurveExpressionRecord {
     local_system: Option<CreoCurveExpressionLocalSystem>,
     lines: Vec<CreoCurveExpressionLine>,
     assignments: Vec<CreoCurveExpressionAssignment>,
+    prohibited_constructs: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -2774,6 +2775,7 @@ fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionReco
                     offset: assignment.offset,
                 })
                 .collect(),
+            prohibited_constructs: record.prohibited_constructs.clone(),
         })
         .collect()
 }
@@ -36176,6 +36178,14 @@ fn build_ir(
             .flat_map(|record| &record.assignments)
             .filter(|assignment| assignment.value.is_some())
             .count();
+        let prohibited_curve_expression_record_count = active_expressions
+            .clone()
+            .filter(|record| !record.prohibited_constructs.is_empty())
+            .count();
+        let prohibited_curve_expression_construct_count = active_expressions
+            .clone()
+            .map(|record| record.prohibited_constructs.len())
+            .sum::<usize>();
         let activation_count = |activation| {
             active_expressions
                 .clone()
@@ -36194,6 +36204,14 @@ fn build_ir(
         source.attributes.insert(
             "evaluated_active_curve_expression_assignment_count".to_string(),
             evaluated_curve_expression_assignment_count.to_string(),
+        );
+        source.attributes.insert(
+            "prohibited_active_curve_expression_record_count".to_string(),
+            prohibited_curve_expression_record_count.to_string(),
+        );
+        source.attributes.insert(
+            "prohibited_active_curve_expression_construct_count".to_string(),
+            prohibited_curve_expression_construct_count.to_string(),
         );
         for (name, activation) in [
             ("active", crate::curve::CurveExpressionActivation::Active),

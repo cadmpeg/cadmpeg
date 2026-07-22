@@ -56,6 +56,8 @@ pub struct CurveExpressionRecord {
     pub lines: Vec<CurveExpressionLine>,
     /// Assignment statements in source order.
     pub assignments: Vec<CurveExpressionAssignment>,
+    /// Curve-equation constructs prohibited by the Creo expression grammar.
+    pub prohibited_constructs: Vec<String>,
     /// Byte offset of the enclosing entity label.
     pub offset: usize,
     /// Byte offset of the `expression` field.
@@ -601,17 +603,24 @@ pub(crate) fn expression_records_with_model_name(
             cursor = line_end + 1;
         }
         if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
-            let assignments = evaluate_expression_program(
+            let prohibited_constructs = curve_equation_prohibited_constructs(&lines);
+            let mut assignments = evaluate_expression_program(
                 &lines,
                 model_name,
                 &ExternalRelationSymbols::default(),
             );
+            if !prohibited_constructs.is_empty() {
+                for assignment in &mut assignments {
+                    assignment.value = None;
+                }
+            }
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
                 local_system,
                 lines,
                 assignments,
+                prohibited_constructs,
                 offset,
                 expression_offset,
             });
@@ -628,7 +637,65 @@ pub(crate) fn reevaluate_expression_records(
     for record in records {
         record.assignments =
             evaluate_expression_program(&record.lines, model_name, external_symbols);
+        if !record.prohibited_constructs.is_empty() {
+            for assignment in &mut record.assignments {
+                assignment.value = None;
+            }
+        }
     }
+}
+
+fn curve_equation_prohibited_constructs(lines: &[CurveExpressionLine]) -> Vec<String> {
+    const PROHIBITED_FUNCTIONS: &[&str] =
+        &["abs", "ceil", "floor", "extract", "if", "itos", "search"];
+    let mut prohibited = BTreeSet::new();
+    for line in lines {
+        let source = line.text.trim();
+        if source.starts_with("/*") {
+            continue;
+        }
+        for keyword in ["if", "else", "endif"] {
+            if starts_relation_keyword(source, keyword) {
+                prohibited.insert(keyword.to_string());
+            }
+        }
+        let bytes = source.as_bytes();
+        let mut cursor = 0;
+        while cursor < bytes.len() {
+            if matches!(bytes[cursor], b'\'' | b'"') {
+                let delimiter = bytes[cursor];
+                cursor += 1;
+                while bytes.get(cursor).is_some_and(|byte| *byte != delimiter) {
+                    cursor += 1;
+                }
+                cursor += usize::from(bytes.get(cursor) == Some(&delimiter));
+                continue;
+            }
+            if bytes[cursor] == b'_' || bytes[cursor].is_ascii_alphabetic() {
+                let start = cursor;
+                let Some(end) = expression_identifier_end(bytes, start) else {
+                    cursor += 1;
+                    continue;
+                };
+                cursor = end;
+                let mut following = cursor;
+                while bytes.get(following).is_some_and(u8::is_ascii_whitespace) {
+                    following += 1;
+                }
+                let name = &source[start..end];
+                if bytes.get(following) == Some(&b'(')
+                    && PROHIBITED_FUNCTIONS
+                        .iter()
+                        .any(|candidate| name.eq_ignore_ascii_case(candidate))
+                {
+                    prohibited.insert(name.to_ascii_lowercase());
+                }
+                continue;
+            }
+            cursor += 1;
+        }
+    }
+    prohibited.into_iter().collect()
 }
 
 #[derive(Default)]
@@ -2557,6 +2624,7 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
 /// Recognize an exact cylindrical helix program expressed by the conventional
 /// Creo outputs `r`, `theta` (degrees), and `z` over `t` in `[0, 1]`.
 pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressionHelix> {
+    record.prohibited_constructs.is_empty().then_some(())?;
     let values = evaluate_affine_program(record);
     let radius = values.get("r")?;
     let theta = values.get("theta")?;
@@ -4407,7 +4475,7 @@ mod tests {
             records[0].assignments[0].activation,
             CurveExpressionActivation::Active
         );
-        assert_eq!(records[0].assignments[0].value, number(1.0));
+        assert_eq!(records[0].assignments[0].value, None);
     }
 
     #[test]
@@ -4454,7 +4522,10 @@ mod tests {
         let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
             \xe0\x0aexpression\0\xf8\x0eA=0\0IF a==0\0b=5\0IF NO\0c=1\0\
             ELSE\0c=b+1\0ENDIF\0ELSE\0b=10\0ENDIF\0a=5\0d=B\0iffy=9\0";
-        let assignments = &expression_records(payload)[0].assignments;
+        let record = &expression_records(payload)[0];
+        assert_eq!(record.prohibited_constructs, ["else", "endif", "if"]);
+        let assignments =
+            evaluate_expression_program(&record.lines, None, &ExternalRelationSymbols::default());
 
         assert_eq!(assignments.len(), 8);
         assert_eq!(assignments[0].value, number(0.0));
@@ -4476,10 +4547,33 @@ mod tests {
     }
 
     #[test]
+    fn curve_equations_retain_but_do_not_evaluate_prohibited_constructs() {
+        let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x0aexpression\0\xf8\x05/* search('ignored') */\0a=abs(-2)\0label='ceil(1)'\0b=sqrt(4)\0c=IF(1,2,3)\0";
+        let mut records = expression_records(payload);
+        let record = &records[0];
+
+        assert_eq!(record.prohibited_constructs, ["abs", "if"]);
+        assert!(record
+            .assignments
+            .iter()
+            .all(|assignment| assignment.value.is_none()));
+        let mut symbols = ExternalRelationSymbols::default();
+        symbols.observe("external", number(5.0));
+        reevaluate_expression_records(&mut records, None, &symbols);
+        assert!(records[0]
+            .assignments
+            .iter()
+            .all(|assignment| assignment.value.is_none()));
+    }
+
+    #[test]
     fn unresolved_and_malformed_conditionals_do_not_choose_a_branch() {
         let unresolved = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
             \xe0\x0aexpression\0\xf8\x06IF external\0x=1\0ELSE\0x=2\0ENDIF\0y=x+1\0";
-        let assignments = &expression_records(unresolved)[0].assignments;
+        let record = &expression_records(unresolved)[0];
+        let assignments =
+            evaluate_expression_program(&record.lines, None, &ExternalRelationSymbols::default());
         assert_eq!(assignments.len(), 3);
         assert!(assignments[..2]
             .iter()
@@ -4489,7 +4583,9 @@ mod tests {
 
         let malformed = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x08\
             \xe0\x0aexpression\0\xf8\x04IF YES\0x=1\0ELSE trailing\0ENDIF\0";
-        let assignments = &expression_records(malformed)[0].assignments;
+        let record = &expression_records(malformed)[0];
+        let assignments =
+            evaluate_expression_program(&record.lines, None, &ExternalRelationSymbols::default());
         assert_eq!(
             assignments[0].activation,
             CurveExpressionActivation::Conditional
@@ -4498,7 +4594,9 @@ mod tests {
 
         let overflow = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
             \xe0\x0aexpression\0\xf8\x06IF 1e308*1e308>0\0x=1\0ELSE\0x=2\0ENDIF\0y=x+1\0";
-        let assignments = &expression_records(overflow)[0].assignments;
+        let record = &expression_records(overflow)[0];
+        let assignments =
+            evaluate_expression_program(&record.lines, None, &ExternalRelationSymbols::default());
         assert!(assignments[..2]
             .iter()
             .all(|assignment| assignment.activation == CurveExpressionActivation::Conditional));

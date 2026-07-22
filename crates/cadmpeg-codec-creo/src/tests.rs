@@ -4924,7 +4924,7 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
 }
 
 #[test]
-fn decode_transfers_evaluated_curve_expression_strings() {
+fn decode_retains_prohibited_curve_expression_strings_without_values() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x06material='steel'\0label=material+'-'+itos(2)\0\
         length=string_length(label)\0match=label=='steel-2'\0formatted=rtos(123.456,2)\0\
@@ -4935,38 +4935,31 @@ fn decode_transfers_evaluated_curve_expression_strings() {
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let parameters = &result.ir.model.parameters;
 
+    assert!(parameters.iter().all(|parameter| parameter.value.is_none()));
+    let native = &result
+        .ir
+        .native
+        .namespace("creo")
+        .expect("Creo native data")
+        .arenas["curve_expressions"][0];
+    assert_eq!(native.fields["prohibited_constructs"][0], "itos");
+    let source = result.ir.source.as_ref().expect("source metadata");
     assert_eq!(
-        parameters[0].value,
-        Some(cadmpeg_ir::features::ParameterValue::String(
-            "steel".to_owned()
-        ))
+        source.attributes["prohibited_active_curve_expression_record_count"],
+        "1"
     );
     assert_eq!(
-        parameters[1].value,
-        Some(cadmpeg_ir::features::ParameterValue::String(
-            "steel-2".to_owned()
-        ))
+        source.attributes["prohibited_active_curve_expression_construct_count"],
+        "1"
     );
     assert_eq!(
-        parameters[2].value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(7.0))
+        native.fields["assignments"][4]["expression"],
+        "rtos(123.456,2)"
     );
-    assert_eq!(
-        parameters[3].value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(1.0))
-    );
-    assert_eq!(
-        parameters[4].value,
-        Some(cadmpeg_ir::features::ParameterValue::String(
-            "123.46".to_owned()
-        ))
-    );
-    assert_eq!(
-        parameters[5].value,
-        Some(cadmpeg_ir::features::ParameterValue::String(
-            "part".to_owned()
-        ))
-    );
+    assert!(native.fields["assignments"][5]["value"].is_null());
+    assert_eq!(parameters[4].expression, "rtos(123.456,2)");
+    assert_eq!(parameters[5].expression, "rel_model_type()");
+    assert_eq!(parameters[5].value, None);
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
@@ -5068,10 +5061,7 @@ fn decode_transfers_curve_expression_conditional_activation() {
     assert_eq!(parameters[1].properties["activation"], "active");
     assert_eq!(parameters[2].properties["activation"], "inactive");
     assert_eq!(parameters[3].properties["activation"], "active");
-    assert_eq!(
-        parameters[3].value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(5.0))
-    );
+    assert_eq!(parameters[3].value, None);
     assert_eq!(parameters[3].dependencies, [parameters[1].id.clone()]);
     assert!(!parameters[3]
         .properties
@@ -5086,6 +5076,19 @@ fn decode_transfers_curve_expression_conditional_activation() {
         .as_array()
         .expect("assignments");
     assert_eq!(native_assignments[2]["activation"], "inactive");
+    let prohibited = result
+        .ir
+        .native
+        .namespace("creo")
+        .expect("Creo native data")
+        .arenas["curve_expressions"][0]
+        .fields["prohibited_constructs"]
+        .as_array()
+        .expect("prohibited constructs");
+    assert_eq!(prohibited.len(), 3);
+    assert_eq!(prohibited[0], "else");
+    assert_eq!(prohibited[1], "endif");
+    assert_eq!(prohibited[2], "if");
     let source = result.ir.source.as_ref().expect("source metadata");
     assert_eq!(
         source.attributes["active_curve_expression_assignment_count"],
@@ -5113,16 +5116,10 @@ fn decode_resolves_positive_local_exists_before_declaration() {
     let parameters = &result.ir.model.parameters;
     assert_eq!(parameters.len(), 3);
     assert_eq!(parameters[0].properties["activation"], "active");
-    assert_eq!(
-        parameters[0].value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(5.0))
-    );
+    assert_eq!(parameters[0].value, None);
     assert_eq!(parameters[1].properties["activation"], "inactive");
     assert_eq!(parameters[1].value, None);
-    assert_eq!(
-        parameters[2].value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(1.0))
-    );
+    assert_eq!(parameters[2].value, None);
 }
 
 #[test]
