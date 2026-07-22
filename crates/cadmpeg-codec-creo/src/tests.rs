@@ -2254,7 +2254,12 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::Extent::Unresolved,
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    ..
+                }
+            },
             ..
         }
     ));
@@ -2299,7 +2304,12 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::Extent::Unresolved,
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    ..
+                }
+            },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
         }
@@ -2325,7 +2335,12 @@ fn decode_types_named_base_protrusion_as_new_body() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::Extent::Unresolved,
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    ..
+                }
+            },
             op: cadmpeg_ir::features::BooleanOp::NewBody,
             ..
         }
@@ -2359,7 +2374,12 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::Extent::Unresolved,
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    ..
+                }
+            },
             op: cadmpeg_ir::features::BooleanOp::Unresolved,
             ..
         }
@@ -2381,7 +2401,12 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::Extent::Unresolved,
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    ..
+                }
+            },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
         }
@@ -3138,8 +3163,10 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 profile: None,
                 axis: None,
-                extent: Some(cadmpeg_ir::features::Extent::Angle {
-                    angle: cadmpeg_ir::features::Angle(angle)
+                extent: Some(cadmpeg_ir::features::RevolveExtent::OneSided {
+                    termination: cadmpeg_ir::features::Termination::Angle {
+                        angle: cadmpeg_ir::features::Angle(angle)
+                    }
                 }),
                 ..
             },
@@ -3199,7 +3226,12 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::Extent::Unresolved,
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    ..
+                }
+            },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
         }
@@ -3227,7 +3259,12 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: cadmpeg_ir::features::Extent::Unresolved,
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    ..
+                }
+            },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
         }
@@ -4272,7 +4309,12 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         &model_feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
-            extent: cadmpeg_ir::features::Extent::Unresolved,
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    ..
+                }
+            },
             op: cadmpeg_ir::features::BooleanOp::Unresolved,
             ..
         }

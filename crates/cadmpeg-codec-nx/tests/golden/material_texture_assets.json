@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "55",
+      "ir_version": "56",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -155,7 +155,7 @@
                 "name": "AISI Steel 4340",
                 "sha256": "c37e17ffad699c434f3e742e63207776cf4eab017efde278d2ee6fde02381b0d",
                 "source_entry": "/Root/materialsTif/AISI Steel 4340",
-                "source_offset": 365,
+                "source_offset": 385,
                 "version": 42
               }
             ],
@@ -177,7 +177,7 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "3",
-          "file_size": "385",
+          "file_size": "405",
           "footer_offset": "0",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -343,15 +343,15 @@
           "file_offset": "174",
           "region": "HEADER"
         },
-        "compressed_size": 191,
+        "compressed_size": 211,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "stream",
-        "uncompressed_size": 191
+        "uncompressed_size": 211
       },
       {
         "attributes": {
-          "file_offset": "365",
+          "file_offset": "385",
           "region": "HEADER"
         },
         "compressed_size": 10,
@@ -362,7 +362,7 @@
       },
       {
         "attributes": {
-          "file_offset": "375",
+          "file_offset": "395",
           "region": "HEADER"
         },
         "compressed_size": 10,

@@ -720,21 +720,10 @@ pub enum FeatureDefinition {
         /// Plane or face from which the extrusion begins.
         #[serde(default)]
         start: ExtrudeStart,
-        /// How far the extrusion travels.
-        extent: Extent,
+        /// How far the extrusion travels on each of its sides.
+        extent: ExtrudeExtent,
         /// Boolean combination with existing bodies.
         op: BooleanOp,
-        /// Draft angle applied to the extruded side walls, when present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        draft: Option<Angle>,
-        /// Independent draft angle applied to the second side of an extrusion
-        /// whose extent has two sides, when present.
-        #[serde(
-            default,
-            alias = "reverse_draft",
-            skip_serializing_if = "Option::is_none"
-        )]
-        second_draft: Option<Angle>,
         /// Persisted source used to resolve the extrusion direction.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         direction_source: Option<ExtrusionDirectionSource>,
@@ -747,12 +736,6 @@ pub enum FeatureDefinition {
         /// Taper orientation used for inner wires, when selectable.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         inner_wire_taper: Option<InnerWireTaper>,
-        /// Signed offset from the first side's terminating geometry.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        first_offset: Option<Length>,
-        /// Signed offset from the second side's terminating geometry.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        second_offset: Option<Length>,
         /// Whether stored lengths are measured along the profile normal instead of the sweep axis.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         length_along_profile_normal: Option<bool>,
@@ -1219,9 +1202,10 @@ pub enum FeatureDefinition {
         /// Hole diameter, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         diameter: Option<Length>,
-        /// How deep the hole extends, when resolved.
+        /// How deep the hole extends, when resolved. Holes travel on one side
+        /// only, so the termination law needs no sidedness wrapper.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        extent: Option<Extent>,
+        extent: Option<Termination>,
         /// Shape and depth convention at the blind end of the hole.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bottom: Option<HoleBottom>,
@@ -1496,7 +1480,7 @@ pub struct RevolutionConstruction {
     pub axis: Option<RevolutionAxis>,
     /// Angular extent, when resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extent: Option<Extent>,
+    pub extent: Option<RevolveExtent>,
     /// Native edge, datum, or sketch-axis selection used to resolve the axis.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axis_reference: Option<PathRef>,
@@ -2123,45 +2107,21 @@ pub enum ExtrudeStart {
     },
 }
 
-/// Termination of a linear or angular feature.
+/// One-sided termination law of a linear or angular sweep. Sidedness around
+/// the profile plane is stated by the owning feature's extent type, never by
+/// the law itself.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Extent {
-    /// Native extent is present structurally but its termination is unresolved.
+pub enum Termination {
+    /// Native termination is present structurally but unresolved.
     Unresolved,
-    /// Fixed depth or angle in one direction.
+    /// Fixed travel distance.
     Blind {
         /// Fixed travel distance.
         length: Length,
     },
-    /// Fixed depth or angle split evenly on both sides of the profile.
-    Symmetric {
-        /// Total travel distance split around the profile plane.
-        length: Length,
-    },
-    /// Independent depths or angles on each side of the profile.
-    TwoSided {
-        /// Extent on the first side.
-        first: Length,
-        /// Extent on the second side.
-        second: Length,
-    },
-    /// Independent termination laws on the two oriented sides of the profile.
-    TwoSidedExtents {
-        /// Termination on the oriented first side.
-        first: Box<Extent>,
-        /// Termination on the opposite second side.
-        second: Box<Extent>,
-    },
-    /// One termination law mirrored across the profile plane.
-    SymmetricExtent {
-        /// First-side termination whose result is mirrored.
-        extent: Box<Extent>,
-    },
     /// Extends through all material.
     ThroughAll,
-    /// Extends through all material on both sides of the profile.
-    ThroughAllBoth,
     /// Extends until it exits the next material region.
     ThroughNext,
     /// Extends until the first encountered model face.
@@ -2193,22 +2153,74 @@ pub enum Extent {
         /// Native or resolved target shape selection.
         target: FaceSelection,
     },
-    /// Fixed angular extent.
+    /// Fixed angular travel.
     Angle {
         /// Angular travel.
         angle: Angle,
     },
-    /// Angular travel split equally around the profile plane.
-    SymmetricAngle {
-        /// Total angular travel.
-        angle: Angle,
+}
+
+/// One side of an extrusion: its termination law and side-local modifiers.
+/// Drafts are measured from the profile plane outward along the side's
+/// travel; an absent draft leaves the side walls parallel.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ExtrudeSide {
+    /// Where this side's travel terminates.
+    pub termination: Termination,
+    /// Draft angle applied to this side's walls, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft: Option<Angle>,
+    /// Signed offset from this side's terminating geometry, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<Length>,
+}
+
+/// Extrusion sidedness around the profile plane.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExtrudeExtent {
+    /// Travel on the oriented side only.
+    OneSided {
+        /// The single traveled side.
+        side: ExtrudeSide,
     },
-    /// Independent angular travel on each side of the profile plane.
-    TwoSidedAngles {
-        /// Angular travel on the first side.
-        first: Angle,
-        /// Angular travel on the second side.
-        second: Angle,
+    /// Independent sides on each side of the profile plane.
+    TwoSided {
+        /// Side along the extrusion direction.
+        first: ExtrudeSide,
+        /// Side opposite the extrusion direction.
+        second: ExtrudeSide,
+    },
+    /// One side mirrored across the profile plane. A blind length or angular
+    /// travel states the total travel split evenly around the plane.
+    Symmetric {
+        /// The mirrored side.
+        side: ExtrudeSide,
+    },
+}
+
+/// Revolution sidedness around the profile plane. Revolution sides carry no
+/// side-local modifiers, only their termination laws.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RevolveExtent {
+    /// Travel on the oriented side only.
+    OneSided {
+        /// The single traveled side's termination.
+        termination: Termination,
+    },
+    /// Independent terminations on each side of the profile plane.
+    TwoSided {
+        /// Termination along the revolution direction.
+        first: Termination,
+        /// Termination opposite the revolution direction.
+        second: Termination,
+    },
+    /// One termination mirrored across the profile plane. An angular travel
+    /// states the total travel split evenly around the plane.
+    Symmetric {
+        /// The mirrored side's termination.
+        termination: Termination,
     },
 }
 

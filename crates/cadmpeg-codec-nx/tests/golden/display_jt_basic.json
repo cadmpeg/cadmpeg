@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "55",
+      "ir_version": "56",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -155,7 +155,7 @@
                 "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 495,
+                "source_offset": 515,
                 "tail": [
                   6,
                   5
@@ -192,7 +192,7 @@
                 "ordinal": 0,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 495
+                "source_offset": 515
               }
             ],
             "display_jt_documents": [
@@ -220,8 +220,8 @@
                   1,
                   1
                 ],
-                "physical_byte_len": 201,
-                "source_offset": 334,
+                "physical_byte_len": 207,
+                "source_offset": 354,
                 "toc_entries": [
                   {
                     "attributes": [
@@ -232,7 +232,7 @@
                     ],
                     "id": "nx:display-jt:toc-entry#0-row-0-0",
                     "ordinal": 0,
-                    "segment_byte_len": 64,
+                    "segment_byte_len": 70,
                     "segment_id": [
                       2,
                       2,
@@ -252,7 +252,7 @@
                       2
                     ],
                     "segment_offset": 137,
-                    "source_offset": 443
+                    "source_offset": 463
                   }
                 ],
                 "toc_offset": 105,
@@ -268,11 +268,11 @@
                     "header_offset": 28,
                     "id": "nx:display-jt:index#0-row-0",
                     "ordinal": 0,
-                    "source_offset": 314,
+                    "source_offset": 334,
                     "value": 100
                   }
                 ],
-                "source_offset": 306,
+                "source_offset": 326,
                 "version": 9
               }
             ],
@@ -280,15 +280,15 @@
               {
                 "compression": {
                   "algorithm": 2,
-                  "compressed_byte_len": 31,
-                  "compressed_data_byte_len": 32,
+                  "compressed_byte_len": 37,
+                  "compressed_data_byte_len": 38,
                   "flag": 2,
                   "inflated_sha256": "f17921f91e80310304aec97e8947719a1b255efb9eeb38137d2b914689e1e81d"
                 },
                 "document": "nx:display-jt:document#0-row-0",
                 "id": "nx:display-jt:segment#0-row-0-0",
-                "payload_sha256": "f4c94329899c9e0a8ae6ce2be0fb5b8f8915e4ae3d647303772aca2ef07501fc",
-                "segment_byte_len": 64,
+                "payload_sha256": "bb2c12e1b93a31bc804b6b107c32d2cb370e231692c02235255201ea21ada64a",
+                "segment_byte_len": 70,
                 "segment_id": [
                   2,
                   2,
@@ -308,7 +308,7 @@
                   2
                 ],
                 "segment_type": 1,
-                "source_offset": 471,
+                "source_offset": 491,
                 "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
               }
             ],
@@ -330,7 +330,7 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "535",
+          "file_size": "561",
           "footer_offset": "0",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -496,22 +496,22 @@
           "file_offset": "115",
           "region": "HEADER"
         },
-        "compressed_size": 191,
+        "compressed_size": 211,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "stream",
-        "uncompressed_size": 191
+        "uncompressed_size": 211
       },
       {
         "attributes": {
-          "file_offset": "306",
+          "file_offset": "326",
           "region": "HEADER"
         },
-        "compressed_size": 229,
+        "compressed_size": 235,
         "compression": "none",
         "name": "/Root/UG_PART/DisplayJT",
         "role": "stream",
-        "uncompressed_size": 229
+        "uncompressed_size": 235
       },
       {
         "attributes": {

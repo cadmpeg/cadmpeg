@@ -286,7 +286,9 @@ fn constraint_parameters(
 }
 
 fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGaps {
-    use cadmpeg_ir::features::{BodySelection, EdgeSelection, Extent, ExtrudeStart, FaceSelection};
+    use cadmpeg_ir::features::{
+        BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, Termination,
+    };
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
     use std::collections::{HashMap, HashSet};
@@ -556,8 +558,16 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 if let ExtrudeStart::FromFace { face, .. } = start {
                     face_selection(face);
                 }
-                if let Extent::ToFace { face, .. } = extent {
-                    face_selection(face);
+                let sides = match extent {
+                    ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                        vec![side]
+                    }
+                    ExtrudeExtent::TwoSided { first, second } => vec![first, second],
+                };
+                for side in sides {
+                    if let Termination::ToFace { face, .. } = &side.termination {
+                        face_selection(face);
+                    }
                 }
             }
             FeatureDefinition::Fillet { groups } => {
@@ -3031,8 +3041,13 @@ mod tests {
                     },
                     "start": {"kind": "profile_plane"},
                     "extent": {
-                        "kind": "to_face",
-                        "face": {"kind": "native", "value": "native:face"}
+                        "kind": "one_sided",
+                        "side": {
+                            "termination": {
+                                "kind": "to_face",
+                                "face": {"kind": "native", "value": "native:face"}
+                            }
+                        }
                     },
                     "op": "cut"
                 }

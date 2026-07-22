@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "55",
+      "ir_version": "56",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -175,7 +175,7 @@
                   89,
                   151
                 ],
-                "source_offset": 495,
+                "source_offset": 515,
                 "version": 1
               },
               {
@@ -204,7 +204,7 @@
                   17,
                   17
                 ],
-                "source_offset": 495,
+                "source_offset": 515,
                 "version": 1
               },
               {
@@ -233,7 +233,7 @@
                   89,
                   151
                 ],
-                "source_offset": 495,
+                "source_offset": 515,
                 "version": 1
               },
               {
@@ -262,7 +262,7 @@
                   89,
                   151
                 ],
-                "source_offset": 495,
+                "source_offset": 515,
                 "version": 1
               },
               {
@@ -291,7 +291,7 @@
                   89,
                   151
                 ],
-                "source_offset": 495,
+                "source_offset": 515,
                 "version": 1
               }
             ],
@@ -309,7 +309,7 @@
                 "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 495,
+                "source_offset": 515,
                 "tail": [],
                 "tail_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
               }
@@ -343,7 +343,7 @@
                 "ordinal": 0,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 495
+                "source_offset": 515
               },
               {
                 "body_byte_len": 28,
@@ -373,7 +373,7 @@
                 "ordinal": 1,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 495
+                "source_offset": 515
               },
               {
                 "body_byte_len": 106,
@@ -403,7 +403,7 @@
                 "ordinal": 2,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 495
+                "source_offset": 515
               },
               {
                 "body_byte_len": 64,
@@ -433,7 +433,7 @@
                 "ordinal": 3,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 495
+                "source_offset": 515
               },
               {
                 "body_byte_len": 118,
@@ -463,7 +463,7 @@
                 "ordinal": 4,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 495
+                "source_offset": 515
               },
               {
                 "body_byte_len": 23,
@@ -493,7 +493,7 @@
                 "ordinal": 5,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 495
+                "source_offset": 515
               }
             ],
             "display_jt_documents": [
@@ -521,8 +521,8 @@
                   1,
                   1
                 ],
-                "physical_byte_len": 466,
-                "source_offset": 334,
+                "physical_byte_len": 428,
+                "source_offset": 354,
                 "toc_entries": [
                   {
                     "attributes": [
@@ -533,7 +533,7 @@
                     ],
                     "id": "nx:display-jt:toc-entry#0-row-0-0",
                     "ordinal": 0,
-                    "segment_byte_len": 329,
+                    "segment_byte_len": 291,
                     "segment_id": [
                       2,
                       2,
@@ -553,7 +553,7 @@
                       2
                     ],
                     "segment_offset": 137,
-                    "source_offset": 443
+                    "source_offset": 463
                   }
                 ],
                 "toc_offset": 105,
@@ -592,7 +592,7 @@
                   ]
                 ],
                 "object_id": 6,
-                "source_offset": 495,
+                "source_offset": 515,
                 "state_flags": 8,
                 "stored_values_mask": 14
               }
@@ -608,7 +608,7 @@
                 "family_data_sha256": "ee10da4aefe61a37df1dee937ca3221afa3b2351f9ea34edbbb769573c6785f7",
                 "id": "nx:display-jt:segment#0-row-0-0-group-node-data-1",
                 "object_id": 2,
-                "source_offset": 495,
+                "source_offset": 515,
                 "version": 1
               },
               {
@@ -620,7 +620,7 @@
                 "family_data_sha256": "f592769b90ad61ae2b837cf9c9603a3087963ff76bb28dc3b27d293e842dce32",
                 "id": "nx:display-jt:segment#0-row-0-0-group-node-data-2",
                 "object_id": 3,
-                "source_offset": 495,
+                "source_offset": 515,
                 "version": 1
               },
               {
@@ -633,7 +633,7 @@
                 "family_data_sha256": "f1b62c7634dac33059f4857804efbc74e391c06cb9974ccdc3a1435e115d82d7",
                 "id": "nx:display-jt:segment#0-row-0-0-group-node-data-3",
                 "object_id": 4,
-                "source_offset": 495,
+                "source_offset": 515,
                 "version": 1
               }
             ],
@@ -646,11 +646,11 @@
                     "header_offset": 28,
                     "id": "nx:display-jt:index#0-row-0",
                     "ordinal": 0,
-                    "source_offset": 314,
+                    "source_offset": 334,
                     "value": 100
                   }
                 ],
-                "source_offset": 306,
+                "source_offset": 326,
                 "version": 9
               }
             ],
@@ -660,7 +660,7 @@
                 "child_object_id": 9,
                 "id": "nx:display-jt:segment#0-row-0-0-instance-node-0",
                 "object_id": 1,
-                "source_offset": 495,
+                "source_offset": 515,
                 "version": 1
               }
             ],
@@ -688,7 +688,7 @@
                   6
                 ],
                 "reserved_bounds": null,
-                "source_offset": 495,
+                "source_offset": 515,
                 "transformed_bounds": [
                   [
                     0.0,
@@ -744,22 +744,22 @@
                 "reserved_values": [
                   0.25
                 ],
-                "source_offset": 495
+                "source_offset": 515
               }
             ],
             "display_jt_segments": [
               {
                 "compression": {
                   "algorithm": 2,
-                  "compressed_byte_len": 296,
-                  "compressed_data_byte_len": 297,
+                  "compressed_byte_len": 258,
+                  "compressed_data_byte_len": 259,
                   "flag": 2,
                   "inflated_sha256": "9664016a85340f2b4b7c84cdf59e45e428e79af680291a42eac06a4fbd28ba9c"
                 },
                 "document": "nx:display-jt:document#0-row-0",
                 "id": "nx:display-jt:segment#0-row-0-0",
-                "payload_sha256": "f898e21a43f4033b5e839e3646c6a703593613d17957551c900b6ee3bf99ddce",
-                "segment_byte_len": 329,
+                "payload_sha256": "2b876b4edbf8dea8f01a722d1cee528865d99ec6cb7737894529cd64862bd983",
+                "segment_byte_len": 291,
                 "segment_id": [
                   2,
                   2,
@@ -779,7 +779,7 @@
                   2
                 ],
                 "segment_type": 1,
-                "source_offset": 471,
+                "source_offset": 491,
                 "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
               }
             ],
@@ -813,7 +813,7 @@
                     5.0
                   ]
                 ],
-                "source_offset": 495,
+                "source_offset": 515,
                 "texture_quantization_bits": 16,
                 "untransformed_bounds": [
                   [
@@ -855,7 +855,7 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "800",
+          "file_size": "782",
           "footer_offset": "0",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -1021,22 +1021,22 @@
           "file_offset": "115",
           "region": "HEADER"
         },
-        "compressed_size": 191,
+        "compressed_size": 211,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "stream",
-        "uncompressed_size": 191
+        "uncompressed_size": 211
       },
       {
         "attributes": {
-          "file_offset": "306",
+          "file_offset": "326",
           "region": "HEADER"
         },
-        "compressed_size": 494,
+        "compressed_size": 456,
         "compression": "none",
         "name": "/Root/UG_PART/DisplayJT",
         "role": "stream",
-        "uncompressed_size": 494
+        "uncompressed_size": 456
       },
       {
         "attributes": {

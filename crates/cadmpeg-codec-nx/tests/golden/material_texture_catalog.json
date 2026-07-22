@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "55",
+      "ir_version": "56",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -155,7 +155,7 @@
                 "name": "unmap$1",
                 "sha256": "c90f086033471f18fec615e4d7bad96b574102e91843a09a853436115a89d77f",
                 "source_entry": "/Root/materialsTif/unmap$1",
-                "source_offset": 346,
+                "source_offset": 366,
                 "version": 42
               }
             ],
@@ -166,7 +166,7 @@
                 "material_path": "materialsTif/Carbon Fiber Harness Satin Coated",
                 "modify_time": "2026-07-15T08:02:00",
                 "source_entry": "/Root/qafmetadata",
-                "source_offset": 598,
+                "source_offset": 618,
                 "storage_path": "materialsTif/unmap$1",
                 "texture_asset": "nx:container:material-texture#0"
               }
@@ -189,7 +189,7 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "3",
-          "file_size": "839",
+          "file_size": "859",
           "footer_offset": "0",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -355,15 +355,15 @@
           "file_offset": "155",
           "region": "HEADER"
         },
-        "compressed_size": 191,
+        "compressed_size": 211,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "stream",
-        "uncompressed_size": 191
+        "uncompressed_size": 211
       },
       {
         "attributes": {
-          "file_offset": "346",
+          "file_offset": "366",
           "region": "HEADER"
         },
         "compressed_size": 10,
@@ -374,7 +374,7 @@
       },
       {
         "attributes": {
-          "file_offset": "356",
+          "file_offset": "376",
           "region": "HEADER"
         },
         "compressed_size": 483,

@@ -471,7 +471,7 @@ fn jt_vertex_flags_require_a_complete_binary_value_packet() {
 
 #[test]
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
-    use cadmpeg_ir::features::{Extent, FaceSelection, HoleKind, Length, ProfileRef};
+    use cadmpeg_ir::features::{FaceSelection, HoleKind, Length, ProfileRef, Termination};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     assert!(!crate::decode::hole_feature_is_incomplete(
@@ -481,7 +481,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(Vector3::new(0.0, 0.0, 1.0)),
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
-        Some(&Extent::ThroughAll),
+        Some(&Termination::ThroughAll),
     ));
     assert!(crate::decode::hole_feature_is_incomplete(
         Some(&ProfileRef::Unresolved("hole".into())),
@@ -490,7 +490,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         None,
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
-        Some(&Extent::ThroughAll),
+        Some(&Termination::ThroughAll),
     ));
     assert!(crate::decode::hole_feature_is_incomplete(
         None,
@@ -499,7 +499,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(Vector3::new(0.0, 0.0, 1.0)),
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
-        Some(&Extent::Unresolved),
+        Some(&Termination::Unresolved),
     ));
     assert!(crate::decode::hole_feature_is_incomplete(
         None,
@@ -517,37 +517,47 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             }),
         ),
         Some(Length(5.0)),
-        Some(&Extent::ThroughAll),
+        Some(&Termination::ThroughAll),
     ));
 }
 
 #[test]
 fn nx_extent_completeness_checks_nested_and_face_termination() {
-    use cadmpeg_ir::features::{Extent, FaceSelection, Length};
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FaceSelection, Length, Termination};
 
-    assert!(!crate::decode::extent_is_incomplete(
-        &Extent::TwoSidedExtents {
-            first: Box::new(Extent::Blind {
+    let side = |termination: Termination| ExtrudeSide {
+        termination,
+        draft: None,
+        offset: None,
+    };
+
+    assert!(!crate::decode::extrude_extent_is_incomplete(
+        &ExtrudeExtent::TwoSided {
+            first: side(Termination::Blind {
                 length: Length(5.0),
             }),
-            second: Box::new(Extent::ThroughAll),
+            second: side(Termination::ThroughAll),
         }
     ));
-    assert!(crate::decode::extent_is_incomplete(
-        &Extent::SymmetricExtent {
-            extent: Box::new(Extent::Unresolved),
+    assert!(crate::decode::extrude_extent_is_incomplete(
+        &ExtrudeExtent::Symmetric {
+            side: side(Termination::Unresolved),
         }
     ));
-    assert!(crate::decode::extent_is_incomplete(&Extent::ToFace {
-        face: FaceSelection::Native("nx:face-selection#0".to_string()),
-        offset: None,
-    }));
-    assert!(crate::decode::extent_is_incomplete(&Extent::ToShape {
-        target: FaceSelection::Resolved {
-            faces: Vec::new(),
-            native: "nx:face-selection#1".to_string(),
-        },
-    }));
+    assert!(crate::decode::termination_is_incomplete(
+        &Termination::ToFace {
+            face: FaceSelection::Native("nx:face-selection#0".to_string()),
+            offset: None,
+        }
+    ));
+    assert!(crate::decode::termination_is_incomplete(
+        &Termination::ToShape {
+            target: FaceSelection::Resolved {
+                faces: Vec::new(),
+                native: "nx:face-selection#1".to_string(),
+            },
+        }
+    ));
 }
 
 #[test]
@@ -808,7 +818,7 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
 
 #[test]
 fn nx_hole_completeness_rejects_opaque_supplied_operands() {
-    use cadmpeg_ir::features::{Extent, FaceSelection, HoleKind, Length, ProfileRef};
+    use cadmpeg_ir::features::{FaceSelection, HoleKind, Length, ProfileRef, Termination};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let incomplete = |profile, face| {
@@ -819,7 +829,7 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
             Some(Vector3::new(0.0, 0.0, 1.0)),
             (&HoleKind::Simple, None),
             Some(Length(1.0)),
-            Some(&Extent::ThroughAll),
+            Some(&Termination::ThroughAll),
         )
     };
 

@@ -1,8 +1,9 @@
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, Extent, ExtrusionDirectionSource, FeatureDefinition, InnerWireTaper, Length,
-    PathRef, ShellJoin, ShellMode, SweepOrientation, SweepTransformation, SweepTransition,
+    Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
+    InnerWireTaper, Length, PathRef, RevolveExtent, ShellJoin, ShellMode, SweepOrientation,
+    SweepTransformation, SweepTransition, Termination,
 };
 use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind as Kind;
 use cadmpeg_ir::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
@@ -758,7 +759,9 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
         cadmpeg_ir::features::FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)),
-                extent: Some(cadmpeg_ir::features::Extent::Angle { angle }),
+                extent: Some(RevolveExtent::OneSided {
+                    termination: Termination::Angle { angle }
+                }),
                 ..
             },
             op: cadmpeg_ir::features::BooleanOp::Join
@@ -871,7 +874,9 @@ fn transfers_non_default_revolution_branches() {
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 axis: Some(axis),
-                extent: Some(Extent::ToFirst),
+                extent: Some(RevolveExtent::OneSided {
+                    termination: Termination::ToFirst
+                }),
                 ..
             },
             ..
@@ -881,7 +886,9 @@ fn transfers_non_default_revolution_branches() {
         definition("ToFace"),
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
-                extent: Some(Extent::ToFace { .. }),
+                extent: Some(RevolveExtent::OneSided {
+                    termination: Termination::ToFace { .. }
+                }),
                 ..
             },
             ..
@@ -889,19 +896,21 @@ fn transfers_non_default_revolution_branches() {
     ));
     assert!(matches!(
         definition("TwoAngles"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { extent: Some(Extent::TwoSidedAngles { first, second }), .. }, .. }
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { extent: Some(RevolveExtent::TwoSided { first: Termination::Angle { angle: first }, second: Termination::Angle { angle: second } }), .. }, .. }
             if (first.0 - 120_f64.to_radians()).abs() < 1e-12 && (second.0 - 30_f64.to_radians()).abs() < 1e-12
     ));
     assert!(matches!(
         definition("Midplane"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { axis: Some(axis), extent: Some(Extent::SymmetricAngle { .. }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), fuse_order: Some(cadmpeg_ir::features::RevolutionFuseOrder::FeatureFirst), solid: Some(true), allow_multi_profile_faces: Some(false), .. }, .. }
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { axis: Some(axis), extent: Some(RevolveExtent::Symmetric { termination: Termination::Angle { .. } }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), fuse_order: Some(cadmpeg_ir::features::RevolutionFuseOrder::FeatureFirst), solid: Some(true), allow_multi_profile_faces: Some(false), .. }, .. }
             if axis.direction.y == -1.0 && reference.ends_with(":ReferenceAxis")
     ));
     assert!(matches!(
         definition("ThroughAll"),
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
-                extent: Some(Extent::ThroughAll),
+                extent: Some(RevolveExtent::OneSided {
+                    termination: Termination::ThroughAll
+                }),
                 ..
             },
             op: BooleanOp::Cut
@@ -909,7 +918,7 @@ fn transfers_non_default_revolution_branches() {
     ));
     assert!(matches!(
         definition("Standalone"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)), axis: Some(axis), extent: Some(Extent::SymmetricAngle { .. }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), solid: Some(true), face_maker_class: Some(face_maker), .. }, op: BooleanOp::NewBody }
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)), axis: Some(axis), extent: Some(RevolveExtent::Symmetric { termination: Termination::Angle { .. } }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), solid: Some(true), face_maker_class: Some(face_maker), .. }, op: BooleanOp::NewBody }
             if axis.direction.z == 1.0 && reference.ends_with(":AxisLink")
                 && face_maker == "Part::FaceMakerUnified"
     ));
@@ -2919,7 +2928,7 @@ fn transfers_branch_complete_threaded_counterdrill_hole() {
     ));
     assert!(matches!(
         extent,
-        Some(cadmpeg_ir::features::Extent::ThroughAll)
+        Some(cadmpeg_ir::features::Termination::ThroughAll)
     ));
     assert!(matches!(
         bottom,
@@ -4217,35 +4226,60 @@ fn transfers_non_default_extrusion_termination_branches() {
     assert!(matches!(
         definition("ToLast"),
         FeatureDefinition::Extrude {
-            extent: Extent::ToLast,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToLast,
+                    ..
+                }
+            },
             ..
         }
     ));
     assert!(matches!(
         definition("ToFirst"),
         FeatureDefinition::Extrude {
-            extent: Extent::ToFirst,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToFirst,
+                    ..
+                }
+            },
             ..
         }
     ));
     assert!(matches!(
         definition("ToFace"),
         FeatureDefinition::Extrude {
-            extent: Extent::ToFace { .. },
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToFace { .. },
+                    ..
+                }
+            },
             ..
         }
     ));
     assert!(matches!(
         definition("ToShape"),
         FeatureDefinition::Extrude {
-            extent: Extent::ToShape { .. },
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToShape { .. },
+                    ..
+                }
+            },
             ..
         }
     ));
     assert!(matches!(
         definition("ThroughAll"),
         FeatureDefinition::Extrude {
-            extent: Extent::ThroughAll,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ThroughAll,
+                    ..
+                }
+            },
             op: BooleanOp::Cut,
             ..
         }
@@ -4254,8 +4288,13 @@ fn transfers_non_default_extrusion_termination_branches() {
         definition("Symmetric"),
         FeatureDefinition::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
-            extent: Extent::Symmetric { length },
-            draft: Some(Angle(draft)),
+            extent: ExtrudeExtent::Symmetric {
+                side: ExtrudeSide {
+                    termination: Termination::Blind { length },
+                    draft: Some(Angle(draft)),
+                    ..
+                }
+            },
             ..
         } if direction.z == -1.0 && length.0 == 12.0 && (*draft - 5_f64.to_radians()).abs() < 1e-12
     ));
@@ -4264,9 +4303,18 @@ fn transfers_non_default_extrusion_termination_branches() {
         FeatureDefinition::Extrude {
             profile: _,
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
-            extent: Extent::TwoSided { first, second },
-            draft: Some(Angle(draft)),
-            second_draft: Some(Angle(reverse_draft)),
+            extent: ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind { length: first },
+                    draft: Some(Angle(draft)),
+                    ..
+                },
+                second: ExtrudeSide {
+                    termination: Termination::Blind { length: second },
+                    draft: Some(Angle(reverse_draft)),
+                    ..
+                },
+            },
             direction_source: Some(ExtrusionDirectionSource::Edge { reference: PathRef::Native(reference) }),
             solid: Some(true),
             face_maker: Some(face_maker),
@@ -4318,15 +4366,17 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
     assert!(matches!(
         definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            extent: cadmpeg_ir::features::Extent::Symmetric { length },
+            extent: cadmpeg_ir::features::ExtrudeExtent::Symmetric {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Blind { length },
+                    draft: Some(cadmpeg_ir::features::Angle(draft)),
+                    ..
+                }
+            },
             direction_source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal),
             solid: Some(false),
-            draft: Some(cadmpeg_ir::features::Angle(draft)),
-            second_draft: Some(cadmpeg_ir::features::Angle(reverse_draft)),
             ..
-        } if length.0 == 12.0
-            && (*draft - 3_f64.to_radians()).abs() < 1e-12
-            && (*reverse_draft - 3_f64.to_radians()).abs() < 1e-12
+        } if length.0 == 12.0 && (*draft - 3_f64.to_radians()).abs() < 1e-12
     ));
     assert!(result.report.losses.is_empty());
 }
@@ -4393,19 +4443,24 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
     assert!(matches!(
         definition("Mixed"),
         FeatureDefinition::Extrude {
-            extent: Extent::TwoSidedExtents { first, second },
+            extent: ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind { length: Length(-5.0) },
+                    draft: Some(Angle(first_draft)),
+                    offset: Some(Length(1.0)),
+                },
+                second: ExtrudeSide {
+                    termination: Termination::ToShape { .. },
+                    draft: Some(Angle(second_draft)),
+                    offset: Some(Length(-2.0)),
+                },
+            },
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
             direction_source: Some(ExtrusionDirectionSource::Edge { reference: PathRef::Native(reference) }),
-            draft: Some(Angle(first_draft)),
-            second_draft: Some(Angle(second_draft)),
-            first_offset: Some(Length(1.0)),
-            second_offset: Some(Length(-2.0)),
             length_along_profile_normal: Some(false),
             allow_multi_profile_faces: Some(true),
             ..
-        } if matches!(first.as_ref(), Extent::Blind { length: Length(-5.0) })
-            && matches!(second.as_ref(), Extent::ToShape { .. })
-            && direction.y == 1.0
+        } if direction.y == 1.0
             && reference.ends_with(":ReferenceAxis")
             && (*first_draft - 2_f64.to_radians()).abs() < 1e-12
             && (*second_draft + 3_f64.to_radians()).abs() < 1e-12
@@ -4413,18 +4468,35 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
     assert!(matches!(
         definition("Symmetric"),
         FeatureDefinition::Extrude {
-            extent: Extent::SymmetricExtent { extent },
-            first_offset: Some(Length(0.5)),
+            extent: ExtrudeExtent::Symmetric {
+                side: ExtrudeSide {
+                    termination: Termination::ThroughAll,
+                    offset: Some(Length(0.5)),
+                    ..
+                }
+            },
             ..
-        } if matches!(extent.as_ref(), Extent::ThroughAll)
+        }
     ));
     assert!(matches!(
         definition("LegacyTwoLengths"),
         FeatureDefinition::Extrude {
-            extent: Extent::TwoSidedExtents { first, second },
+            extent: ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(6.0)
+                    },
+                    ..
+                },
+                second: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(2.0)
+                    },
+                    ..
+                },
+            },
             ..
-        } if matches!(first.as_ref(), Extent::Blind { length: Length(6.0) })
-            && matches!(second.as_ref(), Extent::Blind { length: Length(2.0) })
+        }
     ));
     assert!(result.report.losses.is_empty());
 }
@@ -4550,8 +4622,13 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         pad.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Sketch(_),
-            extent: cadmpeg_ir::features::Extent::Blind {
-                length: cadmpeg_ir::features::Length(10.0)
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Blind {
+                        length: cadmpeg_ir::features::Length(10.0)
+                    },
+                    ..
+                }
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
@@ -4560,8 +4637,13 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     assert!(matches!(
         pocket.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            extent: cadmpeg_ir::features::Extent::Blind {
-                length: cadmpeg_ir::features::Length(2.5)
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Blind {
+                        length: cadmpeg_ir::features::Length(2.5)
+                    },
+                    ..
+                }
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..

@@ -125,10 +125,10 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "55";
+pub const IR_VERSION: &str = "56";
 
 /// Immediately preceding IR version supported by the explicit JSON migration.
-pub const PREVIOUS_IR_VERSION: &str = "54";
+pub const PREVIOUS_IR_VERSION: &str = "55";
 
 arena_registry!(declare_model);
 
@@ -287,7 +287,7 @@ impl CadIr {
         match version {
             Some(IR_VERSION) => serde_json::from_value(value),
             Some(PREVIOUS_IR_VERSION) => {
-                migrate_previous_sketch_spaces(&mut value);
+                migrate_previous_extents(&mut value);
                 value
                     .as_object_mut()
                     .expect("a versioned CADIR document is a JSON object")
@@ -307,7 +307,7 @@ impl CadIr {
     }
 }
 
-fn migrate_previous_sketch_spaces(value: &mut serde_json::Value) {
+fn migrate_previous_extents(value: &mut serde_json::Value) {
     let Some(model) = value
         .get_mut("model")
         .and_then(serde_json::Value::as_object_mut)
@@ -320,7 +320,7 @@ fn migrate_previous_sketch_spaces(value: &mut serde_json::Value) {
     {
         for feature in features {
             if let Some(definition) = feature.get_mut("definition") {
-                migrate_previous_sketch_definition(definition);
+                migrate_previous_extent_definition(definition);
             }
         }
     }
@@ -335,27 +335,152 @@ fn migrate_previous_sketch_spaces(value: &mut serde_json::Value) {
             .flat_map(|states| states.values_mut())
         {
             if let Some(definition) = state.get_mut("definition") {
-                migrate_previous_sketch_definition(definition);
+                migrate_previous_extent_definition(definition);
             }
         }
     }
 }
 
-fn migrate_previous_sketch_definition(definition: &mut serde_json::Value) {
+/// The sidedness of a version-55 extent, with per-side termination laws.
+enum PreviousExtent {
+    OneSided(serde_json::Value),
+    TwoSided(serde_json::Value, serde_json::Value),
+    Symmetric(serde_json::Value),
+}
+
+/// Splits a version-55 composite extent into sidedness plus one-sided
+/// termination laws. A law kind passes through as the side's termination.
+fn split_previous_extent(extent: serde_json::Value) -> PreviousExtent {
+    let kind = extent
+        .get("kind")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let blind = |length: Option<&serde_json::Value>| serde_json::json!({"kind": "blind", "length": length.cloned().unwrap_or(serde_json::Value::Null)});
+    let angle = |angle: Option<&serde_json::Value>| serde_json::json!({"kind": "angle", "angle": angle.cloned().unwrap_or(serde_json::Value::Null)});
+    match kind {
+        "symmetric" => PreviousExtent::Symmetric(blind(extent.get("length"))),
+        "symmetric_angle" => PreviousExtent::Symmetric(angle(extent.get("angle"))),
+        "symmetric_extent" => PreviousExtent::Symmetric(
+            extent
+                .get("extent")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+        ),
+        "two_sided" => {
+            PreviousExtent::TwoSided(blind(extent.get("first")), blind(extent.get("second")))
+        }
+        "two_sided_angles" => {
+            PreviousExtent::TwoSided(angle(extent.get("first")), angle(extent.get("second")))
+        }
+        "two_sided_extents" => PreviousExtent::TwoSided(
+            extent
+                .get("first")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            extent
+                .get("second")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+        ),
+        "through_all_both" => PreviousExtent::TwoSided(
+            serde_json::json!({"kind": "through_all"}),
+            serde_json::json!({"kind": "through_all"}),
+        ),
+        _ => PreviousExtent::OneSided(extent),
+    }
+}
+
+/// A version-55 extrusion side from its termination law and side modifiers.
+fn previous_extrude_side(
+    termination: serde_json::Value,
+    draft: Option<serde_json::Value>,
+    offset: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut side = serde_json::Map::new();
+    side.insert("termination".into(), termination);
+    if let Some(draft) = draft {
+        side.insert("draft".into(), draft);
+    }
+    if let Some(offset) = offset {
+        side.insert("offset".into(), offset);
+    }
+    serde_json::Value::Object(side)
+}
+
+fn migrate_previous_extent_definition(definition: &mut serde_json::Value) {
     let Some(definition) = definition.as_object_mut() else {
         return;
     };
-    if definition
+    match definition
         .get("definition")
         .and_then(serde_json::Value::as_str)
-        != Some("sketch")
     {
-        return;
+        Some("extrude") => {
+            let Some(extent) = definition.remove("extent") else {
+                return;
+            };
+            let draft = definition.remove("draft");
+            let second_draft = definition
+                .remove("second_draft")
+                .or_else(|| definition.remove("reverse_draft"));
+            let first_offset = definition.remove("first_offset");
+            let second_offset = definition.remove("second_offset");
+            let extent = match split_previous_extent(extent) {
+                // Second-side modifiers alongside a one-sided extent had no
+                // side to act on; they are dropped.
+                PreviousExtent::OneSided(termination) => serde_json::json!({
+                    "kind": "one_sided",
+                    "side": previous_extrude_side(termination, draft, first_offset),
+                }),
+                PreviousExtent::TwoSided(first, second) => serde_json::json!({
+                    "kind": "two_sided",
+                    "first": previous_extrude_side(first, draft, first_offset),
+                    "second": previous_extrude_side(second, second_draft, second_offset),
+                }),
+                // A mirrored side carries one draft; version 55 stated a
+                // symmetric taper as equal first- and second-side drafts.
+                PreviousExtent::Symmetric(termination) => serde_json::json!({
+                    "kind": "symmetric",
+                    "side": previous_extrude_side(
+                        termination,
+                        draft.or(second_draft),
+                        first_offset,
+                    ),
+                }),
+            };
+            definition.insert("extent".into(), extent);
+        }
+        Some("revolve") => {
+            let Some(construction) = definition
+                .get_mut("construction")
+                .and_then(serde_json::Value::as_object_mut)
+            else {
+                return;
+            };
+            let Some(extent) = construction.remove("extent") else {
+                return;
+            };
+            let extent = match split_previous_extent(extent) {
+                PreviousExtent::OneSided(termination) => serde_json::json!({
+                    "kind": "one_sided",
+                    "termination": termination,
+                }),
+                PreviousExtent::TwoSided(first, second) => serde_json::json!({
+                    "kind": "two_sided",
+                    "first": first,
+                    "second": second,
+                }),
+                PreviousExtent::Symmetric(termination) => serde_json::json!({
+                    "kind": "symmetric",
+                    "termination": termination,
+                }),
+            };
+            construction.insert("extent".into(), extent);
+        }
+        // Hole extents were already one-sided termination laws; their JSON is
+        // unchanged.
+        _ => {}
     }
-    if definition.get("space").and_then(serde_json::Value::as_str) == Some("spatial") {
-        definition.insert("definition".into(), "spatial_sketch".into());
-    }
-    definition.remove("space");
 }
 
 /// Source-container metadata preserved for reporting.

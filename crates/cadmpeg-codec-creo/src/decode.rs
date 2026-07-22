@@ -17,11 +17,11 @@ use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
-    FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
-    FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleForm, HoleKind, Length, ParameterId,
-    ParameterValue, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction,
+    Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent,
+    ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
+    FeatureId as IrFeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleForm,
+    HoleKind, Length, ParameterId, ParameterValue, PatternForm, PatternKind, ProfileRef,
+    RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent, Termination,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -4549,7 +4549,7 @@ fn generated_arc_cylinder_extent(
     scan: &ContainerScan,
     definition: &crate::feature::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
-) -> Option<(Extent, [f64; 3])> {
+) -> Option<(ExtrudeExtent, [f64; 3])> {
     let feature_id = definition.owner_feature_id?;
     definition.segments.as_ref()?.is_complete().then_some(())?;
     let mut frames = Vec::new();
@@ -4589,7 +4589,7 @@ fn generated_arc_cylinder_extent(
 fn agreed_generated_cylinder_extent(
     transform: &crate::placement::FeatureSectionTransform,
     frames: &[crate::surface::PositionalCylinderFrame],
-) -> Option<(Extent, [f64; 3])> {
+) -> Option<(ExtrudeExtent, [f64; 3])> {
     let normal = normalized(transform.normal)?;
     let first = *frames.first()?;
     let length = first.length.filter(|length| *length > 0.0)?;
@@ -4618,8 +4618,14 @@ fn agreed_generated_cylinder_extent(
         .then_some(())?;
     close(dot(direction, normal).abs(), 1.0).then_some(())?;
     Some((
-        Extent::Blind {
-            length: Length(length),
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(length),
+                },
+                draft: None,
+                offset: None,
+            },
         },
         direction,
     ))
@@ -4655,9 +4661,13 @@ fn resolved_feature_extrusion_span(
 ) -> Option<ExtrusionSpan> {
     generated_arc_cylinder_extent(scan, definition, transform)
         .and_then(|(extent, direction)| match extent {
-            Extent::Blind { length } => {
-                directed_blind_extrusion_span(transform.normal, direction, length.0)
-            }
+            ExtrudeExtent::OneSided {
+                side:
+                    ExtrudeSide {
+                        termination: Termination::Blind { length },
+                        ..
+                    },
+            } => directed_blind_extrusion_span(transform.normal, direction, length.0),
             _ => None,
         })
         .or_else(|| {
@@ -8000,11 +8010,13 @@ fn row_feature_schema_classes(
         .collect()
 }
 
-fn feature_revolution_extent(scan: &ContainerScan, feature_id: u32) -> Option<Extent> {
+fn feature_revolution_extent(scan: &ContainerScan, feature_id: u32) -> Option<RevolveExtent> {
     unique_feature_revolution_extent_kind(&scan.features.revolution_extents, feature_id).map(
         |kind| match kind {
-            crate::feature::FeatureRevolutionExtentKind::FullTurn => Extent::Angle {
-                angle: Angle(std::f64::consts::TAU),
+            crate::feature::FeatureRevolutionExtentKind::FullTurn => RevolveExtent::OneSided {
+                termination: Termination::Angle {
+                    angle: Angle(std::f64::consts::TAU),
+                },
             },
         },
     )
@@ -13467,7 +13479,7 @@ fn schema_feature_definition(
                 ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}"))
             }),
             None,
-            Extent::Unresolved,
+            unresolved_extrude_extent(),
         ));
         let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
         return IrFeatureDefinition::Extrude {
@@ -13484,14 +13496,10 @@ fn schema_feature_definition(
                 output_kind.is_some(),
                 preceding_features_establish_body(ir),
             ),
-            draft: None,
-            second_draft: None,
             direction_source: None,
             solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
             face_maker: None,
             inner_wire_taper: None,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         };
@@ -13708,18 +13716,24 @@ fn unresolved_extrude_feature_definition_with_op(
         profile: ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")),
         direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
         start: cadmpeg_ir::features::ExtrudeStart::default(),
-        extent: Extent::Unresolved,
+        extent: unresolved_extrude_extent(),
         op,
-        draft: None,
-        second_draft: None,
         direction_source: None,
         solid: None,
         face_maker: None,
         inner_wire_taper: None,
-        first_offset: None,
-        second_offset: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
+    }
+}
+
+fn unresolved_extrude_extent() -> ExtrudeExtent {
+    ExtrudeExtent::OneSided {
+        side: ExtrudeSide {
+            termination: Termination::Unresolved,
+            draft: None,
+            offset: None,
+        },
     }
 }
 
@@ -13775,7 +13789,7 @@ struct ExtrusionSpan {
 
 fn hole_extent_and_direction(
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
-) -> Option<([f64; 3], Extent)> {
+) -> Option<([f64; 3], Termination)> {
     let planes = planes.into_iter().collect::<Vec<_>>();
     let [(first_origin, first_normal), (second_origin, second_normal)] = planes.as_slice() else {
         return None;
@@ -13807,7 +13821,7 @@ fn hole_extent_and_direction(
     }
     Some((
         first_normal.map(|value| value * signed_length.signum()),
-        Extent::Blind {
+        Termination::Blind {
             length: Length(signed_length.abs()),
         },
     ))
@@ -13815,7 +13829,7 @@ fn hole_extent_and_direction(
 
 fn hole_placement(
     planes: impl IntoIterator<Item = (u32, [f64; 3], [f64; 3])>,
-) -> Option<(u32, [f64; 3], Extent)> {
+) -> Option<(u32, [f64; 3], Termination)> {
     let planes = planes.into_iter().collect::<Vec<_>>();
     let [(entry_id, entry_origin, entry_normal), (_, termination_origin, termination_normal)] =
         planes.as_slice()
@@ -13997,7 +14011,7 @@ struct SimpleHoleGeometry {
     entry_surface_id: Option<u32>,
     cylinder_ids: Vec<u32>,
     direction: [f64; 3],
-    extent: Extent,
+    extent: Termination,
     geometry: SurfaceGeometry,
 }
 
@@ -14412,7 +14426,7 @@ fn compact_simple_hole_geometry(
         entry_surface_id: None,
         cylinder_ids: vec![cylinder_id],
         direction: frame.axis,
-        extent: Extent::Blind {
+        extent: Termination::Blind {
             length: Length(length),
         },
         geometry: SurfaceGeometry::Cylinder {
@@ -14475,7 +14489,7 @@ struct CircularSweepGeometry {
     cylinder_ids: Vec<u32>,
     section_definition_id: Option<u32>,
     direction: [f64; 3],
-    extent: Extent,
+    extent: ExtrudeExtent,
     geometry: SurfaceGeometry,
 }
 
@@ -14576,14 +14590,10 @@ fn circular_sweep_feature_definition(
         start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent: sweep.extent.clone(),
         op,
-        draft: None,
-        second_draft: None,
         direction_source: None,
         solid,
         face_maker: None,
         inner_wire_taper: None,
-        first_offset: None,
-        second_offset: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
     }
@@ -14647,12 +14657,18 @@ fn two_cap_circular_sweep_geometry(
     }) {
         return None;
     }
-    let (_, direction, extent) = hole_placement([*first, *second])?;
+    let (_, direction, termination) = hole_placement([*first, *second])?;
     Some(CircularSweepGeometry {
         cylinder_ids: cylinder_ids.to_vec(),
         section_definition_id: None,
         direction,
-        extent,
+        extent: ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination,
+                draft: None,
+                offset: None,
+            },
+        },
         geometry: circular_sweep_cylinder_from_cap_outlines([cap(first), cap(second)])?,
     })
 }
@@ -14725,7 +14741,7 @@ fn extrusion_extent_and_direction(
     profile_origin: [f64; 3],
     direction: [f64; 3],
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
-) -> Option<(Extent, [f64; 3])> {
+) -> Option<(ExtrudeExtent, [f64; 3])> {
     let span = extrusion_span(profile_origin, direction, planes)?;
     let direction = normalized(direction)?;
     if span.lower == 0.0 || span.upper == 0.0 {
@@ -14735,8 +14751,8 @@ fn extrusion_extent_and_direction(
             span.upper
         };
         return Some((
-            Extent::Blind {
-                length: Length(signed_length.abs()),
+            ExtrudeExtent::OneSided {
+                side: blind_extrude_side(signed_length.abs()),
             },
             direction.map(|value| value * signed_length.signum()),
         ));
@@ -14745,16 +14761,26 @@ fn extrusion_extent_and_direction(
     let second = -span.lower;
     let scale = first.max(second).max(1.0);
     let extent = if (first - second).abs() <= 1e-9 * scale {
-        Extent::Symmetric {
-            length: Length(first + second),
+        ExtrudeExtent::Symmetric {
+            side: blind_extrude_side(first + second),
         }
     } else {
-        Extent::TwoSided {
-            first: Length(first),
-            second: Length(second),
+        ExtrudeExtent::TwoSided {
+            first: blind_extrude_side(first),
+            second: blind_extrude_side(second),
         }
     };
     Some((extent, direction))
+}
+
+fn blind_extrude_side(length: f64) -> ExtrudeSide {
+    ExtrudeSide {
+        termination: Termination::Blind {
+            length: Length(length),
+        },
+        draft: None,
+        offset: None,
+    }
 }
 
 #[cfg(test)]

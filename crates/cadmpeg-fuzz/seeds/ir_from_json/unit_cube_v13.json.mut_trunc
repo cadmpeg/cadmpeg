@@ -1,5 +1,5 @@
 {
-  "ir_version": "54",
+  "ir_version": "56",
   "units": {
     "length": "millimeter"
   },
@@ -380,5 +380,4 @@
         "sense": "reversed"
       },
       {
-        "id": "synthetic:cube:coedge#top:3",
-        "owner_loop"
+        "id": "synthetic:cub

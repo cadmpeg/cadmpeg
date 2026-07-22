@@ -13,12 +13,12 @@ use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
     ConfigurationBodies, ConfigurationId, CosmeticThreadExtent, CurveProjectionDirection,
     CurveProjectionDirectionState, DesignConfiguration, DesignParameter, DimensionDisplay,
-    EdgeSelection, Extent, FaceMotion, FaceSelection, FeatureDefinition, FeatureId,
-    FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length,
-    ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, PatternSeed, ProfileRef,
-    RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft,
-    RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace, SweepMode, VariableRadius,
-    VertexSelection, WrapMode,
+    EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection, FeatureDefinition,
+    FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind,
+    Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, PatternSeed,
+    ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent,
+    RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace,
+    SweepMode, Termination, VariableRadius, VertexSelection, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::AttributeId;
@@ -2013,8 +2013,13 @@ mod history_reference_tests {
         assert!(matches!(
             project_extrude(&feature, &HashMap::new()),
             Some(FeatureDefinition::Extrude {
-                extent: Extent::Blind {
-                    length: Length(2.1)
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: Termination::Blind {
+                            length: Length(2.1)
+                        },
+                        ..
+                    }
                 },
                 ..
             })
@@ -2133,7 +2138,7 @@ mod history_reference_tests {
                     ..
                 },
             diameter: Some(diameter),
-            extent: Some(Extent::Blind { length }),
+            extent: Some(Termination::Blind { length }),
             ..
         } = projected
         else {
@@ -2738,7 +2743,7 @@ mod history_reference_tests {
         assert_eq!(*diameter, Some(Length(4.5)));
         assert_eq!(
             *extent,
-            Some(Extent::Blind {
+            Some(Termination::Blind {
                 length: Length(13.2)
             })
         );
@@ -2801,7 +2806,7 @@ mod history_reference_tests {
                     angle: Angle(angle),
                 },
                 diameter: Some(Length(3.4)),
-                extent: Some(Extent::Blind {
+                extent: Some(Termination::Blind {
                     length: Length(3.0),
                 }),
                 ..
@@ -2851,7 +2856,7 @@ mod history_reference_tests {
                     drill_point_angle: Angle(drill_point_angle),
                 },
                 diameter: Some(Length(4.2)),
-                extent: Some(Extent::Blind {
+                extent: Some(Termination::Blind {
                     length: Length(10.0),
                 }),
                 ..
@@ -2892,7 +2897,9 @@ mod history_reference_tests {
             projected[0].definition,
             FeatureDefinition::Revolve {
                 construction: RevolutionConstruction {
-                    extent: Some(Extent::Angle { angle: Angle(value) }),
+                    extent: Some(RevolveExtent::OneSided {
+                        termination: Termination::Angle { angle: Angle(value) }
+                    }),
                     ..
                 },
                 op: BooleanOp::Cut,
@@ -2946,7 +2953,9 @@ mod history_reference_tests {
             projected[0].definition,
             FeatureDefinition::Revolve {
                 construction: RevolutionConstruction {
-                    extent: Some(Extent::Angle { angle: Angle(value) }),
+                    extent: Some(RevolveExtent::OneSided {
+                        termination: Termination::Angle { angle: Angle(value) }
+                    }),
                     ..
                 },
                 ..
@@ -3013,16 +3022,18 @@ mod history_reference_tests {
             profile: ProfileRef::Native("sketch-native".into()),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            extent: Extent::Unresolved,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Unresolved,
+                    draft: None,
+                    offset: None,
+                },
+            },
             op: BooleanOp::Unresolved,
-            draft: None,
-            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         };
@@ -3698,7 +3709,7 @@ mod history_reference_tests {
     #[test]
     fn configuration_hole_inherits_shared_construction_and_placement() {
         use cadmpeg_ir::features::{
-            Extent, FeatureDefinition, FeatureId, HoleKind, HolePlacement, Length,
+            FeatureDefinition, FeatureId, HoleKind, HolePlacement, Length, Termination,
         };
 
         let id = FeatureId("test:model:feature#hole".into());
@@ -3730,7 +3741,7 @@ mod history_reference_tests {
                 },
                 exit_kind: None,
                 diameter: Some(Length(5.0)),
-                extent: Some(Extent::Blind {
+                extent: Some(Termination::Blind {
                     length: Length(12.0),
                 }),
                 bottom: None,
@@ -4002,6 +4013,14 @@ pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Fea
     true
 }
 
+/// Mutable references to every side an extrusion extent carries.
+fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut ExtrudeSide> {
+    match extent {
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => vec![side],
+        ExtrudeExtent::TwoSided { first, second } => vec![first, second],
+    }
+}
+
 /// Resolve native topology selections against decoded B-rep identities.
 pub fn bind_topology_selections(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -4052,8 +4071,12 @@ pub fn bind_topology_selections(
                 profile, extent, ..
             } => {
                 resolve_profile_ref(profile, &face_ids);
-                if let Extent::ToFace { face, .. } | Extent::OffsetFromFace { face, .. } = extent {
-                    resolve_face_selection(face, &face_ids);
+                for side in extrude_extent_sides_mut(extent) {
+                    if let Termination::ToFace { face, .. }
+                    | Termination::OffsetFromFace { face, .. } = &mut side.termination
+                    {
+                        resolve_face_selection(face, &face_ids);
+                    }
                 }
             }
             FeatureDefinition::Revolve { construction, .. } => {
@@ -4993,39 +5016,79 @@ fn project_extrude(
             })
             .map(Length)
     };
+    let draft = match feature.parameters.get("Draft") {
+        Some(value) => Some(Angle(parse_angle_rad(value)?)),
+        None => None,
+    };
+    let one_sided = |termination| ExtrudeExtent::OneSided {
+        side: ExtrudeSide {
+            termination,
+            draft,
+            offset: None,
+        },
+    };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None if !feature.parameters.contains_key("Depth")
             && !feature.parameters.contains_key("D1") =>
         {
-            Extent::Unresolved
+            one_sided(Termination::Unresolved)
         }
-        None | Some("Blind") => Extent::Blind {
+        None | Some("Blind") => one_sided(Termination::Blind {
             length: length("Depth").or_else(sole_length)?,
-        },
+        }),
         Some("Symmetric") => match length("Depth").or_else(sole_length) {
-            Some(length) => Extent::Symmetric { length },
-            None => Extent::Unresolved,
+            Some(length) => ExtrudeExtent::Symmetric {
+                side: ExtrudeSide {
+                    termination: Termination::Blind { length },
+                    draft,
+                    offset: None,
+                },
+            },
+            None => one_sided(Termination::Unresolved),
         },
-        Some("TwoSided") => Extent::TwoSided {
-            first: length("Depth")?,
-            second: length("Depth2")?,
+        Some("TwoSided") => ExtrudeExtent::TwoSided {
+            first: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: length("Depth")?,
+                },
+                draft,
+                offset: None,
+            },
+            second: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: length("Depth2")?,
+                },
+                draft: None,
+                offset: None,
+            },
         },
-        Some("ThroughAll") => Extent::ThroughAll,
-        Some("ThroughAllBoth") => Extent::ThroughAllBoth,
-        Some("ThroughNext") => Extent::ThroughNext,
-        Some("ToFace") => Extent::ToFace {
+        Some("ThroughAll") => one_sided(Termination::ThroughAll),
+        Some("ThroughAllBoth") => ExtrudeExtent::TwoSided {
+            first: ExtrudeSide {
+                termination: Termination::ThroughAll,
+                draft,
+                offset: None,
+            },
+            second: ExtrudeSide {
+                termination: Termination::ThroughAll,
+                draft: None,
+                offset: None,
+            },
+        },
+        Some("ThroughNext") => one_sided(Termination::ThroughNext),
+        Some("ToFace") => one_sided(Termination::ToFace {
             face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
             offset: None,
-        },
-        Some("ToVertex") => Extent::ToVertex {
+        }),
+        Some("ToVertex") => one_sided(Termination::ToVertex {
             vertex: VertexSelection::Native(feature.properties.get("Vertex")?.clone()),
-        },
+        }),
         Some("OffsetFromFace") => match length("Depth").or_else(sole_length) {
-            Some(offset) => Extent::OffsetFromFace {
+            Some(offset) => one_sided(Termination::OffsetFromFace {
                 face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
                 offset,
-            },
-            None => Extent::Unresolved,
+            }),
+            None => one_sided(Termination::Unresolved),
         },
         Some(_) => return None,
     };
@@ -5037,10 +5100,6 @@ fn project_extrude(
     {
         return None;
     }
-    let draft = match feature.parameters.get("Draft") {
-        Some(value) => Some(Angle(parse_angle_rad(value)?)),
-        None => None,
-    };
     let profile = if let Some(source) = feature.properties.get("Profile") {
         ProfileRef::Native(
             native_by_source
@@ -5062,14 +5121,10 @@ fn project_extrude(
         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
         extent,
         op,
-        draft,
-        second_draft: None,
         direction_source: None,
         solid: Some(true),
         face_maker: None,
         inner_wire_taper: None,
-        first_offset: None,
-        second_offset: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
     })
@@ -5761,11 +5816,18 @@ fn project_revolve(feature: &Feature, native_by_source: &HashMap<&str, &str>) ->
             .map(Angle)
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
-        None | Some("OneSided") => angle("Angle", 0).map(|angle| Extent::Angle { angle }),
-        Some("Symmetric") => angle("Angle", 0).map(|angle| Extent::SymmetricAngle { angle }),
+        None | Some("OneSided") => angle("Angle", 0).map(|angle| RevolveExtent::OneSided {
+            termination: Termination::Angle { angle },
+        }),
+        Some("Symmetric") => angle("Angle", 0).map(|angle| RevolveExtent::Symmetric {
+            termination: Termination::Angle { angle },
+        }),
         Some("TwoSided") => angle("Angle", 0)
             .zip(angle("Angle2", 1))
-            .map(|(first, second)| Extent::TwoSidedAngles { first, second }),
+            .map(|(first, second)| RevolveExtent::TwoSided {
+                first: Termination::Angle { angle: first },
+                second: Termination::Angle { angle: second },
+            }),
         Some(_) => None,
     };
     let profile = feature.properties.get("Profile").and_then(|source| {
@@ -5925,8 +5987,8 @@ fn project_hole(
             .and_then(|value| parse_positive_length_mm(value))
             .map(Length)
             .or_else(|| profile.as_ref().and_then(|profile| profile.depth))
-            .map(|length| Extent::Blind { length }),
-        Some("ThroughAll") => Some(Extent::ThroughAll),
+            .map(|length| Termination::Blind { length }),
+        Some("ThroughAll") => Some(Termination::ThroughAll),
         Some(_) => None,
     };
     FeatureDefinition::Hole {
@@ -8389,12 +8451,26 @@ fn validate_compact_surface_selection_edits(
             FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
             FeatureDefinition::Extrude {
                 extent:
-                    cadmpeg_ir::features::Extent::ToFace { face, .. }
-                    | cadmpeg_ir::features::Extent::OffsetFromFace { face, .. },
+                    ExtrudeExtent::OneSided {
+                        side:
+                            ExtrudeSide {
+                                termination:
+                                    Termination::ToFace { face, .. }
+                                    | Termination::OffsetFromFace { face, .. },
+                                ..
+                            },
+                    },
                 ..
             } => SelectionSlot::Face(face),
             FeatureDefinition::Extrude {
-                extent: cadmpeg_ir::features::Extent::ToVertex { vertex },
+                extent:
+                    ExtrudeExtent::OneSided {
+                        side:
+                            ExtrudeSide {
+                                termination: Termination::ToVertex { vertex },
+                                ..
+                            },
+                    },
                 ..
             } => SelectionSlot::Vertex(vertex),
             _ => continue,
@@ -10545,25 +10621,39 @@ pub fn sync_neutral_features(
                 start,
                 extent,
                 op,
-                draft,
-                second_draft,
                 direction_source,
                 solid,
                 face_maker,
                 inner_wire_taper,
-                first_offset,
-                second_offset,
                 length_along_profile_normal,
                 allow_multi_profile_faces,
             } => {
+                // Drafts and offsets live per side. The writer expresses only a
+                // first-side draft; a second-side draft or any side offset is
+                // rejected exactly as the removed `second_draft`/`first_offset`/
+                // `second_offset` fields were.
+                let (first_draft, second_side_draft, any_side_offset) = match extent {
+                    ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                        (side.draft, None, side.offset.is_some())
+                    }
+                    ExtrudeExtent::TwoSided { first, second } => (
+                        first.draft,
+                        second.draft,
+                        first.offset.is_some() || second.offset.is_some(),
+                    ),
+                };
+                let extent_is_unresolved = matches!(
+                    extent,
+                    ExtrudeExtent::OneSided { side }
+                        if matches!(side.termination, Termination::Unresolved)
+                );
                 if !matches!(start, cadmpeg_ir::features::ExtrudeStart::ProfilePlane)
-                    || second_draft.is_some()
+                    || second_side_draft.is_some()
                     || direction_source.is_some()
                     || *solid == Some(false)
                     || face_maker.is_some()
                     || inner_wire_taper.is_some()
-                    || first_offset.is_some()
-                    || second_offset.is_some()
+                    || any_side_offset
                     || length_along_profile_normal.is_some()
                     || allow_multi_profile_faces.is_some()
                 {
@@ -10639,13 +10729,13 @@ pub fn sync_neutral_features(
                     }))
                     && !parameters.contains_key("Depth");
                 let mut properties = feature.source_properties.clone();
-                if matches!(extent, Extent::Unresolved) && existing.is_none() {
+                if extent_is_unresolved && existing.is_none() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} requires retained extrusion extent data",
                         feature.id
                     )));
                 }
-                if !matches!(extent, Extent::Unresolved) {
+                if !extent_is_unresolved {
                     parameters.remove("Depth");
                     parameters.remove("Depth2");
                     parameters.remove("Draft");
@@ -10653,86 +10743,102 @@ pub fn sync_neutral_features(
                     properties.remove("Face");
                     properties.remove("Vertex");
                 }
+                let unsupported_extent = || {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses an unsupported extrusion extent",
+                        feature.id
+                    ))
+                };
                 match extent {
-                    Extent::Unresolved => {}
-                    Extent::Blind { length } => {
-                        if properties.contains_key("EndCondition") || existing.is_none() {
-                            properties.insert("EndCondition".into(), "Blind".into());
+                    ExtrudeExtent::OneSided { side } => match &side.termination {
+                        Termination::Unresolved => {}
+                        Termination::Blind { length } => {
+                            if properties.contains_key("EndCondition") || existing.is_none() {
+                                properties.insert("EndCondition".into(), "Blind".into());
+                            }
+                            let key = if positional_depth { "D1" } else { "Depth" };
+                            parameters.insert(
+                                key.into(),
+                                format_length_like(
+                                    length.0,
+                                    existing
+                                        .as_deref()
+                                        .and_then(|record| record.parameters.get(key))
+                                        .map(String::as_str),
+                                ),
+                            );
                         }
-                        let key = if positional_depth { "D1" } else { "Depth" };
-                        parameters.insert(
-                            key.into(),
-                            format_length_like(
-                                length.0,
-                                existing
-                                    .as_deref()
-                                    .and_then(|record| record.parameters.get(key))
-                                    .map(String::as_str),
-                            ),
-                        );
-                    }
-                    Extent::Symmetric { length } => {
-                        properties.insert("EndCondition".into(), "Symmetric".into());
-                        parameters.insert("Depth".into(), format_length_mm(length.0));
-                    }
-                    Extent::TwoSided { first, second } => {
-                        properties.insert("EndCondition".into(), "TwoSided".into());
-                        parameters.insert("Depth".into(), format_length_mm(first.0));
-                        parameters.insert("Depth2".into(), format_length_mm(second.0));
-                    }
-                    Extent::ThroughAll => {
-                        properties.insert("EndCondition".into(), "ThroughAll".into());
-                    }
-                    Extent::ThroughAllBoth => {
-                        properties.insert("EndCondition".into(), "ThroughAllBoth".into());
-                    }
-                    Extent::ThroughNext => {
-                        properties.insert("EndCondition".into(), "ThroughNext".into());
-                    }
-                    Extent::ToFirst | Extent::ToLast | Extent::ToShape { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses an unsupported extrusion termination",
-                            feature.id
-                        )));
-                    }
-                    Extent::ToFace { face, offset } if face_selection_value(face).is_some() => {
-                        let selection = face_selection_value(face).expect("guarded above");
-                        properties.insert("EndCondition".into(), "ToFace".into());
-                        properties.insert("Face".into(), selection);
-                        if let Some(offset) = offset {
+                        Termination::ThroughAll => {
+                            properties.insert("EndCondition".into(), "ThroughAll".into());
+                        }
+                        Termination::ThroughNext => {
+                            properties.insert("EndCondition".into(), "ThroughNext".into());
+                        }
+                        Termination::ToFirst
+                        | Termination::ToLast
+                        | Termination::ToShape { .. } => {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} uses an unsupported extrusion termination",
+                                feature.id
+                            )));
+                        }
+                        Termination::ToFace { face, offset }
+                            if face_selection_value(face).is_some() =>
+                        {
+                            let selection = face_selection_value(face).expect("guarded above");
+                            properties.insert("EndCondition".into(), "ToFace".into());
+                            properties.insert("Face".into(), selection);
+                            if let Some(offset) = offset {
+                                parameters.insert("Depth".into(), format_length_mm(offset.0));
+                            }
+                        }
+                        Termination::ToVertex { vertex }
+                            if vertex_selection_value(vertex).is_some() =>
+                        {
+                            let selection = vertex_selection_value(vertex).expect("guarded above");
+                            properties.insert("EndCondition".into(), "ToVertex".into());
+                            properties.insert("Vertex".into(), selection);
+                        }
+                        Termination::OffsetFromFace { face, offset }
+                            if face_selection_value(face).is_some() =>
+                        {
+                            let selection = face_selection_value(face).expect("guarded above");
+                            properties.insert("EndCondition".into(), "OffsetFromFace".into());
+                            properties.insert("Face".into(), selection);
                             parameters.insert("Depth".into(), format_length_mm(offset.0));
                         }
-                    }
-                    Extent::ToVertex { vertex } if vertex_selection_value(vertex).is_some() => {
-                        let selection = vertex_selection_value(vertex).expect("guarded above");
-                        properties.insert("EndCondition".into(), "ToVertex".into());
-                        properties.insert("Vertex".into(), selection);
-                    }
-                    Extent::OffsetFromFace { face, offset }
-                        if face_selection_value(face).is_some() =>
-                    {
-                        let selection = face_selection_value(face).expect("guarded above");
-                        properties.insert("EndCondition".into(), "OffsetFromFace".into());
-                        properties.insert("Face".into(), selection);
-                        parameters.insert("Depth".into(), format_length_mm(offset.0));
-                    }
-                    Extent::ToFace { .. }
-                    | Extent::ToVertex { .. }
-                    | Extent::OffsetFromFace { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses an unsupported extrusion termination selection",
-                            feature.id
-                        )));
-                    }
-                    Extent::Angle { .. }
-                    | Extent::SymmetricAngle { .. }
-                    | Extent::TwoSidedAngles { .. }
-                    | Extent::TwoSidedExtents { .. }
-                    | Extent::SymmetricExtent { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses an unsupported extrusion extent",
-                            feature.id
-                        )));
+                        Termination::ToFace { .. }
+                        | Termination::ToVertex { .. }
+                        | Termination::OffsetFromFace { .. } => {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} uses an unsupported extrusion termination selection",
+                                feature.id
+                            )));
+                        }
+                        Termination::Angle { .. } => return Err(unsupported_extent()),
+                    },
+                    ExtrudeExtent::Symmetric { side } => match &side.termination {
+                        Termination::Blind { length } => {
+                            properties.insert("EndCondition".into(), "Symmetric".into());
+                            parameters.insert("Depth".into(), format_length_mm(length.0));
+                        }
+                        _ => return Err(unsupported_extent()),
+                    },
+                    ExtrudeExtent::TwoSided { first, second } => {
+                        match (&first.termination, &second.termination) {
+                            (
+                                Termination::Blind { length: first },
+                                Termination::Blind { length: second },
+                            ) => {
+                                properties.insert("EndCondition".into(), "TwoSided".into());
+                                parameters.insert("Depth".into(), format_length_mm(first.0));
+                                parameters.insert("Depth2".into(), format_length_mm(second.0));
+                            }
+                            (Termination::ThroughAll, Termination::ThroughAll) => {
+                                properties.insert("EndCondition".into(), "ThroughAllBoth".into());
+                            }
+                            _ => return Err(unsupported_extent()),
+                        }
                     }
                 }
                 match direction {
@@ -10750,7 +10856,7 @@ pub fn sync_neutral_features(
                         properties.insert("Direction".into(), format_vector3(*direction));
                     }
                 }
-                if let Some(draft) = draft {
+                if let Some(draft) = first_draft {
                     if !draft.0.is_finite() {
                         return Err(CodecError::Malformed(format!(
                             "SLDPRT feature {} has a non-finite extrusion draft",
@@ -12307,13 +12413,13 @@ pub fn sync_neutral_features(
                     }
                 }
                 match extent {
-                    Some(Extent::Blind {
+                    Some(Termination::Blind {
                         length: Length(depth),
                     }) => {
                         parameters.insert("Depth".into(), format_length_mm(*depth));
                         properties.insert("EndCondition".into(), "Blind".into());
                     }
-                    Some(Extent::ThroughAll) => {
+                    Some(Termination::ThroughAll) => {
                         parameters.remove("Depth");
                         properties.insert("EndCondition".into(), "ThroughAll".into());
                     }
@@ -12380,15 +12486,22 @@ pub fn sync_neutral_features(
                     parameters.remove("Angle");
                     parameters.remove("Angle2");
                     match extent {
-                        Extent::Angle { angle } => {
+                        RevolveExtent::OneSided {
+                            termination: Termination::Angle { angle },
+                        } => {
                             properties.insert("EndCondition".into(), "OneSided".into());
                             parameters.insert("Angle".into(), format_angle_rad(angle.0));
                         }
-                        Extent::SymmetricAngle { angle } => {
+                        RevolveExtent::Symmetric {
+                            termination: Termination::Angle { angle },
+                        } => {
                             properties.insert("EndCondition".into(), "Symmetric".into());
                             parameters.insert("Angle".into(), format_angle_rad(angle.0));
                         }
-                        Extent::TwoSidedAngles { first, second } => {
+                        RevolveExtent::TwoSided {
+                            first: Termination::Angle { angle: first },
+                            second: Termination::Angle { angle: second },
+                        } => {
                             properties.insert("EndCondition".into(), "TwoSided".into());
                             parameters.insert("Angle".into(), format_angle_rad(first.0));
                             parameters.insert("Angle2".into(), format_angle_rad(second.0));

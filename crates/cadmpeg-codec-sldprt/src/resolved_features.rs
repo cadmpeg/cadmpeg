@@ -8981,8 +8981,9 @@ pub(crate) fn bind_profile_revolution_axes(
         };
         let generated_axis_surfaces = if matches!(
             construction.extent.as_ref(),
-            Some(cadmpeg_ir::features::Extent::Angle { angle })
-                if (angle.0.abs() - std::f64::consts::TAU).abs() <= 1.0e-9
+            Some(cadmpeg_ir::features::RevolveExtent::OneSided {
+                termination: cadmpeg_ir::features::Termination::Angle { angle },
+            }) if (angle.0.abs() - std::f64::consts::TAU).abs() <= 1.0e-9
         ) {
             surfaces
         } else {
@@ -20376,12 +20377,26 @@ pub(crate) fn project_compact_surface_selections(
             FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
             FeatureDefinition::Extrude {
                 extent:
-                    cadmpeg_ir::features::Extent::ToFace { face, .. }
-                    | cadmpeg_ir::features::Extent::OffsetFromFace { face, .. },
+                    cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                        side:
+                            cadmpeg_ir::features::ExtrudeSide {
+                                termination:
+                                    cadmpeg_ir::features::Termination::ToFace { face, .. }
+                                    | cadmpeg_ir::features::Termination::OffsetFromFace { face, .. },
+                                ..
+                            },
+                    },
                 ..
             } => SelectionSlot::Face(face),
             FeatureDefinition::Extrude {
-                extent: cadmpeg_ir::features::Extent::ToVertex { vertex },
+                extent:
+                    cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                        side:
+                            cadmpeg_ir::features::ExtrudeSide {
+                                termination: cadmpeg_ir::features::Termination::ToVertex { vertex },
+                                ..
+                            },
+                    },
                 ..
             } => SelectionSlot::Vertex(vertex),
             _ => continue,
@@ -29104,9 +29119,9 @@ mod profile_join_tests {
         SketchInputLink, SketchRelationKind,
     };
     use cadmpeg_ir::features::{
-        Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, Extent, Feature,
-        FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue, PathRef, PatternKind,
-        PatternSeed, ProfileRef, RadiusSpec, SweepMode,
+        Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent,
+        ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
+        PathRef, PatternKind, PatternSeed, ProfileRef, RadiusSpec, SweepMode, Termination,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
@@ -29907,18 +29922,20 @@ mod profile_join_tests {
                     profile: ProfileRef::Feature(FeatureId("child".into())),
                     direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
                     start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-                    extent: Extent::Blind {
-                        length: Length(1.0),
+                    extent: ExtrudeExtent::OneSided {
+                        side: ExtrudeSide {
+                            termination: Termination::Blind {
+                                length: Length(1.0),
+                            },
+                            draft: None,
+                            offset: None,
+                        },
                     },
                     op: BooleanOp::Join,
-                    draft: None,
-                    second_draft: None,
                     direction_source: None,
                     solid: None,
                     face_maker: None,
                     inner_wire_taper: None,
-                    first_offset: None,
-                    second_offset: None,
                     length_along_profile_normal: None,
                     allow_multi_profile_faces: None,
                 },

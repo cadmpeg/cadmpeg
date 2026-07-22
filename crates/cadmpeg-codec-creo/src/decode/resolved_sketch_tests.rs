@@ -1385,8 +1385,14 @@ fn equal_opposite_cap_planes_define_symmetric_extent() {
     assert_eq!(
         extent,
         Some((
-            Extent::Symmetric {
-                length: Length(8.0)
+            ExtrudeExtent::Symmetric {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(8.0)
+                    },
+                    draft: None,
+                    offset: None,
+                }
             },
             [0.0, -1.0, 0.0]
         ))
@@ -1448,7 +1454,12 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
         IrFeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: Extent::Unresolved,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Unresolved,
+                    ..
+                }
+            },
             op: BooleanOp::Unresolved,
             solid: None,
             ..
@@ -1539,19 +1550,21 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         IrFeatureDefinition::Extrude {
             profile: ProfileRef::Native("creo:section#1".to_string()),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            extent: Extent::Blind {
-                length: Length(1.0),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(1.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             op: BooleanOp::NewBody,
-            draft: None,
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            second_draft: None,
             direction_source: None,
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         },
@@ -1615,8 +1628,14 @@ fn circular_sweep_projects_profile_direction_and_extent() {
         cylinder_ids: vec![12, 13],
         section_definition_id: None,
         direction: [0.0, 0.0, -1.0],
-        extent: Extent::Blind {
-            length: Length(6.5),
+        extent: ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(6.5),
+                },
+                draft: None,
+                offset: None,
+            },
         },
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(2.0, 3.0, 4.0),
@@ -1638,19 +1657,21 @@ fn circular_sweep_projects_profile_direction_and_extent() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(
                 0.0, 0.0, -1.0
             )),
-            extent: Extent::Blind {
-                length: Length(6.5),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(6.5),
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             op: BooleanOp::Join,
-            draft: None,
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            second_draft: None,
             direction_source: None,
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         }
@@ -1830,7 +1851,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         ]),
         Some((
             [1.0, 0.0, 0.0],
-            Extent::Blind {
+            Termination::Blind {
                 length: Length(3.0),
             },
         ))
@@ -1842,7 +1863,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         ]),
         Some((
             [-0.0, -1.0, -0.0],
-            Extent::Blind {
+            Termination::Blind {
                 length: Length(1.0),
             },
         ))
@@ -1863,7 +1884,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         Some((
             902,
             [0.0, 0.0, 1.0],
-            Extent::Blind {
+            Termination::Blind {
                 length: Length(6.5),
             },
         ))
@@ -2200,9 +2221,21 @@ fn asymmetric_cap_planes_define_two_sided_extent() {
             ],
         ),
         Some((
-            Extent::TwoSided {
-                first: Length(3.0),
-                second: Length(2.0),
+            ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(3.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+                second: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(2.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             [0.0, 0.0, 1.0],
         ))
@@ -2218,8 +2251,14 @@ fn one_negative_cap_offset_reverses_blind_direction() {
             [([0.0, 48.0, 0.0], [0.0, 1.0, 0.0])],
         ),
         Some((
-            Extent::Blind {
-                length: Length(48.0),
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(48.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             [-0.0, 1.0, -0.0],
         ))
@@ -2238,8 +2277,14 @@ fn zero_offset_support_plane_does_not_obscure_blind_cap() {
             ],
         ),
         Some((
-            Extent::Blind {
-                length: Length(48.0),
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(48.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             [0.0, 1.0, 0.0],
         ))
@@ -2259,8 +2304,14 @@ fn interior_axis_normal_planes_do_not_shorten_blind_extent() {
             ],
         ),
         Some((
-            Extent::Blind {
-                length: Length(38.0),
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(38.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             [-0.0, 1.0, -0.0],
         ))
@@ -2289,8 +2340,14 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
     assert_eq!(
         agreed_generated_cylinder_extent(&transform, &frames),
         Some((
-            Extent::Blind {
-                length: Length(34.0)
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(34.0)
+                    },
+                    draft: None,
+                    offset: None,
+                }
             },
             [0.0, 1.0, 0.0]
         ))

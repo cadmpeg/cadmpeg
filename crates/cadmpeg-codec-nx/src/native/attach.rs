@@ -14,10 +14,10 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
     ConfigurationBodies, ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState,
-    DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceSelection, Feature,
-    FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
-    Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
-    RibConstruction, RibDraft, SketchSpace, ThickenSide, TrimRegion,
+    DesignConfiguration, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
+    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleForm,
+    HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusForm,
+    RadiusSpec, RibConstruction, RibDraft, SketchSpace, Termination, ThickenSide, TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -2196,16 +2196,18 @@ fn extrude_feature_definition(
         profile: ProfileRef::Native((*construction).to_string()),
         direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
         start: cadmpeg_ir::features::ExtrudeStart::default(),
-        extent: Extent::Unresolved,
+        extent: ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Unresolved,
+                draft: None,
+                offset: None,
+            },
+        },
         op,
-        draft: None,
-        second_draft: None,
         direction_source: None,
         solid: None,
         face_maker: None,
         inner_wire_taper: None,
-        first_offset: None,
-        second_offset: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
     })
@@ -3101,7 +3103,7 @@ fn non_boolean_feature_definition_with_parameters(
             diameter: hole.diameter,
             extent: simple_hole_template
                 .is_some()
-                .then_some(cadmpeg_ir::features::Extent::ThroughAll),
+                .then_some(cadmpeg_ir::features::Termination::ThroughAll),
             bottom: None,
             taper_angle: None,
             specification: None,
@@ -3171,16 +3173,18 @@ fn non_boolean_feature_definition_with_parameters(
             profile: ProfileRef::Unresolved(kind.to_string()),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             start: cadmpeg_ir::features::ExtrudeStart::default(),
-            extent: Extent::Unresolved,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Unresolved,
+                    draft: None,
+                    offset: None,
+                },
+            },
             op: BooleanOp::Unresolved,
-            draft: None,
-            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         },
@@ -4350,24 +4354,28 @@ mod tests {
 
     #[test]
     fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
-        use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, ProfileRef};
+        use cadmpeg_ir::features::{
+            BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, ProfileRef, Termination,
+        };
 
         assert_eq!(
             super::extrude_feature_definition(Some("nx:profile#1"), None, BooleanOp::NewBody,),
             Some(FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("nx:profile#1".to_string()),
                 direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-                extent: Extent::Unresolved,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: Termination::Unresolved,
+                        draft: None,
+                        offset: None,
+                    },
+                },
                 op: BooleanOp::NewBody,
-                draft: None,
                 start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-                second_draft: None,
                 direction_source: None,
                 solid: None,
                 face_maker: None,
                 inner_wire_taper: None,
-                first_offset: None,
-                second_offset: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
             })
@@ -4706,7 +4714,7 @@ mod tests {
                     countersink_angle: None,
                 }),
                 diameter: None,
-                extent: Some(cadmpeg_ir::features::Extent::ThroughAll),
+                extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
                 ..
             }
         ));
@@ -4990,17 +4998,19 @@ mod tests {
             FeatureDefinition::Extrude {
                 profile: cadmpeg_ir::features::ProfileRef::Unresolved("EXTRUDE".into()),
                 direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-                extent: cadmpeg_ir::features::Extent::Unresolved,
+                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::Termination::Unresolved,
+                        draft: None,
+                        offset: None,
+                    },
+                },
                 op: BooleanOp::Unresolved,
-                draft: None,
                 start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-                second_draft: None,
                 direction_source: None,
                 solid: None,
                 face_maker: None,
                 inner_wire_taper: None,
-                first_offset: None,
-                second_offset: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
             }

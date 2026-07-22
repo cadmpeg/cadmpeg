@@ -851,7 +851,8 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
 #[test]
 fn neutral_features_resolve_sketch_profile_and_path_operands() {
     use crate::features::{
-        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, PathRef, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
+        PathRef, ProfileRef, Termination,
     };
     use crate::sketches::SketchId;
 
@@ -861,18 +862,20 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             profile: ProfileRef::Sketch(sketch.clone()),
             direction: ExtrudeDirection::ProfileNormal,
             start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: Extent::Blind {
-                length: Length(10.0),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(10.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             op: BooleanOp::NewBody,
-            draft: None,
-            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         },
@@ -930,8 +933,8 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 #[test]
 fn feature_history_rejects_dangling_and_forward_dependencies() {
     use crate::features::{
-        BooleanOp, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        FeatureSourceContent, ParameterId, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition,
+        FeatureId, FeatureSourceContent, ParameterId, ProfileRef, Termination,
     };
     use crate::ids::{BodyId, FaceId};
     use std::collections::BTreeMap;
@@ -957,21 +960,23 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
             profile: ProfileRef::Faces(vec![FaceId("synthetic:test:face#profile-missing".into())]),
             direction: ExtrudeDirection::ProfileNormal,
             start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: Extent::ToFace {
-                face: FaceSelection::Faces(vec![FaceId(
-                    "synthetic:test:face#termination-missing".into(),
-                )]),
-                offset: None,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToFace {
+                        face: FaceSelection::Faces(vec![FaceId(
+                            "synthetic:test:face#termination-missing".into(),
+                        )]),
+                        offset: None,
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             op: BooleanOp::NewBody,
-            draft: None,
-            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         },
@@ -2879,56 +2884,113 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
 
 #[test]
 fn feature_extents_round_trip_through_json() {
-    use crate::features::{Angle, Extent, FaceSelection, Length};
+    use crate::features::{
+        Angle, ExtrudeExtent, ExtrudeSide, FaceSelection, Length, RevolveExtent, Termination,
+    };
     use crate::ids::FaceId;
 
     let extents = vec![
-        Extent::Blind {
-            length: Length(12.5),
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(12.5),
+                },
+                draft: Some(Angle(0.1)),
+                offset: None,
+            },
         },
-        Extent::Symmetric {
-            length: Length(25.0),
+        ExtrudeExtent::Symmetric {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(25.0),
+                },
+                draft: None,
+                offset: None,
+            },
         },
-        Extent::TwoSided {
-            first: Length(10.0),
-            second: Length(20.0),
+        ExtrudeExtent::TwoSided {
+            first: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(10.0),
+                },
+                draft: Some(Angle(0.2)),
+                offset: Some(Length(1.0)),
+            },
+            second: ExtrudeSide {
+                termination: Termination::ToFace {
+                    face: FaceSelection::Faces(vec![FaceId("synthetic:test:face#0".into())]),
+                    offset: None,
+                },
+                draft: None,
+                offset: Some(Length(-2.0)),
+            },
         },
-        Extent::ThroughAll,
-        Extent::ToFace {
-            face: FaceSelection::Faces(vec![FaceId("synthetic:test:face#0".into())]),
-            offset: None,
-        },
-        Extent::Angle {
-            angle: Angle(std::f64::consts::PI),
-        },
-        Extent::SymmetricAngle {
-            angle: Angle(std::f64::consts::FRAC_PI_2),
-        },
-        Extent::TwoSidedAngles {
-            first: Angle(0.25),
-            second: Angle(0.75),
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::ThroughAll,
+                draft: None,
+                offset: None,
+            },
         },
     ];
-
     let json = serde_json::to_string(&extents).unwrap();
-    assert_eq!(serde_json::from_str::<Vec<Extent>>(&json).unwrap(), extents);
+    assert_eq!(
+        serde_json::from_str::<Vec<ExtrudeExtent>>(&json).unwrap(),
+        extents
+    );
+
+    let revolve_extents = vec![
+        RevolveExtent::OneSided {
+            termination: Termination::Angle {
+                angle: Angle(std::f64::consts::PI),
+            },
+        },
+        RevolveExtent::Symmetric {
+            termination: Termination::Angle {
+                angle: Angle(std::f64::consts::FRAC_PI_2),
+            },
+        },
+        RevolveExtent::TwoSided {
+            first: Termination::Angle { angle: Angle(0.25) },
+            second: Termination::Angle { angle: Angle(0.75) },
+        },
+    ];
+    let json = serde_json::to_string(&revolve_extents).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Vec<RevolveExtent>>(&json).unwrap(),
+        revolve_extents
+    );
 }
 
 #[test]
 fn feature_extent_magnitudes_are_validated() {
     use crate::features::{
-        Angle, BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
+        Length, ProfileRef, Termination,
     };
 
+    let side = |termination: Termination| ExtrudeSide {
+        termination,
+        draft: None,
+        offset: None,
+    };
     for extent in [
-        Extent::Blind {
-            length: Length(0.0),
+        ExtrudeExtent::OneSided {
+            side: side(Termination::Blind {
+                length: Length(0.0),
+            }),
         },
-        Extent::TwoSided {
-            first: Length(1.0),
-            second: Length(f64::NAN),
+        ExtrudeExtent::TwoSided {
+            first: side(Termination::Blind {
+                length: Length(1.0),
+            }),
+            second: side(Termination::Blind {
+                length: Length(f64::NAN),
+            }),
         },
-        Extent::Angle { angle: Angle(-1.0) },
+        ExtrudeExtent::OneSided {
+            side: side(Termination::Angle { angle: Angle(-1.0) }),
+        },
     ] {
         let mut ir = unit_cube();
         ir.model.features.push(Feature {
@@ -2949,14 +3011,10 @@ fn feature_extent_magnitudes_are_validated() {
                 start: crate::features::ExtrudeStart::ProfilePlane,
                 extent,
                 op: BooleanOp::NewBody,
-                draft: None,
-                second_draft: None,
                 direction_source: None,
                 solid: None,
                 face_maker: None,
                 inner_wire_taper: None,
-                first_offset: None,
-                second_offset: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
             },
@@ -2972,7 +3030,8 @@ fn feature_extent_magnitudes_are_validated() {
 #[test]
 fn explicit_extrusion_direction_must_be_nonzero() {
     use crate::features::{
-        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
+        ProfileRef, Termination,
     };
 
     let mut ir = unit_cube();
@@ -2992,18 +3051,20 @@ fn explicit_extrusion_direction_must_be_nonzero() {
             profile: ProfileRef::Native("profile".into()),
             direction: ExtrudeDirection::Explicit(Vector3::new(0.0, 0.0, 0.0)),
             start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: Extent::Blind {
-                length: Length(1.0),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(1.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             op: BooleanOp::NewBody,
-            draft: None,
-            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         },
@@ -3046,39 +3107,44 @@ fn loft_sections_accept_legacy_profiles_and_preserve_profile_shape() {
 }
 
 #[test]
-fn opposite_side_extrusion_draft_requires_a_valid_two_sided_extent() {
+fn extrusion_side_drafts_are_validated() {
     use crate::features::{
-        Angle, BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
+        Length, ProfileRef, Termination,
     };
 
-    for (extent, second_draft, expected_message) in [
+    let side = |length: f64, draft: Option<Angle>| ExtrudeSide {
+        termination: Termination::Blind {
+            length: Length(length),
+        },
+        draft,
+        offset: None,
+    };
+    for (extent, expected_invalid) in [
         (
-            Extent::TwoSided {
-                first: Length(1.0),
-                second: Length(2.0),
+            ExtrudeExtent::TwoSided {
+                first: side(1.0, None),
+                second: side(2.0, Some(Angle(0.25))),
             },
-            Some(Angle(0.25)),
-            None,
+            false,
         ),
         (
-            Extent::Blind {
-                length: Length(1.0),
+            ExtrudeExtent::TwoSided {
+                first: side(1.0, None),
+                second: side(2.0, Some(Angle(f64::NAN))),
             },
-            Some(Angle(0.25)),
-            Some("opposite-side extrusion draft requires a two-sided extent"),
+            true,
         ),
         (
-            Extent::TwoSided {
-                first: Length(1.0),
-                second: Length(2.0),
+            ExtrudeExtent::Symmetric {
+                side: side(1.0, Some(Angle(std::f64::consts::FRAC_PI_2))),
             },
-            Some(Angle(f64::NAN)),
-            Some("extrusion draft is invalid"),
+            true,
         ),
     ] {
         let mut ir = unit_cube();
         ir.model.features.push(Feature {
-            id: FeatureId("synthetic:test:feature#opposite-draft".into()),
+            id: FeatureId("synthetic:test:feature#side-draft".into()),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
@@ -3095,74 +3161,142 @@ fn opposite_side_extrusion_draft_requires_a_valid_two_sided_extent() {
                 start: crate::features::ExtrudeStart::ProfilePlane,
                 extent,
                 op: BooleanOp::NewBody,
-                draft: None,
-                second_draft,
                 direction_source: None,
                 solid: None,
                 face_maker: None,
                 inner_wire_taper: None,
-                first_offset: None,
-                second_offset: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
             },
             native_ref: None,
         });
-        let findings = validate(&ir, Vec::new()).findings;
-        let has_opposite_draft_finding = findings.iter().any(|finding| {
-            matches!(
-                finding.message.as_str(),
-                "extrusion draft is invalid"
-                    | "opposite-side extrusion draft requires a two-sided extent"
-            )
-        });
-        assert_eq!(has_opposite_draft_finding, expected_message.is_some());
-        if let Some(expected_message) = expected_message {
-            assert!(findings
-                .iter()
-                .any(|finding| finding.message == expected_message));
-        }
+        let has_draft_finding = validate(&ir, Vec::new())
+            .findings
+            .iter()
+            .any(|finding| finding.message == "extrusion draft is invalid");
+        assert_eq!(has_draft_finding, expected_invalid);
     }
 }
 
 #[test]
-fn extrude_second_draft_reads_the_reverse_draft_alias() {
+fn migration_folds_previous_extents_into_sides() {
     use crate::features::{
-        Angle, BooleanOp, Extent, ExtrudeStart, FeatureDefinition, Length, ProfileRef,
+        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
+        Length, ProfileRef, RevolutionConstruction, RevolveExtent, Termination,
     };
 
-    let definition = FeatureDefinition::Extrude {
+    let feature = |ordinal: u64, definition: FeatureDefinition| Feature {
+        id: FeatureId(format!("synthetic:test:feature#migrated-{ordinal}")),
+        ordinal,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    };
+    let extrude = |extent: ExtrudeExtent| FeatureDefinition::Extrude {
         profile: ProfileRef::Native("profile".into()),
         direction: ExtrudeDirection::ProfileNormal,
-        start: ExtrudeStart::ProfilePlane,
-        extent: Extent::TwoSided {
-            first: Length(1.0),
-            second: Length(2.0),
-        },
+        start: crate::features::ExtrudeStart::ProfilePlane,
+        extent,
         op: BooleanOp::NewBody,
-        draft: None,
-        second_draft: Some(Angle(0.25)),
         direction_source: None,
         solid: None,
         face_maker: None,
         inner_wire_taper: None,
-        first_offset: None,
-        second_offset: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
     };
-    let mut encoded = serde_json::to_value(&definition).unwrap();
-    let object = encoded.as_object_mut().unwrap();
-    let angle = object.remove("second_draft").unwrap();
-    object.insert("reverse_draft".into(), angle);
-    let decoded: FeatureDefinition = serde_json::from_value(encoded).expect("alias deserializes");
-    assert_eq!(decoded, definition);
+
+    let mut current = unit_cube();
+    current.model.features.extend([
+        feature(
+            0,
+            extrude(ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(1.0),
+                    },
+                    draft: Some(Angle(0.1)),
+                    offset: Some(Length(1.5)),
+                },
+                second: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(2.0),
+                    },
+                    draft: Some(Angle(0.2)),
+                    offset: Some(Length(-2.5)),
+                },
+            }),
+        ),
+        feature(
+            1,
+            extrude(ExtrudeExtent::Symmetric {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(4.0),
+                    },
+                    draft: Some(Angle(0.3)),
+                    offset: None,
+                },
+            }),
+        ),
+        feature(
+            2,
+            FeatureDefinition::Revolve {
+                construction: RevolutionConstruction {
+                    profile: None,
+                    axis: None,
+                    extent: Some(RevolveExtent::Symmetric {
+                        termination: Termination::Angle {
+                            angle: Angle(std::f64::consts::PI),
+                        },
+                    }),
+                    axis_reference: None,
+                    solid: None,
+                    face_maker_class: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                },
+                op: BooleanOp::NewBody,
+            },
+        ),
+    ]);
+
+    let mut legacy = serde_json::to_value(&current).unwrap();
+    legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
+    let features = legacy["model"]["features"].as_array_mut().unwrap();
+    let index = features.len() - 3;
+    features[index]["definition"]["extent"] =
+        serde_json::json!({"kind": "two_sided", "first": 1.0, "second": 2.0});
+    features[index]["definition"]["draft"] = serde_json::json!(0.1);
+    features[index]["definition"]["second_draft"] = serde_json::json!(0.2);
+    features[index]["definition"]["first_offset"] = serde_json::json!(1.5);
+    features[index]["definition"]["second_offset"] = serde_json::json!(-2.5);
+    features[index + 1]["definition"]["extent"] =
+        serde_json::json!({"kind": "symmetric", "length": 4.0});
+    features[index + 1]["definition"]["draft"] = serde_json::json!(0.3);
+    features[index + 1]["definition"]["second_draft"] = serde_json::json!(0.3);
+    features[index + 2]["definition"]["construction"]["extent"] =
+        serde_json::json!({"kind": "symmetric_angle", "angle": std::f64::consts::PI});
+
+    let legacy = serde_json::to_string(&legacy).unwrap();
+    assert!(CadIr::from_json(&legacy).is_err());
+    let migrated = CadIr::migrate_json(&legacy).expect("previous-version migration");
+    assert_eq!(migrated, current);
 }
 
 #[test]
 fn sketch_feature_ownership_and_order_are_validated() {
     use crate::features::{
-        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
+        ProfileRef, Termination,
     };
     use crate::sketches::{Sketch, SketchId};
 
@@ -3196,18 +3330,20 @@ fn sketch_feature_ownership_and_order_are_validated() {
             profile: ProfileRef::Sketch(sketch_id.clone()),
             direction: ExtrudeDirection::ProfileNormal,
             start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: Extent::Blind {
-                length: Length(1.0),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(1.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             op: BooleanOp::NewBody,
-            draft: None,
-            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         },
@@ -3245,8 +3381,8 @@ fn sketch_feature_ownership_and_order_are_validated() {
 #[test]
 fn sketch_profile_subselections_are_bounds_checked() {
     use crate::features::{
-        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
-        SketchProfileRegion,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
+        ProfileRef, SketchProfileRegion, Termination,
     };
     use crate::sketches::{Sketch, SketchId};
 
@@ -3280,18 +3416,20 @@ fn sketch_profile_subselections_are_bounds_checked() {
             profile,
             direction: ExtrudeDirection::ProfileNormal,
             start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: Extent::Blind {
-                length: Length(1.0),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(1.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
             },
             op: BooleanOp::NewBody,
-            draft: None,
-            second_draft: None,
             direction_source: None,
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
-            first_offset: None,
-            second_offset: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         },
@@ -3684,9 +3822,9 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
 #[test]
 fn feature_operation_geometry_is_validated() {
     use crate::features::{
-        BooleanOp, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
+        BooleanOp, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
         FilletGroup, HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, RibConstruction,
-        RibDraft, RibSide, ScaleCenter, ScaleFactors, ThickenSide, VariableRadius,
+        RibDraft, RibSide, ScaleCenter, ScaleFactors, Termination, ThickenSide, VariableRadius,
     };
 
     let definitions = vec![
@@ -3731,7 +3869,7 @@ fn feature_operation_geometry_is_validated() {
             kind: HoleKind::Simple,
             exit_kind: None,
             diameter: Some(Length(0.0)),
-            extent: Some(Extent::ThroughAll),
+            extent: Some(Termination::ThroughAll),
             bottom: None,
             taper_angle: None,
             specification: None,
@@ -4249,6 +4387,6 @@ fn current_document_excludes_source_byte_accounting() {
     let ir = CadIr::empty(crate::units::Units::default());
     let json = serde_json::to_value(&ir).unwrap();
 
-    assert_eq!(json["ir_version"], "55");
+    assert_eq!(json["ir_version"], crate::IR_VERSION);
     assert!(json.get("byte_ledger").is_none());
 }

@@ -9867,7 +9867,8 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
 #[test]
 fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     use cadmpeg_ir::features::{
-        Angle, BooleanOp, Extent, ExtrudeDirection, ExtrudeStart, FaceSelection, ProfileRef,
+        Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+        FaceSelection, ProfileRef, Termination,
     };
 
     let parameter = |source_kind: &str, unit: &str, value| {
@@ -9991,9 +9992,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(profile),
             direction: ExtrudeDirection::ProfileNormal,
-            extent: Extent::Blind { length: Length(5.5) },
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind { length: Length(5.5) },
+                    draft: Some(Angle(0.2)),
+                    offset: None,
+                },
+            },
             op: BooleanOp::NewBody,
-            draft: Some(Angle(0.2)),
             ..
         } if profile == &neutral_sketch_id(&placement)
     ));
@@ -10227,8 +10233,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         FeatureDefinition::Extrude {
             profile: ProfileRef::Native(ref native),
             direction: ExtrudeDirection::ReversedProfileNormal,
-            extent: Extent::Blind {
-                length: Length(2.0)
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(2.0)
+                    },
+                    ..
+                },
             },
             op: BooleanOp::Join,
             ..
@@ -10310,11 +10321,21 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     assert!(matches!(
         two_sided,
         FeatureDefinition::Extrude {
-            extent: Extent::TwoSided {
-                first: Length(5.5),
-                second: Length(0.5),
+            extent: ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(5.5)
+                    },
+                    ..
+                },
+                second: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(0.5)
+                    },
+                    draft: Some(Angle(-0.3)),
+                    ..
+                },
             },
-            second_draft: Some(Angle(-0.3)),
             ..
         }
     ));
@@ -10343,8 +10364,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         reversed,
         FeatureDefinition::Extrude {
             direction: ExtrudeDirection::ReversedProfileNormal,
-            extent: Extent::Blind {
-                length: Length(6.0)
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(6.0)
+                    },
+                    ..
+                },
             },
             ..
         }
@@ -10367,9 +10393,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         to_face,
         FeatureDefinition::Extrude {
             direction: ExtrudeDirection::ReversedProfileNormal,
-            extent: Extent::ToFace {
-                face: FaceSelection::Native(ref id),
-                offset: Some(Length(0.25)),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToFace {
+                        face: FaceSelection::Native(ref id),
+                        offset: Some(Length(0.25)),
+                    },
+                    ..
+                },
             },
             ..
         } if id == &face_group.id
@@ -10424,9 +10455,15 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 face: FaceSelection::Native(ref id),
                 offset: None,
             },
-            extent: Extent::TwoSided {
-                first: Length(5.5),
-                second: Length(0.5),
+            extent: ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind { length: Length(5.5) },
+                    ..
+                },
+                second: ExtrudeSide {
+                    termination: Termination::Blind { length: Length(0.5) },
+                    ..
+                },
             },
             ..
         } if id == &start_group.id
