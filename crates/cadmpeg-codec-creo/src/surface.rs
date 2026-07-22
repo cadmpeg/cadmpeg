@@ -1160,7 +1160,10 @@ impl SurfaceParameterRecord {
                             == Some(&[0x00, 0x11, 0x13]))
                     || (leading.offset == 3
                         && self.body.get(..3) == Some(&[0x00, 0x11, 0x13])
-                        && self.body.get(leading_end..trailing.offset) == Some(&[0x14]));
+                        && self.body.get(leading_end..trailing.offset) == Some(&[0x14]))
+                    || (leading.offset == 5
+                        && self.body.get(..2) == Some(&[0xeb, 0xba])
+                        && self.body.get(leading_end..trailing.offset) == Some(&[0x12]));
                 (controls_match && frame_reaches_body_end(trailing_end)).then_some(())?;
                 ([*first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
             }
@@ -6913,6 +6916,46 @@ mod tests {
         assert!((frame.axis[0] - 85.1 / length).abs() < 1.0e-12);
         assert!((frame.axis[1] - 0.5 / length).abs() < 1.0e-12);
         assert_eq!(frame.axis[2], 0.0);
+    }
+
+    #[test]
+    fn decodes_prefixed_repeated_diameter_round_envelope() {
+        let body = [
+            0xeb, 0xba, 0xc2, 0x1d, 0x3a, 0x2d, 0x45, 0x30, 0x89, 0xa0, 0x27, 0x52, 0x54, 0x12,
+            0x2d, 0x45, 0x7d, 0x56, 0x6c, 0xf4, 0x1f, 0x22, 0x2d, 0x45, 0x26, 0x66, 0x66, 0x66,
+            0x66, 0x66, 0x42, 0xfb, 0xff, 0xa7, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80, 0x2e, 0x45,
+            0x66, 0x42, 0xf3, 0xff, 0x5e, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80,
+        ];
+        let record = |body: &[u8]| {
+            let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+            payload.extend_from_slice(body);
+            payload.push(0xe3);
+            parameter_records(&payload).remove(0)
+        };
+        let frame = record(&body)
+            .positional_cylinder_frame
+            .expect("complete prefixed repeated-diameter carrier");
+
+        assert_eq!(frame.origin[0], -42.3);
+        assert!((frame.origin[1] + 1.75).abs() < 1.0e-12);
+        assert_eq!(frame.origin[2], 0.0);
+        assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
+        assert!((frame.radius - 0.3).abs() < 1.0e-12);
+        let length = 85.1_f64.hypot(0.5);
+        assert!((frame.length.unwrap() - length).abs() < 1.0e-12);
+        assert!((frame.axis[0] - 85.1 / length).abs() < 1.0e-12);
+        assert!((frame.axis[1] - 0.5 / length).abs() < 1.0e-12);
+        assert_eq!(frame.axis[2], 0.0);
+
+        let mut wrong_prefix = body;
+        wrong_prefix[1] = 0xbb;
+        assert!(record(&wrong_prefix).positional_cylinder_frame.is_none());
+        let mut wrong_separator = body;
+        wrong_separator[13] = 0x13;
+        assert!(record(&wrong_separator).positional_cylinder_frame.is_none());
+        assert!(record(&body[..body.len() - 7])
+            .positional_cylinder_frame
+            .is_none());
     }
 
     #[test]

@@ -502,9 +502,12 @@ and `00 11 13 <first> 14 <second-and-extents>`, plus `12 <first> 00 11 13
 `19` or `32` precedes a two-scalar frame containing an auxiliary value and the
 first diameter endpoint; literal `12` separates that frame from the
 seven-scalar second-diameter-and-extent frame. The selector and auxiliary value
-do not contribute geometry. A replay body may append one complete reference
-encoded as `f7 <reference-id>` after the last scalar frame; that reference does
-not alter the envelope. The diameter endpoints are distinct. Exactly one
+do not contribute geometry. The prefixed-control form begins with the five-byte
+control field `eb ba <payload3>`, followed by the one-scalar first-diameter
+frame, literal `12`, and the seven-scalar second-diameter-and-extent frame. The
+control field does not contribute geometry. A replay body may append one
+complete reference encoded as `f7 <reference-id>` after the last scalar frame;
+that reference does not alter the envelope. The diameter endpoints are distinct. Exactly one
 coordinate span between the extent endpoints equals their absolute difference.
 That coordinate
 is radial: its midpoint is the corresponding cylinder-origin
