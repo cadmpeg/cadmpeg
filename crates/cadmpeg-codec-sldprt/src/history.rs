@@ -1973,6 +1973,92 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
+        let profile = |roles: &[(&str, &str)]| {
+            let mut profile = feature("profile", Some("7"), 0);
+            profile.kind = "Sketch".into();
+            profile.input_class = Some("moProfileFeature_c".into());
+            for (name, expression) in roles {
+                profile
+                    .parameters
+                    .insert((*name).into(), (*expression).into());
+                profile
+                    .content
+                    .push(FeatureContent::Dimension((*name).into()));
+            }
+            profile
+        };
+
+        let counterbore = profile(&[
+            ("a", "118°"),
+            ("b", "5.7"),
+            ("c", "<MOD-DIAM>9"),
+            ("d", "12"),
+            ("e", "<MOD-DIAM>5.5"),
+        ]);
+        let construction = hole_sketch_construction(&counterbore).unwrap();
+        assert_eq!(construction.diameter, Length(5.5));
+        assert_eq!(construction.depth, Some(Length(12.0)));
+        assert!(matches!(
+            construction.kind,
+            HoleKind::CounterboreDrilled {
+                diameter: Length(9.0),
+                depth: Length(5.7),
+                ..
+            }
+        ));
+
+        let threaded = profile(&[
+            ("a", "<MOD-DIAM>4.2"),
+            ("b", "12.4"),
+            ("c", "<MOD-DIAM>5"),
+            ("d", "10"),
+            ("e", "118°"),
+        ]);
+        let construction = hole_sketch_construction(&threaded).unwrap();
+        assert_eq!(construction.diameter, Length(4.2));
+        assert_eq!(construction.depth, Some(Length(12.4)));
+        assert!(matches!(
+            construction.kind,
+            HoleKind::Threaded {
+                major_diameter: Length(5.0),
+                thread_depth: Length(10.0),
+                pitch: None,
+                ..
+            }
+        ));
+
+        let mut canonical = feature("hole", Some("8"), 0);
+        canonical.parameters = [
+            ("Diameter".into(), "4.2mm".into()),
+            ("Depth".into(), "12.4mm".into()),
+            ("ThreadMajorDiameter".into(), "5mm".into()),
+            ("ThreadDepth".into(), "10mm".into()),
+            ("DrillPointAngle".into(), "118°".into()),
+        ]
+        .into();
+        let projected = project_hole(&canonical, &HashMap::new());
+        let FeatureDefinition::Hole {
+            kind:
+                HoleKind::Threaded {
+                    major_diameter,
+                    thread_depth,
+                    ..
+                },
+            diameter: Some(diameter),
+            extent: Some(Extent::Blind { length }),
+            ..
+        } = projected
+        else {
+            panic!("expected canonical threaded hole: {projected:?}");
+        };
+        assert!((diameter.0 - 4.2).abs() < 1.0e-12);
+        assert!((major_diameter.0 - 5.0).abs() < 1.0e-12);
+        assert!((thread_depth.0 - 10.0).abs() < 1.0e-12);
+        assert!((length.0 - 12.4).abs() < 1.0e-12);
+    }
+
+    #[test]
     fn anonymous_scene_class_binds_only_a_unique_matching_kind_group() {
         let mut first = feature("first", Some("153"), 0);
         first.kind = "localized light".into();
@@ -5394,6 +5480,36 @@ fn project_hole(
         .get("CountersinkAngle")
         .and_then(|value| parse_bounded_angle_rad(value))
         .map(Angle);
+    let drill_point_angle = feature
+        .parameters
+        .get("DrillPointAngle")
+        .and_then(|value| parse_bounded_angle_rad(value))
+        .map(Angle);
+    let thread = feature
+        .parameters
+        .get("ThreadMajorDiameter")
+        .and_then(|value| parse_positive_length_mm(value))
+        .map(Length)
+        .zip(
+            feature
+                .parameters
+                .get("ThreadDepth")
+                .and_then(|value| parse_positive_length_mm(value))
+                .map(Length),
+        )
+        .zip(drill_point_angle)
+        .map(
+            |((major_diameter, thread_depth), drill_point_angle)| HoleKind::Threaded {
+                major_diameter,
+                thread_depth,
+                pitch: feature
+                    .parameters
+                    .get("ThreadPitch")
+                    .and_then(|value| parse_positive_length_mm(value))
+                    .map(Length),
+                drill_point_angle,
+            },
+        );
     let kind = if has_counterbore && has_countersink {
         HoleKind::Unresolved {
             form: None,
@@ -5404,7 +5520,14 @@ fn project_hole(
         }
     } else if has_counterbore {
         match (counterbore_diameter, counterbore_depth) {
-            (Some(diameter), Some(depth)) => HoleKind::Counterbore { diameter, depth },
+            (Some(diameter), Some(depth)) => drill_point_angle.map_or(
+                HoleKind::Counterbore { diameter, depth },
+                |drill_point_angle| HoleKind::CounterboreDrilled {
+                    diameter,
+                    depth,
+                    drill_point_angle,
+                },
+            ),
             (diameter, depth) => HoleKind::Unresolved {
                 form: Some(HoleForm::Counterbore),
                 counterbore_diameter: diameter,
@@ -5424,6 +5547,10 @@ fn project_hole(
                 countersink_angle: angle,
             },
         }
+    } else if let Some(thread) = thread {
+        thread
+    } else if let Some(drill_point_angle) = drill_point_angle {
+        HoleKind::SimpleDrilled { drill_point_angle }
     } else {
         profile
             .as_ref()
@@ -5494,9 +5621,17 @@ fn hole_profile_construction(
 }
 
 fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum DimensionRole {
+        Diameter,
+        Length,
+        Angle,
+    }
+
     let mut diameters = Vec::new();
     let mut lengths = Vec::new();
     let mut angles = Vec::new();
+    let mut roles = Vec::new();
     let source_dimensions = profile
         .content
         .iter()
@@ -5520,12 +5655,15 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                 .map(Length)
             {
                 diameters.push(value);
+                roles.push(DimensionRole::Diameter);
             }
         } else if let Some(value) = parse_bounded_angle_rad(expression).map(Angle) {
             angles.push(value);
+            roles.push(DimensionRole::Angle);
         } else {
             if let Some(value) = parse_positive_dimension_length_mm(expression).map(Length) {
                 lengths.push(value);
+                roles.push(DimensionRole::Length);
             }
         }
     }
@@ -5540,10 +5678,12 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
             },
             kind: HoleKind::Simple,
         }),
-        ([diameter], [depth], [_drill_point_angle]) => Some(HoleProfileConstruction {
+        ([diameter], [depth], [drill_point_angle]) => Some(HoleProfileConstruction {
             diameter: *diameter,
             depth: Some(*depth),
-            kind: HoleKind::Simple,
+            kind: HoleKind::SimpleDrilled {
+                drill_point_angle: *drill_point_angle,
+            },
         }),
         ([diameter, entry_diameter], [depth], [angle]) if diameter.0 < entry_diameter.0 => {
             Some(HoleProfileConstruction {
@@ -5552,6 +5692,44 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                 kind: HoleKind::Countersink {
                     diameter: *entry_diameter,
                     angle: *angle,
+                },
+            })
+        }
+        ([diameter, major_diameter], [thread_depth, drill_depth], [drill_point_angle])
+            if roles
+                == [
+                    DimensionRole::Diameter,
+                    DimensionRole::Length,
+                    DimensionRole::Diameter,
+                    DimensionRole::Length,
+                    DimensionRole::Angle,
+                ]
+                && diameter.0 < major_diameter.0
+                && thread_depth.0 < drill_depth.0 =>
+        {
+            Some(HoleProfileConstruction {
+                diameter: *diameter,
+                depth: Some(*drill_depth),
+                kind: HoleKind::Threaded {
+                    major_diameter: *major_diameter,
+                    thread_depth: *thread_depth,
+                    pitch: None,
+                    drill_point_angle: *drill_point_angle,
+                },
+            })
+        }
+        ([diameter, entry_diameter], [entry_depth, depth], [drill_point_angle])
+            if roles.last() == Some(&DimensionRole::Diameter)
+                && diameter.0 < entry_diameter.0
+                && entry_depth.0 < depth.0 =>
+        {
+            Some(HoleProfileConstruction {
+                diameter: *diameter,
+                depth: Some(*depth),
+                kind: HoleKind::CounterboreDrilled {
+                    diameter: *entry_diameter,
+                    depth: *entry_depth,
+                    drill_point_angle: *drill_point_angle,
                 },
             })
         }
@@ -11293,20 +11471,88 @@ pub fn sync_neutral_features(
                         parameters.remove("CounterboreDepth");
                         parameters.remove("CountersinkDiameter");
                         parameters.remove("CountersinkAngle");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters.remove("DrillPointAngle");
+                    }
+                    HoleKind::SimpleDrilled { drill_point_angle } => {
+                        parameters.remove("CounterboreDiameter");
+                        parameters.remove("CounterboreDepth");
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters.insert(
+                            "DrillPointAngle".into(),
+                            format_angle_rad(drill_point_angle.0),
+                        );
                     }
                     HoleKind::Counterbore { diameter, depth } => {
                         parameters.remove("CountersinkDiameter");
                         parameters.remove("CountersinkAngle");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
                         parameters
                             .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
                         parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
+                        parameters.remove("DrillPointAngle");
+                    }
+                    HoleKind::CounterboreDrilled {
+                        diameter,
+                        depth,
+                        drill_point_angle,
+                    } => {
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters
+                            .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
+                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
+                        parameters.insert(
+                            "DrillPointAngle".into(),
+                            format_angle_rad(drill_point_angle.0),
+                        );
                     }
                     HoleKind::Countersink { diameter, angle } => {
                         parameters.remove("CounterboreDiameter");
                         parameters.remove("CounterboreDepth");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters.remove("DrillPointAngle");
                         parameters
                             .insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
                         parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
+                    }
+                    HoleKind::Threaded {
+                        major_diameter,
+                        thread_depth,
+                        pitch,
+                        drill_point_angle,
+                    } => {
+                        parameters.remove("CounterboreDiameter");
+                        parameters.remove("CounterboreDepth");
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        parameters.insert(
+                            "ThreadMajorDiameter".into(),
+                            format_length_mm(major_diameter.0),
+                        );
+                        parameters.insert("ThreadDepth".into(), format_length_mm(thread_depth.0));
+                        if let Some(pitch) = pitch {
+                            parameters.insert("ThreadPitch".into(), format_length_mm(pitch.0));
+                        } else {
+                            parameters.remove("ThreadPitch");
+                        }
+                        parameters.insert(
+                            "DrillPointAngle".into(),
+                            format_angle_rad(drill_point_angle.0),
+                        );
                     }
                 }
                 let mut properties = feature.source_properties.clone();

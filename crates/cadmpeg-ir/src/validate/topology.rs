@@ -1987,14 +1987,44 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             })
                     }
                     HoleKind::Simple => true,
+                    HoleKind::SimpleDrilled { drill_point_angle } => {
+                        drill_point_angle.0.is_finite()
+                            && drill_point_angle.0 > 0.0
+                            && drill_point_angle.0 < std::f64::consts::PI
+                    }
                     HoleKind::Counterbore { diameter, depth } => {
                         positive_feature_length(*diameter) && positive_feature_length(*depth)
+                    }
+                    HoleKind::CounterboreDrilled {
+                        diameter,
+                        depth,
+                        drill_point_angle,
+                    } => {
+                        positive_feature_length(*diameter)
+                            && positive_feature_length(*depth)
+                            && drill_point_angle.0.is_finite()
+                            && drill_point_angle.0 > 0.0
+                            && drill_point_angle.0 < std::f64::consts::PI
                     }
                     HoleKind::Countersink { diameter, angle } => {
                         positive_feature_length(*diameter)
                             && angle.0.is_finite()
                             && angle.0 > 0.0
                             && angle.0 < std::f64::consts::PI
+                    }
+                    HoleKind::Threaded {
+                        major_diameter,
+                        thread_depth,
+                        pitch,
+                        drill_point_angle,
+                    } => {
+                        positive_feature_length(*major_diameter)
+                            && positive_feature_length(*thread_depth)
+                            && pitch.is_none_or(positive_feature_length)
+                            && drill_point_angle.0.is_finite()
+                            && drill_point_angle.0 > 0.0
+                            && drill_point_angle.0 < std::f64::consts::PI
+                            && diameter.is_some_and(|diameter| major_diameter.0 > diameter.0)
                     }
                 };
                 let placements_valid = placements.iter().all(|placement| {

@@ -174,6 +174,8 @@ An extrusion bound to `moCut_c` has Boolean operation cut independently of its l
 
 In the legacy repeated-class form, a non-direct feature name carries a u16 class token immediately before its name marker. A token group is a Hole Wizard group when the feature-input lane declares exactly one Hole Wizard class and every uniquely named history feature in the group is immediately followed by two consecutive profile-feature records. The two profiles are the operation's position and generated-profile sketches.
 
+A generated Hole Wizard profile with two diameter-displayed dimensions, two length dimensions, and one angle dimension is threaded when its ordered dimension roles are diameter, length, diameter, length, angle. These fields are the drill diameter, drill depth, nominal thread major diameter, thread depth, and drill-point included angle. The profile is counterbored when the same dimension multiset terminates with a diameter-displayed dimension: the smaller and larger diameters are the drill and counterbore diameters, the smaller and larger lengths are the counterbore and drill depths, and the angle is the drill-point included angle. A profile with one diameter, one length, and one angle carries a simple drilled hole with drill diameter, drill depth, and drill-point included angle.
+
 Keywords element order is serialization order, not regeneration order. Neutral regeneration order is the stable topological order of parent and dependency references; unrelated features retain their serialization order.
 
 Feature-tree node roles are invariant across configurations. A configuration snapshot changes a tree node's suppression and graph state without changing its role.

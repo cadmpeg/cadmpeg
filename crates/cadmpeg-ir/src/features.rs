@@ -704,7 +704,7 @@ pub enum FeatureDefinition {
         /// Complete one-or-many hole placements. Empty when placement is unresolved.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         placements: Vec<HolePlacement>,
-        /// Entry-shape family of the hole.
+        /// Structural drilling, entry-treatment, and threading form.
         kind: HoleKind,
         /// Hole diameter, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1463,7 +1463,7 @@ pub enum ChamferForm {
     DistanceAngle,
 }
 
-/// Shape at the entry of a hole.
+/// Structural drilling, entry-treatment, and threading form of a hole.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HoleKind {
@@ -1487,6 +1487,11 @@ pub enum HoleKind {
     },
     /// Plain cylindrical hole with no entry feature.
     Simple,
+    /// Plain cylindrical hole terminating in a conical drill point.
+    SimpleDrilled {
+        /// Included angle of the conical drill point.
+        drill_point_angle: Angle,
+    },
     /// Hole with a wider, flat-bottomed counterbore at the entry.
     Counterbore {
         /// Counterbore diameter, wider than the hole diameter.
@@ -1494,12 +1499,33 @@ pub enum HoleKind {
         /// Counterbore depth.
         depth: Length,
     },
+    /// Counterbored hole terminating in a conical drill point.
+    CounterboreDrilled {
+        /// Counterbore diameter, wider than the hole diameter.
+        diameter: Length,
+        /// Axial depth of the counterbore.
+        depth: Length,
+        /// Included angle of the conical drill point.
+        drill_point_angle: Angle,
+    },
     /// Hole with a conical countersink at the entry.
     Countersink {
         /// Countersink diameter at the surface, wider than the hole diameter.
         diameter: Length,
         /// Countersink included angle.
         angle: Angle,
+    },
+    /// Internally threaded hole terminating in a conical drill point.
+    Threaded {
+        /// Nominal major diameter of the internal thread.
+        major_diameter: Length,
+        /// Axial length over which the thread is cut.
+        thread_depth: Length,
+        /// Thread pitch, when carried independently of the nominal designation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pitch: Option<Length>,
+        /// Included angle of the conical drill point.
+        drill_point_angle: Angle,
     },
 }
 
