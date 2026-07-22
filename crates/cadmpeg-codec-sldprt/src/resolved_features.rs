@@ -2,7 +2,7 @@
 //! Typed views over `SolidWorks` `ResolvedFeatures` sketch records.
 
 use crate::classification::{
-    FeatureClass, NativeClassKind, classify, native_object_class, principal_plane,
+    classify, native_object_class, principal_plane, FeatureClass, NativeClassKind,
 };
 use crate::records::{
     FeatureInputBodySelection, FeatureInputClass, FeatureInputClassRole,
@@ -12,7 +12,6 @@ use crate::records::{
     FeatureInputScalar, FeatureInputScalarRole, FeatureInputSurfaceSelection, SketchInputEntity,
     SketchInputKind, SketchInputLink, SketchRelationKind,
 };
-use cadmpeg_ir::Exactness;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::features::{
@@ -33,6 +32,7 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
+use cadmpeg_ir::Exactness;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -304,10 +304,7 @@ fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
             prefix
                 if prefix == SKETCH_MARKER
                     && marker_native_code(payload, offset) == Some(0)
-                    && matches!(
-                        locus,
-                        [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00]
-                    )
+                    && matches!(locus, [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
                     && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
             {
                 (offset.checked_add(66)?, true)
@@ -331,10 +328,7 @@ fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
             prefix
                 if prefix == LEGACY_SKETCH_MARKER
                     && marker_native_code(payload, offset).is_some()
-                    && matches!(
-                        locus,
-                        [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00]
-                    )
+                    && matches!(locus, [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
                     && marker_profile_curve_role(payload, offset) == Some(1)
                     && marker_object_index(payload, offset).is_some()
                     && payload.get(offset + 56..offset + 58) == Some(&[0x0e, 0x00]) =>
@@ -727,22 +721,23 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     if payload.get(offset + 5..offset + 17)? != GEOMETRY_PREFIX {
         return None;
     }
-    let compact_indexed_value_body = matches!(
-        payload.get(offset..offset + SKETCH_MARKER.len()),
-        Some(prefix)
-            if prefix == SKETCH_MARKER
-                || prefix == LEGACY_SKETCH_MARKER
-                || prefix == LEGACY_EXTENDED_SKETCH_MARKER
-    ) && matches!(marker_native_code(payload, offset), Some(0..=2))
-        && (marker_is_geometry_locus(payload, offset)
-            || payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]))
-        && marker_profile_curve_role(payload, offset) == Some(1)
-        && payload.get(offset + 31..offset + 39)
-            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
-        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
-        && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
-        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
-        && sketch_marker_prefix_at(payload, offset.saturating_add(84));
+    let compact_indexed_value_body =
+        matches!(
+            payload.get(offset..offset + SKETCH_MARKER.len()),
+            Some(prefix)
+                if prefix == SKETCH_MARKER
+                    || prefix == LEGACY_SKETCH_MARKER
+                    || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+        ) && matches!(marker_native_code(payload, offset), Some(0..=2))
+            && (marker_is_geometry_locus(payload, offset)
+                || payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]))
+            && marker_profile_curve_role(payload, offset) == Some(1)
+            && payload.get(offset + 31..offset + 39)
+                == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+            && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+            && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+            && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+            && sketch_marker_prefix_at(payload, offset.saturating_add(84));
     if compact_indexed_value_body {
         return None;
     }
@@ -869,8 +864,7 @@ fn legacy_line_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64;
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
         || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
         || payload.get(offset + 74..offset + 78) != Some(&handle_variant)
-        || payload.get(offset + 78..offset + 84)
-            != Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
+        || payload.get(offset + 78..offset + 84) != Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
         || payload.get(offset + 84..offset + 96) != Some(b"sgLineHandle")
         || payload.get(offset + 96..offset + 106)
             != Some(&[0x03, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
@@ -901,8 +895,7 @@ fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> 
         && payload.get(offset + 64..offset + 66) == Some(&[0x1a, 0x00])
         && payload.get(offset + 82..offset + 84) == Some(&[0; 2])
         && payload.get(offset + 84..offset + 86) == Some(&2u16.to_le_bytes())
-        && payload.get(offset + 110..offset + 116)
-            == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 110..offset + 116) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         && payload.get(offset + 116..offset + 158) == Some(&[0; 42])
         && payload
             .get(offset + 158..offset + 162)
@@ -921,8 +914,7 @@ fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> 
     } else if payload.get(offset + 56..offset + 58) == Some(&[0x1a, 0x00])
         && payload.get(offset + 74..offset + 76) == Some(&[0; 2])
         && payload.get(offset + 76..offset + 78) == Some(&2u16.to_le_bytes())
-        && payload.get(offset + 102..offset + 108)
-        == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 102..offset + 108) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         && payload.get(offset + 108..offset + 150) == Some(&[0; 42])
         && sketch_marker_prefix_at(payload, offset.checked_add(154)?)
     {
@@ -936,14 +928,16 @@ fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> 
     } else if payload.get(offset + 56..offset + 58) == Some(&[0x1a, 0x00])
         && payload.get(offset + 74..offset + 76) == Some(&[0; 2])
         && payload.get(offset + 76..offset + 78) == Some(&2u16.to_le_bytes())
-        && payload.get(offset + 94..offset + 100)
-        == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 94..offset + 100) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         && payload.get(offset + 100..offset + 138) == Some(&[0; 38])
         && sketch_marker_prefix_at(payload, offset.checked_add(146)?)
     {
         (
             offset + 58,
-            [&payload[offset + 78..offset + 86], &payload[offset + 86..offset + 94]],
+            [
+                &payload[offset + 78..offset + 86],
+                &payload[offset + 86..offset + 94],
+            ],
         )
     } else {
         return None;
@@ -1028,8 +1022,7 @@ fn current_linked_profile_point(
         || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
         || payload.get(offset + 74..offset + 76) != Some(&[0; 2])
         || payload.get(offset + 76..offset + 78) != Some(&2u16.to_le_bytes())
-        || payload.get(offset + 102..offset + 108)
-            != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        || payload.get(offset + 102..offset + 108) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         || payload.get(offset + 108..offset + 146) != Some(&[0; 38])
         || payload.get(offset + 146..offset + 150) == Some(&u32::MAX.to_le_bytes())
         || !sketch_marker_prefix_at(payload, offset.checked_add(154)?)
@@ -1162,23 +1155,19 @@ fn legacy_extended_profile_curve_kind(payload: &[u8], offset: usize) -> Option<S
 #[cfg(test)]
 mod marker_tests {
     use super::{
-        Angle, BooleanOp, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, CompactPointReferenceKind,
-        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
-        Length, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
         alternate_current_indexed_curve_endpoint_indices,
         alternate_current_selected_axis_endpoint_indices, angled_reference_plane_frame,
-        append_spatial_vertex, arc_angle_relation_kind, normalize_indexed_curve_entities,
-        bind_resolved_curve_vertices,
-        bounded_profile_axis_endpoints, compact_body_component_path_at, compact_body_path_at,
-        compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
-        compact_body_state_ids, compact_bounded_curve_tangent, compact_combine_operation_at,
-        compact_component_plane_frame, compact_curve_endpoint_indices,
-        compact_edge_component_path_at, compact_edge_selection_at,
+        append_spatial_vertex, arc_angle_relation_kind, bind_resolved_curve_vertices,
+        bounded_profile_axis_endpoints, common_generated_surface_axis,
+        compact_body_component_path_at, compact_body_path_at, compact_body_retention_mode,
+        compact_body_selection_at, compact_body_selection_vector, compact_body_state_ids,
+        compact_bounded_curve_tangent, compact_combine_operation_at, compact_component_plane_frame,
+        compact_curve_endpoint_indices, compact_edge_component_path_at, compact_edge_selection_at,
         compact_extrusion_blind_at, compact_extrusion_blind_through_all_second_at,
-        compact_extrusion_mid_plane_at,
-        compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
-        compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
-        compact_extrusion_to_face_at, compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
+        compact_extrusion_mid_plane_at, compact_extrusion_offset_from_face_at,
+        compact_extrusion_through_all_at, compact_extrusion_through_all_both_at,
+        compact_extrusion_through_next_at, compact_extrusion_to_face_at,
+        compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
         compact_indexed_curve_endpoint_indices, compact_legacy_curve_endpoint_indices,
         compact_legacy_radial_circle_index, compact_legacy_selected_axis_endpoint_indices,
         compact_line_chain_addresses, compact_line_region_addresses, compact_offset_plane_source,
@@ -1186,8 +1175,7 @@ mod marker_tests {
         compact_reference_plane_source, compact_single_face_reference_path_at,
         compact_single_face_reference_record_at, compact_sketch_surface_component_path_at,
         compact_surface_selection_at, complete_ordered_compact_line_profile,
-        common_generated_surface_axis, component_path_features,
-        component_path_preceding_feature, component_path_terminal_feature,
+        component_path_features, component_path_preceding_feature, component_path_terminal_feature,
         component_profile_source_at, component_reference_curve_path_at,
         consecutive_legacy_profile_line_endpoints, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_centered_line_endpoints,
@@ -1195,38 +1183,38 @@ mod marker_tests {
         coordinate_roster_curve_endpoint_markers, cosmetic_thread_component_face_reference_at,
         cosmetic_thread_cylinder_reference_at, current_coordinate_linked_line_endpoints,
         current_indexed_arc_reverses_center_sweep, current_linked_profile_point,
-        current_reverse_incidence_endpoint_offsets,
-        current_wide_arc_direct_markers,
-        current_wide_undetailed_line,
-        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
-        explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
-        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
-        inline_surface_reference_at, legacy_compact_diameter_arc_center,
+        current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
+        current_wide_undetailed_line, direct_indexed_curve_endpoint_indices,
+        enrich_history_revolution_inputs, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, fixed_reference_plane_frame, generated_surface_identities,
+        indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
+        legacy_compact_diameter_arc_center,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
         legacy_feature_input_section, legacy_inline_arc_coordinates,
         legacy_line_handle_coordinates, legacy_linked_coordinates, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
-        legacy_terminal_indexed_profile_line,
-        marker_coordinates, marker_is_geometry_locus, marker_is_selected_construction_line,
-        marker_local_id, marker_local_links, marker_object_index, marker_spatial_coordinates,
-        matrix_reference_plane_frame, minimal_reference_plane_frame,
-        mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names,
-        offset_plane_reference_frame_matches, offset_plane_reference_source,
-        offset_reference_plane_frame_pair,
+        legacy_terminal_indexed_profile_line, marker_coordinates, marker_is_geometry_locus,
+        marker_is_selected_construction_line, marker_local_id, marker_local_links,
+        marker_object_index, marker_spatial_coordinates, matrix_reference_plane_frame,
+        minimal_reference_plane_frame, mirror_pattern_component_path_at,
+        mirror_surface_component_path_at, named_scalars, native_scalar_matches_discrete_parameter,
+        normalize_indexed_curve_entities, object_names, offset_plane_reference_frame_matches,
+        offset_plane_reference_source, offset_reference_plane_frame_pair,
         ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
         plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
         profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
         profile_roster_principal_axis_endpoints, reconcile_reference_plane_frame,
-        resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
         roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
         sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
         spatial_vertex_coordinates, tangent_bounded_curve, unique_arc_center_marker,
         unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
-        wide_indexed_curve_endpoint_indices,
+        wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind, Length,
+        CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
+        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
+        SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -1535,14 +1523,12 @@ mod marker_tests {
             .len(),
             1
         );
-        assert!(
-            relation_bindings(
-                "lane",
-                &[class],
-                &[scalar(FeatureInputOperandKind::Native(0x8dda))],
-            )
-            .is_empty()
-        );
+        assert!(relation_bindings(
+            "lane",
+            &[class],
+            &[scalar(FeatureInputOperandKind::Native(0x8dda))],
+        )
+        .is_empty());
     }
 
     #[test]
@@ -3675,11 +3661,9 @@ mod marker_tests {
         let components = component_reference_curve_path_at(&payload, marker).unwrap();
         assert_eq!(components.len(), 4);
         assert_eq!(components[0].instance, Some(0x8c20));
-        assert!(
-            components
-                .iter()
-                .all(|component| component.local_id == Some(1))
-        );
+        assert!(components
+            .iter()
+            .all(|component| component.local_id == Some(1)));
 
         payload[cursor + 8] ^= 1;
         assert_eq!(component_reference_curve_path_at(&payload, marker), None);
@@ -4097,8 +4081,7 @@ mod marker_tests {
         payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         payload[offset + 5..offset + 13].fill(0xff);
         payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-        payload[offset + 23..offset + 29]
-            .copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[offset + 23..offset + 29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
         payload[offset + 31..offset + 39]
             .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
         payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
@@ -4111,8 +4094,7 @@ mod marker_tests {
             payload[offset + start + 2..offset + start + 4].copy_from_slice(&id.to_le_bytes());
             payload[offset + start + 4..offset + start + 8].fill(0xff);
         }
-        payload[offset + 102..offset + 108]
-            .copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        payload[offset + 102..offset + 108].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
         payload[offset + 154..].copy_from_slice(SKETCH_MARKER);
 
         assert_eq!(
@@ -4132,23 +4114,19 @@ mod marker_tests {
         payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         payload[17..21].copy_from_slice(&1u32.to_le_bytes());
         payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
-        payload[31..39]
-            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
         payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
         payload[56..60].copy_from_slice(&[2, 0, 5, 0]);
         payload[60..64].copy_from_slice(&1u32.to_le_bytes());
         payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
 
-        for (offset, coordinates, other) in
-            [
-                (first, [1.0f64, 2.0], 11u16),
-                (second, [3.0f64, 4.0], 12u16),
-            ]
-        {
+        for (offset, coordinates, other) in [
+            (first, [1.0f64, 2.0], 11u16),
+            (second, [3.0f64, 4.0], 12u16),
+        ] {
             payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
             payload[offset + 5..offset + 13].fill(0xff);
-            payload[offset + 13..offset + 17]
-                .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+            payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
             payload[offset + 23..offset + 29]
                 .copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
             payload[offset + 31..offset + 39]
@@ -4158,13 +4136,10 @@ mod marker_tests {
             payload[offset + 58..offset + 66].copy_from_slice(&coordinates[0].to_le_bytes());
             payload[offset + 66..offset + 74].copy_from_slice(&coordinates[1].to_le_bytes());
             payload[offset + 76..offset + 78].copy_from_slice(&2u16.to_le_bytes());
-            for (start, selector, id) in
-                [(78, 0x8178u16, 7u16), (90, 0x8132u16, other)]
-            {
+            for (start, selector, id) in [(78, 0x8178u16, 7u16), (90, 0x8132u16, other)] {
                 payload[offset + start..offset + start + 2]
                     .copy_from_slice(&selector.to_le_bytes());
-                payload[offset + start + 2..offset + start + 4]
-                    .copy_from_slice(&id.to_le_bytes());
+                payload[offset + start + 2..offset + start + 4].copy_from_slice(&id.to_le_bytes());
                 payload[offset + start + 4..offset + start + 8].fill(0xff);
             }
             payload[offset + 102..offset + 108]
@@ -4729,8 +4704,7 @@ mod marker_tests {
         corner[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         corner[17..21].copy_from_slice(&2u32.to_le_bytes());
         corner[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
-        corner[31..39]
-            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        corner[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
         corner[48..56].copy_from_slice(&1.0f64.to_le_bytes());
         corner[56..58].copy_from_slice(&0x16u16.to_le_bytes());
         corner[58..66].copy_from_slice(&20.0f64.to_le_bytes());
@@ -4918,8 +4892,7 @@ mod marker_tests {
         extended[17..21].copy_from_slice(&2u32.to_le_bytes());
         extended[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
         extended[27..29].copy_from_slice(&1u16.to_le_bytes());
-        extended[31..39]
-            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        extended[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
         extended[48..56].copy_from_slice(&1.0f64.to_le_bytes());
         extended[56..58].copy_from_slice(&[0x1e, 0x00]);
         extended[58..66].copy_from_slice(&2.0f64.to_le_bytes());
@@ -5584,8 +5557,7 @@ mod marker_tests {
         payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         payload[17..21].copy_from_slice(&2u32.to_le_bytes());
         payload[23..29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
-        payload[31..39]
-            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
         payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
         payload[56..58].copy_from_slice(&1u16.to_le_bytes());
         payload[58..60].copy_from_slice(&3u16.to_le_bytes());
@@ -5628,7 +5600,13 @@ mod marker_tests {
             sketch_entities: vec![
                 entity("curve", 0, Some(1), SketchInputKind::Arc, None),
                 entity("handle", 1, None, SketchInputKind::Point, Some([-1.0, 0.0])),
-                entity("start", 2, Some(2), SketchInputKind::Point, Some([0.0, 0.0])),
+                entity(
+                    "start",
+                    2,
+                    Some(2),
+                    SketchInputKind::Point,
+                    Some([0.0, 0.0]),
+                ),
                 entity("center", 3, None, SketchInputKind::Point, Some([0.5, 0.5])),
                 entity(
                     "end",
@@ -5843,13 +5821,11 @@ mod marker_tests {
         assert!(current_wide_undetailed_line(&current, 0, Some(31)));
         let mut detailed = current.clone();
         detailed.resize(172, 0);
-        detailed[97..105]
-            .copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]);
+        detailed[97..105].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]);
         detailed[105..109].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         detailed[115..119].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
         detailed[119..121].copy_from_slice(&2u16.to_le_bytes());
-        detailed[123..131]
-            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+        detailed[123..131].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
         detailed[140..148].copy_from_slice(&1.0f64.to_le_bytes());
         detailed[156..164].copy_from_slice(&(-1.0f64).to_le_bytes());
         assert!(!current_wide_undetailed_line(&detailed, 0, Some(31)));
@@ -7447,8 +7423,7 @@ mod marker_tests {
         payload[217..221].copy_from_slice(&0u32.to_le_bytes());
         payload[223..227].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         payload[227..229].copy_from_slice(&2u16.to_le_bytes());
-        payload[231..239]
-            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0d, 0x00]);
+        payload[231..239].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0d, 0x00]);
         payload[248..256].copy_from_slice(&1.0f64.to_le_bytes());
         payload[264..266].copy_from_slice(&0u16.to_le_bytes());
         payload[266..268].copy_from_slice(&1u16.to_le_bytes());
@@ -7731,10 +7706,9 @@ mod marker_tests {
             })
         );
         assert_eq!(
-            common_generated_surface_axis(&[
-                first,
-                cylinder("offset", Point3::new(0.0, 1.0, 0.0)),
-            ]),
+            common_generated_surface_axis(
+                &[first, cylinder("offset", Point3::new(0.0, 1.0, 0.0)),]
+            ),
             None
         );
     }
@@ -7748,8 +7722,7 @@ mod marker_tests {
             payload[offset + 13..offset + 17].copy_from_slice(&[0, 0, 0x80, 0xbf]);
             payload[offset + 23..offset + 27].copy_from_slice(&[4, 0, 2, 0]);
             payload[offset + 27..offset + 29].copy_from_slice(&1u16.to_le_bytes());
-            payload[offset + 31..offset + 39]
-                .copy_from_slice(&[0, 0, 0x80, 0xbf, 0, 0, 4, 0]);
+            payload[offset + 31..offset + 39].copy_from_slice(&[0, 0, 0x80, 0xbf, 0, 0, 4, 0]);
             payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
             payload[offset + 56..offset + 58].copy_from_slice(&start.to_le_bytes());
             payload[offset + 58..offset + 60].copy_from_slice(&end.to_le_bytes());
@@ -9036,19 +9009,16 @@ fn profile_roster_construction_axis(
             Some([*start, *end])
         });
     let native_endpoints = match (axes.next(), axes.next()) {
-        (Some(endpoints), None) => Some([
-            endpoints[0].coordinates_m?,
-            endpoints[1].coordinates_m?,
-        ]),
+        (Some(endpoints), None) => Some([endpoints[0].coordinates_m?, endpoints[1].coordinates_m?]),
         (None, None) => {
             if let Some(endpoints) =
                 profile_roster_implicit_axis_endpoints(lane, profile_native, &markers)
             {
                 Some([endpoints[0].coordinates_m?, endpoints[1].coordinates_m?])
             } else {
-                profile_roster_origin_axis_endpoints(lane, profile_native, &markers).or_else(
-                    || profile_roster_principal_axis_endpoints(lane, profile_native, &markers),
-                )
+                profile_roster_origin_axis_endpoints(lane, profile_native, &markers).or_else(|| {
+                    profile_roster_principal_axis_endpoints(lane, profile_native, &markers)
+                })
             }
         }
         _ => return None,
@@ -9237,27 +9207,20 @@ fn common_generated_surface_axis(
         }
     }
     if direction.x < -DIRECTION_TOLERANCE
-        || (direction.x.abs() <= DIRECTION_TOLERANCE
-            && direction.y < -DIRECTION_TOLERANCE)
+        || (direction.x.abs() <= DIRECTION_TOLERANCE && direction.y < -DIRECTION_TOLERANCE)
         || (direction.x.abs() <= DIRECTION_TOLERANCE
             && direction.y.abs() <= DIRECTION_TOLERANCE
             && direction.z < 0.0)
     {
         direction = Vector3::new(-direction.x, -direction.y, -direction.z);
     }
-    let origin_projection = dot(
-        Vector3::new(origin.x, origin.y, origin.z),
-        direction,
-    );
+    let origin_projection = dot(Vector3::new(origin.x, origin.y, origin.z), direction);
     let origin = Point3::new(
         origin.x - origin_projection * direction.x,
         origin.y - origin_projection * direction.y,
         origin.z - origin_projection * direction.z,
     );
-    Some(cadmpeg_ir::features::RevolutionAxis {
-        origin,
-        direction,
-    })
+    Some(cadmpeg_ir::features::RevolutionAxis { origin, direction })
 }
 
 fn profile_roster_origin_axis_endpoints(
@@ -9313,10 +9276,7 @@ fn profile_roster_origin_axis_endpoints(
     });
     let mut lines = Vec::<[[f64; 2]; 2]>::new();
     for candidate in candidates {
-        let [u, v] = [
-            candidate[1][0] - origin_u,
-            candidate[1][1] - origin_v,
-        ];
+        let [u, v] = [candidate[1][0] - origin_u, candidate[1][1] - origin_v];
         if lines.iter().any(|line| {
             let [line_u, line_v] = [line[1][0] - origin_u, line[1][1] - origin_v];
             (u * line_v - v * line_u).abs() <= 1.0e-9 * u.hypot(v) * line_u.hypot(line_v)
@@ -9374,10 +9334,7 @@ fn profile_roster_principal_axis_endpoints(
             .filter(|[u, v]| (u * axis_v - v * axis_u).abs() <= 1.0e-9)
             .count()
     };
-    let axes = [
-        [[0.0, 0.0], [1.0, 0.0]],
-        [[0.0, 0.0], [0.0, 1.0]],
-    ];
+    let axes = [[[0.0, 0.0], [1.0, 0.0]], [[0.0, 0.0], [0.0, 1.0]]];
     let candidates = axes
         .into_iter()
         .filter(|axis| {
@@ -10228,11 +10185,7 @@ fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
         lane.sketch_entities
             .iter()
             .filter_map(|curve| {
-                current_reverse_incidence_endpoint_offsets(
-                    &lane.native_payload,
-                    curve,
-                    &markers,
-                )
+                current_reverse_incidence_endpoint_offsets(&lane.native_payload, curve, &markers)
             })
             .flatten()
             .filter_map(|offset| {
@@ -11382,7 +11335,11 @@ fn feature_input_sketch_frame(
                 .get(start..end)
                 .and_then(|object| explicit_reference_plane_frame(object).ok().flatten())?;
             let finite_zero = |value: f64| {
-                if value.abs() <= 1.0e-12 { 0.0 } else { value }
+                if value.abs() <= 1.0e-12 {
+                    0.0
+                } else {
+                    value
+                }
             };
             Some((
                 Point3::new(
@@ -14684,7 +14641,7 @@ fn relation_signature(
     family: FeatureInputRelationFamily,
     operands: &[FeatureInputOperand],
 ) -> bool {
-    use FeatureInputOperandKind::{D6, E1, Native};
+    use FeatureInputOperandKind::{Native, D6, E1};
     use FeatureInputRelationFamily::{
         Angle, CircleDiameter, LineLineDistance, PointLineDistance, PointPointDistance,
         PointPointHorizontalDistance, PointPointVerticalDistance,
@@ -17432,12 +17389,10 @@ mod idless_history_binding_tests {
 
         bind_history_classes(&mut histories, &[lane]);
 
-        assert!(
-            histories[0]
-                .features
-                .iter()
-                .all(|feature| feature.input_class.as_deref() == Some("moHoleWzd_c"))
-        );
+        assert!(histories[0]
+            .features
+            .iter()
+            .all(|feature| feature.input_class.as_deref() == Some("moHoleWzd_c")));
     }
 
     #[test]
@@ -17504,12 +17459,10 @@ mod idless_history_binding_tests {
 
         bind_history_classes(&mut histories, &[lane]);
 
-        assert!(
-            histories[0]
-                .features
-                .iter()
-                .all(|feature| { feature.input_class.as_deref() == Some("moCosmeticThread_c") })
-        );
+        assert!(histories[0]
+            .features
+            .iter()
+            .all(|feature| { feature.input_class.as_deref() == Some("moCosmeticThread_c") }));
     }
 }
 
@@ -17582,9 +17535,7 @@ fn feature_operation_code(
 
 fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     match (class, code) {
-        (Some("moRevolution_c"), 5 | 6 | 11 | 60 | 20_322 | 22_016) => {
-            Some(BooleanOp::NewBody)
-        }
+        (Some("moRevolution_c"), 5 | 6 | 11 | 60 | 20_322 | 22_016) => Some(BooleanOp::NewBody),
         (Some("moRevolution_c"), 8) => Some(BooleanOp::Join),
         (Some("moRevCut_c"), _) => Some(BooleanOp::Cut),
         _ => None,
@@ -17593,9 +17544,9 @@ fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
 
 fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     match (class, code) {
-        (Some("moExtrusion_c"), 1 | 4 | 82)
-        | (Some("moICE_c"), 6 | 21 | 0x3ee4_f8b5)
-        | (_, 3) => Some(BooleanOp::Join),
+        (Some("moExtrusion_c"), 1 | 4 | 82) | (Some("moICE_c"), 6 | 21 | 0x3ee4_f8b5) | (_, 3) => {
+            Some(BooleanOp::Join)
+        }
         (Some("moICE_c"), 1 | 2 | 5 | 7 | 10 | 14 | 15 | u32::MAX) | (_, 11) => {
             Some(BooleanOp::Cut)
         }
@@ -20451,9 +20402,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let Some(scalar) = lane
                 .scalars
                 .iter()
-                .filter(|scalar| {
-                    u64::try_from(offset).is_ok_and(|offset| scalar.offset > offset)
-                })
+                .filter(|scalar| u64::try_from(offset).is_ok_and(|offset| scalar.offset > offset))
                 .min_by_key(|scalar| scalar.offset)
             else {
                 continue;
@@ -20468,9 +20417,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .filter(|feature| feature.parameters.len() == 1)
                 .filter(|feature| {
                     feature.parameters.get(*name).is_some_and(|value| {
-                        crate::history::parse_dimension_length_mm(value).is_some_and(|value| {
-                            (value - scalar.value * 1000.0).abs() <= 1.0e-9
-                        })
+                        crate::history::parse_dimension_length_mm(value)
+                            .is_some_and(|value| (value - scalar.value * 1000.0).abs() <= 1.0e-9)
                     })
                 })
                 .collect::<Vec<_>>();
@@ -22829,8 +22777,8 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .filter_map(|record| {
                         let native = quantize(
                             Point2::new(
-                                record.3.0 as f64 * QUANTUM * NATIVE_TO_IR,
-                                record.3.1 as f64 * QUANTUM * NATIVE_TO_IR,
+                                record.3 .0 as f64 * QUANTUM * NATIVE_TO_IR,
+                                record.3 .1 as f64 * QUANTUM * NATIVE_TO_IR,
                             ),
                             QUANTUM,
                         );
@@ -23707,8 +23655,8 @@ fn typed_marker_relation_definition_in_sketch(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
-        ArcAngle90, ArcAngle180, ArcAngle270, AtIntersection, Coincident, Collinear, Concentric,
-        Coradial, EllipseAngle90, EllipseAngle180, EllipseAngle270, Equal, Fixed, Horizontal,
+        ArcAngle180, ArcAngle270, ArcAngle90, AtIntersection, Coincident, Collinear, Concentric,
+        Coradial, EllipseAngle180, EllipseAngle270, EllipseAngle90, Equal, Fixed, Horizontal,
         HorizontalPoints, MergePoints, Midpoint, Parallel, Perpendicular, Symmetric, Tangent,
         Vertical, VerticalPoints,
     };
@@ -23791,26 +23739,27 @@ fn typed_marker_relation_definition_in_sketch(
                 }
             };
             if let [entity] = entities.as_slice() {
-                let projected_kind = if matches!(kind, Horizontal | Vertical)
-                    && !sketch_entities.is_empty()
-                {
-                    let Some(SketchEntity {
-                        geometry: SketchGeometry::Line { start, end },
-                        ..
-                    }) = sketch_entities.iter().find(|candidate| candidate.id == *entity)
-                    else {
-                        return Some(native());
+                let projected_kind =
+                    if matches!(kind, Horizontal | Vertical) && !sketch_entities.is_empty() {
+                        let Some(SketchEntity {
+                            geometry: SketchGeometry::Line { start, end },
+                            ..
+                        }) = sketch_entities
+                            .iter()
+                            .find(|candidate| candidate.id == *entity)
+                        else {
+                            return Some(native());
+                        };
+                        let horizontal = same_dimension_length(start.v, end.v);
+                        let vertical = same_dimension_length(start.u, end.u);
+                        match (horizontal, vertical) {
+                            (true, false) => Horizontal,
+                            (false, true) => Vertical,
+                            _ => return Some(native()),
+                        }
+                    } else {
+                        kind
                     };
-                    let horizontal = same_dimension_length(start.v, end.v);
-                    let vertical = same_dimension_length(start.u, end.u);
-                    match (horizontal, vertical) {
-                        (true, false) => Horizontal,
-                        (false, true) => Vertical,
-                        _ => return Some(native()),
-                    }
-                } else {
-                    kind
-                };
                 if matches!(kind, Horizontal | Vertical)
                     && sketch_entities.is_empty()
                     && entity.0.contains("sketch-entity#relation-point:")
@@ -24836,24 +24785,9 @@ fn coordinate_centered_line_center(payload: &[u8], offset: usize) -> Option<[f64
     {
         return finite_coordinate_pair(payload, offset + 66);
     }
-    let direct = u16::from_le_bytes(
-        payload
-            .get(offset + 74..offset + 76)?
-            .try_into()
-            .ok()?,
-    );
-    let count = u16::from_le_bytes(
-        payload
-            .get(offset + 76..offset + 78)?
-            .try_into()
-            .ok()?,
-    );
-    let tagged = u16::from_le_bytes(
-        payload
-            .get(offset + 82..offset + 84)?
-            .try_into()
-            .ok()?,
-    );
+    let direct = u16::from_le_bytes(payload.get(offset + 74..offset + 76)?.try_into().ok()?);
+    let count = u16::from_le_bytes(payload.get(offset + 76..offset + 78)?.try_into().ok()?);
+    let tagged = u16::from_le_bytes(payload.get(offset + 82..offset + 84)?.try_into().ok()?);
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
@@ -26132,14 +26066,16 @@ fn legacy_code_five_or_six_selected_axis_endpoint_indices(
     offset: usize,
 ) -> Option<[u32; 2]> {
     let trailer_matches = match marker_native_code(payload, offset) {
-        Some(5) => matches!(
-            (
-                payload.get(offset + 84..offset + 88),
-                payload.get(offset + 88..offset + 92)
-            ),
-            (Some(first), Some(second))
-                if first != [0; 4] && second != [0; 4] && first != second
-        ) && payload.get(offset + 80..offset + 84) == Some(&[0; 4]),
+        Some(5) => {
+            matches!(
+                (
+                    payload.get(offset + 84..offset + 88),
+                    payload.get(offset + 88..offset + 92)
+                ),
+                (Some(first), Some(second))
+                    if first != [0; 4] && second != [0; 4] && first != second
+            ) && payload.get(offset + 80..offset + 84) == Some(&[0; 4])
+        }
         Some(6) => {
             payload.get(offset + 80..offset + 84) == Some(&[0x00, 0x00, 0x02, 0x00])
                 && payload.get(offset + 84..offset + 88) == Some(&[0; 4])
@@ -28993,10 +28929,9 @@ fn marker_entities_inner(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        LEGACY_SKETCH_MARKER, MarkerTransform, binary_relation_matches_evaluated_geometry,
-        bind_circle_dimension_centers, bind_circular_profile_by_dimension,
-        bind_detached_relation_drivers, bind_pattern_inputs, bind_sweep_adjacent_profiles,
-        closed_marker_profiles, compact_line_reference_direction,
+        binary_relation_matches_evaluated_geometry, bind_circle_dimension_centers,
+        bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
+        bind_sweep_adjacent_profiles, closed_marker_profiles, compact_line_reference_direction,
         dimensioned_circle_surface_transforms, dimensioned_circle_transform, fitted_marker_circle,
         implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
         marker_point_locus, owned_relation_parameters, profile_loci_by_marker,
@@ -29017,6 +28952,7 @@ mod profile_join_tests {
         unique_profile_line_point_locus, unique_profile_point_line_entity,
         unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
         unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
+        MarkerTransform, LEGACY_SKETCH_MARKER,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -29485,11 +29421,9 @@ mod profile_join_tests {
         assert_eq!(replacement_sketches.len(), 1);
         assert_eq!(replacement_sketches[0].id, expected_sketch);
         assert_eq!(replacement_entities.len(), 12);
-        assert!(
-            replacement_entities
-                .iter()
-                .all(|entity| entity.sketch == expected_sketch)
-        );
+        assert!(replacement_entities
+            .iter()
+            .all(|entity| entity.sketch == expected_sketch));
     }
 
     #[test]
@@ -29560,11 +29494,9 @@ mod profile_join_tests {
             };
         }
         resolve_connected_marker_arcs(&mut entities, 1.0e-8);
-        assert!(
-            entities[3..]
-                .iter()
-                .all(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
-        );
+        assert!(entities[3..]
+            .iter()
+            .all(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. })));
         assert_eq!(entities[3].endpoint_refs, ["p0", "p1"]);
         assert_eq!(entities[4].endpoint_refs, ["p1", "p2"]);
         entities.push(SketchEntity {
@@ -33742,11 +33674,9 @@ mod profile_join_tests {
         assert!(transform.swap);
         assert_eq!(transform.u_sign, 1);
         assert_eq!(transform.v_sign, 1);
-        assert!(
-            markers
-                .into_iter()
-                .all(|point| loci.contains(&transform.apply(point).unwrap()))
-        );
+        assert!(markers
+            .into_iter()
+            .all(|point| loci.contains(&transform.apply(point).unwrap())));
     }
 
     #[test]
@@ -36056,10 +35986,10 @@ mod source_less_lane_tests {
     };
 
     use super::{
-        GeneratedMarkerRelation, append_coordinate_marker, append_coordinate_marker_link,
-        append_generated_sketch_markers, append_reference_marker, assemble_source_less_lanes,
-        coordinate_marker_local_links, generated_marker_relations, marker_local_links,
-        validate_source_less_constraints,
+        append_coordinate_marker, append_coordinate_marker_link, append_generated_sketch_markers,
+        append_reference_marker, assemble_source_less_lanes, coordinate_marker_local_links,
+        generated_marker_relations, marker_local_links, validate_source_less_constraints,
+        GeneratedMarkerRelation,
     };
 
     fn generated_sketch() -> Sketch {
@@ -36207,12 +36137,10 @@ mod source_less_lane_tests {
             coordinate_marker_local_links(&payload, 0),
             Some((vec![2, 3], 0x8386))
         );
-        assert!(
-            append_coordinate_marker_link(&mut payload, 1, 4)
-                .unwrap_err()
-                .to_string()
-                .contains("exceeds two reverse relations")
-        );
+        assert!(append_coordinate_marker_link(&mut payload, 1, 4)
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds two reverse relations"));
     }
 
     #[test]
@@ -36348,12 +36276,10 @@ mod source_less_lane_tests {
             second: SketchLocus::Entity(SketchEntityId("first".into())),
             axis: SketchEntityId("axis".into()),
         };
-        assert!(
-            validate_source_less_constraints(&ir)
-                .unwrap_err()
-                .to_string()
-                .contains("repeats one locus")
-        );
+        assert!(validate_source_less_constraints(&ir)
+            .unwrap_err()
+            .to_string()
+            .contains("repeats one locus"));
     }
 }
 

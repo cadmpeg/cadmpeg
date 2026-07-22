@@ -821,9 +821,6 @@ mod tests {
             parasolid_modeler_generation("SCH_3101284_31100_13006"),
             Some(31)
         );
-        assert_eq!(
-            parasolid_modeler_generation("SCH_SW_33103_11000"),
-            Some(33)
-        );
+        assert_eq!(parasolid_modeler_generation("SCH_SW_33103_11000"), Some(33));
     }
 }
