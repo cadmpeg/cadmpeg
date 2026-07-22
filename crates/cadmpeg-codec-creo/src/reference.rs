@@ -379,6 +379,46 @@ fn conic_local_system(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
         .then(|| values.try_into().expect("twelve bounded conic frame slots"))
 }
 
+fn named_conic_local_system(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    cache: &ScalarCache,
+) -> Option<(usize, Option<[f64; 12]>)> {
+    const TERMINATOR: &[u8] = &[0xf2, crate::psb::token::ENTITY_REF];
+    const MAX_FRAME_BYTES: usize = 12 * 9;
+    let mut marker_count = 0;
+    let mut only_marker = 0;
+    let mut complete_frame = None;
+    let mut competing_frame = false;
+    for candidate in start..end {
+        if data.get(candidate..candidate + TERMINATOR.len()) != Some(TERMINATOR) {
+            continue;
+        }
+        marker_count += 1;
+        only_marker = candidate;
+        if candidate - start <= MAX_FRAME_BYTES {
+            if let Some(frame) = conic_local_system(&data[start..candidate], cache) {
+                competing_frame |= complete_frame.is_some();
+                complete_frame = Some((candidate, frame));
+            }
+        }
+    }
+    if !competing_frame {
+        if let Some(frame) = complete_frame {
+            return Some((frame.0, Some(frame.1)));
+        }
+    }
+    match marker_count {
+        0 => Some((end, conic_local_system(&data[start..end], cache))),
+        1 => Some((
+            only_marker,
+            conic_local_system(&data[start..only_marker], cache),
+        )),
+        _ => None,
+    }
+}
+
 /// Decode the named entity that establishes each `ent_list(conic)` schema.
 ///
 /// The coefficients and parameter fields remain stored conic semantics; this
@@ -504,13 +544,12 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
             continue;
         }
         let local_start = local_opener + 3;
-        let local_end = find_in(
-            payload,
-            &[0xf2, crate::psb::token::ENTITY_REF],
-            local_start,
-            block_end,
-        )
-        .unwrap_or(block_end);
+        let Some((local_end, local_system)) =
+            named_conic_local_system(payload, local_start, block_end, &cache)
+        else {
+            search = block_end.max(fields_start);
+            continue;
+        };
         if !coefficient_1.is_finite()
             || !coefficient_2.is_finite()
             || next_conic_field(payload, local_end, block_end).is_some()
@@ -528,7 +567,7 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
             parameter_end,
             coefficient_1,
             coefficient_2,
-            local_system: conic_local_system(&payload[local_start..local_end], &cache),
+            local_system,
             body: payload[id_label + CONIC_FIELD_HEADERS[0].len()..local_end].to_vec(),
             offset,
         });
@@ -1061,6 +1100,37 @@ mod tests {
             \xf2\xf7\x0e\xe3";
 
         assert_eq!(named_conics(payload).len(), 1);
+    }
+
+    #[test]
+    fn named_conic_local_system_ignores_a_terminator_inside_an_ieee_coordinate() {
+        let payload = b"ent_list(conic)\0\
+            \xe0\x01id\0\x2a\xe0\x01type\0\x1e\xe0\x01flip\0\x01\
+            \xe0\x02end1\0\xf8\x03\xe4\x0f\x0f\
+            \xe0\x02end2\0\xf8\x03\x43\xf0\x00\x0f\x0f\
+            \xe0\x02c1\0\x43\xf0\x00\xe0\x02c2\0\xe4\
+            \xe0\x02local_sys\0\xf9\x04\x03\
+            \x32\xf2\xf7\0\0\0\0\0\x0f\x0f\x0f\x0f\x0f\x0f\x0f\x0f\x0f\x0f\x0f\
+            \xf2\xf7\x0e\xe3";
+
+        let decoded = named_conics(payload);
+        let [conic] = decoded.as_slice() else {
+            panic!("one conic")
+        };
+        assert!(conic.local_system.is_some());
+        assert!(conic.body.ends_with(&[0x0f; 11]));
+    }
+
+    #[test]
+    fn named_conic_withholds_an_ambiguous_local_system_boundary() {
+        let payload = b"ent_list(conic)\0\
+            \xe0\x01id\0\x2a\xe0\x01type\0\x1e\xe0\x01flip\0\x01\
+            \xe0\x02end1\0\xf8\x03\xe4\x0f\x0f\
+            \xe0\x02end2\0\xf8\x03\x43\xf0\x00\x0f\x0f\
+            \xe0\x02c1\0\x43\xf0\x00\xe0\x02c2\0\xe4\
+            \xe0\x02local_sys\0\xf9\x04\x03\xaa\xf2\xf7\xbb\xf2\xf7\x0e\xe3";
+
+        assert!(named_conics(payload).is_empty());
     }
 
     #[test]
