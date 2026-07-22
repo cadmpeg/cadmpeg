@@ -2232,59 +2232,26 @@ fn project_design_history(
         &mut semantic_projection,
         &crate::tessellation::scene_feature_classes(scan),
     );
-    crate::resolved_features::enrich_history_extrusion_terminations(
+    crate::history::enrich_history_semantic(
         &mut semantic_projection,
         lanes,
+        pmi_dimensions,
+        crate::history::HistoryEnrichment::Read,
     );
-    crate::resolved_features::enrich_history_combine_selections(&mut semantic_projection, lanes);
-    crate::resolved_features::enrich_history_sweep_paths(&mut semantic_projection, lanes);
-    crate::resolved_features::enrich_history_sketch_block_references(
-        &mut semantic_projection,
-        lanes,
-    );
-    crate::resolved_features::enrich_history_parameters(&mut semantic_projection, lanes, true);
-    crate::resolved_features::enrich_history_hole_constructions(&mut semantic_projection, lanes);
-    crate::resolved_features::enrich_history_reference_planes(&mut semantic_projection, lanes);
-    crate::pmi::enrich_history_parameters(&mut semantic_projection, pmi_dimensions);
-    crate::history::apply_evaluated_parameters(&mut semantic_projection);
-    crate::resolved_features::enrich_history_reference_axes(&mut semantic_projection, lanes);
-    crate::resolved_features::enrich_history_revolution_inputs(&mut semantic_projection, lanes);
     ir.model.features = crate::history::project_features(&semantic_projection);
     crate::resolved_features::bind_pattern_inputs(
         &mut ir.model.features,
         &semantic_projection,
         lanes,
     );
-    crate::resolved_features::project_compact_body_selections(&mut ir.model.features, lanes);
-    crate::resolved_features::project_compact_combine_paths(
-        &mut ir.model.features,
-        &semantic_projection,
-        lanes,
-    );
-    crate::resolved_features::project_compact_edge_selections(&mut ir.model.features, lanes);
-    crate::resolved_features::project_compact_surface_selections(
-        &mut ir.model.features,
-        &semantic_projection,
-        lanes,
-    );
-    crate::resolved_features::project_surface_sweep_profiles(
-        &mut ir.model.features,
-        &semantic_projection,
-        lanes,
-    );
-    crate::resolved_features::project_helix_axes(
-        &mut ir.model.features,
-        &semantic_projection,
-        lanes,
-    );
-    crate::resolved_features::project_adjacent_extrusion_profiles(
+    crate::history::project_compact_and_generated(
         &mut ir.model.features,
         &semantic_projection,
         lanes,
     );
     ir.model.configurations = crate::history::project_configurations(&semantic_projection);
     let mut parameter_projection = histories.to_vec();
-    crate::resolved_features::enrich_history_parameters(&mut parameter_projection, lanes, false);
+    crate::history::enrich_history_parameters_values_only(&mut parameter_projection, lanes);
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters = crate::history::project_parameters(&parameter_projection);
     crate::history::project_configuration_design_states(ir, histories, lanes, pmi_dimensions);

@@ -7218,6 +7218,88 @@ pub fn configuration_feature_state_hash(configurations: &[DesignConfiguration]) 
     hash_debug(&states)
 }
 
+/// Which side of the codec drives the history-enrichment prefix.
+///
+/// The read (decode) path and the write-side reprojections run the same ordered
+/// choreography of native-lane enrichments, with one direction-specific step:
+/// the read path applies hole-construction enrichment, and the write and
+/// configuration-reprojection paths omit it. Any other divergence between the
+/// directions lives in the callers, around the shared calls below, not inside
+/// this prefix.
+#[derive(Clone, Copy)]
+pub(crate) enum HistoryEnrichment {
+    /// Decode path: includes `enrich_history_hole_constructions`.
+    Read,
+    /// Write path and configuration reprojection: omits hole constructions.
+    Write,
+}
+
+/// Semantic-projection mode of `resolved_features::enrich_history_parameters`
+/// (the historical `true` argument): projects parameters together with their
+/// downstream semantic feature inputs.
+pub(crate) fn enrich_history_parameters_semantic(
+    histories: &mut [FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+) {
+    crate::resolved_features::enrich_history_parameters(histories, lanes, true);
+}
+
+/// Parameter-only mode of `resolved_features::enrich_history_parameters` (the
+/// historical `false` argument): projects parameter values without the semantic
+/// feature-input projection.
+pub(crate) fn enrich_history_parameters_values_only(
+    histories: &mut [FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+) {
+    crate::resolved_features::enrich_history_parameters(histories, lanes, false);
+}
+
+/// The shared native-lane enrichment prefix, declared once for both codec
+/// directions. Runs the ordered extrusion-termination, combine, sweep-path,
+/// sketch-block, parameter, reference-plane, PMI, evaluated-parameter,
+/// reference-axis, and revolution-input enrichments; the read path additionally
+/// applies hole-construction enrichment (selected by `mode`).
+pub(crate) fn enrich_history_semantic(
+    histories: &mut [FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+    pmi_dimensions: &[crate::records::PmiDimension],
+    mode: HistoryEnrichment,
+) {
+    crate::resolved_features::enrich_history_extrusion_terminations(histories, lanes);
+    crate::resolved_features::enrich_history_combine_selections(histories, lanes);
+    crate::resolved_features::enrich_history_sweep_paths(histories, lanes);
+    crate::resolved_features::enrich_history_sketch_block_references(histories, lanes);
+    enrich_history_parameters_semantic(histories, lanes);
+    if matches!(mode, HistoryEnrichment::Read) {
+        crate::resolved_features::enrich_history_hole_constructions(histories, lanes);
+    }
+    crate::resolved_features::enrich_history_reference_planes(histories, lanes);
+    crate::pmi::enrich_history_parameters(histories, pmi_dimensions);
+    apply_evaluated_parameters(histories);
+    crate::resolved_features::enrich_history_reference_axes(histories, lanes);
+    crate::resolved_features::enrich_history_revolution_inputs(histories, lanes);
+}
+
+/// The shared compact/generated projection block, declared once for both codec
+/// directions. Applies the seven ordered projections that read, write, and
+/// configuration reprojection all run against a freshly projected feature list.
+/// Direction-specific operation and profile bindings (pattern inputs,
+/// sweep/revolution/extrusion operations, spatial sketches, tree-node restore)
+/// stay in each caller, around this block.
+pub(crate) fn project_compact_and_generated(
+    features: &mut [cadmpeg_ir::features::Feature],
+    projection: &[FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+) {
+    crate::resolved_features::project_compact_body_selections(features, lanes);
+    crate::resolved_features::project_compact_combine_paths(features, projection, lanes);
+    crate::resolved_features::project_compact_edge_selections(features, lanes);
+    crate::resolved_features::project_compact_surface_selections(features, projection, lanes);
+    crate::resolved_features::project_surface_sweep_profiles(features, projection, lanes);
+    crate::resolved_features::project_helix_axes(features, projection, lanes);
+    crate::resolved_features::project_adjacent_extrusion_profiles(features, projection, lanes);
+}
+
 /// Reproject configuration-local evaluated parameters and feature operations from native lanes.
 pub(crate) fn project_configuration_design_states(
     ir: &mut cadmpeg_ir::CadIr,
@@ -7230,7 +7312,7 @@ pub(crate) fn project_configuration_design_states(
     {
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let mut projection = histories.to_vec();
-        crate::resolved_features::enrich_history_parameters(&mut projection, scoped_lanes, true);
+        enrich_history_parameters_semantic(&mut projection, scoped_lanes);
         crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
         ir.model.configurations[configuration_index].parameter_values =
             project_parameters(&projection)
@@ -7239,47 +7321,15 @@ pub(crate) fn project_configuration_design_states(
                 .collect();
 
         let mut projection = histories.to_vec();
-        crate::resolved_features::enrich_history_extrusion_terminations(
+        enrich_history_semantic(
             &mut projection,
             scoped_lanes,
+            pmi_dimensions,
+            HistoryEnrichment::Write,
         );
-        crate::resolved_features::enrich_history_combine_selections(&mut projection, scoped_lanes);
-        crate::resolved_features::enrich_history_sweep_paths(&mut projection, scoped_lanes);
-        crate::resolved_features::enrich_history_sketch_block_references(
-            &mut projection,
-            scoped_lanes,
-        );
-        crate::resolved_features::enrich_history_parameters(&mut projection, scoped_lanes, true);
-        crate::resolved_features::enrich_history_reference_planes(&mut projection, scoped_lanes);
-        crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
-        apply_evaluated_parameters(&mut projection);
-        crate::resolved_features::enrich_history_reference_axes(&mut projection, scoped_lanes);
-        crate::resolved_features::enrich_history_revolution_inputs(&mut projection, scoped_lanes);
         let mut features = project_features(&projection);
         crate::resolved_features::bind_pattern_inputs(&mut features, &projection, scoped_lanes);
-        crate::resolved_features::project_compact_body_selections(&mut features, scoped_lanes);
-        crate::resolved_features::project_compact_combine_paths(
-            &mut features,
-            &projection,
-            scoped_lanes,
-        );
-        crate::resolved_features::project_compact_edge_selections(&mut features, scoped_lanes);
-        crate::resolved_features::project_compact_surface_selections(
-            &mut features,
-            &projection,
-            scoped_lanes,
-        );
-        crate::resolved_features::project_surface_sweep_profiles(
-            &mut features,
-            &projection,
-            scoped_lanes,
-        );
-        crate::resolved_features::project_helix_axes(&mut features, &projection, scoped_lanes);
-        crate::resolved_features::project_adjacent_extrusion_profiles(
-            &mut features,
-            &projection,
-            scoped_lanes,
-        );
+        project_compact_and_generated(&mut features, &projection, scoped_lanes);
         crate::resolved_features::bind_extrusion_operations(&mut features, histories, scoped_lanes);
         crate::resolved_features::bind_revolution_operations(
             &mut features,
@@ -7957,40 +8007,11 @@ fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
 ) -> Vec<cadmpeg_ir::features::Feature> {
     let mut histories = native.feature_histories.clone();
-    crate::resolved_features::enrich_history_extrusion_terminations(
+    enrich_history_semantic(
         &mut histories,
         &native.feature_input_lanes,
-    );
-    crate::resolved_features::enrich_history_combine_selections(
-        &mut histories,
-        &native.feature_input_lanes,
-    );
-    crate::resolved_features::enrich_history_sweep_paths(
-        &mut histories,
-        &native.feature_input_lanes,
-    );
-    crate::resolved_features::enrich_history_sketch_block_references(
-        &mut histories,
-        &native.feature_input_lanes,
-    );
-    crate::resolved_features::enrich_history_parameters(
-        &mut histories,
-        &native.feature_input_lanes,
-        true,
-    );
-    crate::resolved_features::enrich_history_reference_planes(
-        &mut histories,
-        &native.feature_input_lanes,
-    );
-    crate::pmi::enrich_history_parameters(&mut histories, &native.pmi_dimensions);
-    apply_evaluated_parameters(&mut histories);
-    crate::resolved_features::enrich_history_reference_axes(
-        &mut histories,
-        &native.feature_input_lanes,
-    );
-    crate::resolved_features::enrich_history_revolution_inputs(
-        &mut histories,
-        &native.feature_input_lanes,
+        &native.pmi_dimensions,
+        HistoryEnrichment::Write,
     );
     let mut features = project_features(&histories);
     crate::resolved_features::bind_pattern_inputs(
@@ -8003,39 +8024,7 @@ fn project_features_with_native_inputs(
         &histories,
         &native.feature_input_lanes,
     );
-    crate::resolved_features::project_compact_body_selections(
-        &mut features,
-        &native.feature_input_lanes,
-    );
-    crate::resolved_features::project_compact_combine_paths(
-        &mut features,
-        &histories,
-        &native.feature_input_lanes,
-    );
-    crate::resolved_features::project_compact_edge_selections(
-        &mut features,
-        &native.feature_input_lanes,
-    );
-    crate::resolved_features::project_compact_surface_selections(
-        &mut features,
-        &histories,
-        &native.feature_input_lanes,
-    );
-    crate::resolved_features::project_surface_sweep_profiles(
-        &mut features,
-        &histories,
-        &native.feature_input_lanes,
-    );
-    crate::resolved_features::project_helix_axes(
-        &mut features,
-        &histories,
-        &native.feature_input_lanes,
-    );
-    crate::resolved_features::project_adjacent_extrusion_profiles(
-        &mut features,
-        &histories,
-        &native.feature_input_lanes,
-    );
+    project_compact_and_generated(&mut features, &histories, &native.feature_input_lanes);
     crate::resolved_features::bind_revolution_operations(
         &mut features,
         &histories,
@@ -9271,11 +9260,7 @@ pub fn sync_neutral_features(
         .map(|feature| (feature.id.clone(), feature.parameters.clone()))
         .collect::<HashMap<_, _>>();
     let mut resolved_histories = native.feature_histories.clone();
-    crate::resolved_features::enrich_history_parameters(
-        &mut resolved_histories,
-        &native.feature_input_lanes,
-        true,
-    );
+    enrich_history_parameters_semantic(&mut resolved_histories, &native.feature_input_lanes);
     let resolved_parameter_names = resolved_histories
         .iter()
         .flat_map(|history| &history.features)
