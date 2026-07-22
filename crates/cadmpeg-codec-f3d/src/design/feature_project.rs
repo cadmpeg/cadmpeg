@@ -1040,6 +1040,35 @@ pub fn bind_sketch_feature_geometry(
     }
 }
 
+/// Construction-operand-group role integers used to select a single scoped
+/// group. Fusion serializes these as opaque tags; their semantics are
+/// unresolved (see `docs/formats/f3d-open-items.md`), so the names are neutral.
+const ROLE_0X4: u64 = 0x0000_0004_0000_0000;
+const ROLE_0X5: u64 = 0x0000_0005_0000_0000;
+const ROLE_0X10: u64 = 0x0000_0010_0000_0000;
+
+/// Return the unique non-empty construction operand group in `scope` carrying
+/// `role`. Yields `None` unless exactly one such group exists.
+fn single_operand_group<'a>(
+    groups: &'a [DesignConstructionOperandGroup],
+    scope: &DesignParameterScope,
+    role: u64,
+) -> Option<&'a DesignConstructionOperandGroup> {
+    let matching = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == native_stream(&scope.id)
+                && group.scope_record_index == scope.record_index
+                && group.role == role
+                && !group.members.is_empty()
+        })
+        .collect::<Vec<_>>();
+    let [group] = matching.as_slice() else {
+        return None;
+    };
+    Some(*group)
+}
+
 pub(crate) fn project_offset_faces(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
@@ -1066,18 +1095,7 @@ pub(crate) fn project_offset_faces(
         _ => return None,
     };
     let faces = direct_face_selection(scope, operands).or_else(|| {
-        let matching = groups
-            .iter()
-            .filter(|group| {
-                native_stream(&group.id) == native_stream(&scope.id)
-                    && group.scope_record_index == scope.record_index
-                    && group.role == 0x0000_0010_0000_0000
-                    && !group.members.is_empty()
-            })
-            .collect::<Vec<_>>();
-        let [group] = matching.as_slice() else {
-            return None;
-        };
+        let group = single_operand_group(groups, scope, ROLE_0X10)?;
         Some(cadmpeg_ir::features::FaceSelection::Native(
             group.id.clone(),
         ))
@@ -1102,18 +1120,7 @@ pub(crate) fn project_thicken(
         return None;
     };
     let faces = direct_face_selection(scope, operands).or_else(|| {
-        let matching = groups
-            .iter()
-            .filter(|group| {
-                native_stream(&group.id) == native_stream(&scope.id)
-                    && group.scope_record_index == scope.record_index
-                    && group.role == 0x0000_0005_0000_0000
-                    && !group.members.is_empty()
-            })
-            .collect::<Vec<_>>();
-        let [group] = matching.as_slice() else {
-            return None;
-        };
+        let group = single_operand_group(groups, scope, ROLE_0X5)?;
         Some(FaceSelection::Native(group.id.clone()))
     })?;
     Some(FeatureDefinition::Thicken {
@@ -1141,18 +1148,7 @@ pub(crate) fn project_shell(
         return None;
     };
     let removed_faces = direct_face_selection(scope, operands).or_else(|| {
-        let matching = groups
-            .iter()
-            .filter(|group| {
-                native_stream(&group.id) == native_stream(&scope.id)
-                    && group.scope_record_index == scope.record_index
-                    && group.role == 0x0000_0010_0000_0000
-                    && !group.members.is_empty()
-            })
-            .collect::<Vec<_>>();
-        let [group] = matching.as_slice() else {
-            return None;
-        };
+        let group = single_operand_group(groups, scope, ROLE_0X10)?;
         Some(FaceSelection::Native(group.id.clone()))
     })?;
     Some(FeatureDefinition::Shell {
@@ -1169,18 +1165,7 @@ fn project_move(
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
 
     let operation = scope.move_operation.as_ref()?;
-    let matching = groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == native_stream(&scope.id)
-                && group.scope_record_index == scope.record_index
-                && group.role == 0x0000_0004_0000_0000
-                && !group.members.is_empty()
-        })
-        .collect::<Vec<_>>();
-    let [group] = matching.as_slice() else {
-        return None;
-    };
+    let group = single_operand_group(groups, scope, ROLE_0X4)?;
     Some(FeatureDefinition::MoveBody {
         bodies: BodySelection::Native(group.id.clone()),
         translation: Vector3::new(
@@ -1199,18 +1184,7 @@ pub(crate) fn project_remove_body(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, FeatureDefinition};
 
-    let matching = groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == native_stream(&scope.id)
-                && group.scope_record_index == scope.record_index
-                && group.role == 0x0000_0004_0000_0000
-                && !group.members.is_empty()
-        })
-        .collect::<Vec<_>>();
-    let [group] = matching.as_slice() else {
-        return None;
-    };
+    let group = single_operand_group(groups, scope, ROLE_0X4)?;
     Some(FeatureDefinition::DeleteBody {
         bodies: BodySelection::Native(group.id.clone()),
         mode: BodyRetentionMode::DeleteSelected,
@@ -1282,7 +1256,7 @@ pub(crate) fn project_surface_stitch(
             u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
                 || group.record_index != input_references[ordinal * 2]
                 || group.members.as_slice() != [input_references[ordinal * 2 + 1]]
-                || group.role != 0x0000_0005_0000_0000
+                || group.role != ROLE_0X5
         })
     {
         return None;
@@ -2052,10 +2026,7 @@ pub(crate) fn project_fixed_loft(
         })
         .collect::<Vec<_>>();
     groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let body_count = groups
-        .iter()
-        .filter(|group| group.role == 0x4_0000_0000)
-        .count();
+    let body_count = groups.iter().filter(|group| group.role == ROLE_0X4).count();
     let (sections, guides, centerline) = match operation {
         DesignExtrudeOperation::Join if body_count == 1 => (
             groups
@@ -2080,7 +2051,7 @@ pub(crate) fn project_fixed_loft(
             if guided_profiles.len() == 2 {
                 let guides = groups
                     .iter()
-                    .filter(|group| group.role == 0x5_0000_0000)
+                    .filter(|group| group.role == ROLE_0X5)
                     .map(|group| {
                         resolved_loft_path(
                             group,
@@ -2113,8 +2084,8 @@ pub(crate) fn project_fixed_loft(
             } else if guided_profiles.is_empty() {
                 let role = if groups.iter().all(|group| group.role == 0x41_0000_0000) {
                     0x41_0000_0000
-                } else if groups.iter().all(|group| group.role == 0x5_0000_0000) {
-                    0x5_0000_0000
+                } else if groups.iter().all(|group| group.role == ROLE_0X5) {
+                    ROLE_0X5
                 } else {
                     return None;
                 };
@@ -2130,18 +2101,16 @@ pub(crate) fn project_fixed_loft(
             } else if guided_profiles.len() == 1
                 && groups
                     .iter()
-                    .all(|group| matches!(group.role, 0x43_0000_0000 | 0x5_0000_0000))
+                    .all(|group| matches!(group.role, 0x43_0000_0000 | ROLE_0X5))
             {
                 let point_ordinal = groups
                     .iter()
-                    .position(|group| group.role == 0x5_0000_0000 && group.members.len() == 1)?;
+                    .position(|group| group.role == ROLE_0X5 && group.members.len() == 1)?;
                 if !matches!(point_ordinal, 0) && point_ordinal + 1 != groups.len() {
                     return None;
                 }
                 if groups.iter().enumerate().any(|(ordinal, group)| {
-                    ordinal != point_ordinal
-                        && group.role == 0x5_0000_0000
-                        && group.members.len() == 1
+                    ordinal != point_ordinal && group.role == ROLE_0X5 && group.members.len() == 1
                 }) {
                     return None;
                 }
@@ -2261,7 +2230,7 @@ fn project_fixed_sweep(
         .collect::<Vec<_>>();
     let path = groups
         .iter()
-        .filter(|group| group.role == 0x5_0000_0000)
+        .filter(|group| group.role == ROLE_0X5)
         .collect::<Vec<_>>();
     let ([profile], [path]) = (profile.as_slice(), path.as_slice()) else {
         return None;
@@ -2300,7 +2269,7 @@ pub(crate) fn project_surface_patch(
             {
                 return None;
             }
-            (boundary_count, 0x0000_0004_0000_0000)
+            (boundary_count, ROLE_0X4)
         };
     let stream = native_stream(&scope.id)?;
     let groups = construction_groups
@@ -2360,7 +2329,7 @@ pub(crate) fn project_boundary_fill(
     let (tools, cells) = groups.split_first()?;
     if tools.scope_reference_ordinal != 0
         || tools.record_index != scope.reference_members[0]
-        || tools.role != 0x0000_0004_0000_0000
+        || tools.role != ROLE_0X4
         || cells.is_empty()
     {
         return None;
@@ -2374,7 +2343,7 @@ pub(crate) fn project_boundary_fill(
         if start >= end
             || group.record_index != scope.reference_members[start]
             || group.members.as_slice() != &scope.reference_members[start + 1..end]
-            || (index > 0 && group.role != 0x0000_0005_0000_0000)
+            || (index > 0 && group.role != ROLE_0X5)
         {
             return None;
         }
@@ -2411,7 +2380,7 @@ fn project_split(
     };
     if targets.scope_reference_ordinal != 2
         || targets.record_index != scope.reference_members[2]
-        || targets.role != 0x0000_0004_0000_0000
+        || targets.role != ROLE_0X4
         || targets.members.as_slice() != &scope.reference_members[3..4]
     {
         return None;
