@@ -62,8 +62,10 @@
 //! writing are not supported.
 //! Part attributes transfer as document attributes. The public submodules
 //! expose the lower-level container, stream, geometry, NURBS, intersection, and
-//! topology decoders; applications that need a complete IR entry point should
-//! use [`NxCodec`].
+//! topology decoders. The object-model extraction and attachment tier (record
+//! families, feature semantics, and IR writing) is crate-internal and reached
+//! only through the decode entry point. Applications that need a complete IR
+//! entry point should use [`NxCodec`].
 
 pub mod container;
 pub mod decode;
@@ -72,7 +74,7 @@ pub mod geometry;
 pub mod intersection;
 mod jt;
 mod jt_topology;
-pub mod native;
+pub(crate) mod native;
 pub mod nurbs;
 pub mod om;
 pub mod parasolid;

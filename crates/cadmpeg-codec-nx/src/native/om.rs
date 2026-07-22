@@ -134,6 +134,7 @@ pub struct Expression {
     /// Declared native unit.
     pub unit: ExpressionUnit,
     /// Exact serialized expression text.
+    #[allow(clippy::struct_field_names)]
     pub expression: String,
     /// Finite numeric value after context-free and dependency-graph evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
