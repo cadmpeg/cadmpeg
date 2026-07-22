@@ -4711,6 +4711,26 @@ fn feature_family(feature: &Feature, family: &str) -> bool {
     feature.xml_tag.eq_ignore_ascii_case(family)
 }
 
+/// Reject a neutral edit that retargets an existing native record to an
+/// operation family it did not originate in. A missing record (a freshly
+/// synthesized feature) always passes. The accepted native families are part of
+/// each feature type's write schema; centralizing them keeps the read
+/// classification and the write guard from drifting apart. The emitted
+/// `NotImplemented` message is byte-identical to the historical per-arm guard.
+fn require_same_family(
+    existing: Option<&Feature>,
+    feature_id: &FeatureId,
+    families: &[&str],
+) -> Result<(), CodecError> {
+    if existing.is_some_and(|record| !families.iter().any(|family| feature_family(record, family)))
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {feature_id} changes operation family"
+        )));
+    }
+    Ok(())
+}
+
 fn feature_input_class(feature: &Feature, class: NativeClassKind) -> bool {
     feature
         .input_class
@@ -9591,15 +9611,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "ReferencePlane"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(existing.as_deref(), &feature.id, &["ReferencePlane"])?;
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Origin".into(), format_point3_mm(*origin));
                 properties.insert("Normal".into(), format_vector3(*normal));
@@ -9696,14 +9708,11 @@ pub fn sync_neutral_features(
                             feature.id
                         ))
                     })?;
-                if existing.as_deref().is_some_and(|record| {
-                    !feature_family(record, "TrimSurface") && !feature_family(record, "SurfaceTrim")
-                }) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(
+                    existing.as_deref(),
+                    &feature.id,
+                    &["TrimSurface", "SurfaceTrim"],
+                )?;
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Faces".into(), faces);
                 properties.insert("Tool".into(), tool);
@@ -9733,15 +9742,11 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
-                if existing.as_deref().is_some_and(|record| {
-                    !feature_family(record, "ExtendSurface")
-                        && !feature_family(record, "SurfaceExtend")
-                }) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(
+                    existing.as_deref(),
+                    &feature.id,
+                    &["ExtendSurface", "SurfaceExtend"],
+                )?;
                 if !distance.0.is_finite() || distance.0 <= 0.0 {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has an invalid surface extension",
@@ -9784,15 +9789,11 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
-                if existing.as_deref().is_some_and(|record| {
-                    !feature_family(record, "RuledSurface")
-                        && !feature_family(record, "SurfaceRuled")
-                }) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(
+                    existing.as_deref(),
+                    &feature.id,
+                    &["RuledSurface", "SurfaceRuled"],
+                )?;
                 let (mode_name, direction, distance) = match mode {
                     RuledSurfaceMode::Normal { distance } => ("Normal", None, *distance),
                     RuledSurfaceMode::Tangent { distance } => ("Tangent", None, *distance),
@@ -9851,15 +9852,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "ReferenceAxis"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(existing.as_deref(), &feature.id, &["ReferenceAxis"])?;
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Origin".into(), format_point3_mm(*origin));
                 properties.insert("Direction".into(), format_vector3(*direction));
@@ -9884,15 +9877,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "ReferencePoint"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(existing.as_deref(), &feature.id, &["ReferencePoint"])?;
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Position".into(), format_point3_mm(*position));
                 (
@@ -9918,15 +9903,11 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if existing.as_deref().is_some_and(|record| {
-                    !feature_family(record, "CoordinateSystem")
-                        && !feature_family(record, "ReferenceCoordinateSystem")
-                }) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(
+                    existing.as_deref(),
+                    &feature.id,
+                    &["CoordinateSystem", "ReferenceCoordinateSystem"],
+                )?;
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Origin".into(), format_point3_mm(*origin));
                 properties.insert("XAxis".into(), format_vector3(*x_axis));
@@ -9964,15 +9945,11 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if existing.as_deref().is_some_and(|record| {
-                    !feature_family(record, "EquationDrivenCurve")
-                        && !feature_family(record, "EquationCurve")
-                }) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(
+                    existing.as_deref(),
+                    &feature.id,
+                    &["EquationDrivenCurve", "EquationCurve"],
+                )?;
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Parameter".into(), parameter.clone());
                 properties.insert("XEquation".into(), x_expression.clone());
@@ -10011,15 +9988,11 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
-                if existing.as_deref().is_some_and(|record| {
-                    !feature_family(record, "ProjectedCurve")
-                        && !feature_family(record, "ProjectionCurve")
-                }) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(
+                    existing.as_deref(),
+                    &feature.id,
+                    &["ProjectedCurve", "ProjectionCurve"],
+                )?;
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Source".into(), source);
                 properties.insert("TargetFaces".into(), target_faces);
@@ -10051,15 +10024,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "CompositeCurve"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(existing.as_deref(), &feature.id, &["CompositeCurve"])?;
                 let segments = segments
                     .iter()
                     .map(|segment| {
@@ -10199,15 +10164,7 @@ pub fn sync_neutral_features(
                 mode,
                 depth,
             } => {
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Wrap"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(existing.as_deref(), &feature.id, &["Wrap"])?;
                 let profile =
                     profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
                         .ok_or_else(|| {
@@ -10269,15 +10226,7 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Sketch { space, .. } => {
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Sketch"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(existing.as_deref(), &feature.id, &["Sketch"])?;
                 (
                     existing.as_deref().map_or_else(
                         || match space {
@@ -10308,15 +10257,7 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::SpatialSketch { .. } => {
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Sketch"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(existing.as_deref(), &feature.id, &["Sketch"])?;
                 (
                     "3DSketch".into(),
                     existing
@@ -10944,15 +10885,7 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "OffsetSurface"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(existing.as_deref(), &feature.id, &["OffsetSurface"])?;
                 if !distance.0.is_finite() {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has a non-finite surface offset",
@@ -10986,14 +10919,7 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
-                if existing.as_deref().is_some_and(|record| {
-                    !feature_family(record, "KnitSurface") && !feature_family(record, "Knit")
-                }) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(existing.as_deref(), &feature.id, &["KnitSurface", "Knit"])?;
                 let mut parameters = existing
                     .as_deref()
                     .map(|record| record.parameters.clone())
@@ -11042,15 +10968,11 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
-                if existing.as_deref().is_some_and(|record| {
-                    !feature_family(record, "FilledSurface")
-                        && !feature_family(record, "FillSurface")
-                }) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(
+                    existing.as_deref(),
+                    &feature.id,
+                    &["FilledSurface", "FillSurface"],
+                )?;
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Boundary".into(), boundary);
                 properties.insert("SupportFaces".into(), support_faces);
@@ -11179,15 +11101,11 @@ pub fn sync_neutral_features(
                 tools,
                 reverse,
             } => {
-                if existing.as_deref().is_some_and(|record| {
-                    !feature_family(record, "CutWithSurface")
-                        && !feature_family(record, "SurfaceCut")
-                }) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(
+                    existing.as_deref(),
+                    &feature.id,
+                    &["CutWithSurface", "SurfaceCut"],
+                )?;
                 let targets = body_selection_value(targets).ok_or_else(|| {
                     CodecError::Malformed(format!(
                         "SLDPRT feature {} has no surface-cut target bodies",
@@ -11411,14 +11329,11 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
-                if existing.as_deref().is_some_and(|record| {
-                    !feature_family(record, "MoveBody") && !feature_family(record, "MoveCopyBody")
-                }) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(
+                    existing.as_deref(),
+                    &feature.id,
+                    &["MoveBody", "MoveCopyBody"],
+                )?;
                 if ![translation.x, translation.y, translation.z]
                     .into_iter()
                     .all(f64::is_finite)
@@ -12226,15 +12141,7 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Rib { construction, op } => {
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Rib"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
+                require_same_family(existing.as_deref(), &feature.id, &["Rib"])?;
                 if existing.is_none()
                     && (construction.profile.is_none()
                         || construction.direction.is_none()
