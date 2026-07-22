@@ -25541,6 +25541,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         format: "creo".to_string(),
         container_only,
         geometry_transferred: has_transferred_geometry(ir),
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: summary.notes,
     }

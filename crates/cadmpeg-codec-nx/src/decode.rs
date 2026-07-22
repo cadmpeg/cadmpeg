@@ -1403,6 +1403,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
         format: "nx".to_string(),
         container_only: false,
         geometry_transferred: true,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: summary_notes(scan),
     }
@@ -1503,6 +1504,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         format: "nx".to_string(),
         container_only,
         geometry_transferred: false,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: summary_notes(scan),
     }

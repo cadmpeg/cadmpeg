@@ -207,6 +207,7 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<ProjectedDecode> {
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
+        coverage: std::collections::BTreeMap::new(),
         losses: vec![LossNote {
             category: LossCategory::Topology,
             severity: Severity::Blocking,
@@ -330,6 +331,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<ProjectedDecode> {
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses,
             notes: container::summarize(scan).notes,
         },
@@ -872,6 +874,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<ProjectedDecode>
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: if topology_transferred {
                 vec![LossNote {
                     category: LossCategory::Topology,
@@ -1795,6 +1798,7 @@ fn build_geometry_report(
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: container::summarize(scan).notes,
     }
@@ -1924,6 +1928,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         format: "catia".to_string(),
         container_only,
         geometry_transferred: false,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: summary.notes,
     }

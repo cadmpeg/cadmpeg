@@ -1913,6 +1913,7 @@ impl<'a> DecodeContext<'a> {
                 format: "rhino".to_string(),
                 container_only: false,
                 geometry_transferred: self.geometry_transferred,
+                coverage: std::collections::BTreeMap::new(),
                 losses,
                 notes,
             },

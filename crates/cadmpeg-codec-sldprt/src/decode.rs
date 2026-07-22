@@ -803,6 +803,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         format: "sldprt".to_string(),
         container_only: false,
         geometry_transferred: true,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: container::summarize(scan).notes,
     }
@@ -1240,6 +1241,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         format: "sldprt".to_string(),
         container_only,
         geometry_transferred: false,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: summary.notes,
     }

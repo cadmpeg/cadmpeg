@@ -94,6 +94,15 @@ pub struct DecodeReport {
     pub container_only: bool,
     /// Whether the decoder transferred B-rep geometry into the IR.
     pub geometry_transferred: bool,
+    /// Decode-coverage counts keyed by measure name (sorted).
+    ///
+    /// Records how much of each decoded population the run resolved,
+    /// transferred, dropped, or found ambiguous. Mirrors the
+    /// [`ExportReport::entity_counts`] idiom: typed `usize` census values
+    /// about what the decode did, kept distinct from container facts about
+    /// the source file (which live in the IR source metadata).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub coverage: BTreeMap<String, usize>,
     /// Explicit loss notes.
     pub losses: Vec<LossNote>,
     /// Free-form informational notes (e.g. container findings).

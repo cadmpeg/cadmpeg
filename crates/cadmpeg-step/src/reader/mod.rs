@@ -68,6 +68,7 @@ fn decode_exchange_mode(
         format: "step".into(),
         container_only: options.container_only,
         geometry_transferred: false,
+        coverage: std::collections::BTreeMap::new(),
         losses: Vec::new(),
         notes: exchange
             .references
