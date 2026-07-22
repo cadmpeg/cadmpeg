@@ -22,7 +22,7 @@ fn validate_ir(ir: &CadIr, losses: Vec<cadmpeg_ir::LossNote>) -> ValidationRepor
     if ir.native.namespace("f3d").is_some() {
         report
             .findings
-            .extend(cadmpeg_codec_f3d::validate_native(ir));
+            .extend(cadmpeg_codec_f3d::validate::validate_native(ir));
     }
     if ir.native.namespace("sldprt").is_some() {
         report

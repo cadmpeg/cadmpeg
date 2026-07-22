@@ -6494,7 +6494,7 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
         .find(|coedge| coedge.pcurve.is_some())
         .expect("generated coedge with pcurve");
     assert!(pcurve_coedge.pcurve_parameter_range.is_some());
-    assert!(crate::validate_native(&round_trip.ir).is_empty());
+    assert!(crate::validate::validate_native(&round_trip.ir).is_empty());
 }
 
 #[test]
@@ -7570,7 +7570,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
     }));
-    assert!(crate::validate_native(&round_trip.ir).is_empty());
+    assert!(crate::validate::validate_native(&round_trip.ir).is_empty());
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.token == "-1"
             && tag.design_references == [511]
@@ -8549,16 +8549,18 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             },
         ]
     );
-    assert!(crate::validate_native(&round_trip.ir).is_empty());
+    assert!(crate::validate::validate_native(&round_trip.ir).is_empty());
 
     let mut inconsistent = round_trip.ir.clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0]
         .resolved_members
         .swap(0, 1);
-    assert!(crate::validate_native(&inconsistent).iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
-            && finding.message.contains("typed operands disagree")
-    }));
+    assert!(crate::validate::validate_native(&inconsistent)
+        .iter()
+        .any(|finding| {
+            finding.check == cadmpeg_ir::Check::NativeLinks
+                && finding.message.contains("typed operands disagree")
+        }));
 
     let mut points = native.sketch_points.clone();
     let mut curves = native.sketch_curve_identities.clone();
@@ -9022,7 +9024,7 @@ fn validation_rejects_wrong_sketch_constraint_kind_with_equal_cardinality() {
         relation.id.clone()
     };
 
-    let findings = crate::validate_native(&ir);
+    let findings = crate::validate::validate_native(&ir);
     assert!(findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::ReferentialIntegrity
             && finding.entity.as_deref() == Some(relation_id.as_str())
@@ -9053,7 +9055,7 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
         )
     };
 
-    let findings = crate::validate_native(&ir);
+    let findings = crate::validate::validate_native(&ir);
     assert!(findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some(point_id.as_str())
@@ -9091,12 +9093,14 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
         )
     };
 
-    assert!(!crate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
-            && (finding.entity.as_deref() == Some(point_id.as_str())
-                || finding.entity.as_deref() == Some(curve_id.as_str()))
-            && finding.message.contains("persistent identity")
-    }));
+    assert!(
+        !crate::validate::validate_native(&ir).iter().any(|finding| {
+            finding.check == cadmpeg_ir::Check::NativeLinks
+                && (finding.entity.as_deref() == Some(point_id.as_str())
+                    || finding.entity.as_deref() == Some(curve_id.as_str()))
+                && finding.message.contains("persistent identity")
+        })
+    );
 }
 
 #[test]
@@ -9113,7 +9117,7 @@ fn validation_rejects_aliased_sketch_geometry_records() {
         native.sketch_curve_identities[0].id.clone()
     };
 
-    assert!(crate::validate_native(&ir).iter().any(|finding| {
+    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some(curve_id.as_str())
             && finding
@@ -9143,7 +9147,7 @@ fn validation_rejects_duplicate_design_entity_suffixes() {
         id
     };
 
-    assert!(crate::validate_native(&ir).iter().any(|finding| {
+    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some(duplicate_id.as_str())
             && finding.message.contains("entity suffix is duplicated")
@@ -9179,10 +9183,10 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
         evaluated_value_offset: 234,
     };
     f3d_native_mut(&mut ir).design_parameters.push(parameter);
-    assert!(crate::validate_native(&ir).is_empty());
+    assert!(crate::validate::validate_native(&ir).is_empty());
 
     f3d_native_mut(&mut ir).design_parameters[0].prefix_value = 7;
-    assert!(crate::validate_native(&ir).iter().any(|finding| {
+    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some("generated:design-parameter#0")
             && finding.message.contains("family discriminator")
@@ -9194,7 +9198,7 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
         native.design_parameters[0].kind = crate::records::DesignParameterKind::Feature;
         native.design_parameters[0].owner_record_index = Some(1234);
     }
-    assert!(crate::validate_native(&ir).iter().any(|finding| {
+    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some("generated:design-parameter#0")
     }));
@@ -9320,7 +9324,7 @@ fn validation_requires_one_exact_extrude_profile_group() {
     let profile_message = |finding: &cadmpeg_ir::Finding| {
         finding.message == "Fusion Design Extrude profile conflicts with its profile operand group"
     };
-    let findings = crate::validate_native(&ir);
+    let findings = crate::validate::validate_native(&ir);
     assert!(!findings.iter().any(profile_message));
     assert!(!findings
         .iter()
@@ -9329,12 +9333,16 @@ fn validation_requires_one_exact_extrude_profile_group() {
     f3d_native_mut(&mut ir)
         .design_construction_operand_groups
         .push(group);
-    assert!(crate::validate_native(&ir).iter().any(profile_message));
+    assert!(crate::validate::validate_native(&ir)
+        .iter()
+        .any(profile_message));
 
     f3d_native_mut(&mut ir)
         .design_construction_operand_groups
         .clear();
-    assert!(crate::validate_native(&ir).iter().any(profile_message));
+    assert!(crate::validate::validate_native(&ir)
+        .iter()
+        .any(profile_message));
 }
 
 #[test]
