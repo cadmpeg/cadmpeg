@@ -10,6 +10,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   affine offset, have unspecified normalization semantics.
 - Curve-equation `local_sys f9 04 03` inherited-slot transitions other than
   the defined rank-two body are unspecified.
+- `crv_pnt_arr f9 02 04` inherited-slot bodies outside the direct eight-slot
+  pcurve form have unspecified slot transitions.
 - DICT sign lattices outside the defined scalar lanes are unspecified.
 - `double_xar` slot bodies other than the defined literal and recursive
   placeholder images are unspecified, including variable-length `e5` forms.

@@ -6116,9 +6116,9 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
 fn scan_decodes_labeled_prototype_pcurve_uvs() {
     let mut payload = visibgeom_payload(0, 0);
     payload.extend_from_slice(b"crv_id\0\x2c type\0\x00 crv_pnt_arr\0\xf9\x02\x04");
-    payload.extend_from_slice(&[0x0f, 0xe4]);
+    payload.extend_from_slice(&[0x12, 0xe4]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f]);
+    payload.extend_from_slice(&[0x12, 0xe4, 0x12]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4]);
     payload.extend_from_slice(b"topol_ref_data\0");
@@ -6129,6 +6129,27 @@ fn scan_decodes_labeled_prototype_pcurve_uvs() {
     assert_eq!(prototype.curve_id, 44);
     assert_eq!(prototype.face_0_endpoints, [[0.0, 1.0], [1.0, 0.0]]);
     assert_eq!(prototype.face_1_endpoints, [[3.0, 0.0], [3.0, 1.0]]);
+}
+
+#[test]
+fn scan_withholds_non_exact_labeled_prototype_pcurve_arrays() {
+    for tail in [
+        vec![0xff],
+        vec![0xe4, 0x12],
+        vec![0x18, 0xe7, 0x04, 0x2f, 0x08, 0x00, 0xe4, 0x18],
+    ] {
+        let mut payload = visibgeom_payload(0, 0);
+        payload.extend_from_slice(b"crv_id\0\x2c type\0\x00 crv_pnt_arr\0\xf9\x02\x04");
+        payload.extend_from_slice(&[0x12, 0xe4]);
+        payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+        payload.extend_from_slice(&[0x12, 0xe4, 0x12]);
+        payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+        payload.extend_from_slice(&tail);
+        payload.extend_from_slice(b"topol_ref_data\0");
+        let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+        assert!(scan.prototype_pcurves.is_empty());
+    }
 }
 
 #[test]

@@ -3378,17 +3378,25 @@ pub fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoint
         ) else {
             continue;
         };
-        let mut values = Vec::with_capacity(8);
         let mut cursor = header + 3;
+        let mut values = Vec::with_capacity(8);
         while cursor < prototype_end && values.len() < 8 {
-            if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, &cache) {
+            if payload[cursor] == 0x12
+                || (payload[cursor] == 0x18
+                    && values.len() == 7
+                    && (cursor + 1 == prototype_end || payload.get(cursor + 1) == Some(&0xe0)))
+            {
+                values.push(0.0);
+                cursor += 1;
+            } else if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, &cache) {
                 values.push(value);
                 cursor = next;
             } else {
-                cursor += 1;
+                break;
             }
         }
-        if values.len() == 8 {
+        let array_is_bounded = cursor == prototype_end || payload.get(cursor) == Some(&0xe0);
+        if values.len() == 8 && array_is_bounded {
             result.push(PrototypePcurveEndpoints {
                 curve_id,
                 face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],

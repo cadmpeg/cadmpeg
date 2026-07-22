@@ -1028,9 +1028,9 @@ form opaque spans, so the three span sets partition the complete body.
 
 ### 4.1 Pcurve endpoints
 
-A curve body consisting of exactly eight scalar slots and no references has
-this layout. A scalar token occupies one slot. A standalone `12` occupies one
-zero-valued slot. No other unclaimed byte is permitted. The values are
+A direct curve body consisting of exactly eight scalar slots and no references
+has this layout. A scalar token occupies one slot. A standalone `12` occupies
+one zero-valued slot. No other unclaimed byte is permitted. The values are
 parameter coordinates in the corresponding face spaces.
 
 | Slots  | Meaning                            |
@@ -1041,7 +1041,7 @@ parameter coordinates in the corresponding face spaces.
 | `6..7` | Endpoint B in face `F1` parameters |
 
 A bare terminal `18` supplies the final zero slot when seven preceding scalar
-slots are present. `crv_pnt_arr f9 02 04` stores the same layout.
+slots are present. A direct `crv_pnt_arr f9 02 04` body stores the same layout.
 
 ### 4.2 `fc` curve bodies
 
