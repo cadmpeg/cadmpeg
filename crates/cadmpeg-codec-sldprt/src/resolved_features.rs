@@ -6461,6 +6461,16 @@ fn compact_line_reference_direction(
         };
         let mut directions = Vec::new();
         if record.get(16..32) == Some(&[0; 16])
+            && record.get(88..104) == Some(&[0; 16])
+            && record.get(104..112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
+            && record.get(112..136) == Some(&[0; 24])
+        {
+            if let Some(direction) = direction_at(64) {
+                directions.push(direction);
+                return directions;
+            }
+        }
+        if record.get(16..32) == Some(&[0; 16])
             && record.get(104..112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
             && record.get(112..128) == Some(&[0; 16])
         {
@@ -27456,6 +27466,18 @@ mod profile_join_tests {
         assert_eq!(
             compact_line_reference_direction(&compact_payload, 0, compact_payload.len(), &[]),
             Some(Vector3::new(0.0, -1.0, 0.0))
+        );
+        let mut six_scalar_payload = vec![0; 160];
+        six_scalar_payload[..8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+        six_scalar_payload[12..16].copy_from_slice(&8000u32.to_le_bytes());
+        for (index, value) in [0.2, 0.27, -0.1, 0.0, 1.0, 0.0].into_iter().enumerate() {
+            let offset = 40 + index * 8;
+            six_scalar_payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        six_scalar_payload[104..112].copy_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
+        assert_eq!(
+            compact_line_reference_direction(&six_scalar_payload, 0, six_scalar_payload.len(), &[],),
+            Some(Vector3::new(0.0, 1.0, 0.0))
         );
         let short_handles = 200;
         compact_payload[short_handles..short_handles + 8]
