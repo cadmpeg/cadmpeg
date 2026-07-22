@@ -2949,3 +2949,1508 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(unused_imports)]
+    use std::io::{Cursor, Write};
+
+    use flate2::write::ZlibEncoder;
+    use flate2::Compression;
+
+    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+    use cadmpeg_ir::geometry::{
+        BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
+        ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::report::LossCategory;
+    use cadmpeg_ir::Exactness;
+
+    use crate::container;
+    use crate::parasolid::{self, StreamKind};
+    use crate::test_support::*;
+    use crate::NxCodec;
+
+    use super::*;
+
+    #[test]
+    fn nx_expression_parameter_references_preserve_formula_order() {
+        assert_eq!(
+            super::expression_parameter_names(
+                "max(p12, p3) + p12 + exp2 + p7_radius + p7_radius + p4bad + p5_"
+            ),
+            vec!["p12", "p3", "p12", "p7_radius", "p7_radius"]
+        );
+    }
+
+    #[test]
+    fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
+        let expression = |name: &str, formula: &str, value| super::Expression {
+            id: format!("nx:test:expression#{name}"),
+            object_id: None,
+            record: None,
+            declaration: None,
+            name: name.into(),
+            parameter_index: None,
+            qualifier: None,
+            unit: super::ExpressionUnit::Millimeter,
+            expression: formula.into(),
+            value,
+            source_entry: "part".into(),
+            source_table: "table".into(),
+            source_offset: 0,
+        };
+        let mut expressions = vec![
+            expression("p4", "3", Some(3.0)),
+            expression("p5", "p4bad + 2", None),
+            expression("p6", "p4_ + 2", None),
+        ];
+
+        super::evaluate_expression_graphs(&mut expressions);
+
+        assert_eq!(expressions[1].value, None);
+        assert_eq!(expressions[2].value, None);
+    }
+
+    #[test]
+    fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
+        let expression = |name: &str, formula: &str, value| super::Expression {
+            id: format!("nx:test:expression#{name}"),
+            object_id: None,
+            record: None,
+            declaration: None,
+            name: name.into(),
+            parameter_index: None,
+            qualifier: None,
+            unit: super::ExpressionUnit::Millimeter,
+            expression: formula.into(),
+            value,
+            source_entry: "part".into(),
+            source_table: "table".into(),
+            source_offset: 0,
+        };
+        let mut expressions = vec![
+            expression("p7", "3", Some(3.0)),
+            expression("p7_radius", "5", Some(5.0)),
+            expression("p8", "p7_radius * 2", None),
+            expression("p9", "p8 + p7", None),
+        ];
+
+        super::evaluate_expression_graphs(&mut expressions);
+
+        assert_eq!(expressions[2].value, Some(10.0));
+        assert_eq!(expressions[3].value, Some(13.0));
+    }
+
+    #[test]
+    fn nx_expression_graph_substitutes_dependencies_as_atomic_operands() {
+        let expression = |name: &str, formula: &str, value| super::Expression {
+            id: format!("nx:test:expression#{name}"),
+            object_id: None,
+            record: None,
+            declaration: None,
+            name: name.into(),
+            parameter_index: None,
+            qualifier: None,
+            unit: super::ExpressionUnit::Millimeter,
+            expression: formula.into(),
+            value,
+            source_entry: "part".into(),
+            source_table: "table".into(),
+            source_offset: 0,
+        };
+        let mut expressions = vec![
+            expression("p1", "-2", Some(-2.0)),
+            expression("p2", "p1^2", None),
+            expression("p3", "-p1^2", None),
+        ];
+
+        super::evaluate_expression_graphs(&mut expressions);
+
+        assert_eq!(expressions[1].value, Some(4.0));
+        assert_eq!(expressions[2].value, Some(-4.0));
+    }
+
+    #[test]
+    fn nx_expression_graph_scopes_names_to_their_expression_table() {
+        let expression =
+            |id: &str, table: &str, name: &str, formula: &str, value| super::Expression {
+                id: id.into(),
+                object_id: None,
+                record: None,
+                declaration: None,
+                name: name.into(),
+                parameter_index: None,
+                qualifier: None,
+                unit: super::ExpressionUnit::Millimeter,
+                expression: formula.into(),
+                value,
+                source_entry: "part".into(),
+                source_table: table.into(),
+                source_offset: 0,
+            };
+        let mut expressions = vec![
+            expression("a-p2", "table-a", "p2", "5", Some(5.0)),
+            expression("a-p3", "table-a", "p3", "p2 * 2", None),
+            expression("b-p2", "table-b", "p2", "7", Some(7.0)),
+            expression("b-p3", "table-b", "p3", "p2 * 2", None),
+        ];
+
+        super::evaluate_expression_graphs(&mut expressions);
+
+        assert_eq!(expressions[1].value, Some(10.0));
+        assert_eq!(expressions[3].value, Some(14.0));
+    }
+
+    #[test]
+    fn nx_expression_graph_rejects_every_duplicate_name_in_one_table() {
+        let expression =
+            |id: &str, table: &str, name: &str, formula: &str, value| super::Expression {
+                id: id.into(),
+                object_id: None,
+                record: None,
+                declaration: None,
+                name: name.into(),
+                parameter_index: None,
+                qualifier: None,
+                unit: super::ExpressionUnit::Millimeter,
+                expression: formula.into(),
+                value,
+                source_entry: "part".into(),
+                source_table: table.into(),
+                source_offset: 0,
+            };
+        let mut expressions = vec![
+            expression("a-p1-first", "table-a", "p1", "3", Some(3.0)),
+            expression("a-p1-second", "table-a", "p1", "5", Some(5.0)),
+            expression("a-p2", "table-a", "p2", "p1 * 2", None),
+            expression("b-p1", "table-b", "p1", "7", Some(7.0)),
+            expression("b-p2", "table-b", "p2", "p1 * 2", None),
+        ];
+
+        super::evaluate_expression_graphs(&mut expressions);
+
+        assert_eq!(expressions[0].value, None);
+        assert_eq!(expressions[1].value, None);
+        assert_eq!(expressions[2].value, None);
+        assert_eq!(expressions[3].value, Some(7.0));
+        assert_eq!(expressions[4].value, Some(14.0));
+    }
+
+    #[test]
+    fn nx_formula_dependencies_resolve_to_section_parameters() {
+        let expression = |key: u32,
+                          name: &str,
+                          index: u32,
+                          qualifier: Option<&str>,
+                          text: &str,
+                          value: Option<f64>| super::Expression {
+            id: format!("nx:test:expression#{key}"),
+            object_id: Some(key),
+            record: None,
+            declaration: None,
+            name: name.into(),
+            parameter_index: Some(index),
+            qualifier: qualifier.map(str::to_string),
+            unit: super::ExpressionUnit::Millimeter,
+            expression: text.into(),
+            value,
+            source_entry: "/Root/UG_PART/UG_PART".into(),
+            source_table: "table".into(),
+            source_offset: u64::from(key),
+        };
+        let expressions = [
+            expression(20, "p2", 2, None, "5", Some(5.0)),
+            expression(21, "p2_radius", 2, Some("radius"), "7", Some(7.0)),
+            expression(90, "p9", 9, None, "p2_radius * 2 + p2_radius", None),
+        ];
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        crate::native::attach::attach_expression_parameters(
+            &mut ir,
+            &expressions,
+            &[],
+            &[],
+            &mut annotations,
+        );
+
+        assert_eq!(ir.model.parameters[2].value, None);
+        assert_eq!(
+            ir.model.parameters[2].dependencies,
+            vec![ir.model.parameters[1].id.clone()]
+        );
+    }
+
+    #[test]
+    fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
+        let expression = |key: u32, name: &str, text: &str| super::Expression {
+            id: format!("nx:test:expression#{key}"),
+            object_id: Some(key),
+            record: None,
+            declaration: None,
+            name: name.into(),
+            parameter_index: Some(key),
+            qualifier: None,
+            unit: super::ExpressionUnit::Millimeter,
+            expression: text.into(),
+            value: None,
+            source_entry: "/Root/UG_PART/UG_PART".into(),
+            source_table: "table".into(),
+            source_offset: u64::from(key),
+        };
+        let expressions = [
+            expression(20, "p2", "5"),
+            expression(21, "p2", "7"),
+            expression(90, "p9", "p2 * 2"),
+        ];
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        crate::native::attach::attach_expression_parameters(
+            &mut ir,
+            &expressions,
+            &[],
+            &[],
+            &mut annotations,
+        );
+
+        assert!(ir.model.parameters[2].dependencies.is_empty());
+    }
+
+    #[test]
+    fn nx_formula_dependencies_resolve_within_the_expression_table() {
+        let expression =
+            |id: &str, table: &str, name: &str, text: &str, source_offset: u64| super::Expression {
+                id: format!("nx:test:expression#{id}"),
+                object_id: None,
+                record: None,
+                declaration: None,
+                name: name.into(),
+                parameter_index: None,
+                qualifier: None,
+                unit: super::ExpressionUnit::Millimeter,
+                expression: text.into(),
+                value: None,
+                source_entry: "/Root/UG_PART/UG_PART".into(),
+                source_table: table.into(),
+                source_offset,
+            };
+        let expressions = [
+            expression("a-p3", "table-a", "p3", "p2 * 2", 40),
+            expression("b-p3", "table-b", "p3", "p2 * 2", 10),
+            expression("a-p2", "table-a", "p2", "5", 30),
+            expression("b-p2", "table-b", "p2", "7", 20),
+        ];
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+
+        crate::native::attach::attach_expression_parameters(
+            &mut ir,
+            &expressions,
+            &[],
+            &[],
+            &mut annotations,
+        );
+
+        assert_eq!(ir.model.features.len(), 2);
+        assert_eq!(ir.model.features[0].id.0, "table-b:feature#equations");
+        assert_eq!(ir.model.features[0].ordinal, 0);
+        assert_eq!(ir.model.features[1].id.0, "table-a:feature#equations");
+        assert_eq!(ir.model.features[1].ordinal, 1);
+        assert_eq!(
+            ir.model
+                .parameters
+                .iter()
+                .map(|parameter| (parameter.name.as_str(), parameter.ordinal))
+                .collect::<Vec<_>>(),
+            [("p2", 0), ("p3", 1), ("p2", 0), ("p3", 1)]
+        );
+        assert_eq!(ir.model.parameters[1].owner, ir.model.parameters[0].owner);
+        assert_eq!(
+            ir.model.parameters[1].dependencies,
+            [ir.model.parameters[0].id.clone()]
+        );
+        assert_eq!(ir.model.parameters[3].owner, ir.model.parameters[2].owner);
+        assert_eq!(
+            ir.model.parameters[3].dependencies,
+            [ir.model.parameters[2].id.clone()]
+        );
+        assert_ne!(ir.model.parameters[1].owner, ir.model.parameters[3].owner);
+        for parameter in &mut ir.model.parameters {
+            parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::features::Length(1.0),
+            ));
+        }
+        assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+
+        let mut duplicate_name = ir.clone();
+        duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
+        assert_eq!(
+            crate::decode::incomplete_expression_parameters(&duplicate_name),
+            duplicate_name.model.parameters[..2]
+                .iter()
+                .map(|parameter| parameter.id.clone())
+                .collect()
+        );
+
+        let mut unevaluated = ir.clone();
+        unevaluated.model.parameters[1].value = None;
+        assert_eq!(
+            crate::decode::incomplete_expression_parameters(&unevaluated),
+            [unevaluated.model.parameters[1].id.clone()].into()
+        );
+
+        let mut operation_owned = unevaluated;
+        operation_owned.model.features[0].definition =
+            cadmpeg_ir::features::FeatureDefinition::Native {
+                kind: "TEST_OPERATION".into(),
+                properties: Default::default(),
+                parameters: Default::default(),
+            };
+        assert_eq!(
+            crate::decode::incomplete_expression_parameters(&operation_owned),
+            [operation_owned.model.parameters[1].id.clone()].into()
+        );
+    }
+
+    #[test]
+    fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
+        let expression = |id: &str, name: &str, text: &str, source_offset| super::Expression {
+            id: format!("nx:test:expression#{id}"),
+            object_id: None,
+            record: None,
+            declaration: None,
+            name: name.to_string(),
+            parameter_index: None,
+            qualifier: None,
+            unit: super::ExpressionUnit::Millimeter,
+            expression: text.to_string(),
+            value: None,
+            source_entry: "part".to_string(),
+            source_table: "table".to_string(),
+            source_offset,
+        };
+        let expressions = [
+            expression("p2", "p2", "p3 + 1", 10),
+            expression("p3", "p3", "p2 + 1", 20),
+        ];
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        crate::native::attach::attach_expression_parameters(
+            &mut ir,
+            &expressions,
+            &[],
+            &[],
+            &mut annotations,
+        );
+
+        assert_eq!(ir.model.parameters[0].expression, "p3 + 1");
+        assert_eq!(ir.model.parameters[1].expression, "p2 + 1");
+        assert!(ir
+            .model
+            .parameters
+            .iter()
+            .all(|parameter| parameter.dependencies.is_empty()));
+        assert_eq!(
+            crate::decode::incomplete_expression_parameters(&ir),
+            ir.model
+                .parameters
+                .iter()
+                .map(|parameter| parameter.id.clone())
+                .collect()
+        );
+        let mut losses = Vec::new();
+        crate::decode::append_design_intent_losses(&ir, &mut losses);
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("2 NX expression parameter(s)"));
+    }
+
+    #[test]
+    fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
+        let expression = |id: &str, name: &str, text: &str, source_offset| super::Expression {
+            id: format!("nx:test:expression#{id}"),
+            object_id: None,
+            record: None,
+            declaration: None,
+            name: name.to_string(),
+            parameter_index: None,
+            qualifier: None,
+            unit: super::ExpressionUnit::Millimeter,
+            expression: text.to_string(),
+            value: None,
+            source_entry: "part".to_string(),
+            source_table: "table".to_string(),
+            source_offset,
+        };
+        let expressions = [
+            expression("p2", "p2", "p3 + 1", 10),
+            expression("p3", "p3", "p2 + 1", 20),
+            expression("p5", "p5", "p4 * 2", 40),
+            expression("p4", "p4", "7", 30),
+        ];
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+
+        crate::native::attach::attach_expression_parameters(
+            &mut ir,
+            &expressions,
+            &[],
+            &[],
+            &mut annotations,
+        );
+
+        assert_eq!(
+            ir.model
+                .parameters
+                .iter()
+                .map(|parameter| parameter.name.as_str())
+                .collect::<Vec<_>>(),
+            ["p4", "p5", "p2", "p3"]
+        );
+        assert_eq!(
+            ir.model.parameters[1].dependencies,
+            [ir.model.parameters[0].id.clone()]
+        );
+        assert!(ir.model.parameters[2].dependencies.is_empty());
+        assert!(ir.model.parameters[3].dependencies.is_empty());
+        for parameter in &mut ir.model.parameters {
+            parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::features::Length(1.0),
+            ));
+        }
+        assert_eq!(
+            crate::decode::incomplete_expression_parameters(&ir),
+            ir.model.parameters[2..]
+                .iter()
+                .map(|parameter| parameter.id.clone())
+                .collect()
+        );
+    }
+
+    #[test]
+    fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
+        use crate::native::features::{feature_parameter_uses, FeatureParameterBinding};
+
+        let binding = |id: &str, operation: &str, slot: u8, offset: u64| FeatureParameterBinding {
+            id: id.to_string(),
+            operation_label: operation.to_string(),
+            input_slot: slot,
+            input_block: format!("block-{slot}"),
+            reference_ordinal: 0,
+            expression_declaration: "declaration".to_string(),
+            expression: Some("nx:test:expression#20".to_string()),
+            object_id: 20,
+            source_offset: offset,
+        };
+        let uses = feature_parameter_uses(&[
+            binding("late", "nx:feature-history:operation-label#1-2", 1, 30),
+            binding("early", "nx:feature-history:operation-label#1-2", 0, 20),
+            binding("other", "nx:feature-history:operation-label#1-3", 0, 40),
+        ]);
+        assert_eq!(uses.len(), 2);
+        assert_eq!(uses[0].bindings, ["early", "late"]);
+        assert_eq!(uses[0].source_offsets, [20, 30]);
+
+        let expression = super::Expression {
+            id: "nx:test:expression#20".to_string(),
+            object_id: Some(20),
+            record: None,
+            declaration: None,
+            name: "p20".to_string(),
+            parameter_index: Some(20),
+            qualifier: None,
+            unit: super::ExpressionUnit::Millimeter,
+            expression: "5".to_string(),
+            value: Some(5.0),
+            source_entry: "part".to_string(),
+            source_table: "table".to_string(),
+            source_offset: 20,
+        };
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        crate::native::attach::attach_expression_parameters(
+            &mut ir,
+            &[expression],
+            &[],
+            &uses,
+            &mut annotations,
+        );
+        assert_eq!(
+            ir.model.parameters[0].properties["consumer.0"],
+            "nx:feature-history:feature#1-2"
+        );
+        assert_eq!(
+            ir.model.parameters[0].properties["consumer.1"],
+            "nx:feature-history:feature#1-3"
+        );
+    }
+
+    #[test]
+    fn nx_parameter_consumers_follow_physical_use_order() {
+        let expression = super::Expression {
+            id: "nx:test:expression#20".to_string(),
+            object_id: Some(20),
+            record: None,
+            declaration: None,
+            name: "p20".to_string(),
+            parameter_index: Some(20),
+            qualifier: None,
+            unit: super::ExpressionUnit::Millimeter,
+            expression: "5".to_string(),
+            value: Some(5.0),
+            source_entry: "part".to_string(),
+            source_table: "table".to_string(),
+            source_offset: 10,
+        };
+        let parameter_use = |id: &str, operation: &str, source_offset| {
+            crate::native::features::FeatureParameterUse {
+                id: id.to_string(),
+                operation_label: operation.to_string(),
+                expression: expression.id.clone(),
+                bindings: vec![format!("binding-{id}")],
+                source_offsets: vec![source_offset],
+            }
+        };
+        let uses = [
+            parameter_use("later", "nx:feature-history:operation-label#0-1", 40),
+            parameter_use("earlier", "nx:feature-history:operation-label#9-8", 30),
+        ];
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        crate::native::attach::attach_expression_parameters(
+            &mut ir,
+            &[expression],
+            &[],
+            &uses,
+            &mut annotations,
+        );
+
+        assert_eq!(
+            ir.model.parameters[0].properties["parameter_use.0"],
+            "earlier"
+        );
+        assert_eq!(
+            ir.model.parameters[0].properties["parameter_use.1"],
+            "later"
+        );
+    }
+
+    #[test]
+    fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
+        let expression = super::Expression {
+            id: "nx:test:expression#20".to_string(),
+            object_id: Some(20),
+            record: None,
+            declaration: None,
+            name: "p20".to_string(),
+            parameter_index: Some(20),
+            qualifier: None,
+            unit: super::ExpressionUnit::Millimeter,
+            expression: "5".to_string(),
+            value: Some(5.0),
+            source_entry: "part".to_string(),
+            source_table: "table".to_string(),
+            source_offset: 20,
+        };
+        let parameter_use = crate::native::features::FeatureParameterUse {
+            id: "use".to_string(),
+            operation_label: "nx:feature-history:operation-label#1-2".to_string(),
+            expression: expression.id.clone(),
+            bindings: vec!["binding".to_string()],
+            source_offsets: vec![30],
+        };
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        crate::native::attach::attach_expression_parameters(
+            &mut ir,
+            &[expression],
+            &[],
+            std::slice::from_ref(&parameter_use),
+            &mut annotations,
+        );
+        let parameter_owners = ir
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
+            .collect();
+        let dependencies = crate::native::attach::parameter_owner_dependencies(
+            &parameter_owners,
+            &[
+                cadmpeg_ir::features::FeatureSourceContent::Parameter(
+                    cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
+                ),
+                cadmpeg_ir::features::FeatureSourceContent::Parameter(
+                    cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
+                ),
+            ],
+        );
+
+        assert_eq!(ir.model.features[0].ordinal, 0);
+        assert_eq!(dependencies, [ir.model.parameters[0].owner.clone()]);
+    }
+
+    #[test]
+    fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
+        use super::DataBlockReference;
+        use crate::native::features::FeatureInputBlock;
+
+        let input = FeatureInputBlock {
+            id: "nx:feature-history:input-block#0-7-0".to_string(),
+            operation_label: "nx:feature-history:operation-label#0-7".to_string(),
+            input_slot: 0,
+            object_index: 45,
+            raw_object_index: vec![45],
+            data_block: "nx:om-data-blocks-2:block#45".to_string(),
+            source_offset: 700,
+        };
+        let reference = |ordinal: u32, declaration: Option<&str>| DataBlockReference {
+            id: format!("nx:om-data-block-references-2-45:reference#{ordinal}"),
+            data_block: input.data_block.clone(),
+            ordinal,
+            object_id: 201 + ordinal,
+            raw_object_id: vec![0x80, (201 + ordinal) as u8],
+            target_record: Some(format!("nx:om-record-directory-0:entry#{ordinal}")),
+            target_expression_declaration: declaration.map(str::to_string),
+            source_offset: 800 + u64::from(ordinal),
+        };
+        let references = [
+            reference(0, Some("nx:om-expression-declarations-0:declaration#3")),
+            reference(1, None),
+        ];
+
+        let expression = super::Expression {
+            id: "nx:om-entry-9:expression#3".to_string(),
+            object_id: Some(201),
+            record: None,
+            declaration: Some("nx:om-expression-declarations-0:declaration#3".to_string()),
+            name: "p3".to_string(),
+            parameter_index: Some(3),
+            qualifier: None,
+            unit: super::ExpressionUnit::Millimeter,
+            expression: "12".to_string(),
+            value: Some(12.0),
+            source_entry: "/Root/UG_PART/UG_PART".to_string(),
+            source_table: "table".to_string(),
+            source_offset: 900,
+        };
+        let bindings = crate::native::features::feature_parameter_bindings(
+            std::slice::from_ref(&input),
+            &references,
+            std::slice::from_ref(&expression),
+        );
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(
+            bindings[0].id,
+            "nx:feature-history:parameter-binding#0-7-0-0"
+        );
+        assert_eq!(bindings[0].input_slot, 0);
+        assert_eq!(bindings[0].reference_ordinal, 0);
+        assert_eq!(bindings[0].object_id, 201);
+        assert_eq!(
+            bindings[0].expression_declaration,
+            "nx:om-expression-declarations-0:declaration#3"
+        );
+        assert_eq!(
+            bindings[0].expression.as_deref(),
+            Some("nx:om-entry-9:expression#3")
+        );
+
+        let mut duplicate = expression.clone();
+        duplicate.id = "nx:om-entry-9:expression#30".to_string();
+        let ambiguous = crate::native::features::feature_parameter_bindings(
+            &[input],
+            &references,
+            &[expression, duplicate],
+        );
+        assert_eq!(ambiguous.len(), 1);
+        assert_eq!(ambiguous[0].expression, None);
+    }
+
+    #[test]
+    fn om_offset_store_index_values_end_at_unique_aligned_product_record() {
+        let mut bytes = vec![0, 0];
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        bytes.extend_from_slice(&0x1020u32.to_le_bytes());
+        bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
+        assert_eq!(
+            crate::om::offset_store_index_values(&bytes),
+            Some((2, vec![7, 0x1020]))
+        );
+
+        let mut duplicate = bytes;
+        duplicate.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
+        assert!(crate::om::offset_store_index_values(&duplicate).is_none());
+        assert_eq!(
+            super::control_index_data_block(2, 700, 496).as_deref(),
+            Some("nx:om-data-blocks-2:block#496")
+        );
+        assert!(super::control_index_data_block(2, 700, 700).is_none());
+    }
+
+    #[test]
+    fn native_catalog_separates_offset_only_blocks_from_object_records() {
+        let file =
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+        let container = container::scan_bytes(file).unwrap();
+
+        assert!(super::object_records(&container).is_empty());
+        let blocks = super::data_blocks(&container);
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0].block_ordinal, 0);
+        assert_eq!(blocks[0].role, super::DataBlockRole::Control);
+        assert_eq!(blocks[1].role, super::DataBlockRole::Column);
+        assert!(blocks[0].byte_len > 0);
+        let control_values = super::data_block_control_values(&container);
+        assert_eq!(control_values.len(), 2);
+        assert_eq!(control_values[0].data_block, blocks[0].id);
+        assert_eq!(control_values[0].ordinal, 0);
+        assert_eq!(control_values[0].value, 0);
+        assert_eq!(control_values[1].value, 1);
+        let classes = super::data_block_control_class_references(&container);
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].data_block, blocks[0].id);
+        assert_eq!(classes[0].ordinal, 0);
+        assert_eq!(classes[0].class_ordinal, 0);
+        assert_eq!(classes[0].class_name, "UGS::ModlFeature");
+        assert_eq!(classes[0].class_definition, "nx:om-entry-0:class#8");
+        assert!(super::string_values(&container).is_empty());
+        assert!(super::object_references(&container).is_empty());
+        let expressions = super::expressions(&container);
+        assert_eq!(expressions.len(), 1);
+        assert_eq!(expressions[0].object_id, None);
+        assert_eq!(expressions[0].record, None);
+    }
+
+    #[test]
+    fn native_abr_lane_resolves_nullable_slots_within_its_offset_store() {
+        let mut store = offset_only_indexed_om_section();
+        let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
+        let end_at = index_start + 3 * 4;
+        let end = u32::from_le_bytes(store[end_at..end_at + 4].try_into().unwrap()) as usize;
+        let mut lane = vec![0x11, 0x02];
+        lane.extend_from_slice(&[0xff; 15]);
+        lane.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03]);
+        store.splice(end..end, lane.iter().copied());
+        store[end_at..end_at + 4].copy_from_slice(&((end + lane.len()) as u32).to_le_bytes());
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
+        let container = container::scan_bytes(file).unwrap();
+
+        let lanes = super::data_block_abr_reference_lanes(&container);
+        assert_eq!(lanes.len(), 1);
+        assert_eq!(lanes[0].slot_indices[0], Some(2));
+        assert_eq!(
+            lanes[0].slot_data_blocks[0].as_deref(),
+            Some("nx:om-data-blocks-0:block#2")
+        );
+        assert!(lanes[0].slot_indices[1..].iter().all(Option::is_none));
+        assert_eq!(lanes[0].slot_source_offsets.len(), 16);
+        assert_eq!(lanes[0].slot_source_offsets[0], lanes[0].source_offset + 1);
+    }
+
+    #[test]
+    fn om_numeric_expression_retains_formula_without_literal_value() {
+        let text = b"(Number [mm]) p9: p2 * 2 + p7_radius; ";
+        let mut bytes = b"hostglobalvariables".to_vec();
+        bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+        bytes.extend_from_slice(text);
+        bytes.push(0);
+
+        let expressions = crate::om::numeric_expressions(&bytes);
+        assert_eq!(expressions.len(), 1);
+        assert_eq!(expressions[0].name, "p9");
+        assert_eq!(expressions[0].expression, "p2 * 2 + p7_radius");
+        assert_eq!(expressions[0].value, None);
+        assert_eq!(
+            super::expression_parameter_names(expressions[0].expression),
+            vec!["p2", "p7_radius"]
+        );
+    }
+
+    #[test]
+    fn decode_retains_typed_nx_numeric_expression() {
+        let mut cur = Cursor::new(prt_with_indexed_om_section());
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let expressions = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::Expression>("expressions")
+            .unwrap();
+        assert_eq!(result.ir.native.namespace("nx").unwrap().version, 155);
+        assert_eq!(expressions.len(), 1);
+        assert_eq!(expressions[0].object_id, Some(0x102));
+        assert_eq!(expressions[0].parameter_index, Some(8));
+        assert_eq!(
+            expressions[0].qualifier.as_deref(),
+            Some("CircularPattern_pattern_Circular_Dir_offset_angle")
+        );
+        assert_eq!(
+            expressions[0].name,
+            "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
+        );
+        assert_eq!(expressions[0].unit, super::ExpressionUnit::Degree);
+        assert_eq!(expressions[0].expression, "120");
+        assert_eq!(expressions[0].value, Some(120.0));
+        assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
+        assert!(expressions[0]
+            .source_table
+            .starts_with("nx:om-entry-0:expression-table#"));
+        let declarations = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::ExpressionDeclaration>("expression_declarations")
+            .unwrap();
+        assert_eq!(declarations.len(), 1);
+        assert_eq!(declarations[0].object_id, 0x102);
+        assert_eq!(declarations[0].parameter_index, 8);
+        assert_eq!(declarations[0].literal.as_deref(), Some("120"));
+        assert_eq!(
+            expressions[0].declaration.as_deref(),
+            Some(declarations[0].id.as_str())
+        );
+        let parameter = result
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == expressions[0].name)
+            .unwrap();
+        assert_eq!(
+            parameter.properties.get("declaration"),
+            Some(&declarations[0].id)
+        );
+        assert_eq!(
+            parameter.properties.get("declaration_object_id"),
+            Some(&"258".to_string())
+        );
+        let om_records = result
+            .source_fidelity
+            .retained_records
+            .iter()
+            .filter(|record| record.id.starts_with("nx:om-section-"))
+            .collect::<Vec<_>>();
+        assert_eq!(om_records.len(), 2);
+        assert!(om_records.iter().all(|record| {
+            record.data.as_ref().is_some_and(|data| {
+                data.len() as u64 == record.byte_len
+                    && cadmpeg_ir::hash::sha256_hex(data) == record.sha256
+            })
+        }));
+        let object_records = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::ObjectRecord>("object_records")
+            .unwrap();
+        assert_eq!(object_records.len(), 2);
+        let headers = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::StoreHeader>("store_headers")
+            .unwrap();
+        assert_eq!(headers.len(), 1);
+        assert_eq!(headers[0].version, "NX 2027.3102");
+        assert_eq!(headers[0].object_id, Some(0x101));
+        assert_eq!(object_records[1].object_id, Some(0x102));
+        assert_eq!(
+            object_records[1].object_id_source_offset,
+            object_records[0]
+                .object_id_source_offset
+                .map(|offset| offset + 4)
+        );
+        assert_eq!(expressions[0].record.as_ref(), Some(&object_records[1].id));
+        assert_eq!(object_records[1].record_ordinal, 1);
+        assert_eq!(
+            object_records[0].section_offset,
+            object_records[1].section_offset
+        );
+        assert_eq!(object_records[1].byte_len, om_records[1].byte_len);
+        assert_eq!(object_records[1].sha256, om_records[1].sha256);
+        assert_eq!(
+            object_records[1].dependencies,
+            vec![object_records[0].id.clone()]
+        );
+        assert_eq!(
+            object_records[0].dependents,
+            vec![object_records[1].id.clone()]
+        );
+        let strings = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::StringValue>("string_values")
+            .unwrap();
+        assert_eq!(strings.len(), 1);
+        assert_eq!(strings[0].record, object_records[1].id);
+        assert_eq!(strings[0].object_id, Some(0x102));
+        assert_eq!(strings[0].value, "SKETCH_001");
+        let references = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::ObjectReference>("object_references")
+            .unwrap();
+        assert_eq!(references.len(), 2);
+        assert_eq!(references[0].record, object_records[1].id);
+        assert_eq!(references[0].object_id, Some(0x102));
+        assert_eq!(references[0].value, 0x1234_5678);
+        assert_eq!(references[0].target_record, None);
+        assert_eq!(
+            references[1].kind,
+            super::ObjectReferenceKind::RecordOrdinal16
+        );
+        assert_eq!(references[1].value, 0);
+        assert_eq!(
+            references[1].target_record.as_ref(),
+            Some(&object_records[0].id)
+        );
+        let handles = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::PersistentHandle>("persistent_handles")
+            .unwrap();
+        assert_eq!(handles.len(), 1);
+        assert_eq!(handles[0].value, 0x1234_5678);
+        assert_eq!(handles[0].records, vec![object_records[1].id.clone()]);
+        assert_eq!(handles[0].occurrence_count, 1);
+        assert!(handles[0].external_records.is_empty());
+        assert_eq!(result.ir.model.features.len(), 1);
+        assert!(matches!(
+            result.ir.model.features[0].definition,
+            cadmpeg_ir::features::FeatureDefinition::TreeNode {
+                role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations,
+                ..
+            }
+        ));
+        assert_eq!(result.ir.model.features[0].suppressed, Some(false));
+        assert_eq!(result.ir.model.parameters.len(), 1);
+        assert_eq!(result.ir.model.parameters[0].expression, "120");
+        let parameter = &result.ir.model.parameters[0];
+        assert_eq!(parameter.name, expressions[0].name);
+        assert!(matches!(
+            parameter.value,
+            Some(cadmpeg_ir::features::ParameterValue::Angle(
+                cadmpeg_ir::features::Angle(value)
+            )) if value == 120_f64.to_radians()
+        ));
+        assert_eq!(parameter.native_ref.as_ref(), Some(&expressions[0].id));
+        let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+        assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+    }
+
+    #[test]
+    fn nx_part_attributes_require_typed_atomic_xml() {
+        let xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+    <UgAttributes version="4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <Attribute owner="part" pdmBased="false" title="legacy" utf8title="Material"
+        value="legacy-value" utf8value="Steel" version="3" xsi:type="StringAttributeType"/>
+    </UgAttributes>"#;
+        let attributes = super::parse_part_attributes(xml, 7, "/Root/part/attrs", 100)
+            .expect("typed attributes");
+        assert_eq!(attributes.len(), 1);
+        assert_eq!(attributes[0].id, "nx:part-attributes-7:attribute#0");
+        assert_eq!(attributes[0].title, "Material");
+        assert_eq!(attributes[0].value, "Steel");
+        assert_eq!(attributes[0].value_type, "StringAttributeType");
+        assert!(!attributes[0].pdm_based);
+        assert!(attributes[0].source_offset > 100);
+
+        let mut terminated = xml.to_vec();
+        terminated.push(0);
+        assert_eq!(
+            super::parse_part_attributes(&terminated, 7, "/Root/part/attrs", 100)
+                .expect("terminated typed attributes"),
+            attributes
+        );
+        terminated.push(0);
+        assert!(super::parse_part_attributes(&terminated, 7, "/Root/part/attrs", 100).is_none());
+
+        let malformed = xml
+            .windows(b"pdmBased=\"false\"".len())
+            .position(|window| window == b"pdmBased=\"false\"")
+            .map(|at| {
+                let mut malformed = xml.to_vec();
+                malformed[at + b"pdmBased=\"".len()..at + b"pdmBased=\"false".len()]
+                    .copy_from_slice(b"maybe");
+                malformed
+            })
+            .unwrap();
+        assert!(super::parse_part_attributes(&malformed, 7, "/Root/part/attrs", 100).is_none());
+    }
+
+    #[test]
+    fn decode_retains_length_framed_nx_class_definition() {
+        let mut cur = Cursor::new(prt_with_indexed_om_section());
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let classes = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::ClassDefinition>("class_definitions")
+            .unwrap();
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].name, "UGS::EXP_expression");
+        assert_eq!(classes[0].ordinal, 0);
+        assert_eq!(classes[0].trailing_code, 0x81);
+        assert_eq!(classes[0].source_entry, "/Root/UG_PART/UG_PART");
+    }
+
+    #[test]
+    fn decode_retains_length_framed_nx_field_definitions() {
+        let mut cur = Cursor::new(prt_with_size_framed_om_section());
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let fields = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::FieldDefinition>("field_definitions")
+            .unwrap();
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].name, "m_target");
+        assert_eq!(fields[0].ordinal, 0);
+        assert_eq!(fields[0].registry_suffix, [0x01, 0x02]);
+        assert_eq!(fields[1].name, "m_tools");
+        assert_eq!(fields[1].trailing_code, 0x81);
+        assert!(fields[1].registry_suffix.is_empty());
+        assert_eq!(fields[1].source_entry, "/Root/UG_PART/UG_PART");
+        let classes = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::ClassDefinition>("class_definitions")
+            .unwrap();
+        assert_eq!(classes[0].layout_prefix, &[0x81, 0x21]);
+        assert_eq!(
+            classes[0].schema_fingerprint,
+            Some([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef])
+        );
+        assert_eq!(classes[0].layout_terminal, Some(0x06));
+    }
+
+    #[test]
+    fn decode_retains_nx_arrangement_configurations() {
+        let mut cur = Cursor::new(prt_with_arrangements());
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let configurations = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::Configuration>("configurations")
+            .unwrap();
+        assert_eq!(configurations.len(), 2);
+        assert_eq!(configurations[0].name, "Model");
+        assert!(configurations[0].is_default);
+        assert_eq!(configurations[1].name, "Exploded");
+        assert!(!configurations[1].is_default);
+        assert_eq!(result.ir.model.configurations.len(), 2);
+        assert_eq!(result.ir.model.configurations[0].ordinal, 0);
+        assert_eq!(result.ir.model.configurations[0].source_index, Some(0));
+        assert_eq!(result.ir.model.configurations[0].name, "Model");
+        assert!(result.ir.model.configurations[0].active);
+        assert_eq!(
+            result.ir.model.configurations[0].bodies.resolved(),
+            Some(
+                result
+                    .ir
+                    .model
+                    .bodies
+                    .iter()
+                    .map(|body| body.id.clone())
+                    .collect::<Vec<_>>()
+                    .as_slice()
+            )
+        );
+        assert_eq!(result.ir.model.configurations[1].ordinal, 1);
+        assert_eq!(result.ir.model.configurations[1].name, "Exploded");
+        assert!(!result.ir.model.configurations[1].active);
+        assert!(result.ir.model.configurations[1].bodies.is_unresolved());
+        let uses = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::ConfigurationAttributeUse>("configuration_attribute_uses")
+            .unwrap();
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].configuration, configurations[0].id);
+        assert_eq!(uses[0].name, "Model");
+        assert_eq!(
+            result.ir.model.configurations[0].properties["active_attribute_use"],
+            uses[0].id
+        );
+        let attributes = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::PartAttribute>("part_attributes")
+            .unwrap();
+        let mut mismatch = attributes.clone();
+        mismatch[0].value = "Other".to_string();
+        assert!(super::configuration_attribute_uses(&configurations, &mismatch).is_empty());
+        let mut duplicate = attributes.clone();
+        duplicate.push(attributes[0].clone());
+        assert!(super::configuration_attribute_uses(&configurations, &duplicate).is_empty());
+        let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+        assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+    }
+
+    #[test]
+    fn nx_neutral_active_configuration_requires_the_exact_attribute_join() {
+        for active_name in [None, Some("Other")] {
+            let mut cur = Cursor::new(prt_with_arrangement_attribute(active_name));
+            let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+            let native = result
+                .ir
+                .native
+                .namespace("nx")
+                .unwrap()
+                .arena_as::<super::Configuration>("configurations")
+                .unwrap();
+            assert!(native[0].is_default);
+            assert!(
+                result
+                    .ir
+                    .model
+                    .configurations
+                    .iter()
+                    .all(|configuration| !configuration.active
+                        && configuration.bodies.is_unresolved())
+            );
+        }
+    }
+
+    #[test]
+    fn decode_retains_strict_tiff_material_texture_assets() {
+        let texture = [b'I', b'I', 42, 0, 8, 0, 0, 0, 0, 0];
+        let malformed = [b'I', b'I', 42, 0, 40, 0, 0, 0, 0, 0];
+        let file = prt_with_named_payloads(&[
+            ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+            ("/Root/materialsTif/AISI Steel 4340", texture.to_vec()),
+            ("/Root/materialsTif/Truncated", malformed.to_vec()),
+        ]);
+
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let assets = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::MaterialTextureAsset>("material_texture_assets")
+            .unwrap();
+
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].name, "AISI Steel 4340");
+        assert_eq!(assets[0].byte_order, "little_endian");
+        assert_eq!(assets[0].version, 42);
+        assert_eq!(assets[0].first_ifd_offset, 8);
+        assert_eq!(assets[0].byte_len, texture.len() as u64);
+        assert_eq!(assets[0].sha256, cadmpeg_ir::hash::sha256_hex(&texture));
+        assert_eq!(assets[0].source_entry, "/Root/materialsTif/AISI Steel 4340");
+    }
+
+    #[test]
+    fn decode_joins_qaf_material_names_to_texture_assets() {
+        let texture = [b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0];
+        let qaf = br#"<?xml version="1.0" encoding="UTF-8"?>
+    <folderContents>
+    <folderProperties location="images/preview" unmappedLocation="images/preview"><createTime>2026-07-15T08:00:00</createTime><modifyTime>2026-07-15T08:00:01</modifyTime></folderProperties>
+    <folderProperties location="materialsTif/unmap$1" unmappedLocation="materialsTif/Carbon Fiber Harness Satin Coated"><createTime>2026-07-15T08:01:00</createTime><modifyTime>2026-07-15T08:02:00</modifyTime></folderProperties>
+    </folderContents>"#;
+        let file = prt_with_named_payloads(&[
+            ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+            ("/Root/materialsTif/unmap$1", texture.to_vec()),
+            ("/Root/qafmetadata", qaf.to_vec()),
+        ]);
+
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let namespace = result.ir.native.namespace("nx").unwrap();
+        let assets = namespace
+            .arena_as::<super::MaterialTextureAsset>("material_texture_assets")
+            .unwrap();
+        let catalog = namespace
+            .arena_as::<super::MaterialTextureCatalogEntry>("material_texture_catalog_entries")
+            .unwrap();
+
+        assert_eq!(assets.len(), 1);
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].texture_asset, assets[0].id);
+        assert_eq!(catalog[0].storage_path, "materialsTif/unmap$1");
+        assert_eq!(
+            catalog[0].material_path,
+            "materialsTif/Carbon Fiber Harness Satin Coated"
+        );
+        assert_eq!(catalog[0].create_time, "2026-07-15T08:01:00");
+        assert_eq!(catalog[0].modify_time, "2026-07-15T08:02:00");
+        assert_eq!(catalog[0].source_entry, "/Root/qafmetadata");
+    }
+
+    #[test]
+    fn decode_rejects_ambiguous_nx_arrangement_table_atomically() {
+        for arrangements in [
+            br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="YES" Name="Exploded"/></Arrangements>"#.as_slice(),
+            br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="NO" Name="Model"/></Arrangements>"#.as_slice(),
+        ] {
+            let file = prt_with_named_payloads(&[
+                ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+                ("/Root/part/arrangements", arrangements.to_vec()),
+            ]);
+            let mut cur = Cursor::new(file);
+            let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+            assert!(result.ir.native.namespace("nx").is_none_or(|namespace| {
+                namespace
+                    .arena_as::<super::Configuration>("configurations")
+                    .unwrap()
+                    .is_empty()
+            }));
+            assert!(result.ir.model.configurations.is_empty());
+        }
+    }
+
+    #[test]
+    fn decode_rejects_duplicate_nx_configuration_stream_paths_atomically() {
+        let arrangements =
+            br#"<Arrangements><Arrangement Default="YES" Name="Model"/></Arrangements>"#.to_vec();
+        let attributes = br#"<UgAttributes version="4"><Attribute owner="part" pdmBased="false" utf8title="NX_Arrangement" utf8value="Model" version="3" type="StringAttributeType"/></UgAttributes>"#.to_vec();
+        let file = prt_with_named_payloads(&[
+            ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+            ("/Root/part/arrangements", arrangements.clone()),
+            ("/Root/part/arrangements", arrangements.clone()),
+            ("/Root/part/attrs", attributes.clone()),
+        ]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        assert!(result.ir.model.configurations.is_empty());
+
+        let file = prt_with_named_payloads(&[
+            ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+            ("/Root/part/arrangements", arrangements),
+            ("/Root/part/attrs", attributes.clone()),
+            ("/Root/part/attrs", attributes),
+        ]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir.model.configurations.len(), 1);
+        assert!(!result.ir.model.configurations[0].active);
+        assert!(result.ir.model.configurations[0].bodies.is_unresolved());
+        assert!(result.ir.native.namespace("nx").is_none_or(|namespace| {
+            namespace
+                .arena_as::<super::PartAttribute>("part_attributes")
+                .unwrap()
+                .is_empty()
+        }));
+    }
+
+    #[test]
+    fn assembly_metadata_lists_external_child_paths() {
+        let mut cur = Cursor::new(assembly_with_external_paths());
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let attrs = &result.ir.source.expect("source").attributes;
+        assert_eq!(
+            attrs.get("external_reference.0").map(String::as_str),
+            Some("child.prt")
+        );
+        assert_eq!(
+            attrs.get("external_reference.1").map(String::as_str),
+            Some("nested/b.prt")
+        );
+        let references = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX native namespace")
+            .arena_as::<super::ExternalReference>("external_references")
+            .expect("typed external references");
+        assert_eq!(references.len(), 2);
+        assert_eq!(references[0].ordinal, 0);
+        assert_eq!(references[0].path, "child.prt");
+        assert_eq!(references[1].ordinal, 1);
+        assert_eq!(references[1].path, "nested/b.prt");
+        assert!(references[0].source_offset < references[1].source_offset);
+    }
+
+    #[test]
+    fn persistent_handle_identity_bridges_om_and_external_records() {
+        let reference = super::ObjectReference {
+            id: "nx:test:reference#0".into(),
+            record: "nx:test:om-record#0".into(),
+            object_id: Some(1),
+            ordinal: 0,
+            kind: super::ObjectReferenceKind::PersistentHandle,
+            value: 0x1020_3040,
+            target_record: None,
+            source_entry: "om".into(),
+            source_offset: 0,
+        };
+        let external = super::ExternalReferenceRecord {
+            id: "nx:test:external-record#6".into(),
+            record_id: 6,
+            declared_count: 1,
+            id_slots: [0; 4],
+            handles: vec![0x1020_3040],
+            closing_duplicate: true,
+            prefix_byte_len: 31,
+            tail_byte_len: 0,
+            source_entry: "external".into(),
+            source_offset: 10,
+        };
+        let control = super::DataBlockControlReference {
+            id: "nx:test:control-reference#0".into(),
+            data_block: "nx:test:control-block#0".into(),
+            ordinal: 0,
+            kind: super::ObjectReferenceKind::PersistentHandle,
+            value: 0x1020_3040,
+            source_offset: 20,
+        };
+
+        let tail_pair = super::ExternalReferenceTailReferencePair {
+            id: "nx:test:tail-pair#0".into(),
+            handle_set_record: external.id.clone(),
+            ordinal: 0,
+            persistent_handle: 0x5060_7080,
+            tagged_reference: 7,
+            source_offset: 30,
+        };
+
+        let handles =
+            super::persistent_handles(&[reference], &[control], &[external], &[tail_pair]);
+
+        assert_eq!(handles.len(), 2);
+        assert_eq!(handles[0].records, ["nx:test:om-record#0"]);
+        assert_eq!(handles[0].occurrence_count, 2);
+        assert_eq!(handles[0].data_blocks, ["nx:test:control-block#0"]);
+        assert_eq!(handles[0].external_records, ["nx:test:external-record#6"]);
+        assert_eq!(handles[0].external_occurrence_count, 2);
+        assert_eq!(handles[1].value, 0x5060_7080);
+        assert_eq!(handles[1].external_records, ["nx:test:external-record#6"]);
+        assert_eq!(handles[1].external_occurrence_count, 1);
+    }
+
+    #[test]
+    fn nx_control_handle_pairs_require_maximal_runs_of_exactly_two() {
+        let reference = |ordinal: u32, offset: u64| super::DataBlockControlReference {
+            id: format!("reference#{ordinal}"),
+            data_block: "block#0".into(),
+            ordinal,
+            kind: super::ObjectReferenceKind::PersistentHandle,
+            value: ordinal + 100,
+            source_offset: offset,
+        };
+        let references = [
+            reference(0, 10),
+            reference(1, 15),
+            reference(2, 30),
+            reference(3, 35),
+            reference(4, 40),
+        ];
+        let pairs = super::data_block_control_handle_pairs(&references);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].id, "nx:om-data-block-control:handle-pair#10");
+        assert_eq!(pairs[0].first_reference, "reference#0");
+        assert_eq!(pairs[0].second_reference, "reference#1");
+        assert_eq!(pairs[0].first_handle, 100);
+        assert_eq!(pairs[0].second_handle, 101);
+    }
+
+    #[test]
+    fn native_retains_rmfastload_table_and_member_words() {
+        let container = container::scan_bytes(rmfastload_prt()).unwrap();
+        let entry_offset = container
+            .entries
+            .iter()
+            .find(|entry| entry.name == "/Root/FastLoad/RMFastLoad")
+            .and_then(|entry| entry.file_span)
+            .expect("RMFastLoad span")
+            .0;
+        let (table, object_ids) =
+            super::rmfastload_object_id_table(&container).expect("native RMFastLoad table");
+
+        assert_eq!(table.id, "nx:rmfastload:object-id-table#0");
+        assert_eq!(table.members.len(), 50);
+        assert_eq!(table.raw_count, 50u32.to_le_bytes());
+        assert_eq!(table.registry_source_offset, entry_offset);
+        assert_eq!(
+            table.source_offset,
+            entry_offset + b"UGS::Solid::Topol".len() as u64
+        );
+        assert_eq!(object_ids[0].table, table.id);
+        assert_eq!(object_ids[0].value, 1);
+        assert_eq!(object_ids[0].raw, 1u32.to_le_bytes());
+        assert_eq!(object_ids[0].source_offset, table.source_offset + 4);
+        assert_eq!(object_ids[49].ordinal, 49);
+        assert_eq!(object_ids[49].value, 50);
+        assert_eq!(object_ids[49].raw, 50u32.to_le_bytes());
+        assert_eq!(table.members[49], object_ids[49].id);
+    }
+
+    #[test]
+    fn decode_selects_dominant_rmfastload_body() {
+        let mut cur = Cursor::new(prt_with_two_bodies_and_rmfastload());
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let namespace = result.ir.native.namespace("nx").expect("NX namespace");
+        let tables = namespace
+            .arena_as::<super::RmFastLoadObjectIdTable>("rmfastload_object_id_tables")
+            .expect("RMFastLoad tables");
+        let object_ids = namespace
+            .arena_as::<super::RmFastLoadObjectId>("rmfastload_object_ids")
+            .expect("RMFastLoad object IDs");
+
+        assert_eq!(result.ir.model.bodies.len(), 1);
+        assert_eq!(tables.len(), 1);
+        assert_eq!(tables[0].members.len(), 50);
+        assert_eq!(object_ids.len(), 50);
+        assert_eq!(object_ids[0].value, 1_000);
+        assert_eq!(object_ids[49].value, 1_049);
+        assert!(result.ir.model.bodies[0].id.0.starts_with("nx:s0:"));
+        assert_eq!(result.ir.model.faces.len(), 50);
+        assert_eq!(result.ir.model.surfaces.len(), 50);
+        assert!(result
+            .ir
+            .model
+            .faces
+            .iter()
+            .all(|face| face.id.0.starts_with("nx:s0:")));
+        assert!(result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .all(|surface| surface.id.0.starts_with("nx:s0:")));
+        assert_eq!(
+            result
+                .ir
+                .source
+                .as_ref()
+                .and_then(|source| source.attributes.get("active_body_selector"))
+                .map(String::as_str),
+            Some("rmfastload_object_id_membership")
+        );
+        let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+        assert!(
+            validation.findings.is_empty(),
+            "findings: {:?}",
+            validation.findings
+        );
+    }
+}
