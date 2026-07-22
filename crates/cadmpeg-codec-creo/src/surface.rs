@@ -1346,37 +1346,22 @@ pub fn positional_frame_planes(
                 && record.opaque_spans[1].length == 8)
                 .then(|| (corners[0].offset, corners))
         })();
-        let trailed_auxiliary_frame = (|| {
-            let [leading, middle, terminal] = record.scalar_frames.as_slice() else {
-                return None;
-            };
-            let [_, corners @ ..] = terminal.slots.as_slice() else {
-                return None;
-            };
-            let contiguous_end = |frame: &SurfaceParameterScalarFrame| {
-                frame.slots.iter().try_fold(frame.offset, |cursor, slot| {
-                    (slot.offset == cursor).then(|| cursor + slot.length)
-                })
-            };
+        let suffixed_auxiliary_frame = (|| {
             let frame_end = record.body.len().checked_sub(2)?;
-            (leading.offset == 1
-                && leading.slots.len() == 2
-                && contiguous_end(leading) == Some(11)
-                && middle.offset == 15
-                && middle.slots.len() == 1
-                && contiguous_end(middle) == Some(16)
-                && terminal.offset == 18
-                && corners.len() == 6
-                && contiguous_end(terminal) == Some(frame_end)
-                && record.opaque_spans.len() == 4
-                && record.opaque_spans[0].offset == 0
-                && record.opaque_spans[0].length == 1
-                && record.opaque_spans[1].offset == 11
-                && record.opaque_spans[1].length == 4
-                && record.opaque_spans[2].offset == 16
-                && record.opaque_spans[2].length == 2
-                && record.body.ends_with(&[0xf7, 0x0c]))
-            .then(|| (corners[0].offset, corners))
+            let mut frames = record.scalar_frames.iter().filter(|frame| {
+                frame.slots.len() == 7
+                    && frame
+                        .slots
+                        .last()
+                        .is_some_and(|slot| slot.offset.checked_add(slot.length) == Some(frame_end))
+            });
+            let terminal = frames.next()?;
+            frames.next().is_none().then_some(())?;
+            let [_, corners @ ..] = terminal.slots.as_slice() else {
+                unreachable!("seven slots were checked above");
+            };
+            (record.body.ends_with(&[0xf7, 0x0c]) && corners.len() == 6)
+                .then(|| (corners[0].offset, corners))
         })();
         let reflected_corner_frame = (|| {
             let frame_end = record.body.len().checked_sub(2)?;
@@ -1399,7 +1384,7 @@ pub fn positional_frame_planes(
         })();
         let mut candidates = marked_frames
             .chain(auxiliary_frame)
-            .chain(trailed_auxiliary_frame)
+            .chain(suffixed_auxiliary_frame)
             .chain(reflected_corner_frame)
             .filter_map(|(offset, slots)| {
                 let values = slots
@@ -6184,6 +6169,30 @@ mod tests {
                 normal: [0.0, 0.0, 1.0],
                 u_axis: [1.0, 0.0, 0.0],
                 offset: 37,
+            }]
+        );
+
+        let mut compact_prefix = record.clone();
+        compact_prefix.body = vec![
+            0x18, 0x18, 0x6d, 0xeb, 0x81, 0x84, 0xcc, 0xcc, 0xd0, 0x00, 0x0c, 0x9a, 0xd5, 0xd6,
+            0x25, 0xa6, 0xec, 0x06, 0x18, 0x46, 0x1a, 0xdf, 0x09, 0x9b, 0x3c, 0x32, 0xed, 0x2f,
+            0x20, 0x00, 0xd5, 0xd6, 0x25, 0xa6, 0xec, 0x06, 0x18, 0x46, 0x18, 0x81, 0x99, 0x6a,
+            0xa2, 0x99, 0x53, 0x2e, 0x20, 0x33, 0xf7, 0x0c,
+        ];
+        compact_prefix.scalar_tokens = scalar_tokens(
+            SurfaceKind::Plane,
+            &compact_prefix.body,
+            &scalar::ScalarCache::default(),
+        );
+        compact_prefix.scalar_frames = scalar_frames(&compact_prefix.scalar_tokens);
+        assert_eq!(
+            positional_frame_planes(&[compact_prefix], &[row.clone()]),
+            vec![OutlinePlane {
+                surface_id: 41,
+                origin: [2.479_564_003_064_99, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                u_axis: [0.0, 1.0, 0.0],
+                offset: 23,
             }]
         );
 

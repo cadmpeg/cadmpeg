@@ -836,9 +836,10 @@ An auxiliary-corner positional plane body has a three-byte prefix, one
 seven-byte scalar, an eight-byte control payload, and a terminal frame of seven
 contiguous scalars. The first terminal scalar is auxiliary. The remaining six
 are two XYZ corners and use the same unique-held-coordinate plane rule.
-A second auxiliary-corner form begins with one control byte and two contiguous
-scalars, carries a four-byte control payload, one scalar, and a two-byte control
-payload, then stores the seven-scalar frame followed by `f7 0c`.
+An `f7 0c`-terminated auxiliary-corner form stores a final contiguous frame of
+seven scalars immediately before that terminator. The first scalar is
+auxiliary; the remaining six are the two XYZ corners. Control fields before the
+final frame do not participate in the corner coordinates.
 
 A reflected-held positional plane body ends with `f7 0c`. Immediately before
 that terminator it stores two XYZ corners as six contiguous scalars. The first
