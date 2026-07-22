@@ -314,9 +314,11 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 1.0),
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 1.0),
+        },
         profiles: vec![vec![SketchEntityUse {
             entity: circle_id.clone(),
             reversed: false,
@@ -395,8 +397,8 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     use crate::features::ParameterId;
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+        SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
     };
 
     let entity = SketchEntityId("synthetic:test:entity#0".into());
@@ -408,6 +410,11 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
                 SketchLocus::Start(entity.clone()),
                 SketchLocus::Center(entity.clone()),
             ],
+        },
+        SketchConstraintDefinition::SameCoordinate {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
+            axis: SketchCoordinateAxis::V,
         },
         SketchConstraintDefinition::PointOnObject {
             point: SketchLocus::Start(entity.clone()),
@@ -442,6 +449,15 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
             axis: entity.clone(),
+        },
+        SketchConstraintDefinition::PointSymmetric {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
+            center: SketchLocus::Center(entity.clone()),
+        },
+        SketchConstraintDefinition::TangentLoci {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
         },
         SketchConstraintDefinition::ArcAngle {
             entity: entity.clone(),
@@ -508,9 +524,11 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         id: sketch.clone(),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: Vec::new(),
         native_ref: None,
     });
@@ -572,9 +590,11 @@ fn fixed_arc_angles_validate_against_solved_wraparound_geometry() {
         id: sketch.clone(),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: Vec::new(),
         native_ref: None,
     });
@@ -658,9 +678,11 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         id,
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles,
         native_ref: None,
     };
@@ -1935,10 +1957,31 @@ fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
 }
 
 #[test]
-fn explicit_migration_upgrades_previous_version_without_semantic_changes() {
-    let current = unit_cube();
+fn explicit_migration_upgrades_previous_sketch_placement() {
+    let mut current = unit_cube();
+    current.model.sketches.push(crate::Sketch {
+        id: crate::SketchId("sketch:migration".into()),
+        name: None,
+        configuration: None,
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    });
     let mut legacy = serde_json::to_value(&current).unwrap();
     legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
+    let sketch = legacy["model"]["sketches"][0]
+        .as_object_mut()
+        .expect("legacy sketch object");
+    let placement = sketch
+        .remove("placement")
+        .expect("current sketch placement");
+    sketch.insert("origin".into(), placement["origin"].clone());
+    sketch.insert("normal".into(), placement["normal"].clone());
+    sketch.insert("u_axis".into(), placement["u_axis"].clone());
     let legacy = serde_json::to_string(&legacy).unwrap();
 
     assert!(CadIr::from_json(&legacy).is_err());
@@ -2353,6 +2396,59 @@ fn empty_shell_is_reported() {
     let findings = validate(&ir, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {
         finding.check == Check::WireTopology && finding.message == "shell owns no topology"
+    }));
+}
+
+#[test]
+fn disconnected_shell_faces_are_reported() {
+    let mut ir = unit_cube();
+    let face_edges = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| {
+            let loops = face.loops.iter().collect::<std::collections::HashSet<_>>();
+            let edges = ir
+                .model
+                .coedges
+                .iter()
+                .filter(|coedge| loops.contains(&coedge.owner_loop))
+                .map(|coedge| coedge.edge.clone())
+                .collect::<std::collections::HashSet<_>>();
+            (face.id.clone(), edges)
+        })
+        .collect::<Vec<_>>();
+    let (first, second) = face_edges
+        .iter()
+        .enumerate()
+        .find_map(|(index, (first, first_edges))| {
+            face_edges[index + 1..]
+                .iter()
+                .find(|(_, second_edges)| first_edges.is_disjoint(second_edges))
+                .map(|(second, _)| (first.clone(), second.clone()))
+        })
+        .expect("cube has opposite faces");
+
+    let mut disconnected = ir.model.shells[0].clone();
+    disconnected.id.0 = "synthetic:test:shell#disconnected".into();
+    disconnected.faces = vec![first.clone(), second.clone()];
+    ir.model.shells[0]
+        .faces
+        .retain(|face| face != &first && face != &second);
+    for face in &mut ir.model.faces {
+        if face.id == first || face.id == second {
+            face.shell = disconnected.id.clone();
+        }
+    }
+    ir.model.regions[0].shells.push(disconnected.id.clone());
+    ir.model.shells.push(disconnected.clone());
+    ir.finalize();
+
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(findings.iter().any(|finding| {
+        finding.check == Check::ShellTopology
+            && finding.entity.as_deref() == Some(disconnected.id.0.as_str())
+            && finding.message == "shell faces are disconnected through shared edges"
     }));
 }
 
@@ -2785,11 +2881,18 @@ fn pcurve_surface_mismatch_is_flagged() {
     // derived u/v frame maps `(u, v) -> (u, -v, 0)`. Edge #0 runs from
     // `(0,0,0)` to `(10,0,0)`, so its parameter image is the line
     // `(0,0) -> (10,0)`.
-    let good = |u_end: f64, v_end: f64| {
+    let good = |u_end: f64, v_end: f64, line: bool| {
         let mut ir = unit_cube();
-        ir.model.pcurves.push(crate::geometry::Pcurve {
-            id: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
-            geometry: crate::geometry::PcurveGeometry::Nurbs {
+        let geometry = if line {
+            crate::geometry::PcurveGeometry::Trimmed {
+                parameter_range: [0.0, 1.0],
+                basis: Box::new(crate::geometry::PcurveGeometry::Line {
+                    origin: crate::math::Point2::new(0.0, 0.0),
+                    direction: crate::math::Point2::new(u_end, v_end),
+                }),
+            }
+        } else {
+            crate::geometry::PcurveGeometry::Nurbs {
                 degree: 1,
                 knots: vec![0.0, 0.0, 1.0, 1.0],
                 control_points: vec![
@@ -2798,7 +2901,11 @@ fn pcurve_surface_mismatch_is_flagged() {
                 ],
                 weights: None,
                 periodic: false,
-            },
+            }
+        };
+        ir.model.pcurves.push(crate::geometry::Pcurve {
+            id: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
+            geometry,
             wrapper_reversed: None,
             native_tail_flags: None,
             parameter_range: None,
@@ -2819,7 +2926,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         validate(&ir, Vec::new())
     };
 
-    let consistent = good(10.0, 0.0);
+    let consistent = good(10.0, 0.0, false);
     assert!(
         !consistent
             .findings
@@ -2829,7 +2936,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         consistent.findings
     );
 
-    let inconsistent = good(10.0, 5.0);
+    let inconsistent = good(10.0, 5.0, false);
     assert!(
         inconsistent
             .findings
@@ -2838,6 +2945,27 @@ fn pcurve_surface_mismatch_is_flagged() {
                 && f.entity.as_deref().is_some_and(|e| e.contains("coedge"))),
         "off-surface-image pcurve must be flagged, got: {:?}",
         inconsistent.findings
+    );
+
+    let consistent_line = good(10.0, 0.0, true);
+    assert!(
+        !consistent_line
+            .findings
+            .iter()
+            .any(|f| f.check == Check::GeometricConsistency),
+        "matching bounded line pcurve must validate, got: {:?}",
+        consistent_line.findings
+    );
+
+    let inconsistent_line = good(10.0, 5.0, true);
+    assert!(
+        inconsistent_line
+            .findings
+            .iter()
+            .any(|f| f.check == Check::GeometricConsistency
+                && f.entity.as_deref().is_some_and(|e| e.contains("coedge"))),
+        "off-surface-image bounded line pcurve must be flagged, got: {:?}",
+        inconsistent_line.findings
     );
 }
 
@@ -2948,6 +3076,7 @@ fn feature_extents_round_trip_through_json() {
     use crate::ids::FaceId;
 
     let extents = vec![
+        Extent::Unresolved,
         Extent::Blind {
             length: Length(12.5),
         },
@@ -3045,9 +3174,11 @@ fn sketch_feature_ownership_and_order_are_validated() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: Vec::new(),
         native_ref: None,
     });
@@ -3226,8 +3357,8 @@ fn feature_operation_geometry_is_validated() {
         },
         FeatureDefinition::KnitSurface {
             faces: FaceSelection::Unresolved,
-            merge_entities: true,
-            create_solid: false,
+            merge_entities: Some(true),
+            create_solid: Some(false),
             gap_tolerance: Some(Length(-1.0)),
         },
         FeatureDefinition::ExtendSurface {
@@ -3695,6 +3826,6 @@ fn current_document_excludes_source_byte_accounting() {
     let ir = CadIr::empty(crate::units::Units::default());
     let json = serde_json::to_value(&ir).unwrap();
 
-    assert_eq!(json["ir_version"], "55");
+    assert_eq!(json["ir_version"], crate::IR_VERSION);
     assert!(json.get("byte_ledger").is_none());
 }

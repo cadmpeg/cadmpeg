@@ -2241,9 +2241,11 @@ fn encoder_writes_source_less_line_sketches() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: vec![entity_ids
             .iter()
             .cloned()
@@ -2645,9 +2647,11 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: vec![vec![SketchEntityUse {
             entity: entity_id.clone(),
             reversed: false,
@@ -2869,9 +2873,11 @@ fn encoder_writes_source_less_curved_sketches() {
         id: sketch_id.clone(),
         name: Some("Curves".into()),
         configuration: Some("Main".into()),
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: vec![
             profile(&[0]),
             profile(&[1, 5]),
@@ -3488,9 +3494,11 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             id: sketch_id.clone(),
             name: Some(name.into()),
             configuration: None,
-            origin: Point3::new(0.0, 0.0, ordinal as f64),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, ordinal as f64),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         });
@@ -3629,9 +3637,9 @@ fn encoder_writes_source_less_native_features() {
         FeatureDefinition::Draft {
             faces: FaceSelection::Native("face-b".into()),
             neutral_plane: FaceSelection::Native("face-c".into()),
-            pull_direction: Vector3::new(0.0, 0.0, 1.0),
-            angle: Angle(0.2),
-            outward: false,
+            pull_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            angle: Some(Angle(0.2)),
+            outward: Some(false),
         },
         FeatureDefinition::Combine {
             target: BodySelection::Resolved {
@@ -6540,26 +6548,28 @@ fn decode_partitions_interleaved_schema_33103_faces_by_adjacency() {
         )
         .unwrap();
 
-    let shell_550 = decoded
+    assert_eq!(decoded.ir.model.shells.len(), 4);
+    assert!(decoded
         .ir
         .model
         .shells
         .iter()
-        .find(|shell| shell.id.0.ends_with("#550"))
-        .unwrap();
-    let shell_551 = decoded
-        .ir
-        .model
-        .shells
-        .iter()
-        .find(|shell| shell.id.0.ends_with("#551"))
-        .unwrap();
-    assert_eq!(shell_550.faces.len(), 2);
-    assert_eq!(shell_551.faces.len(), 2);
-    assert!(shell_550.faces.iter().any(|face| face.0.ends_with("#10")));
-    assert!(shell_550.faces.iter().any(|face| face.0.ends_with("#210")));
-    assert!(shell_551.faces.iter().any(|face| face.0.ends_with("#410")));
-    assert!(shell_551.faces.iter().any(|face| face.0.ends_with("#610")));
+        .all(|shell| shell.faces.len() == 1));
+    for (native_shell, face_suffixes) in [(550, ["#10", "#210"]), (551, ["#410", "#610"])] {
+        let prefix = format!("sldprt:brep:shell#{native_shell}");
+        let faces = decoded
+            .ir
+            .model
+            .shells
+            .iter()
+            .filter(|shell| shell.id.0.starts_with(&prefix))
+            .flat_map(|shell| &shell.faces)
+            .collect::<Vec<_>>();
+        assert_eq!(faces.len(), 2);
+        assert!(face_suffixes
+            .iter()
+            .all(|suffix| faces.iter().any(|face| face.0.ends_with(suffix))));
+    }
 }
 
 #[test]
@@ -6592,27 +6602,13 @@ fn decode_partitions_disc14_faces_by_native_shell_rings() {
 
     assert_eq!(decoded.ir.model.bodies.len(), 1);
     assert_eq!(decoded.ir.model.regions.len(), 1);
-    assert_eq!(decoded.ir.model.shells.len(), 2);
-    let shell_500 = decoded
+    assert_eq!(decoded.ir.model.shells.len(), 4);
+    assert!(decoded
         .ir
         .model
         .shells
         .iter()
-        .find(|shell| shell.id.0.ends_with("#500"))
-        .unwrap();
-    let shell_501 = decoded
-        .ir
-        .model
-        .shells
-        .iter()
-        .find(|shell| shell.id.0.ends_with("#501"))
-        .unwrap();
-    assert_eq!(shell_500.faces.len(), 2);
-    assert_eq!(shell_501.faces.len(), 2);
-    assert!(shell_500.faces.iter().any(|face| face.0.ends_with("#10")));
-    assert!(shell_500.faces.iter().any(|face| face.0.ends_with("#210")));
-    assert!(shell_501.faces.iter().any(|face| face.0.ends_with("#410")));
-    assert!(shell_501.faces.iter().any(|face| face.0.ends_with("#610")));
+        .all(|shell| shell.faces.len() == 1));
 
     decoded.ir.model.points[0].position.z += 1.0;
     let mut encoded = Vec::new();
@@ -6623,13 +6619,13 @@ fn decode_partitions_disc14_faces_by_native_shell_rings() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(regenerated.ir.model.regions.len(), 1);
-    assert_eq!(regenerated.ir.model.shells.len(), 2);
+    assert_eq!(regenerated.ir.model.shells.len(), 4);
     assert!(regenerated
         .ir
         .model
         .shells
         .iter()
-        .all(|shell| shell.faces.len() == 2));
+        .all(|shell| shell.faces.len() == 1));
 }
 
 #[test]
@@ -6666,7 +6662,14 @@ fn decode_partitions_disc20_faces_by_native_single_shell_lattice() {
     assert_eq!(decoded.ir.model.bodies[0].id.0, "sldprt:brep:body#900");
     assert_eq!(decoded.ir.model.regions[0].id.0, "sldprt:brep:region#900");
     assert_eq!(decoded.ir.model.shells[0].id.0, "sldprt:brep:shell#500");
-    assert_eq!(decoded.ir.model.shells[0].faces.len(), 2);
+    assert_eq!(decoded.ir.model.shells.len(), 2);
+    assert!(decoded
+        .ir
+        .model
+        .shells
+        .iter()
+        .all(|shell| shell.faces.len() == 1));
+    assert_eq!(decoded.ir.model.regions[0].shells.len(), 2);
     assert!(!decoded
         .report
         .losses
@@ -11637,9 +11640,9 @@ fn semantic_writer_round_trips_typed_draft() {
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
             neutral_plane: FaceSelection::Native(neutral_plane),
-            pull_direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
-            angle: Angle(value),
-            outward: false,
+            pull_direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            angle: Some(Angle(value)),
+            outward: Some(false),
         } if faces == "face:1,face:2"
             && neutral_plane == "face:3"
             && (*value - 3f64.to_radians()).abs() < 1e-12
@@ -11655,9 +11658,9 @@ fn semantic_writer_round_trips_typed_draft() {
     else {
         panic!("typed draft");
     };
-    *pull_direction = Vector3::new(0.0, 1.0, 0.0);
-    *angle = Angle(7f64.to_radians());
-    *outward = true;
+    *pull_direction = Some(Vector3::new(0.0, 1.0, 0.0));
+    *angle = Some(Angle(7f64.to_radians()));
+    *outward = Some(true);
     *faces = FaceSelection::Native("face:4".into());
     *neutral_plane = FaceSelection::Native("face:5".into());
 
@@ -11680,12 +11683,12 @@ fn semantic_writer_round_trips_typed_draft() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::Draft {
-            pull_direction: Vector3 {
+            pull_direction: Some(Vector3 {
                 x: 0.0,
                 y: 1.0,
                 z: 0.0
-            },
-            outward: true,
+            }),
+            outward: Some(true),
             ..
         }
     ));
@@ -11749,7 +11752,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
     else {
         panic!("typed draft");
     };
-    *angle = Angle(5f64.to_radians());
+    *angle = Some(Angle(5f64.to_radians()));
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -13545,8 +13548,8 @@ fn semantic_writer_round_trips_knit_surface() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::KnitSurface {
             faces: FaceSelection::Resolved { faces, native },
-            merge_entities: false,
-            create_solid: false,
+            merge_entities: Some(false),
+            create_solid: Some(false),
             gap_tolerance: Some(Length(0.01)),
         } if faces == &[face_id.clone()] && native == &face
     ));
@@ -13561,8 +13564,8 @@ fn semantic_writer_round_trips_knit_surface() {
         panic!("typed knit surface");
     };
     *faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *merge_entities = true;
-    *create_solid = true;
+    *merge_entities = Some(true);
+    *create_solid = Some(true);
     *gap_tolerance = None;
 
     let mut encoded = Vec::new();
@@ -13581,8 +13584,8 @@ fn semantic_writer_round_trips_knit_surface() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::KnitSurface {
-            merge_entities: true,
-            create_solid: true,
+            merge_entities: Some(true),
+            create_solid: Some(true),
             gap_tolerance: None,
             ..
         }
@@ -13682,8 +13685,8 @@ fn semantic_writer_round_trips_filled_surface() {
         FeatureDefinition::FilledSurface {
             boundary: EdgeSelection::Resolved { edges, native: edge_native },
             support_faces: FaceSelection::Resolved { faces, native: face_native },
-            continuity: SurfaceContinuity::Tangent,
-            merge_result: false,
+            continuity: Some(SurfaceContinuity::Tangent),
+            merge_result: Some(false),
         } if edges == &[edge_id.clone()] && edge_native == &edge
             && faces == &[face_id.clone()] && face_native == &face
     ));
@@ -13699,8 +13702,8 @@ fn semantic_writer_round_trips_filled_surface() {
     };
     *boundary = EdgeSelection::Edges(vec![edge_id.clone()]);
     *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *continuity = SurfaceContinuity::Curvature;
-    *merge_result = true;
+    *continuity = Some(SurfaceContinuity::Curvature);
+    *merge_result = Some(true);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -13718,8 +13721,8 @@ fn semantic_writer_round_trips_filled_surface() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::FilledSurface {
-            continuity: SurfaceContinuity::Curvature,
-            merge_result: true,
+            continuity: Some(SurfaceContinuity::Curvature),
+            merge_result: Some(true),
             ..
         }
     ));
@@ -18532,8 +18535,11 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
     assert_eq!(decoded.ir.model.sketch_constraints.len(), 3);
     let sketch = &decoded.ir.model.sketches[0];
     assert_eq!(sketch.configuration.as_deref(), Some("0"));
-    assert_eq!(sketch.origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
-    assert_eq!(sketch.normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
+    let (origin, normal, _) = sketch
+        .resolved_placement()
+        .expect("resolved sketch placement");
+    assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(sketch.profiles.len(), 1);
     assert_eq!(sketch.profiles[0].len(), 3);
     assert!(decoded
@@ -18840,9 +18846,11 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: vec![vec![cadmpeg_ir::sketches::SketchEntityUse {
             entity: cadmpeg_ir::sketches::SketchEntityId("sketch:entity".into()),
             reversed: false,

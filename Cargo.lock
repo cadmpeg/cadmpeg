@@ -161,6 +161,7 @@ name = "cadmpeg-codec-catia"
 version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
+ "memchr",
  "schemars",
  "serde",
  "sha2",
@@ -171,6 +172,7 @@ name = "cadmpeg-codec-creo"
 version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
+ "regex",
  "serde",
  "sha2",
 ]

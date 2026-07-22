@@ -40,22 +40,26 @@
 //!
 //! # Decode scope
 //!
-//! Decode transfers standard model-space datum planes from `ActDatums` as
-//! derived, unbounded plane surfaces. It preserves PSB geometry sections as
+//! Decode transfers complete model-space planes, selected cylinders, connected
+//! plane topology, placed section sketches, and native feature records. It
+//! preserves PSB geometry sections as
 //! [`cadmpeg_ir::unknown::UnknownRecord`] values.
 //!
 //! Surface prototype parameters describe family templates rather than placed
-//! instances. Per-instance coordinates, curve geometry, face bindings, and
-//! feature evaluation are incomplete, so the codec does not emit a body B-rep.
-//! The decode report identifies these losses and reports whether any datum
-//! planes were transferred.
+//! instances. Other per-instance coordinates, curve families, face bindings,
+//! and feature evaluation remain incomplete. The decode report identifies
+//! these losses.
 
+mod compress;
 pub mod container;
 pub mod curve;
 pub mod datum;
 pub mod decode;
 pub mod feature;
+pub mod placement;
+pub mod primdata;
 pub mod psb;
+pub mod reference;
 pub mod scalar;
 pub mod surface;
 pub mod topology;

@@ -3071,6 +3071,7 @@ fn procedural_construction_reduction_is_reported() {
                     sides: std::array::from_fn(|_| cadmpeg_ir::geometry::IntcurveSupportSide {
                         surface: None,
                         pcurve: None,
+                        pcurve_parameter_range: None,
                     }),
                     parameter_range: [0.0, 1.0],
                     discontinuities: std::array::from_fn(|_| Vec::new()),

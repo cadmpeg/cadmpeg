@@ -46,7 +46,10 @@ use annotations_native::{check_annotations, check_native_links};
 use byte_ledger::check_byte_ledger;
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
-use geometry_consistency::{check_edge_endpoint_consistency, check_pcurve_surface_consistency};
+use geometry_consistency::{
+    check_edge_endpoint_consistency, check_pcurve_surface_consistency,
+    check_procedural_support_consistency,
+};
 use geometry_payloads::{check_bounds, check_tessellations};
 use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
 use pmi::check_pmi;
@@ -58,7 +61,8 @@ use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
 use topology::{
-    check_coedge_pairing, check_loops, check_references, check_units, check_wire_topology, IdSets,
+    check_coedge_pairing, check_loops, check_references, check_shell_connectivity, check_units,
+    check_wire_topology, IdSets,
 };
 
 /// A radius/length that is not a finite positive number is invalid geometry.
@@ -83,12 +87,14 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     check_pmi(ir, &mut findings);
     check_loops(ir, &mut findings);
     check_coedge_pairing(ir, &mut findings);
+    check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
     check_carrier_reachability(ir, &mut findings);
     check_native_links(ir, &all_ids, &mut findings);
     check_parameter_domains(ir, &mut findings);
     check_edge_endpoint_consistency(ir, &mut findings);
     check_pcurve_surface_consistency(ir, &mut findings);
+    check_procedural_support_consistency(ir, &mut findings);
     check_bounds(ir, &mut findings);
     check_tessellations(ir, &mut findings);
     check_subds(ir, &mut findings);
@@ -194,9 +200,11 @@ mod tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: crate::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         });

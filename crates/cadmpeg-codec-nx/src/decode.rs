@@ -4297,7 +4297,8 @@ fn refine_nurbs_surface_parameters(
             position.y - point.y,
             position.z - point.z,
         );
-        let (du, dv) = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
+        let partials = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
+        let (du, dv) = (partials.du, partials.dv);
         let dot =
             |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
         let du_squared = dot(du, du);
@@ -4376,7 +4377,11 @@ fn intersection_side(
             periodic: false,
         })
     });
-    IntcurveSupportSide { surface, pcurve }
+    IntcurveSupportSide {
+        surface,
+        pcurve,
+        pcurve_parameter_range: None,
+    }
 }
 
 fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Option<Point2> {
@@ -4662,10 +4667,12 @@ fn emit_topology(
                                 IntcurveSupportSide {
                                     surface: Some(surface),
                                     pcurve: Some(pcurve),
+                                    pcurve_parameter_range: None,
                                 },
                                 IntcurveSupportSide {
                                     surface: None,
                                     pcurve: None,
+                                    pcurve_parameter_range: None,
                                 },
                             ],
                             parameter_range,
@@ -5804,6 +5811,7 @@ pub(crate) fn attach_tolerant_edge_intersections(
                     sides: supports.map(|surface| IntcurveSupportSide {
                         surface: Some(surface),
                         pcurve: None,
+                        pcurve_parameter_range: None,
                     }),
                     parameter_range: [0.0, 1.0],
                     discontinuities: [Vec::new(), Vec::new(), Vec::new()],
@@ -6468,6 +6476,7 @@ fn build_geometry_report(
         format: "nx".to_string(),
         container_only: false,
         geometry_transferred: true,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: summary_notes(scan),
     }
@@ -7271,6 +7280,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         format: "nx".to_string(),
         container_only,
         geometry_transferred: false,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: summary_notes(scan),
     }

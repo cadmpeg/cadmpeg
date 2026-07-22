@@ -100,6 +100,15 @@ pub struct DecodeReport {
     pub container_only: bool,
     /// Whether the decoder transferred B-rep geometry into the IR.
     pub geometry_transferred: bool,
+    /// Decode-coverage counts keyed by measure name (sorted).
+    ///
+    /// Records how much of each decoded population the run resolved,
+    /// transferred, dropped, or found ambiguous. Mirrors the
+    /// [`ExportReport::entity_counts`] idiom: typed `usize` census values
+    /// about what the decode did, kept distinct from container facts about
+    /// the source file (which live in the IR source metadata).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub coverage: BTreeMap<String, usize>,
     /// Explicit loss notes.
     pub losses: Vec<LossNote>,
     /// Free-form informational notes (e.g. container findings).
@@ -167,6 +176,8 @@ pub enum Check {
     CoedgePairing,
     /// Wire edges, free vertices, or wire bodies violate topology ownership rules.
     WireTopology,
+    /// A face-bearing shell is disconnected through physical-edge incidence.
+    ShellTopology,
     /// A geometry carrier cannot be reached from topology or retained construction data.
     CarrierReachability,
     /// An annotation key, stream index, or field path is invalid.
@@ -209,6 +220,7 @@ impl fmt::Display for Check {
             Self::LoopClosure => "loop_closure",
             Self::CoedgePairing => "coedge_pairing",
             Self::WireTopology => "wire_topology",
+            Self::ShellTopology => "shell_topology",
             Self::CarrierReachability => "carrier_reachability",
             Self::Annotations => "annotations",
             Self::NativeLinks => "native_links",

@@ -15,7 +15,7 @@ cargo add cadmpeg-ir
 
 A `CadIr` document contains:
 
-- required IR version 53 schema, including loop boundary roles, vertex loops, ordered pcurve uses, and the `subds` arena;
+- required IR version 55 schema, including atomic sketch placement, loop boundary roles, vertex loops, ordered pcurve uses, and the `subds` arena;
 - canonical units and document tolerances;
 - flat, ID-referenced arenas for topology, geometry, subdivision control cages, construction features,
   tessellation, appearance, and source attributes;
@@ -88,7 +88,7 @@ offsets.
 
 ## Scope
 
-IR version 53 covers B-rep topology, analytic and NURBS geometry, Catmull–Clark
+IR version 55 covers B-rep topology, analytic and NURBS geometry, Catmull–Clark
 control cages, procedural construction links including Sum and bounded
 Revolution definitions, tessellation, appearance, attributes, and neutral
 feature records. Native namespaces retain format-specific design and history
@@ -98,7 +98,7 @@ Assembly instancing, component trees, and joint constraints are reserved.
 ## Documentation
 
 - [API documentation][docs]
-- [CAD IR version 53][ir-spec]
+- [CAD IR version 55][ir-spec]
 - [Architecture and crate map][architecture]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]

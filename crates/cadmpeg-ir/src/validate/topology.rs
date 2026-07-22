@@ -1044,7 +1044,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ref_error(findings, &procedural.id.0, "unknown record", &record.0);
                 }
             }
-            ProceduralSurfaceDefinition::Helix { .. }
+            ProceduralSurfaceDefinition::RollingBallJet { .. }
+            | ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
             | ProceduralSurfaceDefinition::DegenerateTorus { .. }
             | ProceduralSurfaceDefinition::Unknown { record: None } => {}
@@ -1522,7 +1523,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 (loci.iter().map(locus_entity).cloned().collect(), None)
             }
             Definition::HorizontalPoints { first, second }
-            | Definition::VerticalPoints { first, second } => (
+            | Definition::VerticalPoints { first, second }
+            | Definition::TangentLoci { first, second }
+            | Definition::SameCoordinate { first, second, .. } => (
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 None,
             ),
@@ -1549,6 +1552,18 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     locus_entity(first).clone(),
                     locus_entity(second).clone(),
                     axis.clone(),
+                ],
+                None,
+            ),
+            Definition::PointSymmetric {
+                first,
+                second,
+                center,
+            } => (
+                vec![
+                    locus_entity(first).clone(),
+                    locus_entity(second).clone(),
+                    locus_entity(center).clone(),
                 ],
                 None,
             ),
@@ -1633,6 +1648,7 @@ enum ParameterValueKind {
     Real,
     Integer,
     Boolean,
+    String,
 }
 
 fn check_parameter_value_kinds(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -1744,6 +1760,7 @@ fn parameter_value_kind(value: &ParameterValue) -> ParameterValueKind {
         ParameterValue::Real(_) => ParameterValueKind::Real,
         ParameterValue::Integer(_) => ParameterValueKind::Integer,
         ParameterValue::Boolean(_) => ParameterValueKind::Boolean,
+        ParameterValue::String(_) => ParameterValueKind::String,
     }
 }
 
@@ -2427,7 +2444,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 face_selections.push(faces);
                 face_selections.push(neutral_plane);
-                if !valid_feature_direction(*pull_direction) || !angle.0.is_finite() {
+                if pull_direction.is_some_and(|direction| !valid_feature_direction(direction))
+                    || angle.is_some_and(|angle| !angle.0.is_finite())
+                {
                     feature_geometry_error(findings, feature, "draft geometry is invalid");
                 }
             }
@@ -3184,6 +3203,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlaneUnresolved
+            | FeatureDefinition::BoundarySurfaceUnresolved
             | FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }
@@ -3394,6 +3414,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     _ => {}
                 }
                 let valid_magnitude = match extent {
+                    Extent::Unresolved => true,
                     Extent::Blind { length } | Extent::Symmetric { length } => {
                         length.0.is_finite() && length.0 != 0.0
                     }
@@ -3421,7 +3442,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     | Extent::ToVertex { .. }
                     | Extent::ToShape { .. } => true,
                     Extent::OffsetFromFace { offset, .. } => offset.0.is_finite() && offset.0 > 0.0,
-                    Extent::Unresolved => true,
                     Extent::TwoSidedExtents { .. } | Extent::SymmetricExtent { .. } => {
                         unreachable!("composite extents are expanded above")
                     }
@@ -3660,7 +3680,7 @@ fn parameter_value_is_finite(value: &ParameterValue) -> bool {
         ParameterValue::Length(value) => value.0.is_finite(),
         ParameterValue::Angle(value) => value.0.is_finite(),
         ParameterValue::Real(value) => value.is_finite(),
-        ParameterValue::Integer(_) | ParameterValue::Boolean(_) => true,
+        ParameterValue::Integer(_) | ParameterValue::Boolean(_) | ParameterValue::String(_) => true,
     }
 }
 
@@ -4083,6 +4103,74 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
             })
         {
             wire_error(findings, &body.id.0, "wire body contains faces");
+        }
+    }
+}
+
+pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let faces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.0.as_str(), face))
+        .collect::<HashMap<_, _>>();
+    let loop_faces = ir
+        .model
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.0.as_str(), loop_.face.0.as_str()))
+        .collect::<HashMap<_, _>>();
+    let mut faces_by_edge = HashMap::<&str, HashSet<&str>>::new();
+    for coedge in &ir.model.coedges {
+        let Some(face) = loop_faces.get(coedge.owner_loop.0.as_str()) else {
+            continue;
+        };
+        faces_by_edge
+            .entry(coedge.edge.0.as_str())
+            .or_default()
+            .insert(*face);
+    }
+    let mut neighbors = HashMap::<&str, HashSet<&str>>::new();
+    for edge_faces in faces_by_edge.values() {
+        for &face in edge_faces {
+            neighbors
+                .entry(face)
+                .or_default()
+                .extend(edge_faces.iter().copied().filter(|other| *other != face));
+        }
+    }
+
+    for shell in &ir.model.shells {
+        if shell.faces.len() < 2
+            || shell.faces.iter().any(|face| {
+                faces
+                    .get(face.0.as_str())
+                    .is_none_or(|face| face.loops.is_empty())
+            })
+        {
+            continue;
+        }
+        let owned = shell
+            .faces
+            .iter()
+            .map(|face| face.0.as_str())
+            .collect::<HashSet<_>>();
+        let mut reached = HashSet::from([shell.faces[0].0.as_str()]);
+        let mut pending = vec![shell.faces[0].0.as_str()];
+        while let Some(face) = pending.pop() {
+            for &neighbor in neighbors.get(face).into_iter().flatten() {
+                if owned.contains(neighbor) && reached.insert(neighbor) {
+                    pending.push(neighbor);
+                }
+            }
+        }
+        if reached.len() != owned.len() {
+            findings.push(Finding {
+                check: Check::ShellTopology,
+                severity: Severity::Error,
+                message: "shell faces are disconnected through shared edges".into(),
+                entity: Some(shell.id.0.clone()),
+            });
         }
     }
 }

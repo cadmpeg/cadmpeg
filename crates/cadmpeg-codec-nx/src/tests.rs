@@ -870,9 +870,11 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: Vec::new(),
         native_ref: None,
     });
@@ -1090,9 +1092,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     ir.model.features[0].definition = FeatureDefinition::Draft {
         faces: cadmpeg_ir::features::FaceSelection::Unresolved,
         neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-        pull_direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        angle: cadmpeg_ir::features::Angle(0.1),
-        outward: false,
+        pull_direction: Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
+        angle: Some(cadmpeg_ir::features::Angle(0.1)),
+        outward: Some(false),
     };
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
@@ -1177,9 +1179,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         crate::decode::body_output_feature_family(&FeatureDefinition::Draft {
             faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-            pull_direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            angle: cadmpeg_ir::features::Angle(0.1),
-            outward: false,
+            pull_direction: Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
+            angle: Some(cadmpeg_ir::features::Angle(0.1)),
+            outward: Some(false),
         }),
         Some("draft")
     );
@@ -4567,10 +4569,12 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
                 sides: [
                     IntcurveSupportSide {
                         surface: Some(incident[0].clone()),
+                        pcurve_parameter_range: None,
                         pcurve: None,
                     },
                     IntcurveSupportSide {
                         surface: None,
+                        pcurve_parameter_range: None,
                         pcurve: None,
                     },
                 ],
@@ -4688,6 +4692,7 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
                 sides: [
                     IntcurveSupportSide {
                         surface: Some(source),
+                        pcurve_parameter_range: None,
                         pcurve: Some(PcurveGeometry::Line {
                             origin: Point2::new(0.0, 0.0),
                             direction: Point2::new(std::f64::consts::TAU, 0.0),
@@ -4695,6 +4700,7 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
                     },
                     IntcurveSupportSide {
                         surface: Some(target.clone()),
+                        pcurve_parameter_range: None,
                         pcurve: None,
                     },
                 ],
@@ -4826,6 +4832,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                 sides: [
                     IntcurveSupportSide {
                         surface: Some(source),
+                        pcurve_parameter_range: None,
                         pcurve: Some(PcurveGeometry::Line {
                             origin: Point2::new(0.0, 0.0),
                             direction: Point2::new(1.0, 0.0),
@@ -4833,6 +4840,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                     },
                     IntcurveSupportSide {
                         surface: Some(target),
+                        pcurve_parameter_range: None,
                         pcurve: None,
                     },
                 ],
@@ -4928,10 +4936,12 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 sides: [
                     IntcurveSupportSide {
                         surface: Some(nurbs),
+                        pcurve_parameter_range: None,
                         pcurve: None,
                     },
                     IntcurveSupportSide {
                         surface: Some(plane),
+                        pcurve_parameter_range: None,
                         pcurve: None,
                     },
                 ],
@@ -6709,6 +6719,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
                     sides: [
                         cadmpeg_ir::geometry::IntcurveSupportSide {
                             surface: Some(surface),
+                            pcurve_parameter_range: None,
                             pcurve: Some(PcurveGeometry::Nurbs {
                                 degree: 1,
                                 knots: vec![0.0, 0.0, 1.0, 1.0],
@@ -6719,6 +6730,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
                         },
                         cadmpeg_ir::geometry::IntcurveSupportSide {
                             surface: None,
+                            pcurve_parameter_range: None,
                             pcurve: None,
                         },
                     ],
@@ -7056,10 +7068,12 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                 sides: [
                     cadmpeg_ir::geometry::IntcurveSupportSide {
                         surface: Some(offsets[0].clone()),
+                        pcurve_parameter_range: None,
                         pcurve: None,
                     },
                     cadmpeg_ir::geometry::IntcurveSupportSide {
                         surface: Some(offsets[1].clone()),
+                        pcurve_parameter_range: None,
                         pcurve: Some(PcurveGeometry::Line {
                             origin: Point2::new(1.0, 2.0),
                             direction: Point2::new(3.0, 4.0),
@@ -7835,6 +7849,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 sides: [
                     IntcurveSupportSide {
                         surface: Some(first_spine_side),
+                        pcurve_parameter_range: None,
                         pcurve: Some(PcurveGeometry::Line {
                             origin: Point2::new(0.0, -2.0),
                             direction: Point2::new(1.0, 0.0),
@@ -7842,6 +7857,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     },
                     IntcurveSupportSide {
                         surface: Some(second_spine_side),
+                        pcurve_parameter_range: None,
                         pcurve: Some(PcurveGeometry::Line {
                             origin: Point2::new(0.0, 2.0),
                             direction: Point2::new(1.0, 0.0),
@@ -7884,6 +7900,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 sides: [
                     IntcurveSupportSide {
                         surface: Some(first.clone()),
+                        pcurve_parameter_range: None,
                         pcurve: Some(PcurveGeometry::Line {
                             origin: Point2::new(0.0, -2.0),
                             direction: Point2::new(1.0, 0.0),
@@ -7891,6 +7908,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     },
                     IntcurveSupportSide {
                         surface: Some(surface.clone()),
+                        pcurve_parameter_range: None,
                         pcurve: None,
                     },
                 ],
@@ -8981,9 +8999,11 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
-        origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: Vec::new(),
         native_ref: None,
     });

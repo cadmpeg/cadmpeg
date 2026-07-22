@@ -185,6 +185,64 @@ impl Brep {
     }
 }
 
+fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> {
+    let candidates = out
+        .faces
+        .iter()
+        .filter(|face| face.shell.0 == native_shell_id)
+        .map(|face| face.id.clone())
+        .collect::<Vec<_>>();
+    let candidate_ids = candidates
+        .iter()
+        .map(|face| face.0.as_str())
+        .collect::<HashSet<_>>();
+    let loop_faces = out
+        .loops
+        .iter()
+        .filter(|loop_| candidate_ids.contains(loop_.face.0.as_str()))
+        .map(|loop_| (loop_.id.0.as_str(), loop_.face.0.as_str()))
+        .collect::<HashMap<_, _>>();
+    let mut faces_by_edge = HashMap::<&str, HashSet<&str>>::new();
+    for coedge in &out.coedges {
+        if let Some(face) = loop_faces.get(coedge.owner_loop.0.as_str()) {
+            faces_by_edge
+                .entry(coedge.edge.0.as_str())
+                .or_default()
+                .insert(*face);
+        }
+    }
+    let mut neighbors = HashMap::<&str, HashSet<&str>>::new();
+    for edge_faces in faces_by_edge.values() {
+        for &face in edge_faces {
+            neighbors
+                .entry(face)
+                .or_default()
+                .extend(edge_faces.iter().copied().filter(|other| *other != face));
+        }
+    }
+
+    let mut assigned = HashSet::new();
+    let mut components = Vec::new();
+    for face in &candidates {
+        if !assigned.insert(face.0.as_str()) {
+            continue;
+        }
+        let mut component = Vec::new();
+        let mut pending = vec![face.0.as_str()];
+        while let Some(current) = pending.pop() {
+            component.push(FaceId(current.to_string()));
+            for &neighbor in neighbors.get(current).into_iter().flatten() {
+                if assigned.insert(neighbor) {
+                    pending.push(neighbor);
+                }
+            }
+        }
+        component.sort_by(|left, right| left.0.cmp(&right.0));
+        components.push(component);
+    }
+    components
+}
+
 /// Transfer limitations found while building a [`Brep`].
 #[derive(Default)]
 pub struct Stats {
@@ -940,25 +998,41 @@ fn decode_graph(
         let mut body_regions = Vec::new();
         if native_regions.is_empty() {
             let region_id = format!("sldprt:brep:region#{group}");
-            let shell_id = format!("sldprt:brep:shell#{group}");
-            annotate_group(&shell_id, None);
+            let native_shell_id = format!("sldprt:brep:shell#{group}");
             annotate_group(&region_id, None);
-            out.shells.push(Shell {
-                id: ShellId(shell_id.clone()),
-                region: RegionId(region_id.clone()),
-                faces: out
-                    .faces
+            let mut region_shells = Vec::new();
+            for (component, faces) in shell_face_components(&out, &native_shell_id)
+                .into_iter()
+                .enumerate()
+            {
+                let shell_id = if component == 0 {
+                    native_shell_id.clone()
+                } else {
+                    format!("{native_shell_id}.component-{component}")
+                };
+                annotate_group(&shell_id, None);
+                let face_ids = faces
                     .iter()
-                    .filter(|face| face.shell.0 == shell_id)
-                    .map(|face| face.id.clone())
-                    .collect(),
-                wire_edges: Vec::new(),
-                free_vertices: Vec::new(),
-            });
+                    .map(|face| face.0.as_str())
+                    .collect::<HashSet<_>>();
+                for face in &mut out.faces {
+                    if face_ids.contains(face.id.0.as_str()) {
+                        face.shell = ShellId(shell_id.clone());
+                    }
+                }
+                out.shells.push(Shell {
+                    id: ShellId(shell_id.clone()),
+                    region: RegionId(region_id.clone()),
+                    faces,
+                    wire_edges: Vec::new(),
+                    free_vertices: Vec::new(),
+                });
+                region_shells.push(ShellId(shell_id));
+            }
             out.regions.push(Region {
                 id: RegionId(region_id.clone()),
                 body: BodyId(body_id.clone()),
-                shells: vec![ShellId(shell_id)],
+                shells: region_shells,
             });
             body_regions.push(RegionId(region_id));
         } else {
@@ -967,21 +1041,38 @@ fn decode_graph(
                 annotate_group(&region_id, Some((region.offset, "00_51_region")));
                 let mut region_shells = Vec::new();
                 for shell in &region.shells {
-                    let shell_id = format!("sldprt:brep:shell#{}", shell.attr);
-                    annotate_group(&shell_id, Some((shell.offset, "00_51_shell")));
-                    out.shells.push(Shell {
-                        id: ShellId(shell_id.clone()),
-                        region: RegionId(region_id.clone()),
-                        faces: out
-                            .faces
+                    let native_shell_id = format!("sldprt:brep:shell#{}", shell.attr);
+                    for (component, faces) in shell_face_components(&out, &native_shell_id)
+                        .into_iter()
+                        .enumerate()
+                    {
+                        let shell_id = if component == 0 {
+                            native_shell_id.clone()
+                        } else {
+                            format!("{native_shell_id}.component-{component}")
+                        };
+                        annotate_group(
+                            &shell_id,
+                            (component == 0).then_some((shell.offset, "00_51_shell")),
+                        );
+                        let face_ids = faces
                             .iter()
-                            .filter(|face| face.shell.0 == shell_id)
-                            .map(|face| face.id.clone())
-                            .collect(),
-                        wire_edges: Vec::new(),
-                        free_vertices: Vec::new(),
-                    });
-                    region_shells.push(ShellId(shell_id));
+                            .map(|face| face.0.as_str())
+                            .collect::<HashSet<_>>();
+                        for face in &mut out.faces {
+                            if face_ids.contains(face.id.0.as_str()) {
+                                face.shell = ShellId(shell_id.clone());
+                            }
+                        }
+                        out.shells.push(Shell {
+                            id: ShellId(shell_id.clone()),
+                            region: RegionId(region_id.clone()),
+                            faces,
+                            wire_edges: Vec::new(),
+                            free_vertices: Vec::new(),
+                        });
+                        region_shells.push(ShellId(shell_id));
+                    }
                 }
                 out.regions.push(Region {
                     id: RegionId(region_id.clone()),
