@@ -1363,29 +1363,9 @@ pub fn positional_frame_planes(
             (record.body.ends_with(&[0xf7, 0x0c]) && corners.len() == 6)
                 .then(|| (corners[0].offset, corners))
         })();
-        let reflected_corner_frame = (|| {
-            let frame_end = record.body.len().checked_sub(2)?;
-            let frame = record.scalar_frames.iter().find(|frame| {
-                frame.slots.len() == 6
-                    && frame
-                        .slots
-                        .last()
-                        .is_some_and(|slot| slot.offset + slot.length == frame_end)
-            })?;
-            let [first_held, _, _, second_held, _, _] = frame.slots.as_slice() else {
-                unreachable!("six slots were checked above");
-            };
-            (record.body.ends_with(&[0xf7, 0x0c])
-                && first_held.length == 7
-                && second_held.length == 7
-                && first_held.raw == second_held.raw
-                && matches!(first_held.raw.first(), Some(0xd0..=0xdc)))
-            .then_some((frame.offset, frame.slots.as_slice()))
-        })();
         let mut candidates = marked_frames
             .chain(auxiliary_frame)
             .chain(suffixed_auxiliary_frame)
-            .chain(reflected_corner_frame)
             .filter_map(|(offset, slots)| {
                 let values = slots
                     .iter()
@@ -2227,9 +2207,13 @@ fn reflected_first_coordinate_plane_corner_tokens(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<Vec<SurfaceParameterScalar>> {
-    body.ends_with(&[0xf7, 0x0c]).then_some(())?;
-    let frame_end = body.len().checked_sub(2)?;
+    let frame_end = if body.ends_with(&[0xf7, 0x0c]) {
+        body.len().checked_sub(2)?
+    } else {
+        body.len()
+    };
     let mut candidates = (0..frame_end).filter_map(|start| {
+        (start >= 3 && body.get(start - 3..start) == Some(&[0x00, 0x0c, 0x9a])).then_some(())?;
         let (stored_held, first_end) =
             scalar::decode_tabulated_cylinder_first_coordinate(body, start, cache)?;
         (first_end == start + 7 && stored_held.is_finite() && stored_held < 0.0).then_some(())?;
@@ -6256,6 +6240,25 @@ mod tests {
         );
         assert_eq!(
             positional_frame_planes(std::slice::from_ref(&record), std::slice::from_ref(&row)),
+            vec![OutlinePlane {
+                surface_id: 41,
+                origin: [3.326_456_464_841_722_7, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                u_axis: [0.0, 1.0, 0.0],
+                offset: 24,
+            }]
+        );
+
+        let mut unterminated = record.clone();
+        unterminated.body.truncate(unterminated.body.len() - 2);
+        unterminated.scalar_tokens = scalar_tokens(
+            SurfaceKind::Plane,
+            &unterminated.body,
+            &scalar::ScalarCache::default(),
+        );
+        unterminated.scalar_frames = scalar_frames(&unterminated.scalar_tokens);
+        assert_eq!(
+            positional_frame_planes(&[unterminated], &[row.clone()]),
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [3.326_456_464_841_722_7, 0.0, 0.0],
