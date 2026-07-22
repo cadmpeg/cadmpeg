@@ -5282,6 +5282,102 @@ fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDerivative {
 /// Decode the standard-nested vertex cloud and analytic surface carriers. Returns
 /// `None` when the reconstructed stream yields neither vertices nor surfaces, so
 /// the caller falls back to the container-metadata path.
+fn emit_standard_extrusion_definition(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    surfaces: &mut Vec<Surface>,
+    procedural_supports: &mut HashMap<u32, SurfaceId>,
+    extrusion_definitions: &mut HashMap<u32, ProceduralSurfaceDefinition>,
+    extrusion: crate::b5_transfer::ResolvedExtrusionSurface,
+) -> ProceduralSurfaceDefinition {
+    if let Some(definition) = extrusion_definitions.get(&extrusion.surface_object_id) {
+        return definition.clone();
+    }
+    let surface_object_id = extrusion.surface_object_id;
+    let sides = extrusion.supports.map(|side| {
+        let support_id = procedural_supports
+            .entry(side.surface_object_id)
+            .or_insert_with(|| {
+                let id = SurfaceId(format!(
+                    "catia:standard:procedural-support#{}",
+                    side.surface_object_id
+                ));
+                annotate(
+                    annotations,
+                    &id,
+                    "object_stream_b5_03",
+                    0,
+                    format!("surface:{:08x}", side.surface_object_id),
+                    Exactness::ByteExact,
+                );
+                surfaces.push(Surface {
+                    id: id.clone(),
+                    geometry: side.surface,
+                    source_object: Some(cgm_source("surface", side.surface_object_id)),
+                });
+                id
+            })
+            .clone();
+        IntcurveSupportSide {
+            surface: Some(support_id),
+            pcurve: Some(side.pcurve),
+            pcurve_parameter_range: (side.pcurve_parameter_range
+                != extrusion.directrix_parameter_range)
+                .then_some(side.pcurve_parameter_range),
+        }
+    });
+    let directrix_id = CurveId(format!(
+        "catia:standard:extrusion-directrix#{}",
+        extrusion.directrix_object_id
+    ));
+    annotate(
+        annotations,
+        &directrix_id,
+        "object_stream_a8_03_25",
+        0,
+        "two_support_directrix",
+        Exactness::Unknown,
+    );
+    ir.model.curves.push(Curve {
+        id: directrix_id.clone(),
+        geometry: CurveGeometry::Unknown { record: None },
+        source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+    });
+    let directrix_procedure = ProceduralCurveId(format!(
+        "catia:standard:extrusion-directrix-procedure#{}",
+        extrusion.directrix_object_id
+    ));
+    annotate(
+        annotations,
+        &directrix_procedure,
+        "object_stream_a8_03_25",
+        0,
+        "two_surface_pcurve_intersection",
+        Exactness::Derived,
+    );
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: directrix_procedure,
+        curve: directrix_id.clone(),
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides,
+                parameter_range: extrusion.directrix_parameter_range,
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: Some(extrusion.cache_fit_tolerance),
+    });
+    let definition = ProceduralSurfaceDefinition::Extrusion {
+        directrix: directrix_id,
+        parameter_interval: Some(extrusion.directrix_parameter_range),
+        direction: extrusion.direction,
+        native_position: None,
+    };
+    extrusion_definitions.insert(surface_object_id, definition.clone());
+    definition
+}
+
 fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
     let brep = scan.brep.as_ref()?;
     let points = topology::standard_vertex_points(brep)
@@ -5498,6 +5594,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         "catia:payload:unknown#brep-stream",
     );
     let mut procedural_supports = HashMap::<u32, SurfaceId>::new();
+    let mut extrusion_definitions = HashMap::<u32, ProceduralSurfaceDefinition>::new();
     for (index, surface, tag, procedure) in procedural_surface_plans {
         let procedural_id = ProceduralSurfaceId(format!("catia:standard:procedural-surf#{index}"));
         let (source, carrier, definition, exactness) = match procedure {
@@ -5516,28 +5613,68 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
                 support,
                 distance,
             } => {
-                let support_id = procedural_supports
-                    .entry(support_object_id)
-                    .or_insert_with(|| {
-                        let id = SurfaceId(format!(
+                let support_id = match support {
+                    crate::b5_transfer::ResolvedOffsetSupport::Geometry(support) => {
+                        procedural_supports
+                            .entry(support_object_id)
+                            .or_insert_with(|| {
+                                let id = SurfaceId(format!(
+                                    "catia:standard:procedural-support#{support_object_id}"
+                                ));
+                                annotate(
+                                    &mut annotations,
+                                    &id,
+                                    "object_stream_b5_03",
+                                    0,
+                                    format!("surface:{support_object_id:08x}"),
+                                    Exactness::ByteExact,
+                                );
+                                surfaces.push(Surface {
+                                    id: id.clone(),
+                                    geometry: support,
+                                    source_object: Some(cgm_source("surface", support_object_id)),
+                                });
+                                id
+                            })
+                            .clone()
+                    }
+                    crate::b5_transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
+                        let support_id = SurfaceId(format!(
                             "catia:standard:procedural-support#{support_object_id}"
                         ));
                         annotate(
                             &mut annotations,
-                            &id,
-                            "object_stream_b5_03",
+                            &support_id,
+                            "object_stream_b5_03_2c",
                             0,
                             format!("surface:{support_object_id:08x}"),
-                            Exactness::ByteExact,
+                            Exactness::Derived,
                         );
                         surfaces.push(Surface {
-                            id: id.clone(),
-                            geometry: support,
+                            id: support_id.clone(),
+                            geometry: SurfaceGeometry::Unknown { record: None },
                             source_object: Some(cgm_source("surface", support_object_id)),
                         });
-                        id
-                    })
-                    .clone();
+                        let definition = emit_standard_extrusion_definition(
+                            &mut ir,
+                            &mut annotations,
+                            &mut surfaces,
+                            &mut procedural_supports,
+                            &mut extrusion_definitions,
+                            *extrusion,
+                        );
+                        ir.model.procedural_surfaces.push(ProceduralSurface {
+                            id: ProceduralSurfaceId(format!(
+                                "catia:standard:procedural-support-definition#{support_object_id}"
+                            )),
+                            surface: support_id.clone(),
+                            definition,
+                            cache_fit_tolerance: None,
+                        });
+                        procedural_supports.insert(support_object_id, support_id.clone());
+                        support_id
+                    }
+                };
                 annotations.derived(&procedural_id, "definition.u_sense");
                 annotations.derived(&procedural_id, "definition.v_sense");
                 (
@@ -5554,89 +5691,19 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
                 )
             }
             StandardSurfaceProcedure::Extrusion(extrusion) => {
-                let sides = extrusion.supports.map(|side| {
-                    let support_id = procedural_supports
-                        .entry(side.surface_object_id)
-                        .or_insert_with(|| {
-                            let id = SurfaceId(format!(
-                                "catia:standard:procedural-support#{}",
-                                side.surface_object_id
-                            ));
-                            annotate(
-                                &mut annotations,
-                                &id,
-                                "object_stream_b5_03",
-                                0,
-                                format!("surface:{:08x}", side.surface_object_id),
-                                Exactness::ByteExact,
-                            );
-                            surfaces.push(Surface {
-                                id: id.clone(),
-                                geometry: side.surface,
-                                source_object: Some(cgm_source("surface", side.surface_object_id)),
-                            });
-                            id
-                        })
-                        .clone();
-                    IntcurveSupportSide {
-                        surface: Some(support_id),
-                        pcurve: Some(side.pcurve),
-                        pcurve_parameter_range: (side.pcurve_parameter_range
-                            != extrusion.directrix_parameter_range)
-                            .then_some(side.pcurve_parameter_range),
-                    }
-                });
-                let directrix_id = CurveId(format!(
-                    "catia:standard:extrusion-directrix#{}",
-                    extrusion.directrix_object_id
-                ));
-                annotate(
+                let carrier = extrusion.surface_object_id;
+                let definition = emit_standard_extrusion_definition(
+                    &mut ir,
                     &mut annotations,
-                    &directrix_id,
-                    "object_stream_a8_03_25",
-                    0,
-                    "two_support_directrix",
-                    Exactness::Unknown,
+                    &mut surfaces,
+                    &mut procedural_supports,
+                    &mut extrusion_definitions,
+                    *extrusion,
                 );
-                ir.model.curves.push(Curve {
-                    id: directrix_id.clone(),
-                    geometry: CurveGeometry::Unknown { record: None },
-                    source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
-                });
-                let directrix_procedure = ProceduralCurveId(format!(
-                    "catia:standard:extrusion-directrix-procedure#{}",
-                    extrusion.directrix_object_id
-                ));
-                annotate(
-                    &mut annotations,
-                    &directrix_procedure,
-                    "object_stream_a8_03_25",
-                    0,
-                    "two_surface_pcurve_intersection",
-                    Exactness::Derived,
-                );
-                ir.model.procedural_curves.push(ProceduralCurve {
-                    id: directrix_procedure,
-                    curve: directrix_id.clone(),
-                    definition: ProceduralCurveDefinition::Intersection {
-                        context: IntcurveSupportContext {
-                            sides,
-                            parameter_range: extrusion.directrix_parameter_range,
-                            discontinuities: std::array::from_fn(|_| Vec::new()),
-                        },
-                        discontinuity_flag: false,
-                    },
-                    cache_fit_tolerance: Some(extrusion.cache_fit_tolerance),
-                });
                 (
                     "object_stream_b5_03_2c",
-                    extrusion.surface_object_id,
-                    ProceduralSurfaceDefinition::Extrusion {
-                        directrix: directrix_id,
-                        parameter_interval: Some(extrusion.directrix_parameter_range),
-                        direction: extrusion.direction,
-                        native_position: None,
-                    },
+                    carrier,
+                    definition,
                     Exactness::Derived,
                 )
             }
@@ -5768,7 +5835,7 @@ pub(crate) enum StandardSurfaceProcedure {
     Offset {
         carrier_object_id: u32,
         support_object_id: u32,
-        support: SurfaceGeometry,
+        support: crate::b5_transfer::ResolvedOffsetSupport,
         distance: f64,
     },
     Extrusion(Box<crate::b5_transfer::ResolvedExtrusionSurface>),
@@ -5797,7 +5864,8 @@ pub(crate) fn standard_object_evidence_from_streams(
     tags: &HashSet<u32>,
 ) -> StandardObjectEvidence {
     let mut surface_candidates = HashMap::<u32, Option<StandardSurfaceEvidence>>::new();
-    let mut support_candidates = HashMap::<u32, Option<SurfaceGeometry>>::new();
+    let mut support_candidates =
+        HashMap::<u32, Option<crate::b5_transfer::ResolvedOffsetSupport>>::new();
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     for stream in streams {
         let face_surfaces = crate::b5::face_surface_references(&stream);
@@ -5846,16 +5914,14 @@ pub(crate) fn standard_object_evidence_from_streams(
                         })
                 })
                 .or_else(|| {
-                    crate::b5_transfer::resolved_offset_surface(&graph, surface_id).map(
-                        |(carrier_object_id, support_object_id, support, distance)| {
-                            StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
-                                carrier_object_id,
-                                support_object_id,
-                                support,
-                                distance,
-                            })
-                        },
-                    )
+                    crate::b5_transfer::resolved_offset_surface(&graph, surface_id).map(|offset| {
+                        StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
+                            carrier_object_id: offset.carrier_object_id,
+                            support_object_id: offset.support_object_id,
+                            support: offset.support,
+                            distance: offset.distance,
+                        })
+                    })
                 })
                 .or_else(|| {
                     crate::b5_transfer::resolved_extrusion_surface(&graph, surface_id)
@@ -5887,14 +5953,20 @@ pub(crate) fn standard_object_evidence_from_streams(
                     support_candidates
                         .entry(side.surface_object_id)
                         .and_modify(|stored| {
-                            if stored
-                                .as_ref()
-                                .is_some_and(|stored| stored != &side.surface)
-                            {
+                            if stored.as_ref().is_some_and(|stored| {
+                                stored
+                                    != &crate::b5_transfer::ResolvedOffsetSupport::Geometry(
+                                        side.surface.clone(),
+                                    )
+                            }) {
                                 *stored = None;
                             }
                         })
-                        .or_insert_with(|| Some(side.surface.clone()));
+                        .or_insert_with(|| {
+                            Some(crate::b5_transfer::ResolvedOffsetSupport::Geometry(
+                                side.surface.clone(),
+                            ))
+                        });
                 }
             }
             surface_candidates
@@ -5936,7 +6008,9 @@ pub(crate) fn standard_object_evidence_from_streams(
                                 support_candidates
                                     .get(&side.surface_object_id)
                                     .and_then(Option::as_ref)
-                                    == Some(&side.surface)
+                                    == Some(&crate::b5_transfer::ResolvedOffsetSupport::Geometry(
+                                        side.surface.clone(),
+                                    ))
                             })
                         }
                     };

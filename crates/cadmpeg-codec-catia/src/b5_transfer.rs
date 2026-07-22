@@ -1826,20 +1826,6 @@ pub(crate) fn resolved_surface_procedural_definition(
     }
 }
 
-pub(crate) fn resolved_offset_surface(
-    graph: &B5Graph,
-    surface_id: u32,
-) -> Option<(u32, u32, SurfaceGeometry, f64)> {
-    let offset = graph.offset_surfaces.get(&surface_id)?;
-    let support = resolved_surface_geometry(graph, offset.source_surface)?;
-    Some((
-        offset.carrier_surface,
-        offset.source_surface,
-        support,
-        offset.distance,
-    ))
-}
-
 /// Neutral support evidence for one side of an exact extrusion directrix.
 #[derive(Clone, PartialEq)]
 pub(crate) struct ResolvedExtrusionSupport {
@@ -1868,6 +1854,28 @@ pub(crate) struct ResolvedExtrusionSurface {
     pub(crate) direction: Vector3,
     /// Ordered exact support sides.
     pub(crate) supports: [ResolvedExtrusionSupport; 2],
+}
+
+/// Exact support construction of a resolved offset surface.
+#[derive(Clone, PartialEq)]
+pub(crate) enum ResolvedOffsetSupport {
+    /// Direct neutral support geometry.
+    Geometry(SurfaceGeometry),
+    /// Procedural extrusion support.
+    Extrusion(Box<ResolvedExtrusionSurface>),
+}
+
+/// Exact offset construction resolved from a B5 class-`30` object.
+#[derive(Clone, PartialEq)]
+pub(crate) struct ResolvedOffsetSurface {
+    /// Persistent result-carrier identity.
+    pub(crate) carrier_object_id: u32,
+    /// Persistent support-surface identity.
+    pub(crate) support_object_id: u32,
+    /// Exact support construction.
+    pub(crate) support: ResolvedOffsetSupport,
+    /// Signed offset distance.
+    pub(crate) distance: f64,
 }
 
 pub(crate) fn resolved_extrusion_surface(
@@ -1921,6 +1929,26 @@ pub(crate) fn resolved_extrusion_surface(
         cache_fit_tolerance: extrusion.directrix.cache_fit_tolerance,
         direction: vector(extrusion.direction),
         supports,
+    })
+}
+
+pub(crate) fn resolved_offset_surface(
+    graph: &B5Graph,
+    surface_id: u32,
+) -> Option<ResolvedOffsetSurface> {
+    let offset = graph.offset_surfaces.get(&surface_id)?;
+    let support = resolved_surface_geometry(graph, offset.source_surface)
+        .map(ResolvedOffsetSupport::Geometry)
+        .or_else(|| {
+            resolved_extrusion_surface(graph, offset.source_surface)
+                .map(Box::new)
+                .map(ResolvedOffsetSupport::Extrusion)
+        })?;
+    Some(ResolvedOffsetSurface {
+        carrier_object_id: offset.carrier_surface,
+        support_object_id: offset.source_surface,
+        support,
+        distance: offset.distance,
     })
 }
 

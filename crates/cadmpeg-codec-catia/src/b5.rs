@@ -220,6 +220,8 @@ pub struct B5ExtrusionSurface {
     pub object_id: u32,
     /// Unit world-space extrusion direction.
     pub direction: [f64; 3],
+    /// Increasing native U and V intervals.
+    pub parameter_bounds: [[f64; 2]; 2],
     /// Exact two-support directrix construction.
     pub directrix: B5ExtrusionDirectrix,
 }
@@ -430,9 +432,21 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             surfaces.insert(record.object_id, surface);
         }
     }
+    let object_stream_pcurves = crate::geometry::object_stream_pcurves(bytes)
+        .into_iter()
+        .map(|pcurve| (pcurve.object_id, (pcurve.support_id, pcurve.range)))
+        .collect();
+    let extrusion_surfaces: BTreeMap<u32, B5ExtrusionSurface> = records
+        .iter()
+        .filter_map(|record| {
+            parse_extrusion_surface(record, &by_id, &object_stream_pcurves)
+                .map(|extrusion| (record.object_id, extrusion))
+        })
+        .collect();
     let mut offset_surfaces = BTreeMap::new();
     for record in &records {
-        let Some(offset) = parse_offset_surface(record, &surfaces, &by_id) else {
+        let Some(offset) = parse_offset_surface(record, &surfaces, &extrusion_surfaces, &by_id)
+        else {
             continue;
         };
         let carrier = if let Some(carrier) = surfaces.get(&offset.carrier_surface).cloned() {
@@ -450,17 +464,6 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         surfaces.insert(record.object_id, carrier);
         offset_surfaces.insert(record.object_id, offset);
     }
-    let object_stream_pcurves = crate::geometry::object_stream_pcurves(bytes)
-        .into_iter()
-        .map(|pcurve| (pcurve.object_id, (pcurve.support_id, pcurve.range)))
-        .collect();
-    let extrusion_surfaces: BTreeMap<u32, B5ExtrusionSurface> = records
-        .iter()
-        .filter_map(|record| {
-            parse_extrusion_surface(record, &by_id, &object_stream_pcurves)
-                .map(|extrusion| (record.object_id, extrusion))
-        })
-        .collect();
     let extrusion_pcurves = extrusion_surfaces
         .values()
         .flat_map(|extrusion| {
@@ -1435,6 +1438,7 @@ fn surface_alias_target(record: &B5Record) -> Option<u32> {
 fn parse_offset_surface(
     record: &B5Record,
     surfaces: &BTreeMap<u32, B5Surface>,
+    extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
     records: &HashMap<u32, &B5Record>,
 ) -> Option<B5OffsetSurface> {
     (record.family == 0xb5 && record.class == 0x30 && record.payload.first() == Some(&0x82))
@@ -1456,8 +1460,42 @@ fn parse_offset_surface(
         Some(B5Surface::Cylinder { .. }) => 0x05,
         Some(B5Surface::Torus { .. }) => 0x0d,
         Some(B5Surface::RollingBall { .. }) => 0x19,
+        Some(B5Surface::Unknown {
+            family: 0xb5,
+            class: 0x2c,
+            ..
+        }) => {
+            let source = extrusion_surfaces.get(&source_surface)?;
+            let carrier = extrusion_carrier(records.get(&carrier_surface)?)?;
+            if carrier.direction != source.direction
+                || carrier.parameter_bounds != [[v0, v1], [u0, u1]]
+            {
+                return None;
+            }
+            0x21
+        }
         Some(_) => return None,
         None => {
+            if let (Some(source), Some(carrier)) = (
+                extrusion_surfaces.get(&source_surface),
+                records
+                    .get(&carrier_surface)
+                    .and_then(|record| extrusion_carrier(record)),
+            ) {
+                if carrier.direction != source.direction
+                    || carrier.parameter_bounds != [[v0, v1], [u0, u1]]
+                {
+                    return None;
+                }
+                return (carrier_kind == 0x21).then_some(B5OffsetSurface {
+                    object_id: record.object_id,
+                    carrier_surface,
+                    source_surface,
+                    distance,
+                    carrier_kind,
+                    parameter_bounds: [[u0, u1], [v0, v1]],
+                });
+            }
             let cache = parse_offset_cache(records.get(&carrier_surface)?)?;
             let source = surfaces.get(&source_surface)?;
             let cached_source = surfaces.get(&cache.source_surface)?;
@@ -1508,36 +1546,52 @@ fn parse_extrusion_surface(
     records: &HashMap<u32, &B5Record>,
     object_stream_pcurves: &BTreeMap<u32, (u32, [f64; 2])>,
 ) -> Option<B5ExtrusionSurface> {
-    (record.family == 0xb5 && record.class == 0x2c && record.payload.first() == Some(&0x81))
-        .then_some(())?;
-    let mut position = 1;
-    let directrix_id = reference(&record.payload, &mut position, record.object_id)?;
-    let values = line_values::<9>(&record.payload, position)?;
-    position += 72;
-    if record.payload.get(position..) != Some(&[0x05, 0x05])
-        || unit([values[0], values[1], values[2]]).is_none()
-        || values[3] >= values[4]
-        || values[5].to_bits() != 1.0f64.to_bits()
-        || values[6].to_bits() != 0.0f64.to_bits()
-        || values[7] >= values[8]
-    {
-        return None;
-    }
-    let directrix =
-        parse_extrusion_directrix(records.get(&directrix_id)?, records, object_stream_pcurves)?;
+    let carrier = extrusion_carrier(record)?;
+    let directrix = parse_extrusion_directrix(
+        records.get(&carrier.directrix_id)?,
+        records,
+        object_stream_pcurves,
+    )?;
     if directrix
         .parameter_range
         .into_iter()
-        .zip([values[7], values[8]])
+        .zip(carrier.parameter_bounds[1])
         .any(|(left, right)| left.to_bits() != right.to_bits())
     {
         return None;
     }
     Some(B5ExtrusionSurface {
         object_id: record.object_id,
-        direction: [values[0], values[1], values[2]],
+        direction: carrier.direction,
+        parameter_bounds: carrier.parameter_bounds,
         directrix,
     })
+}
+
+struct B5ExtrusionCarrier {
+    directrix_id: u32,
+    direction: [f64; 3],
+    parameter_bounds: [[f64; 2]; 2],
+}
+
+fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
+    (record.family == 0xb5 && record.class == 0x2c && record.payload.first() == Some(&0x81))
+        .then_some(())?;
+    let mut position = 1;
+    let directrix_id = reference(&record.payload, &mut position, record.object_id)?;
+    let values = line_values::<9>(&record.payload, position)?;
+    position += 72;
+    (record.payload.get(position..) == Some(&[0x05, 0x05])
+        && unit([values[0], values[1], values[2]]).is_some()
+        && values[3] < values[4]
+        && values[5].to_bits() == 1.0f64.to_bits()
+        && values[6].to_bits() == 0.0f64.to_bits()
+        && values[7] < values[8])
+        .then_some(B5ExtrusionCarrier {
+            directrix_id,
+            direction: [values[0], values[1], values[2]],
+            parameter_bounds: [[values[3], values[4]], [values[7], values[8]]],
+        })
 }
 
 fn parse_extrusion_directrix(
@@ -2932,7 +2986,7 @@ mod tests {
             payload,
         };
         assert_eq!(
-            parse_offset_surface(&record, &surfaces, &HashMap::new()),
+            parse_offset_surface(&record, &surfaces, &BTreeMap::new(), &HashMap::new()),
             Some(B5OffsetSurface {
                 object_id: 9,
                 carrier_surface: 2,
@@ -2987,7 +3041,7 @@ mod tests {
         };
 
         assert_eq!(
-            parse_offset_surface(&record, &surfaces, &records),
+            parse_offset_surface(&record, &surfaces, &BTreeMap::new(), &records),
             Some(B5OffsetSurface {
                 object_id: 9,
                 carrier_surface: 2,
@@ -3056,6 +3110,7 @@ mod tests {
             Some(B5ExtrusionSurface {
                 object_id: 8,
                 direction: [0.0, 0.0, 1.0],
+                parameter_bounds: [[-2.0, 6.0], [-3.0, 4.0]],
                 directrix: B5ExtrusionDirectrix {
                     object_id: 5,
                     supports: [(6, 3, [-3.0, 4.0]), (7, 4, [10.0, 20.0])],
