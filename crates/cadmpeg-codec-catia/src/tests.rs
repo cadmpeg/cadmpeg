@@ -3874,8 +3874,10 @@ fn standard_freeform_tag_resolves_object_stream_face_carrier() {
         &[0x82, 0x18, 100, 0, 0x18, 231, 3, 0x05],
     );
     stream.splice(vertex_start..vertex_start, unresolved_face);
-    let evidence =
-        crate::decode::standard_object_evidence_from_streams([stream], &HashSet::from([501]));
+    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+        [stream],
+        &HashSet::from([501]),
+    );
     assert!(matches!(
         evidence.surface_geometries.get(&501),
         Some(SurfaceGeometry::Plane { .. })
@@ -3892,8 +3894,10 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
         .expect("face record");
     second[face + 4..face + 8].copy_from_slice(&501u32.to_le_bytes());
 
-    let evidence =
-        crate::decode::standard_object_evidence_from_streams([first, second], &HashSet::new());
+    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+        [first, second],
+        &HashSet::new(),
+    );
     assert!(evidence.edge_owner_faces.is_empty());
 }
 
@@ -3916,15 +3920,19 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
     append_b5_record(&mut records, 0x5f, 501, &[0x82, 0xe6, 0x18, 231, 3, 0x05]);
     stream.splice(vertex_start..vertex_start, records);
 
-    let evidence =
-        crate::decode::standard_object_evidence_from_streams([stream], &HashSet::from([501]));
+    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+        [stream],
+        &HashSet::from([501]),
+    );
     assert!(!evidence.surface_geometries.contains_key(&501));
     assert!(matches!(
         evidence.procedural_surfaces.get(&501),
-        Some(crate::decode::StandardSurfaceProcedure::RollingBall {
-            carrier_object_id: 100,
-            definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. },
-        })
+        Some(
+            crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
+                carrier_object_id: 100,
+                definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. },
+            }
+        )
     ));
 }
 
@@ -3951,7 +3959,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
             })
         })
         .collect::<Vec<_>>();
-    crate::decode::apply_standard_native_edge_faces(
+    crate::families::standard::decode::apply_standard_native_edge_faces(
         &mut edge_faces,
         &supports,
         &records,
@@ -3968,7 +3976,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
             kind: 0x33,
         },
     ));
-    crate::decode::apply_standard_native_edge_faces(
+    crate::families::standard::decode::apply_standard_native_edge_faces(
         &mut ambiguous,
         &supports,
         &repeated_records,

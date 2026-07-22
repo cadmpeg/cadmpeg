@@ -49,6 +49,7 @@
 //! format-level access.
 
 pub(crate) mod analytic;
+pub(crate) mod assemble;
 pub mod b5;
 mod b5_transfer;
 pub mod catalog;
