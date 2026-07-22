@@ -331,6 +331,19 @@ reverses the corner orientation: the first corner supplies the axial endpoint,
 and the axis and reference direction point toward the second corner. The
 radius-span center coordinate remains the second corner in both forms.
 
+A signed axis-aligned positional cylinder begins `11`, one nonzero signed
+axial length, and `13`, followed by one auxiliary scalar and two XYZ corners.
+All seven fields after `13` use the positional surface-row scalar lane. The
+auxiliary scalar has magnitude less than the axial length. Of the three corner
+spans, exactly one equals the absolute axial length; of the remaining two,
+exactly one is twice the other. The smaller radial span is the radius and the
+larger is the diameter. Without a trailer, the second corner supplies the
+axial endpoint and the axis points toward the first corner. A terminal
+`f7 17` instead selects the first axial endpoint and points toward the second.
+The diameter midpoint and the second corner's radius-span coordinate complete
+the origin. The reference direction points along the diameter from its
+midpoint toward the same corner as the axis.
+
 A zero-support positional cylinder uses the same six-scalar envelope prefix as
 the complete local-system form. Immediately before its three-scalar origin it
 stores the support suffix `0f 18 e6 10 18 0f 18`; all nine support slots are
