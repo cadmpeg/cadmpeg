@@ -8717,6 +8717,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
         let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
         let axis_tolerance_squared = 1.0e-12;
         let mut resolved = Vec::with_capacity(authored_markers.len());
+        let mut ambiguous = false;
         for marker in &authored_markers {
             let mut points = spatial_entities.iter().filter_map(|entity| {
                 (entity.sketch == *sketch_id
@@ -8728,11 +8729,10 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 })
             });
             let Some(point) = points.next() else {
-                resolved.clear();
-                break;
+                continue;
             };
             if points.next().is_some() {
-                resolved.clear();
+                ambiguous = true;
                 break;
             }
             let mut axes = surfaces
@@ -8747,24 +8747,56 @@ pub(crate) fn project_spatial_hole_position_sketches(
                         && point_axis_distance_squared(point, *origin, *axis)
                             <= axis_tolerance_squared =>
                     {
-                        Some(*axis)
+                        Some((*origin, *axis))
                     }
                     _ => None,
-                });
-            let Some(axis) = axes.next() else {
-                resolved.clear();
+                })
+                .collect::<Vec<_>>();
+            axes.sort_by_key(|(origin, axis)| {
+                [
+                    origin.x.to_bits(),
+                    origin.y.to_bits(),
+                    origin.z.to_bits(),
+                    axis.x.to_bits(),
+                    axis.y.to_bits(),
+                    axis.z.to_bits(),
+                ]
+            });
+            axes.dedup_by_key(|(origin, axis)| {
+                [
+                    origin.x.to_bits(),
+                    origin.y.to_bits(),
+                    origin.z.to_bits(),
+                    axis.x.to_bits(),
+                    axis.y.to_bits(),
+                    axis.z.to_bits(),
+                ]
+            });
+            let [(origin, axis)] = axes.as_slice() else {
+                if axes.is_empty() {
+                    continue;
+                }
+                ambiguous = true;
                 break;
             };
-            if axes.next().is_some() {
-                resolved.clear();
-                break;
-            }
             resolved.push(HolePlacement::Axis {
-                origin: point,
-                axis,
+                origin: *origin,
+                axis: *axis,
             });
         }
-        if resolved.len() == authored_markers.len() {
+        resolved.sort_by_key(|placement| match placement {
+            HolePlacement::Axis { origin, axis } => [
+                origin.x.to_bits(),
+                origin.y.to_bits(),
+                origin.z.to_bits(),
+                axis.x.to_bits(),
+                axis.y.to_bits(),
+                axis.z.to_bits(),
+            ],
+            _ => [0; 6],
+        });
+        resolved.dedup();
+        if !ambiguous && !resolved.is_empty() {
             *placements = resolved;
         }
     }
@@ -9928,20 +9960,70 @@ mod hole_axis_tests {
             links: Vec::new(),
             link_selector: None,
         });
+        lane.sketch_entities.push(SketchInputEntity {
+            id: "same-axis-endpoint".into(),
+            parent: "lane".into(),
+            feature_ref: Some("native-position-sketch".into()),
+            ordinal: 1,
+            offset: 90,
+            object_index: Some(2),
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: Some(1.0),
+            coordinates_m: None,
+            links: Vec::new(),
+            link_selector: None,
+        });
+        lane.sketch_entities.push(SketchInputEntity {
+            id: "construction-point".into(),
+            parent: "lane".into(),
+            feature_ref: Some("native-position-sketch".into()),
+            ordinal: 2,
+            offset: 100,
+            object_index: Some(3),
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: Some(1.0),
+            coordinates_m: None,
+            links: Vec::new(),
+            link_selector: None,
+        });
         let sketch = SpatialSketch {
             id: sketch_id.clone(),
             name: Some("Position".into()),
             configuration: None,
-            entities: vec![SpatialSketchEntityId("point".into())],
+            entities: vec![
+                SpatialSketchEntityId("point".into()),
+                SpatialSketchEntityId("same-axis-endpoint".into()),
+                SpatialSketchEntityId("construction-point".into()),
+            ],
             native_ref: Some("lane".into()),
         };
         let point = Point3::new(12.0, 23.0, 30.0);
         let entity = SpatialSketchEntity {
             id: SpatialSketchEntityId("point".into()),
-            sketch: sketch_id,
+            sketch: sketch_id.clone(),
             construction: false,
             native_ref: Some("authored-point".into()),
             geometry: SpatialSketchGeometry::Point { position: point },
+        };
+        let same_axis_endpoint = SpatialSketchEntity {
+            id: SpatialSketchEntityId("same-axis-endpoint".into()),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: Some("same-axis-endpoint".into()),
+            geometry: SpatialSketchGeometry::Point {
+                position: Point3::new(12.0, 23.0, 20.0),
+            },
+        };
+        let construction_point = SpatialSketchEntity {
+            id: SpatialSketchEntityId("construction-point".into()),
+            sketch: sketch_id,
+            construction: true,
+            native_ref: Some("construction-point".into()),
+            geometry: SpatialSketchGeometry::Point {
+                position: Point3::new(100.0, 100.0, 100.0),
+            },
         };
         let surface = Surface {
             id: SurfaceId("bore".into()),
@@ -9958,7 +10040,7 @@ mod hole_axis_tests {
         project_spatial_hole_position_sketches(
             &mut features,
             &[sketch],
-            &[entity],
+            &[entity, same_axis_endpoint, construction_point],
             &[surface],
             &[history],
             &[lane],
@@ -9970,7 +10052,7 @@ mod hole_axis_tests {
         assert_eq!(
             placements,
             &[cadmpeg_ir::features::HolePlacement::Axis {
-                origin: point,
+                origin: Point3::new(12.0, 23.0, 10.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
             }]
         );
