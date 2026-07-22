@@ -2353,6 +2353,59 @@ fn empty_shell_is_reported() {
 }
 
 #[test]
+fn disconnected_shell_faces_are_reported() {
+    let mut ir = unit_cube();
+    let face_edges = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| {
+            let loops = face.loops.iter().collect::<std::collections::HashSet<_>>();
+            let edges = ir
+                .model
+                .coedges
+                .iter()
+                .filter(|coedge| loops.contains(&coedge.owner_loop))
+                .map(|coedge| coedge.edge.clone())
+                .collect::<std::collections::HashSet<_>>();
+            (face.id.clone(), edges)
+        })
+        .collect::<Vec<_>>();
+    let (first, second) = face_edges
+        .iter()
+        .enumerate()
+        .find_map(|(index, (first, first_edges))| {
+            face_edges[index + 1..]
+                .iter()
+                .find(|(_, second_edges)| first_edges.is_disjoint(second_edges))
+                .map(|(second, _)| (first.clone(), second.clone()))
+        })
+        .expect("cube has opposite faces");
+
+    let mut disconnected = ir.model.shells[0].clone();
+    disconnected.id.0 = "synthetic:test:shell#disconnected".into();
+    disconnected.faces = vec![first.clone(), second.clone()];
+    ir.model.shells[0]
+        .faces
+        .retain(|face| face != &first && face != &second);
+    for face in &mut ir.model.faces {
+        if face.id == first || face.id == second {
+            face.shell = disconnected.id.clone();
+        }
+    }
+    ir.model.regions[0].shells.push(disconnected.id.clone());
+    ir.model.shells.push(disconnected.clone());
+    ir.finalize();
+
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(findings.iter().any(|finding| {
+        finding.check == Check::ShellTopology
+            && finding.entity.as_deref() == Some(disconnected.id.0.as_str())
+            && finding.message == "shell faces are disconnected through shared edges"
+    }));
+}
+
+#[test]
 fn orphan_carrier_is_flagged() {
     let mut ir = unit_cube();
     let mut orphan = ir.model.curves[0].clone();

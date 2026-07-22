@@ -62,7 +62,7 @@ impl Default for ExactnessNote {
 pub struct StreamHandle(u32);
 
 /// Incrementally constructs document annotations while interning stream names.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct AnnotationBuilder {
     annotations: Annotations,
 }
@@ -171,6 +171,13 @@ impl AnnotationBuilder {
         self
     }
 
+    /// Remove all annotations for an entity that was removed from the model.
+    pub fn remove_entity(&mut self, id: impl Display) {
+        let id = id.to_string();
+        self.annotations.provenance.remove(&id);
+        self.annotations.exactness.remove(&id);
+    }
+
     /// Borrow the annotations built so far.
     pub fn annotations(&self) -> &Annotations {
         &self.annotations
@@ -239,5 +246,24 @@ mod tests {
 
         builder.exactness("f3d:edge#0", Exactness::ByteExact);
         assert!(builder.annotations().exactness.is_empty());
+    }
+
+    #[test]
+    fn removing_an_entity_removes_provenance_and_exactness() {
+        let mut builder = AnnotationBuilder::new();
+        let stream = builder.stream("catia:e5_0d_03");
+        builder.note("catia:e5:curve#0", stream, 42).tag("circle");
+        builder.derived("catia:e5:curve#0", "geometry");
+
+        builder.remove_entity("catia:e5:curve#0");
+
+        assert!(!builder
+            .annotations()
+            .provenance
+            .contains_key("catia:e5:curve#0"));
+        assert!(!builder
+            .annotations()
+            .exactness
+            .contains_key("catia:e5:curve#0"));
     }
 }

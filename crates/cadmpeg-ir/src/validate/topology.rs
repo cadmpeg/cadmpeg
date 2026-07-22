@@ -1044,7 +1044,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ref_error(findings, &procedural.id.0, "unknown record", &record.0);
                 }
             }
-            ProceduralSurfaceDefinition::Helix { .. }
+            ProceduralSurfaceDefinition::RollingBallJet { .. }
+            | ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
             | ProceduralSurfaceDefinition::DegenerateTorus { .. }
             | ProceduralSurfaceDefinition::Unknown { record: None } => {}
@@ -3996,6 +3997,74 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
             })
         {
             wire_error(findings, &body.id.0, "wire body contains faces");
+        }
+    }
+}
+
+pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let faces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.0.as_str(), face))
+        .collect::<HashMap<_, _>>();
+    let loop_faces = ir
+        .model
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.0.as_str(), loop_.face.0.as_str()))
+        .collect::<HashMap<_, _>>();
+    let mut faces_by_edge = HashMap::<&str, HashSet<&str>>::new();
+    for coedge in &ir.model.coedges {
+        let Some(face) = loop_faces.get(coedge.owner_loop.0.as_str()) else {
+            continue;
+        };
+        faces_by_edge
+            .entry(coedge.edge.0.as_str())
+            .or_default()
+            .insert(*face);
+    }
+    let mut neighbors = HashMap::<&str, HashSet<&str>>::new();
+    for edge_faces in faces_by_edge.values() {
+        for &face in edge_faces {
+            neighbors
+                .entry(face)
+                .or_default()
+                .extend(edge_faces.iter().copied().filter(|other| *other != face));
+        }
+    }
+
+    for shell in &ir.model.shells {
+        if shell.faces.len() < 2
+            || shell.faces.iter().any(|face| {
+                faces
+                    .get(face.0.as_str())
+                    .is_none_or(|face| face.loops.is_empty())
+            })
+        {
+            continue;
+        }
+        let owned = shell
+            .faces
+            .iter()
+            .map(|face| face.0.as_str())
+            .collect::<HashSet<_>>();
+        let mut reached = HashSet::from([shell.faces[0].0.as_str()]);
+        let mut pending = vec![shell.faces[0].0.as_str()];
+        while let Some(face) = pending.pop() {
+            for &neighbor in neighbors.get(face).into_iter().flatten() {
+                if owned.contains(neighbor) && reached.insert(neighbor) {
+                    pending.push(neighbor);
+                }
+            }
+        }
+        if reached.len() != owned.len() {
+            findings.push(Finding {
+                check: Check::ShellTopology,
+                severity: Severity::Error,
+                message: "shell faces are disconnected through shared edges".into(),
+                entity: Some(shell.id.0.clone()),
+            });
         }
     }
 }

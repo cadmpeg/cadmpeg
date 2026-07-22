@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::le::{take_f64s, take_u32 as read_u32, u32_at};
 
+use crate::wire;
+
 /// Resolved graph of an E5 `0D 03` record stream: bodies, faces, edges, and
 /// the geometry records they reference. Produced by [`parse_topology`], which
 /// walks every class-tagged record, resolves cross-record references, and
@@ -33,6 +35,34 @@ pub struct E5Topology {
     /// Sorted, deduplicated `record_id`s of every class-`0xfe` vertex record
     /// referenced as an edge endpoint.
     pub vertex_refs: Vec<u32>,
+}
+
+impl E5Topology {
+    /// Resolve one edge's start/end parameter records for a referenced
+    /// representation. Each bound must contain that representation exactly
+    /// once.
+    #[must_use]
+    pub fn edge_representation_parameters(
+        &self,
+        edge_ref: u32,
+        representation: u32,
+    ) -> Option<[f64; 2]> {
+        let edge = self.edges.get(&edge_ref)?;
+        [edge.parameter_start, edge.parameter_end]
+            .map(|bound_ref| {
+                let bounds = self.bounds.get(&bound_ref)?;
+                let mut entries = bounds
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.representation == representation);
+                let parameter = entries.next()?.parameter;
+                entries.next().is_none().then_some(parameter)
+            })
+            .into_iter()
+            .collect::<Option<Vec<_>>>()?
+            .try_into()
+            .ok()
+    }
 }
 
 /// A class-`0xc0`/`0xc1` curve-support record: the pcurve(s) an edge curve
@@ -111,6 +141,8 @@ pub enum E5Pcurve {
         radius: f64,
         /// `[param_lo, param_hi]` angular domain.
         range: [f64; 2],
+        /// Two trailing scalar fields following the parameter range.
+        tail: [f64; 2],
     },
     /// Class `0xa0`: a nonperiodic degree-5 C2 B-spline p-curve encoded as a
     /// per-knot position/first-derivative/second-derivative jet ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
@@ -146,6 +178,10 @@ pub struct E5Body {
     /// `record_id`s of every class-`0x00` face in the body, in root-record
     /// order.
     pub faces: Vec<u32>,
+    /// Root sign-tape entries aligned with [`Self::faces`].
+    pub face_orientation_signs: Vec<i16>,
+    /// Final two root sign-tape entries after the face-aligned population.
+    pub extra_orientation_signs: [i16; 2],
 }
 
 /// A resolved class-`0x00` advanced-face record: its surface, loops, and
@@ -183,21 +219,40 @@ pub struct E5Loop {
     /// solved by [`solve_loop_chain`]; `true` means the edge is traversed
     /// end-to-start.
     pub reversed: Vec<bool>,
-    /// Per-edge-use sense after folding in the loop's global orientation
-    /// sign `g_loop` ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)); `None` until [`solve_absolute_orientation`]
-    /// resolves it, which it can decline to do (frustrated or ambiguous
-    /// sign system).
-    pub absolute_reversed: Option<Vec<bool>>,
+    /// Shell-consistent member order and traversal senses after folding in
+    /// the loop's global orientation sign. `None` when the radial parity
+    /// system is frustrated or ambiguous.
+    pub(crate) oriented_members: Option<Vec<E5OrientedMember>>,
     /// Loop role bit from the trailing sign tape: `Some(true)` =
     /// `FACE_OUTER_BOUND`, `Some(false)` = `FACE_BOUND`, `None` for a
     /// two-edge digon loop (no trailing role tape).
     pub outer: Option<bool>,
+    /// Complete trailing signed relation tape in serialized order. Empty when
+    /// the loop carries no tape.
+    pub orientation_signs: Vec<i16>,
+}
+
+impl E5Loop {
+    /// Shell-consistent member order and senses when radial parity closes.
+    #[must_use]
+    pub fn resolved_members(&self) -> Option<&[E5OrientedMember]> {
+        self.oriented_members.as_deref()
+    }
+}
+
+/// One E5 loop member in shell-consistent traversal order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct E5OrientedMember {
+    /// Index of the member in the serialized loop arrays.
+    pub serialized_index: usize,
+    /// Whether the physical edge is traversed end-to-start.
+    pub reversed: bool,
 }
 
 /// A resolved class-`0xff` trimmed edge-use record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant), grammar `85
 /// <curve_support_ref> <start_vertex> <end_vertex> <param_start>
 /// <param_end>`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct E5Edge {
     /// This edge-use record's `record_id`.
     pub record_id: u32,
@@ -212,9 +267,8 @@ pub struct E5Edge {
     pub parameter_start: u32,
     /// Reference to the end-parameter representation on the curve support.
     pub parameter_end: u32,
-    /// Raw trailing reference token following the parameter pair; meaning
-    /// not decoded further.
-    pub terminator: u32,
+    /// Bytes following the five counted fields.
+    pub tail: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -239,6 +293,7 @@ struct RawLoop {
     pcurves: Vec<u32>,
     edges: Vec<u32>,
     outer: Option<bool>,
+    orientation_signs: Vec<i16>,
 }
 
 /// Resolve E5 face→loop→edge-use references and determine each serialized
@@ -331,8 +386,9 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
                 pcurves: raw.pcurves.clone(),
                 edge_uses: raw.edges.clone(),
                 reversed,
-                absolute_reversed: None,
+                oriented_members: None,
                 outer: raw.outer,
+                orientation_signs: raw.orientation_signs.clone(),
             });
         }
         faces.push(E5Face {
@@ -342,7 +398,9 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
             loops: resolved_loops,
         });
     }
-    solve_absolute_orientation(&mut faces);
+    if !solve_absolute_orientation(&mut faces) {
+        return None;
+    }
     let edges: BTreeMap<u32, E5Edge> = edges
         .into_iter()
         .filter(|(id, _)| reachable_edges.contains(id))
@@ -377,7 +435,7 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
 }
 
 fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
-    let (pcurves, mut position) = counted_references(record.payload)?;
+    let (pcurves, mut position) = wire::counted_refs(record.payload, false)?;
     let expected = if record.class == 0xc0 { 1 } else { 2 };
     if pcurves.len() != expected || record.payload.get(position) != Some(&0x81) {
         return None;
@@ -420,7 +478,7 @@ fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
 }
 
 fn parse_bounds(record: &Record<'_>) -> Option<E5Bounds> {
-    let (representations, mut position) = counted_references(record.payload)?;
+    let (representations, mut position) = wire::counted_refs(record.payload, false)?;
     if record.payload.get(position)
         != Some(&(0x80u8.checked_add(u8::try_from(representations.len()).ok()?)?))
     {
@@ -458,7 +516,7 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
         return None;
     }
     let mut position = 1;
-    let surface = reference(record.payload, &mut position)?;
+    let surface = wire::object_ref(record.payload, &mut position, false)?;
     match record.class {
         0x96 => {
             let values = take_f64s(record.payload, &mut position, 6)?;
@@ -482,8 +540,6 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
             if position != record.payload.len()
                 || center.iter().chain(&values).any(|value| !value.is_finite())
                 || values[0] <= 0.0
-                || values[3] != 1.0
-                || values[4] != 0.0
             {
                 return None;
             }
@@ -493,6 +549,7 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
                 codes,
                 radius: values[0],
                 range: [values[1], values[2]],
+                tail: [values[3], values[4]],
             })
         }
         0xa0 => parse_jet_pcurve(record.payload, position, surface),
@@ -568,11 +625,11 @@ fn parse_jet_pcurve(payload: &[u8], mut position: usize, surface: u32) -> Option
     })
 }
 
-fn solve_absolute_orientation(faces: &mut [E5Face]) {
+fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
     let mut locations = Vec::new();
     for (face_index, face) in faces.iter().enumerate() {
         for (loop_index, loop_) in face.loops.iter().enumerate() {
-            if loop_.edge_uses.len() > 2 {
+            if !loop_.edge_uses.is_empty() {
                 locations.push((face_index, loop_index));
             }
         }
@@ -587,13 +644,10 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
                 .push((node, if reversed { -1 } else { 1 }));
         }
     }
-    if occurrences.values().any(|uses| uses.len() != 2) {
-        return;
-    }
     let mut adjacency = vec![Vec::<(usize, i8)>::new(); locations.len()];
-    for uses in occurrences.values() {
+    for uses in occurrences.values().filter(|uses| uses.len() == 2) {
         let [(left, left_r), (right, right_r)] = uses.as_slice() else {
-            return;
+            unreachable!("filtered to two occurrences");
         };
         let relation = -left_r * right_r;
         adjacency[*left].push((*right, relation));
@@ -607,6 +661,7 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
         solved[root] = Some(1i8);
         let mut component = vec![root];
         let mut cursor = 0;
+        let mut consistent = true;
         while cursor < component.len() {
             let node = component[cursor];
             cursor += 1;
@@ -614,7 +669,7 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
             for &(neighbor, relation) in &adjacency[node] {
                 let expected = value * relation;
                 match solved[neighbor] {
-                    Some(actual) if actual != expected => return,
+                    Some(actual) if actual != expected => consistent = false,
                     Some(_) => {}
                     None => {
                         solved[neighbor] = Some(expected);
@@ -622,6 +677,12 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
                     }
                 }
             }
+        }
+        if !consistent {
+            for &node in &component {
+                solved[node] = None;
+            }
+            continue;
         }
         let plus_matches = component
             .iter()
@@ -631,9 +692,6 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
             })
             .count();
         let minus_matches = component.len() - plus_matches;
-        if plus_matches == minus_matches {
-            return;
-        }
         if minus_matches > plus_matches {
             for &node in &component {
                 solved[node] = solved[node].map(|value| -value);
@@ -641,16 +699,26 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
         }
     }
     for (node, &(face_index, loop_index)) in locations.iter().enumerate() {
-        let g = solved[node].expect("solved loop orientation");
+        let Some(g) = solved[node] else {
+            continue;
+        };
         let loop_ = &mut faces[face_index].loops[loop_index];
-        loop_.absolute_reversed = Some(
-            loop_
-                .reversed
-                .iter()
-                .map(|reversed| g * if *reversed { -1 } else { 1 } < 0)
+        let flip = g < 0;
+        let mut indices: Vec<usize> = (0..loop_.reversed.len()).collect();
+        if flip {
+            indices.reverse();
+        }
+        loop_.oriented_members = Some(
+            indices
+                .into_iter()
+                .map(|serialized_index| E5OrientedMember {
+                    serialized_index,
+                    reversed: loop_.reversed[serialized_index] ^ flip,
+                })
                 .collect(),
         );
     }
+    solved.into_iter().all(|value| value.is_some())
 }
 
 fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Option<Vec<E5Body>> {
@@ -658,7 +726,7 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
         .iter()
         .filter(|record| record.class == 0x01)
         .map(|record| {
-            let (roots, end) = counted_references(record.payload)?;
+            let (roots, end) = wire::counted_refs(record.payload, false)?;
             if roots.len() != 1 || end != record.payload.len() {
                 return None;
             }
@@ -666,7 +734,7 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
             if root.class != 0x08 {
                 return None;
             }
-            let (faces, mut position) = counted_references(root.payload)?;
+            let (faces, mut position) = wire::counted_refs(root.payload, false)?;
             if root.payload.get(position)
                 != Some(&(0x80u8.checked_add(u8::try_from(faces.len()).ok()?)?))
             {
@@ -691,19 +759,11 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
             Some(E5Body {
                 record_id: record.id,
                 faces,
+                face_orientation_signs: signs[..signs.len() - 2].to_vec(),
+                extra_orientation_signs: signs[signs.len() - 2..].try_into().ok()?,
             })
         })
         .collect()
-}
-
-fn counted_references(payload: &[u8]) -> Option<(Vec<u32>, usize)> {
-    let count = usize::from(payload.first()?.checked_sub(0x80)?);
-    let mut position = 1;
-    let mut references = Vec::with_capacity(count);
-    for _ in 0..count {
-        references.push(reference(payload, &mut position)?);
-    }
-    Some((references, position))
 }
 
 fn records(bytes: &[u8]) -> Vec<Record<'_>> {
@@ -741,10 +801,10 @@ fn parse_face(record: &Record<'_>) -> Option<RawFace> {
         return None;
     }
     let mut position = 1;
-    let surface = reference(record.payload, &mut position)?;
+    let surface = wire::object_ref(record.payload, &mut position, false)?;
     let mut loops = Vec::with_capacity(count);
     for _ in 0..count {
-        loops.push(reference(record.payload, &mut position)?);
+        loops.push(wire::object_ref(record.payload, &mut position, false)?);
     }
     let trailer_sign = i16::from_le_bytes(
         record
@@ -773,55 +833,40 @@ fn parse_loop(record: &Record<'_>) -> Option<RawLoop> {
     let mut pcurves = Vec::with_capacity(member_count / 2);
     let mut edges = Vec::with_capacity(member_count / 2);
     for _ in 0..member_count / 2 {
-        pcurves.push(reference(record.payload, &mut position)?);
-        edges.push(reference(record.payload, &mut position)?);
+        pcurves.push(wire::object_ref(record.payload, &mut position, false)?);
+        edges.push(wire::object_ref(record.payload, &mut position, false)?);
     }
-    let surface = reference(record.payload, &mut position)?;
-    let outer = match parse_loop_role(record.payload.get(position..)?, member_count / 2) {
-        LoopRole::Malformed => return None,
-        LoopRole::Absent => None,
-        LoopRole::Present(role) => Some(role),
-    };
+    let surface = wire::object_ref(record.payload, &mut position, false)?;
+    let (outer, orientation_signs) =
+        parse_loop_signs(record.payload.get(position..)?, member_count / 2)?;
     Some(RawLoop {
         id: record.id,
         surface,
         pcurves,
         edges,
         outer,
+        orientation_signs,
     })
 }
 
-/// Result of decoding a loop record's trailing role tape.
-enum LoopRole {
-    /// The trailing bytes do not match the expected role-tape layout.
-    Malformed,
-    /// No trailing role tape is present (a two-edge digon loop).
-    Absent,
-    /// A role tape is present and decodes to a loop-outer bit.
-    Present(bool),
-}
-
-fn parse_loop_role(trailing: &[u8], edge_count: usize) -> LoopRole {
+fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Option<(Option<bool>, Vec<i16>)> {
     if trailing.is_empty() {
-        return LoopRole::Absent;
+        return Some((None, Vec::new()));
     }
-    let Some(expected_head) = u8::try_from(edge_count)
+    let expected_head = u8::try_from(edge_count)
         .ok()
-        .and_then(|n| 0x80u8.checked_add(n))
-    else {
-        return LoopRole::Malformed;
-    };
+        .and_then(|n| 0x80u8.checked_add(n))?;
     if trailing.first() != Some(&expected_head) || trailing.len() != 1 + 2 * (3 * edge_count + 4) {
-        return LoopRole::Malformed;
+        return None;
     }
     let signs: Vec<i16> = trailing[1..]
         .chunks_exact(2)
         .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
         .collect();
-    if signs.iter().any(|sign| !matches!(sign, -1 | 1)) {
-        return LoopRole::Malformed;
+    if signs.iter().any(|sign| !matches!(sign, -1..=1)) || !matches!(signs[1], -1 | 1) {
+        return None;
     }
-    LoopRole::Present(signs[1] == 1)
+    Some((Some(signs[1] == 1), signs))
 }
 
 fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
@@ -829,12 +874,12 @@ fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
         return None;
     }
     let mut position = 1;
-    let support = reference(record.payload, &mut position)?;
-    let start_vertex = reference(record.payload, &mut position)?;
-    let end_vertex = reference(record.payload, &mut position)?;
-    let parameter_start = reference(record.payload, &mut position)?;
-    let parameter_end = reference(record.payload, &mut position)?;
-    let terminator = reference(record.payload, &mut position)?;
+    let support = wire::object_ref(record.payload, &mut position, false)?;
+    let start_vertex = wire::object_ref(record.payload, &mut position, false)?;
+    let end_vertex = wire::object_ref(record.payload, &mut position, false)?;
+    let parameter_start = wire::object_ref(record.payload, &mut position, false)?;
+    let parameter_end = wire::object_ref(record.payload, &mut position, false)?;
+    let tail = record.payload[position..].to_vec();
     Some(E5Edge {
         record_id: record.id,
         support,
@@ -842,36 +887,8 @@ fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
         end_vertex,
         parameter_start,
         parameter_end,
-        terminator,
+        tail,
     })
-}
-
-fn reference(bytes: &[u8], position: &mut usize) -> Option<u32> {
-    let lead = *bytes.get(*position)?;
-    let (value, width) = match lead {
-        0x38 => (
-            u32::from_le_bytes([
-                *bytes.get(*position + 1)?,
-                *bytes.get(*position + 2)?,
-                *bytes.get(*position + 3)?,
-                0,
-            ]),
-            4,
-        ),
-        0x18 => (
-            u32::from(u16::from_le_bytes([
-                *bytes.get(*position + 1)?,
-                *bytes.get(*position + 2)?,
-            ])),
-            3,
-        ),
-        0x10 => (u32::from(*bytes.get(*position + 1)?) << 8, 2),
-        0x08 => (u32::from(*bytes.get(*position + 1)?), 2),
-        value if value >= 0x80 => (u32::from(value - 0x80), 1),
-        _ => return None,
-    };
-    *position += width;
-    Some(value)
 }
 
 fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<Vec<bool>> {
@@ -911,5 +928,163 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
             solutions.push(senses);
         }
     }
-    (solutions.len() == 1).then(|| solutions.remove(0))
+    if solutions.len() == 1 {
+        return solutions.pop();
+    }
+    if edge_ids.len() == 2
+        && solutions.len() == 2
+        && solutions[0]
+            .iter()
+            .zip(&solutions[1])
+            .all(|(left, right)| left != right)
+    {
+        return solutions.into_iter().find(|solution| !solution[0]);
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        solve_absolute_orientation, solve_loop_chain, E5BoundEntry, E5Bounds, E5Edge, E5Face,
+        E5Loop, E5Topology,
+    };
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn digon_uses_forward_first_edge_as_relative_gauge() {
+        let edges = BTreeMap::from([
+            (
+                1,
+                E5Edge {
+                    record_id: 1,
+                    support: 0,
+                    start_vertex: 10,
+                    end_vertex: 20,
+                    parameter_start: 0,
+                    parameter_end: 0,
+                    tail: Vec::new(),
+                },
+            ),
+            (
+                2,
+                E5Edge {
+                    record_id: 2,
+                    support: 0,
+                    start_vertex: 20,
+                    end_vertex: 10,
+                    parameter_start: 0,
+                    parameter_end: 0,
+                    tail: Vec::new(),
+                },
+            ),
+        ]);
+        assert_eq!(solve_loop_chain(&[1, 2], &edges), Some(vec![false, false]));
+    }
+
+    #[test]
+    fn edge_parameters_resolve_one_entry_from_each_bound() {
+        let edge = E5Edge {
+            record_id: 1,
+            support: 0,
+            start_vertex: 0,
+            end_vertex: 0,
+            parameter_start: 10,
+            parameter_end: 11,
+            tail: Vec::new(),
+        };
+        let bound = |record_id, parameter| E5Bounds {
+            record_id,
+            entries: vec![E5BoundEntry {
+                representation: 20,
+                parameter,
+                code: 7,
+            }],
+        };
+        let mut topology = E5Topology {
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: BTreeMap::from([(1, edge)]),
+            pcurves: BTreeMap::new(),
+            bounds: BTreeMap::from([(10, bound(10, 0.25)), (11, bound(11, 0.75))]),
+            curve_supports: BTreeMap::new(),
+            vertex_refs: Vec::new(),
+        };
+
+        assert_eq!(
+            topology.edge_representation_parameters(1, 20),
+            Some([0.25, 0.75])
+        );
+        topology
+            .bounds
+            .get_mut(&11)
+            .expect("end bound")
+            .entries
+            .push(E5BoundEntry {
+                representation: 20,
+                parameter: 1.0,
+                code: 8,
+            });
+        assert_eq!(topology.edge_representation_parameters(1, 20), None);
+    }
+
+    #[test]
+    fn radial_parity_rejects_frustration_and_reverses_negative_gauge() {
+        let loop_ = |record_id, edge_uses| E5Loop {
+            record_id,
+            surface: record_id + 100,
+            pcurves: vec![record_id + 200; 2],
+            edge_uses,
+            reversed: vec![false, false],
+            oriented_members: None,
+            outer: Some(true),
+            orientation_signs: Vec::new(),
+        };
+        let mut faces = vec![
+            E5Face {
+                record_id: 1,
+                surface: 101,
+                trailer_sign: 1,
+                loops: vec![loop_(11, vec![1, 3])],
+            },
+            E5Face {
+                record_id: 2,
+                surface: 102,
+                trailer_sign: 1,
+                loops: vec![loop_(12, vec![1, 2])],
+            },
+            E5Face {
+                record_id: 3,
+                surface: 103,
+                trailer_sign: 1,
+                loops: vec![loop_(13, vec![2, 3])],
+            },
+        ];
+
+        assert!(!solve_absolute_orientation(&mut faces));
+        assert!(faces
+            .iter()
+            .flat_map(|face| &face.loops)
+            .all(|loop_| loop_.oriented_members.is_none()));
+
+        let mut faces = vec![
+            E5Face {
+                record_id: 1,
+                surface: 101,
+                trailer_sign: 1,
+                loops: vec![loop_(11, vec![1, 2])],
+            },
+            E5Face {
+                record_id: 2,
+                surface: 102,
+                trailer_sign: 1,
+                loops: vec![loop_(12, vec![1, 3])],
+            },
+        ];
+        assert!(solve_absolute_orientation(&mut faces));
+        let second = faces[1].loops[0].resolved_members().unwrap();
+        assert_eq!(second[0].serialized_index, 1);
+        assert_eq!(second[1].serialized_index, 0);
+        assert!(second.iter().all(|member| member.reversed));
+    }
 }

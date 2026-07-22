@@ -6532,26 +6532,28 @@ fn decode_partitions_interleaved_schema_33103_faces_by_adjacency() {
         )
         .unwrap();
 
-    let shell_550 = decoded
+    assert_eq!(decoded.ir.model.shells.len(), 4);
+    assert!(decoded
         .ir
         .model
         .shells
         .iter()
-        .find(|shell| shell.id.0.ends_with("#550"))
-        .unwrap();
-    let shell_551 = decoded
-        .ir
-        .model
-        .shells
-        .iter()
-        .find(|shell| shell.id.0.ends_with("#551"))
-        .unwrap();
-    assert_eq!(shell_550.faces.len(), 2);
-    assert_eq!(shell_551.faces.len(), 2);
-    assert!(shell_550.faces.iter().any(|face| face.0.ends_with("#10")));
-    assert!(shell_550.faces.iter().any(|face| face.0.ends_with("#210")));
-    assert!(shell_551.faces.iter().any(|face| face.0.ends_with("#410")));
-    assert!(shell_551.faces.iter().any(|face| face.0.ends_with("#610")));
+        .all(|shell| shell.faces.len() == 1));
+    for (native_shell, face_suffixes) in [(550, ["#10", "#210"]), (551, ["#410", "#610"])] {
+        let prefix = format!("sldprt:brep:shell#{native_shell}");
+        let faces = decoded
+            .ir
+            .model
+            .shells
+            .iter()
+            .filter(|shell| shell.id.0.starts_with(&prefix))
+            .flat_map(|shell| &shell.faces)
+            .collect::<Vec<_>>();
+        assert_eq!(faces.len(), 2);
+        assert!(face_suffixes
+            .iter()
+            .all(|suffix| faces.iter().any(|face| face.0.ends_with(suffix))));
+    }
 }
 
 #[test]
@@ -6584,27 +6586,13 @@ fn decode_partitions_disc14_faces_by_native_shell_rings() {
 
     assert_eq!(decoded.ir.model.bodies.len(), 1);
     assert_eq!(decoded.ir.model.regions.len(), 1);
-    assert_eq!(decoded.ir.model.shells.len(), 2);
-    let shell_500 = decoded
+    assert_eq!(decoded.ir.model.shells.len(), 4);
+    assert!(decoded
         .ir
         .model
         .shells
         .iter()
-        .find(|shell| shell.id.0.ends_with("#500"))
-        .unwrap();
-    let shell_501 = decoded
-        .ir
-        .model
-        .shells
-        .iter()
-        .find(|shell| shell.id.0.ends_with("#501"))
-        .unwrap();
-    assert_eq!(shell_500.faces.len(), 2);
-    assert_eq!(shell_501.faces.len(), 2);
-    assert!(shell_500.faces.iter().any(|face| face.0.ends_with("#10")));
-    assert!(shell_500.faces.iter().any(|face| face.0.ends_with("#210")));
-    assert!(shell_501.faces.iter().any(|face| face.0.ends_with("#410")));
-    assert!(shell_501.faces.iter().any(|face| face.0.ends_with("#610")));
+        .all(|shell| shell.faces.len() == 1));
 
     decoded.ir.model.points[0].position.z += 1.0;
     let mut encoded = Vec::new();
@@ -6615,13 +6603,13 @@ fn decode_partitions_disc14_faces_by_native_shell_rings() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(regenerated.ir.model.regions.len(), 1);
-    assert_eq!(regenerated.ir.model.shells.len(), 2);
+    assert_eq!(regenerated.ir.model.shells.len(), 4);
     assert!(regenerated
         .ir
         .model
         .shells
         .iter()
-        .all(|shell| shell.faces.len() == 2));
+        .all(|shell| shell.faces.len() == 1));
 }
 
 #[test]
@@ -6658,7 +6646,14 @@ fn decode_partitions_disc20_faces_by_native_single_shell_lattice() {
     assert_eq!(decoded.ir.model.bodies[0].id.0, "sldprt:brep:body#900");
     assert_eq!(decoded.ir.model.regions[0].id.0, "sldprt:brep:region#900");
     assert_eq!(decoded.ir.model.shells[0].id.0, "sldprt:brep:shell#500");
-    assert_eq!(decoded.ir.model.shells[0].faces.len(), 2);
+    assert_eq!(decoded.ir.model.shells.len(), 2);
+    assert!(decoded
+        .ir
+        .model
+        .shells
+        .iter()
+        .all(|shell| shell.faces.len() == 1));
+    assert_eq!(decoded.ir.model.regions[0].shells.len(), 2);
     assert!(!decoded
         .report
         .losses

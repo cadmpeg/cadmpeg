@@ -6006,10 +6006,12 @@ fn decode_two_sided_offset(
                 IntcurveSupportSide {
                     surface: None,
                     pcurve: None,
+                    pcurve_parameter_range: None,
                 },
                 IntcurveSupportSide {
                     surface: None,
                     pcurve: None,
+                    pcurve_parameter_range: None,
                 },
             ],
             parameter_range,

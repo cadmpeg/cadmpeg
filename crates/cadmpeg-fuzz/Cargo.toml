@@ -18,7 +18,7 @@ libfuzzer-sys = "0.4"
 cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d" }
 cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad" }
 cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt" }
-cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia" }
+cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia", features = ["fuzz"] }
 cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo" }
 cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx" }
 cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino", features = ["fuzzing"] }

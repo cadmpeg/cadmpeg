@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reads CATIA V5 `.CATPart` files into [`cadmpeg_ir::CadIr`].
 //!
-//! [`CatiaCodec`] implements the shared [`Codec`] interface. It detects the
-//! `V5_CFV2` file signature, inspects catalogued logical streams, identifies the
-//! storage variant, and decodes the record families supported for that variant.
+//! [`CatiaCodec`] is the crate's only entry point. It implements the shared
+//! [`Codec`] interface: it detects the `V5_CFV2` file signature, inspects the
+//! catalogued logical streams, identifies the storage variant, and decodes the
+//! record families supported for that variant.
 //!
 //! Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
 //! on the cadmpeg support ladder for the standard-nested layout; other layouts
@@ -29,37 +30,36 @@
 //! decode preserves the native payload in an unknown record and reports the
 //! model layers that remain unresolved.
 //!
-//! # Format model
+//! Byte-level format semantics are documented in
+//! [`docs/formats/catia.md`](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md).
 //!
-//! Most `CATPart` files contain an outer `V5_CFV2` header and a nested container.
-//! Its `CATIA_V5 CB0001` directory maps named logical streams to physical extent
-//! lists. [`container`] reconstructs these streams before [`decode`] selects a
-//! decoder using [`variant::Variant`].
+//! # Internal layout
 //!
-//! Standard nested parts can produce analytic surfaces, curves, vertices,
-//! bodies, faces, loops, coedges, and edges when the stored trim and endpoint
-//! relations resolve to one graph. Other recognized layouts expose supported
-//! analytic or NURBS carriers and selected bindings. The codec does not write
-//! `CATPart` files or decode assemblies, design history, tessellation,
-//! appearances, materials, persistent tags, or general document metadata.
-//!
-//! The low-level [`geometry`], [`topology`], [`b5`], [`e5`], and
-//! [`zero_entity`] modules expose record decoders for applications that need
-//! format-level access.
+//! `wire` reads endian scalars and tag records; `solve` holds the pure topology
+//! solvers; `families/*` pair each record vocabulary with its decode route; and
+//! `assemble` lowers decoded records into the neutral IR. All of these are
+//! crate-private; nothing but `CatiaCodec` is part of the public API.
 
-pub mod b5;
-mod b5_transfer;
-pub mod catalog;
-pub mod container;
-pub mod decode;
-pub mod e5;
-pub mod geometry;
-pub mod native;
-pub mod object_graph;
-pub mod topology;
-pub mod value_block;
-pub mod variant;
-pub mod zero_entity;
+pub(crate) mod analytic;
+pub(crate) mod assemble;
+pub(crate) mod catalog;
+pub(crate) mod container;
+pub(crate) mod decode;
+pub(crate) mod families;
+pub(crate) mod native;
+pub(crate) mod nurbs;
+pub(crate) mod object_graph;
+pub(crate) mod solve;
+pub(crate) mod value_block;
+pub(crate) mod variant;
+pub(crate) mod wire;
+
+#[cfg(feature = "fuzz")]
+pub mod fuzz;
+
+/// Maximum number of exact rational-quadratic spans materialized for one
+/// angular curve or surface direction from untrusted native parameters.
+pub(crate) const MAX_EXACT_ARC_SPANS: usize = 4_096;
 
 use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
@@ -92,7 +92,7 @@ impl Codec for CatiaCodec {
         reader: &mut dyn ReadSeek,
         options: &DecodeOptions,
     ) -> Result<DecodeResult, CodecError> {
-        decode::decode(reader, options)
+        decode::decode(reader, *options)
     }
 }
 

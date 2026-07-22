@@ -2825,6 +2825,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::CurveBounded { .. }
                 | ProceduralSurfaceDefinition::Ruled { .. }
                 | ProceduralSurfaceDefinition::Blend { .. }
+                | ProceduralSurfaceDefinition::RollingBallJet { .. }
                 | ProceduralSurfaceDefinition::Unknown { .. } => true,
             })
             .count();
