@@ -34,7 +34,9 @@ pub(crate) use model::*;
 pub use om::*;
 pub use parasolid::*;
 pub use segments::*;
-pub(crate) use substrate::ParsedStreams;
+#[cfg(test)]
+pub(crate) use substrate::pair_stream_indices;
+pub(crate) use substrate::{paired_delta_streams, topology_streams, ParsedStreams};
 
 /// Attach the pre-extracted native object model to `ir`: emit annotations, the
 /// namespace arenas, and the semantic islands. The single entry point the

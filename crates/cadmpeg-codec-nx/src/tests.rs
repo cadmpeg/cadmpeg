@@ -6033,7 +6033,7 @@ fn segment_order_pairs_delta_across_intervening_non_history_stream() {
     ];
     let eligible = BTreeSet::from([2usize, 5]);
     assert_eq!(
-        crate::decode::pair_stream_indices(&streams, Some(&eligible)),
+        crate::native::pair_stream_indices(&streams, Some(&eligible)),
         std::collections::BTreeMap::from([(0, vec![2]), (3, vec![5])])
     );
 }

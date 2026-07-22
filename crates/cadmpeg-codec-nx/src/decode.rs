@@ -937,55 +937,8 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
     });
 }
 
-pub(crate) fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
-    let mut semantic = topology_streams(scan);
-    let pairs = paired_delta_streams(scan);
-    let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
-    for (delta, stream) in scan.streams.iter().enumerate() {
-        if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
-            semantic[delta]
-                .extend_from_slice(&crate::deltas::procedural_residual(&stream.inflated));
-        }
-    }
-    for (partition, deltas) in pairs {
-        for delta in deltas {
-            semantic[partition].extend_from_slice(&crate::deltas::procedural_residual(
-                &scan.streams[delta].inflated,
-            ));
-            semantic[delta].clear();
-        }
-    }
-    semantic
-}
-
-pub(crate) fn topology_streams(scan: &Scan) -> Vec<Vec<u8>> {
-    let mut semantic = scan
-        .streams
-        .iter()
-        .map(|stream| stream.inflated.clone())
-        .collect::<Vec<_>>();
-    let pairs = paired_delta_streams(scan);
-    let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
-    for (delta, stream) in scan.streams.iter().enumerate() {
-        if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
-            let census = crate::deltas::walk(&stream.inflated);
-            if !census.records.is_empty() || !census.tombstones.is_empty() {
-                semantic[delta] = crate::deltas::merge_full_records(&[], &stream.inflated);
-            }
-        }
-    }
-    for (partition, deltas) in pairs {
-        for delta in deltas {
-            semantic[partition] =
-                crate::deltas::merge_full_records(&semantic[partition], &semantic[delta]);
-            semantic[delta].clear();
-        }
-    }
-    semantic
-}
-
 fn unmatched_delta_tombstone_count(scan: &Scan) -> usize {
-    let pairs = paired_delta_streams(scan);
+    let pairs = crate::native::paired_delta_streams(scan);
     let mut current = pairs
         .keys()
         .map(|partition| (*partition, scan.streams[*partition].inflated.clone()))
@@ -1008,42 +961,6 @@ fn unmatched_delta_tombstone_count(scan: &Scan) -> usize {
         }
     }
     unmatched
-}
-
-pub(crate) fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
-    let links = crate::native::segment_stream_links(&scan.container, &scan.streams);
-    let linked_deltas = links
-        .iter()
-        .filter(|link| link.stream_kind == "deltas")
-        .map(|link| link.stream_ordinal as usize)
-        .collect::<BTreeSet<_>>();
-    pair_stream_indices(&scan.streams, (!links.is_empty()).then_some(&linked_deltas))
-}
-
-pub(crate) fn pair_stream_indices(
-    streams: &[Stream],
-    eligible_deltas: Option<&BTreeSet<usize>>,
-) -> BTreeMap<usize, Vec<usize>> {
-    let mut pairs = BTreeMap::<usize, Vec<usize>>::new();
-    for (delta, stream) in streams.iter().enumerate() {
-        if stream.kind != StreamKind::Deltas
-            || eligible_deltas.is_some_and(|eligible| !eligible.contains(&delta))
-        {
-            continue;
-        }
-        let partition = streams[..delta]
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, candidate)| {
-                candidate.kind == StreamKind::Partition && candidate.schema == stream.schema
-            })
-            .map(|(partition, _)| partition);
-        if let Some(partition) = partition {
-            pairs.entry(partition).or_default().push(delta);
-        }
-    }
-    pairs
 }
 
 fn retain_live_annotations(

@@ -122,7 +122,7 @@ impl Codec for NxCodec {
 /// one per embedded Parasolid stream, and the shared container notes.
 fn summarize(scan: &decode::Scan) -> ContainerSummary {
     let mut entries = Vec::new();
-    let semantic_streams = decode::topology_streams(scan);
+    let semantic_streams = native::topology_streams(scan);
 
     for entry in &scan.container.entries {
         let mut attributes = BTreeMap::new();

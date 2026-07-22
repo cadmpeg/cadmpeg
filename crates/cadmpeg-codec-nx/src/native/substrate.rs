@@ -14,11 +14,110 @@
 //! also absorbs the semantic-stream preparation so the decode geometry path reads its
 //! semantic bytes from here rather than recomputing them.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
-use crate::decode::{self, Scan};
+use crate::decode::Scan;
 use crate::intersection::{self, CurveScan};
+use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{self, BlendSurface, Graph, OffsetSurface, SurfaceCurve, TrimmedCurve};
+
+/// The delta-extended semantic bytes per stream: the topology-merged view plus each
+/// unpaired delta stream's procedural residual, with paired delta streams folded into
+/// their partition and then cleared. This is the byte view the decode geometry path's
+/// scanners read.
+pub(crate) fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
+    let mut semantic = topology_streams(scan);
+    let pairs = paired_delta_streams(scan);
+    let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
+    for (delta, stream) in scan.streams.iter().enumerate() {
+        if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
+            semantic[delta]
+                .extend_from_slice(&crate::deltas::procedural_residual(&stream.inflated));
+        }
+    }
+    for (partition, deltas) in pairs {
+        for delta in deltas {
+            semantic[partition].extend_from_slice(&crate::deltas::procedural_residual(
+                &scan.streams[delta].inflated,
+            ));
+            semantic[delta].clear();
+        }
+    }
+    semantic
+}
+
+/// The topology-merged bytes per stream: each stream's inflated bytes with delta
+/// full-record merges applied. Unpaired delta streams that carry records or tombstones
+/// are merged against an empty partition; paired delta streams are merged into their
+/// partition and then cleared.
+pub(crate) fn topology_streams(scan: &Scan) -> Vec<Vec<u8>> {
+    let mut semantic = scan
+        .streams
+        .iter()
+        .map(|stream| stream.inflated.clone())
+        .collect::<Vec<_>>();
+    let pairs = paired_delta_streams(scan);
+    let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
+    for (delta, stream) in scan.streams.iter().enumerate() {
+        if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
+            let census = crate::deltas::walk(&stream.inflated);
+            if !census.records.is_empty() || !census.tombstones.is_empty() {
+                semantic[delta] = crate::deltas::merge_full_records(&[], &stream.inflated);
+            }
+        }
+    }
+    for (partition, deltas) in pairs {
+        for delta in deltas {
+            semantic[partition] =
+                crate::deltas::merge_full_records(&semantic[partition], &semantic[delta]);
+            semantic[delta].clear();
+        }
+    }
+    semantic
+}
+
+/// Map each partition stream ordinal to the delta stream ordinals that pair with it,
+/// restricting the delta candidates to those the segment stream links mark as `deltas`
+/// when any links are present.
+pub(crate) fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
+    let links = super::segment_stream_links(&scan.container, &scan.streams);
+    let linked_deltas = links
+        .iter()
+        .filter(|link| link.stream_kind == "deltas")
+        .map(|link| link.stream_ordinal as usize)
+        .collect::<BTreeSet<_>>();
+    pair_stream_indices(&scan.streams, (!links.is_empty()).then_some(&linked_deltas))
+}
+
+/// Pair each eligible delta stream with the nearest preceding partition stream of the
+/// same schema. `eligible_deltas`, when `Some`, restricts pairing to those delta
+/// ordinals; when `None`, every delta stream is eligible.
+pub(crate) fn pair_stream_indices(
+    streams: &[Stream],
+    eligible_deltas: Option<&BTreeSet<usize>>,
+) -> BTreeMap<usize, Vec<usize>> {
+    let mut pairs = BTreeMap::<usize, Vec<usize>>::new();
+    for (delta, stream) in streams.iter().enumerate() {
+        if stream.kind != StreamKind::Deltas
+            || eligible_deltas.is_some_and(|eligible| !eligible.contains(&delta))
+        {
+            continue;
+        }
+        let partition = streams[..delta]
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, candidate)| {
+                candidate.kind == StreamKind::Partition && candidate.schema == stream.schema
+            })
+            .map(|(partition, _)| partition);
+        if let Some(partition) = partition {
+            pairs.entry(partition).or_default().push(delta);
+        }
+    }
+    pairs
+}
 
 /// The cached parses of one Parasolid byte view of one stream.
 ///
@@ -136,9 +235,9 @@ impl ParsedStreams {
     /// views share one parse when the topology-merged and delta-extended byte views
     /// both equal `stream.inflated` and the stream has no auxiliary-replacement deltas.
     pub(crate) fn parse(scan: &Scan) -> Self {
-        let semantic_streams = decode::semantic_streams(scan);
-        let topology_streams = decode::topology_streams(scan);
-        let delta_pairs = decode::paired_delta_streams(scan);
+        let semantic_streams = semantic_streams(scan);
+        let topology_streams = topology_streams(scan);
+        let delta_pairs = paired_delta_streams(scan);
 
         let per_stream = scan
             .streams
