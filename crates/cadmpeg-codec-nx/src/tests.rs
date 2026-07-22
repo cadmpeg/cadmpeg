@@ -20122,7 +20122,7 @@ mod golden {
                 Ok(text) => text,
                 Err(e) => {
                     failures.push(format!(
-                        "fixture `{name}`: cannot read golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-nx golden`",
+                        "fixture `{name}`: cannot read golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test-fast golden`",
                         path.display()
                     ));
                     continue;
@@ -20137,7 +20137,7 @@ mod golden {
         }
         assert!(
             failures.is_empty(),
-            "{} golden snapshot(s) drifted; if the change is intended run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-nx golden` and review the diff:\n\n{}",
+            "{} golden snapshot(s) drifted; if the change is intended run `UPDATE_GOLDEN=1 cargo test-fast golden` and review the diff:\n\n{}",
             failures.len(),
             failures.join("\n\n")
         );
