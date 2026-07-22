@@ -332,30 +332,15 @@ fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
     if requires_profile_role && marker_profile_curve_role(payload, offset) != Some(1) {
         return None;
     }
-    let point = Point3::new(
-        f64::from_le_bytes(
-            payload
-                .get(coordinate_offset..coordinate_offset + 8)?
-                .try_into()
-                .ok()?,
-        ) * NATIVE_TO_IR,
-        f64::from_le_bytes(
-            payload
-                .get(coordinate_offset + 8..coordinate_offset + 16)?
-                .try_into()
-                .ok()?,
-        ) * NATIVE_TO_IR,
-        f64::from_le_bytes(
-            payload
-                .get(coordinate_offset + 16..coordinate_offset + 24)?
-                .try_into()
-                .ok()?,
-        ) * NATIVE_TO_IR,
-    );
-    [point.x, point.y, point.z]
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(point)
+    let coordinate = |offset: usize| {
+        let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+        (value == 0.0 || value.is_normal()).then_some(value * NATIVE_TO_IR)
+    };
+    Some(Point3::new(
+        coordinate(coordinate_offset)?,
+        coordinate(coordinate_offset + 8)?,
+        coordinate(coordinate_offset + 16)?,
+    ))
 }
 
 pub(crate) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
@@ -980,6 +965,9 @@ mod marker_tests {
             Some(Point3::new(35.0, 0.0, 141.5))
         );
         payload[..offset].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert_eq!(marker_spatial_coordinates(&payload, offset), None);
+        payload[..offset].copy_from_slice(&1u32.to_le_bytes());
+        payload[offset + 58..offset + 66].copy_from_slice(&f64::from_bits(1).to_le_bytes());
         assert_eq!(marker_spatial_coordinates(&payload, offset), None);
     }
 
