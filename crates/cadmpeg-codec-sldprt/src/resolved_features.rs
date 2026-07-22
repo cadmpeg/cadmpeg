@@ -9336,17 +9336,52 @@ fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
         })
         .flatten()
         .collect::<HashSet<_>>();
+    let linked_endpoint_coordinates = lane
+        .sketch_entities
+        .iter()
+        .filter_map(|curve| {
+            let feature = curve.feature_ref.as_ref()?;
+            let offset = usize::try_from(curve.offset).ok()?;
+            let indices = wide_indexed_curve_endpoint_indices(&lane.native_payload, offset)
+                .or_else(|| compact_indexed_curve_endpoint_indices(&lane.native_payload, offset))
+                .or_else(|| compact_legacy_curve_endpoint_indices(&lane.native_payload, offset))
+                .or_else(|| {
+                    alternate_current_indexed_curve_endpoint_indices(&lane.native_payload, offset)
+                })?;
+            let endpoint = |index| {
+                let mut candidates = lane.sketch_entities.iter().filter_map(|marker| {
+                    (marker.feature_ref.as_ref() == Some(feature)
+                        && marker.object_index == Some(index))
+                    .then(|| {
+                        marker.coordinates_m.map(|coordinates| (coordinates, false)).or_else(|| {
+                            usize::try_from(marker.offset).ok().and_then(|offset| {
+                                current_linked_profile_point_coordinates(
+                                    &lane.native_payload,
+                                    offset,
+                                ).map(|coordinates| (coordinates, true))
+                            })
+                        })
+                    })
+                    .flatten()
+                    .map(|(coordinates, linked)| ((feature.clone(), index), coordinates, linked))
+                });
+                let candidate = candidates.next()?;
+                candidates.next().is_none().then_some(candidate)
+            };
+            let endpoints = [endpoint(indices[0])?, endpoint(indices[1])?];
+            (endpoints.iter().filter(|endpoint| endpoint.2).count() == 1).then_some(endpoints)
+        })
+        .flatten()
+        .filter(|endpoint| endpoint.2)
+        .map(|(key, coordinates, _)| (key, coordinates))
+        .collect::<HashMap<_, _>>();
     for marker in &mut lane.sketch_entities {
         let Some(key) = marker.feature_ref.clone().zip(marker.object_index) else {
             continue;
         };
         if endpoints.contains(&key) {
             if marker.coordinates_m.is_none() {
-                marker.coordinates_m = usize::try_from(marker.offset)
-                    .ok()
-                    .and_then(|offset| {
-                        current_linked_profile_point_coordinates(&lane.native_payload, offset)
-                    });
+                marker.coordinates_m = linked_endpoint_coordinates.get(&key).copied();
             }
             if marker.coordinates_m.is_some() {
                 marker.kind = SketchInputKind::Point;
