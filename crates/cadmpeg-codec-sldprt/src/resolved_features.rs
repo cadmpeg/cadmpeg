@@ -159,7 +159,9 @@ pub(crate) fn spatial_sketches(
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     for feature in model_features {
-        if !matches!(feature.definition, FeatureDefinition::SpatialSketch { .. }) {
+        let declared_spatial =
+            matches!(feature.definition, FeatureDefinition::SpatialSketch { .. });
+        if !declared_spatial && !matches!(feature.definition, FeatureDefinition::Sketch { .. }) {
             continue;
         }
         let Some(native_ref) = feature.native_ref.as_deref() else {
@@ -213,6 +215,9 @@ pub(crate) fn spatial_sketches(
             feature.definition = FeatureDefinition::SpatialSketch {
                 sketch: Some(sketch_id),
             };
+            continue;
+        }
+        if !declared_spatial {
             continue;
         }
         let mut candidates = Vec::new();
@@ -288,6 +293,16 @@ fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
                     && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
             {
                 (offset.checked_add(66)?, true)
+            }
+            prefix
+                if prefix == LEGACY_SKETCH_MARKER
+                    && marker_native_code(payload, offset).is_some()
+                    && locus == [0x04, 0x00, 0x02, 0x00]
+                    && marker_profile_curve_role(payload, offset) == Some(1)
+                    && marker_object_index(payload, offset).is_some()
+                    && payload.get(offset + 56..offset + 58) == Some(&[0x0e, 0x00]) =>
+            {
+                (offset.checked_add(58)?, false)
             }
             prefix
                 if prefix == LEGACY_SKETCH_MARKER
@@ -936,6 +951,31 @@ mod marker_tests {
             Some(Point3::new(125.0, -250.0, 375.0))
         );
         payload[offset + 4] = 3;
+        assert_eq!(marker_spatial_coordinates(&payload, offset), None);
+    }
+
+    #[test]
+    fn object_indexed_spatial_point_uses_compact_coordinates() {
+        let offset = 4;
+        let mut payload = vec![0; offset + 82];
+        payload[..offset].copy_from_slice(&1u32.to_le_bytes());
+        payload[offset..offset + LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[offset + 5..offset + 13].fill(0xff);
+        payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[offset + 17..offset + 21].copy_from_slice(&5u32.to_le_bytes());
+        payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[offset + 27..offset + 29].copy_from_slice(&1u16.to_le_bytes());
+        payload[offset + 56..offset + 58].copy_from_slice(&[0x0e, 0x00]);
+        for (index, value) in [0.035_f64, 0.0, 0.1415].into_iter().enumerate() {
+            let start = offset + 58 + index * 8;
+            payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+        }
+
+        assert_eq!(
+            marker_spatial_coordinates(&payload, offset),
+            Some(Point3::new(35.0, 0.0, 141.5))
+        );
+        payload[..offset].copy_from_slice(&u32::MAX.to_le_bytes());
         assert_eq!(marker_spatial_coordinates(&payload, offset), None);
     }
 
