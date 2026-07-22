@@ -672,6 +672,12 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
                     cursor += 1;
                 }
             }
+        } else if bytes[cursor] == b'[' {
+            if let Some(end) = bytes[cursor + 1..].iter().position(|byte| *byte == b']') {
+                cursor += end + 2;
+            } else {
+                cursor += 1;
+            }
         } else if bytes[cursor] == b'_' || bytes[cursor].is_ascii_alphabetic() {
             let start = cursor;
             cursor = expression_identifier_end(bytes, start)?;
@@ -3099,6 +3105,27 @@ mod tests {
         );
         assert_eq!(assignments[12].value, None);
         assert_eq!(assignments[13].value, None);
+    }
+
+    #[test]
+    fn bracketed_relation_units_are_not_dependencies() {
+        let lines = [
+            CurveExpressionLine {
+                text: "length=5[mm]+offset[inch]".to_owned(),
+                offset: 0,
+            },
+            CurveExpressionLine {
+                text: "compound=pressure[N/mm^2]".to_owned(),
+                offset: 1,
+            },
+        ];
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(assignments[0].dependencies, ["offset"]);
+        assert_eq!(assignments[0].value, None);
+        assert_eq!(assignments[1].dependencies, ["pressure"]);
+        assert_eq!(assignments[1].value, None);
     }
 
     #[test]
