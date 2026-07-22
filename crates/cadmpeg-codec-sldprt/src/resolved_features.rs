@@ -1033,7 +1033,8 @@ mod marker_tests {
         coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, cosmetic_thread_component_face_reference_at,
         cosmetic_thread_cylinder_reference_at, current_coordinate_linked_line_endpoints,
-        current_indexed_arc_reverses_center_sweep, current_wide_undetailed_line,
+        current_indexed_arc_reverses_center_sweep, current_wide_arc_direct_markers,
+        current_wide_undetailed_line,
         direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
         explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
         generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
@@ -4995,6 +4996,67 @@ mod marker_tests {
         current_112[17..21].copy_from_slice(&2u32.to_le_bytes());
         current_112[84..86].copy_from_slice(&3u16.to_le_bytes());
         assert_eq!(wide_indexed_curve_endpoint_indices(&current_112, 0), None);
+    }
+
+    #[test]
+    fn current_wide_arc_uses_direct_point_ids_with_an_arc_center_carrier() {
+        let mut payload = vec![0; 92 + SKETCH_MARKER.len()];
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[64..66].copy_from_slice(&6u16.to_le_bytes());
+        payload[66..68].copy_from_slice(&5u16.to_le_bytes());
+        payload[68..72].copy_from_slice(&1u32.to_le_bytes());
+        payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[84..88].copy_from_slice(&4u32.to_le_bytes());
+        payload[88..92].copy_from_slice(&3u32.to_le_bytes());
+        payload[92..].copy_from_slice(SKETCH_MARKER);
+        let entity =
+            |id: &str, object_index, coordinates_m, kind: SketchInputKind| SketchInputEntity {
+                id: id.into(),
+                parent: "lane".into(),
+                feature_ref: Some("sketch".into()),
+                ordinal: 0,
+                offset: 0,
+                object_index,
+                local_id: None,
+                kind,
+                state_value: Some(1.0),
+                coordinates_m,
+                links: Vec::new(),
+                link_selector: None,
+            };
+        let entities = [
+            entity("curve", Some(2), None, SketchInputKind::Arc),
+            entity("center", Some(4), Some([0.0, 0.0]), SketchInputKind::Arc),
+            entity("start", Some(6), Some([0.0, 1.0]), SketchInputKind::Point),
+            entity("end", Some(5), Some([0.0, -1.0]), SketchInputKind::Point),
+            entity("shifted", Some(7), Some([2.0, 0.0]), SketchInputKind::Point),
+        ];
+        let markers = entities.iter().collect::<Vec<_>>();
+
+        let (endpoints, center) = current_wide_arc_direct_markers(&payload, &entities[0], &markers)
+            .expect("direct endpoint IDs");
+        assert_eq!(
+            endpoints
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["start", "end"]
+        );
+        assert_eq!(
+            coordinate_roster_arc_center(
+                &payload,
+                &entities[0],
+                &markers,
+                [endpoints[0], endpoints[1]],
+            ),
+            Some(center)
+        );
     }
 
     #[test]
@@ -23660,6 +23722,9 @@ fn roster_curve_endpoint_markers<'a>(
     {
         return Vec::new();
     }
+    if let Some((endpoints, _)) = current_wide_arc_direct_markers(payload, curve, markers) {
+        return endpoints.to_vec();
+    }
     if let Some(indices) = wide_indexed_curve_endpoint_indices(payload, offset)
         .or_else(|| compact_indexed_curve_endpoint_indices(payload, offset))
         .or_else(|| direct_indexed_curve_endpoint_indices(payload, offset))
@@ -23767,6 +23832,69 @@ fn roster_curve_endpoint_markers<'a>(
         .collect()
 }
 
+fn current_wide_arc_direct_markers<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Option<([&'a SketchInputEntity; 2], [f64; 2])> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(2)
+        || wide_indexed_curve_endpoint_indices(payload, offset).is_none()
+        || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
+    {
+        return None;
+    }
+    let endpoint = |relative: usize| {
+        payload
+            .get(offset + relative..offset + relative + 2)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u16::from_le_bytes)
+            .map(u32::from)
+    };
+    let raw = [endpoint(64)?, endpoint(66)?];
+    if raw[0] == 0 || raw[1] == 0 || raw[0] == raw[1] {
+        return None;
+    }
+    let resolve = |indices: [u32; 2]| {
+        let endpoints = indices.map(|index| {
+            let mut matches = markers.iter().copied().filter(|marker| {
+                marker.feature_ref == curve.feature_ref
+                    && marker.object_index == Some(index)
+                    && marker.coordinates_m.is_some()
+                    && matches!(
+                        marker.kind,
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                    )
+            });
+            let endpoint = matches.next()?;
+            matches.next().is_none().then_some(endpoint)
+        });
+        Some([endpoints[0]?, endpoints[1]?])
+    };
+    let has_unique_center = |endpoints: [&SketchInputEntity; 2]| {
+        let [start_u, start_v] = endpoints[0].coordinates_m?;
+        let [end_u, end_v] = endpoints[1].coordinates_m?;
+        let candidates = markers
+            .iter()
+            .filter(|marker| {
+                marker.feature_ref == curve.feature_ref && marker.kind == SketchInputKind::Arc
+            })
+            .filter_map(|marker| marker.coordinates_m)
+            .map(|[u, v]| Point2::new(u, v))
+            .collect::<Vec<_>>();
+        unique_arc_center_marker(
+            Point2::new(start_u, start_v),
+            Point2::new(end_u, end_v),
+            &candidates,
+            1.0e-9,
+        )
+    };
+    let direct = resolve(raw)?;
+    let center = has_unique_center(direct)?;
+    Some((direct, [center.u, center.v]))
+}
+
 fn compact_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     if !matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
@@ -23865,6 +23993,15 @@ fn coordinate_roster_arc_center(
         || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
     {
         return None;
+    }
+    if let Some((endpoints, center)) = current_wide_arc_direct_markers(payload, curve, markers) {
+        let matches = (resolved_endpoints[0].id == endpoints[0].id
+            && resolved_endpoints[1].id == endpoints[1].id)
+            || (resolved_endpoints[0].id == endpoints[1].id
+                && resolved_endpoints[1].id == endpoints[0].id);
+        if matches {
+            return Some(center);
+        }
     }
     let first_index = usize::from(u16::from_le_bytes(
         payload.get(offset + 64..offset + 66)?.try_into().ok()?,
