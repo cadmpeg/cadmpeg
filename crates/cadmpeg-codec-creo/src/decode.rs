@@ -2069,8 +2069,19 @@ fn curve_transfer_coverage(
 fn surface_transfer_coverage(
     rows: &[crate::surface::SurfaceRow],
     surfaces: &[Surface],
+    procedural_surfaces: &[ProceduralSurface],
 ) -> SurfaceTransferCoverage {
     let unique_rows = crate::surface::uniquely_identified_rows(rows);
+    let extrusion_surfaces = procedural_surfaces
+        .iter()
+        .filter(|procedural| {
+            matches!(
+                procedural.definition,
+                ProceduralSurfaceDefinition::Extrusion { .. }
+            )
+        })
+        .map(|procedural| &procedural.surface)
+        .collect::<BTreeSet<_>>();
     let transferred = surfaces
         .iter()
         .filter_map(|surface| {
@@ -2082,7 +2093,11 @@ fn surface_transfer_coverage(
                 .strip_prefix("VisibGeom:")?
                 .parse::<u32>()
                 .ok()?;
-            Some((id, surface_kind_for_geometry(&surface.geometry)?))
+            let mut kinds = vec![surface_kind_for_geometry(&surface.geometry)?];
+            if extrusion_surfaces.contains(&surface.id) {
+                kinds.push(crate::surface::SurfaceKind::Extrusion);
+            }
+            Some((id, kinds))
         })
         .collect::<Vec<_>>();
     let mut coverage = SurfaceTransferCoverage {
@@ -2104,7 +2119,7 @@ fn surface_transfer_coverage(
     for row in unique_rows {
         let is_transferred = transferred
             .iter()
-            .any(|(id, kind)| *id == row.id && *kind == row.kind);
+            .any(|(id, kinds)| *id == row.id && kinds.contains(&row.kind));
         coverage.transferred_rows += usize::from(is_transferred);
         let family = surface_family(row.kind);
         let family_coverage = coverage.by_family.entry(family).or_default();
@@ -17043,6 +17058,7 @@ mod resolved_sketch_tests {
         let rows = vec![
             row(41, crate::surface::SurfaceKind::Plane),
             row(42, crate::surface::SurfaceKind::Cylinder),
+            row(44, crate::surface::SurfaceKind::Extrusion),
             row(43, crate::surface::SurfaceKind::Cone),
             row(43, crate::surface::SurfaceKind::Cone),
         ];
@@ -17066,16 +17082,29 @@ mod resolved_sketch_tests {
         let surfaces = vec![
             plane("derived-id-independent-of-native-id", 41),
             plane("wrong-family", 42),
+            plane("extrusion-carrier", 44),
         ];
+        let procedural_surfaces = vec![ProceduralSurface {
+            id: ProceduralSurfaceId("extrusion-construction".to_string()),
+            surface: SurfaceId("extrusion-carrier".to_string()),
+            definition: ProceduralSurfaceDefinition::Extrusion {
+                directrix: CurveId("directrix".to_string()),
+                parameter_interval: None,
+                direction: Vector3::new(0.0, 0.0, 1.0),
+                native_position: None,
+            },
+            cache_fit_tolerance: None,
+        }];
 
-        let coverage = surface_transfer_coverage(&rows, &surfaces);
+        let coverage = surface_transfer_coverage(&rows, &surfaces, &procedural_surfaces);
 
-        assert_eq!(coverage.unique_rows, 2);
-        assert_eq!(coverage.transferred_rows, 1);
+        assert_eq!(coverage.unique_rows, 3);
+        assert_eq!(coverage.transferred_rows, 2);
         assert_eq!(coverage.ambiguous_rows, 2);
         assert_eq!(coverage.by_family["plane"], (1, 1));
         assert_eq!(coverage.by_family["cylinder"], (1, 0));
         assert_eq!(coverage.by_family["cone"], (0, 0));
+        assert_eq!(coverage.by_family["extrusion"], (1, 1));
     }
 
     #[test]
@@ -34383,7 +34412,11 @@ fn build_ir(
         ":relation:",
         "creo:relation:",
     );
-    let surface_coverage = surface_transfer_coverage(&scan.surface_rows, &ir.model.surfaces);
+    let surface_coverage = surface_transfer_coverage(
+        &scan.surface_rows,
+        &ir.model.surfaces,
+        &ir.model.procedural_surfaces,
+    );
     let curve_coverage = curve_transfer_coverage(&scan.curve_topology_rows, &ir.model.curves);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
