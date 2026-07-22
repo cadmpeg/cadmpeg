@@ -1008,7 +1008,7 @@ mod marker_tests {
         Length, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
         alternate_current_indexed_curve_endpoint_indices,
         alternate_current_selected_axis_endpoint_indices, angled_reference_plane_frame,
-        append_spatial_vertex, arc_angle_relation_kind, bind_indexed_curve_vertices,
+        append_spatial_vertex, arc_angle_relation_kind, normalize_indexed_curve_entities,
         bind_resolved_curve_vertices,
         bounded_profile_axis_endpoints, compact_body_component_path_at, compact_body_path_at,
         compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
@@ -1044,6 +1044,7 @@ mod marker_tests {
         legacy_feature_input_section, legacy_inline_arc_coordinates,
         legacy_line_handle_coordinates, legacy_linked_coordinates, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
+        legacy_terminal_indexed_profile_line,
         marker_coordinates, marker_is_geometry_locus, marker_is_selected_construction_line,
         marker_local_id, marker_local_links, marker_object_index, marker_spatial_coordinates,
         matrix_reference_plane_frame, minimal_reference_plane_frame,
@@ -4885,7 +4886,7 @@ mod marker_tests {
                 ),
             ],
         };
-        bind_indexed_curve_vertices(&mut lane);
+        normalize_indexed_curve_entities(&mut lane);
         assert_eq!(lane.sketch_entities[1].kind, SketchInputKind::Point);
         assert_eq!(lane.sketch_entities[2].kind, SketchInputKind::Point);
 
@@ -5123,7 +5124,7 @@ mod marker_tests {
             ],
         };
 
-        bind_indexed_curve_vertices(&mut lane);
+        normalize_indexed_curve_entities(&mut lane);
         bind_resolved_curve_vertices(&mut lane);
 
         assert_eq!(lane.sketch_entities[4].kind, SketchInputKind::Point);
@@ -5193,6 +5194,52 @@ mod marker_tests {
             legacy_extended_profile_curve_kind(&curve, 0),
             Some(SketchInputKind::Arc)
         );
+    }
+
+    #[test]
+    fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
+        let detail = 84;
+        let mut payload = vec![0; detail * 2];
+        for offset in [0, detail] {
+            payload[offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+                .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+            payload[offset + 5..offset + 13].fill(0xff);
+            payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+            payload[offset + 23..offset + 29]
+                .copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+            payload[offset + 31..offset + 39]
+                .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+            payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+            payload[offset + 60..offset + 64].copy_from_slice(&1u32.to_le_bytes());
+            payload[offset + 64..offset + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        }
+        let entity = |id: &str, offset, kind| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("sketch".into()),
+            ordinal: 0,
+            offset,
+            object_index: None,
+            local_id: None,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m: None,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let sibling = entity("sibling", 0, SketchInputKind::LineOrCircle);
+        let terminal = entity("terminal", detail as u64, SketchInputKind::Arc);
+
+        assert!(legacy_terminal_indexed_profile_line(
+            &payload,
+            &terminal,
+            &[&sibling, &terminal],
+        ));
+        assert!(!legacy_terminal_indexed_profile_line(
+            &payload,
+            &terminal,
+            &[&terminal],
+        ));
     }
 
     #[test]
@@ -9068,7 +9115,7 @@ pub(crate) fn bind_scalar_operands(
                 scalar.feature_ref = Some(feature_id.to_string());
             }
         }
-        bind_indexed_curve_vertices(lane);
+        normalize_indexed_curve_entities(lane);
         let mut marker_ids = HashMap::<(String, u32), Vec<(String, bool)>>::new();
         for entity in &lane.sketch_entities {
             if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id) {
@@ -9151,7 +9198,23 @@ pub(crate) fn bind_scalar_operands(
     }
 }
 
-fn bind_indexed_curve_vertices(lane: &mut FeatureInputLane) {
+fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
+    let terminal_lines = {
+        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
+        markers
+            .iter()
+            .copied()
+            .filter(|curve| {
+                legacy_terminal_indexed_profile_line(&lane.native_payload, curve, &markers)
+            })
+            .map(|curve| curve.id.clone())
+            .collect::<HashSet<_>>()
+    };
+    for marker in &mut lane.sketch_entities {
+        if terminal_lines.contains(&marker.id) {
+            marker.kind = SketchInputKind::LineOrCircle;
+        }
+    }
     let endpoints = lane
         .sketch_entities
         .iter()
@@ -23700,6 +23763,42 @@ fn consecutive_legacy_profile_line_endpoints<'a>(
         return Vec::new();
     }
     vec![line, next]
+}
+
+fn legacy_terminal_indexed_profile_line(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+) -> bool {
+    let Some(offset) = usize::try_from(curve.offset).ok() else {
+        return false;
+    };
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(0)
+        || !(marker_is_geometry_locus(payload, offset)
+            || payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]))
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || sketch_marker_prefix_at(payload, offset.saturating_add(84))
+    {
+        return false;
+    }
+    markers.iter().copied().any(|sibling| {
+        let Some(sibling_offset) = usize::try_from(sibling.offset).ok() else {
+            return false;
+        };
+        sibling.feature_ref == curve.feature_ref
+            && sibling.offset < curve.offset
+            && sibling.kind == SketchInputKind::LineOrCircle
+            && marker_native_code(payload, sibling_offset) == Some(0)
+            && legacy_extended_profile_curve_kind(payload, sibling_offset)
+                == Some(SketchInputKind::LineOrCircle)
+    })
 }
 
 fn roster_curve_endpoint_markers<'a>(
