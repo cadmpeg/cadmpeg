@@ -764,6 +764,77 @@ impl SurfaceParameterRecord {
         (type_byte == 0x24).then_some(())?;
         self.repeated_diameter_type24_round_frame(cache)
             .or_else(|| self.type24_held_coordinate_round_frame())
+            .or_else(|| self.type24_square_radial_round_frame())
+    }
+
+    fn type24_square_radial_round_frame(&self) -> Option<PositionalCylinderFrame> {
+        (self.boundary == SurfaceBodyBoundary::CompoundClose).then_some(())?;
+        let terminal = self.scalar_frames.last()?;
+        ((6..=8).contains(&terminal.slots.len())).then_some(())?;
+        if terminal.slots.len() == 7 {
+            if let [leading, _] = self.scalar_frames.as_slice() {
+                let leading_end = leading
+                    .slots
+                    .iter()
+                    .try_fold(leading.offset, |cursor, slot| {
+                        (slot.offset == cursor).then(|| cursor + slot.length)
+                    })?;
+                let control_length = terminal.offset.checked_sub(leading_end)?;
+                let repeated_diameter_shell = matches!(
+                    (leading.slots.len(), leading.offset, control_length),
+                    (1, 1, 1 | 3) | (1, 3, 1) | (2, 0 | 1, 1) | (3, 0, 1)
+                );
+                (!repeated_diameter_shell).then_some(())?;
+            }
+        }
+        let terminal_end = terminal
+            .slots
+            .iter()
+            .try_fold(terminal.offset, |cursor, slot| {
+                (slot.offset == cursor).then(|| cursor + slot.length)
+            })?;
+        if terminal_end != self.body.len() {
+            (self.body.get(terminal_end) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let (_, reference_end) = psb::reference_id(&self.body, terminal_end + 1).ok()?;
+            (reference_end == self.body.len()).then_some(())?;
+        }
+        let corners = &terminal.slots[terminal.slots.len() - 6..];
+        let values = corners
+            .iter()
+            .map(|slot| slot.value)
+            .collect::<Option<Vec<_>>>()?;
+        values.iter().all(|value| value.is_finite()).then_some(())?;
+        let first: [f64; 3] = values[..3].try_into().ok()?;
+        let second: [f64; 3] = values[3..].try_into().ok()?;
+        let spans = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
+        let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
+        let equal_pairs = [(0, 1), (0, 2), (1, 2)]
+            .into_iter()
+            .filter(|(first, second)| {
+                (spans[*first].abs() - spans[*second].abs()).abs() <= 1e-9 * scale
+            })
+            .collect::<Vec<_>>();
+        let [(first_radial, second_radial)] = equal_pairs.as_slice() else {
+            return None;
+        };
+        let axis_index = 3usize.checked_sub(first_radial + second_radial)?;
+        let diameter = f64::midpoint(spans[*first_radial].abs(), spans[*second_radial].abs());
+        let length = spans[axis_index].abs();
+        (diameter > 1e-12 * scale && length > 1e-12 * scale).then_some(())?;
+        let mut origin = first;
+        origin[*first_radial] = f64::midpoint(first[*first_radial], second[*first_radial]);
+        origin[*second_radial] = f64::midpoint(first[*second_radial], second[*second_radial]);
+        let mut axis = [0.0; 3];
+        axis[axis_index] = spans[axis_index].signum();
+        let mut ref_direction = [0.0; 3];
+        ref_direction[*first_radial] = spans[*first_radial].signum();
+        Some(PositionalCylinderFrame {
+            origin,
+            axis,
+            ref_direction,
+            radius: 0.5 * diameter,
+            length: Some(length),
+        })
     }
 
     fn repeated_diameter_type24_round_frame(
@@ -6764,6 +6835,59 @@ mod tests {
         assert!(record(&incomplete_split)
             .positional_cylinder_frame
             .is_none());
+    }
+
+    #[test]
+    fn decodes_terminal_square_radial_type24_round_envelope() {
+        let body = [
+            0x32, 0x90, 0x32, 0x70, 0x63, 0x1c, 0x71, 0xa7, 0x2d, 0x4b, 0xc1, 0x0d, 0x60, 0xad,
+            0x2a, 0x4c, 0x12, 0x2d, 0x4f, 0x30, 0xcb, 0xcd, 0xcc, 0x62, 0xc5, 0x48, 0x58, 0xc0,
+            0x2d, 0x57, 0x75, 0x9c, 0xe9, 0x32, 0x3b, 0xfa, 0x48, 0x28, 0x00, 0x48, 0x56, 0x80,
+            0x2d, 0x59, 0x2d, 0x7c, 0x1f, 0xc1, 0xd8, 0x36, 0x48, 0x08, 0x00, 0xf7, 0x40,
+        ];
+        let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        payload.extend_from_slice(&body);
+        payload.push(0xe3);
+        let record = parameter_records(&payload).remove(0);
+
+        let frame = record
+            .positional_cylinder_frame
+            .expect("complete square-radial carrier");
+        assert_eq!(frame.origin, [-94.5, -93.837_702_082_688_25, -7.5]);
+        assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
+        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+        assert_eq!(frame.radius, 4.5);
+        assert!((frame.length.unwrap() - 6.872_998_848_194_527).abs() < 1.0e-12);
+
+        let mut ambiguous = record.clone();
+        ambiguous.scalar_frames[1].slots[6].value = Some(-102.837_702_082_688_25);
+        assert!(ambiguous.type24_square_radial_round_frame().is_none());
+
+        let mut unowned_tail = record;
+        unowned_tail.body.push(0x00);
+        assert!(unowned_tail.type24_square_radial_round_frame().is_none());
+
+        let six_slot_body = [
+            27, 244, 0, 86, 19, 73, 195, 99, 182, 160, 18, 45, 26, 98, 51, 231, 180, 183, 80, 72,
+            62, 0, 45, 29, 51, 51, 51, 51, 51, 153, 71, 9, 153, 71, 61, 204, 45, 30, 0, 0, 0, 0, 0,
+            101, 46, 9, 153, 247, 23,
+        ];
+        let mut six_slot_payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        six_slot_payload.extend_from_slice(&six_slot_body);
+        six_slot_payload.push(0xe3);
+        let six_slot = parameter_records(&six_slot_payload).remove(0);
+        let frame = six_slot
+            .positional_cylinder_frame
+            .expect("complete six-slot square-radial carrier");
+        assert!(frame
+            .origin
+            .into_iter()
+            .zip([-29.9, -7.4, -3.2])
+            .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
+        assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
+        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+        assert!((frame.radius - 0.1).abs() < 1.0e-12);
+        assert!((frame.length.unwrap() - 6.4).abs() < 1.0e-12);
     }
 
     #[test]
