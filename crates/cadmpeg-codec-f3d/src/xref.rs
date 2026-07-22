@@ -196,7 +196,7 @@ pub fn design_for<'a>(table: &'a XrefTable, reference: &XrefReference) -> Option
 
 /// Expand container references through their occurrence records in the active
 /// Design `BulkStream` and retain each occurrence-local placement matrix.
-pub(crate) fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) {
+fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) {
     let roles = table
         .references
         .iter()

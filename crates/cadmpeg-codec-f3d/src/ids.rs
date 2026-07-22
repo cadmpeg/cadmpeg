@@ -35,7 +35,7 @@ pub(crate) const FILE_SOURCE_IMAGE_ID: &str = "f3d:file:source-image#0";
 /// Percent-encode `#`, `%`, and whitespace so a value can occupy one
 /// `#{len}:{key}` identity-key segment without colliding with the separators
 /// or the reserved escape byte.
-pub(crate) fn identity_key_component(value: &str) -> String {
+fn identity_key_component(value: &str) -> String {
     use std::fmt::Write as _;
 
     let mut encoded = String::with_capacity(value.len());

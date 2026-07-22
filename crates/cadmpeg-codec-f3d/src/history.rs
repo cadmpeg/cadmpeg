@@ -2968,7 +2968,7 @@ fn stable_ref(id: &str) -> Option<i64> {
 
 /// Resolve one Design persistent local identity to its invariant stable ASM
 /// history family and the states containing that slot.
-pub(crate) fn historical_identity_kind(
+fn historical_identity_kind(
     histories: &[AsmHistory],
     local_id: u64,
 ) -> Option<(AsmHistoricalEntityKind, Vec<i64>)> {

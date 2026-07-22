@@ -785,7 +785,7 @@ pub(crate) struct BodyAppearanceOverride {
 /// Design `BulkStream` and join them to ASM body keys through the BREP
 /// body-map record
 /// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
-pub(crate) fn decode_body_appearance_overrides(
+fn decode_body_appearance_overrides(
     _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
@@ -831,7 +831,7 @@ pub struct FaceAppearanceAssignment {
 /// length-prefixed UTF-16 strings before the marker are the 36-character
 /// face GUID and the bound visual GUID
 /// ([spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)).
-pub(crate) fn decode_face_appearance_assignments(
+fn decode_face_appearance_assignments(
     _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
