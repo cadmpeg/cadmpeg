@@ -1378,9 +1378,29 @@ pub fn positional_frame_planes(
                 && record.body.ends_with(&[0xf7, 0x0c]))
             .then(|| (corners[0].offset, corners))
         })();
+        let reflected_corner_frame = (|| {
+            let frame_end = record.body.len().checked_sub(2)?;
+            let frame = record.scalar_frames.iter().find(|frame| {
+                frame.slots.len() == 6
+                    && frame
+                        .slots
+                        .last()
+                        .is_some_and(|slot| slot.offset + slot.length == frame_end)
+            })?;
+            let [first_held, _, _, second_held, _, _] = frame.slots.as_slice() else {
+                unreachable!("six slots were checked above");
+            };
+            (record.body.ends_with(&[0xf7, 0x0c])
+                && first_held.length == 7
+                && second_held.length == 7
+                && first_held.raw == second_held.raw
+                && matches!(first_held.raw.first(), Some(0xd0..=0xdc)))
+            .then_some((frame.offset, frame.slots.as_slice()))
+        })();
         let mut candidates = marked_frames
             .chain(auxiliary_frame)
             .chain(trailed_auxiliary_frame)
+            .chain(reflected_corner_frame)
             .filter_map(|(offset, slots)| {
                 let values = slots
                     .iter()
@@ -2128,6 +2148,10 @@ fn scalar_tokens(
     cache: &scalar::ScalarCache,
 ) -> Vec<SurfaceParameterScalar> {
     let mut tokens = Vec::new();
+    let reflected_plane_corners = (kind == SurfaceKind::Plane)
+        .then(|| reflected_plane_corner_tokens(body, cache))
+        .flatten()
+        .unwrap_or_default();
     let outline_markers = if kind == SurfaceKind::TorusOrSphere {
         torus_outline_markers(body)
     } else {
@@ -2145,6 +2169,14 @@ fn scalar_tokens(
     };
     let mut cursor = 0;
     while cursor < body.len() {
+        if let Some(token) = reflected_plane_corners
+            .iter()
+            .find(|token| token.offset == cursor)
+        {
+            tokens.push(token.clone());
+            cursor += token.length;
+            continue;
+        }
         if let Some((_, end, _)) = outline_markers
             .iter()
             .find(|(offset, _, _)| *offset == cursor)
@@ -2204,6 +2236,58 @@ fn scalar_tokens(
         }
     }
     tokens
+}
+
+fn reflected_plane_corner_tokens(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<SurfaceParameterScalar>> {
+    body.ends_with(&[0xf7, 0x0c]).then_some(())?;
+    let frame_end = body.len().checked_sub(2)?;
+    let mut candidates = (0..frame_end).filter_map(|start| {
+        let (stored_held, first_end) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, start, cache)?;
+        (first_end == start + 7 && stored_held.is_finite() && stored_held < 0.0).then_some(())?;
+        let (first_other, second_start) =
+            scalar::decode_in_surface_row_lane(body, first_end, cache)?;
+        let (first_axial, repeated_start) =
+            scalar::decode_in_surface_row_lane(body, second_start, cache)?;
+        (body.get(repeated_start..repeated_start + 7) == body.get(start..first_end))
+            .then_some(())?;
+        let (repeated_held, second_other_start) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, repeated_start, cache)?;
+        let (second_other, second_axial_start) =
+            scalar::decode_in_surface_row_lane(body, second_other_start, cache)?;
+        let (second_axial, end) =
+            scalar::decode_in_surface_row_lane(body, second_axial_start, cache)?;
+        (end == frame_end
+            && [
+                first_other,
+                first_axial,
+                repeated_held,
+                second_other,
+                second_axial,
+            ]
+            .iter()
+            .all(|value| value.is_finite()))
+        .then_some(())?;
+        let slot = |value, offset, end| SurfaceParameterScalar {
+            value: Some(value),
+            raw: body[offset..end].to_vec(),
+            offset,
+            length: end - offset,
+        };
+        Some(vec![
+            slot(-stored_held, start, first_end),
+            slot(first_other, first_end, second_start),
+            slot(first_axial, second_start, repeated_start),
+            slot(-repeated_held, repeated_start, second_other_start),
+            slot(second_other, second_other_start, second_axial_start),
+            slot(second_axial, second_axial_start, end),
+        ])
+    });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
 
 fn opaque_spans(body: &[u8], tokens: &[SurfaceParameterScalar]) -> Vec<SurfaceParameterOpaqueSpan> {
@@ -6113,6 +6197,75 @@ mod tests {
             slots: vec![slot(1.0, 18, 1)],
         });
         assert!(positional_frame_planes(&[short], &[row]).is_empty());
+    }
+
+    #[test]
+    fn derives_plane_from_reflected_held_corner_frame() {
+        let body = vec![
+            0x18, 0xe4, 0x28, 0xad, 0xfb, 0xcd, 0xe8, 0xf5, 0xc2, 0x80, 0x00, 0x0c, 0x9a, 0xdc,
+            0x9c, 0x95, 0x35, 0x00, 0x80, 0xf8, 0x46, 0x1a, 0xdf, 0x09, 0x9b, 0x3c, 0x32, 0xed,
+            0x2f, 0x20, 0x00, 0xdc, 0x9c, 0x95, 0x35, 0x00, 0x80, 0xf8, 0x46, 0x1a, 0xa3, 0x11,
+            0xff, 0x6a, 0x47, 0x68, 0x2e, 0x20, 0x33, 0xf7, 0x0c,
+        ];
+        let tokens = scalar_tokens(SurfaceKind::Plane, &body, &scalar::ScalarCache::default());
+        let frames = scalar_frames(&tokens);
+        let record = SurfaceParameterRecord {
+            surface_id: 41,
+            scalar_values: tokens.iter().filter_map(|token| token.value).collect(),
+            opaque_spans: opaque_spans(&body, &tokens),
+            terminal_scalar_frame: terminal_scalar_frame(&body, &frames),
+            scalar_tokens: tokens,
+            scalar_frames: frames,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: None,
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: None,
+            body,
+            boundary: SurfaceBodyBoundary::CompoundClose,
+            offset: 3,
+            body_offset: 11,
+        };
+        let row = SurfaceRow {
+            id: 41,
+            type_byte: SurfaceKind::Plane.canonical_type_byte(),
+            kind: SurfaceKind::Plane,
+            feature_id: 17,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 3,
+        };
+
+        assert_eq!(
+            record
+                .scalar_frames
+                .last()
+                .expect("reflected corner frame")
+                .slots
+                .len(),
+            6
+        );
+        assert_eq!(
+            positional_frame_planes(std::slice::from_ref(&record), std::slice::from_ref(&row)),
+            vec![OutlinePlane {
+                surface_id: 41,
+                origin: [3.326_456_464_841_722_7, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                u_axis: [0.0, 1.0, 0.0],
+                offset: 24,
+            }]
+        );
+
+        let mut unequal = record;
+        unequal.body[31] = 0xdb;
+        let tokens = scalar_tokens(
+            SurfaceKind::Plane,
+            &unequal.body,
+            &scalar::ScalarCache::default(),
+        );
+        assert!(tokens.iter().all(|token| token.offset != 13));
+        unequal.scalar_frames = scalar_frames(&tokens);
+        assert!(positional_frame_planes(&[unequal], &[row]).is_empty());
     }
 
     #[test]

@@ -840,6 +840,15 @@ A second auxiliary-corner form begins with one control byte and two contiguous
 scalars, carries a four-byte control payload, one scalar, and a two-byte control
 payload, then stores the seven-scalar frame followed by `f7 0c`.
 
+A reflected-held positional plane body ends with `f7 0c`. Immediately before
+that terminator it stores two XYZ corners as six contiguous scalars. The first
+coordinate of each corner uses the tabulated-cylinder first-coordinate DICT
+lane, the two seven-byte token images are identical, and their decoded values
+are negative. Negating that stored coordinate gives the held model-space X
+coordinate. The other four slots use the positional surface-row scalar lane.
+They give the two YZ coordinate pairs. This bounded form therefore defines the
+plane `x = -stored_x` with the positive X basis normal.
+
 For a generated section plane selected through the parent-datum rule, multiple
 held envelope coordinates are filtered against the orientation plane. The
 unique perpendicular held axis defines the section plane.
