@@ -189,17 +189,25 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
     }
 }
 
-/// The parameter extremes over which a pcurve is checked. Geometry is evaluated
-/// in its own parameterization: NURBS knot bounds and explicit trimmed bounds.
-/// The top-level retained range may use a source parameterization unrelated to
-/// the neutral geometry and therefore does not override either domain.
+/// The parameter extremes over which a pcurve is checked. Ordinary NURBS
+/// carriers use their knot domain because some native range fields are
+/// independent metadata. Polar NURBS carriers use their explicit trim range,
+/// falling back to the knot domain. Other analytic carriers have no intrinsic
+/// finite extent here.
 fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2]> {
-    pcurve_geometry_parameter_extremes(&pcurve.geometry)
+    match &pcurve.geometry {
+        PcurveGeometry::PolarNurbs { knots, .. } => pcurve
+            .parameter_range
+            .or_else(|| Some([*knots.first()?, *knots.last()?])),
+        geometry => pcurve_geometry_parameter_extremes(geometry),
+    }
 }
 
 fn pcurve_geometry_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
-        PcurveGeometry::Nurbs { knots, .. } => Some([*knots.first()?, *knots.last()?]),
+        PcurveGeometry::Nurbs { knots, .. } | PcurveGeometry::PolarNurbs { knots, .. } => {
+            Some([*knots.first()?, *knots.last()?])
+        }
         PcurveGeometry::Trimmed {
             parameter_range, ..
         } => Some(*parameter_range),
@@ -208,6 +216,7 @@ fn pcurve_geometry_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64;
         | PcurveGeometry::Circle { .. }
         | PcurveGeometry::Ellipse { .. }
         | PcurveGeometry::Parabola { .. }
-        | PcurveGeometry::Hyperbola { .. } => None,
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::PolarHarmonic { .. } => None,
     }
 }

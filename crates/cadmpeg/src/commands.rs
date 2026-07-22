@@ -11,7 +11,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, SourceFidelity};
 
-use crate::loader::{self, read_prefix};
+use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
 use crate::registry::Registry;
 use crate::{DecodeArgs, ForcedInput, Format};
 
@@ -85,7 +85,7 @@ pub fn inspect(
     forced: Option<ForcedInput>,
     json: bool,
 ) -> Result<()> {
-    let prefix = read_prefix(path, 512)?;
+    let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
     let (codec, confidence) = match forced {
         Some(ForcedInput::Codec(id)) => (
             registry

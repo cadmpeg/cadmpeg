@@ -20,7 +20,7 @@ use cadmpeg_ir::features::{
     FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
     FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleForm, HoleKind, Length, ParameterId,
     ParameterValue, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, SketchSpace,
+    RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -1587,8 +1587,8 @@ fn transfer_curve_expression_features(
             },
             |helix| IrFeatureDefinition::HelixNativeAxis {
                 axis_native_ref: curve_expression_record_id(record),
-                radius: Length(helix.radius),
-                height: Length(helix.height),
+                axial_rise: Length(helix.height),
+                pitch: Length(helix.height / helix.revolutions),
                 revolutions: helix.revolutions,
                 start_angle: Angle(helix.start_angle),
                 clockwise: helix.clockwise,
@@ -8045,6 +8045,11 @@ fn reconcile_constraint_entity_references(
         SketchConstraintDefinition::Midpoint { point, entity } => {
             locus_emitted(point) && emitted.contains(entity)
         }
+        SketchConstraintDefinition::AtIntersection {
+            point,
+            first,
+            second,
+        } => locus_emitted(point) && emitted.contains(first) && emitted.contains(second),
         SketchConstraintDefinition::PointOnObject { point, entity } => {
             locus_emitted(point) && emitted.contains(entity)
         }
@@ -8059,6 +8064,7 @@ fn reconcile_constraint_entity_references(
             center,
         } => locus_emitted(first) && locus_emitted(second) && locus_emitted(center),
         SketchConstraintDefinition::Concentric { first, second }
+        | SketchConstraintDefinition::Coradial { first, second }
         | SketchConstraintDefinition::Collinear { first, second }
         | SketchConstraintDefinition::Parallel { first, second }
         | SketchConstraintDefinition::Perpendicular { first, second }
@@ -8072,6 +8078,12 @@ fn reconcile_constraint_entity_references(
         | SketchConstraintDefinition::Fixed { entity }
         | SketchConstraintDefinition::Radius { entity, .. }
         | SketchConstraintDefinition::Diameter { entity, .. } => emitted.contains(entity),
+        SketchConstraintDefinition::HorizontalPoints { first, second }
+        | SketchConstraintDefinition::VerticalPoints { first, second } => {
+            locus_emitted(first) && locus_emitted(second)
+        }
+        SketchConstraintDefinition::ArcAngle { entity, .. }
+        | SketchConstraintDefinition::EllipseAngle { entity, .. } => emitted.contains(entity),
         SketchConstraintDefinition::SnellsLaw {
             incident,
             refracted,
@@ -8116,6 +8128,7 @@ fn reconcile_constraint_parameter_reference(
         | SketchConstraintDefinition::SameCoordinate { .. }
         | SketchConstraintDefinition::Midpoint { .. }
         | SketchConstraintDefinition::Concentric { .. }
+        | SketchConstraintDefinition::Coradial { .. }
         | SketchConstraintDefinition::Collinear { .. }
         | SketchConstraintDefinition::Symmetric { .. }
         | SketchConstraintDefinition::PointSymmetric { .. }
@@ -8129,6 +8142,11 @@ fn reconcile_constraint_parameter_reference(
         | SketchConstraintDefinition::Fixed { .. } => true,
         SketchConstraintDefinition::Disabled
         | SketchConstraintDefinition::PointOnObject { .. }
+        | SketchConstraintDefinition::AtIntersection { .. }
+        | SketchConstraintDefinition::HorizontalPoints { .. }
+        | SketchConstraintDefinition::VerticalPoints { .. }
+        | SketchConstraintDefinition::ArcAngle { .. }
+        | SketchConstraintDefinition::EllipseAngle { .. }
         | SketchConstraintDefinition::InternalAlignment { .. }
         | SketchConstraintDefinition::Group { .. }
         | SketchConstraintDefinition::Text { .. } => true,
@@ -10888,7 +10906,6 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 source_content: Vec::new(),
                 outputs: Vec::new(),
                 definition: IrFeatureDefinition::Sketch {
-                    space: SketchSpace::Planar,
                     sketch: Some(sketch_id.clone()),
                 },
                 native_ref: Some(sketch_native_ref(&sketch_id)),
@@ -13160,10 +13177,7 @@ fn schema_feature_definition(
                     .any(|candidate| candidate.id == sketch)
                     .then_some(sketch)
             });
-        return IrFeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
-            sketch,
-        };
+        return IrFeatureDefinition::Sketch { sketch };
     }
     if schema_class == 911 {
         let unresolved_form = stepped_hole_form(
@@ -13235,6 +13249,7 @@ fn schema_feature_definition(
             face,
             position,
             direction,
+            placements: Vec::new(),
             kind: if simple_form {
                 HoleKind::Simple
             } else {
@@ -13405,7 +13420,9 @@ fn schema_feature_definition(
             None
         };
         let (profile, direction, extent) = construction.unwrap_or((
-            profile.unwrap_or(ProfileRef::Unresolved),
+            profile.unwrap_or_else(|| {
+                ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}"))
+            }),
             None,
             Extent::Unresolved,
         ));
@@ -13468,7 +13485,7 @@ fn schema_feature_definition(
         return unresolved_surface_merge_feature_definition();
     }
     if numbered_feature_name_has_family(kind, "Extrude") {
-        return unresolved_extrude_feature_definition();
+        return unresolved_extrude_feature_definition(feature_id);
     }
     IrFeatureDefinition::Native {
         kind: kind.to_string(),
@@ -13569,6 +13586,7 @@ fn named_feature_definition(
     }
     if matches!(kind, "Protrusion" | "Cut") {
         return Some(unresolved_extrude_feature_definition_with_op(
+            feature_id,
             section_sweep_boolean_operation(
                 feature_recipe_effect(scan, feature_id),
                 kind,
@@ -13597,7 +13615,7 @@ fn named_feature_definition(
         });
     }
     if kind == "Extrude" || numbered_feature_name_has_family(kind, "Extrude") {
-        return Some(unresolved_extrude_feature_definition());
+        return Some(unresolved_extrude_feature_definition(feature_id));
     }
     if kind == "Revolve" {
         return Some(IrFeatureDefinition::Revolve {
@@ -13631,13 +13649,16 @@ fn named_feature_definition(
     ))
 }
 
-fn unresolved_extrude_feature_definition() -> IrFeatureDefinition {
-    unresolved_extrude_feature_definition_with_op(BooleanOp::Unresolved)
+fn unresolved_extrude_feature_definition(feature_id: u32) -> IrFeatureDefinition {
+    unresolved_extrude_feature_definition_with_op(feature_id, BooleanOp::Unresolved)
 }
 
-fn unresolved_extrude_feature_definition_with_op(op: BooleanOp) -> IrFeatureDefinition {
+fn unresolved_extrude_feature_definition_with_op(
+    feature_id: u32,
+    op: BooleanOp,
+) -> IrFeatureDefinition {
     IrFeatureDefinition::Extrude {
-        profile: ProfileRef::Unresolved,
+        profile: ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")),
         direction: None,
         extent: Extent::Unresolved,
         op,

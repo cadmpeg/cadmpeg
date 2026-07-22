@@ -1438,9 +1438,9 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
     ));
     assert!(reference_named_feature_definition("Extrude 2").is_none());
     assert!(matches!(
-        unresolved_extrude_feature_definition(),
+        unresolved_extrude_feature_definition(42),
         IrFeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved,
+            profile: ProfileRef::Unresolved(_),
             direction: None,
             extent: Extent::Unresolved,
             op: BooleanOp::Unresolved,

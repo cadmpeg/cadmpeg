@@ -260,6 +260,7 @@ impl CadIr {
             Some(IR_VERSION) => serde_json::from_value(value),
             Some(PREVIOUS_IR_VERSION) => {
                 migrate_previous_sketch_placements(&mut value);
+                migrate_previous_sketch_spaces(&mut value);
                 value
                     .as_object_mut()
                     .expect("a versioned CADIR document is a JSON object")
@@ -308,6 +309,57 @@ fn migrate_previous_sketch_placements(value: &mut serde_json::Value) {
             }),
         );
     }
+}
+
+fn migrate_previous_sketch_spaces(value: &mut serde_json::Value) {
+    let Some(model) = value
+        .get_mut("model")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    if let Some(features) = model
+        .get_mut("features")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for feature in features {
+            if let Some(definition) = feature.get_mut("definition") {
+                migrate_previous_sketch_definition(definition);
+            }
+        }
+    }
+    if let Some(configurations) = model
+        .get_mut("configurations")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for state in configurations
+            .iter_mut()
+            .filter_map(|configuration| configuration.get_mut("feature_states"))
+            .filter_map(serde_json::Value::as_object_mut)
+            .flat_map(|states| states.values_mut())
+        {
+            if let Some(definition) = state.get_mut("definition") {
+                migrate_previous_sketch_definition(definition);
+            }
+        }
+    }
+}
+
+fn migrate_previous_sketch_definition(definition: &mut serde_json::Value) {
+    let Some(definition) = definition.as_object_mut() else {
+        return;
+    };
+    if definition
+        .get("definition")
+        .and_then(serde_json::Value::as_str)
+        != Some("sketch")
+    {
+        return;
+    }
+    if definition.get("space").and_then(serde_json::Value::as_str) == Some("spatial") {
+        definition.insert("definition".into(), "spatial_sketch".into());
+    }
+    definition.remove("space");
 }
 /// Source-container metadata preserved for reporting.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

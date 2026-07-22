@@ -2197,7 +2197,7 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: None,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             ..
@@ -2240,7 +2240,7 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
     assert!(matches!(
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: None,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -2264,7 +2264,7 @@ fn decode_types_named_base_protrusion_as_new_body() {
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: None,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::NewBody,
@@ -2296,7 +2296,7 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
     assert!(matches!(
         feature("creo:model:feature#4").definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: None,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::Unresolved,
@@ -2318,7 +2318,7 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
     assert!(matches!(
         feature("creo:model:feature#6").definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: None,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -3076,7 +3076,7 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: None,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -3102,7 +3102,7 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
     assert!(matches!(
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: None,
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -4123,7 +4123,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert!(matches!(
         &model_feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: cadmpeg_ir::features::BooleanOp::Unresolved,
             ..
@@ -4745,8 +4745,8 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert!(matches!(
         &result.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::HelixNativeAxis {
-            radius: cadmpeg_ir::features::Length(5.0),
-            height: cadmpeg_ir::features::Length(71.0),
+            axial_rise: cadmpeg_ir::features::Length(71.0),
+            pitch: cadmpeg_ir::features::Length(71.0),
             revolutions: 1.0,
             start_angle: cadmpeg_ir::features::Angle(0.0),
             clockwise: false,
