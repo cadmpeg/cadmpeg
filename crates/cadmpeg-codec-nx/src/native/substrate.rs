@@ -291,3 +291,54 @@ impl ParsedStreams {
         &self.semantic_streams[ordinal]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(unused_imports)]
+    use std::io::{Cursor, Write};
+
+    use flate2::write::ZlibEncoder;
+    use flate2::Compression;
+
+    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+    use cadmpeg_ir::geometry::{
+        BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
+        ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::report::LossCategory;
+    use cadmpeg_ir::Exactness;
+
+    use crate::container;
+    use crate::parasolid::{self, StreamKind};
+    use crate::test_support::*;
+    use crate::NxCodec;
+
+    use super::*;
+
+    #[test]
+    fn segment_order_pairs_delta_across_intervening_non_history_stream() {
+        use crate::parasolid::{Stream, StreamKind};
+        use std::collections::BTreeSet;
+
+        let stream = |kind, schema: Option<&str>, file_offset| Stream {
+            file_offset,
+            inflated: Vec::new(),
+            kind,
+            schema: schema.map(str::to_string),
+        };
+        let streams = vec![
+            stream(StreamKind::Partition, Some("SCH_A"), 10),
+            stream(StreamKind::Preview, None, 20),
+            stream(StreamKind::Deltas, Some("SCH_A"), 30),
+            stream(StreamKind::Partition, Some("SCH_B"), 40),
+            stream(StreamKind::Deltas, Some("SCH_A"), 50),
+            stream(StreamKind::Deltas, Some("SCH_B"), 60),
+        ];
+        let eligible = BTreeSet::from([2usize, 5]);
+        assert_eq!(
+            super::pair_stream_indices(&streams, Some(&eligible)),
+            std::collections::BTreeMap::from([(0, vec![2]), (3, vec![5])])
+        );
+    }
+}
