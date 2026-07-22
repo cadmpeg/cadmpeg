@@ -7044,7 +7044,6 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("configuration")));
-
     let referenced_data = build_prt(
         "c",
         &[(
@@ -7066,6 +7065,22 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         decoded.ir.source.as_ref().unwrap().attributes["configuration_state"],
         "driver_table_unresolved"
     );
+}
+
+#[test]
+fn decode_reports_only_unimplemented_relation_function_namespaces() {
+    let data = build_prt("c", &[]);
+    let decoded = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode empty part");
+
+    let relation_gap = decoded
+        .report
+        .losses
+        .iter()
+        .find(|loss| loss.message.contains("cross-model relation functions"))
+        .expect("precise remaining relation gap");
+    assert!(relation_gap.message.contains("graph, case-study, cabling"));
+    assert!(!relation_gap.message.contains("pattern-matching"));
 }
 
 #[test]

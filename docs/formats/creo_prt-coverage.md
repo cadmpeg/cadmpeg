@@ -41,7 +41,8 @@ fixtures, claims above L1 remain unproven.
   closed numeric and string operator and deterministic function values transfer,
   including exact and regular-expression whole-string matching.
   Local bindings are case-insensitive, scoped external symbols remain whole,
-  the reserved `PI` constant evaluates, and nested `IF`/`ELSE`/`ENDIF`
+  the reserved `PI` and dimensioned gravitational `G` constants evaluate, and
+  nested `IF`/`ELSE`/`ENDIF`
   activation is evaluated without selecting unresolved branches. Positive
   `exists()` queries resolve against the complete local assignment namespace
   and decoded `d<external_id>` section-dimension identities. Unambiguous

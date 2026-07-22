@@ -766,6 +766,8 @@ pub(crate) fn expression_identifier_key(name: &str) -> String {
 fn reserved_relation_scalar(name: &str) -> Option<f64> {
     if name.eq_ignore_ascii_case("pi") {
         Some(std::f64::consts::PI)
+    } else if name.eq_ignore_ascii_case("g") {
+        Some(9_800.0)
     } else if name.eq_ignore_ascii_case("true") || name.eq_ignore_ascii_case("yes") {
         Some(1.0)
     } else if name.eq_ignore_ascii_case("false") || name.eq_ignore_ascii_case("no") {
@@ -1042,6 +1044,12 @@ impl RelationDimension {
         time: -2,
         angle: 0,
     };
+    const ACCELERATION: Self = Self {
+        length: 1,
+        mass: 0,
+        time: -2,
+        angle: 0,
+    };
 
     fn combine(self, right: Self, subtract: bool) -> Option<Self> {
         let sign = if subtract { -1 } else { 1 };
@@ -1222,6 +1230,9 @@ fn relation_unit_symbol(symbol: &str) -> Option<RelationUnit> {
 
 trait ExpressionValue: Clone {
     fn number(value: f64) -> Self;
+    fn reserved(name: &str) -> Option<Self> {
+        reserved_relation_scalar(name).map(Self::number)
+    }
     fn string(_value: String) -> Option<Self> {
         None
     }
@@ -1418,6 +1429,14 @@ impl ExpressionValue for CurveExpressionValue {
 
     fn string(value: String) -> Option<Self> {
         Some(Self::String(value))
+    }
+
+    fn reserved(name: &str) -> Option<Self> {
+        if name.eq_ignore_ascii_case("g") {
+            Some(quantity_value(9_800.0, RelationDimension::ACCELERATION))
+        } else {
+            reserved_relation_scalar(name).map(Self::number)
+        }
     }
 
     fn with_unit(self, unit: RelationUnit) -> Option<Self> {
@@ -1850,8 +1869,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         let name = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
         self.whitespace();
         if self.source.get(self.cursor) != Some(&b'(') {
-            if let Some(value) = reserved_relation_scalar(name) {
-                return Some(V::number(value));
+            if let Some(value) = V::reserved(name) {
+                return Some(value);
             }
             return self.values.get(&expression_identifier_key(name)).cloned();
         }
@@ -3695,6 +3714,10 @@ mod tests {
                 text: "compound=pressure[N/mm^2]".to_owned(),
                 offset: 1,
             },
+            CurveExpressionLine {
+                text: "fall=G*2[s]^2".to_owned(),
+                offset: 2,
+            },
         ];
         let assignments =
             evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
@@ -3703,6 +3726,11 @@ mod tests {
         assert_eq!(assignments[0].value, None);
         assert_eq!(assignments[1].dependencies, ["pressure"]);
         assert_eq!(assignments[1].value, None);
+        assert!(assignments[2].dependencies.is_empty());
+        assert_eq!(
+            assignments[2].value,
+            Some(CurveExpressionValue::Length(39_200.0))
+        );
 
         let values = BTreeMap::new();
         let cases = [
