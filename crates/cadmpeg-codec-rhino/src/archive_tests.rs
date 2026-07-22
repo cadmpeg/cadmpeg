@@ -125,29 +125,13 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     context.set_retention_limits(point.len(), point.len());
     let result = context.commit();
 
-    assert_eq!(
-        result.ir.native_unknowns("rhino").unwrap()[0].byte_len,
-        large.len() as u64
-    );
-    assert_eq!(
-        result.ir.native_unknowns("rhino").unwrap()[0].sha256,
-        sha256_hex(&large)
-    );
-    assert_eq!(result.ir.native_unknowns("rhino").unwrap()[0].data, None);
-    assert_eq!(
-        result.ir.native_unknowns("rhino").unwrap()[1].byte_len,
-        point.len() as u64
-    );
-    assert_eq!(
-        result.ir.native_unknowns("rhino").unwrap()[1].sha256,
-        sha256_hex(&point)
-    );
-    assert_eq!(
-        result.ir.native_unknowns("rhino").unwrap()[1]
-            .data
-            .as_deref(),
-        Some(point.as_slice())
-    );
+    let retained = &result.source_fidelity.retained_records;
+    assert_eq!(retained[0].byte_len, large.len() as u64);
+    assert_eq!(retained[0].sha256, sha256_hex(&large));
+    assert_eq!(retained[0].data, None);
+    assert_eq!(retained[1].byte_len, point.len() as u64);
+    assert_eq!(retained[1].sha256, sha256_hex(&point));
+    assert_eq!(retained[1].data.as_deref(), Some(point.as_slice()));
 
     let two_points = archive(&[point.clone(), point.clone()]);
     let scan = super::container::scan(two_points).expect("complete archive scan");
@@ -155,12 +139,10 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     context.set_retention_limits(point.len(), point.len());
     let result = context.commit();
     assert_eq!(
-        result.ir.native_unknowns("rhino").unwrap()[0]
-            .data
-            .as_deref(),
+        result.source_fidelity.retained_records[0].data.as_deref(),
         Some(point.as_slice())
     );
-    assert_eq!(result.ir.native_unknowns("rhino").unwrap()[1].data, None);
+    assert_eq!(result.source_fidelity.retained_records[1].data, None);
 }
 
 #[test]
@@ -537,11 +519,8 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     assert_eq!(face.shell, shell.id);
     assert_eq!(face.loops, vec![loop_record.id.clone()]);
     assert_eq!(loop_record.face, face.id);
-    assert!(model
-        .coedges
-        .iter()
-        .all(|coedge| coedge.pcurve.is_some()
-            && model.edges.iter().any(|edge| edge.id == coedge.edge)));
+    assert!(model.coedges.iter().all(|coedge| !coedge.pcurves.is_empty()
+        && model.edges.iter().any(|edge| edge.id == coedge.edge)));
     assert!(model.edges.iter().all(|edge| edge.curve.is_some()
         && edge
             .tolerance
@@ -662,9 +641,10 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
         assert_eq!(result.ir.model.points.len(), 1, "{:?}", result.report);
         assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 2);
         let unknown = &result.ir.native_unknowns("rhino").unwrap()[0];
-        assert_eq!(unknown.byte_len, failure.len() as u64);
-        assert_eq!(unknown.sha256, sha256_hex(&failure));
-        assert_eq!(unknown.data.as_deref(), Some(failure.as_slice()));
+        let retained = &result.source_fidelity.retained_records[0];
+        assert_eq!(retained.byte_len, failure.len() as u64);
+        assert_eq!(retained.sha256, sha256_hex(&failure));
+        assert_eq!(retained.data.as_deref(), Some(failure.as_slice()));
         assert!(unknown.links.is_empty());
         assert!(!result.ir.native_unknowns("rhino").unwrap()[1]
             .links

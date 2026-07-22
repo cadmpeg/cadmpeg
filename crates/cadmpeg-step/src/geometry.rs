@@ -6,15 +6,255 @@
 //! counterparts. NURBS carriers use `*_WITH_KNOTS`, with complex instances for
 //! rational geometry.
 
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
 
 use crate::writer::{real, refs, Emitter, Ref};
+
+pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
+    match surface {
+        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => false,
+        SurfaceGeometry::Transformed { basis, transform } => {
+            similarity_transform(transform) && surface_is_supported(basis)
+        }
+        _ => true,
+    }
+}
+
+pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
+    match curve {
+        CurveGeometry::Unknown { .. } => false,
+        CurveGeometry::Transformed { basis, transform } => {
+            similarity_transform(transform) && curve_is_supported(basis)
+        }
+        _ => true,
+    }
+}
+
+fn similarity_transform(transform: &Transform) -> bool {
+    if transform
+        .rows
+        .iter()
+        .flatten()
+        .any(|value| !value.is_finite())
+        || transform.rows[3][0].abs() > 1.0e-12
+        || transform.rows[3][1].abs() > 1.0e-12
+        || transform.rows[3][2].abs() > 1.0e-12
+        || (transform.rows[3][3] - 1.0).abs() > 1.0e-12
+    {
+        return false;
+    }
+    let columns = [
+        Vector3::new(
+            transform.rows[0][0],
+            transform.rows[1][0],
+            transform.rows[2][0],
+        ),
+        Vector3::new(
+            transform.rows[0][1],
+            transform.rows[1][1],
+            transform.rows[2][1],
+        ),
+        Vector3::new(
+            transform.rows[0][2],
+            transform.rows[1][2],
+            transform.rows[2][2],
+        ),
+    ];
+    let scale = columns[0].norm();
+    let tolerance = 1.0e-10 * scale.max(1.0);
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    scale > 1.0e-12
+        && columns
+            .iter()
+            .all(|column| (column.norm() - scale).abs() <= tolerance)
+        && dot(columns[0], columns[1]).abs() <= tolerance * scale
+        && dot(columns[0], columns[2]).abs() <= tolerance * scale
+        && dot(columns[1], columns[2]).abs() <= tolerance * scale
+}
+
+#[cfg(test)]
+mod support_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_transform_that_step_operator_cannot_represent() {
+        let anisotropic = Transform {
+            rows: [
+                [2.0, 0.0, 0.0, 0.0],
+                [0.0, 3.0, 0.0, 0.0],
+                [0.0, 0.0, 2.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        };
+        let curve = CurveGeometry::Transformed {
+            basis: Box::new(CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            }),
+            transform: anisotropic,
+        };
+
+        assert!(!curve_is_supported(&curve));
+    }
+}
 
 /// Emit or reuse a `CARTESIAN_POINT`.
 pub fn point(e: &mut Emitter, p: Point3) -> Ref {
     let params = format!("'',({},{},{})", real(p.x), real(p.y), real(p.z));
     e.emit_interned("CARTESIAN_POINT", &params)
+}
+
+fn point2(e: &mut Emitter, p: Point2) -> Ref {
+    let params = format!("'',({},{})", real(p.u), real(p.v));
+    e.emit_interned("CARTESIAN_POINT", &params)
+}
+
+fn direction2(e: &mut Emitter, v: Point2) -> Ref {
+    let magnitude = (v.u * v.u + v.v * v.v).sqrt();
+    let (x, y) = if magnitude > 0.0 {
+        (v.u / magnitude, v.v / magnitude)
+    } else {
+        (1.0, 0.0)
+    };
+    e.emit_interned("DIRECTION", &format!("'',({},{})", real(x), real(y)))
+}
+
+fn axis2_placement_2d(e: &mut Emitter, location: Point2, x_axis: Point2) -> Ref {
+    let location = point2(e, location);
+    let direction = direction2(e, x_axis);
+    e.emit("AXIS2_PLACEMENT_2D", &format!("'',{location},{direction}"))
+}
+
+/// Emit a two-dimensional curve for use inside a `PCURVE` representation.
+pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
+    Some(match geometry {
+        PcurveGeometry::Line { origin, direction } => {
+            let point = point2(e, *origin);
+            let magnitude = (direction.u * direction.u + direction.v * direction.v).sqrt();
+            let direction = direction2(e, *direction);
+            let vector = e.emit("VECTOR", &format!("'',{direction},{}", real(magnitude)));
+            e.emit("LINE", &format!("'',{point},{vector}"))
+        }
+        PcurveGeometry::Circle {
+            center,
+            x_axis,
+            radius,
+            ..
+        } => {
+            let placement = axis2_placement_2d(e, *center, *x_axis);
+            e.emit("CIRCLE", &format!("'',{placement},{}", real(*radius)))
+        }
+        PcurveGeometry::Ellipse {
+            center,
+            x_axis,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            let placement = axis2_placement_2d(e, *center, *x_axis);
+            e.emit(
+                "ELLIPSE",
+                &format!(
+                    "'',{placement},{},{}",
+                    real(*major_radius),
+                    real(*minor_radius)
+                ),
+            )
+        }
+        PcurveGeometry::Parabola {
+            vertex,
+            x_axis,
+            focal_distance,
+            ..
+        } => {
+            let placement = axis2_placement_2d(e, *vertex, *x_axis);
+            e.emit(
+                "PARABOLA",
+                &format!("'',{placement},{}", real(*focal_distance)),
+            )
+        }
+        PcurveGeometry::Hyperbola {
+            center,
+            x_axis,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            let placement = axis2_placement_2d(e, *center, *x_axis);
+            e.emit(
+                "HYPERBOLA",
+                &format!(
+                    "'',{placement},{},{}",
+                    real(*major_radius),
+                    real(*minor_radius)
+                ),
+            )
+        }
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        } => {
+            let points = control_points
+                .iter()
+                .map(|point| point2(e, *point))
+                .collect::<Vec<_>>();
+            let (knots, multiplicities) = compress_knots(knots);
+            let base = format!(
+                "{degree},{},.UNSPECIFIED.,{},.U.",
+                refs(&points),
+                closed_flag(*periodic)
+            );
+            let with_knots = format!(
+                "{},{},.UNSPECIFIED.",
+                int_list(&multiplicities),
+                real_list(&knots)
+            );
+            if let Some(weights) = weights {
+                e.emit_raw(
+                    "B_SPLINE_CURVE_WITH_KNOTS",
+                    &format!(
+                        "( BOUNDED_CURVE() B_SPLINE_CURVE({base}) B_SPLINE_CURVE_WITH_KNOTS({with_knots}) CURVE() GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_CURVE({}) REPRESENTATION_ITEM('') )",
+                        real_list(weights)
+                    ),
+                )
+            } else {
+                e.emit(
+                    "B_SPLINE_CURVE_WITH_KNOTS",
+                    &format!("'',{base},{with_knots}"),
+                )
+            }
+        }
+        PcurveGeometry::Trimmed {
+            parameter_range,
+            basis,
+        } => {
+            let basis = pcurve(e, basis)?;
+            e.emit(
+                "TRIMMED_CURVE",
+                &format!(
+                    "'',{basis},({}),({}),.T.,.PARAMETER.",
+                    real(parameter_range[0]),
+                    real(parameter_range[1])
+                ),
+            )
+        }
+        PcurveGeometry::Offset { distance, basis } => {
+            let basis = pcurve(e, basis)?;
+            e.emit(
+                "OFFSET_CURVE_2D",
+                &format!("'',{basis},{},.F.", real(*distance)),
+            )
+        }
+        PcurveGeometry::PolarHarmonic { .. } | PcurveGeometry::PolarNurbs { .. } => return None,
+    })
 }
 
 /// Emit or reuse a unit-length `DIRECTION`.
@@ -40,6 +280,40 @@ pub fn placement(e: &mut Emitter, origin: Point3, axis: Vector3, ref_dir: Vector
     let a = direction(e, axis);
     let r = direction(e, ref_dir);
     e.emit("AXIS2_PLACEMENT_3D", &format!("'',{o},{a},{r}"))
+}
+
+fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
+    let origin = point(
+        e,
+        Point3::new(
+            transform.rows[0][3],
+            transform.rows[1][3],
+            transform.rows[2][3],
+        ),
+    );
+    let x = Vector3::new(
+        transform.rows[0][0],
+        transform.rows[1][0],
+        transform.rows[2][0],
+    );
+    let y = Vector3::new(
+        transform.rows[0][1],
+        transform.rows[1][1],
+        transform.rows[2][1],
+    );
+    let z = Vector3::new(
+        transform.rows[0][2],
+        transform.rows[1][2],
+        transform.rows[2][2],
+    );
+    let scale = x.norm();
+    let x = direction(e, x);
+    let y = direction(e, y);
+    let z = direction(e, z);
+    e.emit(
+        "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
+        &format!("'',{x},{y},{origin},{},{z}", real(scale)),
+    )
 }
 
 /// Emit an analytic or NURBS surface carrier.
@@ -100,15 +374,20 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
                 "TOROIDAL_SURFACE",
                 &format!(
                     "'',{pl},{},{}",
-                    real(*major_radius),
+                    real(major_radius.abs()),
                     real(minor_radius.abs())
                 ),
             )
         }
         SurfaceGeometry::Nurbs(n) => nurbs_surface(e, n),
+        SurfaceGeometry::Transformed { basis, transform } => {
+            let parent = surface(e, basis);
+            let operator = transformation_operator(e, *transform);
+            e.emit("SURFACE_REPLICA", &format!("'',{parent},{operator}"))
+        }
         // Unknown surfaces have no STEP representation; the writer filters faces
         // resting on them in `emit_face` before ever reaching here.
-        SurfaceGeometry::Unknown { .. } => {
+        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => {
             unreachable!("unknown surfaces are filtered before surface emission")
         }
     }
@@ -176,6 +455,22 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
             e.emit("POLYLINE", &format!("'',({point},{point})"))
         }
         CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
+        CurveGeometry::Polyline { points, .. } => {
+            let points = points
+                .iter()
+                .map(|position| point(e, *position).to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            e.emit("POLYLINE", &format!("'',({points})"))
+        }
+        CurveGeometry::Transformed { basis, transform } => {
+            let parent = curve(e, basis);
+            let operator = transformation_operator(e, *transform);
+            e.emit("CURVE_REPLICA", &format!("'',{parent},{operator}"))
+        }
+        CurveGeometry::Composite { .. } => {
+            unreachable!("composite curves are emitted from their child graph")
+        }
         CurveGeometry::Unknown { .. } => {
             unreachable!("unknown curves are filtered before emission")
         }

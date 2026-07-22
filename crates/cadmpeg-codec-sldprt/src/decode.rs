@@ -89,22 +89,31 @@ struct EvaluatedFeatureState<'a> {
 /// The function reads and retains the complete source image. Container framing
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through [`DecodeResult::report`] when a partial result can be represented.
+#[allow(clippy::trivially_copy_pass_by_ref)]
 pub fn decode(
+    reader: &mut dyn ReadSeek,
+    options: &DecodeOptions,
+) -> Result<DecodeResult, CodecError> {
+    decode_inner(reader, options)
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn decode_inner(
     reader: &mut dyn ReadSeek,
     options: &DecodeOptions,
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(reader)?;
 
     if options.container_only {
-        let ir = build_metadata_ir(&scan)?;
+        let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return Ok(DecodeResult::new(ir, report));
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
         if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
-            let ir = build_geometry_ir(
+            let (ir, annotations, unknowns) = build_geometry_ir(
                 &scan,
                 streams[decoded.selected].origin,
                 &streams[decoded.selected].header,
@@ -112,14 +121,40 @@ pub fn decode(
                 &decoded.configuration_bodies,
             )?;
             append_design_losses(&ir, &mut report);
-            return Ok(DecodeResult::new(ir, report));
+            return decode_result(ir, report, annotations, unknowns);
         }
     }
 
-    let ir = build_metadata_ir(&scan)?;
+    let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let mut report = build_container_report(&scan, false);
     append_design_losses(&ir, &mut report);
-    Ok(DecodeResult::new(ir, report))
+    decode_result(ir, report, annotations, unknowns)
+}
+
+fn decode_result(
+    mut ir: CadIr,
+    report: DecodeReport,
+    annotations: Annotations,
+    mut unknowns: Vec<UnknownRecord>,
+) -> Result<DecodeResult, CodecError> {
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..cadmpeg_ir::SourceFidelity::default()
+    };
+    let source_image = unknowns
+        .iter()
+        .position(|record| record.id.0 == "sldprt:file:source-image#0")
+        .map(|index| unknowns.remove(index));
+    source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", &unknowns)?;
+    if let Some(source_image) = source_image {
+        source_fidelity.retain_unknown_records("sldprt", std::slice::from_ref(&source_image));
+    }
+    set_semantic_hash(&mut ir);
+    Ok(DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        source_fidelity,
+    ))
 }
 
 fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
@@ -741,6 +776,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     let incomplete_edge_selection = |selection: &EdgeSelection| match selection {
         EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => edges.is_empty(),
         EdgeSelection::Generated { edges, .. } => edges.is_empty(),
+        EdgeSelection::All => false,
         EdgeSelection::Unresolved | EdgeSelection::Native(_) => true,
     };
     let incomplete_face_selection = |selection: &FaceSelection| match selection {
@@ -870,13 +906,14 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::Fillet { edges, radius } => {
                 incomplete_edge_selection(edges) || matches!(radius, RadiusSpec::Unresolved { .. })
             }
-            FeatureDefinition::Chamfer { edges, spec } => {
+            FeatureDefinition::Chamfer { edges, spec, .. } => {
                 incomplete_edge_selection(edges) || matches!(spec, ChamferSpec::Unresolved { .. })
             }
             FeatureDefinition::Shell {
                 removed_faces,
                 thickness,
                 outward,
+                ..
             } => {
                 incomplete_optional_face_selection(removed_faces)
                     || thickness.is_none()
@@ -975,6 +1012,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 kind,
                 diameter,
                 extent,
+                ..
             } => {
                 face.as_ref().is_some_and(incomplete_face_selection)
                     || placements.is_empty()
@@ -998,6 +1036,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || matches!(pattern, PatternKind::CurveDriven { path: None, .. })
             }
             FeatureDefinition::Native { .. } => false,
+            _ => false,
         })
         .count();
     if incomplete_typed_features > 0 {
@@ -1376,7 +1415,7 @@ fn build_geometry_ir(
     header: &StreamHeader,
     mut brep: Brep,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
-) -> Result<CadIr, CodecError> {
+) -> Result<(CadIr, Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let materials = crate::appearance::materials(scan);
     let unique_material = materials.len() == 1;
@@ -1389,12 +1428,12 @@ fn build_geometry_ir(
         }
     }
     ir.source = Some(source_meta(scan, origin, header));
-    ir.annotations = std::mem::take(&mut brep.annotations);
-    let mut histories = crate::history::histories(scan, &mut ir.annotations);
-    let mut lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
+    let mut annotations = std::mem::take(&mut brep.annotations);
+    let mut histories = crate::history::histories(scan, &mut annotations);
+    let mut lanes = crate::resolved_features::lanes(scan, &mut annotations);
     crate::resolved_features::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
-    let pmi_dimensions = crate::pmi::dimensions(scan, &mut ir.annotations);
+    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::spatial_sketches(&mut ir.model.features, &histories, &lanes);
@@ -1426,7 +1465,7 @@ fn build_geometry_ir(
     crate::history::align_configuration_parameter_kinds(&mut ir);
     stamp_parameter_baseline(&mut ir);
     let (mut sketches, mut sketch_entities, mut sketch_constraints) =
-        crate::resolved_features::sketches(scan, &mut ir.annotations);
+        crate::resolved_features::sketches(scan, &mut annotations);
     crate::resolved_features::bind_sketch_profiles(
         &mut ir.model.features,
         &mut sketches,
@@ -1434,7 +1473,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &histories,
         &lanes,
-        &ir.annotations,
+        &annotations,
     );
     crate::resolved_features::project_compact_sketch_profiles(
         &mut ir.model.features,
@@ -1507,7 +1546,7 @@ fn build_geometry_ir(
         &lanes,
     );
     stamp_feature_baseline(&mut ir);
-    let mut attributes = crate::metadata::attributes(scan, &mut ir.annotations);
+    let mut attributes = crate::metadata::attributes(scan, &mut annotations);
     attributes.extend(crate::history::custom_property_attributes(&histories));
     let mut native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
@@ -1569,6 +1608,7 @@ fn build_geometry_ir(
         &mut ir,
         &histories,
         &native.feature_input_lanes,
+        &annotations,
     );
     mark_active_configuration(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
@@ -1591,7 +1631,7 @@ fn build_geometry_ir(
             face_color.color_attr
         ));
         crate::annotations::note(
-            &mut ir.annotations,
+            &mut annotations,
             id.0.clone(),
             header.description.clone(),
             face_color.offset as u64,
@@ -1646,7 +1686,7 @@ fn build_geometry_ir(
         let id = AppearanceId(format!("sldprt:appearance:material#{index}"));
         let material_stream = material.source_name;
         crate::annotations::note(
-            &mut ir.annotations,
+            &mut annotations,
             id.0.clone(),
             material_stream.clone(),
             material.record_offset as u64,
@@ -1688,7 +1728,7 @@ fn build_geometry_ir(
             let id = format!("sldprt:displaylist:record#{}:{index}", display.ordinal());
             let display_stream = display.display_name();
             crate::annotations::note(
-                &mut ir.annotations,
+                &mut annotations,
                 id.clone(),
                 display_stream,
                 0,
@@ -1700,6 +1740,8 @@ fn build_geometry_ir(
                 .push(cadmpeg_ir::tessellation::Tessellation {
                     id,
                     body: None,
+                    faces: Vec::new(),
+                    chordal_deflection: None,
                     source_object: None,
                     vertices: mesh.vertices,
                     triangles: mesh.triangles,
@@ -1710,7 +1752,7 @@ fn build_geometry_ir(
         }
         let display_id = format!("sldprt:displaylist:record#{}", display.ordinal());
         crate::annotations::note(
-            &mut ir.annotations,
+            &mut annotations,
             display_id.clone(),
             display.display_name(),
             0,
@@ -1735,7 +1777,7 @@ fn build_geometry_ir(
         }
         let id = format!("sldprt:file:block#{}", source_block.offset);
         crate::annotations::note(
-            &mut ir.annotations,
+            &mut annotations,
             id.clone(),
             source_block
                 .section
@@ -1757,7 +1799,7 @@ fn build_geometry_ir(
     for source_stream in &scan.compound_streams {
         let id = format!("sldprt:file:compound-stream#{}", source_stream.directory_id);
         crate::annotations::note(
-            &mut ir.annotations,
+            &mut annotations,
             id.clone(),
             source_stream.path.clone(),
             0,
@@ -1806,10 +1848,9 @@ fn build_geometry_ir(
         partition.links.extend(opaque_surfaces);
         partition.links.extend(opaque_curves);
     }
-    preserve_source_image(scan, &mut ir, &mut unknowns);
-    ir.set_native_unknowns("sldprt", &unknowns)?;
+    preserve_source_image(scan, &mut annotations, &mut unknowns);
     set_semantic_hash(&mut ir);
-    Ok(ir)
+    Ok((ir, annotations, unknowns))
 }
 
 fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::SldprtNative) {
@@ -1851,19 +1892,20 @@ fn source_meta(scan: &ContainerScan, origin: BodyOrigin<'_>, header: &StreamHead
         scan.compound_streams.len().to_string(),
     );
     let active_name = match origin {
-        BodyOrigin::Block(fallback) => container::select_active_parasolid(scan)
-            .map(|(block, _)| {
-                block
-                    .section
-                    .clone()
-                    .unwrap_or_else(|| format!("block@{}", block.offset))
-            })
-            .unwrap_or_else(|| {
+        BodyOrigin::Block(fallback) => container::select_active_parasolid(scan).map_or_else(
+            || {
                 fallback
                     .section
                     .clone()
                     .unwrap_or_else(|| format!("block@{}", fallback.offset))
-            }),
+            },
+            |(block, _)| {
+                block
+                    .section
+                    .clone()
+                    .unwrap_or_else(|| format!("block@{}", block.offset))
+            },
+        ),
         BodyOrigin::Compound(_) => origin.name(),
     };
     attributes.insert("active_parasolid_block".to_string(), active_name);
@@ -2019,16 +2061,20 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
 }
 
-fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
+fn build_metadata_ir(
+    scan: &ContainerScan,
+) -> Result<(CadIr, Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
-    let mut histories = crate::history::histories(scan, &mut ir.annotations);
-    let mut lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
+    let mut unknowns = Vec::new();
+    let mut annotations = Annotations::default();
+    let mut histories = crate::history::histories(scan, &mut annotations);
+    let mut lanes = crate::resolved_features::lanes(scan, &mut annotations);
     crate::resolved_features::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
-    let pmi_dimensions = crate::pmi::dimensions(scan, &mut ir.annotations);
+    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
     let (sketches, sketch_entities, sketch_constraints) =
-        crate::resolved_features::sketches(scan, &mut ir.annotations);
-    let mut model_attributes = crate::metadata::attributes(scan, &mut ir.annotations);
+        crate::resolved_features::sketches(scan, &mut annotations);
+    let mut model_attributes = crate::metadata::attributes(scan, &mut annotations);
     model_attributes.extend(crate::history::custom_property_attributes(&histories));
     ir.model.attributes = model_attributes;
     ir.model.sketches = sketches;
@@ -2053,7 +2099,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         attributes.insert("parasolid_schema".to_string(), header.schema.clone());
         let id = format!("sldprt:file:block#{}", block.offset);
         crate::annotations::note(
-            &mut ir.annotations,
+            &mut annotations,
             id.clone(),
             block
                 .section
@@ -2063,17 +2109,14 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             "parasolid_stream",
             Exactness::Unknown,
         );
-        ir.push_native_unknown(
-            "sldprt",
-            UnknownRecord {
-                id: UnknownId(id),
-                offset: block.offset as u64,
-                byte_len: block.uncomp_sz as u64,
-                sha256: sha256_hex(&block.payload),
-                data: Some(block.payload.clone()),
-                links: Vec::new(),
-            },
-        )?;
+        unknowns.push(UnknownRecord {
+            id: UnknownId(id),
+            offset: block.offset as u64,
+            byte_len: block.uncomp_sz as u64,
+            sha256: sha256_hex(&block.payload),
+            data: Some(block.payload.clone()),
+            links: Vec::new(),
+        });
     }
 
     ir.source = Some(SourceMeta {
@@ -2110,7 +2153,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &ir.model.parameters,
         &histories,
         &lanes,
-        &ir.annotations,
+        &annotations,
     );
     crate::resolved_features::project_compact_sketch_profiles(
         &mut ir.model.features,
@@ -2201,7 +2244,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &lanes,
     );
     crate::history::order_features_for_regeneration(&mut ir.model.features);
-    crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes);
+    crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes, &annotations);
     stamp_feature_baseline(&mut ir);
     stamp_configuration_baseline(&mut ir);
     let native = crate::native::SldprtNative {
@@ -2213,11 +2256,9 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     native.store(ir.native.namespace_mut("sldprt"))?;
     stamp_sketch_baseline(&mut ir, &native);
     mark_active_configuration(&mut ir);
-    let mut unknowns = ir.native_unknowns("sldprt")?;
-    preserve_source_image(scan, &mut ir, &mut unknowns);
-    ir.set_native_unknowns("sldprt", &unknowns)?;
+    preserve_source_image(scan, &mut annotations, &mut unknowns);
     set_semantic_hash(&mut ir);
-    Ok(ir)
+    Ok((ir, annotations, unknowns))
 }
 
 fn project_design_history(
@@ -2532,7 +2573,6 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
         units: ir.units.clone(),
         tolerances: ir.tolerances,
         model: ir.model.clone(),
-        annotations: Annotations::default(),
         native: cadmpeg_ir::Native::default(),
     };
     normalized.model.bodies.iter_mut().for_each(|body| {
@@ -2598,9 +2638,13 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
     )
 }
 
-fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr, unknowns: &mut Vec<UnknownRecord>) {
+fn preserve_source_image(
+    scan: &ContainerScan,
+    annotations: &mut Annotations,
+    unknowns: &mut Vec<UnknownRecord>,
+) {
     crate::annotations::note(
-        &mut ir.annotations,
+        annotations,
         "sldprt:file:source-image#0",
         "source",
         0,
@@ -2754,6 +2798,8 @@ mod design_loss_tests {
             outputs: Vec::new(),
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
             },
             native_ref: None,
         });
@@ -2850,6 +2896,8 @@ mod design_loss_tests {
             outputs: Vec::new(),
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
             },
             native_ref: None,
         });
@@ -2924,6 +2972,10 @@ mod design_loss_tests {
                 revolutions: 3.0,
                 start_angle: Angle(0.0),
                 clockwise: false,
+                radial_growth: None,
+                cone_angle: None,
+                segment_turns: None,
+                construction_style: None,
             },
         ));
         ir.model.features.push(feature(
@@ -3007,6 +3059,10 @@ mod design_loss_tests {
                     removed_faces: FaceSelection::Faces(Vec::new()),
                     thickness: Some(Length(1.0)),
                     outward: Some(false),
+                    mode: None,
+                    join: None,
+                    resolve_intersections: None,
+                    allow_self_intersections: None,
                 },
             ),
             feature(
@@ -3064,6 +3120,8 @@ mod design_loss_tests {
             outputs: Vec::new(),
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
             },
             native_ref: None,
         });
@@ -3232,6 +3290,8 @@ mod design_loss_tests {
             outputs: Vec::new(),
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
             },
             native_ref: None,
         };
@@ -3296,6 +3356,8 @@ mod design_loss_tests {
             outputs,
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
             },
             native_ref: None,
         };
@@ -3820,6 +3882,8 @@ mod design_loss_tests {
             outputs: Vec::new(),
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
             },
             native_ref: None,
         });

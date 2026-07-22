@@ -44,7 +44,9 @@ fn legacy_scene_object_count(payload: &[u8]) -> usize {
         .count()
 }
 
-fn scene_classes(payload: &[u8]) -> (Vec<(u32, String)>, Vec<(String, usize)>) {
+type SceneClasses = (Vec<(u32, String)>, Vec<(String, usize)>);
+
+fn scene_classes(payload: &[u8]) -> SceneClasses {
     let declarations = payload
         .windows(CLASS_MARKER.len())
         .enumerate()

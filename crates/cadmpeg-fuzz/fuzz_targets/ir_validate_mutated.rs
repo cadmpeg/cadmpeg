@@ -5,7 +5,6 @@
 
 #![no_main]
 
-use cadmpeg_ir::validate::validate;
 use cadmpeg_ir::CadIr;
 use libfuzzer_sys::fuzz_target;
 
@@ -26,6 +25,7 @@ fuzz_target!(|data: &[u8]| {
         Ok(ir) => ir,
         Err(_) => return,
     };
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
 
     match strategy % 15 {
         0 => {
@@ -115,7 +115,7 @@ fuzz_target!(|data: &[u8]| {
         }
         13 => {
             // Add an annotation for an entity that does not exist.
-            ir.annotations.provenance.insert(
+            source_fidelity.annotations.provenance.insert(
                 "nonexistent".to_string(),
                 cadmpeg_ir::annotations::Provenance {
                     stream: u32::MAX,
@@ -133,5 +133,5 @@ fuzz_target!(|data: &[u8]| {
         _ => {}
     }
 
-    let _ = validate(&ir, Vec::new());
+    let _ = cadmpeg_ir::validate_with_source_fidelity(&ir, &source_fidelity, Vec::new());
 });

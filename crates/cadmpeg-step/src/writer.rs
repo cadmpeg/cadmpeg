@@ -122,30 +122,9 @@ pub fn real(v: f64) -> String {
 /// Encode a Rust string as a Part 21 single-quoted string literal.
 ///
 /// Apostrophes are doubled. Non-ASCII and control characters use
-/// `\X2\..\X0\` UTF-16 hexadecimal notation, keeping the encoded file 7-bit.
+/// `\X2\..\X0\` or `\X4\..\X0\` hexadecimal notation, keeping the encoded file 7-bit.
 pub fn string(s: &str) -> String {
-    use std::fmt::Write as _;
-
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('\'');
-    for ch in s.chars() {
-        if ch == '\'' {
-            out.push_str("''");
-        } else if ch.is_ascii() && !ch.is_ascii_control() {
-            out.push(ch);
-        } else {
-            // Extended encoding: 4 hex digits per UTF-16 code unit, wrapped in
-            // a single \X2\...\X0\ run.
-            out.push_str("\\X2\\");
-            let mut buf = [0u16; 2];
-            for cu in ch.encode_utf16(&mut buf) {
-                let _ = write!(out, "{cu:04X}");
-            }
-            out.push_str("\\X0\\");
-        }
-    }
-    out.push('\'');
-    out
+    format!("'{}'", crate::strings::encode(s))
 }
 
 /// Join instance references into a Part 21 aggregate such as `(#1,#2,#3)`.

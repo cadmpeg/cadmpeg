@@ -6,18 +6,22 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::annotations::Annotations;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
+use crate::drawings::Drawing;
 use crate::features::{DesignConfiguration, DesignParameter, Feature};
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
+use crate::presentation::{PresentationDocument, ViewPresentation};
+use crate::products::{AssemblyJoint, Component, Occurrence};
+use crate::semantic_annotations::SemanticAnnotation;
 use crate::sketches::{Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchEntity};
+use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{Tolerances, Units};
-use crate::unknown::UnknownRecord;
+use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 
 macro_rules! arena_registry {
     ($macro:ident) => {
@@ -45,10 +49,22 @@ macro_rules! arena_registry {
             spatial_sketches: SpatialSketch, "Spatial sketch arena.", [serde(default)] => |e| e.id.0.clone();
             spatial_sketch_entities: SpatialSketchEntity, "Solved spatial sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
             sketch_constraints: SketchConstraint, "Sketch constraint arena.", [serde(default)] => |e| e.id.0.clone();
+            spreadsheets: Spreadsheet, "Spreadsheet arena.", [serde(default)] => |e| e.id.0.clone();
+            components: Component, "Product component arena.", [serde(default)] => |e| e.id.0.clone();
+            occurrences: Occurrence, "Product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
+            assembly_joints: AssemblyJoint, "Assembly joint arena.", [serde(default)] => |e| e.id.0.clone();
+            drawings: Drawing, "Drawing page, resource, view, and annotation arena.", [serde(default)] => |e| e.id.0.clone();
+            semantic_annotations: SemanticAnnotation, "Semantic dimension, note, symbol, and callout arena.", [serde(default)] => |e| e.id.0.clone();
+            presentation_documents: PresentationDocument, "Document presentation arena.", [serde(default)] => |e| e.id.0.clone();
+            view_presentations: ViewPresentation, "View-provider presentation arena.", [serde(default)] => |e| e.id.0.clone();
             tessellations: Tessellation, "Tessellation arena.", [] => |e| e.id.clone();
             appearances: Appearance, "Appearance arena.", [] => |e| e.id.0.clone();
             appearance_bindings: AppearanceBinding, "Appearance binding arena.", [] => |e| e.id.clone();
             attributes: SourceAttribute, "Attribute arena.", [] => |e| e.id.0.clone();
+            products: crate::product::Product, "Product prototype arena.", [serde(default)] => |e| e.id.0.clone();
+            product_occurrences: crate::product::ProductOccurrence, "Placed product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
+            pmi: crate::pmi::PmiAnnotation, "Product-manufacturing information arena.", [serde(default)] => |e| e.id.0.clone();
+            presentation_layers: crate::presentation::PresentationLayer, "Presentation layer arena.", [serde(default)] => |e| e.id.0.clone();
         }
     };
 }
@@ -81,7 +97,10 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "3";
+pub const IR_VERSION: &str = "53";
+
+/// Immediately preceding IR version supported by the explicit JSON migration.
+pub const PREVIOUS_IR_VERSION: &str = "52";
 
 arena_registry!(declare_model);
 
@@ -107,8 +126,8 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 
 /// A versioned CAD document.
 ///
-/// `model` holds the format-neutral graph. `annotations`, `native`, and
-/// `unknowns` retain source fidelity without changing that graph's semantics.
+/// `model` holds the format-neutral graph. `native` retains typed
+/// format-specific product data without changing that graph's semantics.
 /// Entity IDs must be globally unique across all document arenas.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CadIr {
@@ -125,9 +144,6 @@ pub struct CadIr {
     pub tolerances: Tolerances,
     /// Format-neutral model.
     pub model: Model,
-    /// Sparse provenance and exactness tables.
-    #[serde(default)]
-    pub annotations: Annotations,
     /// Independently versioned native namespaces.
     #[serde(default)]
     pub native: Native,
@@ -138,7 +154,7 @@ impl CadIr {
     pub fn native_unknowns(
         &self,
         format: &str,
-    ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
+    ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
         self.native.namespace(format).map_or_else(
             || Ok(Vec::new()),
             |namespace| namespace.arena_as("unknowns"),
@@ -148,13 +164,13 @@ impl CadIr {
     /// Deserialize every reserved native `unknowns` arena.
     pub fn all_native_unknowns(
         &self,
-    ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
+    ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
         self.native
             .0
             .values()
             .filter(|namespace| namespace.arenas.contains_key("unknowns"))
             .try_fold(Vec::new(), |mut records, namespace| {
-                records.extend(namespace.arena_as::<UnknownRecord>("unknowns")?);
+                records.extend(namespace.arena_as::<NativeUnknownRecord>("unknowns")?);
                 Ok(records)
             })
     }
@@ -163,7 +179,7 @@ impl CadIr {
     pub fn set_native_unknowns(
         &mut self,
         format: &str,
-        records: &[UnknownRecord],
+        records: &[NativeUnknownRecord],
     ) -> Result<(), crate::native::NativeConvertError> {
         let namespace = self.native.namespace_mut(format);
         if namespace.version == 0 {
@@ -172,11 +188,28 @@ impl CadIr {
         namespace.set_arena("unknowns", records)
     }
 
+    /// Replace the reserved `unknowns` arena for `format`, consuming the records.
+    ///
+    /// Codecs retaining large source populations should use this form to avoid
+    /// keeping typed and generic native copies alive at the same time.
+    pub fn set_native_unknowns_owned(&mut self, format: &str, records: Vec<UnknownRecord>) {
+        let namespace = self.native.namespace_mut(format);
+        if namespace.version == 0 {
+            namespace.version = 1;
+        }
+        let mut converted = records
+            .into_iter()
+            .map(UnknownRecord::into_native_record)
+            .collect::<Vec<_>>();
+        converted.sort_by(|left, right| left.id.cmp(&right.id));
+        namespace.arenas.insert("unknowns".into(), converted);
+    }
+
     /// Append one record to the reserved `unknowns` arena for `format`.
     pub fn push_native_unknown(
         &mut self,
         format: &str,
-        record: UnknownRecord,
+        record: NativeUnknownRecord,
     ) -> Result<(), crate::native::NativeConvertError> {
         let mut records = self.native_unknowns(format)?;
         records.retain(|existing| existing.id != record.id);
@@ -192,7 +225,6 @@ impl CadIr {
             units,
             tolerances: Tolerances::default(),
             model: Model::default(),
-            annotations: Annotations::default(),
             native: Native::default(),
         }
     }
@@ -216,10 +248,67 @@ impl CadIr {
         serde_json::from_value(value)
     }
 
+    /// Migrate JSON from the immediately preceding IR version and parse it.
+    ///
+    /// The immediately preceding version is upgraded, including structural
+    /// normalization required by the current schema. Older versions remain
+    /// unsupported.
+    pub fn migrate_json(s: &str) -> Result<Self, serde_json::Error> {
+        let mut value: serde_json::Value = serde_json::from_str(s)?;
+        let version = value.get("ir_version").and_then(serde_json::Value::as_str);
+        match version {
+            Some(IR_VERSION) => serde_json::from_value(value),
+            Some(PREVIOUS_IR_VERSION) => {
+                migrate_previous_external_documents(&mut value);
+                value
+                    .as_object_mut()
+                    .expect("a versioned CADIR document is a JSON object")
+                    .insert("ir_version".into(), IR_VERSION.into());
+                serde_json::from_value(value)
+            }
+            _ => Err(<serde_json::Error as serde::de::Error>::custom(format!(
+                "cannot migrate ir_version {version:?}; expected {PREVIOUS_IR_VERSION} or {IR_VERSION}"
+            ))),
+        }
+    }
+
     /// Sort model, native, and unknown-record arenas by identity.
     pub fn finalize(&mut self) {
         self.model.finalize();
         self.native.finalize();
+    }
+}
+
+fn migrate_previous_external_documents(value: &mut serde_json::Value) {
+    let Some(occurrences) = value
+        .get_mut("model")
+        .and_then(|model| model.get_mut("occurrences"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    for occurrence in occurrences {
+        let Some(document) = occurrence
+            .get_mut("prototype")
+            .and_then(serde_json::Value::as_object_mut)
+            .filter(|prototype| {
+                prototype.get("scope").and_then(serde_json::Value::as_str) == Some("external")
+            })
+            .and_then(|prototype| prototype.get_mut("document"))
+        else {
+            continue;
+        };
+        if let Some(identity) = document.as_str().map(str::to_owned) {
+            let resolution = if identity.is_empty() {
+                "missing_reference"
+            } else {
+                "unresolved"
+            };
+            *document = serde_json::json!({
+                "document_id": identity,
+                "resolution": resolution
+            });
+        }
     }
 }
 

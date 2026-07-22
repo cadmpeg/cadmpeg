@@ -16,11 +16,13 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d" }
+cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad" }
 cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt" }
 cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia" }
 cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo" }
 cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx" }
 cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino", features = ["fuzzing"] }
+cadmpeg-codec-iges = { path = "../cadmpeg-codec-iges" }
 cadmpeg-ir = { path = "../cadmpeg-ir" }
 cadmpeg-step = { path = "../cadmpeg-step" }
 zip = { version = "2", default-features = false, features = ["deflate"] }
@@ -36,8 +38,68 @@ name = "generate_comprehensive_seeds"
 path = "src/bin/generate_comprehensive_seeds.rs"
 
 [[bin]]
+name = "generate_fcstd_seeds"
+path = "src/bin/generate_fcstd_seeds.rs"
+
+[[bin]]
 name = "f3d_container"
 path = "fuzz_targets/f3d_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_container"
+path = "fuzz_targets/fcstd_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_decode"
+path = "fuzz_targets/fcstd_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_write"
+path = "fuzz_targets/fcstd_write.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_xml"
+path = "fuzz_targets/fcstd_xml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_gui"
+path = "fuzz_targets/fcstd_gui.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_brep"
+path = "fuzz_targets/fcstd_brep.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_element_map"
+path = "fuzz_targets/fcstd_element_map.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_auxiliary"
+path = "fuzz_targets/fcstd_auxiliary.rs"
 test = false
 doc = false
 bench = false
@@ -73,6 +135,13 @@ bench = false
 [[bin]]
 name = "ir_from_json"
 path = "fuzz_targets/ir_from_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ir_migrate_json"
+path = "fuzz_targets/ir_migrate_json.rs"
 test = false
 doc = false
 bench = false
@@ -287,6 +356,27 @@ bench = false
 
 # IR and STEP targets
 [[bin]]
+name = "step_lexer"
+path = "fuzz_targets/step_lexer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "step_parser"
+path = "fuzz_targets/step_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "step_reader"
+path = "fuzz_targets/step_reader.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "ir_diff"
 path = "fuzz_targets/ir_diff.rs"
 test = false
@@ -352,10 +442,21 @@ path = "src/bin/generate_synthetic_fixtures.rs"
 name = "generate_rhino_seeds"
 path = "src/bin/generate_rhino_seeds.rs"
 
+[[bin]]
+name = "generate_iges_seeds"
+path = "src/bin/generate_iges_seeds.rs"
+
 # Rhino parser targets
 [[bin]]
 name = "rhino_container"
 path = "fuzz_targets/rhino_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "iges_container"
+path = "fuzz_targets/iges_container.rs"
 test = false
 doc = false
 bench = false

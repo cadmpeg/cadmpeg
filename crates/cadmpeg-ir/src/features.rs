@@ -267,6 +267,12 @@ pub enum FeatureDefinition {
     TreeNode {
         /// Structural or presentation role of the node.
         role: FeatureTreeNodeRole,
+        /// Ordered features owned by this node.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        children: Vec<FeatureId>,
+        /// Active child, when the source design identifies one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        active_child: Option<FeatureId>,
     },
     /// Non-geometric thread annotation attached to a cylindrical face.
     CosmeticThread {
@@ -313,6 +319,76 @@ pub enum FeatureDefinition {
         /// Point position in model space.
         position: Point3,
     },
+    /// Standalone model vertex constructed at one point.
+    PointGeometry {
+        /// Vertex position in the feature's local construction frame.
+        position: Point3,
+    },
+    /// Straight edge between two finite points.
+    LineSegment {
+        /// Start point.
+        start: Point3,
+        /// End point.
+        end: Point3,
+    },
+    /// Circular edge over an angular interval.
+    CircularArc {
+        /// Circle center in the feature's local construction frame.
+        center: Point3,
+        /// Circle-plane normal.
+        normal: Vector3,
+        /// Circle radius.
+        radius: Length,
+        /// Start parameter angle.
+        start_angle: Angle,
+        /// End parameter angle.
+        end_angle: Angle,
+    },
+    /// Elliptic edge over an angular interval.
+    EllipticArc {
+        /// Ellipse center in the feature's local construction frame.
+        center: Point3,
+        /// Circle-plane normal.
+        normal: Vector3,
+        /// Major-axis direction in the ellipse plane.
+        major_axis: Vector3,
+        /// Major semiaxis radius.
+        major_radius: Length,
+        /// Minor semiaxis radius.
+        minor_radius: Length,
+        /// Start parameter angle.
+        start_angle: Angle,
+        /// End parameter angle.
+        end_angle: Angle,
+    },
+    /// Ordered straight-edge chain.
+    Polyline {
+        /// Ordered vertices in the feature's local construction frame.
+        points: Vec<Point3>,
+        /// Whether the last point connects back to the first.
+        closed: bool,
+    },
+    /// Regular planar polygon centered at the local origin.
+    RegularPolygonCurve {
+        /// Number of polygon sides.
+        sides: u32,
+        /// Center-to-vertex distance.
+        circumradius: Length,
+    },
+    /// Rectangular bounded planar face in the local XY plane.
+    PlanarPatch {
+        /// Length along the local x-axis.
+        length: Length,
+        /// Width along the local y-axis.
+        width: Length,
+    },
+    /// Faces built from an ordered set of source shapes.
+    FaceFromShapes {
+        /// Complete ordered source-shape selection.
+        sources: BodySelection,
+        /// Extensible native face-building algorithm identifier.
+        face_maker_class: String,
+    },
     /// Constructed model-space coordinate system.
     DatumCoordinateSystem {
         /// Frame origin.
@@ -352,6 +428,21 @@ pub enum FeatureDefinition {
         #[serde(default)]
         bidirectional: bool,
     },
+    /// Shapes projected along a direction onto one support surface.
+    ProjectOnSurface {
+        /// Ordered shapes and subelements projected onto the support.
+        sources: PathRef,
+        /// Single support face receiving the projection.
+        support_face: FaceSelection,
+        /// Unit projection direction.
+        direction: Vector3,
+        /// Result topology retained from the projected shapes.
+        mode: SurfaceProjectionMode,
+        /// Normal extrusion height used to turn projected faces into solids.
+        height: Length,
+        /// Normal offset applied to the projected result.
+        offset: Length,
+    },
     /// Ordered chain of source paths exposed as one construction curve.
     CompositeCurve {
         /// Source segments in traversal order.
@@ -377,6 +468,18 @@ pub enum FeatureDefinition {
         start_angle: Angle,
         /// Whether angular travel is clockwise when viewed along the axis.
         clockwise: bool,
+        /// Radial growth per revolution for a planar spiral, when non-cylindrical.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        radial_growth: Option<Length>,
+        /// Cone half-angle for a conical helix, when non-cylindrical.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cone_angle: Option<Angle>,
+        /// Number of turns per generated curve subdivision, when requested.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        segment_turns: Option<f64>,
+        /// Persisted construction algorithm generation, when selectable.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        construction_style: Option<HelixConstructionStyle>,
     },
     /// Circular helix with retained native axis placement.
     HelixNativeAxis {
@@ -437,6 +540,29 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         placement: Option<crate::transform::Transform>,
     },
+    /// Directly stored geometry with no replayable parametric construction.
+    ///
+    /// The feature's `outputs` identify the retained bodies when geometry is present.
+    StoredGeometry,
+    /// Geometry copied from an earlier feature without an additional modeling operation.
+    DerivedGeometry {
+        /// Feature supplying the copied geometry.
+        source: FeatureId,
+    },
+    /// Geometry imported from an external model file.
+    ImportedGeometry {
+        /// External source path exactly as persisted by the design.
+        path: String,
+        /// Model format read from the external file.
+        format: GeometryImportFormat,
+    },
+    /// Parametric analytic solid primitive.
+    Primitive {
+        /// Primitive dimensions and angular bounds.
+        solid: PrimitiveSolid,
+        /// Boolean combination with an existing `PartDesign` body.
+        op: BooleanOp,
+    },
     /// Linear extrusion of a profile.
     Extrude {
         /// Profile swept along `direction` (or the profile's own normal, when
@@ -453,6 +579,33 @@ pub enum FeatureDefinition {
         /// Draft angle applied to the extruded side walls, when present.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         draft: Option<Angle>,
+        /// Draft angle on the opposite side of a two-sided extrusion.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reverse_draft: Option<Angle>,
+        /// Persisted source used to resolve the extrusion direction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction_source: Option<ExtrusionDirectionSource>,
+        /// Whether the result is a solid (`true`) or sheet (`false`), when selectable.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        solid: Option<bool>,
+        /// Native face-building policy used to turn closed wires into faces.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        face_maker: Option<ExtrusionFaceMaker>,
+        /// Taper orientation used for inner wires, when selectable.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        inner_wire_taper: Option<InnerWireTaper>,
+        /// Signed offset from the first side's terminating geometry.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        first_offset: Option<Length>,
+        /// Signed offset from the second side's terminating geometry.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        second_offset: Option<Length>,
+        /// Whether stored lengths are measured along the profile normal instead of the sweep axis.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        length_along_profile_normal: Option<bool>,
+        /// Whether a profile containing multiple faces is accepted as one operation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_multi_profile_faces: Option<bool>,
     },
     /// Revolution of a profile around an axis.
     Revolve {
@@ -466,17 +619,52 @@ pub enum FeatureDefinition {
         /// Cross-section swept along the path, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         profile: Option<ProfileRef>,
+        /// Additional cross-sections after the primary profile, in path order.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        sections: Vec<ProfileRef>,
         /// Trajectory followed by the profile, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<PathRef>,
         /// Result family and solid Boolean operation.
         mode: SweepMode,
+        /// Rule used to orient cross-sections along the path.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        orientation: Option<SweepOrientation>,
+        /// Corner continuation used where path segments meet.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        transition: Option<SweepTransition>,
+        /// Interpolation law used between multiple cross-sections.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        transformation: Option<SweepTransformation>,
+        /// Whether tangent-connected edges are included in the primary path.
+        #[serde(default)]
+        path_tangent: bool,
+        /// Whether linear edges and planar faces are simplified after construction.
+        #[serde(default)]
+        linearize: bool,
         /// Total profile twist along the path, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         twist: Option<Angle>,
         /// End-to-start profile scale ratio, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scale: Option<f64>,
+        /// Whether a profile containing multiple faces is accepted as one operation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_multi_profile_faces: Option<bool>,
+    },
+    /// Solid sweep of a profile along a parametrically defined helix or spiral.
+    HelicalSweep {
+        /// Complete helix path and profile construction.
+        construction: HelicalSweepConstruction,
+        /// Boolean combination with the existing body.
+        op: BooleanOp,
+    },
+    /// Live or frozen reference geometry imported from other design features.
+    Binder {
+        /// Ordered source objects and selected subelements.
+        sources: Vec<BinderSource>,
+        /// Binding and derived-shape construction semantics.
+        construction: BinderConstruction,
     },
     /// Loft through an ordered sequence of section profiles.
     Loft {
@@ -490,6 +678,21 @@ pub enum FeatureDefinition {
         /// Whether the loft closes from the last section to the first.
         #[serde(default)]
         closed: bool,
+        /// Whether the sections bound a solid instead of a sheet body.
+        #[serde(default = "default_true")]
+        solid: bool,
+        /// Whether adjacent sections are connected by straight ruled spans.
+        #[serde(default)]
+        ruled: bool,
+        /// Maximum polynomial degree used to interpolate the sections, when constrained.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_degree: Option<u32>,
+        /// Whether section topology is checked and adjusted for compatibility, when carried.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        check_compatibility: Option<bool>,
+        /// Whether profiles containing multiple faces are accepted as one operation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_multi_profile_faces: Option<bool>,
     },
     /// Thin rib grown from a profile.
     Rib {
@@ -511,6 +714,9 @@ pub enum FeatureDefinition {
         edges: EdgeSelection,
         /// Dimensional definition of the chamfer.
         spec: ChamferSpec,
+        /// Whether the dimensional reference side is reversed.
+        #[serde(default)]
+        flip_direction: bool,
     },
     /// Thin-wall shell operation.
     Shell {
@@ -523,6 +729,82 @@ pub enum FeatureDefinition {
         /// as opposed to inward, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         outward: Option<bool>,
+        /// Offset construction used to generate the wall.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mode: Option<ShellMode>,
+        /// Corner continuation law used between offset faces.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        join: Option<ShellJoin>,
+        /// Whether intersecting offset regions are resolved during construction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resolve_intersections: Option<bool>,
+        /// Whether self-intersecting offset regions may be retained.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_self_intersections: Option<bool>,
+    },
+    /// Offsets an entire source shape without removing opening faces.
+    OffsetShape {
+        /// Source shape or body to offset.
+        source: BodySelection,
+        /// Signed normal offset in canonical millimeters.
+        distance: Length,
+        /// Offset construction mode.
+        mode: ShellMode,
+        /// Corner continuation law.
+        join: ShellJoin,
+        /// Whether intersecting regions are resolved.
+        resolve_intersections: bool,
+        /// Whether self-intersecting regions may be retained.
+        allow_self_intersections: bool,
+        /// Whether open offset boundaries are filled.
+        fill: bool,
+        /// Whether planar two-dimensional offset rules are used.
+        planar: bool,
+    },
+    /// Builds one compound topology node from ordered source shapes.
+    Compound {
+        /// Ordered source members retained as a native or resolved selection.
+        members: BodySelection,
+    },
+    /// Removes redundant splitter topology from a source shape.
+    RefineShape {
+        /// Source shape whose coincident boundaries are simplified.
+        source: BodySelection,
+    },
+    /// Reverses the topological orientation of a source shape.
+    ReverseShape {
+        /// Source shape whose complete orientation is reversed.
+        source: BodySelection,
+    },
+    /// Ruled sheet connecting two ordered boundary curves.
+    RuledBetweenCurves {
+        /// First source boundary.
+        first: PathRef,
+        /// Second source boundary.
+        second: PathRef,
+        /// Traversal relationship between the two boundaries.
+        orientation: RuledCurveOrientation,
+    },
+    /// Intersection curves produced where two source shapes meet.
+    SectionShape {
+        /// First intersected source shape.
+        first: BodySelection,
+        /// Second intersected source shape.
+        second: BodySelection,
+        /// Whether the resulting section edges are approximated.
+        approximate: bool,
+    },
+    /// Reflects one source shape across a model-space plane.
+    MirrorShape {
+        /// Shape transformed into the mirrored result.
+        source: BodySelection,
+        /// Point on the persisted resolved mirror plane.
+        plane_origin: Point3,
+        /// Unit normal of the persisted resolved mirror plane.
+        plane_normal: Vector3,
+        /// Native plane, face, or circle reference that supplied the resolved plane.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plane_reference: Option<FaceSelection>,
     },
     /// Adds material normal to selected faces.
     Thicken {
@@ -698,9 +980,21 @@ pub enum FeatureDefinition {
     },
     /// Drilled or machined hole.
     Hole {
+        /// Sketch or profile supplying one or more hole locations.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile: Option<ProfileRef>,
+        /// Geometry families in the profile that generate hole locations.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_filter: Option<HoleProfileFilter>,
         /// Face the hole is placed on, when known.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         face: Option<FaceSelection>,
+        /// Shared hole entry position when the construction carries one location separately.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        position: Option<Point3>,
+        /// Shared drilling direction when carried independently of complete placements.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
         /// Complete one-or-many hole placements. Empty when placement is unresolved.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         placements: Vec<HolePlacement>,
@@ -712,6 +1006,18 @@ pub enum FeatureDefinition {
         /// How deep the hole extends, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extent: Option<Extent>,
+        /// Shape and depth convention at the blind end of the hole.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bottom: Option<HoleBottom>,
+        /// Included taper angle for a conical hole, when enabled.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        taper_angle: Option<Angle>,
+        /// Standard sizing and thread construction, when specified.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        specification: Option<Box<HoleSpecification>>,
+        /// Whether a profile containing multiple faces is accepted as one operation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_multi_profile_faces: Option<bool>,
     },
     /// Repetition or reflection of existing features.
     Pattern {
@@ -719,6 +1025,15 @@ pub enum FeatureDefinition {
         seeds: Vec<PatternSeed>,
         /// Spatial transform defining the repetition or reflection.
         pattern: PatternKind,
+    },
+    /// Operation followed by source-requested topology cleanup.
+    PostProcess {
+        /// Underlying construction whose result is post-processed.
+        operation: Box<FeatureDefinition>,
+        /// Whether redundant splitter boundaries are removed.
+        refine: bool,
+        /// Boolean-operation tolerance selection carried by the feature family.
+        fuzzy_tolerance: FuzzyTolerance,
     },
     /// Source-native operation without neutral semantics.
     Native {
@@ -765,6 +1080,176 @@ pub enum PatternSeed {
     Bodies(BodySelection),
 }
 
+/// External model format consumed by an imported-geometry feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GeometryImportFormat {
+    /// ISO 10303 STEP model data.
+    Step,
+    /// IGES model data.
+    Iges,
+    /// Native boundary-representation model data.
+    Brep,
+}
+
+/// Selection policy for Boolean-operation fuzzy tolerance.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum FuzzyTolerance {
+    /// Let the modeling kernel use its default tolerance.
+    KernelDefault,
+    /// Determine a suitable tolerance from the participating shapes.
+    Automatic,
+    /// Use the supplied positive model-unit tolerance.
+    Explicit(f64),
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+/// Geometric offset construction used by a thin-wall shell operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellMode {
+    /// Offsets the selected boundary as a skin.
+    Skin,
+    /// Extends the offset along boundary edges as a pipe-like wall.
+    Pipe,
+    /// Builds wall material on both sides of the original boundary.
+    BothSides,
+}
+
+/// Corner continuation law for adjacent shell offset faces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellJoin {
+    /// Continues corners with rounded arcs.
+    Arc,
+    /// Extends adjacent faces tangentially to meet.
+    Tangent,
+    /// Intersects adjacent offset faces to form sharp corners.
+    Intersection,
+}
+
+/// Traversal relationship between ruled-surface boundary curves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RuledCurveOrientation {
+    /// Select curve traversal automatically from endpoint proximity.
+    Automatic,
+    /// Retain both persisted curve traversal directions.
+    Forward,
+    /// Reverse the second curve relative to the first.
+    Reversed,
+}
+
+/// Canonical dimensions of an analytic solid primitive.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PrimitiveSolid {
+    /// Rectangular solid aligned to its feature frame.
+    Box {
+        /// Size along the local x-axis.
+        length: Length,
+        /// Size along the local y-axis.
+        width: Length,
+        /// Size along the local z-axis.
+        height: Length,
+    },
+    /// Circular cylinder aligned to its feature-frame z-axis.
+    Cylinder {
+        /// Circular base radius.
+        radius: Length,
+        /// Axial height.
+        height: Length,
+        /// Angular sweep around the axis.
+        angle: Angle,
+    },
+    /// Circular cone or frustum aligned to its feature-frame z-axis.
+    Cone {
+        /// Radius at the local-frame origin.
+        radius1: Length,
+        /// Radius at the opposite end.
+        radius2: Length,
+        /// Axial height.
+        height: Length,
+        /// Angular sweep around the axis.
+        angle: Angle,
+    },
+    /// Spherical segment.
+    Sphere {
+        /// Sphere radius.
+        radius: Length,
+        /// Lower latitude bound.
+        latitude1: Angle,
+        /// Upper latitude bound.
+        latitude2: Angle,
+        /// Longitudinal sweep.
+        longitude: Angle,
+    },
+    /// Ellipsoidal segment aligned to its feature frame.
+    Ellipsoid {
+        /// Radius along local x.
+        x_radius: Length,
+        /// Radius along local y.
+        y_radius: Length,
+        /// Radius along local z.
+        z_radius: Length,
+        /// Lower latitude bound.
+        latitude1: Angle,
+        /// Upper latitude bound.
+        latitude2: Angle,
+        /// Longitudinal sweep.
+        longitude: Angle,
+    },
+    /// Toroidal segment aligned to its feature frame.
+    Torus {
+        /// Distance from the axis to the tube center.
+        major_radius: Length,
+        /// Tube radius.
+        minor_radius: Length,
+        /// Lower tube-angle bound.
+        latitude1: Angle,
+        /// Upper tube-angle bound.
+        latitude2: Angle,
+        /// Sweep around the torus axis.
+        longitude: Angle,
+    },
+    /// Regular polygonal prism aligned to its feature frame.
+    Prism {
+        /// Number of polygon sides.
+        sides: u32,
+        /// Distance from polygon center to each vertex.
+        circumradius: Length,
+        /// Axial height.
+        height: Length,
+    },
+    /// General wedge defined by two x-z profiles across a y interval.
+    Wedge {
+        /// Lower x bound.
+        xmin: Length,
+        /// Lower y bound.
+        ymin: Length,
+        /// Lower z bound.
+        zmin: Length,
+        /// Inner x coordinate on the lower-y profile.
+        x2min: Length,
+        /// Inner z coordinate on the lower-y profile.
+        z2min: Length,
+        /// Upper x bound.
+        xmax: Length,
+        /// Upper y bound.
+        ymax: Length,
+        /// Upper z bound.
+        zmax: Length,
+        /// Inner x coordinate on the upper-y profile.
+        x2max: Length,
+        /// Inner z coordinate on the upper-y profile.
+        z2max: Length,
+    },
+}
+
 /// Independently decoded inputs of a profile revolution.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RevolutionConstruction {
@@ -777,6 +1262,31 @@ pub struct RevolutionConstruction {
     /// Angular extent, when resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extent: Option<Extent>,
+    /// Native edge, datum, or sketch-axis selection used to resolve the axis.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axis_reference: Option<PathRef>,
+    /// Whether a standalone revolution creates a solid rather than a sheet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solid: Option<bool>,
+    /// Face-building algorithm used for a standalone solid revolution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face_maker_class: Option<String>,
+    /// Compatibility ordering for fusing a `PartDesign` revolution into its body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fuse_order: Option<RevolutionFuseOrder>,
+    /// Whether a profile containing multiple faces is accepted as one operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_multi_profile_faces: Option<bool>,
+}
+
+/// Operand ordering used to fuse a `PartDesign` revolution result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RevolutionFuseOrder {
+    /// Existing body is the first fuse operand.
+    BaseFirst,
+    /// Newly revolved feature is the first fuse operand.
+    FeatureFirst,
 }
 
 /// Complete line placement used as a revolution axis.
@@ -1062,6 +1572,8 @@ pub enum ThickenSide {
 pub enum EdgeSelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
+    /// Every edge of the operation's input body.
+    All,
     /// Resolved topological edges.
     Edges(Vec<EdgeId>),
     /// Resolved edges paired with the format-native selection required for rewrite.
@@ -1259,12 +1771,28 @@ pub enum Extent {
         /// Extent on the second side.
         second: Length,
     },
+    /// Independent termination laws on the two oriented sides of the profile.
+    TwoSidedExtents {
+        /// Termination on the oriented first side.
+        first: Box<Extent>,
+        /// Termination on the opposite second side.
+        second: Box<Extent>,
+    },
+    /// One termination law mirrored across the profile plane.
+    SymmetricExtent {
+        /// First-side termination whose result is mirrored.
+        extent: Box<Extent>,
+    },
     /// Extends through all material.
     ThroughAll,
     /// Extends through all material on both sides of the profile.
     ThroughAllBoth,
     /// Extends until it exits the next material region.
     ThroughNext,
+    /// Extends until the first encountered model face.
+    ToFirst,
+    /// Extends until the last encountered model face.
+    ToLast,
     /// Extends until it reaches a target face.
     ToFace {
         /// Face terminating the operation.
@@ -1281,6 +1809,11 @@ pub enum Extent {
         face: FaceSelection,
         /// Offset distance from the face.
         offset: Length,
+    },
+    /// Extends until one of the faces in a selected target shape.
+    ToShape {
+        /// Native or resolved target shape selection.
+        target: FaceSelection,
     },
     /// Fixed angular extent.
     Angle {
@@ -1299,6 +1832,63 @@ pub enum Extent {
         /// Angular travel on the second side.
         second: Angle,
     },
+}
+
+/// Persisted source of a resolved linear-extrusion direction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExtrusionDirectionSource {
+    /// Direction comes from the persisted direction vector.
+    Custom,
+    /// Direction comes from a selected straight edge.
+    Edge {
+        /// Native edge selection used as the direction axis.
+        reference: PathRef,
+    },
+    /// Direction comes from the source profile's plane normal.
+    ProfileNormal,
+}
+
+/// Native face-building policy for a solid linear extrusion.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ExtrusionFaceMaker {
+    /// Runtime face-maker class, retained as an extensible semantic identifier.
+    pub class: String,
+    /// Persisted enumeration value corresponding to the class, when carried.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<u32>,
+}
+
+/// Relationship between outer-wire and inner-wire taper directions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InnerWireTaper {
+    /// Inner wires taper opposite to outer wires.
+    Inverted,
+    /// Inner wires taper in the same direction as outer wires.
+    SameAsOuter,
+}
+
+/// Persisted construction algorithm used for a parametric helix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HelixConstructionStyle {
+    /// Historical construction retained for document compatibility.
+    Legacy,
+    /// Corrected construction used by newly created features.
+    Corrected,
+}
+
+/// Result topology retained by a projection-on-surface operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceProjectionMode {
+    /// Retain all projected result shapes.
+    All,
+    /// Retain projected faces only.
+    Faces,
+    /// Retain projected edges only.
+    Edges,
 }
 
 /// Boolean effect of a solid-producing feature.
@@ -1330,6 +1920,236 @@ pub enum SweepMode {
     },
     /// Sweep creates a sheet body.
     Surface,
+}
+
+/// Cross-section orientation law along a sweep path.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SweepOrientation {
+    /// Rotation-minimizing corrected-Frenet frame.
+    CorrectedFrenet,
+    /// Fixed section frame.
+    Fixed,
+    /// Exact Frenet frame from path derivatives.
+    Frenet,
+    /// Frame constrained by a secondary path.
+    Auxiliary {
+        /// Secondary orientation path.
+        path: PathRef,
+        /// Whether tangent-connected edges extend the secondary path.
+        tangent: bool,
+        /// Whether corresponding points use curvilinear rather than parameter distance.
+        curvilinear: bool,
+    },
+    /// Frame constrained by a fixed binormal direction.
+    Binormal {
+        /// Unit binormal direction.
+        direction: Vector3,
+    },
+}
+
+/// Corner continuation used by a sweep path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SweepTransition {
+    /// Transform the section continuously across the corner.
+    Transformed,
+    /// Form a sharp right-corner intersection.
+    RightCorner,
+    /// Insert a rounded corner transition.
+    RoundCorner,
+}
+
+/// Cross-section interpolation law for a multi-section sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SweepTransformation {
+    /// Keep one constant section along the path.
+    Constant,
+    /// Interpolate through explicit ordered sections.
+    MultiSection,
+    /// Apply linear section interpolation.
+    Linear,
+    /// Apply an S-shaped interpolation law.
+    SShape,
+    /// Apply the native smooth interpolation law.
+    Interpolation,
+}
+
+/// Complete construction of a solid helical sweep.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct HelicalSweepConstruction {
+    /// Profile swept along the helical path.
+    pub profile: ProfileRef,
+    /// Point at the start of the helix axis.
+    pub axis_origin: Point3,
+    /// Unit direction of positive axial travel.
+    pub axis_direction: Vector3,
+    /// Persisted authoring law identifying the independent parameters.
+    pub law: HelicalSweepLaw,
+    /// Positive axial advance per turn; zero is permitted for a planar spiral.
+    pub pitch: Length,
+    /// Signed total axial travel.
+    pub height: Length,
+    /// Positive number of turns.
+    pub turns: f64,
+    /// Signed radial change per turn.
+    pub radial_growth: Length,
+    /// Cone half-angle corresponding to radial growth.
+    pub cone_angle: Angle,
+    /// Whether angular travel is left-handed along the positive axis.
+    pub left_handed: bool,
+    /// Whether path travel runs opposite the declared axis direction.
+    pub reversed: bool,
+    /// Relative tolerance used while joining the generated sweep.
+    pub tolerance: f64,
+    /// Whether a profile containing multiple faces is accepted as one operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_multi_profile_faces: Option<bool>,
+}
+
+/// Independent-parameter law used to author a helical sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HelicalSweepLaw {
+    /// Pitch, height, and cone angle are independent.
+    PitchHeightAngle,
+    /// Pitch, turn count, and cone angle are independent.
+    PitchTurnsAngle,
+    /// Height, turn count, and cone angle are independent.
+    HeightTurnsAngle,
+    /// Height, turn count, and radial growth are independent.
+    HeightTurnsGrowth,
+}
+
+/// One object or subelement selection consumed by a design binder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BinderSource {
+    /// Bound object identity.
+    pub target: BinderTarget,
+    /// Ordered native subelement selectors; empty selects the complete object.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subelements: Vec<String>,
+}
+
+/// Resolved or externally scoped binder target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BinderTarget {
+    /// Feature in this CADIR document.
+    Feature {
+        /// Target feature identity.
+        feature: FeatureId,
+    },
+    /// Object in another source document.
+    External {
+        /// Source document identity.
+        document: String,
+        /// Object identity within the source document.
+        object: String,
+    },
+    /// Source-native target identity that cannot be resolved further.
+    Native {
+        /// Opaque source-native target identity.
+        reference: String,
+    },
+}
+
+/// Binding behavior and optional derived-shape construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BinderConstruction {
+    /// Simple binder over one support object.
+    Shape {
+        /// Transform support geometry between its container and the binder container.
+        trace_support: bool,
+    },
+    /// Multi-object subshape binder.
+    SubShape {
+        /// Live-update lifecycle.
+        lifecycle: BinderLifecycle,
+        /// Placement interpretation for linked subobjects.
+        placement: BinderPlacement,
+        /// Copy-on-change state.
+        copy_on_change: BinderCopyOnChange,
+        /// Whether linked objects are claimed as children in the tree.
+        claim_children: bool,
+        /// Whether multiple resulting solids are fused.
+        fuse: bool,
+        /// Whether bound wires are promoted to faces.
+        make_face: bool,
+        /// Whether external documents may remain partially loaded.
+        partial_load: bool,
+        /// Whether redundant edges are removed from the result.
+        refine: bool,
+        /// Optional two-dimensional offset construction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        offset: Option<BinderOffset>,
+        /// Context object used to interpret relative placement.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context: Option<BinderTarget>,
+    },
+}
+
+/// Update lifecycle of a subshape binder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BinderLifecycle {
+    /// Automatically tracks changes to its sources.
+    Synchronized,
+    /// Retains links but updates only when explicitly requested.
+    Frozen,
+    /// Stores a copied shape and no longer retains live binding behavior.
+    Detached,
+}
+
+/// Placement interpretation for bound subobjects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BinderPlacement {
+    /// Interpret source placement relative to the binder context.
+    Relative,
+    /// Preserve source placement in global coordinates.
+    Global,
+}
+
+/// Copy-on-change state of a subshape binder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BinderCopyOnChange {
+    /// Do not clone configurable source properties.
+    Disabled,
+    /// Clone configurable source properties when they change.
+    Enabled,
+    /// A private source copy has already been mutated.
+    Mutated,
+}
+
+/// Two-dimensional offset applied to bound faces or wires.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BinderOffset {
+    /// Signed offset distance.
+    pub distance: Length,
+    /// Join law at offset corners.
+    pub join: BinderOffsetJoin,
+    /// Whether to fill between original and offset wires.
+    pub fill: bool,
+    /// Whether open input wires produce open offset results.
+    pub open_result: bool,
+    /// Whether child-wire intersections are resolved together.
+    pub intersection: bool,
+}
+
+/// Corner join law of a binder offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BinderOffsetJoin {
+    /// Circular corner arcs.
+    Arcs,
+    /// Tangent continuation.
+    Tangent,
+    /// Sharp line-line intersections.
+    Intersection,
 }
 
 /// Profile consumed by an extrude or revolve.
@@ -1527,6 +2347,101 @@ pub enum HoleKind {
         /// Included angle of the conical drill point.
         drill_point_angle: Angle,
     },
+    /// Hole with a conical entry followed by a wider cylindrical recess.
+    Counterdrill {
+        /// Entry-recess diameter.
+        diameter: Length,
+        /// Cylindrical recess depth.
+        depth: Length,
+        /// Included conical entry angle.
+        angle: Angle,
+    },
+}
+
+/// Profile geometry families accepted as hole-location generators.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HoleProfileFilter {
+    /// Profile points generate holes.
+    pub points: bool,
+    /// Profile circles generate holes at their centers.
+    pub circles: bool,
+    /// Profile circular arcs generate holes at their centers.
+    pub arcs: bool,
+}
+
+/// Blind-end construction of a drilled hole.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HoleBottom {
+    /// Flat-bottomed cylindrical end.
+    Flat,
+    /// Conical drill point.
+    Angled {
+        /// Included drill-point angle.
+        included_angle: Angle,
+        /// Whether the declared blind depth reaches the tip instead of the shoulder.
+        depth_to_tip: bool,
+    },
+}
+
+/// Standard sizing and optional physical-thread construction for a hole.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct HoleSpecification {
+    /// Named thread or fastener standard family.
+    pub standard: String,
+    /// Nominal size designation within the standard.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub designation: Option<String>,
+    /// Tolerance or thread class.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class: Option<String>,
+    /// Clearance-hole fit class when the hole is not threaded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fit: Option<String>,
+    /// Whether the hole is internally threaded rather than a clearance hole.
+    pub threaded: bool,
+    /// Whether exact helical thread geometry is modeled.
+    pub modeled: bool,
+    /// Whether cosmetic thread presentation is requested.
+    pub cosmetic: bool,
+    /// Thread pitch in canonical millimeters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pitch: Option<Length>,
+    /// Nominal major thread diameter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub major_diameter: Option<Length>,
+    /// Thread handedness.
+    pub hand: ThreadHand,
+    /// Axial thread-depth construction.
+    pub depth: HoleThreadDepth,
+    /// Additional radial thread clearance used for modeled geometry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clearance: Option<Length>,
+}
+
+/// Thread handedness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ThreadHand {
+    /// Right-hand thread.
+    Right,
+    /// Left-hand thread.
+    Left,
+}
+
+/// Axial extent rule for a hole thread.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HoleThreadDepth {
+    /// Thread follows the complete hole depth.
+    HoleDepth,
+    /// Explicit thread length.
+    Blind {
+        /// Explicit axial thread length.
+        depth: Length,
+    },
+    /// Standard tapped-hole runout is subtracted from the hole depth.
+    TappedStandard,
 }
 
 /// Structural form of a hole entry treatment.
@@ -1535,6 +2450,8 @@ pub enum HoleKind {
 pub enum HoleForm {
     /// Wider, flat-bottomed entry.
     Counterbore,
+    /// Conical entry followed by a cylindrical recess.
+    Counterdrill,
     /// Conical entry.
     Countersink,
 }
@@ -1617,6 +2534,14 @@ pub enum PatternKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         second: Option<LinearPatternDirection>,
     },
+    /// Repeats seeds at explicitly located distances along a straight direction.
+    LinearOffsets {
+        /// Repetition direction, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
+        /// Cumulative distances from the original instance, beginning with zero.
+        offsets: Vec<Length>,
+    },
     /// Repeats seeds evenly around an axis.
     Circular {
         /// A point on the pattern axis.
@@ -1627,6 +2552,15 @@ pub enum PatternKind {
         angle: Angle,
         /// Total number of instances, including the original.
         count: u32,
+    },
+    /// Repeats seeds at explicitly located angles around an axis.
+    CircularAngles {
+        /// A point on the pattern axis.
+        axis_origin: Point3,
+        /// Unit direction of the pattern axis.
+        axis_dir: Vector3,
+        /// Cumulative angles from the original instance, beginning with zero.
+        angles: Vec<Angle>,
     },
     /// Repeats seeds at fixed arc-length spacing along a curve.
     CurveDriven {
@@ -1645,6 +2579,53 @@ pub enum PatternKind {
         /// Unit normal of the mirror plane.
         plane_normal: Vector3,
     },
+    /// Repeats seeds using progressive uniform scales.
+    Scale {
+        /// Fixed locus used by every scale transform.
+        center: PatternScaleCenter,
+        /// Scale factor of the final instance relative to the original.
+        final_factor: f64,
+        /// Total number of instances, including the original.
+        count: u32,
+    },
+    /// Applies an ordered sequence of pattern stages.
+    Composite {
+        /// Stages in application order.
+        stages: Vec<PatternStage>,
+    },
+}
+
+/// Fixed locus for a progressive pattern scale.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum PatternScaleCenter {
+    /// Volume centroid of the first seed feature.
+    FirstSeedCentroid,
+    /// Explicit model-space point.
+    Point(Point3),
+    /// Format-native center reference.
+    Native(String),
+}
+
+/// One stage of an ordered composite pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PatternStage {
+    /// Pattern transform sequence contributed by this stage.
+    pub pattern: Box<PatternKind>,
+    /// Rule used to combine this stage with preceding stages.
+    pub combination: PatternStageCombination,
+}
+
+/// Combination rule for a composite-pattern stage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PatternStageCombination {
+    /// Establishes the initial transform sequence.
+    Initialize,
+    /// Applies each new transform to every preceding transform.
+    CartesianProduct,
+    /// Aligns transforms with equally sized slices of preceding occurrences.
+    AlignedSlices,
 }
 
 /// Complete secondary direction of a two-direction linear pattern.
@@ -1670,4 +2651,8 @@ pub enum PatternForm {
     CurveDriven,
     /// Reflection across a plane.
     Mirror,
+    /// Progressive uniform scaling.
+    Scale,
+    /// Ordered composition of multiple pattern forms.
+    Composite,
 }

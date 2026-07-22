@@ -1722,6 +1722,12 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         })
         .collect::<Result<Vec<_>, _>>()?;
     for (index, coedge) in coedges.iter().enumerate() {
+        if coedge.pcurves.len() > 1 {
+            return Err(CodecError::NotImplemented(format!(
+                "coedge {} has an ordered pcurve collection",
+                coedge.id
+            )));
+        }
         let next = coedges[(index + 1) % coedges.len()];
         let previous = coedges[(index + coedges.len() - 1) % coedges.len()];
         if coedge.owner_loop != loop_.id
@@ -1937,6 +1943,16 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 ));
             }
         }
+        SurfaceGeometry::Polygonal { .. } => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D generation does not support polygonal surface carriers".into(),
+            ));
+        }
+        SurfaceGeometry::Transformed { .. } => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D generation does not support transformed surface carriers".into(),
+            ));
+        }
     }
     records.push(0x11);
 
@@ -2076,9 +2092,10 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         native_ref(&mut records, 5);
         native_i64(&mut records, 0);
         let pcurve_ref = coedge
-            .pcurve
-            .as_ref()
-            .map(|pcurve_id| {
+            .pcurves
+            .first()
+            .map(|use_| {
+                let pcurve_id = &use_.pcurve;
                 model
                     .pcurves
                     .iter()
@@ -3222,6 +3239,18 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                     )));
                 }
             }
+            SurfaceGeometry::Polygonal { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less multi-face F3D does not support polygonal surface carrier {}",
+                    surface.id
+                )));
+            }
+            SurfaceGeometry::Transformed { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less multi-face F3D does not support transformed surface carrier {}",
+                    surface.id
+                )));
+            }
         }
         records.push(0x11);
     }
@@ -3329,6 +3358,12 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     }
 
     for (coedge_ordinal, coedge) in model.coedges.iter().enumerate() {
+        if coedge.pcurves.len() > 1 {
+            return Err(CodecError::NotImplemented(format!(
+                "coedge {} has an ordered pcurve collection",
+                coedge.id
+            )));
+        }
         let next = coedge_ordinals.get(&coedge.next).copied();
         let previous = coedge_ordinals.get(&coedge.previous).copied();
         let radial = coedge_ordinals.get(&coedge.radial_next).copied();
@@ -3372,9 +3407,10 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         native_ref(&mut records, native_record_index(loop_start, owner)?);
         native_i64(&mut records, 0);
         let pcurve_ref = coedge
-            .pcurve
-            .as_ref()
-            .map(|pcurve_id| {
+            .pcurves
+            .first()
+            .map(|use_| {
+                let pcurve_id = &use_.pcurve;
                 pcurve_ordinals
                     .get(pcurve_id)
                     .copied()
@@ -5468,6 +5504,11 @@ fn native_procedural_surface(
             parameter_interval,
             transposed,
         } => {
+            let parameter_interval = (*parameter_interval).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "source-less F3D rot_spl_sur requires a directrix parameter interval".into(),
+                )
+            })?;
             let directrix = target
                 .model
                 .curves
@@ -5479,7 +5520,7 @@ fn native_procedural_surface(
                         procedural.id
                     ))
                 })?;
-            let directrix = native_interval_curve(&directrix.geometry, *parameter_interval)?;
+            let directrix = native_interval_curve(&directrix.geometry, parameter_interval)?;
             let native_parameter_interval = [
                 directrix.knots.first().copied().unwrap_or(0.0),
                 directrix.knots.last().copied().unwrap_or(0.0),
@@ -5489,7 +5530,7 @@ fn native_procedural_surface(
                 solved_cache.v_knots.last().copied().unwrap_or(0.0),
             ];
             if *transposed
-                || *parameter_interval != native_parameter_interval
+                || parameter_interval != native_parameter_interval
                 || *angular_interval != native_angular_interval
             {
                 return Err(CodecError::NotImplemented(
@@ -5525,6 +5566,16 @@ fn native_procedural_surface(
             v_sense,
             extension_flags,
         } => {
+            let u_sense = (*u_sense).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "source-less F3D offset surface requires a U sense".into(),
+                )
+            })?;
+            let v_sense = (*v_sense).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "source-less F3D offset surface requires a V sense".into(),
+                )
+            })?;
             let support = target
                 .model
                 .surfaces
@@ -5557,8 +5608,8 @@ fn native_procedural_surface(
             )?;
             native_embedded_surface(bytes, &support.geometry)?;
             native_f64(bytes, *distance / 10.0);
-            native_enum(bytes, *u_sense);
-            native_enum(bytes, *v_sense);
+            native_enum(bytes, u_sense);
+            native_enum(bytes, v_sense);
             for flag in extension_flags {
                 bytes.push(native_bool(*flag));
             }
@@ -5621,9 +5672,15 @@ fn native_procedural_surface(
                 procedural.id
             )))
         }
-        ProceduralSurfaceDefinition::Unknown { .. } => {
+        ProceduralSurfaceDefinition::LinearSweep { .. }
+        | ProceduralSurfaceDefinition::AxisRevolution { .. }
+        | ProceduralSurfaceDefinition::ParallelOffset { .. }
+        | ProceduralSurfaceDefinition::DegenerateTorus { .. }
+        | ProceduralSurfaceDefinition::CurveBounded { .. }
+        | ProceduralSurfaceDefinition::Subset { .. }
+        | ProceduralSurfaceDefinition::Unknown { .. } => {
             return Err(CodecError::NotImplemented(format!(
-                "source-less F3D unknown procedural surface {} cannot be regenerated losslessly",
+                "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
@@ -8562,7 +8619,8 @@ fn native_procedural_curve(
             apex_factor,
             axis,
         } => (angle_range, center, major, minor, pitch, apex_factor, axis),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { .. } => {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D offset curve {} lacks a defined native offset-law grammar",
                 procedural.id
@@ -8684,6 +8742,16 @@ fn native_embedded_surface(
         SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "source-less F3D embedded unknown support surfaces are unsupported".into(),
+            ));
+        }
+        SurfaceGeometry::Polygonal { .. } => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D embedded polygonal support surfaces are unsupported".into(),
+            ));
+        }
+        SurfaceGeometry::Transformed { .. } => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D embedded transformed support surfaces are unsupported".into(),
             ));
         }
     }
@@ -8960,6 +9028,15 @@ fn native_pcurve_geometry(
             weights: weights.clone(),
             periodic: *periodic,
         }),
+        PcurveGeometry::Trimmed {
+            parameter_range,
+            basis,
+        } => native_pcurve_geometry(basis, *parameter_range),
+        PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Offset { .. } => Err(CodecError::NotImplemented(
+            "F3D writing of this exact pcurve family is not implemented".into(),
+        )),
     }
 }
 

@@ -10,12 +10,19 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::topology::{BodyKind, Color, Sense};
+use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::Annotations;
 
 use crate::container::MARKER;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
-pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+pub fn write_semantic_with_records(
+    ir: &CadIr,
+    annotations: &Annotations,
+    retained_records: &[UnknownRecord],
+    writer: &mut dyn Write,
+) -> Result<(), CodecError> {
     let mut native = ir
         .native
         .namespace("sldprt")
@@ -29,6 +36,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             SldprtNative::load(namespace).map_err(Into::into)
         })
         .transpose()?;
+    let retained_partition = retained_partition(ir, retained_records);
     let mut normalized = ir.clone();
     sort_arenas(&mut normalized);
     let validation = cadmpeg_ir::validate::validate(&normalized, Vec::new());
@@ -58,8 +66,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         &mut native,
         feature_parameter_changes_authorized,
     )?;
-    crate::history::prepare_configurations_for_write(ir, &mut native)?;
-    let retained_partition = retained_partition(ir);
+    crate::history::prepare_configurations_for_write(ir, &mut native, annotations)?;
     let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
     if !validation.is_ok() {
         let detail = validation
@@ -71,7 +78,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             });
         return Err(CodecError::Malformed(detail.into()));
     }
-    check_semantic_support(ir)?;
+    check_semantic_support(ir, annotations)?;
     if ir.model.faces.is_empty() {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writing requires a B-rep".into(),
@@ -80,7 +87,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
     // The IR stores canonical millimetres; Parasolid stores metres.
     let length_scale = 0.001;
     let patched_partition = if retained_partition.is_none() {
-        crate::writer_patch::patch_partition(ir, length_scale)?
+        crate::writer_patch::patch_partition(ir, annotations, retained_records, length_scale)?
     } else {
         None
     };
@@ -143,14 +150,11 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
         let section = lane.configuration.as_ref().map_or_else(
             || {
-                ir.annotations
+                annotations
                     .provenance
                     .get(&lane.id)
                     .and_then(|provenance| {
-                        ir.annotations
-                            .streams
-                            .get(provenance.stream as usize)
-                            .cloned()
+                        annotations.streams.get(provenance.stream as usize).cloned()
                     })
                     .unwrap_or_else(|| "Contents/ResolvedFeatures".into())
             },
@@ -161,7 +165,13 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             .map_or(&[][..], |native| native.feature_histories.as_slice());
         sections.push((section, resolved_feature_payload(lane, histories)?));
     }
-    let opaque = opaque_blocks(ir, &active_partition_section, retain_native_brep)?;
+    let opaque = opaque_blocks(
+        ir,
+        retained_records,
+        annotations,
+        &active_partition_section,
+        retain_native_brep,
+    )?;
     if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
         let has_document_envelope = opaque
             .iter()
@@ -177,15 +187,15 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         sections.push((section, payload));
     }
 
-    let type_ids = section_type_ids(ir, &sections)?;
-    writer.write_all(&outer_header(ir))?;
+    let type_ids = section_type_ids(retained_records, &sections)?;
+    writer.write_all(&outer_header(retained_records))?;
     for ((section, payload), type_id) in sections.iter().zip(&type_ids) {
         writer.write_all(&block(payload, section, *type_id)?)?;
     }
-    for cell in retained_cache_cells(ir, &sections) {
+    for cell in retained_cache_cells(retained_records, &sections) {
         writer.write_all(&cell)?;
     }
-    for entry in section_directory_entries(ir, &sections, &type_ids)? {
+    for entry in section_directory_entries(retained_records, &sections, &type_ids)? {
         writer.write_all(&entry)?;
     }
     Ok(())
@@ -267,20 +277,20 @@ fn sort_arenas(ir: &mut CadIr) {
         .sort_by_key(|binding| format!("{:?}:{}", binding.target, binding.appearance.0));
 }
 
-fn source_image(ir: &CadIr) -> Option<Vec<u8>> {
-    ir.native_unknowns("sldprt")
-        .ok()?
-        .into_iter()
+fn source_image(records: &[UnknownRecord]) -> Option<Vec<u8>> {
+    records
+        .iter()
         .find(|record| record.id.0 == "sldprt:file:source-image#0")?
         .data
+        .clone()
 }
 
 fn section_directory_entries(
-    ir: &CadIr,
+    records: &[UnknownRecord],
     sections: &[(String, Vec<u8>)],
     type_ids: &[u32],
 ) -> Result<Vec<Vec<u8>>, CodecError> {
-    let source = source_image(ir);
+    let source = source_image(records);
     let source_scan = source.as_deref().map(crate::container::scan_bytes);
     sections
         .iter()
@@ -301,8 +311,8 @@ fn section_directory_entries(
         .collect()
 }
 
-fn retained_cache_cells(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Vec<Vec<u8>> {
-    let Some(source) = source_image(ir) else {
+fn retained_cache_cells(records: &[UnknownRecord], sections: &[(String, Vec<u8>)]) -> Vec<Vec<u8>> {
+    let Some(source) = source_image(records) else {
         return Vec::new();
     };
     let scan = crate::container::scan_bytes(&source);
@@ -324,13 +334,13 @@ fn retained_cache_cells(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Vec<Vec<u
         .collect()
 }
 
-fn retained_partition(ir: &CadIr) -> Option<(String, Vec<u8>)> {
+fn retained_partition(ir: &CadIr, records: &[UnknownRecord]) -> Option<(String, Vec<u8>)> {
     let source = ir.source.as_ref()?;
     let expected = source.attributes.get("brep_semantic_sha256")?;
     if crate::decode::brep_semantic_hash(ir) != *expected {
         return None;
     }
-    let source_image = source_image(ir)?;
+    let source_image = source_image(records)?;
     let scan = crate::container::scan_bytes(&source_image);
     let (block, _) = crate::container::select_active_parasolid(&scan)?;
     let original_section = block
@@ -360,8 +370,8 @@ fn remapped_partition_section(ir: &CadIr, section: &str) -> Option<String> {
     Some(format!("Contents/Config-{new_index}-Partition"))
 }
 
-fn outer_header(ir: &CadIr) -> [u8; 8] {
-    source_image(ir)
+fn outer_header(records: &[UnknownRecord]) -> [u8; 8] {
+    source_image(records)
         .as_deref()
         .and_then(|source| source.get(..8))
         .and_then(|header| header.try_into().ok())
@@ -373,9 +383,12 @@ fn outer_header(ir: &CadIr) -> [u8; 8] {
         })
 }
 
-fn section_type_ids(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Result<Vec<u32>, CodecError> {
+fn section_type_ids(
+    records: &[UnknownRecord],
+    sections: &[(String, Vec<u8>)],
+) -> Result<Vec<u32>, CodecError> {
     let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
-    if let Some(source) = source_image(ir) {
+    if let Some(source) = source_image(records) {
         for block in crate::container::scan_bytes(&source).blocks {
             if let Some(section) = block.section {
                 source_ids
@@ -408,7 +421,7 @@ fn section_type_ids(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Result<Vec<u3
         .collect()
 }
 
-fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
+fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
     if !ir.model.configurations.is_empty()
         && ir
             .model
@@ -478,8 +491,7 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
     }
     if ir.model.edges.iter().any(|edge| {
         edge.param_range.is_some()
-            && ir
-                .annotations
+            && annotations
                 .exactness
                 .get(&edge.id.0)
                 .is_none_or(|note| note.entity != cadmpeg_ir::Exactness::Derived)
@@ -691,7 +703,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .coedges
         .iter()
-        .filter_map(|coedge| coedge.pcurve.clone())
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.clone()))
         .collect::<HashSet<_>>();
     subset
         .model
@@ -703,18 +715,18 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
 
 fn opaque_blocks(
     ir: &CadIr,
+    records: &[UnknownRecord],
+    annotations: &Annotations,
     active_partition: &str,
     retain_native_brep: bool,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let mut seen = HashSet::new();
-    ir.native_unknowns("sldprt")
-        .unwrap_or_default()
-        .into_iter()
+    records
+        .iter()
         .filter(|record| record.id.0.starts_with("sldprt:file:block#"))
         .filter_map(|record| {
-            let provenance = ir.annotations.provenance.get(&record.id.0)?;
-            let section = ir
-                .annotations
+            let provenance = annotations.provenance.get(&record.id.0)?;
+            let section = annotations
                 .streams
                 .get(usize::try_from(provenance.stream).ok()?)?
                 .as_str();
@@ -742,7 +754,7 @@ fn opaque_blocks(
             {
                 return None;
             }
-            let mut payload = record.data?;
+            let mut payload = record.data.clone()?;
             if lower.contains("pmisemanticdatadb") {
                 if let Err(error) = crate::pmi::patch_payload(ir, &record.id.0, &mut payload) {
                     return Some(Err(error));
@@ -755,7 +767,7 @@ fn opaque_blocks(
                     Err(error) => return Some(Err(error)),
                 }
             }
-            seen.insert((section.to_string(), record.sha256))
+            seen.insert((section.to_string(), record.sha256.clone()))
                 .then_some(Ok((section.to_string(), payload)))
         })
         .collect()
@@ -1546,6 +1558,8 @@ pub(super) fn sequential_tessellation(
     Ok(cadmpeg_ir::tessellation::Tessellation {
         id: mesh.id.clone(),
         body: mesh.body.clone(),
+        faces: mesh.faces.clone(),
+        chordal_deflection: mesh.chordal_deflection,
         source_object: mesh.source_object.clone(),
         vertices,
         triangles: triangles_from_strips(&vec![3; triangle_count as usize])?,
@@ -1716,12 +1730,10 @@ pub(crate) fn brep_body(
         .iter()
         .filter(|curve| {
             matches!(curve.geometry, CurveGeometry::Degenerate { .. })
-                && ir
-                    .annotations
-                    .provenance
-                    .get(&curve.id.0)
-                    .and_then(|note| note.tag.as_deref())
-                    == Some("derived_sphere_seam")
+                && curve
+                    .id
+                    .0
+                    .starts_with("sldprt:brep:curve#sphere-seam-face:")
         })
         .map(|curve| curve.id.clone())
         .collect::<HashSet<_>>();
@@ -2288,7 +2300,10 @@ pub(super) fn surface_values(
                 ],
             )
         }
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Transformed { .. }
+        | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support this surface carrier".into(),
             ))
@@ -2598,9 +2613,24 @@ pub(super) fn curve_values(
                 "semantic SLDPRT writer does not support degenerate curves".into(),
             ))
         }
+        CurveGeometry::Composite { .. } => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer does not support composite curves".into(),
+            ))
+        }
         CurveGeometry::Nurbs(_) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
+            ))
+        }
+        CurveGeometry::Polyline { .. } => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer does not support polyline curve carriers".into(),
+            ))
+        }
+        CurveGeometry::Transformed { .. } => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer does not support transformed curve carriers".into(),
             ))
         }
         CurveGeometry::Unknown { .. } => {
@@ -2635,7 +2665,10 @@ pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math:
             ref_direction,
             ..
         } => *ref_direction,
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
+        SurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
             x: 1.0,
             y: 0.0,
             z: 0.0,

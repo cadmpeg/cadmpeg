@@ -42,7 +42,12 @@ jobs:
       - name: Run each fuzz target briefly
         run: |
           for t in $(cargo +nightly fuzz list --fuzz-dir crates/cadmpeg-fuzz); do
-            cargo +nightly fuzz run "$t" --fuzz-dir crates/cadmpeg-fuzz -- -max_total_time=60
+            seed_dir="crates/cadmpeg-fuzz/seeds/$t"
+            if [ -d "$seed_dir" ]; then
+              cargo +nightly fuzz run "$t" "$seed_dir" --fuzz-dir crates/cadmpeg-fuzz -- -max_total_time=60
+            else
+              cargo +nightly fuzz run "$t" --fuzz-dir crates/cadmpeg-fuzz -- -max_total_time=60
+            fi
           done
 
       - name: Upload crash artifacts

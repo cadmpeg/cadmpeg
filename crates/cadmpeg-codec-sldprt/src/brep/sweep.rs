@@ -21,9 +21,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::LEN_TO_MM;
 
-/// Absent-value sentinel bit pattern shared with chart records.
-const MISSING: u64 = 0xc2bc_928f_996e_0000;
-
 /// A parsed swept- or spun-surface carrier.
 #[derive(Debug, Clone)]
 pub(crate) struct SweepCarrier {
@@ -52,12 +49,6 @@ pub(crate) enum SweepKind {
         /// Unit spin-axis direction.
         axis: Vector3,
     },
-}
-
-fn is_missing(bytes: &[u8], at: usize) -> bool {
-    bytes
-        .get(at..at + 8)
-        .is_some_and(|b| u64::from_be_bytes(b.try_into().expect("8-byte slice")) == MISSING)
 }
 
 fn unit3(bytes: &[u8], at: usize) -> Option<Vector3> {
@@ -179,11 +170,7 @@ pub(crate) fn swept_nurbs(
 /// Build the exact rational NURBS of a full surface of revolution: the
 /// profile revolved `2π` about the axis through `base`, with the angular
 /// parameter (`v`, radians) following `A × (C - Z)`.
-pub(crate) fn spun_nurbs(
-    profile: &NurbsCurve,
-    base: Point3,
-    axis: Vector3,
-) -> Option<NurbsSurface> {
+pub(crate) fn spun_nurbs(profile: &NurbsCurve, base: Point3, axis: Vector3) -> NurbsSurface {
     use std::f64::consts::{FRAC_PI_2, PI};
     let n = profile.control_points.len();
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
@@ -248,7 +235,7 @@ pub(crate) fn spun_nurbs(
         2.0 * PI,
         2.0 * PI,
     ];
-    Some(NurbsSurface {
+    NurbsSurface {
         u_degree: profile.degree,
         v_degree: 2,
         u_knots: profile.knots.clone(),
@@ -259,7 +246,7 @@ pub(crate) fn spun_nurbs(
         weights: Some(weights),
         u_periodic: false,
         v_periodic: true,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -295,12 +282,14 @@ mod tests {
 
     #[test]
     fn parses_spun_record_with_sentinel_tail() {
+        const MISSING: u64 = 0xc2bc_928f_996e_0000;
+
         let mut bytes = header(0x44, 12, 6);
         for v in [0.0f64, 0.0, 0.0, 0.0, -1.0, 0.0] {
             bytes.extend_from_slice(&v.to_be_bytes());
         }
         for _ in 0..8 {
-            bytes.extend_from_slice(&super::MISSING.to_be_bytes());
+            bytes.extend_from_slice(&MISSING.to_be_bytes());
         }
         let carriers = scan_sweep_carriers(&bytes);
         let carrier = carriers.get(&12).expect("spun carrier");
@@ -392,8 +381,7 @@ mod tests {
             &profile,
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
-        )
-        .expect("spun surface");
+        );
         // The revolution is the standard rational quadratic NURBS circle: four
         // 90-degree Bézier segments with corner weights √2/2 and breakpoint
         // knots at 0, π/2, π, 3π/2, 2π. Within a segment the parameter `v` is

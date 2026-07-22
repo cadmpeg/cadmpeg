@@ -1,0 +1,23 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('edition 3 sections'),'3;1');
+FILE_NAME('sections','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');
+FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }'));
+ENDSEC;
+ANCHOR;
+<root>=#1;
+<alias>=<root>;
+ENDSEC;
+REFERENCE;
+<#ext>=<https://example.invalid/external-part>;
+ENDSEC;
+DATA('AP242');
+#1=PRODUCT('P1','Part','',());
+ENDSEC;
+DATA('AP242');
+#2=EXAMPLE_RECORD(<alias>);
+ENDSEC;
+SIGNATURE;
+opaque signature bytes: @%[]{}=deadbeef
+ENDSEC;
+END-ISO-10303-21;

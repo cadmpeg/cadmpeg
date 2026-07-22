@@ -57,10 +57,11 @@ fn nurbs_point(curve: &cadmpeg_ir::geometry::NurbsCurve, parameter: f64) -> Opti
             } else {
                 (parameter - curve.knots[knot]) / denominator
             };
-            for coordinate in 0..4 {
-                poles[local][coordinate] =
-                    (1.0 - alpha) * poles[local - 1][coordinate] + alpha * poles[local][coordinate];
-            }
+            let previous = poles[local - 1];
+            let current = poles[local];
+            poles[local] = std::array::from_fn(|coordinate| {
+                (1.0 - alpha) * previous[coordinate] + alpha * current[coordinate]
+            });
         }
     }
     let result = poles[degree];

@@ -1769,13 +1769,13 @@ fn decode_transfers_point_plane_cylinder_line() {
     // The Parasolid stream is preserved verbatim.
     let unknowns = result.ir.native_unknowns("nx").unwrap();
     assert_eq!(unknowns.len(), 1);
-    assert_eq!(unknowns[0].sha256.len(), 64);
+    assert_eq!(result.source_fidelity.retained_records[0].sha256.len(), 64);
     assert_eq!(
         unknowns[0].links,
         ["nx:s0:surf#0", "nx:s0:surf#1", "nx:s0:crv#0",]
     );
     assert_eq!(
-        result.ir.annotations.exactness[&unknowns[0].id.to_string()].fields["links"],
+        result.source_fidelity.annotations.exactness[&unknowns[0].id.to_string()].fields["links"],
         Exactness::Derived
     );
 
@@ -1844,8 +1844,8 @@ fn decode_emits_offset_surface_construction() {
         panic!("offset definition");
     };
     assert_eq!(*distance, 2.5);
-    assert_eq!(*u_sense, 0);
-    assert_eq!(*v_sense, 0);
+    assert_eq!(*u_sense, Some(0));
+    assert_eq!(*v_sense, Some(0));
     assert!(extension_flags.is_empty());
     assert_ne!(procedural.surface, *support);
     assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
@@ -2548,16 +2548,16 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
     let mut cur = Cursor::new(topology_part_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let ir = &result.ir;
+    let annotations = &result.source_fidelity.annotations;
 
     macro_rules! assert_arena_annotations {
         ($arena:expr) => {
             for entity in $arena {
-                let provenance = ir
-                    .annotations
+                let provenance = annotations
                     .provenance
                     .get(&entity.id.to_string())
                     .expect("annotation provenance");
-                assert!(ir.annotations.streams[provenance.stream as usize].starts_with("nx:"));
+                assert!(annotations.streams[provenance.stream as usize].starts_with("nx:"));
                 assert!(provenance.tag.is_some());
             }
         };
@@ -2577,12 +2577,12 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
     let unknowns = ir.native_unknowns("nx").unwrap();
     assert_arena_annotations!(&unknowns);
 
-    let point_note = &ir.annotations.exactness[&ir.model.points[0].id.to_string()];
+    let point_note = &annotations.exactness[&ir.model.points[0].id.to_string()];
     assert_eq!(point_note.entity, Exactness::ByteExact);
     assert_eq!(point_note.fields["position"], Exactness::Derived);
-    let surface_note = &ir.annotations.exactness[&ir.model.surfaces[0].id.to_string()];
+    let surface_note = &annotations.exactness[&ir.model.surfaces[0].id.to_string()];
     assert_eq!(surface_note.fields["geometry"], Exactness::Derived);
-    let curve_note = &ir.annotations.exactness[&ir.model.curves[0].id.to_string()];
+    let curve_note = &annotations.exactness[&ir.model.curves[0].id.to_string()];
     assert_eq!(curve_note.fields["geometry"], Exactness::Derived);
     for id in [
         ir.model.vertices[0].id.to_string(),
@@ -2590,7 +2590,7 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
         ir.model.faces[0].id.to_string(),
     ] {
         assert_eq!(
-            ir.annotations.exactness[&id].fields["tolerance"],
+            annotations.exactness[&id].fields["tolerance"],
             Exactness::Derived
         );
     }

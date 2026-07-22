@@ -28,6 +28,8 @@ fuzz_target!(|data: &[u8]| {
     };
 
     let options = StepWriteOptions {
+        schema: Default::default(),
+        unsupported: Default::default(),
         product_name: format!("Product {}", data[0]),
         author: format!("Author {}", data[1]),
         organization: format!("Org {}", data[2]),

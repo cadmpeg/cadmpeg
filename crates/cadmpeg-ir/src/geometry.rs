@@ -9,6 +9,7 @@
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
+use crate::transform::Transform;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -125,6 +126,22 @@ pub enum SurfaceGeometry {
     },
     /// Free-form NURBS surface.
     Nurbs(NurbsSurface),
+    /// Source-native polygonal surface with an explicit chordal error bound.
+    Polygonal {
+        /// Ordered model-space vertices.
+        vertices: Vec<Point3>,
+        /// Zero-based triangle indices into `vertices`.
+        triangles: Vec<[u32; 3]>,
+        /// Maximum chordal deviation recorded by the source.
+        chordal_deflection: f64,
+    },
+    /// Exact affine placement of an inline basis surface.
+    Transformed {
+        /// Unplaced basis geometry with unchanged parameterization.
+        basis: Box<SurfaceGeometry>,
+        /// Affine map from basis coordinates to model coordinates.
+        transform: Transform,
+    },
     /// Surface geometry that has no typed neutral representation.
     ///
     /// `record` links to retained source bytes when available.
@@ -216,14 +233,63 @@ pub enum CurveGeometry {
         /// The collapsed curve point.
         point: Point3,
     },
+    /// Ordered child curves joined into one bounded carrier.
+    Composite {
+        /// Ordered curve uses and their continuity contracts.
+        segments: Vec<CompositeCurveSegment>,
+        /// Whether the source classifies the complete curve as self-intersecting.
+        self_intersect: Option<bool>,
+    },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
+    /// Source-native polyline with an explicit chordal error bound.
+    Polyline {
+        /// Ordered model-space samples.
+        points: Vec<Point3>,
+        /// Optional source parameters parallel to `points`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameters: Option<Vec<f64>>,
+        /// Maximum chordal deviation recorded by the source.
+        chordal_deflection: f64,
+    },
+    /// Exact affine placement of an inline basis curve.
+    Transformed {
+        /// Unplaced basis geometry with unchanged parameterization.
+        basis: Box<CurveGeometry>,
+        /// Affine map from basis coordinates to model coordinates.
+        transform: Transform,
+    },
     /// Native curve carrier whose shape is not decoded.
     Unknown {
         /// Retained native record containing the curve carrier.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
     },
+}
+
+/// One directed child use in a composite curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompositeCurveSegment {
+    /// Referenced child curve carrier.
+    pub curve: CurveId,
+    /// Whether the child parameter direction is retained.
+    pub same_sense: bool,
+    /// Required continuity from the preceding segment to this segment.
+    pub transition: CompositeCurveTransition,
+}
+
+/// STEP composite-curve transition continuity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositeCurveTransition {
+    /// No positional continuity is asserted.
+    Discontinuous,
+    /// Positional continuity.
+    Continuous,
+    /// Positional and tangent continuity.
+    ContSameGradient,
+    /// Positional, tangent, and curvature continuity.
+    ContSameGradientSameCurvature,
 }
 
 /// Derive a stable in-plane reference direction from an axis.
@@ -378,6 +444,13 @@ pub enum ProceduralSurfaceDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_position: Option<Point3>,
     },
+    /// Unbounded linear sweep of a directrix.
+    LinearSweep {
+        /// Curve swept along `direction`.
+        directrix: CurveId,
+        /// Length-bearing sweep vector.
+        direction: Vector3,
+    },
     /// Revolution of a directrix about an axis.
     Revolution {
         /// Curve revolved about the axis to form the surface.
@@ -388,10 +461,21 @@ pub enum ProceduralSurfaceDefinition {
         axis_direction: Vector3,
         /// Angular start and end parameters, in radians.
         angular_interval: [f64; 2],
-        /// Directrix surface-parameter start and end values.
-        parameter_interval: [f64; 2],
+        /// Directrix surface-parameter start and end values, when carried by
+        /// the source representation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter_interval: Option<[f64; 2]>,
         /// Whether the source parameter directions are transposed.
         transposed: bool,
+    },
+    /// Full revolution of a directrix about an axis.
+    AxisRevolution {
+        /// Curve revolved about the axis.
+        directrix: CurveId,
+        /// Point on the revolution axis.
+        axis_origin: Point3,
+        /// Unit revolution-axis direction.
+        axis_direction: Vector3,
     },
     /// Sum of two ordered curves from a base point.
     Sum {
@@ -433,12 +517,44 @@ pub enum ProceduralSurfaceDefinition {
         support: SurfaceId,
         /// Signed offset distance, in document length units.
         distance: f64,
-        /// Native U parameter-direction sense enum.
-        u_sense: i64,
-        /// Native V parameter-direction sense enum.
-        v_sense: i64,
+        /// Native U parameter-direction sense enum, when carried.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        u_sense: Option<i64>,
+        /// Native V parameter-direction sense enum, when carried.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        v_sense: Option<i64>,
         /// Ordered conditional ASM extension flags.
         extension_flags: Vec<bool>,
+    },
+    /// Rectangular parameter sub-range of a support surface.
+    Subset {
+        /// Surface being restricted.
+        support: SurfaceId,
+        /// Ordered U and V parameter intervals.
+        parameter_ranges: [[f64; 2]; 2],
+    },
+    /// Parallel offset from a support surface.
+    ParallelOffset {
+        /// Surface being offset.
+        support: SurfaceId,
+        /// Signed offset distance.
+        distance: f64,
+        /// Whether the source classifies the result as self-intersecting.
+        self_intersect: Option<bool>,
+    },
+    /// Self-intersecting torus with an explicitly selected outer or inner sheet.
+    DegenerateTorus {
+        /// Whether the outer sheet is selected at the self-intersection.
+        select_outer: bool,
+    },
+    /// Surface domain bounded by ordered curves on a supporting surface.
+    CurveBounded {
+        /// Supporting surface whose parameterization defines the domain.
+        support: SurfaceId,
+        /// Boundary curves on the support.
+        boundaries: Vec<CurveId>,
+        /// Whether the support's natural outer boundary is implicit.
+        implicit_outer: bool,
     },
     /// Ruled surface joining two directrices.
     Ruled {
@@ -2129,10 +2245,34 @@ pub enum ProceduralCurveDefinition {
         source: CurveId,
         /// Signed offset distance, in document length units.
         distance: f64,
+        /// Fixed plane-normal direction defining the offset side, when carried
+        /// by the source representation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
         /// Surface the offset is measured within, when the offset is constrained
         /// to a support surface; `None` for a free-space offset.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         support: Option<SurfaceId>,
+        /// Unit normal defining the positive offset side for planar offsets.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        normal: Option<Vector3>,
+        /// Parameter interval on the source curve used by the offset.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter_range: Option<[f64; 2]>,
+        /// Variable distance law; absent when `distance` is uniform.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance_law: Option<CurveOffsetDistanceLaw>,
+    },
+    /// Free-space 3D offset using a reference direction.
+    SpatialOffset {
+        /// Curve being offset.
+        source: CurveId,
+        /// Signed offset distance.
+        distance: f64,
+        /// Reference direction controlling the offset frame.
+        reference_direction: Vector3,
+        /// Whether the source classifies the result as self-intersecting.
+        self_intersect: Option<bool>,
     },
     /// Intersection of two surfaces after applying independent signed offsets.
     TwoSidedOffset {
@@ -2177,6 +2317,44 @@ pub enum ProceduralCurveDefinition {
     },
 }
 
+/// Independent variable used by a curve-offset distance law.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CurveOffsetLawBasis {
+    /// Distance measured along the source curve from the offset interval start.
+    ArcLength,
+    /// Native source-curve parameter.
+    Parameter,
+}
+
+/// Variable signed distance law for a planar curve offset.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CurveOffsetDistanceLaw {
+    /// Linear interpolation between two distance controls.
+    Linear {
+        /// Independent-variable interpretation.
+        basis: CurveOffsetLawBasis,
+        /// Ordered signed distances in document length units.
+        distances: [f64; 2],
+        /// Ordered arc-length or neutral carrier-parameter controls.
+        control_range: [f64; 2],
+    },
+    /// One coordinate of another curve defines the signed distance.
+    Coordinate {
+        /// Curve carrying the distance function.
+        function: CurveId,
+        /// One-based coordinate number on `function`.
+        coordinate: u8,
+        /// Independent-variable interpretation.
+        basis: CurveOffsetLawBasis,
+        /// Function parameter at zero source parameter or arc length.
+        function_parameter_offset: f64,
+        /// Function-parameter change per neutral source parameter or length unit.
+        function_parameter_scale: f64,
+    },
+}
+
 /// The shape of a parameter-space (u, v) curve on a surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -2187,18 +2365,6 @@ pub enum PcurveGeometry {
         origin: Point2,
         /// Parameter-space direction.
         direction: Point2,
-    },
-    /// A circle in parameter space, evaluated by angle in radians.
-    Circle {
-        /// Circle center.
-        center: Point2,
-        /// Unit direction at parameter zero.
-        ref_direction: Point2,
-        /// Positive parameter-space radius.
-        radius: f64,
-        /// Parameter increases clockwise in the parameter plane.
-        #[serde(default)]
-        clockwise: bool,
     },
     /// Polar angle and axial coordinate of a first-order harmonic spatial curve.
     PolarHarmonic {
@@ -2232,19 +2398,53 @@ pub enum PcurveGeometry {
         #[serde(default)]
         periodic: bool,
     },
-    /// An ellipse in parameter space, evaluated by angle in radians.
+    /// Full circle in parameter space.
+    Circle {
+        /// Circle center.
+        center: Point2,
+        /// Zero-angle unit direction.
+        x_axis: Point2,
+        /// Positive-angle unit direction.
+        y_axis: Point2,
+        /// Circle radius.
+        radius: f64,
+    },
+    /// Full ellipse in parameter space.
     Ellipse {
         /// Ellipse center.
         center: Point2,
-        /// Unit major-axis direction at parameter zero.
-        major_direction: Point2,
-        /// Positive major radius.
+        /// Major-axis unit direction.
+        x_axis: Point2,
+        /// Minor-axis unit direction.
+        y_axis: Point2,
+        /// Semi-major radius.
         major_radius: f64,
-        /// Positive minor radius.
+        /// Semi-minor radius.
         minor_radius: f64,
-        /// Parameter increases clockwise in the parameter plane.
-        #[serde(default)]
-        clockwise: bool,
+    },
+    /// Parabola in parameter space.
+    Parabola {
+        /// Parabola vertex.
+        vertex: Point2,
+        /// Axis unit direction.
+        x_axis: Point2,
+        /// Positive transverse unit direction.
+        y_axis: Point2,
+        /// Focus distance.
+        focal_distance: f64,
+    },
+    /// Hyperbola in parameter space.
+    Hyperbola {
+        /// Hyperbola center.
+        center: Point2,
+        /// Transverse-axis unit direction.
+        x_axis: Point2,
+        /// Conjugate-axis unit direction.
+        y_axis: Point2,
+        /// Semi-transverse radius.
+        major_radius: f64,
+        /// Semi-conjugate radius.
+        minor_radius: f64,
     },
     /// A free-form NURBS curve in parameter space (control points are (u, v)).
     Nurbs {
@@ -2260,6 +2460,20 @@ pub enum PcurveGeometry {
         /// Whether the parameter-space curve is periodic.
         #[serde(default)]
         periodic: bool,
+    },
+    /// Parameter restriction of an exact basis pcurve.
+    Trimmed {
+        /// Native parameter interval retained from the basis.
+        parameter_range: [f64; 2],
+        /// Exact basis geometry.
+        basis: Box<PcurveGeometry>,
+    },
+    /// Signed planar offset of an exact basis pcurve.
+    Offset {
+        /// Signed parameter-space distance.
+        distance: f64,
+        /// Exact basis geometry.
+        basis: Box<PcurveGeometry>,
     },
 }
 

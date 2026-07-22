@@ -428,19 +428,17 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
         .enumerate()
         .map(|(ordinal, (offset, code))| {
             let coordinates_m = marker_coordinates(payload, offset);
-            let kind = if marker_spatial_coordinates(payload, offset).is_some() {
+            let kind = if marker_spatial_coordinates(payload, offset).is_some()
+                || legacy_line_handle_coordinates(payload, offset).is_some()
+                || coordinates_m.is_some()
+                    && (indexed_profile_vertex(payload, offset)
+                        || linked_profile_vertex(payload, offset))
+            {
                 SketchInputKind::Point
-            } else if legacy_line_handle_coordinates(payload, offset).is_some() {
-                SketchInputKind::Point
-            } else if coordinates_m.is_some() && indexed_profile_vertex(payload, offset) {
-                SketchInputKind::Point
-            } else if coordinates_m.is_some() && linked_profile_vertex(payload, offset) {
-                SketchInputKind::Point
-            } else if current_geometry_locus_profile_line(payload, offset, code) {
-                SketchInputKind::LineOrCircle
-            } else if coordinates_m.is_none()
-                && (marker_is_selected_construction_line(payload, offset)
-                    || compact_curve_endpoint_indices(payload, offset).is_some())
+            } else if current_geometry_locus_profile_line(payload, offset, code)
+                || coordinates_m.is_none()
+                    && (marker_is_selected_construction_line(payload, offset)
+                        || compact_curve_endpoint_indices(payload, offset).is_some())
             {
                 SketchInputKind::LineOrCircle
             } else if coordinates_m.is_none()
@@ -1008,10 +1006,9 @@ fn indexed_profile_vertex(payload: &[u8], offset: usize) -> bool {
         && marker_profile_curve_role(payload, offset) == Some(1)
 }
 
-fn current_linked_profile_point(
-    payload: &[u8],
-    offset: usize,
-) -> Option<([f64; 2], [(u16, u16); 2])> {
+type LinkedProfilePoint = ([f64; 2], [(u16, u16); 2]);
+
+fn current_linked_profile_point(payload: &[u8], offset: usize) -> Option<LinkedProfilePoint> {
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(0)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
@@ -5932,7 +5929,7 @@ mod marker_tests {
         ]);
         payload[64..66].copy_from_slice(&[0x1e, 0x00]);
         payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
-        assert_eq!(marker_local_links(&payload, 0), None);
+        assert_eq!(marker_local_links(&payload, 0), Some(([30, 39], 1)));
     }
 
     #[test]
@@ -9166,6 +9163,8 @@ fn common_generated_surface_axis(
             SurfaceGeometry::Plane { .. }
             | SurfaceGeometry::Sphere { .. }
             | SurfaceGeometry::Nurbs(_)
+            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Transformed { .. }
             | SurfaceGeometry::Unknown { .. } => None,
         })
         .collect::<Vec<_>>();
@@ -10204,10 +10203,10 @@ fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
         if marker.coordinates_m.is_none() {
             marker.coordinates_m = linked_endpoint_coordinates.get(&marker.offset).copied();
         }
-        if endpoints.contains(&key) || linked_endpoint_coordinates.contains_key(&marker.offset) {
-            if marker.coordinates_m.is_some() {
-                marker.kind = SketchInputKind::Point;
-            }
+        if (endpoints.contains(&key) || linked_endpoint_coordinates.contains_key(&marker.offset))
+            && marker.coordinates_m.is_some()
+        {
+            marker.kind = SketchInputKind::Point;
         }
     }
 }
@@ -10371,6 +10370,10 @@ pub(crate) fn project_helix_axes(
             revolutions: *revolutions,
             start_angle: *start_angle,
             clockwise: *clockwise,
+            radial_growth: None,
+            cone_angle: None,
+            segment_turns: None,
+            construction_style: None,
         };
     }
 }
@@ -10783,7 +10786,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 axis.y.to_bits(),
                 axis.z.to_bits(),
             ],
-            _ => [0; 6],
+            HolePlacement::Directed { .. } => [0; 6],
         });
         resolved.dedup();
         if !ambiguous && !resolved.is_empty() {
@@ -10956,13 +10959,13 @@ pub(crate) fn project_hole_axes(
                         axis.y.to_bits(),
                         axis.z.to_bits(),
                     ],
-                    _ => [0; 6],
+                    HolePlacement::Directed { .. } => [0; 6],
                 })
                 .collect::<Vec<_>>()
         });
         solutions.dedup();
         if let [solution] = solutions.as_slice() {
-            *placements = solution.clone();
+            placements.clone_from(solution);
         }
     }
 }
@@ -11117,7 +11120,7 @@ fn marker_pattern_bore_axes(
                         quantize_scalar(axis.y),
                         quantize_scalar(axis.z),
                     ],
-                    _ => [0; 6],
+                    HolePlacement::Directed { .. } => [0; 6],
                 })
                 .collect::<Vec<_>>();
             solutions.insert(key, placements);
@@ -11137,7 +11140,7 @@ fn canonical_axis(axis: Vector3) -> Vector3 {
     let sign = [axis.x, axis.y, axis.z]
         .into_iter()
         .find(|component| component.abs() > 1.0e-12)
-        .map_or(1.0, |component| component.signum());
+        .map_or(1.0, f64::signum);
     Vector3::new(axis.x * sign, axis.y * sign, axis.z * sign)
 }
 
@@ -11506,6 +11509,7 @@ fn compact_position_loci(
     Some(solution.clone())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compact_position_assignments(
     node_index: usize,
     nodes: &[u16],
@@ -11621,11 +11625,19 @@ mod hole_axis_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Hole {
+                profile: None,
+                profile_filter: None,
                 face: None,
+                position: None,
+                direction: None,
                 placements: Vec::new(),
                 kind: HoleKind::Simple,
                 diameter: Some(Length(4.0)),
                 extent: None,
+                bottom: None,
+                taper_angle: None,
+                specification: None,
+                allow_multi_profile_faces: None,
             },
             native_ref: Some("native-hole".into()),
         }
@@ -13571,7 +13583,11 @@ fn inline_mirror_surface_paths(
         }
         let local_bytes = &payload[terminal + 12..terminal + 16];
         let next_is_component = {
-            let instance = u16::from_le_bytes(local_bytes[..2].try_into().unwrap());
+            let instance = u16::from_le_bytes(
+                local_bytes[..2]
+                    .try_into()
+                    .expect("two-byte instance slice"),
+            );
             instance & 0x8000 != 0
                 && instance != u16::MAX
                 && local_bytes[2..] == [0, 0]
@@ -13707,7 +13723,8 @@ pub(crate) fn generated_surface_identities(
         let tail: [u8; 4] = lane.native_payload[terminal + 12..terminal + 16]
             .try_into()
             .expect("bounded surface identity tail");
-        let possible_instance = u16::from_le_bytes(tail[..2].try_into().unwrap());
+        let possible_instance =
+            u16::from_le_bytes(tail[..2].try_into().expect("two-byte instance slice"));
         if possible_instance & 0x8000 != 0
             && possible_instance != u16::MAX
             && tail[2..] == [0, 0]
@@ -13726,7 +13743,11 @@ pub(crate) fn generated_surface_identities(
         let Some(components) = inline_surface_reference_at(&lane.native_payload, offset) else {
             continue;
         };
-        let feature_source_id = u32::from_le_bytes(signature[4..8].try_into().unwrap());
+        let feature_source_id = u32::from_le_bytes(
+            signature[4..8]
+                .try_into()
+                .expect("four-byte feature source ID slice"),
+        );
         let local_identity = u32::from_le_bytes(tail);
         let key = (
             prefix,
@@ -14281,13 +14302,7 @@ fn marker_local_links(payload: &[u8], offset: usize) -> Option<([u16; 2], u16)> 
     if wide_indexed_curve_endpoint_indices(payload, offset).is_some() {
         return None;
     }
-    let coordinate_layout = payload.get(offset + 5..offset + 17)?
-        == [
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x80, 0xbf,
-        ]
-        && payload.get(offset + 64..offset + 66)? == [0x1e, 0x00];
-    if coordinate_layout
-        || payload.get(offset + 70..offset + 72)? != [0, 0]
+    if payload.get(offset + 70..offset + 72)? != [0, 0]
         || payload.get(offset + 72..offset + 80)? != (-1.0f64).to_le_bytes()
     {
         return None;
@@ -16067,10 +16082,12 @@ fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3
         .then_some((origin, normal, u_axis))
 }
 
+type ReferencePlaneFrame = (Point3, Vector3, Vector3);
+
 fn offset_reference_plane_frame_pair(
     payload: &[u8],
     distance: f64,
-) -> Option<((Point3, Vector3, Vector3), (Point3, Vector3, Vector3))> {
+) -> Option<(ReferencePlaneFrame, ReferencePlaneFrame)> {
     let frames = payload
         .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
         .filter_map(fixed_reference_plane_frame)
@@ -21553,6 +21570,7 @@ fn legacy_single_face_reference_path_at(
                         .is_some_and(|source| source != 0)
             })
     };
+    #[allow(clippy::items_after_statements, clippy::too_many_arguments)]
     fn parse_entries(
         payload: &[u8],
         entry_at: &impl Fn(usize) -> Option<FeatureInputComponentPathEntry>,
@@ -21653,7 +21671,7 @@ fn legacy_single_face_reference_path_at(
             || prefix[2..6] != 1u32.to_le_bytes()
             || prefix[6..10] != [0; 4]
             || !(1..=64).contains(&count)
-            || !matches!(&prefix[14..18], [0, 2, 0, 0] | [0, 3, 0, 0])
+            || !matches!(&prefix[14..18], [0, 2 | 3, 0, 0])
             || prefix[22..30] != prefix[30..38]
             || prefix[38..40] != [0, 0]
         {
@@ -21858,7 +21876,7 @@ pub(crate) fn compact_surface_selection_value(
         }
         match component.local_id {
             Some(local_id) => {
-                write!(&mut value, "{local_id}").expect("writing to String cannot fail")
+                write!(&mut value, "{local_id}").expect("writing to String cannot fail");
             }
             None => value.push('_'),
         }
@@ -22266,6 +22284,8 @@ pub(crate) fn project_dissected_sketches(
         if aliases.contains_key(&feature.id) {
             feature.definition = FeatureDefinition::TreeNode {
                 role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
+                children: Vec::new(),
+                active_child: None,
             };
             continue;
         }
@@ -23510,6 +23530,15 @@ pub(crate) fn project_relation_bindings(
                 )),
                 sketch: (*sketch).clone(),
                 definition,
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
                 native_ref: Some(relation.id.clone()),
             });
         }
@@ -23537,6 +23566,15 @@ pub(crate) fn project_relation_bindings(
                 )),
                 sketch: (*sketch).clone(),
                 definition,
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
                 native_ref: Some(marker.id.clone()),
             });
         }
@@ -24217,6 +24255,12 @@ fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2) -> bool {
             distance <= SKETCH_POINT_TOLERANCE
                 && (-SKETCH_POINT_TOLERANCE..=1.0 + SKETCH_POINT_TOLERANCE).contains(&parameter)
         }
+        SketchGeometry::ReferenceLine { origin, direction } => {
+            let length = direction.u.hypot(direction.v);
+            length > SKETCH_POINT_TOLERANCE
+                && ((point.u - origin.u) * direction.v - (point.v - origin.v) * direction.u).abs()
+                    <= SKETCH_POINT_TOLERANCE * length
+        }
         SketchGeometry::Circle { center, radius } => {
             same_dimension_length((point.u - center.u).hypot(point.v - center.v), radius.0)
         }
@@ -24270,6 +24314,56 @@ fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2) -> bool {
                 (None, None) => true,
                 _ => false,
             }
+        }
+        SketchGeometry::Hyperbola {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            start_parameter,
+            end_parameter,
+        } => {
+            let cosine = major_angle.0.cos();
+            let sine = major_angle.0.sin();
+            let du = point.u - center.u;
+            let dv = point.v - center.v;
+            let x = du * cosine + dv * sine;
+            let y = -du * sine + dv * cosine;
+            let parameter = (y / minor_radius.0).asinh();
+            let on_curve = (x - major_radius.0 * parameter.cosh()).abs()
+                <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
+            on_curve
+                && start_parameter
+                    .zip(*end_parameter)
+                    .is_none_or(|(start, end)| {
+                        (start.min(end) - SKETCH_POINT_TOLERANCE
+                            ..=start.max(end) + SKETCH_POINT_TOLERANCE)
+                            .contains(&parameter)
+                    })
+        }
+        SketchGeometry::Parabola {
+            vertex,
+            axis_angle,
+            focal_length,
+            start_parameter,
+            end_parameter,
+        } => {
+            let cosine = axis_angle.0.cos();
+            let sine = axis_angle.0.sin();
+            let du = point.u - vertex.u;
+            let dv = point.v - vertex.v;
+            let x = du * cosine + dv * sine;
+            let parameter = -du * sine + dv * cosine;
+            let on_curve = (x - parameter * parameter / (4.0 * focal_length.0)).abs()
+                <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
+            on_curve
+                && start_parameter
+                    .zip(*end_parameter)
+                    .is_none_or(|(start, end)| {
+                        (start.min(end) - SKETCH_POINT_TOLERANCE
+                            ..=start.max(end) + SKETCH_POINT_TOLERANCE)
+                            .contains(&parameter)
+                    })
         }
         SketchGeometry::Point { .. }
         | SketchGeometry::Nurbs { .. }
@@ -25553,9 +25647,9 @@ fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<us
     ) {
         return None;
     }
-    if compact_indexed_curve_endpoint_indices(payload, offset).is_some() {
-        Some(56)
-    } else if compact_curve_endpoint_indices(payload, offset).is_some() {
+    if compact_indexed_curve_endpoint_indices(payload, offset).is_some()
+        || compact_curve_endpoint_indices(payload, offset).is_some()
+    {
         Some(56)
     } else if wide_indexed_curve_endpoint_indices(payload, offset).is_some() {
         Some(64)
@@ -28695,6 +28789,7 @@ fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLocus)> {
             locus(*start, SketchLocus::Start(entity.id.clone())),
             locus(*end, SketchLocus::End(entity.id.clone())),
         ],
+        SketchGeometry::ReferenceLine { .. } => Vec::new(),
         SketchGeometry::Circle { center, .. } => {
             vec![locus(*center, SketchLocus::Center(entity.id.clone()))]
         }
@@ -28744,6 +28839,51 @@ fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLocus)> {
                 SketchLocus::End(entity.id.clone()),
             ),
         ],
+        SketchGeometry::Hyperbola {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            start_parameter,
+            end_parameter,
+        } => {
+            let mut loci = vec![locus(*center, SketchLocus::Center(entity.id.clone()))];
+            let point = |parameter: f64| {
+                let x = major_radius.0 * parameter.cosh();
+                let y = minor_radius.0 * parameter.sinh();
+                Point2::new(
+                    center.u + x * major_angle.0.cos() - y * major_angle.0.sin(),
+                    center.v + x * major_angle.0.sin() + y * major_angle.0.cos(),
+                )
+            };
+            if let (Some(start), Some(end)) = (start_parameter, end_parameter) {
+                loci.push(locus(point(*start), SketchLocus::Start(entity.id.clone())));
+                loci.push(locus(point(*end), SketchLocus::End(entity.id.clone())));
+            }
+            loci
+        }
+        SketchGeometry::Parabola {
+            vertex,
+            axis_angle,
+            focal_length,
+            start_parameter,
+            end_parameter,
+        } => {
+            let point = |parameter: f64| {
+                let x = parameter * parameter / (4.0 * focal_length.0);
+                Point2::new(
+                    vertex.u + x * axis_angle.0.cos() - parameter * axis_angle.0.sin(),
+                    vertex.v + x * axis_angle.0.sin() + parameter * axis_angle.0.cos(),
+                )
+            };
+            match (start_parameter, end_parameter) {
+                (Some(start), Some(end)) => vec![
+                    locus(point(*start), SketchLocus::Start(entity.id.clone())),
+                    locus(point(*end), SketchLocus::End(entity.id.clone())),
+                ],
+                _ => Vec::new(),
+            }
+        }
         SketchGeometry::Nurbs { control_points, .. } if !control_points.is_empty() => vec![
             locus(control_points[0], SketchLocus::Start(entity.id.clone())),
             locus(
@@ -29666,6 +29806,15 @@ mod profile_join_tests {
                     },
                     op: BooleanOp::Join,
                     draft: None,
+                    reverse_draft: None,
+                    direction_source: None,
+                    solid: None,
+                    face_maker: None,
+                    inner_wire_taper: None,
+                    first_offset: None,
+                    second_offset: None,
+                    length_along_profile_normal: None,
+                    allow_multi_profile_faces: None,
                 },
                 native_ref: Some("consumer-native".into()),
             },
@@ -29704,12 +29853,14 @@ mod profile_join_tests {
             &features[1].definition,
             FeatureDefinition::TreeNode {
                 role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
+                ..
             }
         ));
         assert!(matches!(
             features[3].definition,
             FeatureDefinition::TreeNode {
                 role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
+                ..
             }
         ));
         assert!(matches!(
@@ -31880,12 +32031,19 @@ mod profile_join_tests {
         features[0].dependencies.clear();
         features[0].definition = FeatureDefinition::Sweep {
             profile: None,
+            sections: Vec::new(),
             path: Some(PathRef::Native("curve-reference".into())),
             mode: SweepMode::Solid {
                 op: cadmpeg_ir::features::BooleanOp::Join,
             },
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
             twist: None,
             scale: None,
+            allow_multi_profile_faces: None,
         };
         bind_sweep_adjacent_profiles(&mut features, &[sweep_history], std::slice::from_ref(&lane));
         assert!(matches!(
@@ -34489,6 +34647,15 @@ fn project_endpoint_constraints(
             id,
             sketch: sketch.clone(),
             definition: SketchConstraintDefinition::CoincidentLoci { loci },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
             native_ref: None,
         });
     }
@@ -36132,6 +36299,15 @@ mod source_less_lane_tests {
                 first: SketchEntityId("horizontal".into()),
                 second: SketchEntityId("vertical".into()),
             },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
             native_ref: None,
         });
         let mut payload = Vec::new();
@@ -36180,6 +36356,15 @@ mod source_less_lane_tests {
                 second: SketchLocus::Entity(SketchEntityId("second".into())),
                 axis: SketchEntityId("axis".into()),
             },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
             native_ref: None,
         });
         let mut payload = Vec::new();
@@ -36905,8 +37090,11 @@ fn generated_marker_kind(geometry: &SketchGeometry) -> SketchInputKind {
         SketchGeometry::Point { .. } => SketchInputKind::Point,
         SketchGeometry::Arc { .. } => SketchInputKind::Arc,
         SketchGeometry::Line { .. }
+        | SketchGeometry::ReferenceLine { .. }
         | SketchGeometry::Circle { .. }
         | SketchGeometry::Ellipse { .. }
+        | SketchGeometry::Hyperbola { .. }
+        | SketchGeometry::Parabola { .. }
         | SketchGeometry::Nurbs { .. }
         | SketchGeometry::Native { .. } => SketchInputKind::LineOrCircle,
     }
@@ -37185,7 +37373,7 @@ fn sketch_brep(
                 } else {
                     Sense::Forward
                 },
-                pcurve: None,
+                pcurves: Vec::new(),
             });
         }
         let count = coedge_ids.len();
@@ -37204,7 +37392,9 @@ fn sketch_brep(
         ir.model.loops.push(Loop {
             id: loop_id,
             face: face_id.clone(),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             coedges: coedge_ids,
+            vertex_uses: Vec::new(),
         });
     }
     for (ordinal, entity) in ordered_entities.iter().enumerate() {
@@ -37216,6 +37406,7 @@ fn sketch_brep(
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+            source_object: None,
         });
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
@@ -37241,12 +37432,14 @@ fn sketch_brep(
             previous: coedge_id.clone(),
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
-            pcurve: None,
+            pcurves: Vec::new(),
         });
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face: face_id.clone(),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             coedges: vec![coedge_id],
+            vertex_uses: Vec::new(),
         });
         face_loops.push(loop_id);
     }
@@ -37435,7 +37628,11 @@ fn generated_sketch_curve(
                     .map(|(start, end)| [*start, *end]),
             })
         }
-        SketchGeometry::Point { .. } | SketchGeometry::Native { .. } => Err(
+        SketchGeometry::Point { .. }
+        | SketchGeometry::ReferenceLine { .. }
+        | SketchGeometry::Hyperbola { .. }
+        | SketchGeometry::Parabola { .. }
+        | SketchGeometry::Native { .. } => Err(
             cadmpeg_ir::codec::CodecError::NotImplemented(
                 "source-less SLDPRT sketch writing does not support point or native-only profile entities".into(),
             ),
@@ -37466,6 +37663,7 @@ fn sketch_vertex(
     ir.model.points.push(Point {
         id: point_id.clone(),
         position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+        source_object: None,
     });
     ir.model.vertices.push(Vertex {
         id: vertex_id.clone(),

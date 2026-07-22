@@ -6,11 +6,12 @@
 //! angles from the reference/major direction, line parameters are signed
 //! distances along the unit direction, and B-splines evaluate by Cox–de Boor
 //! over their stored knot vectors. Carriers without a typed parameterization
-//! ([`CurveGeometry::Unknown`], [`SurfaceGeometry::Unknown`], parabolas, and
-//! hyperbolas) evaluate to `None`.
+//! ([`CurveGeometry::Unknown`], [`CurveGeometry::Composite`],
+//! [`SurfaceGeometry::Unknown`], parabolas, and hyperbolas) evaluate to `None`.
 
 use crate::geometry::{CurveGeometry, NurbsSurface, PcurveGeometry, SurfaceGeometry};
 use crate::math::{Point2, Point3, Vector3};
+use crate::transform::Transform;
 
 fn cross(a: Vector3, b: Vector3) -> Vector3 {
     Vector3::new(
@@ -178,6 +179,13 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
 
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
 pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
+    curve_point_inner(geometry, t, 0)
+}
+
+fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<Point3> {
+    if depth > 256 {
+        return None;
+    }
     match geometry {
         CurveGeometry::Line { origin, direction } => Some(offset(*origin, &[(t, *direction)])),
         CurveGeometry::Circle {
@@ -205,6 +213,31 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
                 (minor_radius * t.sin(), cross(*axis, *major_direction)),
             ],
         )),
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => Some(offset(
+            *vertex,
+            &[
+                (focal_distance * t * t, *major_direction),
+                (2.0 * focal_distance * t, cross(*axis, *major_direction)),
+            ],
+        )),
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => Some(offset(
+            *center,
+            &[
+                (major_radius * t.cosh(), *major_direction),
+                (minor_radius * t.sinh(), cross(*axis, *major_direction)),
+            ],
+        )),
         CurveGeometry::Degenerate { point } => Some(*point),
         CurveGeometry::Nurbs(nurbs) => nurbs_curve_point(
             nurbs.degree,
@@ -213,9 +246,13 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
             nurbs.weights.as_deref(),
             t,
         ),
-        CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. }
-        | CurveGeometry::Unknown { .. } => None,
+        CurveGeometry::Polyline {
+            points, parameters, ..
+        } => polyline_point(points, parameters.as_deref(), t),
+        CurveGeometry::Transformed { basis, transform } => {
+            curve_point_inner(basis, t, depth + 1).map(|point| affine_point(*transform, point))
+        }
+        CurveGeometry::Composite { .. } | CurveGeometry::Unknown { .. } => None,
     }
 }
 
@@ -223,6 +260,13 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
 /// the azimuth angle and `v` the axial distance / polar angle on analytic
 /// quadrics, and both are knot-domain parameters on NURBS surfaces.
 pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point3> {
+    surface_point_inner(geometry, u, v, 0)
+}
+
+fn surface_point_inner(geometry: &SurfaceGeometry, u: f64, v: f64, depth: usize) -> Option<Point3> {
+    if depth > 256 {
+        return None;
+    }
     match geometry {
         SurfaceGeometry::Plane {
             origin,
@@ -294,12 +338,73 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
             ))
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point(nurbs, u, v),
+        SurfaceGeometry::Polygonal { .. } => None,
+        SurfaceGeometry::Transformed { basis, transform } => {
+            surface_point_inner(basis, u, v, depth + 1).map(|point| affine_point(*transform, point))
+        }
         SurfaceGeometry::Unknown { .. } => None,
     }
 }
 
+fn polyline_point(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Option<Point3> {
+    if points.len() < 2 || !t.is_finite() {
+        return None;
+    }
+    let implicit;
+    let parameters = if let Some(parameters) = parameters {
+        if parameters.len() != points.len() {
+            return None;
+        }
+        parameters
+    } else {
+        implicit = (0..points.len())
+            .map(|index| index as f64)
+            .collect::<Vec<_>>();
+        &implicit
+    };
+    let segment = parameters.windows(2).position(|window| {
+        (t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1])
+    })?;
+    let width = parameters[segment + 1] - parameters[segment];
+    if width == 0.0 || !width.is_finite() {
+        return None;
+    }
+    let fraction = (t - parameters[segment]) / width;
+    let start = points[segment];
+    let end = points[segment + 1];
+    Some(Point3::new(
+        start.x + fraction * (end.x - start.x),
+        start.y + fraction * (end.y - start.y),
+        start.z + fraction * (end.z - start.z),
+    ))
+}
+
+fn affine_point(transform: Transform, point: Point3) -> Point3 {
+    Point3::new(
+        transform.rows[0][0] * point.x
+            + transform.rows[0][1] * point.y
+            + transform.rows[0][2] * point.z
+            + transform.rows[0][3],
+        transform.rows[1][0] * point.x
+            + transform.rows[1][1] * point.y
+            + transform.rows[1][2] * point.z
+            + transform.rows[1][3],
+        transform.rows[2][0] * point.x
+            + transform.rows[2][1] * point.y
+            + transform.rows[2][2] * point.z
+            + transform.rows[2][3],
+    )
+}
+
 /// Evaluate a pcurve carrier at parameter `t`, yielding a surface `(u, v)`.
 pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
+    pcurve_uv_inner(geometry, t, 0)
+}
+
+fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Point2> {
+    if depth > 256 {
+        return None;
+    }
     match geometry {
         PcurveGeometry::Line { origin, direction } => Some(Point2::new(
             origin.u + t * direction.u,
@@ -307,32 +412,49 @@ pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
         )),
         PcurveGeometry::Circle {
             center,
-            ref_direction,
+            x_axis,
+            y_axis,
             radius,
-            clockwise,
-        } => {
-            let sin = if *clockwise { -t.sin() } else { t.sin() };
-            Some(Point2::new(
-                center.u + radius * (t.cos() * ref_direction.u - sin * ref_direction.v),
-                center.v + radius * (t.cos() * ref_direction.v + sin * ref_direction.u),
-            ))
-        }
+        } => Some(offset2(
+            *center,
+            &[(radius * t.cos(), *x_axis), (radius * t.sin(), *y_axis)],
+        )),
         PcurveGeometry::Ellipse {
             center,
-            major_direction,
+            x_axis,
+            y_axis,
             major_radius,
             minor_radius,
-            clockwise,
-        } => {
-            let sin = if *clockwise { -t.sin() } else { t.sin() };
-            Some(Point2::new(
-                center.u + major_radius * t.cos() * major_direction.u
-                    - minor_radius * sin * major_direction.v,
-                center.v
-                    + major_radius * t.cos() * major_direction.v
-                    + minor_radius * sin * major_direction.u,
-            ))
-        }
+        } => Some(offset2(
+            *center,
+            &[
+                (major_radius * t.cos(), *x_axis),
+                (minor_radius * t.sin(), *y_axis),
+            ],
+        )),
+        PcurveGeometry::Parabola {
+            vertex,
+            x_axis,
+            y_axis,
+            focal_distance,
+        } if *focal_distance != 0.0 => Some(offset2(
+            *vertex,
+            &[(t * t / (4.0 * focal_distance), *x_axis), (t, *y_axis)],
+        )),
+        PcurveGeometry::Parabola { .. } => None,
+        PcurveGeometry::Hyperbola {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => Some(offset2(
+            *center,
+            &[
+                (major_radius * t.cosh(), *x_axis),
+                (minor_radius * t.sinh(), *y_axis),
+            ],
+        )),
         PcurveGeometry::PolarHarmonic {
             radial_center,
             radial_cos,
@@ -376,7 +498,20 @@ pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
             weights,
             ..
         } => nurbs_pcurve_uv(*degree, knots, control_points, weights.as_deref(), t),
+        PcurveGeometry::Trimmed { basis, .. } => pcurve_uv_inner(basis, t, depth + 1),
+        // Exact offset evaluation also requires the basis tangent. The IR
+        // retains the exact construction even when this point-only evaluator
+        // cannot establish a stable tangent.
+        PcurveGeometry::Offset { .. } => None,
     }
+}
+
+fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
+    terms.iter().fold(base, |mut point, (factor, direction)| {
+        point.u += factor * direction.u;
+        point.v += factor * direction.v;
+        point
+    })
 }
 
 #[cfg(test)]
@@ -389,16 +524,16 @@ mod tests {
     fn analytic_pcurves_preserve_angular_parameterization() {
         let circle = PcurveGeometry::Circle {
             center: Point2::new(2.0, 3.0),
-            ref_direction: Point2::new(1.0, 0.0),
+            x_axis: Point2::new(1.0, 0.0),
+            y_axis: Point2::new(0.0, -1.0),
             radius: 4.0,
-            clockwise: true,
         };
         let ellipse = PcurveGeometry::Ellipse {
             center: Point2::new(2.0, 3.0),
-            major_direction: Point2::new(0.0, 1.0),
+            x_axis: Point2::new(0.0, 1.0),
+            y_axis: Point2::new(-1.0, 0.0),
             major_radius: 4.0,
             minor_radius: 2.0,
-            clockwise: false,
         };
         let polar = PcurveGeometry::PolarHarmonic {
             radial_center: Point2::new(0.0, 0.0),

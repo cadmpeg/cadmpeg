@@ -16,6 +16,11 @@ categories = ["encoding", "graphics"]
 [dependencies]
 cadmpeg-ir = { workspace = true }
 thiserror = { workspace = true }
+encoding_rs = { workspace = true }
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "step_pipeline"
+harness = false
