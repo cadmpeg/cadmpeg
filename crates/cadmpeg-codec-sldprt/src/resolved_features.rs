@@ -29188,12 +29188,24 @@ mod profile_join_tests {
         let mut display_handle = marker("display-handle", Some([0.030, 0.030]));
         display_handle.feature_ref = Some("sketch-native".into());
         display_handle.ordinal = 12;
-        display_handle.offset = 250;
+        display_handle.offset = 300;
         display_handle.kind = SketchInputKind::Arc;
-        payload.resize(300, 0);
-        payload[200..205].copy_from_slice(LEGACY_SKETCH_MARKER);
-        payload[227..229].copy_from_slice(&2u16.to_le_bytes());
-        payload[268..272].copy_from_slice(&0u32.to_le_bytes());
+        payload.resize(400, 0);
+        let axis = 200;
+        payload[axis..axis + 5].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[axis + 5..axis + 13].fill(0xff);
+        payload[axis + 13..axis + 17].copy_from_slice(&(-1.0f32).to_le_bytes());
+        payload[axis + 17..axis + 21].copy_from_slice(&2u32.to_le_bytes());
+        payload[axis + 23..axis + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[axis + 27..axis + 29].copy_from_slice(&2u16.to_le_bytes());
+        payload[axis + 31..axis + 39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+        payload[axis + 48..axis + 56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[axis + 56..axis + 58].copy_from_slice(&2u16.to_le_bytes());
+        payload[axis + 58..axis + 60].copy_from_slice(&3u16.to_le_bytes());
+        payload[axis + 64..axis + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[axis + 74..axis + 76].copy_from_slice(&2u16.to_le_bytes());
+        payload[axis + 84..axis + 89].copy_from_slice(LEGACY_SKETCH_MARKER);
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
