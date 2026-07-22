@@ -5,7 +5,7 @@
 layouts used by CATPart files and decodes supported analytic surfaces, NURBS
 surfaces, curves, vertices, and B-rep topology.
 
-Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder for the standard-nested layout; other layouts are L1.
+Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder for the standard-nested layout; other layout bands remain L1 because their connected topology support is conditional rather than band-wide.
 
 Add the codec and IR crates:
 
@@ -62,7 +62,7 @@ when only source metadata and container diagnostics are needed.
 
 The crate reads parts only. It does not write `.CATPart` files or decode
 assemblies, design history, tessellation, appearances, materials, persistent
-object tags, or general document metadata. The [format support matrix][support]
+object tags, or general document metadata beyond the embedded JPEG preview. The [format support matrix][support]
 tracks coverage by model layer.
 
 ## Reference

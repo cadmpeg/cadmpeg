@@ -261,20 +261,20 @@ See [`formats/siemens_nx.md`](formats/siemens_nx.md) and [`formats/siemens_nx-op
 
 ### Read profile
 
-- **Container and versions: Partial.** The codec decodes `V5_CFV2` containers and distinguishes standard-nested, FBB-only, zero-entity, float-packed, E5, and inner-without-directory layouts.
-- **Geometry: Partial.** Standard-nested files transfer vertices, planes when their bridge records resolve, curved analytic surfaces, and supported edge curves. Other layouts transfer subsets of analytic or freeform carriers.
-- **Topology: Partial.** Standard-nested files can emit a connected body, shell, face, loop, coedge, edge, and vertex graph when trim, support, and endpoint assignment resolve. Other parsed topology families remain disconnected from the common IR.
+- **Container and versions: Partial.** The codec decodes `V5_CFV2` containers, enumerates named outer and inner directory streams with reconstructed extents, inventories every bounded outer `FINJPL` block by stored name/type/family, reads the saved-by CATIA version/release/service-pack/hot-fix tuple, enumerates CATIA document references, and distinguishes standard-nested, FBB-only, zero-entity, float-packed, E5, and inner-without-directory layouts.
+- **Geometry: Partial.** Standard-nested and FBB-only files transfer vertices, bridged planes, signed-axis analytic carriers, supported edge curves, consolidated NURBS carriers, uniquely domain-bound constant-offset constructions, and fit-free rolling-ball surface jets. E5 one-pcurve boundary supports lift analytic isoparametric lines and circles into exact 3D edge carriers and retain general nonplanar pcurves as exact parametric surface-curve constructions. Zero-entity graphs transfer analytic, NURBS, and typed procedural curve carriers. Freeform face aliases and unbridged planes remain unknown.
+- **Topology: Partial.** Standard-nested and FBB-only files emit a connected body, shell, face, loop, coedge, edge, and vertex graph when trim, support, and endpoint assignment resolve. Reference-closed E5 and zero-entity graphs emit the same connected common-IR topology. Incomplete endpoint quotients and owner graphs decline atomically to disconnected geometry.
 - **Tessellation: None.**
 - **Design intent: None.**
 - **Product structure: None.**
-- **Presentation and metadata: None.** Persistent tags, attributes, materials, and appearance bindings remain outside the IR.
+- **Presentation and metadata: Partial.** The summary-information JPEG preview transfers byte-exactly with its dimensions. Persistent tags, attributes, materials, and appearance bindings remain outside the IR.
 
 ### Write and round trip
 
 - **Native write: None.**
 - **Round trip: None.**
 
-Open gates include endpoint incidence for additional variants, orientation signs, pcurve attachment, spline edge curves, persistent tags, attributes, and the consolidated-stream tag resolver.
+Open gates include endpoint incidence for additional variants, orientation signs, pcurve attachment, spline edge curves, remaining persistent edge/cache bindings, attributes, and the consolidated-stream tag resolver.
 
 See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](formats/catia-open-items.md).
 

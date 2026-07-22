@@ -579,6 +579,17 @@ pub enum ProceduralSurfaceDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native: Option<Box<RollingBallConstruction>>,
     },
+    /// Rolling-ball surface defined by aligned quintic value/derivative jets.
+    RollingBallJet {
+        /// Polynomial degree of every scalar channel.
+        degree: u32,
+        /// Strictly increasing native parameters, aligned with `sites`.
+        knots: Vec<f64>,
+        /// Native knot multiplicities, aligned with `knots`.
+        multiplicities: Vec<u32>,
+        /// Complete value, first-derivative, and second-derivative rows.
+        sites: Vec<RollingBallJetSite>,
+    },
     /// Preserved construction without a neutral interpretation.
     Unknown {
         /// Reference to the preserved raw source record, when retained.
@@ -900,6 +911,36 @@ pub struct BlendSupport {
     /// Selects the opposite surface-normal side when true.
     #[serde(default)]
     pub reversed: bool,
+}
+
+/// One aligned knot site of an exact rolling-ball surface jet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RollingBallJetSite {
+    /// First limiting point at the knot.
+    pub first_limit: Point3,
+    /// Second limiting point at the knot.
+    pub second_limit: Point3,
+    /// Rolling-ball center at the knot.
+    pub center: Point3,
+    /// Signed opening angle at the knot, in radians.
+    pub angle: f64,
+    /// First parameter derivative of all four value channels.
+    pub first_derivative: RollingBallJetDerivative,
+    /// Second parameter derivative of all four value channels.
+    pub second_derivative: RollingBallJetDerivative,
+}
+
+/// One derivative row for the four channels of a rolling-ball jet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RollingBallJetDerivative {
+    /// Derivative of the first limiting point.
+    pub first_limit: Vector3,
+    /// Derivative of the second limiting point.
+    pub second_limit: Vector3,
+    /// Derivative of the rolling-ball center.
+    pub center: Vector3,
+    /// Derivative of the signed opening angle.
+    pub angle: f64,
 }
 
 /// Cross-section family of a procedural blend.
@@ -2025,6 +2066,35 @@ pub struct IntcurveSupportSide {
     /// UV curve on `surface`, absent for the native `nullbs` sentinel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcurve: Option<PcurveGeometry>,
+    /// Ordered native pcurve interval corresponding affinely to the support
+    /// context's solved-curve interval. Absence means both use the same
+    /// parameter directly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve_parameter_range: Option<[f64; 2]>,
+}
+
+impl IntcurveSupportSide {
+    /// Map one solved-curve parameter into this side's pcurve parameter.
+    ///
+    /// Returns `None` when this side has no pcurve or when an explicit affine
+    /// mapping is paired with a zero-width solved interval.
+    #[must_use]
+    pub fn pcurve_parameter(
+        &self,
+        solved_parameter_range: [f64; 2],
+        parameter: f64,
+    ) -> Option<f64> {
+        self.pcurve.as_ref()?;
+        let Some(pcurve_range) = self.pcurve_parameter_range else {
+            return Some(parameter);
+        };
+        let solved_span = solved_parameter_range[1] - solved_parameter_range[0];
+        if solved_span == 0.0 {
+            return None;
+        }
+        let fraction = (parameter - solved_parameter_range[0]) / solved_span;
+        Some(pcurve_range[0] + fraction * (pcurve_range[1] - pcurve_range[0]))
+    }
 }
 
 /// Shared prefix carried by surface-related native intcurve constructions.

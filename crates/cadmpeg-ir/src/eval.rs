@@ -85,6 +85,39 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> 
     values
 }
 
+fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
+    if degree == 0 {
+        return vec![0.0];
+    }
+    let lower = bspline_basis(knots, degree - 1, span, t);
+    let lower_start = span - (degree - 1);
+    (0..=degree)
+        .map(|local| {
+            let index = span - degree + local;
+            let lower_at = |global: usize| {
+                global
+                    .checked_sub(lower_start)
+                    .and_then(|at| lower.get(at))
+                    .copied()
+                    .unwrap_or(0.0)
+            };
+            let left_denominator = knots[index + degree] - knots[index];
+            let right_denominator = knots[index + degree + 1] - knots[index + 1];
+            let left = if left_denominator == 0.0 {
+                0.0
+            } else {
+                degree as f64 * lower_at(index) / left_denominator
+            };
+            let right = if right_denominator == 0.0 {
+                0.0
+            } else {
+                degree as f64 * lower_at(index + 1) / right_denominator
+            };
+            left - right
+        })
+        .collect()
+}
+
 /// Evaluate a possibly-rational B-spline curve over 3D poles.
 pub fn nurbs_curve_point(
     degree: u32,
@@ -175,6 +208,92 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
         }
     }
     (weight_sum != 0.0).then(|| Point3::new(x / weight_sum, y / weight_sum, z / weight_sum))
+}
+
+/// Point and first partial derivatives of a NURBS surface in its stored
+/// parameterization.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SurfacePartials {
+    /// Surface point at `(u, v)`.
+    pub point: Point3,
+    /// First partial derivative with respect to `u`.
+    pub du: Vector3,
+    /// First partial derivative with respect to `v`.
+    pub dv: Vector3,
+}
+
+/// Evaluate a tensor-product NURBS surface and its exact rational first
+/// partials at `(u, v)`.
+pub fn nurbs_surface_partials(
+    surface: &NurbsSurface,
+    u_at: f64,
+    v_at: f64,
+) -> Option<SurfacePartials> {
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    if surface.control_points.len() != u_count.checked_mul(v_count)?
+        || surface
+            .weights
+            .as_ref()
+            .is_some_and(|weights| weights.len() != surface.control_points.len())
+    {
+        return None;
+    }
+    let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
+    let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
+    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at);
+    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at);
+    let u_derivative = bspline_basis_derivative(&surface.u_knots, u_degree, u_span, u_at);
+    let v_derivative = bspline_basis_derivative(&surface.v_knots, v_degree, v_span, v_at);
+    let mut weighted = [0.0; 3];
+    let mut weighted_u = [0.0; 3];
+    let mut weighted_v = [0.0; 3];
+    let mut weight = 0.0;
+    let mut weight_u = 0.0;
+    let mut weight_v = 0.0;
+    for i in 0..=u_degree {
+        for j in 0..=v_degree {
+            let index = (u_span - u_degree + i) * v_count + (v_span - v_degree + j);
+            let pole = surface.control_points.get(index)?;
+            let pole_weight = surface
+                .weights
+                .as_ref()
+                .map_or(1.0, |weights| weights[index]);
+            let basis = u_basis[i] * v_basis[j] * pole_weight;
+            let basis_u = u_derivative[i] * v_basis[j] * pole_weight;
+            let basis_v = u_basis[i] * v_derivative[j] * pole_weight;
+            for (axis, coordinate) in [pole.x, pole.y, pole.z].into_iter().enumerate() {
+                weighted[axis] += basis * coordinate;
+                weighted_u[axis] += basis_u * coordinate;
+                weighted_v[axis] += basis_v * coordinate;
+            }
+            weight += basis;
+            weight_u += basis_u;
+            weight_v += basis_v;
+        }
+    }
+    if weight == 0.0 {
+        return None;
+    }
+    let point = Point3::new(
+        weighted[0] / weight,
+        weighted[1] / weight,
+        weighted[2] / weight,
+    );
+    let derivative = |weighted_derivative: [f64; 3], weight_derivative: f64| {
+        Vector3::new(
+            (weighted_derivative[0] - point.x * weight_derivative) / weight,
+            (weighted_derivative[1] - point.y * weight_derivative) / weight,
+            (weighted_derivative[2] - point.z * weight_derivative) / weight,
+        )
+    };
+    Some(SurfacePartials {
+        point,
+        du: derivative(weighted_u, weight_u),
+        dv: derivative(weighted_v, weight_v),
+    })
 }
 
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
@@ -516,9 +635,61 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 
 #[cfg(test)]
 mod tests {
-    use super::pcurve_uv;
-    use crate::geometry::PcurveGeometry;
-    use crate::math::Point2;
+    use super::{nurbs_surface_partials, pcurve_uv};
+    use crate::geometry::{NurbsSurface, PcurveGeometry};
+    use crate::math::{Point2, Point3, Vector3};
+
+    #[test]
+    fn bilinear_surface_partials_follow_stored_parameterization() {
+        let surface = NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 3.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(2.0, 3.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let partials = nurbs_surface_partials(&surface, 0.25, 0.75).expect("partials");
+        assert_eq!(partials.point, Point3::new(0.5, 2.25, 0.0));
+        assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
+        assert_eq!(partials.dv, Vector3::new(0.0, 3.0, 0.0));
+    }
+
+    #[test]
+    fn rational_surface_partials_apply_the_weight_quotient_rule() {
+        let surface = NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 3.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(2.0, 3.0, 0.0),
+            ],
+            weights: Some(vec![1.0, 1.0, 2.0, 2.0]),
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let partials = nurbs_surface_partials(&surface, 0.5, 0.25).expect("partials");
+        assert!((partials.point.x - 4.0 / 3.0).abs() < 1e-12);
+        assert!((partials.point.y - 0.75).abs() < 1e-12);
+        assert!((partials.du.x - 16.0 / 9.0).abs() < 1e-12);
+        assert!(partials.du.y.abs() < 1e-12);
+        assert!((partials.dv.y - 3.0).abs() < 1e-12);
+    }
 
     #[test]
     fn analytic_pcurves_preserve_angular_parameterization() {

@@ -1440,6 +1440,70 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::RollingBallJet {
+            degree,
+            knots,
+            multiplicities,
+            sites,
+        } = &procedural.definition
+        {
+            let point_finite = |point: &crate::math::Point3| {
+                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+            };
+            let vector_finite = |vector: &Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let derivative_finite = |derivative: &crate::geometry::RollingBallJetDerivative| {
+                [
+                    &derivative.first_limit,
+                    &derivative.second_limit,
+                    &derivative.center,
+                ]
+                .iter()
+                .all(|vector| vector_finite(vector))
+                    && derivative.angle.is_finite()
+            };
+            let sites_valid = sites.iter().all(|site| {
+                let radius = |point: &crate::math::Point3| {
+                    ((point.x - site.center.x).powi(2)
+                        + (point.y - site.center.y).powi(2)
+                        + (point.z - site.center.z).powi(2))
+                    .sqrt()
+                };
+                let first_radius = radius(&site.first_limit);
+                let second_radius = radius(&site.second_limit);
+                point_finite(&site.first_limit)
+                    && point_finite(&site.second_limit)
+                    && point_finite(&site.center)
+                    && site.angle.is_finite()
+                    && derivative_finite(&site.first_derivative)
+                    && derivative_finite(&site.second_derivative)
+                    && first_radius.is_finite()
+                    && first_radius > 0.0
+                    && second_radius.is_finite()
+                    && (first_radius - second_radius).abs()
+                        <= 1e-9 * first_radius.max(second_radius).max(1.0)
+            });
+            if *degree == 0
+                || knots.len() != sites.len()
+                || multiplicities.len() != knots.len()
+                || multiplicities.first() != Some(&(degree + 1))
+                || multiplicities.last() != Some(&(degree + 1))
+                || multiplicities
+                    .iter()
+                    .any(|multiplicity| *multiplicity == 0 || *multiplicity > degree + 1)
+                || knots.len() < 2
+                || knots.iter().any(|knot| !knot.is_finite())
+                || knots.windows(2).any(|pair| pair[0] >= pair[1])
+                || !sites_valid
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "rolling-ball jet payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Offset {
             distance,
             extension_flags,
@@ -1942,10 +2006,14 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::ThreeSurfaceIntersection { context, .. } =
+        if let ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } =
             &procedural.definition
         {
-            if !support_context_is_finite(context) {
+            if !support_context_is_finite(context)
+                || !support_side_mapping_is_finite(third)
+                || (third.pcurve_parameter_range.is_some()
+                    && context.parameter_range[0] == context.parameter_range[1])
+            {
                 bounds_err(
                     findings,
                     &procedural.id.0,
@@ -2400,11 +2468,71 @@ fn support_context_is_finite(context: &crate::geometry::IntcurveSupportContext) 
         .iter()
         .all(|value| value.is_finite())
         && context.parameter_range[0] <= context.parameter_range[1]
+        && (context.parameter_range[0] != context.parameter_range[1]
+            || context
+                .sides
+                .iter()
+                .all(|side| side.pcurve_parameter_range.is_none()))
+        && context.sides.iter().all(support_side_mapping_is_finite)
         && context
             .discontinuities
             .iter()
             .flatten()
             .all(|value| value.is_finite())
+}
+
+fn support_side_mapping_is_finite(side: &crate::geometry::IntcurveSupportSide) -> bool {
+    side.pcurve_parameter_range.is_none_or(|range| {
+        side.pcurve.is_some() && range.iter().all(|value| value.is_finite()) && range[0] != range[1]
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::support_context_is_finite;
+    use crate::geometry::{IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry};
+    use crate::math::Point2;
+
+    fn context(pcurve: bool, pcurve_parameter_range: Option<[f64; 2]>) -> IntcurveSupportContext {
+        IntcurveSupportContext {
+            sides: [
+                IntcurveSupportSide {
+                    surface: None,
+                    pcurve: pcurve.then_some(PcurveGeometry::Line {
+                        origin: Point2::new(0.0, 0.0),
+                        direction: Point2::new(1.0, 0.0),
+                    }),
+                    pcurve_parameter_range,
+                },
+                IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                    pcurve_parameter_range: None,
+                },
+            ],
+            parameter_range: [0.0, 1.0],
+            discontinuities: std::array::from_fn(|_| Vec::new()),
+        }
+    }
+
+    #[test]
+    fn support_pcurve_mapping_requires_a_finite_nonzero_pcurve_interval() {
+        let mapped = context(true, Some([5.0, 2.0]));
+        assert!(support_context_is_finite(&mapped));
+        assert_eq!(
+            mapped.sides[0].pcurve_parameter(mapped.parameter_range, 0.25),
+            Some(4.25)
+        );
+        assert!(!support_context_is_finite(&context(
+            false,
+            Some([5.0, 2.0])
+        )));
+        assert!(!support_context_is_finite(&context(true, Some([2.0, 2.0]))));
+        assert!(!support_context_is_finite(&context(
+            true,
+            Some([f64::NAN, 2.0])
+        )));
+    }
 }
 
 pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], dir: &str) {
