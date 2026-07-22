@@ -11128,6 +11128,7 @@ fn section_skamp_constraints_for_geometry(
         .iter()
         .filter_map(|skamp| {
             let unique_skamp_id = complete_skamps && skamp_id_counts.get(&skamp.id) == Some(&1);
+            let active = section_skamp_active(skamp.status);
             let native_constraint = || {
                 let entities = skamp
                     .items
@@ -11149,6 +11150,15 @@ fn section_skamp_constraints_for_geometry(
                         })
                         .collect(),
                 })
+            };
+            let tangent_locus = |item| {
+                if active {
+                    section_skamp_endpoint(definition, sketch, item)
+                } else if matches!(item.sense, 2 | 3) {
+                    section_skamp_incidence_locus(definition, sketch, item, geometry)
+                } else {
+                    None
+                }
             };
             let mut constraint_definition = if unique_skamp_id {
                 match (skamp.kind, skamp.items.as_slice()) {
@@ -11232,12 +11242,11 @@ fn section_skamp_constraints_for_geometry(
                         }
                     }
                     (4, [first, second])
-                        if section_skamp_endpoint(definition, sketch, first).is_some()
-                            && section_skamp_endpoint(definition, sketch, second).is_some() =>
+                        if tangent_locus(first).is_some() && tangent_locus(second).is_some() =>
                     {
                         SketchConstraintDefinition::TangentLoci {
-                            first: section_skamp_endpoint(definition, sketch, first)?,
-                            second: section_skamp_endpoint(definition, sketch, second)?,
+                            first: tangent_locus(first)?,
+                            second: tangent_locus(second)?,
                         }
                     }
                     (4, [first, second])
@@ -11330,12 +11339,9 @@ fn section_skamp_constraints_for_geometry(
                         }
                     }
                     (17 | 30 | 31, [_, _]) => {
-                        if let Some((first, second, axis)) = section_skamp_same_coordinate(
-                            definition,
-                            sketch,
-                            skamp,
-                            section_skamp_active(skamp.status),
-                        ) {
+                        if let Some((first, second, axis)) =
+                            section_skamp_same_coordinate(definition, sketch, skamp, active)
+                        {
                             SketchConstraintDefinition::SameCoordinate {
                                 first,
                                 second,
@@ -11359,7 +11365,7 @@ fn section_skamp_constraints_for_geometry(
             } else {
                 native_constraint()?
             };
-            if section_skamp_active(skamp.status)
+            if active
                 && geometry.is_some_and(|geometry| {
                     !sketch_constraint_loci_compatible(&constraint_definition, geometry)
                 })
@@ -11377,7 +11383,7 @@ fn section_skamp_constraints_for_geometry(
                     definition: constraint_definition,
                     name: None,
                     driving: None,
-                    active: Some(section_skamp_active(skamp.status)),
+                    active: Some(active),
                     virtual_space: None,
                     visible: None,
                     orientation: None,
@@ -21463,6 +21469,56 @@ mod resolved_sketch_tests {
             }
         );
         assert_eq!(inactive[0].0.active, Some(false));
+        let mut inactive_tangent_definition = point_coincidence_definition.clone();
+        let inactive_tangent = &mut inactive_tangent_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0];
+        inactive_tangent.kind = 4;
+        inactive_tangent.items = vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 13,
+                sense: 2,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 99,
+                sense: 2,
+            },
+        ];
+        assert_eq!(
+            section_skamp_constraints_for_geometry(
+                &inactive_tangent_definition,
+                &SketchId("creo:model:sketch#917".into()),
+                Some(&unresolved_arc_geometry),
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::TangentLoci {
+                first: SketchLocus::End(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:13".to_string()
+                )),
+                second: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:99".to_string()
+                )),
+            }
+        );
+        inactive_tangent_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0]
+            .status = 1;
+        assert!(matches!(
+            section_skamp_constraints_for_geometry(
+                &inactive_tangent_definition,
+                &SketchId("creo:model:sketch#917".into()),
+                Some(&unresolved_arc_geometry),
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
         point_coincidence_definition
             .relations
             .as_mut()
