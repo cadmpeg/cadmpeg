@@ -42,8 +42,9 @@ fixtures, claims above L1 remain unproven.
   Local bindings are case-insensitive, scoped external symbols remain whole,
   the reserved `PI` constant evaluates, and nested `IF`/`ELSE`/`ENDIF`
   activation is evaluated without selecting unresolved branches. Positive
-  `exists()` queries resolve against the complete local assignment namespace;
-  other namespaces remain unresolved. Affine
+  `exists()` queries resolve against the complete local assignment namespace
+  and decoded `d<external_id>` section-dimension identities; other namespaces
+  remain unresolved. Affine
   cylindrical-coordinate programs transfer as helices.
 - Feature rows, parent/input tables, affected geometry and edge identifiers,
   recipe effects, saved sections, and operation states retain stable native

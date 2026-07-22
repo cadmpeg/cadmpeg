@@ -12,7 +12,7 @@
 //! native loops, units, feature identifiers, and datum planes. [`summarize`]
 //! converts that scan into the codec-neutral container summary.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 
@@ -1694,7 +1694,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let nonvisible_curve_prototypes = curve_prototypes(&data, &nonvisible_geometry_sections);
     let curve_prototypes = curve_prototypes(&data, &model_geometry_sections);
     let cross_section_curve_prototypes = cross_section_curve_prototypes(&data, &sections);
-    let curve_expressions = curve_expressions(
+    let mut curve_expressions = curve_expressions(
         &data,
         &sections,
         model_name.as_deref().and_then(relation_model_name),
@@ -1778,6 +1778,17 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         &mut feature_definitions,
         &feature_operations,
         &section_owner_ranges,
+    );
+    let relation_dimension_symbols = feature_definitions
+        .iter()
+        .filter_map(|definition| definition.dimensions.as_ref())
+        .flat_map(|table| table.rows.iter())
+        .map(|dimension| format!("d{}", dimension.external_id))
+        .collect::<BTreeSet<_>>();
+    curve::reevaluate_expression_records(
+        &mut curve_expressions,
+        model_name.as_deref().and_then(relation_model_name),
+        &relation_dimension_symbols,
     );
     let mut feature_revolution_extents = feature::revolution_extents(&feature_rows);
     feature_revolution_extents.extend(feature::definition_revolution_extents(

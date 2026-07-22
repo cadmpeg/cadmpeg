@@ -59,7 +59,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - The geometry families and external-reference bindings of solver-only
   `skamp_ptr` entity identifiers are unspecified.
 - The owner and namespace joins that expose model, feature, component, and
-  dimension items to curve-expression `exists()` queries are unspecified.
+  scoped dimension items beyond decoded local `d<external_id>` identities to
+  curve-expression `exists()` queries are unspecified.
 - The DEPDB sweep-axis relation for parts without `ActDatums` is unspecified,
   including the feature-definition datum defaults or standard-datum convention
   that supplies the `protextrude` axis. The current regeneration snapshot is

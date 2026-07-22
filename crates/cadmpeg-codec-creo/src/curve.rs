@@ -564,7 +564,7 @@ pub(crate) fn expression_records_with_model_name(
             cursor = line_end + 1;
         }
         if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
-            let assignments = evaluate_expression_program(&lines, model_name);
+            let assignments = evaluate_expression_program(&lines, model_name, &BTreeSet::new());
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
@@ -577,6 +577,17 @@ pub(crate) fn expression_records_with_model_name(
         }
     }
     records
+}
+
+pub(crate) fn reevaluate_expression_records(
+    records: &mut [CurveExpressionRecord],
+    model_name: Option<&str>,
+    external_symbols: &BTreeSet<String>,
+) {
+    for record in records {
+        record.assignments =
+            evaluate_expression_program(&record.lines, model_name, external_symbols);
+    }
 }
 
 fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAssignment> {
@@ -791,6 +802,7 @@ fn branch_activation(
 fn evaluate_expression_program(
     lines: &[CurveExpressionLine],
     model_name: Option<&str>,
+    external_symbols: &BTreeSet<String>,
 ) -> Vec<CurveExpressionAssignment> {
     if !expression_program_control_is_valid(lines) {
         return lines
@@ -803,14 +815,16 @@ fn evaluate_expression_program(
             .collect();
     }
 
-    let declared_symbols = lines
-        .iter()
-        .filter_map(expression_assignment)
-        .map(|assignment| expression_identifier_key(&assignment.name))
-        .collect::<BTreeSet<_>>();
+    let mut existing_symbols = external_symbols.clone();
+    existing_symbols.extend(
+        lines
+            .iter()
+            .filter_map(expression_assignment)
+            .map(|assignment| expression_identifier_key(&assignment.name)),
+    );
     let context = RelationEvaluationContext {
         model_name,
-        declared_symbols: Some(&declared_symbols),
+        existing_symbols: Some(&existing_symbols),
     };
     let mut values = BTreeMap::new();
     let mut stack = Vec::<ConditionalFrame>::new();
@@ -866,7 +880,7 @@ fn evaluate_expression_program(
 #[derive(Clone, Copy, Default)]
 struct RelationEvaluationContext<'a> {
     model_name: Option<&'a str>,
-    declared_symbols: Option<&'a BTreeSet<String>>,
+    existing_symbols: Option<&'a BTreeSet<String>>,
 }
 
 trait ExpressionValue: Clone {
@@ -1602,7 +1616,7 @@ fn evaluate_creo_relation_function(
         (CreoMathFunction::RelModelType, []) => String("part".to_owned()),
         (CreoMathFunction::Exists, [String(name)])
             if context
-                .declared_symbols?
+                .existing_symbols?
                 .contains(&expression_identifier_key(name)) =>
         {
             Number(1.0)
@@ -2970,7 +2984,7 @@ mod tests {
                 offset,
             })
             .collect::<Vec<_>>();
-        let assignments = evaluate_expression_program(&lines, None);
+        let assignments = evaluate_expression_program(&lines, None, &BTreeSet::new());
 
         assert!(assignments[0].dependencies.is_empty());
         assert_eq!(
@@ -3075,7 +3089,7 @@ mod tests {
     }
 
     #[test]
-    fn proves_exists_only_for_declared_local_relation_symbols() {
+    fn proves_exists_for_local_and_external_relation_symbols() {
         let sources = [
             "IF exists('later')",
             "selected=1",
@@ -3083,6 +3097,9 @@ mod tests {
             "selected=2",
             "ENDIF",
             "later=5",
+            "IF exists('d42')",
+            "dimension=3",
+            "ENDIF",
             "IF exists('external')",
             "unknown=1",
             "ENDIF",
@@ -3095,9 +3112,10 @@ mod tests {
                 offset,
             })
             .collect::<Vec<_>>();
-        let assignments = evaluate_expression_program(&lines, None);
+        let assignments =
+            evaluate_expression_program(&lines, None, &BTreeSet::from(["d42".to_owned()]));
 
-        assert_eq!(assignments.len(), 4);
+        assert_eq!(assignments.len(), 5);
         assert!(assignments[0].dependencies.is_empty());
         assert_eq!(assignments[0].activation, CurveExpressionActivation::Active);
         assert_eq!(assignments[0].value, number(1.0));
@@ -3107,11 +3125,31 @@ mod tests {
         );
         assert_eq!(assignments[1].value, None);
         assert_eq!(assignments[2].value, number(5.0));
+        assert_eq!(assignments[3].activation, CurveExpressionActivation::Active);
+        assert_eq!(assignments[3].value, number(3.0));
         assert_eq!(
-            assignments[3].activation,
+            assignments[4].activation,
             CurveExpressionActivation::Conditional
         );
-        assert_eq!(assignments[3].value, None);
+        assert_eq!(assignments[4].value, None);
+    }
+
+    #[test]
+    fn reevaluates_expression_records_after_external_symbols_are_decoded() {
+        let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x0aexpression\0\xf8\x03IF exists('d42')\0selected=1\0ENDIF\0";
+        let mut records = expression_records(payload);
+
+        assert_eq!(
+            records[0].assignments[0].activation,
+            CurveExpressionActivation::Conditional
+        );
+        reevaluate_expression_records(&mut records, None, &BTreeSet::from(["d42".to_owned()]));
+        assert_eq!(
+            records[0].assignments[0].activation,
+            CurveExpressionActivation::Active
+        );
+        assert_eq!(records[0].assignments[0].value, number(1.0));
     }
 
     #[test]
