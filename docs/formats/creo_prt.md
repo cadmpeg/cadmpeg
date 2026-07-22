@@ -302,6 +302,14 @@ corners; preceding frame scalars and prefix bytes do not contribute to the
 plane equation. Exactly one corner-coordinate pair is equal. That held
 coordinate defines the axis-aligned plane equation.
 
+The split terminal-corner form also ends `f7 1f`. It has one leading frame of
+one or two auxiliary scalars and one terminal frame of exactly eight scalars.
+One complete opaque prefix precedes the leading frame, one complete opaque
+control span separates the frames, and no other bytes precede the trailer. The
+terminal frame's first two scalars are auxiliary and its final six scalars are
+the two XYZ corners. Exactly one corner-coordinate pair is equal and defines
+the axis-aligned plane equation.
+
 A complete positional cylinder body begins `11 18 13`, followed by axial
 length and the first corner's three coordinates, then the second corner's first
 two coordinates in the positional surface-row scalar lane. An opaque third

@@ -1447,10 +1447,44 @@ pub fn positional_frame_planes(
             let corners = &terminal.slots[terminal.slots.len() - 6..];
             Some((corners[0].offset, corners))
         })();
+        let split_terminal_corner_frame = (|| {
+            let frame_end = record.body.len().checked_sub(2)?;
+            record.body.ends_with(&[0xf7, 0x1f]).then_some(())?;
+            let [leading, terminal] = record.scalar_frames.as_slice() else {
+                return None;
+            };
+            ((1..=2).contains(&leading.slots.len()) && terminal.slots.len() == 8).then_some(())?;
+            let leading_end = leading
+                .slots
+                .iter()
+                .try_fold(leading.offset, |cursor, slot| {
+                    (slot.offset == cursor).then(|| cursor + slot.length)
+                })?;
+            let terminal_end = terminal
+                .slots
+                .iter()
+                .try_fold(terminal.offset, |cursor, slot| {
+                    (slot.offset == cursor).then(|| cursor + slot.length)
+                })?;
+            let [prefix, controls, trailer] = record.opaque_spans.as_slice() else {
+                return None;
+            };
+            (prefix.offset == 0
+                && prefix.length == leading.offset
+                && controls.offset == leading_end
+                && controls.length == terminal.offset.checked_sub(leading_end)?
+                && trailer.offset == frame_end
+                && trailer.length == 2
+                && terminal_end == frame_end)
+                .then_some(())?;
+            let corners = &terminal.slots[2..];
+            Some((corners[0].offset, corners))
+        })();
         let mut candidates = marked_frames
             .chain(auxiliary_frame)
             .chain(suffixed_auxiliary_frame)
             .chain(terminal_corner_frame)
+            .chain(split_terminal_corner_frame)
             .filter_map(|(offset, slots)| {
                 let values = slots
                     .iter()
@@ -7196,6 +7230,50 @@ mod tests {
 
         let mut ambiguous = record;
         ambiguous.scalar_frames[0].slots[7].value = Some(-95.250_230_249_874_05);
+        assert!(positional_frame_planes(&[ambiguous], &[row]).is_empty());
+    }
+
+    #[test]
+    fn derives_plane_from_split_terminal_corner_frame() {
+        let body = [
+            0x32, 0xf7, 0xf0, 0x6c, 0x6b, 0x2d, 0x51, 0x9a, 0x2d, 0x42, 0x50, 0x4a, 0x32, 0x0f,
+            0x60, 0x20, 0x2e, 0x4e, 0xff, 0x2d, 0x4e, 0x4f, 0x19, 0xda, 0x50, 0x97, 0xe8, 0x46,
+            0x64, 0x1f, 0xff, 0xff, 0xff, 0xff, 0xfc, 0x2d, 0x52, 0xbd, 0x3b, 0x51, 0xe3, 0x56,
+            0xe4, 0x2f, 0x1c, 0x00, 0x46, 0x58, 0xbf, 0xff, 0xff, 0xff, 0xff, 0xf8, 0x2d, 0x58,
+            0xbc, 0xa3, 0x26, 0x03, 0xf2, 0xc8, 0x2f, 0x1c, 0x00, 0xf7, 0x1f,
+        ];
+        let mut payload = vec![7, 0x22, 4, 0x01, 0, 0];
+        payload.extend_from_slice(&body);
+        payload.push(0xe3);
+        let record = parameter_records(&payload).remove(0);
+        let row = SurfaceRow {
+            id: record.surface_id,
+            type_byte: SurfaceKind::Plane.canonical_type_byte(),
+            kind: SurfaceKind::Plane,
+            feature_id: 17,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 3,
+        };
+
+        assert_eq!(
+            positional_frame_planes(&[record.clone()], &[row.clone()]),
+            vec![OutlinePlane {
+                surface_id: record.surface_id,
+                origin: [0.0, 0.0, 7.0],
+                normal: [0.0, 0.0, 1.0],
+                u_axis: [1.0, 0.0, 0.0],
+                offset: record.body_offset + 27,
+            }]
+        );
+
+        let mut incomplete_controls = record.clone();
+        incomplete_controls.opaque_spans[1].length -= 1;
+        assert!(positional_frame_planes(&[incomplete_controls], &[row.clone()]).is_empty());
+
+        let mut ambiguous = record;
+        ambiguous.scalar_frames[1].slots[5].value = ambiguous.scalar_frames[1].slots[2].value;
         assert!(positional_frame_planes(&[ambiguous], &[row]).is_empty());
     }
 
