@@ -26731,56 +26731,13 @@ fn typed_relation_definition(
     }
 }
 
-fn unique_profile_distance_locus(
-    sketch: &SketchId,
-    known: &SketchLocus,
-    parameter: &cadmpeg_ir::features::DesignParameter,
-    sketch_entities: &[SketchEntity],
-) -> Option<SketchLocus> {
-    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
-        return None;
-    };
-    let point = |locus: &SketchLocus| {
-        let entity = sketch_entities
-            .iter()
-            .find(|entity| entity.id == locus_entity(locus))?;
-        sketch_entity_loci(entity)
-            .into_iter()
-            .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
-    };
-    let known_point = point(known)?;
-    let mut candidates = canonical_profile_loci(sketch, sketch_entities)
-        .into_iter()
-        .filter_map(|(candidate_point, candidate)| {
-            let measured =
-                (candidate_point.u - known_point.u).hypot(candidate_point.v - known_point.v);
-            (candidate != *known && same_dimension_length(measured, distance.0))
-                .then_some(candidate)
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-    candidates.dedup();
-    let mut candidates = candidates.into_iter();
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
-}
-
-fn unique_repaired_profile_distance_loci_pair(
-    sketch: &SketchId,
-    first: &SketchLocus,
-    second: &SketchLocus,
-    parameter: &cadmpeg_ir::features::DesignParameter,
-    sketch_entities: &[SketchEntity],
+// Reduce a set of candidate locus pairs to the sole survivor: order the pairs
+// by their component locus keys, drop exact duplicates, and yield the pair only
+// when exactly one remains. Shared by every profile-pair resolver so the
+// tie-breaking order is identical across measurements.
+fn sole_locus_pair(
+    mut candidates: Vec<(SketchLocus, SketchLocus)>,
 ) -> Option<(SketchLocus, SketchLocus)> {
-    let mut candidates = [first, second]
-        .into_iter()
-        .filter_map(|known| {
-            let partner = unique_profile_distance_locus(sketch, known, parameter, sketch_entities)?;
-            let mut pair = [known.clone(), partner];
-            pair.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-            Some((pair[0].clone(), pair[1].clone()))
-        })
-        .collect::<Vec<_>>();
     candidates.sort_by(|(first_left, second_left), (first_right, second_right)| {
         locus_key(first_left)
             .cmp(&locus_key(first_right))
@@ -26793,12 +26750,61 @@ fn unique_repaired_profile_distance_loci_pair(
     Some(candidate.clone())
 }
 
-fn unique_profile_axis_distance_locus(
+// Find the unique profile locus pair whose spanned dimension, measured by
+// `measure` over the two loci points, equals the parameter length. Every
+// unordered pair of canonical profile loci is a candidate; `measure` is the
+// only axis of variation between the distance and axis-distance resolvers.
+fn unique_profile_measured_loci_pair(
+    sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+    measure: impl Fn(&Point2, &Point2) -> f64,
+) -> Option<(SketchLocus, SketchLocus)> {
+    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let loci = canonical_profile_loci(sketch, sketch_entities);
+    let mut candidates = Vec::new();
+    for (first_index, (first_point, first)) in loci.iter().enumerate() {
+        for (second_point, second) in &loci[first_index + 1..] {
+            if same_dimension_length(measure(first_point, second_point), distance.0) {
+                candidates.push((first.clone(), second.clone()));
+            }
+        }
+    }
+    sole_locus_pair(candidates)
+}
+
+// Repair a candidate pair by resolving each supplied locus to its unique
+// partner via `partner`, forming the sorted pair, and keeping it only when the
+// two starting loci agree on exactly one pair.
+fn unique_repaired_profile_pair(
+    first: &SketchLocus,
+    second: &SketchLocus,
+    partner: impl Fn(&SketchLocus) -> Option<SketchLocus>,
+) -> Option<(SketchLocus, SketchLocus)> {
+    let candidates = [first, second]
+        .into_iter()
+        .filter_map(|known| {
+            let mut pair = [known.clone(), partner(known)?];
+            pair.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+            Some((pair[0].clone(), pair[1].clone()))
+        })
+        .collect::<Vec<_>>();
+    sole_locus_pair(candidates)
+}
+
+// Find the unique profile locus at a given dimension from `known`, where
+// `measure` reports the dimension between the known point and a candidate
+// point. The known locus is excluded and, as for the pair resolvers, `measure`
+// is the sole axis of variation between the straight-distance and axis-distance
+// forms.
+fn unique_profile_measured_locus(
     sketch: &SketchId,
     known: &SketchLocus,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
-    horizontal: bool,
+    measure: impl Fn(&Point2, &Point2) -> f64,
 ) -> Option<SketchLocus> {
     let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
         return None;
@@ -26807,13 +26813,9 @@ fn unique_profile_axis_distance_locus(
     let mut candidates = canonical_profile_loci(sketch, sketch_entities)
         .into_iter()
         .filter_map(|(candidate_point, candidate)| {
-            let measured = if horizontal {
-                (candidate_point.u - known_point.u).abs()
-            } else {
-                (candidate_point.v - known_point.v).abs()
-            };
-            (candidate != *known && same_dimension_length(measured, distance.0))
-                .then_some(candidate)
+            (candidate != *known
+                && same_dimension_length(measure(&known_point, &candidate_point), distance.0))
+            .then_some(candidate)
         })
         .collect::<Vec<_>>();
     candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
@@ -26822,6 +26824,55 @@ fn unique_profile_axis_distance_locus(
         return None;
     };
     Some(candidate.clone())
+}
+
+fn unique_profile_distance_locus(
+    sketch: &SketchId,
+    known: &SketchLocus,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<SketchLocus> {
+    unique_profile_measured_locus(
+        sketch,
+        known,
+        parameter,
+        sketch_entities,
+        |known, candidate| (candidate.u - known.u).hypot(candidate.v - known.v),
+    )
+}
+
+fn unique_repaired_profile_distance_loci_pair(
+    sketch: &SketchId,
+    first: &SketchLocus,
+    second: &SketchLocus,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<(SketchLocus, SketchLocus)> {
+    unique_repaired_profile_pair(first, second, |known| {
+        unique_profile_distance_locus(sketch, known, parameter, sketch_entities)
+    })
+}
+
+fn unique_profile_axis_distance_locus(
+    sketch: &SketchId,
+    known: &SketchLocus,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+    horizontal: bool,
+) -> Option<SketchLocus> {
+    unique_profile_measured_locus(
+        sketch,
+        known,
+        parameter,
+        sketch_entities,
+        |known, candidate| {
+            if horizontal {
+                (candidate.u - known.u).abs()
+            } else {
+                (candidate.v - known.v).abs()
+            }
+        },
+    )
 }
 
 fn unique_repaired_profile_axis_distance_pair(
@@ -26832,31 +26883,9 @@ fn unique_repaired_profile_axis_distance_pair(
     sketch_entities: &[SketchEntity],
     horizontal: bool,
 ) -> Option<(SketchLocus, SketchLocus)> {
-    let mut candidates = [first, second]
-        .into_iter()
-        .filter_map(|known| {
-            let partner = unique_profile_axis_distance_locus(
-                sketch,
-                known,
-                parameter,
-                sketch_entities,
-                horizontal,
-            )?;
-            let mut pair = [known.clone(), partner];
-            pair.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-            Some((pair[0].clone(), pair[1].clone()))
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by(|(first_left, second_left), (first_right, second_right)| {
-        locus_key(first_left)
-            .cmp(&locus_key(first_right))
-            .then_with(|| locus_key(second_left).cmp(&locus_key(second_right)))
-    });
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    unique_repaired_profile_pair(first, second, |known| {
+        unique_profile_axis_distance_locus(sketch, known, parameter, sketch_entities, horizontal)
+    })
 }
 
 fn unique_profile_axis_distance_pair(
@@ -26865,33 +26894,13 @@ fn unique_profile_axis_distance_pair(
     sketch_entities: &[SketchEntity],
     horizontal: bool,
 ) -> Option<(SketchLocus, SketchLocus)> {
-    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
-        return None;
-    };
-    let loci = canonical_profile_loci(sketch, sketch_entities);
-    let mut candidates = Vec::new();
-    for (first_index, (first_point, first)) in loci.iter().enumerate() {
-        for (second_point, second) in &loci[first_index + 1..] {
-            let measured = if horizontal {
-                (second_point.u - first_point.u).abs()
-            } else {
-                (second_point.v - first_point.v).abs()
-            };
-            if same_dimension_length(measured, distance.0) {
-                candidates.push((first.clone(), second.clone()));
-            }
+    unique_profile_measured_loci_pair(sketch, parameter, sketch_entities, |first, second| {
+        if horizontal {
+            (second.u - first.u).abs()
+        } else {
+            (second.v - first.v).abs()
         }
-    }
-    candidates.sort_by(|(first_left, second_left), (first_right, second_right)| {
-        locus_key(first_left)
-            .cmp(&locus_key(first_right))
-            .then_with(|| locus_key(second_left).cmp(&locus_key(second_right)))
-    });
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    })
 }
 
 fn unique_profile_distance_loci_pair(
@@ -26899,29 +26908,9 @@ fn unique_profile_distance_loci_pair(
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchLocus, SketchLocus)> {
-    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
-        return None;
-    };
-    let loci = canonical_profile_loci(sketch, sketch_entities);
-    let mut candidates = Vec::new();
-    for (first_index, (first_point, first)) in loci.iter().enumerate() {
-        for (second_point, second) in &loci[first_index + 1..] {
-            let measured = (second_point.u - first_point.u).hypot(second_point.v - first_point.v);
-            if same_dimension_length(measured, distance.0) {
-                candidates.push((first.clone(), second.clone()));
-            }
-        }
-    }
-    candidates.sort_by(|(first_left, second_left), (first_right, second_right)| {
-        locus_key(first_left)
-            .cmp(&locus_key(first_right))
-            .then_with(|| locus_key(second_left).cmp(&locus_key(second_right)))
-    });
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    unique_profile_measured_loci_pair(sketch, parameter, sketch_entities, |first, second| {
+        (second.u - first.u).hypot(second.v - first.v)
+    })
 }
 
 fn canonical_profile_loci(
