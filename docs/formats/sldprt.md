@@ -174,6 +174,8 @@ The selected axis line may be omitted from the curve roster while its two endpoi
 
 The selected axis may instead omit its line while retaining one coordinate-bearing marker at the profile origin. Candidate axis lines pass through that origin marker and an object-indexed profile-curve endpoint. Collinear candidates denote one line. Among candidates having every object-indexed profile-curve endpoint on one side, the unique line incident to the greatest number of distinct object-indexed profile-curve endpoints is the revolution axis.
 
+The selected axis and its endpoint markers may both be omitted when the axis is a principal axis of the profile sketch. The horizontal and vertical lines through the profile origin are candidates. A candidate must have every object-indexed profile-curve endpoint on one side and be incident to at least two distinct object-indexed profile-curve endpoints. The candidate with uniquely greatest endpoint incidence is the revolution axis.
+
 An omitted axis may coexist with other unreferenced coordinate handles. In this form, exactly two non-curve endpoint markers store little-endian u32 `1` at marker +76. Every object-indexed profile-curve endpoint lies on one side of the infinite line through the selected pair.
 
 An omitted axis may share its first point with a profile curve. Its sole non-curve endpoint immediately follows that shared coordinate-bearing point in the feature-local marker roster and stores little-endian u32 `1` at marker +76. Every object-indexed profile-curve endpoint lies on one side of the infinite line through the retained pair.

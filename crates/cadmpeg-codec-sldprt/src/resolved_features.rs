@@ -1167,7 +1167,8 @@ mod marker_tests {
         ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
         plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
         profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
-        reconcile_reference_plane_frame, resolve_operand_marker,
+        profile_roster_principal_axis_endpoints, reconcile_reference_plane_frame,
+        resolve_operand_marker,
         resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
         roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
@@ -7491,7 +7492,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn omitted_origin_axis_uses_the_unique_maximum_incidence_support_line() {
+    fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines() {
         let mut payload = vec![0; 700];
         let curve = |payload: &mut [u8], offset: usize, start: u16, end: u16| {
             payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -7556,6 +7557,10 @@ mod marker_tests {
         assert_eq!(
             profile_roster_origin_axis_endpoints(&lane, "profile-native", &markers),
             Some([[0.0, 0.0], [0.0, 0.01]])
+        );
+        assert_eq!(
+            profile_roster_principal_axis_endpoints(&lane, "profile-native", &markers),
+            Some([[0.0, 0.0], [0.0, 1.0]])
         );
     }
 
@@ -8773,7 +8778,9 @@ fn profile_roster_construction_axis(
             {
                 [endpoints[0].coordinates_m?, endpoints[1].coordinates_m?]
             } else {
-                profile_roster_origin_axis_endpoints(lane, profile_native, &markers)?
+                profile_roster_origin_axis_endpoints(lane, profile_native, &markers).or_else(
+                    || profile_roster_principal_axis_endpoints(lane, profile_native, &markers),
+                )?
             }
         }
         _ => return None,
@@ -8820,6 +8827,7 @@ fn profile_roster_origin_axis_endpoints(
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
+        .filter(|endpoint| endpoint.object_index.is_some())
         .map(|endpoint| endpoint.id.as_str())
         .collect::<HashSet<_>>();
     let unreferenced_points = markers
@@ -8899,6 +8907,53 @@ fn profile_roster_origin_axis_endpoints(
         return None;
     };
     Some(**axis)
+}
+
+fn profile_roster_principal_axis_endpoints(
+    lane: &FeatureInputLane,
+    profile_native: &str,
+    markers: &[&SketchInputEntity],
+) -> Option<[[f64; 2]; 2]> {
+    let curve_endpoints = markers
+        .iter()
+        .copied()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
+        .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
+        .filter(|endpoint| endpoint.object_index.is_some())
+        .map(|endpoint| endpoint.id.as_str())
+        .collect::<HashSet<_>>();
+    let incidence = |axis: &[[f64; 2]; 2]| {
+        let [axis_u, axis_v] = axis[1];
+        markers
+            .iter()
+            .filter(|marker| curve_endpoints.contains(marker.id.as_str()))
+            .filter_map(|marker| marker.coordinates_m)
+            .filter(|[u, v]| (u * axis_v - v * axis_u).abs() <= 1.0e-9)
+            .count()
+    };
+    let axes = [
+        [[0.0, 0.0], [1.0, 0.0]],
+        [[0.0, 0.0], [0.0, 1.0]],
+    ];
+    let candidates = axes
+        .into_iter()
+        .filter(|axis| {
+            bounded_profile_axis_coordinates(profile_native, markers, &curve_endpoints, *axis)
+        })
+        .map(|axis| (incidence(&axis), axis))
+        .collect::<Vec<_>>();
+    let maximum_incidence = candidates.iter().map(|(count, _)| *count).max()?;
+    if maximum_incidence < 2 {
+        return None;
+    }
+    let selected = candidates
+        .iter()
+        .filter(|(count, _)| *count == maximum_incidence)
+        .collect::<Vec<_>>();
+    let [(_, axis)] = selected.as_slice() else {
+        return None;
+    };
+    Some(*axis)
 }
 
 fn profile_roster_implicit_axis_endpoints<'a>(
