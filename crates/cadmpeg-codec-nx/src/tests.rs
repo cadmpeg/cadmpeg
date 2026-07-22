@@ -12289,11 +12289,7 @@ fn decode_preserves_multiple_shells_in_one_region() {
 
 fn offset_surface_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    let face = stream
-        .windows(4)
-        .position(|window| window == [0, 14, 0, 4])
-        .expect("face record");
-    put_ref(&mut stream, face + 26, 12);
+    link_partition_face(&mut stream, 12);
 
     let mut offset = record(60, 31);
     put_ref(&mut offset, 2, 12);
@@ -12488,11 +12484,7 @@ fn shared_region_shells_partition_stream() -> Vec<u8> {
 
 fn blend_surface_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    let face = stream
-        .windows(4)
-        .position(|window| window == [0, 14, 0, 4])
-        .expect("face record");
-    put_ref(&mut stream, face + 26, 12);
+    link_partition_face(&mut stream, 12);
 
     let mut blend = record(56, 66);
     put_ref(&mut blend, 2, 12);
@@ -13203,15 +13195,30 @@ fn deltas_surface_curve_partition_stream() -> Vec<u8> {
     ))
 }
 
-fn circle_topology_partition_stream() -> Vec<u8> {
-    let mut stream = topology_partition_stream();
+/// Point the single partition face record at geometry reference `reference`.
+fn link_partition_face(stream: &mut Vec<u8>, reference: u16) {
+    let face = stream
+        .windows(4)
+        .position(|window| window == [0, 14, 0, 4])
+        .expect("face record");
+    put_ref(stream, face + 26, reference);
+}
+
+/// Point both the edge and fin topology records at geometry reference
+/// `reference`.
+fn link_partition_edge_and_fin(stream: &mut Vec<u8>, reference: u16) {
     for (kind, xmt, field) in [(16u8, 8u8, 24usize), (17, 7, 18)] {
         let record = stream
             .windows(4)
             .position(|window| window == [0, kind, 0, xmt])
             .expect("topology record");
-        put_ref(&mut stream, record + field, 12);
+        put_ref(stream, record + field, reference);
     }
+}
+
+fn circle_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    link_partition_edge_and_fin(&mut stream, 12);
     let mut circle = record(31, 99);
     put_ref(&mut circle, 2, 12);
     circle[18] = b'+';
@@ -13234,13 +13241,7 @@ fn deltas_circle_partition_stream() -> Vec<u8> {
 
 fn ellipse_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    for (kind, xmt, field) in [(16u8, 8u8, 24usize), (17, 7, 18)] {
-        let record = stream
-            .windows(4)
-            .position(|window| window == [0, kind, 0, xmt])
-            .expect("topology record");
-        put_ref(&mut stream, record + field, 13);
-    }
+    link_partition_edge_and_fin(&mut stream, 13);
     let mut ellipse = record(32, 107);
     put_ref(&mut ellipse, 2, 13);
     ellipse[18] = b'+';
@@ -13266,11 +13267,7 @@ fn deltas_ellipse_partition_stream() -> Vec<u8> {
 
 fn cylinder_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    let face = stream
-        .windows(4)
-        .position(|window| window == [0, 14, 0, 4])
-        .expect("face");
-    put_ref(&mut stream, face + 26, 12);
+    link_partition_face(&mut stream, 12);
     let mut cylinder = record(51, 99);
     put_ref(&mut cylinder, 2, 12);
     cylinder[18] = b'+';
@@ -13293,11 +13290,7 @@ fn deltas_cylinder_partition_stream() -> Vec<u8> {
 
 fn cone_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    let face = stream
-        .windows(4)
-        .position(|window| window == [0, 14, 0, 4])
-        .expect("face");
-    put_ref(&mut stream, face + 26, 12);
+    link_partition_face(&mut stream, 12);
     let mut cone = record(52, 115);
     put_ref(&mut cone, 2, 12);
     cone[18] = b'+';
@@ -13335,11 +13328,7 @@ fn deltas_cone_partition_stream() -> Vec<u8> {
 
 fn sphere_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    let face = stream
-        .windows(4)
-        .position(|window| window == [0, 14, 0, 4])
-        .expect("face");
-    put_ref(&mut stream, face + 26, 12);
+    link_partition_face(&mut stream, 12);
     let mut sphere = record(53, 99);
     put_ref(&mut sphere, 2, 12);
     sphere[18] = b'+';
@@ -13362,11 +13351,7 @@ fn deltas_sphere_partition_stream() -> Vec<u8> {
 
 fn torus_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
-    let face = stream
-        .windows(4)
-        .position(|window| window == [0, 14, 0, 4])
-        .expect("face");
-    put_ref(&mut stream, face + 26, 12);
+    link_partition_face(&mut stream, 12);
     let mut torus = record(54, 107);
     put_ref(&mut torus, 2, 12);
     torus[18] = b'+';
