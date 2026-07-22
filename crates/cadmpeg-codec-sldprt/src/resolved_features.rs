@@ -8942,9 +8942,14 @@ pub(crate) fn project_hole_axes(
         }
         if solutions.is_empty() {
             for lane in lanes {
-                if let Some(solution) =
-                    marker_pattern_bore_axes(lane, position_feature.id.as_str(), radius, surfaces)
-                {
+                if let Some(solution) = marker_pattern_bore_axes(
+                    lane,
+                    position_feature.id.as_str(),
+                    radius,
+                    surfaces,
+                    hole_position_temporary_axis(histories, lane, position_feature)
+                        .map(|(_, direction)| direction),
+                ) {
                     solutions.push(solution);
                 }
             }
@@ -8977,6 +8982,7 @@ fn marker_pattern_bore_axes(
     feature: &str,
     radius: f64,
     surfaces: &[Surface],
+    direction: Option<Vector3>,
 ) -> Option<Vec<HolePlacement>> {
     const QUANTUM: f64 = 1.0e-8;
     let mut marker_loci = lane
@@ -9046,11 +9052,38 @@ fn marker_pattern_bore_axes(
         let mut candidates = lines
             .into_iter()
             .filter_map(|(point, surfaces)| {
-                let (origin, direction) = surfaces.first().copied()?;
-                surfaces
-                    .iter()
-                    .all(|(_, axis)| dot(*axis, direction) >= 1.0 - 1.0e-9)
-                    .then_some((point, origin, direction))
+                let mut oriented = match direction {
+                    Some(expected) => surfaces
+                        .iter()
+                        .copied()
+                        .filter(|(_, axis)| dot(expected, *axis) >= 1.0 - 1.0e-9)
+                        .collect::<Vec<_>>(),
+                    None => {
+                        let (_, first) = surfaces.first().copied()?;
+                        if !surfaces
+                            .iter()
+                            .all(|(_, axis)| dot(*axis, first) >= 1.0 - 1.0e-9)
+                        {
+                            return None;
+                        }
+                        surfaces
+                    }
+                };
+                oriented.sort_by_key(|(origin, axis)| {
+                    [
+                        origin.x.to_bits(),
+                        origin.y.to_bits(),
+                        origin.z.to_bits(),
+                        axis.x.to_bits(),
+                        axis.y.to_bits(),
+                        axis.z.to_bits(),
+                    ]
+                });
+                oriented.dedup();
+                let [(origin, axis)] = oriented.as_slice() else {
+                    return None;
+                };
+                Some((point, *origin, *axis))
             })
             .collect::<Vec<_>>();
         candidates.sort_unstable_by_key(|(point, _, _)| *point);
@@ -9198,6 +9231,22 @@ fn marker_backed_feature_frame(
     lane: &FeatureInputLane,
     native_feature: &crate::records::Feature,
 ) -> Option<(Point3, Vector3, Vector3)> {
+    let (context_start, start, end) = feature_object_byte_range(histories, lane, native_feature)?;
+    let plane_frames = lane_sketch_plane_frames(model_features, histories, lane);
+    feature_input_sketch_frame(
+        &lane.native_payload,
+        &plane_frames,
+        context_start,
+        start,
+        end,
+    )
+}
+
+fn feature_object_byte_range(
+    histories: &[crate::records::FeatureHistory],
+    lane: &FeatureInputLane,
+    native_feature: &crate::records::Feature,
+) -> Option<(usize, usize, usize)> {
     let mut objects = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -9217,14 +9266,69 @@ fn marker_backed_feature_frame(
         .get(index + 1)
         .and_then(|(offset, _)| usize::try_from(*offset).ok())
         .unwrap_or(lane.native_payload.len());
-    let plane_frames = lane_sketch_plane_frames(model_features, histories, lane);
-    feature_input_sketch_frame(
-        &lane.native_payload,
-        &plane_frames,
-        context_start,
-        start,
-        end,
-    )
+    Some((context_start, start, end))
+}
+
+fn hole_position_temporary_axis(
+    histories: &[crate::records::FeatureHistory],
+    lane: &FeatureInputLane,
+    native_feature: &crate::records::Feature,
+) -> Option<(Point3, Vector3)> {
+    let (_, start, end) = feature_object_byte_range(histories, lane, native_feature)?;
+    hole_temporary_axis(&lane.native_payload, start, end)
+}
+
+fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Point3, Vector3)> {
+    const DECLARATION: &[u8] = b"\xff\xff\x01\x00\x0f\x00moTempAxisRef_w";
+    const HANDLE_PAIR: &[u8] = b"\xc7\xcf\xff\xff\xc7\xcf\xff\xff";
+    const NATIVE_TO_IR: f64 = 1000.0;
+
+    let last_declaration = end.checked_sub(364)?;
+    let mut axes = (start..=last_declaration).filter_map(|declaration| {
+        if payload.get(declaration..declaration + DECLARATION.len()) != Some(DECLARATION)
+            || payload.get(declaration + 267..declaration + 275) != Some(HANDLE_PAIR)
+            || payload.get(declaration + 275..declaration + 279) != Some(&[0; 4])
+            || payload
+                .get(declaration + 279..declaration + 283)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u32::from_le_bytes)
+                .is_none_or(|address| address == 0)
+            || payload.get(declaration + 283..declaration + 299) != Some(&[0; 16])
+        {
+            return None;
+        }
+        let scalar = |index: usize| {
+            let offset = declaration + 299 + index * 8;
+            let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+            value.is_finite().then_some(value)
+        };
+        let depth = scalar(0)?;
+        let origin = Point3::new(
+            scalar(1)? * NATIVE_TO_IR,
+            scalar(2)? * NATIVE_TO_IR,
+            scalar(3)? * NATIVE_TO_IR,
+        );
+        let direction = Vector3::new(scalar(4)?, scalar(5)?, scalar(6)?);
+        let norm = dot(direction, direction).sqrt();
+        let record_end = declaration + 355;
+        let next_record = (record_end..=record_end + 24).find(|offset| {
+            payload.get(record_end..*offset).is_some_and(|padding| {
+                padding.iter().all(|byte| *byte == 0)
+                    && (payload.get(*offset..*offset + 4) == Some(CLASS_MARKER)
+                        || payload
+                            .get(*offset..*offset + 2)
+                            .and_then(|bytes| bytes.try_into().ok())
+                            .map(u16::from_le_bytes)
+                            .is_some_and(|token| token & 0x8000 != 0 && token != u16::MAX))
+            })
+        })?;
+        (depth > 0.0 && (norm - 1.0).abs() <= 1.0e-9 && next_record < end).then_some((
+            origin,
+            Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
+        ))
+    });
+    let axis = axes.next()?;
+    axes.all(|candidate| candidate == axis).then_some(axis)
 }
 
 fn feature_input_sketch_frame(
@@ -9500,8 +9604,8 @@ mod hole_axis_tests {
 
     use super::{
         compact_position_loci, enrich_history_hole_constructions, enrich_history_parameters,
-        hole_position_sketch_source, marker_pattern_bore_axes, project_hole_axes,
-        project_hole_position_sketches, project_spatial_hole_position_sketches,
+        hole_position_sketch_source, hole_temporary_axis, marker_pattern_bore_axes,
+        project_hole_axes, project_hole_position_sketches, project_spatial_hole_position_sketches,
     };
     use crate::records::{
         FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
@@ -9688,7 +9792,7 @@ mod hole_axis_tests {
         };
         let mut surfaces = vec![surface(0, -9.0), surface(1, 13.0), surface(2, 100.0)];
 
-        let placements = marker_pattern_bore_axes(&lane, "position", 2.1, &surfaces).unwrap();
+        let placements = marker_pattern_bore_axes(&lane, "position", 2.1, &surfaces, None).unwrap();
         assert_eq!(placements.len(), 2);
         assert!(placements.iter().any(|placement| matches!(
             placement,
@@ -9701,13 +9805,77 @@ mod hole_axis_tests {
                 if origin.x == 13.0 && origin.y == 7.0 && origin.z == 10.0
         )));
 
-        let mut opposite = surface(3, -9.0);
+        let opposite_side = |id, x| Surface {
+            id: SurfaceId(format!("surface-{id}")),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(x, 30.0, 10.0),
+                axis: Vector3::new(0.0, 0.0, -1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.1,
+            },
+            source_object: None,
+        };
+        surfaces.extend([opposite_side(3, -9.0), opposite_side(4, 13.0)]);
+        assert!(marker_pattern_bore_axes(&lane, "position", 2.1, &surfaces, None).is_none());
+        assert_eq!(
+            marker_pattern_bore_axes(
+                &lane,
+                "position",
+                2.1,
+                &surfaces,
+                Some(Vector3::new(0.0, 0.0, 1.0)),
+            )
+            .unwrap()
+            .len(),
+            2
+        );
+
+        let mut opposite = surface(5, -9.0);
         let SurfaceGeometry::Cylinder { axis, .. } = &mut opposite.geometry else {
             unreachable!();
         };
         *axis = Vector3::new(0.0, 0.0, -1.0);
         surfaces.push(opposite);
-        assert!(marker_pattern_bore_axes(&lane, "position", 2.1, &surfaces).is_none());
+        assert_eq!(
+            marker_pattern_bore_axes(
+                &lane,
+                "position",
+                2.1,
+                &surfaces,
+                Some(Vector3::new(0.0, 0.0, 1.0)),
+            )
+            .unwrap()
+            .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn hole_temporary_axis_decodes_depth_point_direction_layout() {
+        let mut payload = vec![0; 500];
+        let declaration = 40;
+        payload[declaration..declaration + 4].copy_from_slice(&[0xff, 0xff, 0x01, 0x00]);
+        payload[declaration + 4..declaration + 6].copy_from_slice(&15u16.to_le_bytes());
+        payload[declaration + 6..declaration + 21].copy_from_slice(b"moTempAxisRef_w");
+        payload[declaration + 267..declaration + 275]
+            .copy_from_slice(b"\xc7\xcf\xff\xff\xc7\xcf\xff\xff");
+        payload[declaration + 279..declaration + 283].copy_from_slice(&4700u32.to_le_bytes());
+        for (index, value) in [0.0075, -0.045, 0.028, -0.03, -1.0, 0.0, 0.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = declaration + 299 + index * 8;
+            payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        payload[declaration + 364..declaration + 368].copy_from_slice(&[0xff, 0xfe, 0xff, 0x00]);
+
+        assert_eq!(
+            hole_temporary_axis(&payload, 32, payload.len()),
+            Some((
+                Point3::new(-45.0, 28.0, -30.0),
+                Vector3::new(-1.0, 0.0, 0.0),
+            ))
+        );
     }
 
     #[test]
