@@ -4,6 +4,84 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+use super::substrate::StreamView;
+
+/// Shared skeleton for Parasolid record families read from the cached per-stream
+/// record view. It owns the stream loop, the `nx:s{ordinal}:{ID_STEM}#{xmt}`
+/// identity, and the sort by identity; each family supplies only its cached row
+/// slice and its record constructor.
+pub(crate) trait ParasolidStreamRecords {
+    /// Cached row type read from the stream's record [`StreamView`].
+    type Row: Copy;
+    /// Emitted native record type.
+    type Record;
+    /// Identity stem between the `nx:s{ordinal}:` prefix and the `#{xmt}` suffix.
+    const ID_STEM: &'static str;
+    /// The cached rows of one stream's record view.
+    fn rows(view: &StreamView) -> &[Self::Row];
+    /// Cross-reference index carried into the record identity.
+    fn xmt(row: &Self::Row) -> u32;
+    /// Build one record from its identity, stream ordinal, and cached row.
+    fn record(id: String, stream_ordinal: u32, row: &Self::Row) -> Self::Record;
+    /// The identity of a built record, used as the sort key.
+    fn id(record: &Self::Record) -> &str;
+}
+
+/// Run the cached-view record skeleton for one family: map every cached row of
+/// every stream to a record, then sort by identity. Non-Parasolid streams hold
+/// empty views, so no per-stream guard is needed.
+pub(crate) fn per_parasolid_stream<P: ParasolidStreamRecords>(
+    parsed: &ParsedStreams,
+) -> Vec<P::Record> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in parsed.iter() {
+        for row in P::rows(stream.view_for_records()) {
+            let id = format!("nx:s{stream_ordinal}:{}#{}", P::ID_STEM, P::xmt(row));
+            records.push(P::record(id, stream_ordinal as u32, row));
+        }
+    }
+    records.sort_by(|left, right| P::id(left).cmp(P::id(right)));
+    records
+}
+
+/// Shared skeleton for Parasolid record families scanned fresh from each
+/// Parasolid stream's inflated bytes. It owns the `is_parasolid()` guard, the
+/// stream loop, the `nx:s{ordinal}:{ID_STEM}#{xmt}` identity, and the sort; each
+/// family supplies only its scanner and its record constructor.
+pub(crate) trait ParasolidScanRecords {
+    /// Scanned row type produced from the inflated stream bytes.
+    type Row;
+    /// Emitted native record type.
+    type Record;
+    /// Identity stem between the `nx:s{ordinal}:` prefix and the `#{xmt}` suffix.
+    const ID_STEM: &'static str;
+    /// Scan one inflated Parasolid stream into its rows.
+    fn scan(bytes: &[u8]) -> Vec<Self::Row>;
+    /// Cross-reference index carried into the record identity.
+    fn xmt(row: &Self::Row) -> u32;
+    /// Build one record from its identity, stream ordinal, and scanned row.
+    fn record(id: String, stream_ordinal: u32, row: Self::Row) -> Self::Record;
+    /// The identity of a built record, used as the sort key.
+    fn id(record: &Self::Record) -> &str;
+}
+
+/// Run the fresh-scan record skeleton for one family: scan every Parasolid
+/// stream, map each scanned row to a record, then sort by identity.
+pub(crate) fn per_parasolid_scan<P: ParasolidScanRecords>(streams: &[Stream]) -> Vec<P::Record> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind.is_parasolid() {
+            continue;
+        }
+        for row in P::scan(&stream.inflated) {
+            let id = format!("nx:s{stream_ordinal}:{}#{}", P::ID_STEM, P::xmt(&row));
+            records.push(P::record(id, stream_ordinal as u32, row));
+        }
+    }
+    records.sort_by(|left, right| P::id(left).cmp(P::id(right)));
+    records
+}
+
 /// Complete typed source record for one Parasolid offset surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParasolidOffsetSurfaceRecord {
@@ -29,23 +107,34 @@ pub struct ParasolidOffsetSurfaceRecord {
 pub(crate) fn parasolid_offset_surface_records(
     parsed: &ParsedStreams,
 ) -> Vec<ParasolidOffsetSurfaceRecord> {
-    let mut records = Vec::new();
-    for (stream_ordinal, stream) in parsed.iter() {
-        for offset in stream.view_for_records().offset_surfaces.iter().copied() {
-            records.push(ParasolidOffsetSurfaceRecord {
-                id: format!("nx:s{stream_ordinal}:offset-surface-record#{}", offset.xmt),
-                stream_ordinal: stream_ordinal as u32,
-                xmt: offset.xmt,
-                discriminator: offset.discriminator,
-                true_offset: offset.true_offset,
-                support_xmt: offset.support,
-                distance: offset.distance,
-                inflated_offset: offset.pos as u64,
-            });
+    per_parasolid_stream::<ParasolidOffsetSurfaceRecord>(parsed)
+}
+
+impl ParasolidStreamRecords for ParasolidOffsetSurfaceRecord {
+    type Row = crate::topology::OffsetSurface;
+    type Record = ParasolidOffsetSurfaceRecord;
+    const ID_STEM: &'static str = "offset-surface-record";
+    fn rows(view: &StreamView) -> &[Self::Row] {
+        &view.offset_surfaces
+    }
+    fn xmt(row: &Self::Row) -> u32 {
+        row.xmt
+    }
+    fn record(id: String, stream_ordinal: u32, row: &Self::Row) -> Self::Record {
+        ParasolidOffsetSurfaceRecord {
+            id,
+            stream_ordinal,
+            xmt: row.xmt,
+            discriminator: row.discriminator,
+            true_offset: row.true_offset,
+            support_xmt: row.support,
+            distance: row.distance,
+            inflated_offset: row.pos as u64,
         }
     }
-    records.sort_by(|left, right| left.id.cmp(&right.id));
-    records
+    fn id(record: &Self::Record) -> &str {
+        &record.id
+    }
 }
 
 /// Complete typed source record for one Parasolid trimmed curve.
@@ -71,22 +160,33 @@ pub struct ParasolidTrimmedCurveRecord {
 pub(crate) fn parasolid_trimmed_curve_records(
     parsed: &ParsedStreams,
 ) -> Vec<ParasolidTrimmedCurveRecord> {
-    let mut records = Vec::new();
-    for (stream_ordinal, stream) in parsed.iter() {
-        for trim in stream.view_for_records().trimmed_curves.iter().copied() {
-            records.push(ParasolidTrimmedCurveRecord {
-                id: format!("nx:s{stream_ordinal}:trimmed-curve-record#{}", trim.xmt),
-                stream_ordinal: stream_ordinal as u32,
-                xmt: trim.xmt,
-                basis_xmt: trim.basis,
-                points: trim.points,
-                parameters: trim.parameters,
-                inflated_offset: trim.pos as u64,
-            });
+    per_parasolid_stream::<ParasolidTrimmedCurveRecord>(parsed)
+}
+
+impl ParasolidStreamRecords for ParasolidTrimmedCurveRecord {
+    type Row = crate::topology::TrimmedCurve;
+    type Record = ParasolidTrimmedCurveRecord;
+    const ID_STEM: &'static str = "trimmed-curve-record";
+    fn rows(view: &StreamView) -> &[Self::Row] {
+        &view.trimmed_curves
+    }
+    fn xmt(row: &Self::Row) -> u32 {
+        row.xmt
+    }
+    fn record(id: String, stream_ordinal: u32, row: &Self::Row) -> Self::Record {
+        ParasolidTrimmedCurveRecord {
+            id,
+            stream_ordinal,
+            xmt: row.xmt,
+            basis_xmt: row.basis,
+            points: row.points,
+            parameters: row.parameters,
+            inflated_offset: row.pos as u64,
         }
     }
-    records.sort_by(|left, right| left.id.cmp(&right.id));
-    records
+    fn id(record: &Self::Record) -> &str {
+        &record.id
+    }
 }
 
 /// Complete typed source record for one Parasolid surface curve.
@@ -114,23 +214,34 @@ pub struct ParasolidSurfaceCurveRecord {
 pub(crate) fn parasolid_surface_curve_records(
     parsed: &ParsedStreams,
 ) -> Vec<ParasolidSurfaceCurveRecord> {
-    let mut records = Vec::new();
-    for (stream_ordinal, stream) in parsed.iter() {
-        for curve in stream.view_for_records().surface_curves.iter().copied() {
-            records.push(ParasolidSurfaceCurveRecord {
-                id: format!("nx:s{stream_ordinal}:surface-curve-record#{}", curve.xmt),
-                stream_ordinal: stream_ordinal as u32,
-                xmt: curve.xmt,
-                surface_xmt: curve.surface,
-                pcurve_xmt: curve.pcurve,
-                original_curve_xmt: curve.original,
-                tolerance_to_original: curve.tolerance,
-                inflated_offset: curve.pos as u64,
-            });
+    per_parasolid_stream::<ParasolidSurfaceCurveRecord>(parsed)
+}
+
+impl ParasolidStreamRecords for ParasolidSurfaceCurveRecord {
+    type Row = crate::topology::SurfaceCurve;
+    type Record = ParasolidSurfaceCurveRecord;
+    const ID_STEM: &'static str = "surface-curve-record";
+    fn rows(view: &StreamView) -> &[Self::Row] {
+        &view.surface_curves
+    }
+    fn xmt(row: &Self::Row) -> u32 {
+        row.xmt
+    }
+    fn record(id: String, stream_ordinal: u32, row: &Self::Row) -> Self::Record {
+        ParasolidSurfaceCurveRecord {
+            id,
+            stream_ordinal,
+            xmt: row.xmt,
+            surface_xmt: row.surface,
+            pcurve_xmt: row.pcurve,
+            original_curve_xmt: row.original,
+            tolerance_to_original: row.tolerance,
+            inflated_offset: row.pos as u64,
         }
     }
-    records.sort_by(|left, right| left.id.cmp(&right.id));
-    records
+    fn id(record: &Self::Record) -> &str {
+        &record.id
+    }
 }
 
 /// Complete typed source record for one Parasolid blend-bound bridge.
@@ -158,27 +269,35 @@ pub struct ParasolidBlendBoundRecord {
 
 /// Decode complete typed source records for Parasolid blend-bound bridges.
 pub fn parasolid_blend_bound_records(streams: &[Stream]) -> Vec<ParasolidBlendBoundRecord> {
-    let mut records = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
-            continue;
-        }
-        for bound in crate::intersection::blend_bounds(&stream.inflated) {
-            records.push(ParasolidBlendBoundRecord {
-                id: format!("nx:s{stream_ordinal}:blend-bound-record#{}", bound.xmt),
-                stream_ordinal: stream_ordinal as u32,
-                xmt: bound.xmt,
-                header_references: bound.header_references,
-                sense: bound.sense,
-                boundary_index: bound.boundary_index,
-                blend_surface_xmt: bound.blend_surface,
-                escaped: bound.escaped,
-                inflated_offset: bound.pos as u64,
-            });
+    per_parasolid_scan::<ParasolidBlendBoundRecord>(streams)
+}
+
+impl ParasolidScanRecords for ParasolidBlendBoundRecord {
+    type Row = crate::intersection::BlendBound;
+    type Record = ParasolidBlendBoundRecord;
+    const ID_STEM: &'static str = "blend-bound-record";
+    fn scan(bytes: &[u8]) -> Vec<Self::Row> {
+        crate::intersection::blend_bounds(bytes)
+    }
+    fn xmt(row: &Self::Row) -> u32 {
+        row.xmt
+    }
+    fn record(id: String, stream_ordinal: u32, row: Self::Row) -> Self::Record {
+        ParasolidBlendBoundRecord {
+            id,
+            stream_ordinal,
+            xmt: row.xmt,
+            header_references: row.header_references,
+            sense: row.sense,
+            boundary_index: row.boundary_index,
+            blend_surface_xmt: row.blend_surface,
+            escaped: row.escaped,
+            inflated_offset: row.pos as u64,
         }
     }
-    records.sort_by(|left, right| left.id.cmp(&right.id));
-    records
+    fn id(record: &Self::Record) -> &str {
+        &record.id
+    }
 }
 
 /// Complete typed source record for one Parasolid `term_use` endpoint.
@@ -204,26 +323,34 @@ pub struct ParasolidTermUseRecord {
 
 /// Decode complete typed source records for Parasolid `term_use` endpoints.
 pub fn parasolid_term_use_records(streams: &[Stream]) -> Vec<ParasolidTermUseRecord> {
-    let mut records = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
-            continue;
-        }
-        for term in crate::intersection::term_use_records(&stream.inflated) {
-            records.push(ParasolidTermUseRecord {
-                id: format!("nx:s{stream_ordinal}:term-use-record#{}", term.xmt),
-                stream_ordinal: stream_ordinal as u32,
-                xmt: term.xmt,
-                count: term.count,
-                form: String::from_utf8_lossy(&term.form).into_owned(),
-                point: [term.point.x, term.point.y, term.point.z],
-                framing: term.framing,
-                inflated_offset: term.pos as u64,
-            });
+    per_parasolid_scan::<ParasolidTermUseRecord>(streams)
+}
+
+impl ParasolidScanRecords for ParasolidTermUseRecord {
+    type Row = crate::intersection::TermUse;
+    type Record = ParasolidTermUseRecord;
+    const ID_STEM: &'static str = "term-use-record";
+    fn scan(bytes: &[u8]) -> Vec<Self::Row> {
+        crate::intersection::term_use_records(bytes)
+    }
+    fn xmt(row: &Self::Row) -> u32 {
+        row.xmt
+    }
+    fn record(id: String, stream_ordinal: u32, row: Self::Row) -> Self::Record {
+        ParasolidTermUseRecord {
+            id,
+            stream_ordinal,
+            xmt: row.xmt,
+            count: row.count,
+            form: String::from_utf8_lossy(&row.form).into_owned(),
+            point: [row.point.x, row.point.y, row.point.z],
+            framing: row.framing,
+            inflated_offset: row.pos as u64,
         }
     }
-    records.sort_by(|left, right| left.id.cmp(&right.id));
-    records
+    fn id(record: &Self::Record) -> &str {
+        &record.id
+    }
 }
 
 /// Complete typed source record for one Parasolid support-UV values array.
@@ -249,26 +376,34 @@ pub struct ParasolidSupportUvRecord {
 
 /// Decode complete typed source records for Parasolid support-UV arrays.
 pub fn parasolid_support_uv_records(streams: &[Stream]) -> Vec<ParasolidSupportUvRecord> {
-    let mut records = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
-            continue;
-        }
-        for record in crate::intersection::support_uv_records(&stream.inflated) {
-            records.push(ParasolidSupportUvRecord {
-                id: format!("nx:s{stream_ordinal}:support-uv-record#{}", record.xmt),
-                stream_ordinal: stream_ordinal as u32,
-                xmt: record.xmt,
-                count: record.count,
-                marker: record.marker,
-                values: record.values,
-                framing: record.framing,
-                inflated_offset: record.pos as u64,
-            });
+    per_parasolid_scan::<ParasolidSupportUvRecord>(streams)
+}
+
+impl ParasolidScanRecords for ParasolidSupportUvRecord {
+    type Row = crate::intersection::SupportUvRecord;
+    type Record = ParasolidSupportUvRecord;
+    const ID_STEM: &'static str = "support-uv-record";
+    fn scan(bytes: &[u8]) -> Vec<Self::Row> {
+        crate::intersection::support_uv_records(bytes)
+    }
+    fn xmt(row: &Self::Row) -> u32 {
+        row.xmt
+    }
+    fn record(id: String, stream_ordinal: u32, row: Self::Row) -> Self::Record {
+        ParasolidSupportUvRecord {
+            id,
+            stream_ordinal,
+            xmt: row.xmt,
+            count: row.count,
+            marker: row.marker,
+            values: row.values,
+            framing: row.framing,
+            inflated_offset: row.pos as u64,
         }
     }
-    records.sort_by(|left, right| left.id.cmp(&right.id));
-    records
+    fn id(record: &Self::Record) -> &str {
+        &record.id
+    }
 }
 
 /// Complete typed source record for one physical Parasolid `CHART_s` record.
@@ -372,32 +507,34 @@ pub struct ParasolidIntersectionRecord {
 pub(crate) fn parasolid_intersection_records(
     parsed: &ParsedStreams,
 ) -> Vec<ParasolidIntersectionRecord> {
-    let mut records = Vec::new();
-    for (stream_ordinal, stream) in parsed.iter() {
-        for construction in stream
-            .view_for_records()
-            .intersections
-            .constructions
-            .iter()
-            .copied()
-        {
-            records.push(ParasolidIntersectionRecord {
-                id: format!(
-                    "nx:s{stream_ordinal}:intersection-record#{}",
-                    construction.xmt
-                ),
-                stream_ordinal: stream_ordinal as u32,
-                xmt: construction.xmt,
-                header_references: construction.header_references,
-                sense: construction.sense,
-                construction_references: construction.references,
-                delta_twin: construction.delta_twin,
-                inflated_offset: construction.pos as u64,
-            });
+    per_parasolid_stream::<ParasolidIntersectionRecord>(parsed)
+}
+
+impl ParasolidStreamRecords for ParasolidIntersectionRecord {
+    type Row = crate::topology::CompositeCurve;
+    type Record = ParasolidIntersectionRecord;
+    const ID_STEM: &'static str = "intersection-record";
+    fn rows(view: &StreamView) -> &[Self::Row] {
+        &view.intersections.constructions
+    }
+    fn xmt(row: &Self::Row) -> u32 {
+        row.xmt
+    }
+    fn record(id: String, stream_ordinal: u32, row: &Self::Row) -> Self::Record {
+        ParasolidIntersectionRecord {
+            id,
+            stream_ordinal,
+            xmt: row.xmt,
+            header_references: row.header_references,
+            sense: row.sense,
+            construction_references: row.references,
+            delta_twin: row.delta_twin,
+            inflated_offset: row.pos as u64,
         }
     }
-    records.sort_by(|left, right| left.id.cmp(&right.id));
-    records
+    fn id(record: &Self::Record) -> &str {
+        &record.id
+    }
 }
 
 /// Complete typed type-56 rolling-ball blend-surface record.
@@ -689,28 +826,34 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
 pub(crate) fn parasolid_blend_surface_records(
     parsed: &ParsedStreams,
 ) -> Vec<ParasolidBlendSurfaceRecord> {
-    let mut records = parsed
-        .iter()
-        .flat_map(|(stream_ordinal, stream)| {
-            stream
-                .view_for_records()
-                .blend_surfaces
-                .iter()
-                .copied()
-                .map(move |blend| ParasolidBlendSurfaceRecord {
-                    id: format!("nx:s{stream_ordinal}:blend-surface-record#{}", blend.xmt),
-                    stream_ordinal: stream_ordinal as u32,
-                    xmt: blend.xmt,
-                    support_xmts: blend.supports,
-                    spine_xmt: blend.spine,
-                    offsets: blend.offsets,
-                    thumb_weights: blend.thumb_weights,
-                    inflated_offset: blend.pos as u64,
-                })
-        })
-        .collect::<Vec<_>>();
-    records.sort_by(|first, second| first.id.cmp(&second.id));
-    records
+    per_parasolid_stream::<ParasolidBlendSurfaceRecord>(parsed)
+}
+
+impl ParasolidStreamRecords for ParasolidBlendSurfaceRecord {
+    type Row = crate::topology::BlendSurface;
+    type Record = ParasolidBlendSurfaceRecord;
+    const ID_STEM: &'static str = "blend-surface-record";
+    fn rows(view: &StreamView) -> &[Self::Row] {
+        &view.blend_surfaces
+    }
+    fn xmt(row: &Self::Row) -> u32 {
+        row.xmt
+    }
+    fn record(id: String, stream_ordinal: u32, row: &Self::Row) -> Self::Record {
+        ParasolidBlendSurfaceRecord {
+            id,
+            stream_ordinal,
+            xmt: row.xmt,
+            support_xmts: row.supports,
+            spine_xmt: row.spine,
+            offsets: row.offsets,
+            thumb_weights: row.thumb_weights,
+            inflated_offset: row.pos as u64,
+        }
+    }
+    fn id(record: &Self::Record) -> &str {
+        &record.id
+    }
 }
 
 /// Retain every non-null topology-to-attribute-list reference.
