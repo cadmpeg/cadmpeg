@@ -6,48 +6,21 @@
 
 #![allow(clippy::unwrap_used)]
 
-use std::{
-    collections::{HashMap, HashSet},
-    io::Cursor,
-};
+use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+
 use cadmpeg_ir::document::CadIr;
+
 use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SurfaceGeometry};
+
 use cadmpeg_ir::math::{Point3, Vector3};
+
 use cadmpeg_ir::Annotations;
 
 use crate::variant::Variant;
-use crate::CatiaCodec;
 
-#[test]
-fn standard_torus_major_sign_selects_the_axis_hemisphere() {
-    let mut bytes = vec![0x00, 0x33, 0x38];
-    for value in [0.0_f32, 0.0, 7.0, 0.0, 0.0, -20.0, 5.0] {
-        bytes.extend_from_slice(&value.to_be_bytes());
-    }
-    let surface = crate::families::standard::records::decode_curved(
-        &bytes,
-        &crate::families::standard::records::SurfacePrefix {
-            pos: 0,
-            target: 0,
-            kind: 0x38,
-        },
-    )
-    .expect("signed torus carrier");
-    let SurfaceGeometry::Torus {
-        axis,
-        major_radius,
-        minor_radius,
-        ..
-    } = surface
-    else {
-        panic!("torus geometry");
-    };
-    assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
-    assert_eq!(major_radius, 20.0);
-    assert_eq!(minor_radius, 5.0);
-}
+use crate::CatiaCodec;
 
 fn summary_preview_segment() -> Vec<u8> {
     let mut bytes = b"FINJPL  \x01\x01\x00\x03\x00\x00\x00\x15\x00CATSummaryInformation".to_vec();
@@ -113,7 +86,7 @@ fn assert_every_entity_has_v1_annotation(ir: &CadIr, annotations: &Annotations) 
     assert_eq!(annotations.provenance.len(), entity_count);
 }
 
-fn standard_quad_topology_stream() -> Vec<u8> {
+pub(crate) fn standard_quad_topology_stream() -> Vec<u8> {
     let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 10, 0, 0, 0, 10];
     for handle in [1u16, 10, 11, 12, 13, 14, 15, 16, 17, 10] {
         bytes.extend_from_slice(&handle.to_be_bytes());
@@ -146,141 +119,6 @@ fn standard_quad_topology_stream() -> Vec<u8> {
         }
     }
     bytes
-}
-
-#[test]
-fn standard_topology_recovers_a_quad_boundary_and_port_vertices() {
-    let topology = crate::families::standard::fbb::parse_standard(&standard_quad_topology_stream())
-        .expect("valid standard topology");
-
-    assert_eq!(topology.face_count(), 1);
-    assert_eq!(topology.edge_rows().len(), 4);
-    assert_eq!(topology.vertex_points().len(), 4);
-    let boundary = &topology.faces()[0].boundaries[0];
-    assert_eq!(boundary.coedges.len(), 4);
-    assert_eq!(
-        boundary
-            .coedges
-            .iter()
-            .map(|use_| use_.edge_row)
-            .collect::<Vec<_>>(),
-        vec![0, 1, 2, 3]
-    );
-    assert!(boundary.coedges.iter().all(|use_| !use_.reversed));
-    assert_eq!(topology.logical_vertex_count(), 4);
-}
-
-#[test]
-fn standard_counted_vertex_table_excludes_incidental_markers() {
-    let mut bytes = standard_quad_topology_stream();
-    bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-    bytes.extend_from_slice(&le_f32(10.0));
-    bytes.extend_from_slice(&le_f32(20.0));
-    bytes.extend_from_slice(&le_f32(30.0));
-
-    assert_eq!(
-        crate::families::standard::fbb::standard_vertex_points(&bytes)
-            .unwrap()
-            .len(),
-        4
-    );
-}
-
-#[test]
-fn zero_entity_vertices_exclude_framed_payload_markers() {
-    let mut bytes = vec![0u8; 16];
-    bytes[..8].copy_from_slice(OUTER_MAGIC);
-    let mut record = vec![0u8; 0x15 + 12];
-    record[..4].copy_from_slice(&[0xa9, 0x03, 0x10, 0x15]);
-    record[4..7].copy_from_slice(&[0x05, 0x08, 0x01]);
-    for (index, value) in [90.0f32, 91.0, 92.0].into_iter().enumerate() {
-        record[7 + index * 4..11 + index * 4].copy_from_slice(&le_f32(value));
-    }
-    bytes.extend_from_slice(&record);
-    bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-    for value in [1.0f32, 2.0, 3.0] {
-        bytes.extend_from_slice(&le_f32(value));
-    }
-
-    assert_eq!(
-        crate::zero_entity::unframed_vertices(&bytes),
-        [cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)]
-    );
-
-    let mut malformed = vec![0xa9, 0x03, 0x10, 0xff, 0x05, 0x08, 0x01];
-    malformed.extend_from_slice(&[0; 12]);
-    assert!(crate::zero_entity::unframed_vertices(&malformed).is_empty());
-}
-
-#[test]
-fn object_stream_vertices_exclude_framed_payload_markers() {
-    let mut bytes = vec![0xb2, 0x03, 0x06, 0x10, 0x05];
-    bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-    for value in [90.0f32, 91.0, 92.0] {
-        bytes.extend_from_slice(&le_f32(value));
-    }
-    bytes.push(0);
-    bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-    for value in [1.0f32, 2.0, 3.0] {
-        bytes.extend_from_slice(&le_f32(value));
-    }
-
-    assert_eq!(
-        crate::families::consolidated::records::object_stream_vertices(&bytes),
-        [cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)]
-    );
-    assert!(crate::families::consolidated::records::object_stream_vertices(&bytes[5..]).is_empty());
-
-    let mut b5 = Vec::new();
-    let mut payload = vec![0x05, 0x08, 0x01];
-    for value in [90.0f32, 91.0, 92.0] {
-        payload.extend_from_slice(&le_f32(value));
-    }
-    append_b5_record(&mut b5, 0x06, 1, &payload);
-    append_b5_record(&mut b5, 0x06, 2, &[]);
-    b5.extend_from_slice(&[0x05, 0x08, 0x01]);
-    for value in [4.0f32, 5.0, 6.0] {
-        b5.extend_from_slice(&le_f32(value));
-    }
-    assert_eq!(
-        crate::families::consolidated::records::object_stream_vertices(&b5),
-        [cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)]
-    );
-}
-
-#[test]
-fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
-    let mut bytes = standard_quad_topology_stream();
-    let header = bytes
-        .windows(3)
-        .position(|window| window == [0x01, 0x01, 0x04])
-        .expect("edge table header");
-    bytes[header + 2] = 2;
-    let second_table = header + 3 + 2 * 8;
-    bytes.splice(
-        second_table..second_table,
-        [
-            0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x02, 0x02,
-        ],
-    );
-
-    let topology = crate::families::standard::fbb::parse_standard(&bytes).expect("two edge tables");
-    assert_eq!(
-        topology
-            .edge_rows()
-            .iter()
-            .map(|row| row.kind)
-            .collect::<Vec<_>>(),
-        vec![1, 1, 2, 2]
-    );
-    assert_eq!(
-        crate::solve::missing_edge::standard_edge_rows(&bytes)
-            .expect("edge rows")
-            .iter()
-            .map(|row| row.kind)
-            .collect::<Vec<_>>(),
-        vec![1, 1, 2, 2]
-    );
 }
 
 #[test]
@@ -546,147 +384,6 @@ fn standard_mesh_runs_include_flanking_segments() {
 }
 
 #[test]
-fn fbb_topology_reads_u24_mesh_and_edge_handles() {
-    let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 10, 0, 0, 0, 10];
-    for handle in [
-        1u32, 0x01_0010, 0x01_0011, 0x01_0012, 0x01_0013, 0x01_0014, 0x01_0015, 0x01_0016,
-        0x01_0017, 0x01_0010,
-    ] {
-        bytes.extend_from_slice(&handle.to_be_bytes()[1..]);
-    }
-    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
-    for (kind, rows) in [
-        (
-            1,
-            [
-                [0x01_0010u32, 0x01_0011],
-                [0x01_0011, 0x01_0012],
-                [0x01_0012, 0x01_0013],
-                [0x01_0013, 0x01_0014],
-            ],
-        ),
-        (
-            2,
-            [
-                [0x01_0014u32, 0x01_0015],
-                [0x01_0015, 0x01_0016],
-                [0x01_0016, 0x01_0017],
-                [0x01_0017, 0x01_0010],
-            ],
-        ),
-    ] {
-        bytes.extend_from_slice(&[0x01, kind, 4]);
-        for row in rows {
-            bytes.extend_from_slice(&[0x02, 2]);
-            for handle in row {
-                bytes.extend_from_slice(&handle.to_be_bytes()[1..]);
-            }
-        }
-        bytes.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
-    }
-    bytes.extend_from_slice(&[0x01, 0x06, 4]);
-    for index in 0..4 {
-        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-        for value in [index as f32, 0.0, 0.0] {
-            bytes.extend_from_slice(&le_f32(value));
-        }
-    }
-
-    let topology =
-        crate::families::standard::topology::parse_fbb(&bytes).expect("valid FBB topology");
-    assert_eq!(topology.edge_rows()[0].handles, vec![0x01_0010, 0x01_0011]);
-    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
-    assert_eq!(topology.logical_vertex_count(), 8);
-    assert_eq!(topology.vertex_points().len(), 4);
-    let table_ports = crate::solve::missing_edge::standard_edge_port_identities(&bytes)
-        .expect("scoped FBB ports");
-    assert_eq!(table_ports[0][1], table_ports[1][0]);
-    assert_eq!(table_ports[1][1], table_ports[2][0]);
-    assert_eq!(table_ports[2][1], table_ports[3][0]);
-    assert_ne!(table_ports[3][1], table_ports[4][0]);
-    assert_eq!(table_ports[4][1], table_ports[5][0]);
-    assert_eq!(table_ports[5][1], table_ports[6][0]);
-    assert_eq!(table_ports[6][1], table_ports[7][0]);
-    let native_ports = [
-        [100, 101],
-        [101, 102],
-        [102, 103],
-        [103, 100],
-        [100, 101],
-        [101, 102],
-        [102, 103],
-        [103, 100],
-    ];
-    let quotient =
-        crate::families::standard::topology::parse_fbb_with_native_vertices(&bytes, &native_ports)
-            .expect("native endpoint quotient");
-    assert_eq!(quotient.logical_vertex_count(), 4);
-    assert_eq!(
-        quotient.edge_vertices().expect("edge vertices"),
-        native_ports.map(|pair| pair.map(|identity| usize::try_from(identity - 100).unwrap()))
-    );
-    assert_eq!(
-        quotient
-            .bind_vertex_points(&[
-                [0, 1],
-                [1, 2],
-                [2, 3],
-                [3, 0],
-                [0, 1],
-                [1, 2],
-                [2, 3],
-                [3, 0],
-            ])
-            .expect("coordinate binding"),
-        vec![0, 1, 2, 3]
-    );
-    let runs = crate::solve::missing_edge::standard_mesh_edge_runs(&bytes).expect("u24 edge runs");
-    assert_eq!(runs.len(), 8);
-    assert!(runs.iter().all(|run| run.segment_count == 1));
-    assert_eq!(
-        crate::families::standard::fbb::standard_vertex_points(&bytes)
-            .unwrap()
-            .len(),
-        4
-    );
-}
-
-#[test]
-fn fbb_topology_reads_u16_mesh_and_edge_handles() {
-    let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 6, 0, 0, 0, 6];
-    for handle in [1u16, 0x1010, 0x1011, 0x1012, 0x1013, 0x1010] {
-        bytes.extend_from_slice(&handle.to_be_bytes());
-    }
-    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
-    for (kind, rows) in [
-        (1, [[0x1010u16, 0x1011], [0x1011, 0x1012]]),
-        (2, [[0x1012u16, 0x1013], [0x1013, 0x1010]]),
-    ] {
-        bytes.extend_from_slice(&[0x01, kind, 2]);
-        for row in rows {
-            bytes.extend_from_slice(&[0x02, 2]);
-            for handle in row {
-                bytes.extend_from_slice(&handle.to_be_bytes());
-            }
-        }
-        bytes.extend_from_slice(&[0x10, 0xa4, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
-    }
-    bytes.extend_from_slice(&[0x01, 0x06, 4]);
-    for index in 0..4 {
-        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-        for value in [index as f32, 0.0, 0.0] {
-            bytes.extend_from_slice(&le_f32(value));
-        }
-    }
-
-    let topology =
-        crate::families::standard::topology::parse_fbb(&bytes).expect("valid u16 FBB topology");
-    assert_eq!(topology.edge_rows()[0].handles, vec![0x1010, 0x1011]);
-    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
-    assert_eq!(topology.vertex_points().len(), 4);
-}
-
-#[test]
 fn standard_mesh_gap_assignment_does_not_merge_row_local_endpoint_names() {
     let mut bytes = standard_quad_topology_stream();
     for _ in 0..4 {
@@ -748,210 +445,23 @@ fn standard_mesh_endpoint_domains_ignore_row_local_endpoint_order() {
     assert!(coedges.iter().all(|coedge| !coedge.reversed));
 }
 
-#[test]
-fn fbb_topology_reads_u8_mesh_and_edge_handles() {
-    let mut bytes = vec![0x01, 0x49, 0x02, 0xff, 6, 0, 0, 0];
-    for value in [0.0f32, 0.0, 1.0] {
-        bytes.extend_from_slice(&le_f32(value));
-    }
-    bytes.extend_from_slice(&[0x10, 0x11, 0x12, 0x10, 0x12, 0x13]);
-    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
-    for (kind, rows) in [
-        (1, [[0x10u8, 0x11], [0x11, 0x12]]),
-        (2, [[0x12u8, 0x13], [0x13, 0x10]]),
-    ] {
-        bytes.extend_from_slice(&[0x01, kind, 2]);
-        for row in rows {
-            bytes.extend_from_slice(&[0x02, 2]);
-            bytes.extend_from_slice(&row);
-        }
-        bytes.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
-    }
-    bytes.extend_from_slice(&[0x01, 0x06, 4]);
-    for index in 0..4 {
-        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-        for value in [index as f32, 0.0, 0.0] {
-            bytes.extend_from_slice(&le_f32(value));
-        }
-    }
+pub(crate) const OUTER_MAGIC: &[u8; 8] = b"V5_CFV2\0";
 
-    let topology =
-        crate::families::standard::topology::parse_fbb(&bytes).expect("valid u8 FBB topology");
-    assert_eq!(topology.edge_rows()[0].handles, vec![0x10, 0x11]);
-    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
-    assert_eq!(topology.vertex_points().len(), 4);
-    assert_eq!(
-        crate::families::standard::fbb::standard_face_frame_vectors(&bytes),
-        [Some([0.0, 0.0, 1.0])]
-    );
-}
-
-#[test]
-fn fbb_topology_requires_one_u16_delimiter_family() {
-    let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 6, 0, 0, 0, 6];
-    for handle in [1u16, 0x1010, 0x1011, 0x1012, 0x1013, 0x1010] {
-        bytes.extend_from_slice(&handle.to_be_bytes());
-    }
-    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
-    for (kind, family, rows) in [
-        (1, 0x94, [[0x1010u16, 0x1011], [0x1011, 0x1012]]),
-        (2, 0xa4, [[0x1012u16, 0x1013], [0x1013, 0x1010]]),
-    ] {
-        bytes.extend_from_slice(&[0x01, kind, 2]);
-        for row in rows {
-            bytes.extend_from_slice(&[0x02, 2]);
-            for handle in row {
-                bytes.extend_from_slice(&handle.to_be_bytes());
-            }
-        }
-        bytes.extend_from_slice(&[0x10, family, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
-    }
-    bytes.extend_from_slice(&[0x01, 0x06, 0]);
-
-    assert!(crate::families::standard::topology::parse_fbb(&bytes).is_none());
-}
-
-#[test]
-fn standard_vertex_roster_preserves_native_identity_order() {
-    let mut bytes = vec![0x54, 0x02, 0x00, 0x00, 0, 0, 0, 0xff];
-    for identity in [0x01_0203u32, 0x01_0206, 0x01_0209] {
-        bytes.push(0x54);
-        bytes.extend_from_slice(&identity.to_le_bytes()[..3]);
-        bytes.extend_from_slice(&[0, 0, 0]);
-    }
-    bytes.extend_from_slice(&[0x54, 0x01, 0x00, 0x00, 0, 0, 0]);
-
-    assert_eq!(
-        crate::families::standard::records::standard_vertex_roster(&bytes, 3),
-        Some(vec![0x01_0203, 0x01_0206, 0x01_0209])
-    );
-}
-
-#[test]
-fn standard_topology_matches_edge_interiors_and_collapses_endpoint_ports() {
-    let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 11, 0, 0, 0, 11];
-    for handle in [1u16, 10, 11, 12, 13, 14, 15, 16, 17, 18, 10] {
-        bytes.extend_from_slice(&handle.to_be_bytes());
-    }
-    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
-    bytes.extend_from_slice(&[0x01, 0x01, 3]);
-    for row in [
-        [101u16, 12, 11, 100],
-        [101, 14, 15, 102],
-        [102, 17, 18, 100],
-    ] {
-        bytes.extend_from_slice(&[0x02, 4]);
-        for handle in row {
-            bytes.extend_from_slice(&handle.to_be_bytes());
-        }
-    }
-    bytes.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
-    bytes.extend_from_slice(&[0x01, 0x06, 3]);
-    for index in 0..3 {
-        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-        for value in [index as f32, 0.0, 0.0] {
-            bytes.extend_from_slice(&le_f32(value));
-        }
-    }
-
-    let topology =
-        crate::families::standard::fbb::parse_standard(&bytes).expect("interior-run topology");
-    let coedges = &topology.faces()[0].boundaries[0].coedges;
-    assert_eq!(
-        coedges.iter().map(|use_| use_.edge_row).collect::<Vec<_>>(),
-        vec![0, 1, 2]
-    );
-    assert!(coedges[0].reversed);
-    assert_eq!(topology.logical_vertex_count(), 3);
-}
-
-#[test]
-fn standard_legacy_two_strip_packet_recovers_two_face_boundaries() {
-    let mut bytes = vec![0x01, 0x42, 0x02, 0xff, 12, 0, 0, 0, 6, 6];
-    for handle in [10u16, 11, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25] {
-        bytes.extend_from_slice(&handle.to_be_bytes());
-    }
-    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
-    bytes.extend_from_slice(&[0x01, 0x01, 6]);
-    for row in [
-        [100u16, 11, 101],
-        [101, 15, 102],
-        [102, 12, 100],
-        [200, 21, 201],
-        [201, 25, 202],
-        [202, 22, 200],
-    ] {
-        bytes.extend_from_slice(&[0x02, 3]);
-        for handle in row {
-            bytes.extend_from_slice(&handle.to_be_bytes());
-        }
-    }
-    bytes.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
-    bytes.extend_from_slice(&[0x01, 0x06, 6]);
-    for index in 0..6 {
-        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-        for value in [index as f32, 0.0, 0.0] {
-            bytes.extend_from_slice(&le_f32(value));
-        }
-    }
-
-    let topology =
-        crate::families::standard::fbb::parse_standard(&bytes).expect("legacy B=2 packet");
-    assert_eq!(topology.faces()[0].boundaries.len(), 2);
-    assert!(topology.faces()[0]
-        .boundaries
-        .iter()
-        .all(|boundary| boundary.coedges.len() == 3));
-    assert_eq!(topology.logical_vertex_count(), 6);
-}
-
-#[test]
-fn standard_curve_support_table_recovers_leading_spline_and_widened_faces() {
-    let mut bytes = vec![0x60, 1, 2, 3, 0, 0, 0, 0xff];
-    bytes.extend_from_slice(&260u32.to_le_bytes());
-    bytes.push(1);
-    bytes.extend_from_slice(&[0x60, 4, 5, 6, 0, 2, 0, 0x33, 0x36, 0xff]);
-    bytes.extend_from_slice(&260u32.to_le_bytes());
-    bytes.push(2);
-
-    let rows = crate::families::standard::records::standard_curve_supports(&bytes, 300);
-    assert_eq!(rows.len(), 2);
-    assert!(matches!(
-        rows[0].geometry,
-        crate::families::standard::records::StandardCurveGeometry::Bspline
-    ));
-    assert!(matches!(
-        rows[1].geometry,
-        crate::families::standard::records::StandardCurveGeometry::Line
-    ));
-    assert_eq!(rows[0].faces, [260, 1]);
-    assert_eq!(rows[1].faces, [260, 2]);
-}
-
-#[test]
-fn topology_binds_logical_vertices_from_exact_edge_endpoint_pairs() {
-    let topology = crate::families::standard::fbb::parse_standard(&standard_quad_topology_stream())
-        .expect("quad topology");
-    let assignment = topology
-        .bind_vertex_points(&[[0, 1], [1, 2], [2, 3], [3, 0]])
-        .expect("unique point assignment");
-
-    assert_eq!(assignment, vec![0, 1, 2, 3]);
-}
-
-const OUTER_MAGIC: &[u8; 8] = b"V5_CFV2\0";
 const DIR_MAGIC: &[u8; 16] = b"CATIA_V5 CB0001\0";
 
 fn be32(v: u32) -> [u8; 4] {
     v.to_be_bytes()
 }
-fn le_f32(v: f32) -> [u8; 4] {
+
+pub(crate) fn le_f32(v: f32) -> [u8; 4] {
     v.to_le_bytes()
 }
+
 fn be_f32(v: f32) -> [u8; 4] {
     v.to_be_bytes()
 }
-fn le_f64(v: f64) -> [u8; 8] {
+
+pub(crate) fn le_f64(v: f64) -> [u8; 8] {
     v.to_le_bytes()
 }
 
@@ -1272,7 +782,7 @@ fn zero_entity_nurbs_catpart() -> Vec<u8> {
     f
 }
 
-fn e5_circle_stream() -> Vec<u8> {
+pub(crate) fn e5_circle_stream() -> Vec<u8> {
     let mut record = vec![0u8; 113];
     record[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
     record[3] = 0xc9;
@@ -1305,7 +815,7 @@ fn e5_circle_stream() -> Vec<u8> {
     record
 }
 
-fn e5_torus_stream() -> Vec<u8> {
+pub(crate) fn e5_torus_stream() -> Vec<u8> {
     let mut record = vec![0u8; 143];
     record[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
     record[3] = 0xcc;
@@ -1327,11 +837,11 @@ fn e5_torus_stream() -> Vec<u8> {
     record
 }
 
-fn e5_plane_stream() -> Vec<u8> {
+pub(crate) fn e5_plane_stream() -> Vec<u8> {
     e5_plane_stream_with_transform_scalars(4)
 }
 
-fn e5_plane_stream_with_transform_scalars(scalar_count: usize) -> Vec<u8> {
+pub(crate) fn e5_plane_stream_with_transform_scalars(scalar_count: usize) -> Vec<u8> {
     let mut payload = vec![0u8; 58 + 8 * scalar_count];
     for (index, value) in [1.0f64, 2.0, 3.0].into_iter().enumerate() {
         payload[1 + 8 * index..9 + 8 * index].copy_from_slice(&le_f64(value));
@@ -1349,7 +859,7 @@ fn e5_plane_stream_with_transform_scalars(scalar_count: usize) -> Vec<u8> {
     bytes
 }
 
-fn a8_surface_stream() -> Vec<u8> {
+pub(crate) fn a8_surface_stream() -> Vec<u8> {
     let mut payload = Vec::new();
     payload.push(0); // lead
     payload.extend_from_slice(&[9, 0, 0, 9, 1]); // degree, flags, K, marker
@@ -1373,7 +883,7 @@ fn a8_surface_stream() -> Vec<u8> {
     record
 }
 
-fn a8_elided_surface_stream() -> Vec<u8> {
+pub(crate) fn a8_elided_surface_stream() -> Vec<u8> {
     let mut bytes = a8_surface_stream();
     bytes.truncate(59);
     let mut tail = vec![0; 141];
@@ -1396,7 +906,7 @@ fn a8_elided_surface_stream() -> Vec<u8> {
     bytes
 }
 
-fn a8_rational_surface_stream() -> Vec<u8> {
+pub(crate) fn a8_rational_surface_stream() -> Vec<u8> {
     let mut record = a8_surface_stream();
     // Header is 11 bytes; the common-form mode follows the two degree/knot
     // sections at record offset 58 for this 2×2 distinct-knot fixture.
@@ -1409,7 +919,7 @@ fn a8_rational_surface_stream() -> Vec<u8> {
     record
 }
 
-fn a8_pcurve_stream() -> Vec<u8> {
+pub(crate) fn a8_pcurve_stream() -> Vec<u8> {
     let mut payload = vec![0, 0x18, 0x34, 0x12, 21, 0, 0, 9, 0x0c];
     for value in [0.0f64, 1.0] {
         payload.extend_from_slice(&le_f64(value));
@@ -1434,11 +944,11 @@ fn a8_pcurve_stream() -> Vec<u8> {
     record
 }
 
-fn a5_pcurve_stream() -> Vec<u8> {
+pub(crate) fn a5_pcurve_stream() -> Vec<u8> {
     a5_pcurve_stream_with_uv([0.0, 1.0], [0.0, 1.0])
 }
 
-fn a6_pcurve_stream() -> Vec<u8> {
+pub(crate) fn a6_pcurve_stream() -> Vec<u8> {
     let narrow = a5_pcurve_stream();
     let mut wide = vec![0xa6, 0x03, 0x20];
     wide.extend_from_slice(&narrow[3..7]);
@@ -1447,7 +957,7 @@ fn a6_pcurve_stream() -> Vec<u8> {
     wide
 }
 
-fn b2_pcurve_stream() -> Vec<u8> {
+pub(crate) fn b2_pcurve_stream() -> Vec<u8> {
     let narrow = a5_pcurve_stream();
     let payload = &narrow[8..];
     let mut record = vec![0xb2, 0x03, 0x20, u8::try_from(payload.len()).unwrap(), 0x05];
@@ -1455,7 +965,7 @@ fn b2_pcurve_stream() -> Vec<u8> {
     record
 }
 
-fn b2_parameter_point_stream() -> Vec<u8> {
+pub(crate) fn b2_parameter_point_stream() -> Vec<u8> {
     let mut bytes = Vec::new();
     for values in [
         vec![2.0f64, 3.0],
@@ -1472,7 +982,7 @@ fn b2_parameter_point_stream() -> Vec<u8> {
     bytes
 }
 
-fn b2_reference_list_stream() -> Vec<u8> {
+pub(crate) fn b2_reference_list_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x37, 0x22, 0x05];
     for value in 0u8..26 {
         record.push(4 * value + 1);
@@ -1481,7 +991,7 @@ fn b2_reference_list_stream() -> Vec<u8> {
     record
 }
 
-fn b2_owner_packet_stream() -> Vec<u8> {
+pub(crate) fn b2_owner_packet_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x62, 0x52, 0x05, 0x89];
     for (index, value) in [1000u16, 1, 1001, 2, 1002, 3, 1003, 4, 1004]
         .into_iter()
@@ -1498,7 +1008,7 @@ fn b2_owner_packet_stream() -> Vec<u8> {
     record
 }
 
-fn b2_width_coded_owner_packet_stream() -> Vec<u8> {
+pub(crate) fn b2_width_coded_owner_packet_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x62, 0x50, 0x05, 0x89];
     for (index, value) in [216u16, 3, 540, 7, 223, 19, 545, 31, 606]
         .into_iter()
@@ -1519,14 +1029,14 @@ fn b2_width_coded_owner_packet_stream() -> Vec<u8> {
     record
 }
 
-fn b2_counted_61_stream() -> Vec<u8> {
+pub(crate) fn b2_counted_61_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x61, 0x0c, 0x05, 0x84, 0x08, 0x14, 0x05, 0x08, 0x0e, 0x05, 0x79, 0x04, 0x4a,
         0x41, 0x03,
     ]
 }
 
-fn b2_long_61_stream() -> Vec<u8> {
+pub(crate) fn b2_long_61_stream() -> Vec<u8> {
     let mut payload = vec![0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb, 0x06];
     for member in [0x064a_u16, 0x0650, 0x0656] {
         payload.extend_from_slice(&member.to_le_bytes());
@@ -1543,13 +1053,13 @@ fn b2_long_61_stream() -> Vec<u8> {
     record
 }
 
-fn b2_link_5f_stream() -> Vec<u8> {
+pub(crate) fn b2_link_5f_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x08, 0x5d, 0x02, 0x03, 0x05,
     ]
 }
 
-fn b2_linked_owner_stream() -> Vec<u8> {
+pub(crate) fn b2_linked_owner_stream() -> Vec<u8> {
     let mut bytes = vec![
         0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x08, 0xeb, 0x03, 0x03, 0x05,
     ];
@@ -1557,7 +1067,7 @@ fn b2_linked_owner_stream() -> Vec<u8> {
     bytes
 }
 
-fn b2_linked_counted_owner_stream() -> Vec<u8> {
+pub(crate) fn b2_linked_counted_owner_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x5f, 0x06, 0x11, 0x82, 0x08, 0x94, 0x03, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x19,
         0x05, 0x87, 0x08, 0x8f, 0x03, 0x1d, 0x08, 0x07, 0x01, 0x08, 0x02, 0x01, 0x08, 0x19, 0x01,
@@ -1565,7 +1075,7 @@ fn b2_linked_counted_owner_stream() -> Vec<u8> {
     ]
 }
 
-fn b2_cone_face_stream() -> Vec<u8> {
+pub(crate) fn b2_cone_face_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x3b, 0x20, 0x05];
     for value in 0u8..16 {
         record.push(4 * value + 1);
@@ -1575,7 +1085,7 @@ fn b2_cone_face_stream() -> Vec<u8> {
     record
 }
 
-fn b2_topology_metadata_stream() -> Vec<u8> {
+pub(crate) fn b2_topology_metadata_stream() -> Vec<u8> {
     let mut bytes = vec![
         0xb2, 0x03, 0x5e, 0x07, 0x05, 0x0a, 0x34, 0x12, 0x0a, 0x78, 0x56, 0,
     ];
@@ -1583,14 +1093,14 @@ fn b2_topology_metadata_stream() -> Vec<u8> {
     bytes
 }
 
-fn b2_edge_node_stream() -> Vec<u8> {
+pub(crate) fn b2_edge_node_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x5e, 0x0d, 0x05, 0x04, 0xd8, 0x08, 0x79, 0x03, 0x08, 0x7f, 0x03, 0x04, 0xd7,
         0x04, 0xd6, 0x21,
     ]
 }
 
-fn b2_revolution_stream() -> Vec<u8> {
+pub(crate) fn b2_revolution_stream() -> Vec<u8> {
     let scale = 2.0;
     let angular_lo = scale * 0.5;
     let angular_hi = angular_lo + scale * std::f64::consts::TAU;
@@ -1622,7 +1132,7 @@ fn b2_revolution_stream() -> Vec<u8> {
     record
 }
 
-fn b2_group_stream() -> Vec<u8> {
+pub(crate) fn b2_group_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x65, 0x04, 0x05, 0x81, 0x03, 0x05, 0x0d, 0xb2, 0x03, 0x60, 0x02, 0x05, 0x81,
         0x0d,
@@ -1654,7 +1164,7 @@ fn a5_pcurve_stream_with_uv(u: [f64; 2], v: [f64; 2]) -> Vec<u8> {
     record
 }
 
-fn a5_circle_bound_edge_stream() -> Vec<u8> {
+pub(crate) fn a5_circle_bound_edge_stream() -> Vec<u8> {
     let radius = 3.0;
     let arc = [0.0, 2.0 * std::f64::consts::PI * radius];
     let mut bytes = a5_pcurve_stream_with_uv(arc, [2.0, 2.0]);
@@ -1664,7 +1174,7 @@ fn a5_circle_bound_edge_stream() -> Vec<u8> {
     bytes
 }
 
-fn a5_cone_bound_edge_stream() -> Vec<u8> {
+pub(crate) fn a5_cone_bound_edge_stream() -> Vec<u8> {
     let u = [0.0f64, 1.0];
     let v = [2.0f64, 3.0];
     let mut bytes = a5_pcurve_stream_with_uv(u, v);
@@ -1686,7 +1196,7 @@ fn a5_cone_bound_edge_stream() -> Vec<u8> {
     bytes
 }
 
-fn b2_offset_support_stream() -> Vec<u8> {
+pub(crate) fn b2_offset_support_stream() -> Vec<u8> {
     b2_offset_support_stream_for([0.0, -1.0, 4.0, 3.0])
 }
 
@@ -1698,18 +1208,18 @@ fn b2_offset_support_stream_for(domain: [f64; 4]) -> Vec<u8> {
     record
 }
 
-fn b3_offset_support_stream() -> Vec<u8> {
+pub(crate) fn b3_offset_support_stream() -> Vec<u8> {
     let narrow = b2_offset_support_stream();
     let mut wide = vec![0xb3, 0x03, 0x31, narrow[3], 0x05, 0x00];
     wide.extend_from_slice(&narrow[5..]);
     wide
 }
 
-fn b2_edge_parameter_stream() -> Vec<u8> {
+pub(crate) fn b2_edge_parameter_stream() -> Vec<u8> {
     b2_edge_parameter_stream_for(2.0, 7.0)
 }
 
-fn b2_edge_parameter_stream_for(lo: f64, hi: f64) -> Vec<u8> {
+pub(crate) fn b2_edge_parameter_stream_for(lo: f64, hi: f64) -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x23, 0x4e, 0];
     record.extend_from_slice(&[0; 6]);
     for value in [lo, hi, 1e-6, lo, hi, 1.0, lo, hi, 1e-6] {
@@ -1718,14 +1228,14 @@ fn b2_edge_parameter_stream_for(lo: f64, hi: f64) -> Vec<u8> {
     record
 }
 
-fn a5_edge_block_stream() -> Vec<u8> {
+pub(crate) fn a5_edge_block_stream() -> Vec<u8> {
     let mut bytes = a5_pcurve_stream();
     bytes.extend_from_slice(&a5_pcurve_stream());
     bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
     bytes
 }
 
-fn b2_edge_block_stream() -> Vec<u8> {
+pub(crate) fn b2_edge_block_stream() -> Vec<u8> {
     fn b_family_pcurve() -> Vec<u8> {
         let a_family = a5_pcurve_stream();
         let payload = &a_family[8..];
@@ -1754,7 +1264,7 @@ fn a5_topology_edge_run_stream() -> Vec<u8> {
     bytes
 }
 
-fn b2_topology_edge_run_stream() -> Vec<u8> {
+pub(crate) fn b2_topology_edge_run_stream() -> Vec<u8> {
     let mut bytes = b2_edge_block_stream();
     bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 5, 9, 0x84]);
     bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 9, 13, 0x88]);
@@ -1762,7 +1272,7 @@ fn b2_topology_edge_run_stream() -> Vec<u8> {
     bytes
 }
 
-fn a5_native_edge_run_stream(curve: u8, start: u8, end: u8) -> Vec<u8> {
+pub(crate) fn a5_native_edge_run_stream(curve: u8, start: u8, end: u8) -> Vec<u8> {
     assert!(curve >= 3);
     let mut bytes = a5_edge_block_stream();
     bytes.extend_from_slice(&a5_native_edge_identity_stream(curve, start, end));
@@ -1800,7 +1310,7 @@ fn a5_native_edge_identity_stream(curve: u8, start: u8, end: u8) -> Vec<u8> {
     bytes
 }
 
-fn a5_cylinder_bound_edge_stream() -> Vec<u8> {
+pub(crate) fn a5_cylinder_bound_edge_stream() -> Vec<u8> {
     let mut bytes = a5_edge_block_stream();
     bytes.extend_from_slice(&b2_cylinder_stream());
     let endpoints = [
@@ -1816,7 +1326,7 @@ fn a5_cylinder_bound_edge_stream() -> Vec<u8> {
     bytes
 }
 
-fn a5_nurbs_bound_edge_stream(offset: f64) -> Vec<u8> {
+pub(crate) fn a5_nurbs_bound_edge_stream(offset: f64) -> Vec<u8> {
     let cylinder_uv = ([0.0f64, 1.0], [0.0f64, 1.0]);
     let surface_uv = ([0.0f64, 1.0], [0.0f64, 0.0]);
     let p0 = [1.0, 4.0, 3.0];
@@ -1857,7 +1367,7 @@ fn a5_nurbs_bound_edge_stream(offset: f64) -> Vec<u8> {
     bytes
 }
 
-fn b2_circle_stream() -> Vec<u8> {
+pub(crate) fn b2_circle_stream() -> Vec<u8> {
     let radius = 3.0;
     let mut record = vec![0xb2, 0x03, 0x19, 0x33, 0x05, 0x08, 0x34, 0x12];
     for value in [
@@ -1873,7 +1383,7 @@ fn b2_circle_stream() -> Vec<u8> {
     record
 }
 
-fn b2_cylinder_stream() -> Vec<u8> {
+pub(crate) fn b2_cylinder_stream() -> Vec<u8> {
     let radius = 2.0;
     let mut record = vec![0xb2, 0x03, 0x28, 0x5a, 0x05];
     record.resize(95, 0);
@@ -1894,14 +1404,14 @@ fn b2_cylinder_stream() -> Vec<u8> {
     record
 }
 
-fn b3_cylinder_stream() -> Vec<u8> {
+pub(crate) fn b3_cylinder_stream() -> Vec<u8> {
     let narrow = b2_cylinder_stream();
     let mut wide = vec![0xb3, 0x03, 0x28, 0x5a, 0x05, 0x00];
     wide.extend_from_slice(&narrow[5..]);
     wide
 }
 
-fn b2_implicit_axis_cylinder_stream() -> Vec<u8> {
+pub(crate) fn b2_implicit_axis_cylinder_stream() -> Vec<u8> {
     let radius = 2.0;
     let mut record = vec![0xb2, 0x03, 0x28, 0x52, 0x05];
     record.resize(87, 0);
@@ -1918,7 +1428,7 @@ fn b2_implicit_axis_cylinder_stream() -> Vec<u8> {
     record
 }
 
-fn b2_phase_tailed_cylinder_stream() -> Vec<u8> {
+pub(crate) fn b2_phase_tailed_cylinder_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x28, 0x62, 0x05];
     record.resize(103, 0);
     let p = 5;
@@ -1936,7 +1446,7 @@ fn b2_phase_tailed_cylinder_stream() -> Vec<u8> {
     record
 }
 
-fn b2_cone_stream() -> Vec<u8> {
+pub(crate) fn b2_cone_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x29, 0xb8, 0x05];
     record.resize(189, 0);
     for (start, values) in [
@@ -1957,7 +1467,7 @@ fn b2_cone_stream() -> Vec<u8> {
     record
 }
 
-fn b2_construction_use_stream() -> Vec<u8> {
+pub(crate) fn b2_construction_use_stream() -> Vec<u8> {
     b2_construction_use_stream_for([0.0, -1.0, 4.0, 3.0])
 }
 
@@ -1971,7 +1481,7 @@ fn b2_construction_use_stream_for(domain: [f64; 4]) -> Vec<u8> {
     record
 }
 
-fn b2_embedded_cylinder_stream() -> Vec<u8> {
+pub(crate) fn b2_embedded_cylinder_stream() -> Vec<u8> {
     let standalone = b2_cylinder_stream();
     let mut record = vec![
         0xb2, 0x03, 0x60, 0x02, 0x05, 0x81, 0x0d, 0xb4, 0x03, 0x28, 0x5a,
@@ -2143,7 +1653,7 @@ fn finjpl_stream() -> Vec<u8> {
     bytes
 }
 
-fn a5_surface_stream() -> Vec<u8> {
+pub(crate) fn a5_surface_stream() -> Vec<u8> {
     a5_surface_stream_with_poles([
         [0.0, 0.0, 0.0],
         [1.0, 0.0, 1.0],
@@ -2152,7 +1662,7 @@ fn a5_surface_stream() -> Vec<u8> {
     ])
 }
 
-fn a6_surface_stream() -> Vec<u8> {
+pub(crate) fn a6_surface_stream() -> Vec<u8> {
     let narrow = a5_surface_stream();
     let mut wide = vec![0xa6, 0x03, 0x34];
     wide.extend_from_slice(&narrow[3..7]);
@@ -2185,7 +1695,7 @@ fn a5_surface_stream_with_poles(poles: [[f64; 3]; 4]) -> Vec<u8> {
     record
 }
 
-fn a5_rational_surface_stream() -> Vec<u8> {
+pub(crate) fn a5_rational_surface_stream() -> Vec<u8> {
     let mut record = a5_surface_stream();
     record[46] = 0x05;
     let tail = record.split_off(143);
@@ -2198,7 +1708,7 @@ fn a5_rational_surface_stream() -> Vec<u8> {
     record
 }
 
-fn a5_freeform_curve_stream() -> Vec<u8> {
+pub(crate) fn a5_freeform_curve_stream() -> Vec<u8> {
     let mut payload = vec![9, 21, 9, 0x0c];
     for value in [0.0f64, 1.0] {
         payload.extend_from_slice(&le_f64(value));
@@ -2243,7 +1753,7 @@ fn a5_freeform_curve_stream() -> Vec<u8> {
     record
 }
 
-fn a6_freeform_curve_stream() -> Vec<u8> {
+pub(crate) fn a6_freeform_curve_stream() -> Vec<u8> {
     let narrow = a5_freeform_curve_stream();
     let mut wide = vec![0xa6, 0x03, 0x32];
     wide.extend_from_slice(&narrow[3..7]);
@@ -2252,7 +1762,7 @@ fn a6_freeform_curve_stream() -> Vec<u8> {
     wide
 }
 
-fn a5_guide_curve_stream() -> Vec<u8> {
+pub(crate) fn a5_guide_curve_stream() -> Vec<u8> {
     let mut payload = vec![9, 21, 9, 0x0c];
     payload.extend_from_slice(&le_f64(0.0));
     payload.extend_from_slice(&le_f64(1.0));
@@ -2275,7 +1785,7 @@ fn a5_guide_curve_stream() -> Vec<u8> {
     record
 }
 
-fn a8_freeform_curve_stream() -> Vec<u8> {
+pub(crate) fn a8_freeform_curve_stream() -> Vec<u8> {
     let mut payload = vec![0, 9, 21, 0, 0, 9, 0x0c];
     for value in [0.0f64, 1.0] {
         payload.extend_from_slice(&le_f64(value));
@@ -2983,50 +2493,7 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
     }
 }
 
-#[test]
-fn e5_circle_parser_reads_framed_carrier() {
-    let stream = e5_circle_stream();
-    let circles = crate::families::e5::records::e5_circles(&stream);
-    assert_eq!(circles.len(), 1);
-    match &circles[0].geometry {
-        cadmpeg_ir::geometry::CurveGeometry::Circle {
-            center,
-            axis,
-            radius,
-            ..
-        } => {
-            assert_eq!(*center, cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
-            assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-            assert_eq!(*radius, 2.5);
-        }
-        other => panic!("expected circle, got {other:?}"),
-    }
-    let surfaces = crate::families::e5::records::e5_surfaces(&stream);
-    assert!(matches!(
-        surfaces[0].geometry,
-        SurfaceGeometry::Cylinder { radius: 2.5, .. }
-    ));
-}
-
-#[test]
-fn e5_edge_parser_reads_u24_reference_tokens() {
-    let mut record = vec![0u8; 13];
-    record[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
-    record[3] = 0xff;
-    let payload = [
-        0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x80,
-    ];
-    record[5..7].copy_from_slice(&(payload.len() as u16).to_le_bytes());
-    record.extend_from_slice(&payload);
-
-    let edges = crate::families::e5::records::e5_edges(&record);
-    assert_eq!(edges.len(), 1);
-    assert_eq!(edges[0].support_id, 0x03_0201);
-    assert_eq!(edges[0].start_vertex_id, 0x06_0504);
-    assert_eq!(edges[0].end_vertex_id, 0x09_0807);
-}
-
-fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
+pub(crate) fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
     bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, class, 0]);
     bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
     bytes.extend_from_slice(&[0, 0]);
@@ -3034,7 +2501,7 @@ fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
     bytes.extend_from_slice(payload);
 }
 
-fn e5_uv_line_payload(surface: u16, offset: f64) -> Vec<u8> {
+pub(crate) fn e5_uv_line_payload(surface: u16, offset: f64) -> Vec<u8> {
     let mut payload = vec![0x81, 0x18];
     payload.extend_from_slice(&surface.to_le_bytes());
     for value in [offset, 0.0, 1.0, 0.0, -1.0, 1.0] {
@@ -3144,292 +2611,7 @@ fn e5_torus_topology_stream() -> Vec<u8> {
     bytes
 }
 
-#[test]
-fn e5_topology_follows_face_loop_and_serialized_edge_members() {
-    let mut bytes = Vec::new();
-    for id in [10u32, 20, 30] {
-        append_e5_record(&mut bytes, 0xfe, id, &[]);
-    }
-    for (id, start, end) in [(100u8, 10u8, 20u8), (101, 20, 30), (102, 30, 10)] {
-        append_e5_record(
-            &mut bytes,
-            0xff,
-            u32::from(id),
-            &[0x85, 0x08, 200, 0x08, start, 0x08, end, 0x80, 0x80],
-        );
-    }
-    for (id, surface, offset) in [
-        (400u32, 500u16, 0.0),
-        (401, 500, 1.0),
-        (402, 500, 2.0),
-        (410, 501, 0.0),
-        (411, 501, 1.0),
-        (412, 501, 2.0),
-    ] {
-        append_e5_record(&mut bytes, 0x96, id, &e5_uv_line_payload(surface, offset));
-    }
-    let mut jet = vec![0x81, 0x18];
-    jet.extend_from_slice(&500u16.to_le_bytes());
-    for value in [5u32, 0, 0, 2, 0, 0, 0] {
-        jet.extend_from_slice(&value.to_le_bytes());
-    }
-    jet.extend_from_slice(&le_f64(1.0));
-    for value in [6u32, 6, 2] {
-        jet.extend_from_slice(&value.to_le_bytes());
-    }
-    for values in [[1.0f64, 0.0], [0.0, 1.0], [0.0, -1.0], [1.0, 0.0]] {
-        for value in values {
-            jet.extend_from_slice(&le_f64(value));
-        }
-    }
-    jet.extend_from_slice(&1u16.to_le_bytes());
-    for values in [[-1.0f64, 0.0], [0.0, -1.0]] {
-        for value in values {
-            jet.extend_from_slice(&le_f64(value));
-        }
-    }
-    jet.extend_from_slice(&le_f64(0.0));
-    jet.extend_from_slice(&le_f64(1.0));
-    append_e5_record(&mut bytes, 0xa0, 403, &jet);
-    let mut support_payload = vec![0x82, 0x18, 144, 1, 0x18, 154, 1, 0x81, 0, 0];
-    support_payload.extend_from_slice(&le_f64(-10.0));
-    support_payload.extend_from_slice(&le_f64(10.0));
-    append_e5_record(&mut bytes, 0xc1, 200, &support_payload);
-    let mut bound_payload = vec![0x82, 0x18, 144, 1, 0x08, 200, 0x82];
-    for (parameter, code) in [(0.25f64, 1u32), (0.75, 7)] {
-        bound_payload.extend_from_slice(&le_f64(parameter));
-        bound_payload.extend_from_slice(&code.to_le_bytes());
-    }
-    append_e5_record(&mut bytes, 0x0e, 900, &bound_payload);
-    let mut loop_payload = vec![
-        0x87, 0x18, 144, 1, 0x08, 100, 0x18, 145, 1, 0x08, 101, 0x18, 146, 1, 0x08, 102, 0x18, 244,
-        1, 0x83,
-    ];
-    for _ in 0..13 {
-        loop_payload.extend_from_slice(&1i16.to_le_bytes());
-    }
-    append_e5_record(&mut bytes, 0x09, 300, &loop_payload);
-    let mut reverse_loop_payload = vec![
-        0x87, 0x18, 154, 1, 0x08, 100, 0x18, 156, 1, 0x08, 102, 0x18, 155, 1, 0x08, 101, 0x18, 245,
-        1, 0x83,
-    ];
-    for _ in 0..12 {
-        reverse_loop_payload.extend_from_slice(&1i16.to_le_bytes());
-    }
-    reverse_loop_payload.extend_from_slice(&0i16.to_le_bytes());
-    append_e5_record(&mut bytes, 0x09, 301, &reverse_loop_payload);
-    append_e5_record(&mut bytes, 0xcc, 500, &[]);
-    append_e5_record(&mut bytes, 0xcc, 501, &[]);
-    append_e5_record(
-        &mut bytes,
-        0x00,
-        600,
-        &[0x82, 0x18, 244, 1, 0x18, 44, 1, 0x01, 0x00],
-    );
-    append_e5_record(
-        &mut bytes,
-        0x00,
-        601,
-        &[0x82, 0x18, 245, 1, 0x18, 45, 1, 0x01, 0x00],
-    );
-    append_e5_record(
-        &mut bytes,
-        0x08,
-        700,
-        &[0x82, 0x18, 88, 2, 0x18, 89, 2, 0x82, 1, 0, 1, 0, 1, 0, 1, 0],
-    );
-    append_e5_record(&mut bytes, 0x01, 800, &[0x81, 0x18, 188, 2]);
-
-    let topology = crate::e5::parse_topology(&bytes).expect("E5 graph");
-    assert_eq!(topology.faces.len(), 2);
-    assert_eq!(topology.faces[0].surface, 500);
-    assert_eq!(topology.faces[0].loops[0].edge_uses, vec![100, 101, 102]);
-    assert_eq!(
-        topology.faces[0].loops[0].reversed,
-        vec![false, false, false]
-    );
-    assert_eq!(topology.faces[0].loops[0].outer, Some(true));
-    assert_eq!(topology.faces[0].loops[0].orientation_signs, vec![1; 13]);
-    assert_eq!(
-        topology.faces[0].loops[0]
-            .resolved_members()
-            .unwrap()
-            .iter()
-            .map(|member| (member.serialized_index, member.reversed))
-            .collect::<Vec<_>>(),
-        vec![(0, false), (1, false), (2, false)]
-    );
-    assert_eq!(
-        topology.faces[1].loops[0]
-            .resolved_members()
-            .unwrap()
-            .iter()
-            .map(|member| (member.serialized_index, member.reversed))
-            .collect::<Vec<_>>(),
-        vec![(0, true), (1, true), (2, true)]
-    );
-    assert_eq!(
-        topology.faces[1].loops[0].orientation_signs,
-        [vec![1; 12], vec![0]].concat()
-    );
-    assert_eq!(topology.bodies[0].faces, vec![600, 601]);
-    assert_eq!(topology.bodies[0].face_orientation_signs, vec![1, 1]);
-    assert_eq!(topology.bodies[0].extra_orientation_signs, [1, 1]);
-    assert_eq!(topology.pcurves.len(), 7);
-    assert!(matches!(
-        topology.pcurves[&400],
-        crate::e5::E5Pcurve::Line {
-            direction: [1.0, 0.0],
-            ..
-        }
-    ));
-    assert_eq!(topology.bounds[&900].entries[0].parameter, 0.25);
-    assert_eq!(topology.bounds[&900].entries[1].representation, 200);
-    assert_eq!(topology.curve_supports[&200].pcurves, vec![400, 410]);
-    assert_eq!(topology.curve_supports[&200].range, [-10.0, 10.0]);
-    assert!(matches!(
-        topology.pcurves[&403],
-        crate::e5::E5Pcurve::Jet { degree: 5, ref knots, .. } if knots == &[0.0, 1.0]
-    ));
-}
-
-#[test]
-fn standard_circle_parser_rejects_non_support_marker() {
-    let mut bytes = vec![0x61, 0, 0, 0, 0, 0x12, 0, 0x33, 0x37];
-    bytes.extend_from_slice(&[0; 18]);
-    assert!(crate::families::standard::records::standard_circles(&bytes, 1).is_empty());
-}
-
-#[test]
-fn standard_surface_roster_walks_freeform_and_analytic_records() {
-    use crate::families::standard::records::StandardSurfaceRecord;
-
-    let mut bytes = vec![0x34, 0x12, 0, 0, 0, 0];
-    for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
-        bytes.extend_from_slice(&le_f32(value));
-    }
-    bytes.push(0x01);
-    let analytic = bytes.len();
-    bytes.extend_from_slice(&[0x78, 0x56, 0, 0, 0x1a, 0, 0x33, 0x33]);
-    bytes.resize(analytic + 72, 0);
-    bytes.push(0xff);
-    bytes.push(0x60);
-
-    let records = crate::families::standard::records::standard_surface_records(&bytes, 2)
-        .expect("surface roster");
-    assert!(matches!(
-        records[0],
-        StandardSurfaceRecord::Freeform {
-            pos: 0,
-            tag: 0x1234,
-            forward: true,
-            ..
-        }
-    ));
-    let StandardSurfaceRecord::Freeform { bounds, .. } = &records[0] else {
-        unreachable!("freeform roster row")
-    };
-    assert_eq!(bounds.aabb_center, [0.0, 0.0, 0.0]);
-    assert_eq!(bounds.aabb_half_extents, [1.0, 1.0, 1.0]);
-    assert_eq!(bounds.sphere_center, [0.0, 0.0, 0.0]);
-    assert_eq!(bounds.sphere_radius, 2.0);
-    assert!(matches!(
-        &records[1],
-        StandardSurfaceRecord::Analytic(prefix)
-            if prefix.pos == analytic + 5 && prefix.target == 0x5678 && prefix.kind == 0x33
-    ));
-}
-
-#[test]
-fn plane_bounds_bind_normals_by_persistent_carrier_tag() {
-    fn bounds_record(
-        tag: u32,
-        center: [f32; 3],
-        half: [f32; 3],
-        sphere: [f32; 3],
-        radius: f32,
-    ) -> Vec<u8> {
-        let mut bytes = vec![0xff];
-        bytes.extend_from_slice(&tag.to_le_bytes()[..3]);
-        bytes.extend_from_slice(&[0x00, 0x02, 0x00, 0x33, 0x32]);
-        for value in [
-            center[0], center[1], center[2], half[0], half[1], half[2], sphere[0], sphere[1],
-            sphere[2], radius,
-        ] {
-            bytes.extend_from_slice(&le_f32(value));
-        }
-        bytes
-    }
-
-    let mut bytes = bounds_record(0x010203, [1.0, 2.0, 3.0], [1.0; 3], [1.0, 2.0, 3.0], 4.0);
-    bytes.extend(bounds_record(
-        0x040506,
-        [4.0, 5.0, 6.0],
-        [1.0; 3],
-        [4.0, 5.0, 6.0],
-        4.0,
-    ));
-    bytes.extend(bounds_record(
-        0x070809,
-        [0.0, 0.0, 50.0],
-        [2.5, 2.5, 0.0],
-        [5.2e-7, 1.6e-7, 50.0],
-        2.5,
-    ));
-    let normals = HashMap::from([
-        (0x040506, [0.0, 1.0, 0.0]),
-        (0x010203, [1.0, 0.0, 0.0]),
-        (0x070809, [0.0, 0.0, 1.0]),
-    ]);
-    let planes = crate::families::standard::records::plane_params(&bytes, &normals);
-
-    assert_eq!(planes.len(), 3);
-    assert_eq!(planes[0].target, 0x010203);
-    assert_eq!(planes[0].normal, Vector3::new(1.0, 0.0, 0.0));
-    assert_eq!(planes[1].target, 0x040506);
-    assert_eq!(planes[1].normal, Vector3::new(0.0, 1.0, 0.0));
-    assert_eq!(planes[2].target, 0x070809);
-    assert_eq!(
-        planes[2].origin,
-        Point3::new(f64::from(5.2e-7f32), f64::from(1.6e-7f32), 50.0)
-    );
-}
-
-#[test]
-fn standard_face_witness_requires_an_analytic_marker() {
-    let mut record = vec![0u8; 48];
-    record[5..8].copy_from_slice(&[0x00, 0x33, 0x33]);
-    for (index, value) in [1.0f32, 2.0, 3.0].into_iter().enumerate() {
-        record[32 + index * 4..36 + index * 4].copy_from_slice(&value.to_le_bytes());
-    }
-    assert_eq!(
-        crate::families::standard::records::standard_face_witness(&record, 5),
-        Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
-    );
-    record[6] = 0x32;
-    assert!(crate::families::standard::records::standard_face_witness(&record, 5).is_none());
-}
-
-#[test]
-fn standard_curve_supports_begin_after_the_surface_roster() {
-    let mut bytes = vec![
-        0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 0, // earlier valid-looking row
-    ];
-    bytes.extend_from_slice(&[0x34, 0x12, 0, 0, 0, 0]);
-    for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
-        bytes.extend_from_slice(&le_f32(value));
-    }
-    bytes.push(0x01);
-    bytes.extend_from_slice(&[
-        0x60, 2, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 0, // roster-adjacent row
-    ]);
-
-    let rows = crate::families::standard::records::standard_curve_supports(&bytes, 1);
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].tag, 2);
-}
-
-fn zero_entity_record(kind: u8, mut tail: Vec<u8>) -> Vec<u8> {
+pub(crate) fn zero_entity_record(kind: u8, mut tail: Vec<u8>) -> Vec<u8> {
     let length = 12 + tail.len();
     let mut record = vec![
         0xa9,
@@ -3442,132 +2624,13 @@ fn zero_entity_record(kind: u8, mut tail: Vec<u8>) -> Vec<u8> {
     record
 }
 
-#[test]
-fn zero_entity_parser_decodes_face_loop_lanes_and_packed_senses() {
-    let mut carrier = zero_entity_record(0x27, vec![0; 106]);
-    for (offset, value) in [
-        (14usize, 10.0f64),
-        (22, 0.0),
-        (30, 0.0),
-        (38, 1.0),
-        (46, 0.0),
-        (54, 0.0),
-        (62, 0.0),
-        (70, 1.0),
-        (78, 0.0),
-    ] {
-        carrier[offset..offset + 8].copy_from_slice(&le_f64(value));
-    }
-    let mut support_tail = vec![0; 113];
-    support_tail[0] = 0x10;
-    support_tail[1..5].copy_from_slice(&2u32.to_le_bytes());
-    for (offset, value) in [(81usize, 1.0f64), (89, 2.0), (97, 3.0), (105, 4.0)] {
-        support_tail[offset..offset + 8].copy_from_slice(&le_f64(value));
-    }
-    let support = zero_entity_record(0x21, support_tail);
-    let mut face_tail = vec![0x82, 0x10];
-    face_tail.extend_from_slice(&1000u32.to_le_bytes());
-    face_tail.push(0x10);
-    face_tail.extend_from_slice(&900u32.to_le_bytes());
-    face_tail.push(0);
-    let face = zero_entity_record(0x5f, face_tail);
-
-    let mut loop_tail = vec![0x85];
-    for reference in [98u32, 500, 97, 501, 100] {
-        loop_tail.push(0x10);
-        loop_tail.extend_from_slice(&reference.to_le_bytes());
-    }
-    loop_tail.extend_from_slice(&[0x82, 0x41, 0b01_0111, 0x01]);
-    let loop_record = zero_entity_record(0x62, loop_tail);
-    let mut physical_edge = zero_entity_record(0x5e, vec![0; 26]);
-    for (offset, reference) in [
-        (7usize, 10u32),
-        (12, 20),
-        (17, 30),
-        (22, 40),
-        (27, 50),
-        (32, 60),
-    ] {
-        physical_edge[offset] = 0x10;
-        physical_edge[offset + 1..offset + 5].copy_from_slice(&reference.to_le_bytes());
-    }
-    let mut side_pair_tail = vec![0x82, 0x10];
-    side_pair_tail.extend_from_slice(&1000u32.to_le_bytes());
-    side_pair_tail.push(0x10);
-    side_pair_tail.extend_from_slice(&2000u32.to_le_bytes());
-    side_pair_tail.resize(105, 0);
-    let side_pair = zero_entity_record(0x25, side_pair_tail);
-    let coedge_twin = |side: u8| {
-        let mut record = zero_entity_record(0x06, vec![0; 56]);
-        record[7] = 0x10;
-        record[8..12].copy_from_slice(&1u32.to_le_bytes());
-        record[12..15].copy_from_slice(&[0x83, 0x10, side]);
-        for (offset, reference) in [
-            (15usize, 1000u32 + u32::from(side)),
-            (20, 2000u32 + u32::from(side)),
-        ] {
-            record[offset] = 0x10;
-            record[offset + 1..offset + 5].copy_from_slice(&reference.to_le_bytes());
-        }
-        record
-    };
-    let mut incidence_tail = vec![0x83];
-    for item in [700u32, 701, 702] {
-        incidence_tail.push(0x10);
-        incidence_tail.extend_from_slice(&item.to_le_bytes());
-    }
-    let incidence = zero_entity_record(0x05, incidence_tail);
-    let vertex_marker = zero_entity_record(0x5d, vec![0; 6]);
-    let mut bytes = carrier;
-    bytes.extend_from_slice(&support);
-    bytes.extend_from_slice(&face);
-    bytes.extend_from_slice(&loop_record);
-    bytes.extend_from_slice(&physical_edge);
-    bytes.extend_from_slice(&side_pair);
-    bytes.extend_from_slice(&coedge_twin(1));
-    bytes.extend_from_slice(&coedge_twin(2));
-    bytes.extend_from_slice(&incidence);
-    bytes.extend_from_slice(&vertex_marker);
-
-    let topology = crate::zero_entity::parse(&bytes).expect("zero-entity topology records");
-    assert_eq!(topology.faces[0].loop_terminals, vec![100]);
-    assert_eq!(topology.loops[0].member_ids, vec![98, 97]);
-    assert_eq!(topology.loops[0].secondary_refs, vec![500, 501]);
-    assert_eq!(topology.loops[0].terminal_id, 100);
-    assert_eq!(topology.loops[0].reversed, vec![false, true]);
-    assert!(!topology.loops[0].inner);
-    assert_eq!(topology.carrier_runs[0].support_ordinals, vec![1]);
-    assert_eq!(topology.supports[0].slot, 2);
-    assert_eq!(
-        topology.supports[0].uv_endpoints,
-        Some([[1.0, 2.0], [3.0, 4.0]])
-    );
-    assert_eq!(topology.faces[0].loop_indices, vec![0]);
-    assert_eq!(topology.loops[0].support_indices, vec![Some(0), None]);
-    assert_eq!(
-        topology.supports[0].lifted_endpoints,
-        Some([[11.0, 2.0, 0.0], [13.0, 4.0, 0.0]])
-    );
-    assert_eq!(
-        topology.physical_edges[0].references,
-        [10, 20, 30, 40, 50, 60]
-    );
-    assert_eq!(topology.side_pairs[0].bases, [1000, 2000]);
-    assert_eq!(
-        topology.side_pairs[0].composite_keys,
-        [[1001, 2001], [1002, 2002]]
-    );
-    assert_eq!(topology.coedge_twins[1].side, 2);
-    assert_eq!(topology.vertices[0].incidence_items, vec![700, 701, 702]);
-}
-
-fn append_b5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
+pub(crate) fn append_b5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
     bytes.extend_from_slice(&[0xb5, 0x03, class, payload.len() as u8]);
     bytes.extend_from_slice(&id.to_le_bytes());
     bytes.extend_from_slice(payload);
 }
 
-fn b5_linear_pcurve_payload(surface: u16, start: [f64; 2], end: [f64; 2]) -> Vec<u8> {
+pub(crate) fn b5_linear_pcurve_payload(surface: u16, start: [f64; 2], end: [f64; 2]) -> Vec<u8> {
     let mut payload = vec![0x81, 0x18];
     payload.extend_from_slice(&surface.to_le_bytes());
     payload.extend_from_slice(&[0x01, 5, 0, 0, 9, 0x08, 1]);
@@ -3582,7 +2645,7 @@ fn b5_linear_pcurve_payload(surface: u16, start: [f64; 2], end: [f64; 2]) -> Vec
     payload
 }
 
-fn b5_analytic_line_pcurve_payload(
+pub(crate) fn b5_analytic_line_pcurve_payload(
     surface: u16,
     origin: [f64; 2],
     direction: [f64; 2],
@@ -3604,7 +2667,7 @@ fn b5_analytic_line_pcurve_payload(
     payload
 }
 
-fn b5_isoparametric_line_pcurve_payload(
+pub(crate) fn b5_isoparametric_line_pcurve_payload(
     surface: u16,
     constant_u: f64,
     interval_v: [f64; 2],
@@ -3618,7 +2681,7 @@ fn b5_isoparametric_line_pcurve_payload(
     payload
 }
 
-fn b5_transverse_isoparametric_line_pcurve_payload(
+pub(crate) fn b5_transverse_isoparametric_line_pcurve_payload(
     surface: u16,
     constant_v: f64,
     interval_u: [f64; 2],
@@ -3632,7 +2695,7 @@ fn b5_transverse_isoparametric_line_pcurve_payload(
     payload
 }
 
-fn b5_closed_triangle_stream() -> Vec<u8> {
+pub(crate) fn b5_closed_triangle_stream() -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut plane = vec![0; 73];
     for (offset, value) in [
@@ -3689,427 +2752,6 @@ fn b5_closed_triangle_stream() -> Vec<u8> {
 }
 
 #[test]
-fn b5_frame_walk_ignores_markers_inside_payloads() {
-    let mut bytes = Vec::new();
-    let mut payload = vec![0xb5, 0x03, 0x5f, 0x08, 0, 0, 0, 0, 0x05, 0x08, 0x01];
-    for value in [90.0f32, 91.0, 92.0] {
-        payload.extend_from_slice(&le_f32(value));
-    }
-    append_b5_record(&mut bytes, 0x06, 1, &payload);
-    bytes.extend_from_slice(&b5_closed_triangle_stream());
-    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
-    assert_eq!(graph.faces.len(), 1);
-    assert_eq!(graph.loops.len(), 1);
-    assert_eq!(graph.vertex_points.len(), 3);
-    assert_eq!(graph.edge_vertices.len(), 3);
-}
-
-#[test]
-fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
-    let mut bytes = b5_closed_triangle_stream();
-    append_b5_record(
-        &mut bytes,
-        0x18,
-        600,
-        &b5_analytic_line_pcurve_payload(100, [2.0, 3.0], [4.0, -2.0], [-0.5, 1.5]),
-    );
-    append_b5_record(
-        &mut bytes,
-        0x18,
-        601,
-        &b5_isoparametric_line_pcurve_payload(100, 2.0, [-3.0, 5.0]),
-    );
-    append_b5_record(
-        &mut bytes,
-        0x18,
-        602,
-        &b5_transverse_isoparametric_line_pcurve_payload(100, -4.0, [1.0, 7.0]),
-    );
-    // Keep the appended record in a length-closed run.
-    append_b5_record(&mut bytes, 0x5e, 603, &[]);
-    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
-    let pcurve = graph.pcurves.get(&600).expect("analytic line pcurve");
-    assert_eq!(pcurve.degree, 1);
-    assert_eq!(pcurve.distinct_knots, vec![-0.5, 1.5]);
-    assert_eq!(pcurve.multiplicities, vec![2, 2]);
-    assert_eq!(pcurve.control_points, vec![[0.0, 4.0], [8.0, 0.0]]);
-    assert_eq!(
-        pcurve.lifted_endpoints,
-        Some([[0.0, 4.0, 0.0], [8.0, 0.0, 0.0]])
-    );
-    let isoparametric = graph.pcurves.get(&601).expect("isoparametric line pcurve");
-    assert_eq!(isoparametric.degree, 1);
-    assert_eq!(isoparametric.distinct_knots, vec![-3.0, 5.0]);
-    assert_eq!(isoparametric.multiplicities, vec![2, 2]);
-    assert_eq!(isoparametric.control_points, vec![[2.0, -3.0], [2.0, 5.0]]);
-    assert_eq!(
-        isoparametric.lifted_endpoints,
-        Some([[2.0, -3.0, 0.0], [2.0, 5.0, 0.0]])
-    );
-    let transverse = graph.pcurves.get(&602).expect("transverse line pcurve");
-    assert_eq!(transverse.degree, 1);
-    assert_eq!(transverse.distinct_knots, vec![1.0, 7.0]);
-    assert_eq!(transverse.multiplicities, vec![2, 2]);
-    assert_eq!(transverse.control_points, vec![[1.0, -4.0], [7.0, -4.0]]);
-    assert_eq!(
-        transverse.lifted_endpoints,
-        Some([[1.0, -4.0, 0.0], [7.0, -4.0, 0.0]])
-    );
-}
-
-#[test]
-fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
-    let mut bytes = a8_surface_stream();
-    bytes[7..11].copy_from_slice(&0x1234u32.to_le_bytes());
-    let mut plane = vec![0; 73];
-    for (offset, value) in [
-        (1usize, 10.0f64),
-        (9, 0.0),
-        (17, 0.0),
-        (25, 1.0),
-        (33, 0.0),
-        (41, 0.0),
-        (49, 0.0),
-        (57, 1.0),
-        (65, 0.0),
-    ] {
-        plane[offset..offset + 8].copy_from_slice(&le_f64(value));
-    }
-    append_b5_record(&mut bytes, 0x27, 100, &plane);
-    for (id, offset) in [(200u32, 0.0f64), (201, 1.0), (202, 2.0)] {
-        let payload = b5_linear_pcurve_payload(100, [offset, 0.0], [offset + 1.0, 0.0]);
-        append_b5_record(&mut bytes, 0x21, id, &payload);
-    }
-    let mut profile = vec![0; 49];
-    for (offset, value) in [
-        (1usize, 1.0f64),
-        (9, 0.0),
-        (17, 0.0),
-        (25, 0.0),
-        (33, 0.0),
-        (41, 1.0),
-    ] {
-        profile[offset..offset + 8].copy_from_slice(&le_f64(value));
-    }
-    append_b5_record(&mut bytes, 0x0e, 110, &profile);
-    let mut revolution = vec![0; 143];
-    revolution[1] = 0x38;
-    revolution[2..5].copy_from_slice(&[110, 0, 0]);
-    revolution[77 + 16..77 + 24].copy_from_slice(&le_f64(1.0));
-    revolution[135..143].copy_from_slice(&le_f64(1.0));
-    append_b5_record(&mut bytes, 0x2d, 120, &revolution);
-    append_b5_record(
-        &mut bytes,
-        0x21,
-        210,
-        &b5_linear_pcurve_payload(120, [1.0, 0.0], [1.0, std::f64::consts::PI]),
-    );
-    append_b5_record(
-        &mut bytes,
-        0x21,
-        211,
-        &b5_linear_pcurve_payload(0x1234, [0.0, 0.0], [1.0, 1.0]),
-    );
-    append_b5_record(&mut bytes, 0x5e, 300, &[]);
-    append_b5_record(&mut bytes, 0x5e, 301, &[]);
-    append_b5_record(&mut bytes, 0x5e, 0x01_0100, &[]);
-    let loop_payload = [
-        0x87, 0x18, 200, 0, 0x18, 44, 1, 0x18, 201, 0, 0x18, 45, 1, 0x18, 202, 0, 0x30, 1, 1, 0x18,
-        100, 0,
-    ];
-    append_b5_record(&mut bytes, 0x62, 400, &loop_payload);
-    append_b5_record(&mut bytes, 0x5f, 500, &[0x18, 100, 0, 0x18, 144, 1]);
-    for point in [
-        [10.0f32, 0.0, 0.0],
-        [11.0, 0.0, 0.0],
-        [12.0, 0.0, 0.0],
-        [13.0, 0.0, 0.0],
-    ] {
-        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-        for value in point {
-            bytes.extend_from_slice(&le_f32(value));
-        }
-    }
-
-    let graph = crate::families::b5::graph::parse(&bytes).expect("B5 object topology");
-    assert_eq!(graph.faces[0].surface, 100);
-    assert_eq!(graph.faces[0].loops, vec![400]);
-    assert_eq!(graph.loops[&400].pcurves, vec![200, 201, 202]);
-    assert_eq!(graph.loops[&400].edges, vec![300, 301, 0x01_0100]);
-    assert_eq!(graph.pcurves[&200].degree, 1);
-    assert_eq!(
-        graph.pcurves[&200].control_points,
-        vec![[0.0, 0.0], [1.0, 0.0]]
-    );
-    assert_eq!(
-        graph.pcurves[&200].lifted_endpoints,
-        Some([[10.0, 0.0, 0.0], [11.0, 0.0, 0.0]])
-    );
-    assert_eq!(graph.edge_vertices[&300], [0, 1]);
-    assert_eq!(graph.edge_vertices[&0x01_0100], [2, 3]);
-    let revolution_endpoints = graph.pcurves[&210]
-        .lifted_endpoints
-        .expect("revolution lift");
-    assert!((revolution_endpoints[0][0] - 1.0).abs() < 1e-12);
-    assert!((revolution_endpoints[1][0] + 1.0).abs() < 1e-12);
-    assert!((revolution_endpoints[1][2] - 1.0).abs() < 1e-12);
-    assert_eq!(
-        graph.pcurves[&211].lifted_endpoints,
-        Some([[0.0, 0.0, 0.0], [8.0, 2.0, 2.0]])
-    );
-}
-
-#[test]
-fn standard_freeform_tag_resolves_object_stream_face_carrier() {
-    let mut stream = b5_closed_triangle_stream();
-    let vertex_start = stream
-        .windows(3)
-        .position(|bytes| bytes == [0x05, 0x08, 0x01])
-        .unwrap();
-    let mut unresolved_face = Vec::new();
-    append_b5_record(
-        &mut unresolved_face,
-        0x5f,
-        501,
-        &[0x82, 0x18, 100, 0, 0x18, 231, 3, 0x05],
-    );
-    stream.splice(vertex_start..vertex_start, unresolved_face);
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [stream],
-        &HashSet::from([501]),
-    );
-    assert!(matches!(
-        evidence.surface_geometries.get(&501),
-        Some(SurfaceGeometry::Plane { .. })
-    ));
-}
-
-#[test]
-fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
-    let first = b5_closed_triangle_stream();
-    let mut second = first.clone();
-    let face = second
-        .windows(3)
-        .position(|bytes| bytes == [0xb5, 0x03, 0x5f])
-        .expect("face record");
-    second[face + 4..face + 8].copy_from_slice(&501u32.to_le_bytes());
-
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [first, second],
-        &HashSet::new(),
-    );
-    assert!(evidence.edge_owner_faces.is_empty());
-}
-
-#[test]
-fn standard_face_resolves_a_rolling_ball_result_carrier() {
-    let mut stream = b5_closed_triangle_stream();
-    let vertex_start = stream
-        .windows(3)
-        .position(|bytes| bytes == [0x05, 0x08, 0x01])
-        .expect("vertex run");
-    let mut records = a8_freeform_curve_stream();
-    records[7..11].copy_from_slice(&100u32.to_le_bytes());
-    let mut offset = vec![0x82, 0xe4, 0xe5];
-    offset.extend_from_slice(&le_f64(-0.5));
-    offset.push(0x19);
-    for bound in [-2.0, 3.0, -4.0, 5.0] {
-        offset.extend_from_slice(&le_f64(bound));
-    }
-    append_b5_record(&mut records, 0x30, 102, &offset);
-    append_b5_record(&mut records, 0x5f, 501, &[0x82, 0xe6, 0x18, 231, 3, 0x05]);
-    stream.splice(vertex_start..vertex_start, records);
-
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [stream],
-        &HashSet::from([501]),
-    );
-    assert!(!evidence.surface_geometries.contains_key(&501));
-    assert!(matches!(
-        evidence.procedural_surfaces.get(&501),
-        Some(
-            crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
-                carrier_object_id: 100,
-                definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. },
-            }
-        )
-    ));
-}
-
-#[test]
-fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
-    use crate::families::standard::records::{
-        StandardCurveGeometry, StandardCurveSupport, StandardSurfaceRecord,
-    };
-
-    let mut edge_faces = vec![[0, 0]];
-    let supports = vec![StandardCurveSupport {
-        pos: 0,
-        tag: 700,
-        faces: [0, 0],
-        geometry: StandardCurveGeometry::Bspline,
-    }];
-    let records = [10u32, 20]
-        .into_iter()
-        .map(|target| {
-            StandardSurfaceRecord::Analytic(crate::families::standard::records::SurfacePrefix {
-                pos: 0,
-                target,
-                kind: 0x33,
-            })
-        })
-        .collect::<Vec<_>>();
-    crate::families::standard::decode::apply_standard_native_edge_faces(
-        &mut edge_faces,
-        &supports,
-        &records,
-        &HashMap::from([(700, HashSet::from([20, 900]))]),
-    );
-    assert_eq!(edge_faces, [[0, 1]]);
-
-    let mut ambiguous = vec![[0, 0]];
-    let mut repeated_records = records;
-    repeated_records.push(StandardSurfaceRecord::Analytic(
-        crate::families::standard::records::SurfacePrefix {
-            pos: 0,
-            target: 20,
-            kind: 0x33,
-        },
-    ));
-    crate::families::standard::decode::apply_standard_native_edge_faces(
-        &mut ambiguous,
-        &supports,
-        &repeated_records,
-        &HashMap::from([(700, HashSet::from([20]))]),
-    );
-    assert_eq!(ambiguous, [[0, 0]]);
-}
-
-#[test]
-fn standard_line_parser_reads_face_incidence() {
-    let bytes = [0x60, 1, 2, 3, 0, 2, 0, 0x33, 0x36, 0, 1];
-    let lines = crate::families::standard::records::standard_lines(&bytes, 2);
-    assert_eq!(lines.len(), 1);
-    assert_eq!(lines[0].tag, 0x03_0201);
-    assert_eq!(lines[0].faces, [0, 1]);
-}
-
-#[test]
-fn e5_surface_parser_reads_framed_torus() {
-    let surfaces = crate::families::e5::records::e5_surfaces(&e5_torus_stream());
-    assert_eq!(surfaces.len(), 1);
-    match &surfaces[0].geometry {
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
-            assert_eq!(*center, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
-            assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-            assert_eq!(
-                *ref_direction,
-                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-            );
-            assert_eq!((*major_radius, *minor_radius), (12.0, 2.0));
-        }
-        other => panic!("expected torus, got {other:?}"),
-    }
-}
-
-#[test]
-fn e5_plane_parser_preserves_origin_and_natural_bounds_without_fabricating_axes() {
-    let planes = crate::families::e5::records::e5_planes(&e5_plane_stream());
-    assert_eq!(planes.len(), 1);
-    assert_eq!(planes[0].record_id, 42);
-    assert_eq!(planes[0].origin, [1.0, 2.0, 3.0]);
-    assert_eq!(planes[0].u_range, [-4.0, 7.0]);
-    assert_eq!(planes[0].v_range, [-2.0, 9.0]);
-}
-
-#[test]
-fn e5_plane_parser_reads_terminal_bounds_after_extended_transform_lane() {
-    let planes =
-        crate::families::e5::records::e5_planes(&e5_plane_stream_with_transform_scalars(5));
-    assert_eq!(planes.len(), 1);
-    assert_eq!(planes[0].origin, [1.0, 2.0, 3.0]);
-    assert_eq!(planes[0].u_range, [-4.0, 7.0]);
-    assert_eq!(planes[0].v_range, [-2.0, 9.0]);
-}
-
-#[test]
-fn a8_surface_parser_reads_common_form_nurbs() {
-    let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_surface_stream());
-    assert_eq!(surfaces.len(), 1);
-    assert_eq!(surfaces[0].object_id, 0xdeca_fbad);
-    match &surfaces[0].geometry {
-        SurfaceGeometry::Nurbs(surface) => {
-            assert_eq!((surface.u_degree, surface.v_degree), (2, 2));
-            assert_eq!((surface.u_count, surface.v_count), (3, 3));
-            assert_eq!(surface.control_points[8].x, 8.0);
-        }
-        other => panic!("expected NURBS surface, got {other:?}"),
-    }
-}
-
-#[test]
-fn a8_surface_header_survives_an_opaque_pole_representation() {
-    let mut bytes = a8_surface_stream();
-    bytes[59..67].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
-    let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
-    assert_eq!(headers.len(), 1);
-    assert_eq!(headers[0].object_id, 0xdeca_fbad);
-    assert_eq!((headers[0].u_degree, headers[0].v_degree), (2, 2));
-    assert_eq!((headers[0].u_count, headers[0].v_count), (3, 3));
-    assert_eq!(headers[0].u_multiplicities, [3, 3]);
-    assert_eq!(headers[0].v_multiplicities, [3, 3]);
-    assert!(!headers[0].poles_elided);
-}
-
-#[test]
-fn a8_surface_header_identifies_an_elided_pole_grid() {
-    let mut bytes = a8_surface_stream();
-    bytes.truncate(59);
-    let mut tail = vec![0; 141];
-    tail[..4].copy_from_slice(&[0x05, 0x21, 0x05, 0x05]);
-    bytes.extend_from_slice(&tail);
-    bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0, 1, 0, 0, 0]);
-    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
-    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
-    let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
-    assert_eq!(headers.len(), 1);
-    assert!(headers[0].poles_elided);
-}
-
-#[test]
-fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
-    let bytes = a8_elided_surface_stream();
-
-    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
-        .try_into()
-        .expect("one elided header");
-    let surface = crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, &header)
-        .expect("unique external pole allocation");
-    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
-        panic!("NURBS surface");
-    };
-    assert_eq!(surface.control_points.len(), 9);
-    assert_eq!(surface.control_points[8], Point3::new(8.0, 2.0, 2.0));
-
-    let [resolved] = crate::families::a5a8::records::resolved_a8_surfaces(&bytes)
-        .try_into()
-        .expect("one resolved surface");
-    assert_eq!(resolved.object_id, 0xdeca_fbad);
-    let SurfaceGeometry::Nurbs(resolved) = resolved.geometry else {
-        panic!("NURBS surface");
-    };
-    assert_eq!(resolved.control_points, surface.control_points);
-}
-
-#[test]
 fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
     let file = object_main_catpart(&a8_elided_surface_stream());
     let mut cur = Cursor::new(file);
@@ -4124,46 +2766,6 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
 }
 
 #[test]
-fn a8_pcurve_parser_reads_degree5_uv_jet() {
-    let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream());
-    assert_eq!(pcurves.len(), 1);
-    assert_eq!(
-        (pcurves[0].object_id, pcurves[0].support_id),
-        (0x5678, 0x1234)
-    );
-    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
-    assert_eq!(pcurves[0].range, [0.0, 1.0]);
-    assert_eq!(pcurves[0].mode, 0x01);
-    let mut wrong_degree = a8_pcurve_stream();
-    wrong_degree[15] = 17;
-    assert!(crate::families::a5a8::records::a8_pcurves(&wrong_degree).is_empty());
-
-    let mut repeated_knot = a8_pcurve_stream();
-    repeated_knot[28..36].copy_from_slice(&le_f64(0.0));
-    assert!(crate::families::a5a8::records::a8_pcurves(&repeated_knot).is_empty());
-
-    let mut wrong_endpoint_multiplicity = a8_pcurve_stream();
-    wrong_endpoint_multiplicity[36] = 21;
-    assert!(crate::families::a5a8::records::a8_pcurves(&wrong_endpoint_multiplicity).is_empty());
-
-    let mut trailing_byte = a8_pcurve_stream();
-    trailing_byte.push(0);
-    let payload_len = u32::try_from(trailing_byte.len() - 11).unwrap();
-    trailing_byte[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert!(crate::families::a5a8::records::a8_pcurves(&trailing_byte).is_empty());
-}
-
-#[test]
-fn a8_pcurve_parser_retains_mode_five_uv_jet() {
-    let mut bytes = a8_pcurve_stream();
-    bytes[39] = 0x05;
-    let pcurves = crate::families::a5a8::records::a8_pcurves(&bytes);
-    assert_eq!(pcurves.len(), 1);
-    assert_eq!(pcurves[0].mode, 0x05);
-    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
-}
-
-#[test]
 fn decode_object_stream_does_not_promote_unbound_a8_pcurve() {
     let file = object_main_catpart(&a8_pcurve_stream());
     let decoded = CatiaCodec
@@ -4171,65 +2773,6 @@ fn decode_object_stream_does_not_promote_unbound_a8_pcurve() {
         .expect("decode unbound object-stream pcurve");
     assert!(decoded.ir.model.pcurves.is_empty());
     assert!(!decoded.ir.native_unknowns("catia").unwrap().is_empty());
-}
-
-#[test]
-fn b5_pcurve_parser_reads_degree5_uv_jet() {
-    let a8 = a8_pcurve_stream();
-    let payload = &a8[11..];
-    let mut b5 = vec![0xb5, 0x03, 0x20, u8::try_from(payload.len()).unwrap()];
-    b5.extend_from_slice(&0x5678u32.to_le_bytes());
-    b5.extend_from_slice(payload);
-
-    let pcurves = crate::families::a5a8::records::object_stream_pcurves(&b5);
-
-    assert_eq!(pcurves.len(), 1);
-    assert_eq!(
-        (pcurves[0].object_id, pcurves[0].support_id),
-        (0x5678, 0x1234)
-    );
-    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
-}
-
-#[test]
-fn b5_pcurve_parser_accepts_split_24_bit_support_reference() {
-    let a8 = a8_pcurve_stream();
-    let mut payload = a8[11..].to_vec();
-    payload.splice(1..4, [0x28, 0x34, 0x12]);
-    let mut b5 = vec![0xb5, 0x03, 0x20, u8::try_from(payload.len()).unwrap()];
-    b5.extend_from_slice(&0x5678u32.to_le_bytes());
-    b5.extend_from_slice(&payload);
-
-    let pcurves = crate::families::a5a8::records::object_stream_pcurves(&b5);
-
-    assert_eq!(pcurves.len(), 1);
-    assert_eq!(pcurves[0].support_id, 0x0012_0034);
-}
-
-#[test]
-fn a5_pcurve_parser_reads_compact_support_and_uv_jet() {
-    let pcurves = crate::families::a5a8::records::a5_pcurves(&a5_pcurve_stream());
-    assert_eq!(pcurves.len(), 1);
-    assert_eq!(pcurves[0].support_id, 0x1234);
-    assert_eq!(pcurves[0].extrapolation_sites, 2);
-    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
-    assert_eq!(pcurves[0].range, [0.0, 1.0]);
-    assert_eq!(pcurves[0].tail, [0x07]);
-
-    let mut padded = a5_pcurve_stream();
-    padded.push(0);
-    let payload_len = u32::try_from(padded.len() - 8).unwrap();
-    padded[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert_eq!(
-        crate::families::a5a8::records::a5_pcurves(&padded)[0].tail,
-        [0x07, 0]
-    );
-
-    let mut trailing = padded;
-    trailing.push(1);
-    let payload_len = u32::try_from(trailing.len() - 8).unwrap();
-    trailing[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert!(crate::families::a5a8::records::a5_pcurves(&trailing).is_empty());
 }
 
 #[test]
@@ -4630,259 +3173,6 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
 }
 
 #[test]
-fn consolidated_pcurve_parser_reads_width2_frame() {
-    let pcurves = crate::families::a5a8::records::a5_pcurves(&a6_pcurve_stream());
-    assert_eq!(pcurves.len(), 1);
-    assert_eq!(pcurves[0].support_id, 0x1234);
-    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
-}
-
-#[test]
-fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
-    let pcurves = crate::families::b2::records::b2_pcurves(&b2_pcurve_stream());
-    assert_eq!(pcurves.len(), 1);
-    assert_eq!(pcurves[0].support_id, 0x1234);
-    assert_eq!(pcurves[0].degree, 5);
-    assert_eq!(pcurves[0].second_derivatives, vec![[0.0, 0.0]; 2]);
-}
-
-#[test]
-fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
-    use crate::families::b2::records::B2ParameterPoint;
-
-    let points = crate::families::b2::records::b2_parameter_points(&b2_parameter_point_stream());
-    assert_eq!(points.len(), 3);
-    assert!(matches!(
-        points[0],
-        B2ParameterPoint::Uv { uv: [2.0, 3.0], .. }
-    ));
-    assert!(matches!(
-        points[1],
-        B2ParameterPoint::StationUv {
-            station: 11.0,
-            uv: [4.0, 5.0],
-            ..
-        }
-    ));
-    assert!(matches!(points[2], B2ParameterPoint::FiveScalars { .. }));
-}
-
-#[test]
-fn b2_reference_list_parser_reads_compact_refs_and_unit_tail() {
-    let records = crate::families::b2::records::b2_reference_lists(&b2_reference_list_stream());
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].references, (0u32..26).collect::<Vec<_>>());
-}
-
-#[test]
-fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
-    use crate::families::b2::records::B2OwnerReferenceEncoding;
-
-    let packets = crate::families::b2::records::b2_owner_packets(&b2_owner_packet_stream());
-    assert_eq!(packets.len(), 1);
-    assert_eq!(packets[0].header_token, 5);
-    assert_eq!(
-        packets[0].reference_encoding,
-        B2OwnerReferenceEncoding::TaggedU16Strong
-    );
-    assert_eq!(
-        packets[0].references,
-        [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]
-    );
-    assert_eq!(packets[0].numeric_tail, std::array::from_fn(|i| i as u8));
-
-    let packets =
-        crate::families::b2::records::b2_owner_packets(&b2_width_coded_owner_packet_stream());
-    assert_eq!(packets.len(), 1);
-    assert_eq!(
-        packets[0].reference_encoding,
-        B2OwnerReferenceEncoding::WidthCodedStrong
-    );
-    assert_eq!(
-        packets[0].references,
-        [216, 3, 540, 7, 223, 19, 545, 31, 606]
-    );
-}
-
-#[test]
-fn b2_counted_61_parser_separates_references_from_tail() {
-    let records = crate::families::b2::records::b2_counted_61(&b2_counted_61_stream());
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].header_token, 5);
-    assert_eq!(records[0].references, [1300, 1294, 30, 74]);
-    assert_eq!(records[0].tail, [0x41, 0x03]);
-}
-
-#[test]
-fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
-    let records = crate::families::b2::records::b2_long_61(&b2_long_61_stream());
-    assert_eq!(records.len(), 1);
-    assert_eq!(
-        records[0].prefix,
-        [0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb]
-    );
-    assert_eq!(records[0].members, [0x064a, 0x0650, 0x0656]);
-    assert_eq!(
-        records[0].references,
-        [0x0100, 0x0103, 0x0106, 0x0109, 0x010c]
-    );
-    assert_eq!(records[0].scalar, 42.5);
-
-    let mut short = vec![0xb2, 0x03, 0x61, 27, 0x05];
-    short.extend_from_slice(&[0; 27]);
-    short[13] = 0x06;
-    assert!(crate::families::b2::records::b2_long_61(&short).is_empty());
-}
-
-#[test]
-fn b2_link_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
-    let mut bytes = Vec::new();
-    for payload in [
-        &[0x82, 0x04, 0x5d, 0x03, 0x05][..],
-        &[0x82, 0x08, 0x5d, 0x02, 0x03, 0x05],
-        &[0x82, 0x0c, 0x5d, 0x02, 0x01, 0x03, 0x05],
-        &[0x82, 0x10, 0x5d, 0x02, 0x01, 0x01, 0x03, 0x05],
-    ] {
-        bytes.extend_from_slice(&[0xb2, 0x03, 0x5f, u8::try_from(payload.len()).unwrap(), 0x05]);
-        bytes.extend_from_slice(payload);
-    }
-    let links = crate::families::b2::records::b2_links_5f(&bytes);
-    assert_eq!(links.len(), 4);
-    assert!(links.iter().all(|link| link.header_token == 5));
-    assert_eq!(
-        links.iter().map(|link| link.target).collect::<Vec<_>>(),
-        [0x5d, 0x025d, 0x01025d, 0x0101_025d]
-    );
-
-    let malformed = [
-        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x04, 0x5d, 0x00, 0x03, 0x05,
-    ];
-    assert!(crate::families::b2::records::b2_links_5f(&malformed).is_empty());
-}
-
-#[test]
-fn b2_linked_owner_requires_adjacency_and_successor_identity() {
-    let pairs = crate::families::b2::records::b2_linked_owners(&b2_linked_owner_stream());
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].link.target, 1003);
-    assert_eq!(pairs[0].owner.references[8], 1004);
-
-    let mut separated = b2_link_5f_stream();
-    separated.extend_from_slice(&[0xb2, 0x03, 0x2e, 0x01, 0x05, 0x05]);
-    separated.extend_from_slice(&b2_owner_packet_stream());
-    assert!(crate::families::b2::records::b2_linked_owners(&separated).is_empty());
-}
-
-#[test]
-fn b2_counted_owner_closes_variable_reference_lane_and_successor_link() {
-    let bytes = b2_linked_counted_owner_stream();
-    let owners = crate::families::b2::records::b2_counted_owners(&bytes);
-    assert_eq!(owners.len(), 1);
-    assert_eq!(owners[0].references, [911, 7, 263, 258, 281, 276, 917]);
-    assert_eq!(owners[0].tail, [0x83, 0x41, 0x92, 0x00, 0x01]);
-
-    let linked = crate::families::b2::records::b2_linked_counted_owners(&bytes);
-    assert_eq!(linked.len(), 1);
-    assert_eq!(linked[0].link.target, 916);
-    assert_eq!(linked[0].owner.references.last(), Some(&917));
-
-    let mut wrong_successor = bytes;
-    wrong_successor[35] = 0x99;
-    assert!(crate::families::b2::records::b2_linked_counted_owners(&wrong_successor).is_empty());
-}
-
-#[test]
-fn b2_cone_face_parser_reads_refs_scale_and_half_angle() {
-    let records = crate::families::b2::records::b2_cone_faces(&b2_cone_face_stream());
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].references.len(), 16);
-    assert_eq!(records[0].angular_scale, 1.5);
-    assert_eq!(records[0].half_angle, std::f64::consts::FRAC_PI_4);
-}
-
-#[test]
-fn b2_topology_metadata_parser_preserves_refs_and_sense_code() {
-    use crate::families::b2::records::B2UseSense;
-
-    let bytes = b2_topology_metadata_stream();
-    let edges = crate::families::b2::records::b2_edge_metadata(&bytes);
-    let uses = crate::families::b2::records::b2_use_metadata(&bytes);
-    assert_eq!(edges[0].references, vec![0x1234, 0x5678]);
-    assert_eq!(edges[0].payload, [0x0a, 0x34, 0x12, 0x0a, 0x78, 0x56, 0]);
-    assert_eq!(uses[0].sense, Some(B2UseSense::Sense88));
-    assert!(uses[0].references.is_none());
-    assert_eq!(uses[0].payload, [1, 2, 3, 0x88]);
-}
-
-#[test]
-fn b2_edge_node_parser_reads_compact_native_vertex_identities() {
-    let nodes = crate::families::b2::records::b2_edge_nodes(&b2_edge_node_stream());
-    assert_eq!(nodes.len(), 1);
-    assert_eq!(nodes[0].header_token, 5);
-    assert_eq!(nodes[0].curve_ref, 216);
-    assert_eq!(nodes[0].start_vertex_ref, 889);
-    assert_eq!(nodes[0].end_vertex_ref, 895);
-    assert_eq!(nodes[0].start_parameter_ref, 215);
-    assert_eq!(nodes[0].end_parameter_ref, 214);
-    assert_eq!(nodes[0].tail, 0x21);
-}
-
-#[test]
-fn b2_edge_node_parser_reads_tagged_and_raw_vertex_identities() {
-    let mut bytes = vec![
-        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x0d, 0x06, 0x8b, 0x0a, 0xc1, 0x01, 0x09, 0x05, 0x01,
-    ];
-    bytes.extend_from_slice(&[
-        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x0d, 0xcf, 0xe7, 0x09, 0x05, 0x01,
-    ]);
-    let nodes = crate::families::b2::records::b2_edge_nodes(&bytes);
-    assert_eq!(nodes.len(), 2);
-    assert_eq!(nodes[0].curve_ref, 3);
-    assert_eq!(nodes[0].start_vertex_ref, 139);
-    assert_eq!(nodes[0].end_vertex_ref, 449);
-    assert_eq!(nodes[0].start_parameter_ref, 2);
-    assert_eq!(nodes[0].end_parameter_ref, 1);
-    assert_eq!(nodes[0].tail, 0x01);
-    assert_eq!(nodes[1].start_vertex_ref, 207);
-    assert_eq!(nodes[1].end_vertex_ref, 231);
-}
-
-#[test]
-fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
-    for reference_token in [0x08, 0x0a] {
-        let mut stream = b2_revolution_stream();
-        stream[5] = reference_token;
-        let records = crate::families::b2::records::b2_revolutions(&stream);
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].profile_curve_id, 0x1234);
-        assert_eq!(records[0].origin, [1.0, 2.0, 3.0]);
-        assert_eq!(records[0].axis, [0.0, 0.0, 1.0]);
-        assert_eq!(records[0].profile_range, [-4.0, 9.0]);
-    }
-}
-
-#[test]
-fn b2_group_parser_reads_separator_and_typed_opener() {
-    let bytes = b2_group_stream();
-    let separators = crate::families::b2::records::b2_group_separators(&bytes);
-    let groups = crate::families::b2::records::b2_groups(&bytes);
-    assert_eq!(separators.len(), 1);
-    assert_eq!(separators[0].token, 0x05);
-    assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].group_id, 32);
-    assert_eq!(groups[0].group_type, 3);
-}
-
-#[test]
-fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
-    let offsets = crate::families::b2::records::b2_offset_supports(&b2_offset_support_stream());
-    assert_eq!(offsets.len(), 1);
-    assert_eq!(offsets[0].support_id, 0x1234);
-    assert_eq!(offsets[0].distance, 2.5);
-    assert_eq!(offsets[0].domain, [0.0, -1.0, 4.0, 3.0]);
-}
-
-#[test]
 fn offset_support_binds_by_native_domain_knot_limits() {
     let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
     let mut decoy = carriers[0].clone();
@@ -5031,43 +3321,6 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
 }
 
 #[test]
-fn consolidated_offset_support_parser_reads_width2_frame() {
-    let offsets = crate::families::b2::records::b2_offset_supports(&b3_offset_support_stream());
-    assert_eq!(offsets.len(), 1);
-    assert_eq!(offsets[0].support_id, 0x1234);
-    assert_eq!(offsets[0].distance, 2.5);
-}
-
-#[test]
-fn b2_edge_parameter_parser_validates_repeated_range_packet() {
-    let packets = crate::families::b2::records::b2_edge_parameters(&b2_edge_parameter_stream());
-    assert_eq!(packets.len(), 1);
-    assert_eq!(packets[0].range, [2.0, 7.0]);
-    assert_eq!(packets[0].tolerance, 1e-6);
-}
-
-#[test]
-fn a5_edge_block_parser_groups_two_coparametric_pcurves_and_packet() {
-    let blocks =
-        crate::families::consolidated::records::consolidated_edge_blocks(&a5_edge_block_stream());
-    assert_eq!(blocks.len(), 1);
-    assert!(blocks[0].co_parametric);
-    assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
-    assert_eq!(blocks[0].pcurves[1].range, [0.0, 1.0]);
-    assert_eq!(blocks[0].parameters.range, [0.0, 1.0]);
-}
-
-#[test]
-fn consolidated_edge_block_groups_b_family_pcurves() {
-    let blocks =
-        crate::families::consolidated::records::consolidated_edge_blocks(&b2_edge_block_stream());
-    assert_eq!(blocks.len(), 1);
-    assert!(blocks[0].co_parametric);
-    assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
-    assert_eq!(blocks[0].pcurves[1].range, [0.0, 1.0]);
-}
-
-#[test]
 fn consolidated_edge_use_run_is_independent_of_pcurve_availability() {
     use crate::families::b2::records::B2UseSense;
 
@@ -5124,37 +3377,6 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
             }
         )
     ));
-}
-
-#[test]
-fn consolidated_edge_definition_decodes_general_scalar_layout() {
-    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
-
-    let mut payload = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
-    for value in [0.0_f64, 2.0, 1e-6, 0.5, 1.5, 1.0, -0.5, 1e-6] {
-        payload.extend_from_slice(&value.to_le_bytes());
-    }
-    assert_eq!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x24, &payload),
-        Some(ConsolidatedEdgeDefinitionData::Scalar {
-            operands: [1, 2, 3463],
-            values: vec![0.0, 2.0, 1e-6, 0.5, 1.5, 1.0, -0.5, 1e-6],
-        })
-    );
-    let mut class24_nine_scalars = payload.clone();
-    class24_nine_scalars.extend_from_slice(&1e-6_f64.to_le_bytes());
-    assert!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(
-            0x24,
-            &class24_nine_scalars
-        )
-        .is_none()
-    );
-    payload.pop();
-    assert!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x24, &payload)
-            .is_none()
-    );
 }
 
 #[test]
@@ -5340,306 +3562,6 @@ fn a5_topology_edge_run_preserves_uses_and_native_endpoint_identities() {
     assert!(!runs[0].identity_chain_consistent);
     assert_eq!(runs[0].node.start_vertex_ref, 889);
     assert_eq!(runs[0].node.end_vertex_ref, 895);
-}
-
-#[test]
-fn consolidated_topology_edge_run_accepts_b_family_pcurves() {
-    let runs = crate::families::consolidated::records::consolidated_topology_edge_runs(
-        &b2_topology_edge_run_stream(),
-    );
-    assert_eq!(runs.len(), 1);
-    assert_eq!(runs[0].edge.pcurves[0].support_id, 0x1234);
-    assert_eq!(runs[0].node.start_vertex_ref, 889);
-    assert_eq!(runs[0].node.end_vertex_ref, 895);
-}
-
-#[test]
-fn consolidated_native_edge_graph_uses_persistent_endpoint_incidence() {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&a5_native_edge_run_stream(3, 10, 11));
-    bytes.extend_from_slice(&a5_native_edge_run_stream(6, 11, 12));
-    bytes.extend_from_slice(&a5_native_edge_run_stream(9, 12, 10));
-    let graph = crate::families::consolidated::records::consolidated_native_edge_graph(&bytes)
-        .expect("native edge graph");
-    assert_eq!(graph.vertex_identities, [10, 11, 12]);
-    assert_eq!(
-        graph
-            .edges
-            .iter()
-            .map(|edge| edge.vertices)
-            .collect::<Vec<_>>(),
-        [[0, 1], [1, 2], [2, 0]]
-    );
-    assert_eq!(graph.components, [vec![0, 1, 2]]);
-    assert!(graph
-        .edges
-        .iter()
-        .all(|edge| edge.run.identity_chain_consistent));
-}
-
-#[test]
-fn consolidated_native_edge_graph_treats_curve_references_as_run_local() {
-    let mut bytes = a5_native_edge_run_stream(3, 10, 11);
-    bytes.extend_from_slice(&a5_native_edge_run_stream(3, 20, 21));
-    let graph = crate::families::consolidated::records::consolidated_native_edge_graph(&bytes)
-        .expect("native edge graph");
-    assert_eq!(graph.edges.len(), 2);
-    assert_eq!(graph.components, [vec![0], vec![1]]);
-}
-
-#[test]
-fn a5_edge_block_does_not_cross_an_intervening_framed_record() {
-    let mut bytes = a5_pcurve_stream();
-    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x01, 0x05, 0x84]);
-    bytes.extend_from_slice(&a5_pcurve_stream());
-    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
-    assert!(crate::families::consolidated::records::consolidated_edge_blocks(&bytes).is_empty());
-}
-
-#[test]
-fn a5_edge_binding_resolves_cylinder_by_endpoint_lifts() {
-    use crate::families::consolidated::records::ConsolidatedSupportBinding;
-
-    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
-        &a5_cylinder_bound_edge_stream(),
-    );
-    assert_eq!(blocks.len(), 1);
-    assert!(matches!(
-        blocks[0].supports[0],
-        Some(ConsolidatedSupportBinding::Cylinder { .. })
-    ));
-    assert!(matches!(
-        blocks[0].supports[1],
-        Some(ConsolidatedSupportBinding::Cylinder { .. })
-    ));
-    assert!(blocks[0].endpoint_loci.is_some());
-}
-
-#[test]
-fn a5_edge_binding_resolves_partner_nurbs_carrier() {
-    use crate::families::consolidated::records::ConsolidatedSupportBinding;
-
-    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
-        &a5_nurbs_bound_edge_stream(0.0),
-    );
-    assert!(matches!(
-        blocks[0].supports[0],
-        Some(ConsolidatedSupportBinding::Cylinder { .. })
-    ));
-    assert!(matches!(
-        blocks[0].supports[1],
-        Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if offset == 0.0
-    ));
-    assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
-    assert!(blocks[0].endpoint_loci.is_some());
-}
-
-#[test]
-fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
-    use crate::families::consolidated::records::ConsolidatedSupportBinding;
-
-    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
-        &a5_nurbs_bound_edge_stream(1.25),
-    );
-    assert!(matches!(
-        blocks[0].supports[1],
-        Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if (offset.abs() - 1.25).abs() < 1e-6
-    ));
-    assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
-    assert!(blocks[0].endpoint_loci.is_some());
-}
-
-#[test]
-fn a5_edge_binding_resolves_circle_by_constant_v_and_arc_range() {
-    use crate::families::consolidated::records::ConsolidatedSupportBinding;
-
-    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
-        &a5_circle_bound_edge_stream(),
-    );
-    assert!(matches!(
-        blocks[0].supports[0],
-        Some(ConsolidatedSupportBinding::Circle { .. })
-    ));
-}
-
-#[test]
-fn a5_edge_binding_resolves_cone_by_endpoint_lifts() {
-    use crate::families::consolidated::records::ConsolidatedSupportBinding;
-
-    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
-        &a5_cone_bound_edge_stream(),
-    );
-    assert!(matches!(
-        blocks[0].supports[0],
-        Some(ConsolidatedSupportBinding::Cone { .. })
-    ));
-    assert!(blocks[0].endpoint_loci.is_some());
-}
-
-#[test]
-fn b2_circle_parser_reads_arc_length_parameterization() {
-    let circles = crate::families::b2::records::b2_circles(&b2_circle_stream());
-    assert_eq!(circles.len(), 1);
-    assert_eq!(circles[0].record_id, 0x1234);
-    assert_eq!(circles[0].center_pair, [4.0, -2.0]);
-    assert_eq!(circles[0].radius, 3.0);
-    assert!(circles[0].full_circle);
-}
-
-#[test]
-fn b2_cylinder_parser_reads_arc_length_carrier() {
-    let cylinders = crate::families::b2::records::b2_cylinders(&b2_cylinder_stream());
-    assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].u_range, [0.0, 4.0 * std::f64::consts::PI]);
-    assert_eq!(cylinders[0].v_range, [-4.0, 5.0]);
-    match &cylinders[0].geometry {
-        Some(SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius,
-            ..
-        }) => {
-            assert_eq!([origin.x, origin.y, origin.z], [1.0, 2.0, 3.0]);
-            assert_eq!([axis.x, axis.y, axis.z], [1.0, 0.0, 0.0]);
-            assert_eq!(*radius, 2.0);
-        }
-        other => panic!("expected cylinder, got {other:?}"),
-    }
-}
-
-#[test]
-fn consolidated_cylinder_parser_reads_width2_frame() {
-    let cylinders = crate::families::b2::records::b2_cylinders(&b3_cylinder_stream());
-    assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].layout, 0x5a);
-    assert!(cylinders[0].geometry.is_some());
-}
-
-#[test]
-fn consolidated_frame_width_and_flag_are_independent() {
-    let mut width1_flag13 = b2_cylinder_stream();
-    width1_flag13[1] = 0x13;
-    let mut width2_flag83 = b3_cylinder_stream();
-    width2_flag83[1] = 0x83;
-    assert_eq!(
-        crate::families::b2::records::b2_cylinders(&width1_flag13).len(),
-        1
-    );
-    assert_eq!(
-        crate::families::b2::records::b2_cylinders(&width2_flag83).len(),
-        1
-    );
-}
-
-#[test]
-fn consolidated_record_walk_inventory_preserves_width_flag_and_boundaries() {
-    use crate::families::consolidated::records::ConsolidatedFamily;
-
-    let first = a6_pcurve_stream();
-    let second = b3_cylinder_stream();
-    let mut bytes = first.clone();
-    bytes.extend_from_slice(&second);
-    let records = crate::families::consolidated::records::consolidated_records(&bytes);
-    assert_eq!(records.len(), 2);
-    assert_eq!(records[0].family, ConsolidatedFamily::A);
-    assert_eq!(
-        (records[0].width, records[0].flag, records[0].class),
-        (2, 0x03, 0x20)
-    );
-    assert_eq!(records[0].range, 0..first.len());
-    assert_eq!(records[1].family, ConsolidatedFamily::B);
-    assert_eq!(records[1].range, first.len()..first.len() + second.len());
-}
-
-#[test]
-fn consolidated_record_walk_suppresses_payload_records_and_resumes_after_parent() {
-    let nested = [0xb2, 0x03, 0x20, 1, 7, 0xaa];
-    let mut outer = vec![0xb2, 0x03, 0x20, nested.len() as u8, 1];
-    outer.extend_from_slice(&nested);
-    let sibling_start = outer.len();
-    outer.extend_from_slice(&[0xb2, 0x03, 0x20, 1, 2, 0xbb]);
-
-    let records = crate::families::consolidated::records::consolidated_records(&outer);
-    assert_eq!(records.len(), 2);
-    assert_eq!(records[0].range, 0..sibling_start);
-    assert_eq!(records[1].range, sibling_start..outer.len());
-}
-
-#[test]
-fn b2_cylinder_parser_reads_implicit_axis_layout() {
-    let cylinders = crate::families::b2::records::b2_cylinders(&b2_implicit_axis_cylinder_stream());
-    assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].layout, 0x52);
-    assert!(matches!(
-        cylinders[0].geometry,
-        Some(SurfaceGeometry::Cylinder { axis, .. }) if [axis.x, axis.y, axis.z] == [1.0, 0.0, 0.0]
-    ));
-}
-
-#[test]
-fn b2_cylinder_parser_preserves_phase_tailed_layout_raw() {
-    let cylinders = crate::families::b2::records::b2_cylinders(&b2_phase_tailed_cylinder_stream());
-    assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].layout, 0x62);
-    assert!(cylinders[0].geometry.is_none());
-    assert_eq!(cylinders[0].stored_vector, Some([0.0, 1.0]));
-    assert_eq!(cylinders[0].phase, Some(0.75));
-
-    for range in [30..38, 46..54, 95..103] {
-        let mut malformed = b2_phase_tailed_cylinder_stream();
-        malformed[range].copy_from_slice(&f64::NAN.to_le_bytes());
-        assert!(crate::families::b2::records::b2_cylinders(&malformed).is_empty());
-    }
-}
-
-#[test]
-fn b2_cone_parser_reads_orthonormal_slant_chart() {
-    let cones = crate::families::b2::records::b2_cones(&b2_cone_stream());
-    assert_eq!(cones.len(), 1);
-    assert_eq!(cones[0].apex, [1.0, 2.0, 3.0]);
-    assert_eq!(cones[0].axis, [0.0, 0.0, 1.0]);
-    assert_eq!(cones[0].half_angle, 0.25);
-    assert_eq!(cones[0].slant_range, [2.0, 8.0]);
-    assert_eq!(cones[0].angular_scale, 3.0);
-}
-
-#[test]
-fn b2_construction_use_parser_reorders_offset_domain() {
-    let uses = crate::families::b2::records::b2_construction_uses(&b2_construction_use_stream());
-    assert_eq!(uses.len(), 1);
-    assert_eq!(uses[0].support_id, 0x1234);
-    assert_eq!(uses[0].distance, -2.0);
-    assert_eq!(uses[0].kind, 0x01);
-    assert_eq!(uses[0].domain, Some([0.0, -1.0, 4.0, 3.0]));
-    let offsets = crate::families::b2::records::b2_offset_supports(&b2_construction_use_stream());
-    assert_eq!(offsets.len(), 1);
-    assert_eq!(offsets[0].support_id, 0x1234);
-    assert_eq!(offsets[0].distance, -2.0);
-    assert_eq!(offsets[0].domain, [0.0, -1.0, 4.0, 3.0]);
-}
-
-#[test]
-fn b2_offset_support_parser_ignores_other_construction_kinds() {
-    let mut record = b2_construction_use_stream();
-    record[17] = 0x19;
-
-    let uses = crate::families::b2::records::b2_construction_uses(&record);
-    assert_eq!(uses.len(), 1);
-    assert_eq!(uses[0].kind, 0x19);
-    assert!(crate::families::b2::records::b2_offset_supports(&record).is_empty());
-}
-
-#[test]
-fn b2_composite_parser_reads_embedded_cylinder_frame() {
-    let cylinders =
-        crate::families::b2::records::b2_embedded_cylinders(&b2_embedded_cylinder_stream());
-    assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].object_id, 0x5678);
-    assert_eq!(cylinders[0].wrapper_pos, 0);
-    assert_eq!(
-        cylinders[0].cylinder.u_range,
-        [0.0, 4.0 * std::f64::consts::PI]
-    );
 }
 
 #[test]
@@ -7241,152 +5163,6 @@ fn e5_stream_selection_prefers_coherent_storage_segment_over_stray_preamble_mark
 }
 
 #[test]
-fn e5_vertices_exclude_marker_like_record_payload_bytes() {
-    let mut false_vertex = vec![0x05, 0x08, 0x01];
-    for value in [90.0f32, 91.0, 92.0] {
-        false_vertex.extend_from_slice(&le_f32(value));
-    }
-    let mut stream = Vec::new();
-    append_e5_record(&mut stream, 0xc0, 1, &false_vertex);
-    stream.extend_from_slice(&[0x05, 0x08, 0x01]);
-    for value in [1.0f32, 2.0, 3.0] {
-        stream.extend_from_slice(&le_f32(value));
-    }
-    append_e5_record(&mut stream, 0xfe, 2, &[]);
-
-    let vertices = crate::families::e5::records::e5_vertices(&stream, 1);
-    assert_eq!(vertices.len(), 1);
-    assert_eq!(vertices[0], cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
-}
-
-#[test]
-fn e5_vertices_reject_multiple_matching_coordinate_runs() {
-    let mut stream = Vec::new();
-    for (record_id, coordinate) in [(1, 1.0f32), (2, 2.0)] {
-        append_e5_record(&mut stream, 0xfe, record_id, &[]);
-        stream.extend_from_slice(&[0x05, 0x08, 0x01]);
-        for value in [coordinate, 0.0, 0.0] {
-            stream.extend_from_slice(&le_f32(value));
-        }
-    }
-    append_e5_record(&mut stream, 0xfe, 3, &[]);
-
-    assert!(crate::families::e5::records::e5_vertices(&stream, 1).is_empty());
-}
-
-#[test]
-fn e5_vertices_concatenate_a_complete_split_roster() {
-    let mut stream = Vec::new();
-    for (record_id, coordinates) in [(1, [1.0f32, 2.0]), (2, [3.0, 4.0])] {
-        append_e5_record(&mut stream, 0xfe, record_id, &[]);
-        for coordinate in coordinates {
-            stream.extend_from_slice(&[0x05, 0x08, 0x01]);
-            for value in [coordinate, 0.0, 0.0] {
-                stream.extend_from_slice(&le_f32(value));
-            }
-        }
-    }
-    append_e5_record(&mut stream, 0xfe, 3, &[]);
-
-    let vertices = crate::families::e5::records::e5_vertices(&stream, 4);
-    assert_eq!(
-        vertices.iter().map(|point| point.x).collect::<Vec<_>>(),
-        vec![1.0, 2.0, 3.0, 4.0]
-    );
-}
-
-#[test]
-fn a8_surface_parser_reads_rational_weight_grid() {
-    let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_rational_surface_stream());
-    match &surfaces[0].geometry {
-        SurfaceGeometry::Nurbs(surface) => assert_eq!(surface.weights, Some(vec![2.0; 9])),
-        other => panic!("expected NURBS surface, got {other:?}"),
-    }
-}
-
-#[test]
-fn a5_surface_parser_reads_consolidated_nurbs() {
-    let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
-    assert_eq!(surfaces.len(), 1);
-    match &surfaces[0].geometry {
-        SurfaceGeometry::Nurbs(surface) => {
-            assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
-            assert_eq!((surface.u_count, surface.v_count), (2, 2));
-            assert_eq!(surface.control_points[3].x, 3.0);
-        }
-        other => panic!("expected NURBS surface, got {other:?}"),
-    }
-}
-
-#[test]
-fn consolidated_surface_parser_reads_width2_frame() {
-    let surfaces = crate::families::a5a8::records::a5_surfaces(&a6_surface_stream());
-    assert_eq!(surfaces.len(), 1);
-    match &surfaces[0].geometry {
-        SurfaceGeometry::Nurbs(surface) => assert_eq!((surface.u_count, surface.v_count), (2, 2)),
-        other => panic!("expected NURBS surface, got {other:?}"),
-    }
-}
-
-#[test]
-fn a5_surface_parser_reads_rational_weight_program() {
-    let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_rational_surface_stream());
-    match &surfaces[0].geometry {
-        SurfaceGeometry::Nurbs(surface) => assert_eq!(surface.weights, Some(vec![2.0; 4])),
-        other => panic!("expected NURBS surface, got {other:?}"),
-    }
-}
-
-#[test]
-fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
-    let curves = crate::families::a5a8::records::a5_freeform_curves(&a5_freeform_curve_stream());
-    assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].degree, 5);
-    assert_eq!(curves[0].knots, vec![0.0, 1.0]);
-    assert_eq!(curves[0].sites[1].radius, 2.0);
-    assert!(!curves[0].radius_constant);
-
-    let mut wrong_degree = a5_freeform_curve_stream();
-    wrong_degree[9] = 17;
-    assert!(crate::families::a5a8::records::a5_freeform_curves(&wrong_degree).is_empty());
-}
-
-#[test]
-fn consolidated_curve_parser_reads_width2_frame() {
-    let curves = crate::families::a5a8::records::a5_freeform_curves(&a6_freeform_curve_stream());
-    assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].degree, 5);
-    assert_eq!(curves[0].sites[1].radius, 2.0);
-}
-
-#[test]
-fn guide_curve_parser_reads_position_and_unit_direction_jet() {
-    let curves = crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream());
-    assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].degree, 5);
-    assert_eq!(curves[0].sites[0].point, [0.0, 0.0, 0.0]);
-    assert_eq!(curves[0].sites[0].direction, [1.0, 0.0, 0.0]);
-    assert_eq!(curves[0].sites[1].direction, [0.0, 1.0, 0.0]);
-    let points = curves[0]
-        .sites
-        .iter()
-        .map(|site| site.point)
-        .collect::<Vec<_>>();
-    let derivatives = vec![[0.0; 3]; 2];
-    let (knots, controls) = crate::nurbs::quintic_jet_bspline3(
-        curves[0].degree,
-        &curves[0].knots,
-        &points,
-        &derivatives,
-        &derivatives,
-    )
-    .expect("exact 3D quintic jet");
-    assert_eq!(knots, [vec![0.0; 6], vec![1.0; 6]].concat());
-    assert_eq!(controls.first(), Some(&[0.0, 0.0, 0.0]));
-    assert_eq!(controls.last(), Some(&[2.0, 3.0, 4.0]));
-}
-
-#[test]
 fn standard_decode_transfers_consolidated_guide_curve() {
     let mut bytes = standard_catpart();
     bytes.splice(16..16, a5_guide_curve_stream());
@@ -7408,28 +5184,6 @@ fn standard_decode_transfers_consolidated_guide_curve() {
     assert_eq!(nurbs.degree, 5);
     assert_eq!(nurbs.control_points.first().unwrap().x, 0.0);
     assert_eq!(nurbs.control_points.last().unwrap().z, 4.0);
-}
-
-#[test]
-fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
-    let curves = crate::families::a5a8::records::a8_freeform_curves(&a8_freeform_curve_stream());
-    assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].object_id, 0x1234_5678);
-    assert_eq!(curves[0].degree, 5);
-    assert_eq!(curves[0].multiplicities, vec![6, 6]);
-    assert_eq!(curves[0].sites[1].radius, 2.0);
-    assert_eq!(curves[0].tail_len, 59);
-
-    let mut repeated_knot = a8_freeform_curve_stream();
-    repeated_knot[26..34].copy_from_slice(&le_f64(0.0));
-    assert!(crate::families::a5a8::records::a8_freeform_curves(&repeated_knot).is_empty());
-
-    let mut invalid_endpoint_multiplicity = a8_freeform_curve_stream();
-    invalid_endpoint_multiplicity[34] = 21;
-    assert!(
-        crate::families::a5a8::records::a8_freeform_curves(&invalid_endpoint_multiplicity)
-            .is_empty()
-    );
 }
 
 #[test]
@@ -7631,7 +5385,7 @@ fn decode_e5_stream_transfers_circle_carrier() {
 #[test]
 fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     let stream = e5_torus_topology_stream();
-    crate::e5::parse_topology(&stream).expect("generated E5 topology");
+    crate::families::e5::graph::parse_topology(&stream).expect("generated E5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
         crate::container::scan_bytes(file.clone()).variant,

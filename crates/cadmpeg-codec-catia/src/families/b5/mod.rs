@@ -8,3 +8,6 @@
 pub mod graph;
 pub(crate) mod transfer;
 mod vecmath;
+
+#[cfg(test)]
+mod tests;

@@ -16,8 +16,6 @@ use std::collections::{BTreeMap, HashMap};
 pub struct PlaneParams {
     /// The little-endian u24 carrier tag.
     pub target: u32,
-    /// Offset of the `00 02 00 33 32` marker in the BREP stream.
-    pub pos: usize,
     /// Bounding-sphere center, which lies on the plane.
     pub origin: Point3,
     /// Unit plane normal from the positionally paired trim packet.
@@ -349,7 +347,6 @@ pub fn plane_params<S: std::hash::BuildHasher>(
         };
         out.push(PlaneParams {
             target,
-            pos,
             origin: Point3::new(
                 f64::from(sphere[0]),
                 f64::from(sphere[1]),

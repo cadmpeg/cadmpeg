@@ -63,6 +63,7 @@ pub struct A8SurfaceHeader {
 /// Degree-5 UV jet stored in an `a8 03 20` object record.
 pub struct A8Pcurve {
     /// Record byte offset.
+    #[cfg(test)]
     pub pos: usize,
     /// Inline object identifier.
     pub object_id: u32,
@@ -72,9 +73,8 @@ pub struct A8Pcurve {
     pub degree: u32,
     /// Distinct parameter knots.
     pub knots: Vec<f64>,
-    /// Multiplicity for each distinct knot.
-    pub multiplicities: Vec<u32>,
     /// Stored UV-jet channel-mode byte.
+    #[cfg(test)]
     pub mode: u8,
     /// UV positions at the knot sites.
     pub points: Vec<[f64; 2]>,
@@ -127,12 +127,6 @@ pub struct A5FreeformCurve {
     pub first_derivatives: Vec<[f64; 10]>,
     /// Ten second-derivative channels per knot.
     pub second_derivatives: Vec<[f64; 10]>,
-    /// Minimum stored-site radius.
-    pub radius_min: f64,
-    /// Maximum stored-site radius.
-    pub radius_max: f64,
-    /// Whether all stored-site radii are equal.
-    pub radius_constant: bool,
 }
 
 /// One position and unit reference direction in an `a5/a6/a7 03 39` jet.
@@ -433,11 +427,6 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     let first_derivatives = block(at + block_bytes)?;
     let second_derivatives = block(at + 2 * block_bytes)?;
     let sites = rolling_ball_sites(positions)?;
-    let radius_min = sites.iter().map(|s| s.radius).fold(f64::INFINITY, f64::min);
-    let radius_max = sites
-        .iter()
-        .map(|s| s.radius)
-        .fold(f64::NEG_INFINITY, f64::max);
     Some(A5FreeformCurve {
         pos,
         header_token,
@@ -446,9 +435,6 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         sites,
         first_derivatives,
         second_derivatives,
-        radius_min,
-        radius_max,
-        radius_constant: radius_max - radius_min < 1e-9,
     })
 }
 
@@ -484,6 +470,7 @@ fn distance3(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 /// Decode framed `a8 03 20` UV jet records.
 #[must_use]
+#[cfg(test)]
 pub fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
     object_stream_pcurves(data)
         .into_iter()
@@ -532,6 +519,8 @@ fn parse_object_stream_pcurve(
     end: usize,
     object_id: u32,
 ) -> Option<A8Pcurve> {
+    #[cfg(not(test))]
+    let _ = pos;
     let mut at = payload + 1;
     let support_id = object_stream_reference(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
@@ -596,12 +585,13 @@ fn parse_object_stream_pcurve(
         return None;
     }
     Some(A8Pcurve {
+        #[cfg(test)]
         pos,
         object_id,
         support_id,
         degree,
         knots,
-        multiplicities,
+        #[cfg(test)]
         mode,
         points: u.into_iter().zip(v).map(|p| [p.0, p.1]).collect(),
         first_derivatives: du.into_iter().zip(dv).map(|p| [p.0, p.1]).collect(),

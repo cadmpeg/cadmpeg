@@ -3,7 +3,7 @@
 
 use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
-    CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardTopology, TrimPacketLayout, TrimRecord,
+    CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardTopology, TrimRecord,
 };
 use crate::solve::incidence::reconstruct_incidence_candidates;
 use crate::solve::mesh_quotient::MeshQuotient;
@@ -25,33 +25,6 @@ const TRIM_KINDS: [u8; 14] = [
 #[must_use]
 pub fn standard_face_count(bytes: &[u8]) -> Option<usize> {
     largest_fbb_run(bytes).map(|(_, count, _)| count)
-}
-
-/// Return the primitive partitions of the unique width-selected standard trim
-/// chain, in positional face order. An absent or width-ambiguous chain returns
-/// an empty vector.
-#[must_use]
-pub fn standard_trim_packet_layouts(bytes: &[u8]) -> Vec<TrimPacketLayout> {
-    let Some((face_start, face_count, _)) = largest_fbb_run(bytes) else {
-        return Vec::new();
-    };
-    let solutions = [1, 2, 3]
-        .into_iter()
-        .filter_map(|width| parse_trim_chain(bytes, face_start, face_count, width))
-        .collect::<Vec<_>>();
-    let Ok([records]) = <[Vec<TrimRecord>; 1]>::try_from(solutions) else {
-        return Vec::new();
-    };
-    records
-        .into_iter()
-        .map(|record| TrimPacketLayout {
-            kind: record.kind,
-            independent_triangles: record.independent_count,
-            strip_lengths: record.strip_lengths,
-            fan_lengths: record.fan_lengths,
-            handle_count: record.handles.len(),
-        })
-        .collect()
 }
 
 /// Unit frame vector for each positional standard trim packet. The result is
@@ -168,18 +141,6 @@ pub fn parse_standard_motif(
     <[StandardTopology; 1]>::try_from(solutions)
         .ok()
         .map(|[topology]| topology)
-}
-
-/// Reconstruct standard topology from byte-derived endpoint coordinate rows.
-/// The endpoint graph is accepted only when all face incidences close and the
-/// radial orientation constraints are consistent.
-#[must_use]
-pub fn parse_standard_endpoints(
-    bytes: &[u8],
-    edge_faces: &[[usize; 2]],
-    edge_points: &[[usize; 2]],
-) -> Option<StandardTopology> {
-    parse_standard_endpoints_with_edge_classes(bytes, edge_faces, edge_points, None)
 }
 
 /// Reconstruct standard topology while treating equal curve-class identifiers

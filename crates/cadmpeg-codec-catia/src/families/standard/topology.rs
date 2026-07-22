@@ -100,6 +100,7 @@ impl StandardTopology {
     /// Number of port/corner equivalence classes. Coordinate rows are a
     /// separate stored table and are not assigned to these classes here.
     #[must_use]
+    #[cfg(test)]
     pub fn logical_vertex_count(&self) -> usize {
         self.logical_vertex_count
     }
@@ -379,21 +380,6 @@ pub(crate) struct TrimRecord {
     pub(crate) strip_lengths: Vec<usize>,
     pub(crate) fan_lengths: Vec<usize>,
     pub(crate) kind: u8,
-}
-
-/// Primitive partition of one selected positional standard trim packet.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TrimPacketLayout {
-    /// Packet kind byte (`0x40 | primitive-mask`).
-    pub kind: u8,
-    /// Number of independent triangle triples at the start of the handle lane.
-    pub independent_triangles: usize,
-    /// Ordered handle counts of the packet's triangle strips.
-    pub strip_lengths: Vec<usize>,
-    /// Ordered handle counts of the packet's triangle fans.
-    pub fan_lengths: Vec<usize>,
-    /// Total number of handles in the packet lane.
-    pub handle_count: usize,
 }
 
 pub(crate) fn reconstruct_incidence(

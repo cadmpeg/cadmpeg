@@ -33,7 +33,7 @@ use crate::native::CatiaNative;
 /// exhausting the table yields the metadata-only fallback.
 pub fn decode(
     reader: &mut dyn ReadSeek,
-    options: &DecodeOptions,
+    options: DecodeOptions,
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(reader)?;
 

@@ -14,19 +14,6 @@ use crate::solve::UnionFind;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-/// Return the endpoint-port handles for the standard edge table, in physical
-/// edge-row order.
-#[cfg(test)]
-#[must_use]
-pub fn standard_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    let (_, _, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
-    edge_rows
-        .iter()
-        .map(|row| Some([*row.handles.first()?, *row.handles.last()?]))
-        .collect()
-}
-
 /// Return the counted physical edge rows in their serialized table order.
 ///
 /// Each row retains its table-kind byte, native handle width semantics, and

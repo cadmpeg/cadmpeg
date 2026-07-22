@@ -38,7 +38,7 @@ pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
     let stream = &scan.data[stream_range];
     let circles = crate::families::e5::records::e5_circles(stream);
     let mut surfaces = crate::families::e5::records::e5_surfaces(stream);
-    let topology = crate::e5::parse_topology(stream);
+    let topology = crate::families::e5::graph::parse_topology(stream);
     let vertex_count = topology.as_ref().map_or_else(
         || {
             crate::families::e5::records::e5_edges(stream)
@@ -192,7 +192,7 @@ pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
 
 pub(crate) fn append_e5_planes(
     stream: &[u8],
-    topology: &crate::e5::E5Topology,
+    topology: &crate::families::e5::graph::E5Topology,
     points: &[Point3],
     surfaces: &mut Vec<crate::families::e5::records::E5Surface>,
 ) {
@@ -227,8 +227,10 @@ pub(crate) fn append_e5_planes(
                         continue;
                     };
                     for pcurve_ref in &support.pcurves {
-                        let Some(crate::e5::E5Pcurve::Line {
-                            surface, direction, ..
+                        let Some(crate::families::e5::graph::E5Pcurve::Line {
+                            surface,
+                            direction,
+                            ..
                         }) = topology.pcurves.get(pcurve_ref)
                         else {
                             continue;
@@ -278,7 +280,7 @@ pub(crate) fn append_e5_planes(
 pub(crate) fn solve_e5_plane_frame(
     surface_ref: u32,
     origin: [f64; 3],
-    topology: &crate::e5::E5Topology,
+    topology: &crate::families::e5::graph::E5Topology,
     points: &[Point3],
     expected_normal: Option<Vector3>,
 ) -> Option<(Vector3, Vector3)> {
@@ -369,9 +371,11 @@ pub(crate) fn solve_e5_plane_frame(
     (canonical.len() == 1).then(|| canonical[0])
 }
 
-pub(crate) fn e5_native_uv_endpoints(pcurve: &crate::e5::E5Pcurve) -> Option<[[f64; 2]; 2]> {
+pub(crate) fn e5_native_uv_endpoints(
+    pcurve: &crate::families::e5::graph::E5Pcurve,
+) -> Option<[[f64; 2]; 2]> {
     match pcurve {
-        crate::e5::E5Pcurve::Line {
+        crate::families::e5::graph::E5Pcurve::Line {
             origin,
             direction,
             range,
@@ -382,7 +386,7 @@ pub(crate) fn e5_native_uv_endpoints(pcurve: &crate::e5::E5Pcurve) -> Option<[[f
                 origin[1] + parameter * direction[1],
             ]
         })),
-        crate::e5::E5Pcurve::Circle {
+        crate::families::e5::graph::E5Pcurve::Circle {
             center,
             radius,
             range,
@@ -394,7 +398,9 @@ pub(crate) fn e5_native_uv_endpoints(pcurve: &crate::e5::E5Pcurve) -> Option<[[f
                 center[1] + radius * angle.sin(),
             ]
         })),
-        crate::e5::E5Pcurve::Jet { points, .. } => Some([*points.first()?, *points.last()?]),
+        crate::families::e5::graph::E5Pcurve::Jet { points, .. } => {
+            Some([*points.first()?, *points.last()?])
+        }
     }
 }
 
@@ -581,7 +587,7 @@ struct E5Ownership {
 pub(crate) fn transfer_e5_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    topology: &crate::e5::E5Topology,
+    topology: &crate::families::e5::graph::E5Topology,
     decoded_surfaces: &[crate::families::e5::records::E5Surface],
 ) -> bool {
     if topology.vertex_refs.len() != ir.model.vertices.len()
@@ -679,7 +685,7 @@ pub(crate) fn transfer_e5_topology(
 /// or returns `None` when any binding fails admission.
 #[allow(clippy::question_mark)]
 fn plan_e5_boundary(
-    topology: &crate::e5::E5Topology,
+    topology: &crate::families::e5::graph::E5Topology,
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     point_for_ref: &HashMap<u32, Point3>,
 ) -> Option<E5BoundaryPlan> {
@@ -814,9 +820,9 @@ fn plan_e5_boundary(
                 continue;
             };
             let surface_ref = match pcurve {
-                crate::e5::E5Pcurve::Line { surface, .. }
-                | crate::e5::E5Pcurve::Circle { surface, .. }
-                | crate::e5::E5Pcurve::Jet { surface, .. } => *surface,
+                crate::families::e5::graph::E5Pcurve::Line { surface, .. }
+                | crate::families::e5::graph::E5Pcurve::Circle { surface, .. }
+                | crate::families::e5::graph::E5Pcurve::Jet { surface, .. } => *surface,
             };
             let Some((surface_id, decoded_surface)) = surface_for_ref.get(&surface_ref) else {
                 continue;
@@ -952,7 +958,7 @@ fn plan_e5_boundary(
 fn prune_e5_unused_surfaces(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    topology: &crate::e5::E5Topology,
+    topology: &crate::families::e5::graph::E5Topology,
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     intersection_plan: &BTreeMap<u32, IntcurveSupportContext>,
     surface_curve_plan: &BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
@@ -990,7 +996,7 @@ fn prune_e5_unused_surfaces(
 
 /// Resolves body face groupings into region/shell components, or `None` on failure.
 #[allow(clippy::question_mark)]
-fn resolve_e5_ownership(topology: &crate::e5::E5Topology) -> Option<E5Ownership> {
+fn resolve_e5_ownership(topology: &crate::families::e5::graph::E5Topology) -> Option<E5Ownership> {
     let body_faces: Vec<(Option<u32>, Vec<u32>)> = if topology.bodies.is_empty() {
         vec![(
             None,
@@ -1027,7 +1033,7 @@ fn resolve_e5_ownership(topology: &crate::e5::E5Topology) -> Option<E5Ownership>
 fn emit_e5_curves_and_edges(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    topology: &crate::e5::E5Topology,
+    topology: &crate::families::e5::graph::E5Topology,
     vertex_for_ref: &HashMap<u32, VertexId>,
     edge_ids: &HashMap<u32, EdgeId>,
     edge_curve_plan: &BTreeMap<u32, (CurveGeometry, [f64; 2])>,
@@ -1262,7 +1268,7 @@ fn emit_e5_bodies(
 fn emit_e5_faces_loops_coedges(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    topology: &crate::e5::E5Topology,
+    topology: &crate::families::e5::graph::E5Topology,
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     face_shell: &HashMap<u32, ShellId>,
     edge_ids: &HashMap<u32, EdgeId>,
@@ -1382,7 +1388,7 @@ fn emit_e5_faces_loops_coedges(
 }
 
 pub(crate) fn e5_stored_pcurve_reversed(
-    topology: &crate::e5::E5Topology,
+    topology: &crate::families::e5::graph::E5Topology,
     edge_ref: u32,
     pcurve_ref: u32,
     native_range: [f64; 2],
@@ -1402,12 +1408,12 @@ pub(crate) fn parameter_ranges_reversed(
 }
 
 pub(crate) fn e5_pcurve_on_surface(
-    pcurve: &crate::e5::E5Pcurve,
+    pcurve: &crate::families::e5::graph::E5Pcurve,
     decoded_surface: &crate::families::e5::records::E5Surface,
 ) -> Option<(PcurveGeometry, [f64; 2], [Point3; 2])> {
     let surface = &decoded_surface.geometry;
     match pcurve {
-        crate::e5::E5Pcurve::Line {
+        crate::families::e5::graph::E5Pcurve::Line {
             origin: raw_origin,
             direction,
             range,
@@ -1434,7 +1440,7 @@ pub(crate) fn e5_pcurve_on_surface(
                     .ok()?,
             ))
         }
-        crate::e5::E5Pcurve::Circle {
+        crate::families::e5::graph::E5Pcurve::Circle {
             center,
             radius,
             range,
@@ -1480,7 +1486,7 @@ pub(crate) fn e5_pcurve_on_surface(
                     .ok()?,
             ))
         }
-        crate::e5::E5Pcurve::Jet {
+        crate::families::e5::graph::E5Pcurve::Jet {
             degree,
             knots,
             points,
@@ -1526,7 +1532,7 @@ pub(crate) fn e5_pcurve_on_surface(
 
 pub(crate) fn e5_boundary_curve(
     surface: &SurfaceGeometry,
-    native_pcurve: &crate::e5::E5Pcurve,
+    native_pcurve: &crate::families::e5::graph::E5Pcurve,
     pcurve: &PcurveGeometry,
     range: [f64; 2],
     endpoints: [Point3; 2],
@@ -1537,7 +1543,7 @@ pub(crate) fn e5_boundary_curve(
             normal,
             u_axis,
         },
-        crate::e5::E5Pcurve::Circle { center, radius, .. },
+        crate::families::e5::graph::E5Pcurve::Circle { center, radius, .. },
     ) = (surface, native_pcurve)
     {
         let v_axis = (*normal).cross(*u_axis);
@@ -1560,7 +1566,7 @@ pub(crate) fn e5_boundary_curve(
             normal,
             u_axis,
         },
-        crate::e5::E5Pcurve::Jet { .. },
+        crate::families::e5::graph::E5Pcurve::Jet { .. },
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -1929,7 +1935,7 @@ pub(crate) struct E5BodyOwnership {
 }
 
 pub(crate) fn e5_ownership_plan(
-    topology: &crate::e5::E5Topology,
+    topology: &crate::families::e5::graph::E5Topology,
     body_faces: &[(Option<u32>, Vec<u32>)],
 ) -> Option<Vec<E5BodyOwnership>> {
     if body_faces.is_empty() || body_faces.iter().any(|(_, faces)| faces.is_empty()) {
@@ -2037,7 +2043,7 @@ mod route_tests {
         parameter_ranges_reversed,
     };
 
-    use crate::e5::{E5Edge, E5Face, E5Loop, E5Topology};
+    use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Topology};
 
     use cadmpeg_ir::eval::pcurve_uv;
     use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
@@ -2072,7 +2078,7 @@ mod route_tests {
                 pcurves: vec![300 + record_id],
                 edge_uses: vec![edge_use],
                 reversed: vec![false],
-                oriented_members: Some(vec![crate::e5::E5OrientedMember {
+                oriented_members: Some(vec![crate::families::e5::graph::E5OrientedMember {
                     serialized_index: 0,
                     reversed: false,
                 }]),
@@ -2176,7 +2182,7 @@ mod route_tests {
             origin: cadmpeg_ir::math::Point2::new(0.0, 3.0),
             direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
         };
-        let native = crate::e5::E5Pcurve::Line {
+        let native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
             origin: [0.0, 3.0],
             direction: [1.0, 0.0],
@@ -2208,7 +2214,7 @@ mod route_tests {
             normal: Vector3::new(0.0, 0.0, 1.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         };
-        let native = crate::e5::E5Pcurve::Circle {
+        let native = crate::families::e5::graph::E5Pcurve::Circle {
             surface: 0,
             center: [4.0, 5.0],
             codes: [0, 0],
@@ -2251,7 +2257,7 @@ mod route_tests {
         let points = vec![[0.0, 0.0], [1.0, 2.0]];
         let first = vec![[1.0, 2.0], [1.0, 2.0]];
         let second = vec![[0.0, 0.0], [0.0, 0.0]];
-        let native = crate::e5::E5Pcurve::Jet {
+        let native = crate::families::e5::graph::E5Pcurve::Jet {
             surface: 0,
             degree: 5,
             knots: vec![0.0, 1.0],
@@ -2322,7 +2328,7 @@ mod route_tests {
             },
             uv_scale: [0.5, 1.0],
         };
-        let pcurve = crate::e5::E5Pcurve::Jet {
+        let pcurve = crate::families::e5::graph::E5Pcurve::Jet {
             surface: 7,
             degree: 5,
             knots: vec![0.0, 1.0],
@@ -2367,7 +2373,7 @@ mod route_tests {
             },
             uv_scale: [0.2, 0.5],
         };
-        let pcurve = crate::e5::E5Pcurve::Circle {
+        let pcurve = crate::families::e5::graph::E5Pcurve::Circle {
             surface: 7,
             center: [10.0, 4.0],
             codes: [0, 0],

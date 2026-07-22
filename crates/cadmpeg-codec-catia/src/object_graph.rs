@@ -23,12 +23,14 @@ pub struct ObjectGraph {
 impl ObjectGraph {
     /// Resolve a one-based serialized object ordinal.
     #[must_use]
+    #[cfg(test)]
     pub fn record(&self, ordinal: u32) -> Option<&ObjectRecord> {
         let index = usize::try_from(ordinal.checked_sub(1)?).ok()?;
         self.records.get(index)
     }
 
     /// Return records directly owned by `owner_ordinal`, in serialization order.
+    #[cfg(test)]
     pub fn children(&self, owner_ordinal: u32) -> impl Iterator<Item = &ObjectRecord> {
         self.records
             .iter()
@@ -219,6 +221,7 @@ pub struct SurfaceAlias {
 
 /// Literal unresolved `7C D9` marker occurrence and bounded source context.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub struct Marker7cd9 {
     /// Marker byte offset.
     pub pos: usize,
@@ -230,6 +233,7 @@ pub struct Marker7cd9 {
 
 /// Expose literal `7C D9` occurrences without assigning record framing or semantics.
 #[must_use]
+#[cfg(test)]
 pub fn markers_7cd9(data: &[u8], context_len: usize) -> Vec<Marker7cd9> {
     let positions: Vec<usize> = data
         .windows(2)
@@ -289,6 +293,7 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
 
 /// Parse the valid `7C08` candidate containing the most `7C09` records.
 #[must_use]
+#[cfg(test)]
 pub fn parse(data: &[u8]) -> Option<ObjectGraph> {
     parse_all(data)
         .into_iter()

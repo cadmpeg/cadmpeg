@@ -7,15 +7,19 @@
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::le::u16_at as u16_le;
 use cadmpeg_ir::math::{Point3, Vector3};
+#[cfg(test)]
 use std::collections::BTreeMap;
 
 use crate::families::a5a8::records::A8Surface;
+#[cfg(test)]
+use crate::families::consolidated::records::consolidated_records;
 use crate::families::consolidated::records::{
-    b_family_frames, consolidated_records, parse_consolidated_pcurve, ConsolidatedFrame,
-    ConsolidatedPcurve,
+    b_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
 };
+#[cfg(test)]
+use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
-    allocation_ref, compact_int, f64_le, finite_f64_lane, persistent_ref, read_f64_array, u32_le_24,
+    allocation_ref, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
 };
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
@@ -34,6 +38,7 @@ pub struct B2OffsetSupport {
 
 /// Parameter-space data stored in a `b2/b3/b4 03 18` record.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg(test)]
 pub enum B2ParameterPoint {
     /// Two-coordinate UV point (`L=0x12`).
     Uv {
@@ -62,6 +67,7 @@ pub enum B2ParameterPoint {
 
 /// Persistent-tag reference list stored in a `b2/b3/b4 03 37` record.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub struct B2ReferenceList {
     /// Record byte offset.
     pub pos: usize,
@@ -72,6 +78,7 @@ pub struct B2ReferenceList {
 /// Nine-reference owner packet stored in a `b2/b3/b4 03 62` record with a
 /// 62-byte numeric tail.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub struct B2OwnerPacket {
     /// Record byte offset.
     pub pos: usize,
@@ -87,6 +94,7 @@ pub struct B2OwnerPacket {
 
 /// Count-framed class-`0x62` owner record with a class-specific tail.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub struct B2CountedOwner {
     /// Record byte offset.
     pub pos: usize,
@@ -100,6 +108,7 @@ pub struct B2CountedOwner {
 
 /// Reference dialect used by a nine-reference class-`0x62` owner packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
 pub enum B2OwnerReferenceEncoding {
     /// Strong identities use `0x0a <u16le>` and weak identities use compact integers.
     TaggedU16Strong,
@@ -110,6 +119,7 @@ pub enum B2OwnerReferenceEncoding {
 
 /// Count-prefixed class-`0x61` reference record.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub struct B2Counted61 {
     /// Record byte offset.
     pub pos: usize,
@@ -123,6 +133,7 @@ pub struct B2Counted61 {
 
 /// Long-form class-`0x61` record with a monotone u16 member lane.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg(test)]
 pub struct B2Long61 {
     /// Record byte offset.
     pub pos: usize,
@@ -140,6 +151,7 @@ pub struct B2Long61 {
 
 /// Fixed-shape class-`0x5f` link record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
 pub struct B2Link5f {
     /// Record byte offset.
     pub pos: usize,
@@ -152,6 +164,7 @@ pub struct B2Link5f {
 /// Adjacent class-`0x5f` link and class-`0x62` owner packet joined by their
 /// allocation-successor identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub struct B2LinkedOwner {
     /// Fixed link immediately preceding the owner packet.
     pub link: B2Link5f,
@@ -162,6 +175,7 @@ pub struct B2LinkedOwner {
 /// Adjacent class-`0x5f` link and count-framed class-`0x62` owner joined by
 /// the owner's allocation-successor identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub struct B2LinkedCountedOwner {
     /// Fixed link immediately preceding the owner packet.
     pub link: B2Link5f,
@@ -171,6 +185,7 @@ pub struct B2LinkedCountedOwner {
 
 /// Cone-face chart descriptor stored in a `b2/b3/b4 03 3b` record.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg(test)]
 pub struct B2ConeFace {
     /// Record byte offset.
     pub pos: usize,
@@ -208,6 +223,7 @@ pub struct B2UseMetadata {
 
 /// Byte-level metadata from a class-`0x5e` consolidated record.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub struct B2EdgeMetadata {
     /// Record byte offset.
     pub pos: usize,
@@ -272,6 +288,7 @@ pub fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
 
 /// Decode class-`0x5e` payloads and their `0x0a <u16le>` reference tokens.
 #[must_use]
+#[cfg(test)]
 pub fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
     b_family_frames(data, 0x5e)
         .into_iter()
@@ -327,6 +344,7 @@ pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
 
 /// Decode width-coded `b2/b3/b4 03 3b` cone-face descriptors.
 #[must_use]
+#[cfg(test)]
 pub fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
     b_family_frames(data, 0x3b)
         .into_iter()
@@ -359,6 +377,7 @@ pub fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
 
 /// Decode `b2/b3/b4 03 37` compact reference lists with their unit tail.
 #[must_use]
+#[cfg(test)]
 pub fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
     b_family_frames(data, 0x37)
         .into_iter()
@@ -386,6 +405,7 @@ pub fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
 /// Decode class-`0x62` owner packets whose leading count fixes the persistent
 /// reference lane and leaves a nonempty class-specific tail.
 #[must_use]
+#[cfg(test)]
 pub fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
     b_family_frames(data, 0x62)
         .into_iter()
@@ -411,6 +431,7 @@ pub fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
 /// Decode width-coded class-`0x62` owner packets whose counted references and
 /// fixed numeric tail consume the complete frame.
 #[must_use]
+#[cfg(test)]
 pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
     b_family_frames(data, 0x62)
         .into_iter()
@@ -458,6 +479,7 @@ pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
 /// records without a leading count belong to a separate grammar and are not
 /// returned.
 #[must_use]
+#[cfg(test)]
 pub fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
     b_family_frames(data, 0x61)
         .into_iter()
@@ -487,6 +509,7 @@ pub fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
 /// Decode the long class-`0x61` form. Its fixed 25-byte suffix determines the
 /// monotone member-list boundary without searching for delimiter bytes.
 #[must_use]
+#[cfg(test)]
 pub fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
     b_family_frames(data, 0x61)
         .into_iter()
@@ -539,6 +562,7 @@ pub fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
 
 /// Decode `82 <width-coded target> 03 05` class-`0x5f` links.
 #[must_use]
+#[cfg(test)]
 pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
     b_family_frames(data, 0x5f)
         .into_iter()
@@ -562,6 +586,7 @@ pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
 /// Bind immediately adjacent `5f,62` records when the owner's ninth identity
 /// is the checked successor of the link target.
 #[must_use]
+#[cfg(test)]
 pub fn b2_linked_owners(data: &[u8]) -> Vec<B2LinkedOwner> {
     let links = b2_links_5f(data)
         .into_iter()
@@ -590,6 +615,7 @@ pub fn b2_linked_owners(data: &[u8]) -> Vec<B2LinkedOwner> {
 /// Bind immediately adjacent `5f,62` records when the count-framed owner's
 /// final identity is the checked successor of the link target.
 #[must_use]
+#[cfg(test)]
 pub fn b2_linked_counted_owners(data: &[u8]) -> Vec<B2LinkedCountedOwner> {
     let links = b2_links_5f(data)
         .into_iter()
@@ -619,6 +645,7 @@ pub fn b2_linked_counted_owners(data: &[u8]) -> Vec<B2LinkedCountedOwner> {
 
 /// Decode width-coded `b2/b3/b4 03 18` parameter-space records.
 #[must_use]
+#[cfg(test)]
 pub fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
     b_family_frames(data, 0x18)
         .into_iter()
@@ -788,9 +815,8 @@ pub struct B2Cylinder {
     /// Record byte offset.
     pub pos: usize,
     /// Payload-layout discriminator (`0x52`, `0x5a`, or `0x62`).
+    #[cfg(test)]
     pub layout: u8,
-    /// Stored frame token.
-    pub frame_token: u8,
     /// Decoded carrier; absent for the unresolved phase-tailed `0x62` frame.
     pub geometry: Option<SurfaceGeometry>,
     /// Arc-length circumferential range.
@@ -798,8 +824,10 @@ pub struct B2Cylinder {
     /// Axial range.
     pub v_range: [f64; 2],
     /// Stored planar vector for a phase-tailed `0x62` frame.
+    #[cfg(test)]
     pub stored_vector: Option<[f64; 2]>,
     /// Phase scalar for a phase-tailed `0x62` frame.
+    #[cfg(test)]
     pub phase: Option<f64>,
 }
 
@@ -818,8 +846,6 @@ pub struct B2Cone {
     pub axis: [f64; 3],
     /// Cone half-angle in radians.
     pub half_angle: f64,
-    /// Stored angular-origin offset.
-    pub angular_offset: f64,
     /// Native slant-coordinate range.
     pub slant_range: [f64; 2],
     /// Divisor mapping the stored U coordinate to azimuth.
@@ -828,34 +854,22 @@ pub struct B2Cone {
 
 /// Axis-and-profile surface of revolution stored in a `b2 03 2d` record.
 #[derive(Debug, Clone)]
+#[cfg(test)]
 pub struct B2Revolution {
-    /// Record byte offset.
-    pub pos: usize,
     /// Referenced profile-curve identifier.
     pub profile_curve_id: u16,
     /// Axis-frame origin.
     pub origin: [f64; 3],
-    /// First transverse basis direction.
-    pub basis_u: [f64; 3],
-    /// Second transverse basis direction.
-    pub basis_v: [f64; 3],
     /// Revolution-axis direction.
     pub axis: [f64; 3],
-    /// Stored angular parameter interval.
-    pub angular_range: [f64; 2],
     /// Stored profile parameter interval.
     pub profile_range: [f64; 2],
-    /// Divisor mapping the stored angular parameter to radians.
-    pub angular_scale: f64,
-    /// Stored mean angular parameter.
-    pub mean_angle_parameter: f64,
 }
 
 /// Constant `b2 03 65` separator preceding a typed group opener.
 #[derive(Debug, Clone)]
+#[cfg(test)]
 pub struct B2GroupSeparator {
-    /// Record byte offset.
-    pub pos: usize,
     /// Consolidated-frame header token.
     pub token: u32,
 }
@@ -866,6 +880,7 @@ pub struct B2Group {
     /// Record byte offset.
     pub pos: usize,
     /// Compact group identifier.
+    #[cfg(test)]
     pub group_id: u32,
     /// Compact group-type code; type `3` opens a cylinder chain.
     pub group_type: u32,
@@ -882,14 +897,8 @@ pub struct B2ConstructionUse {
     pub distance: f64,
     /// Construction-type discriminant.
     pub kind: u8,
-    /// Four kind-specific stored scalars.
-    pub fields: [f64; 4],
     /// Carrier domain `[u0, v0, u1, v1]` for kind `0x01`.
     pub domain: Option<[f64; 4]>,
-    /// Active parameter interval for kind `0x19`.
-    pub active_interval: Option<[f64; 2]>,
-    /// Effective rolling-ball radius for kind `0x19`.
-    pub effective_radius: Option<f64>,
 }
 
 /// Cylinder frame following a type-3 `b2 03 60` group opener.
@@ -1006,10 +1015,7 @@ pub fn b2_construction_uses(data: &[u8]) -> Vec<B2ConstructionUse> {
             support_id,
             distance,
             kind,
-            fields,
             domain: (kind == 0x01).then_some([fields[0], fields[2], fields[1], fields[3]]),
-            active_interval: (kind == 0x19).then_some([fields[0], fields[1]]),
-            effective_radius: (kind == 0x19).then_some(fields[3]),
         });
     }
     out
@@ -1070,7 +1076,6 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
                 t2,
                 axis,
                 half_angle,
-                angular_offset,
                 slant_range,
                 angular_scale,
             });
@@ -1081,6 +1086,7 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
 
 /// Decode `b2 03 2d` axis-and-profile surfaces of revolution.
 #[must_use]
+#[cfg(test)]
 pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
     let mut out = Vec::new();
     for frame in b_family_frames(data, 0x2d) {
@@ -1123,16 +1129,10 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
             continue;
         }
         out.push(B2Revolution {
-            pos: frame.pos,
             profile_curve_id,
             origin: axis_frame[0..3].try_into().expect("three origin values"),
-            basis_u: axis_frame[3..6].try_into().expect("three basis values"),
-            basis_v: axis_frame[6..9].try_into().expect("three basis values"),
             axis: axis_frame[9..12].try_into().expect("three axis values"),
-            angular_range: [bounds[0], bounds[1]],
             profile_range: [bounds[2], bounds[3]],
-            angular_scale,
-            mean_angle_parameter,
         });
     }
     out
@@ -1140,12 +1140,12 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
 
 /// Decode constant `b2 03 65` group separators.
 #[must_use]
+#[cfg(test)]
 pub fn b2_group_separators(data: &[u8]) -> Vec<B2GroupSeparator> {
     b_family_frames(data, 0x65)
         .into_iter()
         .filter(|frame| data.get(frame.payload..frame.end) == Some(&[0x81, 0x03, 0x05, 0x0d]))
         .map(|frame| B2GroupSeparator {
-            pos: frame.pos,
             token: frame.header_token,
         })
         .collect()
@@ -1158,10 +1158,15 @@ pub fn b2_groups(data: &[u8]) -> Vec<B2Group> {
         .into_iter()
         .filter_map(|frame| {
             let mut at = frame.payload;
+            // Advances `at` past the compact group id; the value is retained
+            // only for test inspection.
             let group_id = compact_int(data, &mut at)?;
+            #[cfg(not(test))]
+            let _ = group_id;
             let group_type = compact_int(data, &mut at)?;
             (at == frame.end).then_some(B2Group {
                 pos: frame.pos,
+                #[cfg(test)]
                 group_id,
                 group_type,
             })
@@ -1229,8 +1234,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let ref_direction = Vector3::new(-axis.y, axis.x, 0.0);
             Some(B2Cylinder {
                 pos,
+                #[cfg(test)]
                 layout,
-                frame_token,
                 geometry: Some(SurfaceGeometry::Cylinder {
                     origin,
                     axis,
@@ -1239,7 +1244,9 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 }),
                 u_range,
                 v_range,
+                #[cfg(test)]
                 stored_vector: None,
+                #[cfg(test)]
                 phase: None,
             })
         }
@@ -1261,8 +1268,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             }
             Some(B2Cylinder {
                 pos,
+                #[cfg(test)]
                 layout,
-                frame_token,
                 geometry: Some(SurfaceGeometry::Cylinder {
                     origin,
                     axis: Vector3::new(1.0, 0.0, 0.0),
@@ -1271,7 +1278,9 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 }),
                 u_range,
                 v_range,
+                #[cfg(test)]
                 stored_vector: None,
+                #[cfg(test)]
                 phase: None,
             })
         }
@@ -1298,12 +1307,14 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             }
             Some(B2Cylinder {
                 pos,
+                #[cfg(test)]
                 layout,
-                frame_token,
                 geometry: None,
                 u_range,
                 v_range,
+                #[cfg(test)]
                 stored_vector: Some(vector),
+                #[cfg(test)]
                 phase: Some(phase),
             })
         }

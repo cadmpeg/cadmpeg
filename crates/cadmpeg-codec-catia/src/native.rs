@@ -3,12 +3,15 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+#[cfg(test)]
+use std::collections::HashSet;
 
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::catalog;
 use crate::container;
+#[cfg(test)]
 use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 use crate::object_graph::{
     self, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField, PayloadSubtype,
@@ -1055,6 +1058,7 @@ fn native_consolidated_support_binding(
     }
 }
 
+#[cfg(test)]
 fn validate_consolidated_pcurves(
     pcurves: &[CatiaConsolidatedPcurve],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -1089,6 +1093,7 @@ fn validate_consolidated_pcurves(
     Ok(())
 }
 
+#[cfg(test)]
 fn validate_consolidated_edge_runs(
     runs: &[CatiaConsolidatedEdgeRun],
     pcurves: &[CatiaConsolidatedPcurve],
@@ -1353,6 +1358,7 @@ fn external_reference_views(segments: &[CatiaFinjplSegment]) -> Vec<CatiaExterna
         .collect()
 }
 
+#[cfg(test)]
 fn validate_native_links(
     aliases: &[CatiaAliasRow],
     catalogs: &[CatiaCatalog],
@@ -1736,6 +1742,7 @@ impl CatiaNative {
     }
 
     /// Load the typed CATIA namespace from generic native arenas.
+    #[cfg(test)]
     pub fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
@@ -1938,6 +1945,7 @@ impl CatiaNative {
     }
 
     /// Store the typed CATIA namespace into generic native arenas.
+    #[cfg(test)]
     pub fn store(
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,

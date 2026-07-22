@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Exercises CATIA E5 topology parsing and orientation solving with arbitrary
-//! graph data. Parse errors are expected; panics are failures.
+//! Fuzz target for CATIA E5 topology parsing and orientation solving.
+//!
+//! Feeds arbitrary bytes through `cadmpeg_codec_catia::fuzz::e5_topology`.
+//! Contract: no input may panic.
 
 #![no_main]
 
-use cadmpeg_codec_catia::e5::parse_topology;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let _ = parse_topology(data);
+    cadmpeg_codec_catia::fuzz::e5_topology(data);
 });

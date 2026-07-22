@@ -30,8 +30,8 @@ use crate::solve::UnionFind;
 
 pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutput> {
     let decoded = crate::families::zero_entity::records::zero_entity_surfaces(&scan.data);
-    let points = crate::zero_entity::unframed_vertices(&scan.data);
-    let topology = crate::zero_entity::parse(&scan.data);
+    let points = crate::families::zero_entity::graph::unframed_vertices(&scan.data);
+    let topology = crate::families::zero_entity::graph::parse(&scan.data);
     if decoded.is_empty() && points.is_empty() && topology.is_none() {
         return None;
     }
@@ -180,7 +180,7 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
 /// from the planner means the graph failed admission and nothing is emitted.
 struct ZeroEntityPlan {
     loop_owner: Vec<usize>,
-    edges: Vec<crate::zero_entity::ZeroResolvedEdge>,
+    edges: Vec<crate::families::zero_entity::graph::ZeroResolvedEdge>,
     occurrence_edges: HashMap<(usize, usize), (usize, usize)>,
     face_components: Vec<usize>,
     component_count: usize,
@@ -193,7 +193,7 @@ struct ZeroEntityPlan {
 pub(crate) fn transfer_zero_entity_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    topology: &crate::zero_entity::ZeroEntityTopology,
+    topology: &crate::families::zero_entity::graph::ZeroEntityTopology,
 ) -> bool {
     let Some(plan) = plan_zero_entity_topology(topology) else {
         return false;
@@ -230,7 +230,7 @@ pub(crate) fn transfer_zero_entity_topology(
 /// `None` when any admission check fails.
 #[allow(clippy::question_mark)]
 fn plan_zero_entity_topology(
-    topology: &crate::zero_entity::ZeroEntityTopology,
+    topology: &crate::families::zero_entity::graph::ZeroEntityTopology,
 ) -> Option<ZeroEntityPlan> {
     const TOLERANCE: f64 = 2e-3;
     let Some(loop_owner) = unique_index_owners(
@@ -280,7 +280,7 @@ fn plan_zero_entity_topology(
     }) {
         return None;
     }
-    let edges = crate::zero_entity::resolve_occurrence_edges(topology);
+    let edges = crate::families::zero_entity::graph::resolve_occurrence_edges(topology);
     if edges.len() != topology.physical_edges.len()
         || topology.faces.len() != topology.carrier_runs.len()
         || topology
@@ -365,10 +365,12 @@ fn plan_zero_entity_topology(
         .supports
         .iter()
         .map(|support| match support.pcurve.as_ref() {
-            Some(geometry) => Some(Some(crate::zero_entity::pcurve_parameter_range(
-                geometry,
-                support.uv_endpoints,
-            )?)),
+            Some(geometry) => Some(Some(
+                crate::families::zero_entity::graph::pcurve_parameter_range(
+                    geometry,
+                    support.uv_endpoints,
+                )?,
+            )),
             None => Some(None),
         })
         .collect::<Option<Vec<_>>>()
@@ -449,7 +451,7 @@ fn emit_zero_entity_vertices(
 fn emit_zero_entity_surfaces(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    topology: &crate::zero_entity::ZeroEntityTopology,
+    topology: &crate::families::zero_entity::graph::ZeroEntityTopology,
 ) {
     for (index, run) in topology.carrier_runs.iter().enumerate() {
         let id = SurfaceId(format!("catia:zero-entity:surf#{index}"));
@@ -474,7 +476,7 @@ fn emit_zero_entity_surfaces(
 fn emit_zero_entity_pcurves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    topology: &crate::zero_entity::ZeroEntityTopology,
+    topology: &crate::families::zero_entity::graph::ZeroEntityTopology,
     pcurve_ranges: &[Option<[f64; 2]>],
 ) {
     for (support_index, support) in topology.supports.iter().enumerate() {
@@ -574,14 +576,14 @@ fn emit_zero_entity_bodies(
 fn emit_zero_entity_edges(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    topology: &crate::zero_entity::ZeroEntityTopology,
-    edges: &[crate::zero_entity::ZeroResolvedEdge],
+    topology: &crate::families::zero_entity::graph::ZeroEntityTopology,
+    edges: &[crate::families::zero_entity::graph::ZeroResolvedEdge],
     edge_vertices: &[[usize; 2]],
 ) {
     for (edge_index, pair) in edge_vertices.iter().enumerate() {
         let id = EdgeId(format!("catia:zero-entity:edge#{edge_index}"));
         let direct = edges[edge_index].occurrences.iter().find_map(|occurrence| {
-            crate::zero_entity::direct_support_curve(
+            crate::families::zero_entity::graph::direct_support_curve(
                 topology,
                 *occurrence,
                 edges[edge_index].endpoints,
@@ -592,7 +594,12 @@ fn emit_zero_entity_edges(
         let direct_construction = direct.as_ref().and_then(|curve| curve.construction.clone());
         let intersection = direct
             .is_none()
-            .then(|| crate::zero_entity::intersection_curve(topology, &edges[edge_index]))
+            .then(|| {
+                crate::families::zero_entity::graph::intersection_curve(
+                    topology,
+                    &edges[edge_index],
+                )
+            })
             .flatten();
         let intersection_range = intersection
             .as_ref()
@@ -727,7 +734,7 @@ fn emit_zero_entity_edges(
 fn emit_zero_entity_faces(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    topology: &crate::zero_entity::ZeroEntityTopology,
+    topology: &crate::families::zero_entity::graph::ZeroEntityTopology,
     face_senses: &[Sense],
     face_components: &[usize],
 ) {
@@ -770,8 +777,8 @@ fn emit_zero_entity_faces(
 fn emit_zero_entity_loops_coedges(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    topology: &crate::zero_entity::ZeroEntityTopology,
-    edges: &[crate::zero_entity::ZeroResolvedEdge],
+    topology: &crate::families::zero_entity::graph::ZeroEntityTopology,
+    edges: &[crate::families::zero_entity::graph::ZeroResolvedEdge],
     occurrence_edges: &HashMap<(usize, usize), (usize, usize)>,
     loop_owner: &[usize],
 ) {
@@ -888,7 +895,7 @@ mod route_tests {
 
     use crate::families::zero_entity::decode::unique_index_owners;
 
-    use crate::zero_entity::pcurve_parameter_range;
+    use crate::families::zero_entity::graph::pcurve_parameter_range;
 
     use cadmpeg_ir::geometry::PcurveGeometry;
 

@@ -204,6 +204,7 @@ pub struct ZeroEntityLoop {
 /// One loop-member occurrence participating in a geometrically closed radial
 /// edge pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::struct_field_names)]
 pub struct ZeroResolvedOccurrence {
     /// Index into [`ZeroEntityTopology::loops`].
     pub loop_index: usize,

@@ -10,7 +10,9 @@ use cadmpeg_ir::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+#[cfg(test)]
+use std::collections::HashMap;
 use std::ops::Range;
 
 use crate::families::a5a8::records::{a5_pcurves, a5_surfaces, A8Surface};
@@ -68,6 +70,7 @@ pub struct ConsolidatedTopologyEdgeRun {
     /// Co-parametric side definitions and shared range packet.
     pub edge: ConsolidatedEdgeBlock,
     /// The two serialized edge uses, in side order.
+    #[cfg(test)]
     pub uses: [B2UseMetadata; 2],
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
@@ -85,9 +88,8 @@ pub struct ConsolidatedAnalyticCircleEdgeRun {
     /// Arc-length circle carrier.
     pub circle: B2Circle,
     /// Eight-scalar class-`0x23` edge definition.
+    #[cfg(test)]
     pub definition: ConsolidatedEdgeDefinition,
-    /// The two serialized edge uses, in side order.
-    pub uses: [B2UseMetadata; 2],
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
     /// Whether the use references and endpoint selectors close one allocation chain.
@@ -114,10 +116,6 @@ pub struct ConsolidatedAnalyticCircleDescriptor {
 pub struct ConsolidatedClass25EdgeRun {
     /// Typed class-`0x18` descriptor.
     pub descriptor: B2Class25Descriptor,
-    /// Typed class-`0x25` edge definition.
-    pub definition: ConsolidatedEdgeDefinition,
-    /// The two serialized edge uses, in side order.
-    pub uses: [B2UseMetadata; 2],
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
     /// Whether the use references and endpoint selectors close one allocation chain.
@@ -285,6 +283,7 @@ fn class25_persistent_ref(bytes: &[u8], at: &mut usize) -> Option<(u32, Option<u
 
 /// Native endpoint-incidence graph of complete consolidated edge runs.
 #[derive(Debug, Clone)]
+#[cfg(test)]
 pub struct ConsolidatedNativeEdgeGraph {
     /// Persistent native vertex identities in first-incidence order.
     pub vertex_identities: Vec<u32>,
@@ -297,6 +296,7 @@ pub struct ConsolidatedNativeEdgeGraph {
 
 /// One edge in a consolidated native endpoint-incidence graph.
 #[derive(Debug, Clone)]
+#[cfg(test)]
 pub struct ConsolidatedNativeGraphEdge {
     /// Complete serialized edge run.
     pub run: ConsolidatedTopologyEdgeRun,
@@ -429,6 +429,7 @@ pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyE
                 let use_run = use_runs.get(&use0.range.start)?;
                 Some(ConsolidatedTopologyEdgeRun {
                     edge: edges.get(&pcurve0.range.start)?.clone(),
+                    #[cfg(test)]
                     uses: use_run.uses.clone(),
                     node: use_run.node,
                     identity_chain_consistent: use_run.identity_chain_consistent,
@@ -490,8 +491,8 @@ pub fn consolidated_analytic_circle_edge_runs(
                     payload: data[parameter.payload.clone()].to_vec(),
                 },
                 circle: circles.get(&circle.range.start)?.clone(),
+                #[cfg(test)]
                 definition,
-                uses: use_run.uses.clone(),
                 node: use_run.node,
                 identity_chain_consistent: use_run.identity_chain_consistent,
             })
@@ -543,8 +544,6 @@ pub fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25Edg
             }
             Some(ConsolidatedClass25EdgeRun {
                 descriptor: descriptors.get(&descriptor.range.start)?.clone(),
-                definition,
-                uses: use_run.uses.clone(),
                 node: use_run.node,
                 identity_chain_consistent: use_run.identity_chain_consistent,
             })
@@ -626,6 +625,7 @@ pub fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
 /// Build the native endpoint-incidence graph for all complete consolidated
 /// edge runs. A broken use/edge allocation chain invalidates the graph.
 #[must_use]
+#[cfg(test)]
 pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeEdgeGraph> {
     let runs = consolidated_topology_edge_runs(data);
     if runs.is_empty() {

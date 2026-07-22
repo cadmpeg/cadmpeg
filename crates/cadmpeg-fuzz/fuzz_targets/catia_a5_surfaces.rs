@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for CATIA A5 freeform surface extraction.
 //!
-//! Feeds arbitrary bytes through `cadmpeg_codec_catia::families::a5a8::records::a5_surfaces`
-//! to exercise freeform surface extraction. Contract: no input may panic.
+//! Feeds arbitrary bytes through `cadmpeg_codec_catia::fuzz::geometry_a5_surfaces`.
+//! Contract: no input may panic.
 
 #![no_main]
 
-use cadmpeg_codec_catia::families::a5a8::records::a5_surfaces;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let _ = a5_surfaces(data);
+    cadmpeg_codec_catia::fuzz::geometry_a5_surfaces(data);
 });

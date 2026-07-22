@@ -16,8 +16,6 @@ use crate::wire::bytes::{f64_le, f64_point, f64_vector, read_f64_array, u32_le_2
 pub struct E5Circle {
     /// Offset of the `e5 0d 03` record in the source buffer.
     pub pos: usize,
-    /// E5 persistent record id, when present.
-    pub record_id: u32,
     /// The complete circle carrier.
     pub geometry: CurveGeometry,
 }
@@ -32,8 +30,10 @@ pub struct E5Plane {
     /// Stored plane origin.
     pub origin: [f64; 3],
     /// Natural U-coordinate bounds.
+    #[cfg(test)]
     pub u_range: [f64; 2],
     /// Natural V-coordinate bounds.
+    #[cfg(test)]
     pub v_range: [f64; 2],
 }
 
@@ -157,7 +157,6 @@ pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
                     if let Some(axis) = frame_u.cross(frame_v).unit() {
                         out.push(E5Circle {
                             pos,
-                            record_id: u32_le(data, pos + 9).unwrap_or(0),
                             geometry: CurveGeometry::Circle {
                                 center: origin,
                                 axis,
@@ -203,7 +202,9 @@ pub fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
             pos,
             record_id: u32_le(data, pos + 9).unwrap_or(0),
             origin,
+            #[cfg(test)]
             u_range: [bounds[0], bounds[1]],
+            #[cfg(test)]
             v_range: [bounds[2], bounds[3]],
         });
     }
@@ -214,10 +215,6 @@ pub fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
 /// records, not point-table indexes.
 #[derive(Debug, Clone)]
 pub struct E5Edge {
-    /// Offset of the `e5 0d 03` record in the source buffer.
-    pub pos: usize,
-    /// Referenced curve-support (`0xc0`/`0xc1`) record id.
-    pub support_id: u32,
     /// Referenced start-vertex (class `0xfe`) record id.
     pub start_vertex_id: u32,
     /// Referenced end-vertex (class `0xfe`) record id.
@@ -231,12 +228,10 @@ pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
         let pos = record.pos;
         if record.class == 0xff && data.get(pos + 13) == Some(&0x85) {
             let payload = &data[pos + 13..record.end];
-            if let Some((support_id, next)) = e5_ref(payload, 1) {
+            if let Some((_, next)) = e5_ref(payload, 1) {
                 if let Some((start_vertex_id, next)) = e5_ref(payload, next) {
                     if let Some((end_vertex_id, _)) = e5_ref(payload, next) {
                         out.push(E5Edge {
-                            pos,
-                            support_id,
                             start_vertex_id,
                             end_vertex_id,
                         });

@@ -174,6 +174,7 @@ fn preview_images_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Vec<Pr
 /// Repeated identical copies collapse to one value; conflicting copies reject
 /// the version instead of selecting by position.
 #[must_use]
+#[cfg(test)]
 pub fn last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
     let segments = finjpl_segments(data, 0, data.len());
     last_save_version_in_segments(data, &segments)
@@ -467,13 +468,6 @@ pub struct Extent {
     pub phys_off: u32,
     /// Physical byte length of this extent.
     pub phys_len: u32,
-    /// Logical byte length; validated equal to `phys_len` ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)).
-    pub log_len: u32,
-    /// Logical byte offset within the reconstructed stream; validated
-    /// cumulative from `0` across a descriptor's extents ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)).
-    pub log_off: u32,
-    /// Raw extent-struct flags word; meaning not decoded further.
-    pub flags: u32,
 }
 
 /// One catalogued logical stream.
@@ -495,8 +489,6 @@ pub struct Descriptor {
 pub struct InnerDir {
     /// File offset of the inner `V5_CFV2` magic.
     pub inner: usize,
-    /// File offset of the `CATIA_V5 CB0001` directory.
-    pub dir_offset: usize,
     /// Catalogued streams.
     pub descriptors: Vec<Descriptor>,
 }
@@ -659,7 +651,6 @@ fn parse_directory_region(
     }
     Some(InnerDir {
         inner: physical_base,
-        dir_offset,
         descriptors,
     })
 }
@@ -682,7 +673,8 @@ fn parse_extents(
         let phys_len = u32_be(dirbuf, base + 4)?;
         let log_len = u32_be(dirbuf, base + 8)?;
         let log_off = u32_be(dirbuf, base + 12)?;
-        let flags = u32_be(dirbuf, base + 16)?;
+        // Presence-validate the trailing flags word without retaining it.
+        u32_be(dirbuf, base + 16)?;
         if phys_len == 0
             || physical_base + phys_off as usize + phys_len as usize > file_len
             || log_off as usize != cum
@@ -691,13 +683,7 @@ fn parse_extents(
             return None;
         }
         cum += log_len as usize;
-        extents.push(Extent {
-            phys_off,
-            phys_len,
-            log_len,
-            log_off,
-            flags,
-        });
+        extents.push(Extent { phys_off, phys_len });
     }
     Some((extents, cum))
 }
@@ -1035,7 +1021,6 @@ mod tests {
     fn coherent_e5_stream_overrides_nested_fbb_markers() {
         let inner = InnerDir {
             inner: 0,
-            dir_offset: 0,
             descriptors: Vec::new(),
         };
         let census = Census {
