@@ -903,6 +903,7 @@ mod marker_tests {
         alternate_current_indexed_curve_endpoint_indices,
         alternate_current_selected_axis_endpoint_indices, angled_reference_plane_frame,
         append_spatial_vertex, arc_angle_relation_kind, bind_indexed_curve_vertices,
+        bind_resolved_curve_vertices,
         bounded_profile_axis_endpoints, compact_body_component_path_at, compact_body_path_at,
         compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
         compact_body_state_ids, compact_bounded_curve_tangent, compact_combine_operation_at,
@@ -4664,6 +4665,76 @@ mod marker_tests {
         current_112[17..21].copy_from_slice(&2u32.to_le_bytes());
         current_112[84..86].copy_from_slice(&3u16.to_le_bytes());
         assert_eq!(wide_indexed_curve_endpoint_indices(&current_112, 0), None);
+    }
+
+    #[test]
+    fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
+        let mut payload = vec![0; 104 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[31..39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&1u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&3u16.to_le_bytes());
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..76].copy_from_slice(&1i32.to_le_bytes());
+        payload[76..78].copy_from_slice(&2u16.to_le_bytes());
+        for start in (78..94).step_by(4) {
+            payload[start..start + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[104..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        let entity = |id: &str, offset, object_index, kind, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("profile".into()),
+            ordinal: 0,
+            offset,
+            object_index,
+            local_id: None,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let mut lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![
+                entity("curve", 0, Some(1), SketchInputKind::Arc, None),
+                entity("handle", 1, None, SketchInputKind::Point, Some([-1.0, 0.0])),
+                entity("start", 2, Some(2), SketchInputKind::Point, Some([0.0, 0.0])),
+                entity("center", 3, None, SketchInputKind::Point, Some([0.5, 0.5])),
+                entity(
+                    "end",
+                    4,
+                    Some(3),
+                    SketchInputKind::LineOrCircle,
+                    Some([1.0, 0.0]),
+                ),
+            ],
+        };
+
+        bind_indexed_curve_vertices(&mut lane);
+        bind_resolved_curve_vertices(&mut lane);
+
+        assert_eq!(lane.sketch_entities[4].kind, SketchInputKind::Point);
     }
 
     #[test]
@@ -8586,6 +8657,7 @@ pub(crate) fn bind_scalar_operands(
                 entity.link_selector = Some(selector);
             }
         }
+        bind_resolved_curve_vertices(lane);
         let entities_by_feature = lane.sketch_entities.iter().fold(
             HashMap::<&str, Vec<&SketchInputEntity>>::new(),
             |mut by_feature, entity| {
@@ -8651,6 +8723,54 @@ fn bind_indexed_curve_vertices(lane: &mut FeatureInputLane) {
         };
         if marker.coordinates_m.is_some() && endpoints.contains(&key) {
             marker.kind = SketchInputKind::Point;
+        }
+    }
+}
+
+fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
+    loop {
+        let markers_by_id = lane
+            .sketch_entities
+            .iter()
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
+        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
+        let mut resolved_curves = HashSet::new();
+        let mut resolved_endpoints = HashSet::new();
+        for curve in markers.iter().copied().filter(|marker| {
+            matches!(
+                marker.kind,
+                SketchInputKind::LineOrCircle | SketchInputKind::Arc
+            )
+        }) {
+            let endpoints = marker_curve_endpoint_markers(
+                &lane.native_payload,
+                curve,
+                &markers_by_id,
+                &markers,
+            );
+            if endpoints.len() == 2 {
+                resolved_curves.insert(curve.id.clone());
+            }
+            resolved_endpoints.extend(
+                endpoints
+                    .into_iter()
+                    .filter(|marker| marker.coordinates_m.is_some())
+                    .map(|marker| marker.id.clone()),
+            );
+        }
+        let mut changed = false;
+        for marker in &mut lane.sketch_entities {
+            if marker.kind != SketchInputKind::Point
+                && resolved_endpoints.contains(marker.id.as_str())
+                && !resolved_curves.contains(marker.id.as_str())
+            {
+                marker.kind = SketchInputKind::Point;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
         }
     }
 }
@@ -16881,35 +17001,10 @@ pub(crate) fn project_marker_backed_sketches(
                             &markers_by_id,
                             &object_markers,
                         );
-                        let mut endpoint_refs = endpoints
+                        endpoints
                             .iter()
                             .map(|endpoint| endpoint.id.clone())
-                            .collect::<Vec<_>>();
-                        if let (
-                            SketchGeometry::Arc {
-                                center,
-                                radius,
-                                start_angle,
-                                ..
-                            },
-                            [first, second],
-                        ) = (&geometry, endpoints.as_slice())
-                        {
-                            let geometry_start = Point2::new(
-                                center.u + radius.0 * start_angle.0.cos(),
-                                center.v + radius.0 * start_angle.0.sin(),
-                            );
-                            if let (Some(first), Some(second)) = (project(first), project(second)) {
-                                let first_distance =
-                                    (geometry_start.u - first.u).hypot(geometry_start.v - first.v);
-                                let second_distance = (geometry_start.u - second.u)
-                                    .hypot(geometry_start.v - second.v);
-                                if second_distance < first_distance {
-                                    endpoint_refs.reverse();
-                                }
-                            }
-                        }
-                        endpoint_refs
+                            .collect::<Vec<_>>()
                     } else {
                         Vec::new()
                     };
@@ -17174,6 +17269,32 @@ fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) 
         entities[index].geometry = geometry;
     }
     resolve_tangent_bridge_marker_arcs(entities, tolerance);
+    for entity in entities {
+        let SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            ..
+        } = entity.geometry
+        else {
+            continue;
+        };
+        let [first_ref, second_ref] = entity.endpoint_refs.as_slice() else {
+            continue;
+        };
+        let (Some(first), Some(second)) = (points.get(first_ref), points.get(second_ref)) else {
+            continue;
+        };
+        let geometry_start = Point2::new(
+            center.u + radius.0 * start_angle.0.cos(),
+            center.v + radius.0 * start_angle.0.sin(),
+        );
+        let first_distance = (geometry_start.u - first.u).hypot(geometry_start.v - first.v);
+        let second_distance = (geometry_start.u - second.u).hypot(geometry_start.v - second.v);
+        if second_distance < first_distance {
+            entity.endpoint_refs.reverse();
+        }
+    }
 }
 
 fn resolve_tangent_bridge_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) {
@@ -27202,6 +27323,8 @@ mod profile_join_tests {
                 .iter()
                 .all(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
         );
+        assert_eq!(entities[3].endpoint_refs, ["p0", "p1"]);
+        assert_eq!(entities[4].endpoint_refs, ["p1", "p2"]);
         entities.push(SketchEntity {
             id: SketchEntityId("entity-line".into()),
             sketch,
