@@ -832,6 +832,11 @@ slots three through five are the second. Exactly one equal coordinate defines
 the held axis and offset under the same plane rule. Zero or multiple equal
 coordinates leave the plane unresolved.
 
+An auxiliary-corner positional plane body has a three-byte prefix, one
+seven-byte scalar, an eight-byte control payload, and a terminal frame of seven
+contiguous scalars. The first terminal scalar is auxiliary. The remaining six
+are two XYZ corners and use the same unique-held-coordinate plane rule.
+
 For a generated section plane selected through the parent-datum rule, multiple
 held envelope coordinates are filtered against the orientation plane. The
 unique perpendicular held axis defines the section plane.

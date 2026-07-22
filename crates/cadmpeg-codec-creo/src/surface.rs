@@ -1295,8 +1295,8 @@ pub fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
     result
 }
 
-/// Derive axis-aligned plane equations from complete six-scalar positional
-/// corner frames owned by uniquely identified plane rows.
+/// Derive axis-aligned plane equations from complete positional corner frames
+/// owned by uniquely identified plane rows.
 #[must_use]
 pub fn positional_frame_planes(
     parameters: &[SurfaceParameterRecord],
@@ -1311,17 +1311,45 @@ pub fn positional_frame_planes(
         {
             continue;
         }
-        let mut candidates = record
-            .scalar_frames
-            .iter()
-            .filter(|frame| frame.slots.len() == 6)
-            .filter(|frame| {
-                frame.offset >= 3
-                    && record.body.get(frame.offset - 3..frame.offset) == Some(&[0x00, 0x0c, 0x9a])
-            })
-            .filter_map(|frame| {
-                let values = frame
-                    .slots
+        let marked_frames = record.scalar_frames.iter().filter_map(|frame| {
+            (frame.slots.len() == 6
+                && frame.offset >= 3
+                && record.body.get(frame.offset - 3..frame.offset) == Some(&[0x00, 0x0c, 0x9a]))
+            .then_some((frame.offset, frame.slots.as_slice()))
+        });
+        let auxiliary_frame = (|| {
+            let [leading, terminal] = record.scalar_frames.as_slice() else {
+                return None;
+            };
+            let [leading_slot] = leading.slots.as_slice() else {
+                return None;
+            };
+            let [_, corners @ ..] = terminal.slots.as_slice() else {
+                return None;
+            };
+            let leading_end = leading_slot.offset.checked_add(leading_slot.length)?;
+            let terminal_end = terminal
+                .slots
+                .iter()
+                .try_fold(terminal.offset, |cursor, slot| {
+                    (slot.offset == cursor).then(|| cursor + slot.length)
+                })?;
+            (leading.offset == 3
+                && leading_end == 10
+                && terminal.offset == 18
+                && corners.len() == 6
+                && terminal_end == record.body.len()
+                && record.opaque_spans.len() == 2
+                && record.opaque_spans[0].offset == 0
+                && record.opaque_spans[0].length == 3
+                && record.opaque_spans[1].offset == 10
+                && record.opaque_spans[1].length == 8)
+                .then_some((corners[0].offset, corners))
+        })();
+        let mut candidates = marked_frames
+            .chain(auxiliary_frame)
+            .filter_map(|(offset, slots)| {
+                let values = slots
                     .iter()
                     .map(|slot| slot.value)
                     .collect::<Option<Vec<_>>>()?;
@@ -1352,7 +1380,7 @@ pub fn positional_frame_planes(
                     origin,
                     normal,
                     u_axis,
-                    offset: record.body_offset + frame.offset,
+                    offset: record.body_offset + offset,
                 })
             })
             .collect::<Vec<_>>();
@@ -5908,6 +5936,85 @@ mod tests {
         let mut ambiguous = record;
         ambiguous.scalar_frames[0].slots[4].value = Some(2.0);
         assert!(positional_frame_planes(&[ambiguous], &[row]).is_empty());
+    }
+
+    #[test]
+    fn derives_plane_from_auxiliary_corner_frame() {
+        let slot = |value, offset, length| SurfaceParameterScalar {
+            value: Some(value),
+            raw: vec![0; length],
+            offset,
+            length,
+        };
+        let record = SurfaceParameterRecord {
+            surface_id: 41,
+            body: vec![0; 49],
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: vec![
+                SurfaceParameterOpaqueSpan {
+                    raw: vec![0; 3],
+                    offset: 0,
+                    length: 3,
+                },
+                SurfaceParameterOpaqueSpan {
+                    raw: vec![0; 8],
+                    offset: 10,
+                    length: 8,
+                },
+            ],
+            scalar_frames: vec![
+                SurfaceParameterScalarFrame {
+                    offset: 3,
+                    slots: vec![slot(0.86, 3, 7)],
+                },
+                SurfaceParameterScalarFrame {
+                    offset: 18,
+                    slots: vec![
+                        slot(0.8, 18, 3),
+                        slot(42.3, 21, 8),
+                        slot(1.75, 29, 3),
+                        slot(-0.3, 32, 3),
+                        slot(37.6, 35, 8),
+                        slot(1.75, 43, 3),
+                        slot(0.3, 46, 3),
+                    ],
+                },
+            ],
+            terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: None,
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: None,
+            boundary: SurfaceBodyBoundary::CompoundClose,
+            offset: 3,
+            body_offset: 11,
+        };
+        let row = SurfaceRow {
+            id: 41,
+            type_byte: SurfaceKind::Plane.canonical_type_byte(),
+            kind: SurfaceKind::Plane,
+            feature_id: 17,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 3,
+        };
+
+        assert_eq!(
+            positional_frame_planes(&[record.clone()], &[row.clone()]),
+            vec![OutlinePlane {
+                surface_id: 41,
+                origin: [0.0, 1.75, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                u_axis: [1.0, 0.0, 0.0],
+                offset: 32,
+            }]
+        );
+
+        let mut incomplete = record;
+        incomplete.opaque_spans[1].length = 7;
+        assert!(positional_frame_planes(&[incomplete], &[row]).is_empty());
     }
 
     #[test]
