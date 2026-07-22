@@ -4450,6 +4450,23 @@ fn decode_retains_outer_object_graph_order_and_dependencies() {
             .map(|record| record.id.clone())
             .collect::<Vec<_>>()
     );
+    assert_eq!(decoded.report.coverage["decoded_object_graph_count"], 1);
+    assert_eq!(decoded.report.coverage["decoded_object_record_count"], 2);
+    assert_eq!(decoded.report.coverage["decoded_design_object_count"], 1);
+    assert_eq!(decoded.report.coverage["decoded_design_field_count"], 2);
+    assert_eq!(decoded.report.coverage["classified_design_object_count"], 0);
+    assert_eq!(decoded.report.coverage["unresolved_design_owner_count"], 0);
+    assert_eq!(decoded.report.coverage["transferred_feature_count"], 0);
+    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
+    assert_eq!(decoded.report.coverage["transferred_sketch_count"], 0);
+    assert_eq!(
+        decoded.report.coverage["transferred_sketch_constraint_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["transferred_configuration_count"],
+        0
+    );
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking

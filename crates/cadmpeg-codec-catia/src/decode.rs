@@ -66,19 +66,100 @@ fn finish_decode(
         .object_graphs
         .iter()
         .map(|graph| graph.records.len())
-        .sum::<usize>();
+        .sum();
+    let design_field_count = native
+        .design_objects
+        .iter()
+        .map(|object| object.fields.len())
+        .sum();
+    let classified_design_object_count = native
+        .design_objects
+        .iter()
+        .filter(|object| object.owner_class.is_some() || !object.field_classes.is_empty())
+        .count();
+    let design_dependency_count = native
+        .design_objects
+        .iter()
+        .map(|object| object.dependencies.len())
+        .sum();
+    let unresolved_design_owner_count = native
+        .design_objects
+        .iter()
+        .filter(|object| object.owner_record.is_none())
+        .count();
+    let value_field_count = native
+        .value_blocks
+        .iter()
+        .map(|block| block.fields.len())
+        .sum();
     let value_selection_count = native
         .value_blocks
         .iter()
         .map(|block| block.schema_selections.len())
-        .sum::<usize>();
+        .sum();
+    report.coverage.extend([
+        (
+            "decoded_object_graph_count".to_string(),
+            native.object_graphs.len(),
+        ),
+        (
+            "decoded_object_record_count".to_string(),
+            object_record_count,
+        ),
+        (
+            "decoded_design_object_count".to_string(),
+            native.design_objects.len(),
+        ),
+        ("decoded_design_field_count".to_string(), design_field_count),
+        (
+            "classified_design_object_count".to_string(),
+            classified_design_object_count,
+        ),
+        (
+            "decoded_design_dependency_count".to_string(),
+            design_dependency_count,
+        ),
+        (
+            "unresolved_design_owner_count".to_string(),
+            unresolved_design_owner_count,
+        ),
+        (
+            "decoded_value_block_count".to_string(),
+            native.value_blocks.len(),
+        ),
+        ("decoded_value_field_count".to_string(), value_field_count),
+        (
+            "decoded_value_schema_selection_count".to_string(),
+            value_selection_count,
+        ),
+        (
+            "transferred_feature_count".to_string(),
+            ir.model.features.len(),
+        ),
+        (
+            "transferred_parameter_count".to_string(),
+            ir.model.parameters.len(),
+        ),
+        (
+            "transferred_sketch_count".to_string(),
+            ir.model.sketches.len(),
+        ),
+        (
+            "transferred_sketch_constraint_count".to_string(),
+            ir.model.sketch_constraints.len(),
+        ),
+        (
+            "transferred_configuration_count".to_string(),
+            ir.model.configurations.len(),
+        ),
+    ]);
     if object_record_count != 0 || !native.value_blocks.is_empty() {
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {design_dependency_count} object dependency link(s), {} value block(s), {value_field_count} value field(s), and {value_selection_count} schema-selected value(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; neutral features, parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
                 native.value_blocks.len(),
             ),
