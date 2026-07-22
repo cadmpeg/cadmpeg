@@ -18,30 +18,58 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+/// Record slices shared by every dimension-constraint projection: the sketch
+/// placements, parameter and companion tables, the locus/group/annotation
+/// dimension records, and the sketch geometry the loci reference.
+pub struct DimensionConstraintInputs<'a> {
+    pub(crate) placements: &'a [DesignSketchPlacement],
+    pub(crate) parameters: &'a [DesignParameter],
+    pub(crate) owners: &'a [DesignParameterOwner],
+    pub(crate) pairs: &'a [DesignDimensionLocusPair],
+    pub(crate) groups: &'a [DesignDimensionLocusGroup],
+    pub(crate) annotation_frames: &'a [DesignDimensionAnnotationFrame],
+    pub(crate) null_pairs: &'a [DesignDimensionNullLocusPair],
+    pub(crate) companions: &'a [DesignParameterCompanion],
+    pub(crate) recipe_records: &'a [DesignDimensionRecipeRecord],
+    pub(crate) points: &'a [SketchPoint],
+    pub(crate) curves: &'a [SketchCurveIdentity],
+    pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+}
+
 /// Project dimensional parameter companions into parameter-backed sketch
 /// constraints. Two-locus dimensions have neutral semantics; aggregate and
 /// role-dependent forms remain explicit native constraints.
-#[allow(clippy::too_many_arguments)]
 pub fn project_dimension_constraints(
-    placements: &[DesignSketchPlacement],
+    inputs: &DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
-    parameters: &[DesignParameter],
-    owners: &[DesignParameterOwner],
-    pairs: &[DesignDimensionLocusPair],
-    groups: &[DesignDimensionLocusGroup],
-    annotation_frames: &[DesignDimensionAnnotationFrame],
-    null_pairs: &[DesignDimensionNullLocusPair],
-    companions: &[DesignParameterCompanion],
-    recipe_records: &[DesignDimensionRecipeRecord],
-    points: &[SketchPoint],
-    curves: &[SketchCurveIdentity],
-    entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     let spatial_sketch_ids = spatial_sketches
         .iter()
         .map(|sketch| sketch.id.clone())
         .collect::<HashSet<_>>();
-    project_all_dimension_constraints(
+    let placements = inputs.placements;
+    project_all_dimension_constraints(inputs)
+        .into_iter()
+        .filter(|constraint| {
+            placements
+                .iter()
+                .find(|placement| neutral_sketch_id(placement) == constraint.sketch)
+                .is_none_or(|placement| {
+                    !spatial_sketch_ids.contains(&neutral_spatial_sketch_id(placement))
+                })
+        })
+        .collect()
+}
+
+fn project_all_dimension_constraints(
+    inputs: &DimensionConstraintInputs<'_>,
+) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinition as Definition, SketchGeometry,
+        SketchNativeOperand,
+    };
+
+    let &DimensionConstraintInputs {
         placements,
         parameters,
         owners,
@@ -54,38 +82,7 @@ pub fn project_dimension_constraints(
         points,
         curves,
         entities,
-    )
-    .into_iter()
-    .filter(|constraint| {
-        placements
-            .iter()
-            .find(|placement| neutral_sketch_id(placement) == constraint.sketch)
-            .is_none_or(|placement| {
-                !spatial_sketch_ids.contains(&neutral_spatial_sketch_id(placement))
-            })
-    })
-    .collect()
-}
-
-#[allow(clippy::too_many_arguments)]
-fn project_all_dimension_constraints(
-    placements: &[DesignSketchPlacement],
-    parameters: &[DesignParameter],
-    owners: &[DesignParameterOwner],
-    pairs: &[DesignDimensionLocusPair],
-    groups: &[DesignDimensionLocusGroup],
-    annotation_frames: &[DesignDimensionAnnotationFrame],
-    null_pairs: &[DesignDimensionNullLocusPair],
-    companions: &[DesignParameterCompanion],
-    recipe_records: &[DesignDimensionRecipeRecord],
-    points: &[SketchPoint],
-    curves: &[SketchCurveIdentity],
-    entities: &[cadmpeg_ir::sketches::SketchEntity],
-) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
-    use cadmpeg_ir::sketches::{
-        SketchConstraint, SketchConstraintDefinition as Definition, SketchGeometry,
-        SketchNativeOperand,
-    };
+    } = inputs;
 
     let sketches = placements
         .iter()
@@ -896,26 +893,22 @@ pub(crate) fn bind_offset_dimension_parameters(
 
 /// Project dimensions owned by model-space sketches without assigning them
 /// planar relation semantics.
-#[allow(clippy::too_many_arguments)]
 pub fn project_spatial_dimension_constraints(
-    placements: &[DesignSketchPlacement],
+    inputs: &DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
-    parameters: &[DesignParameter],
-    owners: &[DesignParameterOwner],
-    pairs: &[DesignDimensionLocusPair],
-    groups: &[DesignDimensionLocusGroup],
-    annotation_frames: &[DesignDimensionAnnotationFrame],
-    null_pairs: &[DesignDimensionNullLocusPair],
-    companions: &[DesignParameterCompanion],
-    recipe_records: &[DesignDimensionRecipeRecord],
-    points: &[SketchPoint],
-    curves: &[SketchCurveIdentity],
-    entities: &[cadmpeg_ir::sketches::SketchEntity],
     spatial_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition, SpatialSketchConstraint, SpatialSketchConstraintDefinition,
     };
+
+    let &DimensionConstraintInputs {
+        placements,
+        parameters,
+        points,
+        curves,
+        ..
+    } = inputs;
 
     let spatial_by_planar_id = placements
         .iter()
@@ -960,79 +953,66 @@ pub fn project_spatial_dimension_constraints(
             ))
         })
         .collect::<HashMap<_, _>>();
-    project_all_dimension_constraints(
-        placements,
-        parameters,
-        owners,
-        pairs,
-        groups,
-        annotation_frames,
-        null_pairs,
-        companions,
-        recipe_records,
-        points,
-        curves,
-        entities,
-    )
-    .into_iter()
-    .filter_map(|constraint| {
-        let sketch = spatial_by_planar_id.get(&constraint.sketch)?.clone();
-        let definition = match constraint.definition {
-            SketchConstraintDefinition::Native {
-                native_kind,
-                native_state,
-                parameter,
-                operands,
-                ..
-            } => {
-                let distance = parameter.as_ref().and_then(|parameter| {
-                    let expected = *parameter_lengths.get(parameter)?;
-                    let scope = native_stream(constraint.native_ref.as_deref()?)?;
-                    let measured = operands
-                        .iter()
-                        .filter(|operand| operand.object_index != 0)
-                        .map(|operand| {
-                            spatial_by_record
-                                .get(&(scope, operand.object_index))
-                                .copied()
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    let [first, second] = measured.as_slice() else {
-                        return None;
-                    };
-                    (native_kind.starts_with("Linear Dimension")
-                        && first.sketch == sketch
-                        && second.sketch == sketch
-                        && spatial_parallel_line_distance_matches(
-                            &first.geometry,
-                            &second.geometry,
-                            expected,
-                        ))
-                    .then(|| {
-                        SpatialSketchConstraintDefinition::ParallelLineDistance {
-                            first: first.id.clone(),
-                            second: second.id.clone(),
-                            parameter: parameter.clone(),
-                        }
-                    })
-                });
-                distance.unwrap_or(SpatialSketchConstraintDefinition::Native {
+    project_all_dimension_constraints(inputs)
+        .into_iter()
+        .filter_map(|constraint| {
+            let sketch = spatial_by_planar_id.get(&constraint.sketch)?.clone();
+            let definition = match constraint.definition {
+                SketchConstraintDefinition::Native {
                     native_kind,
                     native_state,
                     parameter,
                     operands,
-                })
-            }
-            _ => return None,
-        };
-        Some(SpatialSketchConstraint {
-            id: constraint.id,
-            sketch,
-            definition,
-            native_ref: constraint.native_ref,
+                    ..
+                } => {
+                    let distance = parameter.as_ref().and_then(|parameter| {
+                        let expected = *parameter_lengths.get(parameter)?;
+                        let scope = native_stream(constraint.native_ref.as_deref()?)?;
+                        let measured = operands
+                            .iter()
+                            .filter(|operand| operand.object_index != 0)
+                            .map(|operand| {
+                                spatial_by_record
+                                    .get(&(scope, operand.object_index))
+                                    .copied()
+                            })
+                            .collect::<Option<Vec<_>>>()?;
+                        let [first, second] = measured.as_slice() else {
+                            return None;
+                        };
+                        (native_kind.starts_with("Linear Dimension")
+                            && first.sketch == sketch
+                            && second.sketch == sketch
+                            && spatial_parallel_line_distance_matches(
+                                &first.geometry,
+                                &second.geometry,
+                                expected,
+                            ))
+                        .then(|| {
+                            SpatialSketchConstraintDefinition::ParallelLineDistance {
+                                first: first.id.clone(),
+                                second: second.id.clone(),
+                                parameter: parameter.clone(),
+                            }
+                        })
+                    });
+                    distance.unwrap_or(SpatialSketchConstraintDefinition::Native {
+                        native_kind,
+                        native_state,
+                        parameter,
+                        operands,
+                    })
+                }
+                _ => return None,
+            };
+            Some(SpatialSketchConstraint {
+                id: constraint.id,
+                sketch,
+                definition,
+                native_ref: constraint.native_ref,
+            })
         })
-    })
-    .collect()
+        .collect()
 }
 
 pub(crate) fn spatial_parallel_line_distance_matches(

@@ -932,53 +932,33 @@ pub fn decode(
                 &native.sketch_points,
                 &native.sketch_curve_identities,
             );
+            let dimension_inputs = crate::design::decode::dimensions::DimensionDecodeInputs {
+                scan: &scan,
+                parameters: &native.design_parameters,
+                owners: &native.design_parameter_owners,
+                companions: &native.design_parameter_companions,
+                scopes: &native.design_parameter_scopes,
+                headers: &native.design_record_headers,
+                points: &native.sketch_points,
+                curves: &native.sketch_curve_identities,
+            };
             native.design_dimension_locus_pairs =
-                crate::design::decode::dimensions::decode_dimension_locus_pairs(
-                    &scan,
-                    &native.design_parameters,
-                    &native.design_parameter_owners,
-                    &native.design_parameter_companions,
-                    &native.design_parameter_scopes,
-                    &native.design_record_headers,
-                    &native.sketch_points,
-                    &native.sketch_curve_identities,
-                )?;
+                crate::design::decode::dimensions::decode_dimension_locus_pairs(&dimension_inputs)?;
             native.design_dimension_annotation_frames =
                 crate::design::decode::dimensions::decode_dimension_annotation_frames(
-                    &scan,
-                    &native.design_parameters,
-                    &native.design_parameter_owners,
-                    &native.design_parameter_companions,
-                    &native.design_parameter_scopes,
-                    &native.design_record_headers,
+                    &dimension_inputs,
                     &native.design_entity_headers,
-                    &native.sketch_points,
-                    &native.sketch_curve_identities,
                 )?;
             native.design_dimension_locus_groups =
                 crate::design::decode::dimensions::decode_dimension_locus_groups(
-                    &scan,
-                    &native.design_parameters,
-                    &native.design_parameter_owners,
-                    &native.design_parameter_companions,
-                    &native.design_parameter_scopes,
-                    &native.design_record_headers,
+                    &dimension_inputs,
                     &native.design_entity_headers,
-                    &native.sketch_points,
-                    &native.sketch_curve_identities,
                 )?;
             native.design_dimension_null_locus_pairs =
                 crate::design::decode::dimensions::decode_dimension_null_locus_pairs(
-                    &scan,
-                    &native.design_parameters,
-                    &native.design_parameter_owners,
-                    &native.design_parameter_companions,
-                    &native.design_parameter_scopes,
-                    &native.design_record_headers,
+                    &dimension_inputs,
                     &native.design_dimension_locus_pairs,
                     &native.design_dimension_locus_groups,
-                    &native.sketch_points,
-                    &native.sketch_curve_identities,
                 )?;
             crate::design::dimensions::remove_dimension_frame_relations(
                 &mut native.sketch_relations,
@@ -1018,16 +998,18 @@ pub fn decode(
             );
             (ir.model.features, ir.model.parameters) =
                 crate::design::feature_project::project_parameter_design_with_edge_identities(
-                    &native.design_parameters,
-                    &native.design_parameter_owners,
-                    &native.design_parameter_scopes,
-                    &native.design_construction_operand_groups,
-                    &native.design_fillet_radius_groups,
-                    &native.design_edge_operands,
-                    &native.design_edge_identity_operands,
-                    &native.design_face_operands,
-                    &native.design_sketch_placements,
-                    &native.design_body_bindings,
+                    &crate::design::feature_project::ProjectInputs {
+                        native: &native.design_parameters,
+                        owners: &native.design_parameter_owners,
+                        scopes: &native.design_parameter_scopes,
+                        construction_groups: &native.design_construction_operand_groups,
+                        fillet_radius_groups: &native.design_fillet_radius_groups,
+                        edge_operands: &native.design_edge_operands,
+                        edge_identity_operands: &native.design_edge_identity_operands,
+                        face_operands: &native.design_face_operands,
+                        placements: &native.design_sketch_placements,
+                        body_bindings: &native.design_body_bindings,
+                    },
                 );
             crate::design::feature_project::bind_form_cages(
                 &scan,
@@ -1158,38 +1140,30 @@ pub fn decode(
                 &native.sketch_relations,
                 &ir.model.sketch_entities,
             );
+            let constraint_inputs = crate::design::dimensions::DimensionConstraintInputs {
+                placements: &native.design_sketch_placements,
+                parameters: &native.design_parameters,
+                owners: &native.design_parameter_owners,
+                pairs: &native.design_dimension_locus_pairs,
+                groups: &native.design_dimension_locus_groups,
+                annotation_frames: &native.design_dimension_annotation_frames,
+                null_pairs: &native.design_dimension_null_locus_pairs,
+                companions: &native.design_parameter_companions,
+                recipe_records: &native.design_dimension_recipe_records,
+                points: &native.sketch_points,
+                curves: &native.sketch_curve_identities,
+                entities: &ir.model.sketch_entities,
+            };
             ir.model.sketch_constraints.extend(
                 crate::design::dimensions::project_dimension_constraints(
-                    &native.design_sketch_placements,
+                    &constraint_inputs,
                     &ir.model.spatial_sketches,
-                    &native.design_parameters,
-                    &native.design_parameter_owners,
-                    &native.design_dimension_locus_pairs,
-                    &native.design_dimension_locus_groups,
-                    &native.design_dimension_annotation_frames,
-                    &native.design_dimension_null_locus_pairs,
-                    &native.design_parameter_companions,
-                    &native.design_dimension_recipe_records,
-                    &native.sketch_points,
-                    &native.sketch_curve_identities,
-                    &ir.model.sketch_entities,
                 ),
             );
             ir.model.spatial_sketch_constraints.extend(
                 crate::design::dimensions::project_spatial_dimension_constraints(
-                    &native.design_sketch_placements,
+                    &constraint_inputs,
                     &ir.model.spatial_sketches,
-                    &native.design_parameters,
-                    &native.design_parameter_owners,
-                    &native.design_dimension_locus_pairs,
-                    &native.design_dimension_locus_groups,
-                    &native.design_dimension_annotation_frames,
-                    &native.design_dimension_null_locus_pairs,
-                    &native.design_parameter_companions,
-                    &native.design_dimension_recipe_records,
-                    &native.sketch_points,
-                    &native.sketch_curve_identities,
-                    &ir.model.sketch_entities,
                     &ir.model.spatial_sketch_entities,
                 ),
             );
@@ -1315,53 +1289,33 @@ pub fn decode(
         &native.sketch_points,
         &native.sketch_curve_identities,
     );
+    let dimension_inputs = crate::design::decode::dimensions::DimensionDecodeInputs {
+        scan: &scan,
+        parameters: &native.design_parameters,
+        owners: &native.design_parameter_owners,
+        companions: &native.design_parameter_companions,
+        scopes: &native.design_parameter_scopes,
+        headers: &native.design_record_headers,
+        points: &native.sketch_points,
+        curves: &native.sketch_curve_identities,
+    };
     native.design_dimension_locus_pairs =
-        crate::design::decode::dimensions::decode_dimension_locus_pairs(
-            &scan,
-            &native.design_parameters,
-            &native.design_parameter_owners,
-            &native.design_parameter_companions,
-            &native.design_parameter_scopes,
-            &native.design_record_headers,
-            &native.sketch_points,
-            &native.sketch_curve_identities,
-        )?;
+        crate::design::decode::dimensions::decode_dimension_locus_pairs(&dimension_inputs)?;
     native.design_dimension_annotation_frames =
         crate::design::decode::dimensions::decode_dimension_annotation_frames(
-            &scan,
-            &native.design_parameters,
-            &native.design_parameter_owners,
-            &native.design_parameter_companions,
-            &native.design_parameter_scopes,
-            &native.design_record_headers,
+            &dimension_inputs,
             &native.design_entity_headers,
-            &native.sketch_points,
-            &native.sketch_curve_identities,
         )?;
     native.design_dimension_locus_groups =
         crate::design::decode::dimensions::decode_dimension_locus_groups(
-            &scan,
-            &native.design_parameters,
-            &native.design_parameter_owners,
-            &native.design_parameter_companions,
-            &native.design_parameter_scopes,
-            &native.design_record_headers,
+            &dimension_inputs,
             &native.design_entity_headers,
-            &native.sketch_points,
-            &native.sketch_curve_identities,
         )?;
     native.design_dimension_null_locus_pairs =
         crate::design::decode::dimensions::decode_dimension_null_locus_pairs(
-            &scan,
-            &native.design_parameters,
-            &native.design_parameter_owners,
-            &native.design_parameter_companions,
-            &native.design_parameter_scopes,
-            &native.design_record_headers,
+            &dimension_inputs,
             &native.design_dimension_locus_pairs,
             &native.design_dimension_locus_groups,
-            &native.sketch_points,
-            &native.sketch_curve_identities,
         )?;
     crate::design::dimensions::remove_dimension_frame_relations(
         &mut native.sketch_relations,
@@ -1396,16 +1350,18 @@ pub fn decode(
         crate::design::configurations::project_configurations(&native.design_configurations);
     (ir.model.features, ir.model.parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
-            &native.design_parameters,
-            &native.design_parameter_owners,
-            &native.design_parameter_scopes,
-            &native.design_construction_operand_groups,
-            &native.design_fillet_radius_groups,
-            &native.design_edge_operands,
-            &native.design_edge_identity_operands,
-            &native.design_face_operands,
-            &native.design_sketch_placements,
-            &native.design_body_bindings,
+            &crate::design::feature_project::ProjectInputs {
+                native: &native.design_parameters,
+                owners: &native.design_parameter_owners,
+                scopes: &native.design_parameter_scopes,
+                construction_groups: &native.design_construction_operand_groups,
+                fillet_radius_groups: &native.design_fillet_radius_groups,
+                edge_operands: &native.design_edge_operands,
+                edge_identity_operands: &native.design_edge_identity_operands,
+                face_operands: &native.design_face_operands,
+                placements: &native.design_sketch_placements,
+                body_bindings: &native.design_body_bindings,
+            },
         );
     crate::design::feature_project::bind_form_cages(
         &scan,
@@ -1536,38 +1492,30 @@ pub fn decode(
         &native.sketch_relations,
         &ir.model.sketch_entities,
     );
+    let constraint_inputs = crate::design::dimensions::DimensionConstraintInputs {
+        placements: &native.design_sketch_placements,
+        parameters: &native.design_parameters,
+        owners: &native.design_parameter_owners,
+        pairs: &native.design_dimension_locus_pairs,
+        groups: &native.design_dimension_locus_groups,
+        annotation_frames: &native.design_dimension_annotation_frames,
+        null_pairs: &native.design_dimension_null_locus_pairs,
+        companions: &native.design_parameter_companions,
+        recipe_records: &native.design_dimension_recipe_records,
+        points: &native.sketch_points,
+        curves: &native.sketch_curve_identities,
+        entities: &ir.model.sketch_entities,
+    };
     ir.model
         .sketch_constraints
         .extend(crate::design::dimensions::project_dimension_constraints(
-            &native.design_sketch_placements,
+            &constraint_inputs,
             &ir.model.spatial_sketches,
-            &native.design_parameters,
-            &native.design_parameter_owners,
-            &native.design_dimension_locus_pairs,
-            &native.design_dimension_locus_groups,
-            &native.design_dimension_annotation_frames,
-            &native.design_dimension_null_locus_pairs,
-            &native.design_parameter_companions,
-            &native.design_dimension_recipe_records,
-            &native.sketch_points,
-            &native.sketch_curve_identities,
-            &ir.model.sketch_entities,
         ));
     ir.model.spatial_sketch_constraints.extend(
         crate::design::dimensions::project_spatial_dimension_constraints(
-            &native.design_sketch_placements,
+            &constraint_inputs,
             &ir.model.spatial_sketches,
-            &native.design_parameters,
-            &native.design_parameter_owners,
-            &native.design_dimension_locus_pairs,
-            &native.design_dimension_locus_groups,
-            &native.design_dimension_annotation_frames,
-            &native.design_dimension_null_locus_pairs,
-            &native.design_parameter_companions,
-            &native.design_dimension_recipe_records,
-            &native.sketch_points,
-            &native.sketch_curve_identities,
-            &ir.model.sketch_entities,
             &ir.model.spatial_sketch_entities,
         ),
     );

@@ -28,10 +28,28 @@ use cadmpeg_ir::le::{u32_at, u64_at as read_u64};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+/// Design record slices projected together into the neutral construction
+/// history: the parameter, owner, and scope tables plus the construction
+/// operand, fillet-radius, edge, edge-identity, and face operand records and
+/// the sketch placements and body bindings each feature scope resolves against.
+pub struct ProjectInputs<'a> {
+    pub(crate) native: &'a [DesignParameter],
+    pub(crate) owners: &'a [DesignParameterOwner],
+    pub(crate) scopes: &'a [DesignParameterScope],
+    pub(crate) construction_groups: &'a [DesignConstructionOperandGroup],
+    pub(crate) fillet_radius_groups: &'a [DesignFilletRadiusGroup],
+    pub(crate) edge_operands: &'a [DesignEdgeOperand],
+    pub(crate) edge_identity_operands: &'a [DesignEdgeIdentityOperand],
+    pub(crate) face_operands: &'a [DesignFaceOperand],
+    pub(crate) placements: &'a [DesignSketchPlacement],
+    pub(crate) body_bindings: &'a [DesignBodyBinding],
+}
+
 /// Project parameter scopes and their document- or scope-owned parameters into
 /// the neutral construction history.
-// Faithful signature over parallel design-parameter slices; bundling them
-// into a struct would only shift the fan-out to every caller.
+// Faithful reduced-arg entry point over the same slices as `ProjectInputs`;
+// its many test callers pass positional slices, so it defaults the fixed
+// edge-identity and body-binding tables and forwards through the bundle.
 #[allow(clippy::too_many_arguments)]
 pub fn project_parameter_design(
     native: &[DesignParameter],
@@ -46,33 +64,23 @@ pub fn project_parameter_design(
     Vec<cadmpeg_ir::features::Feature>,
     Vec<cadmpeg_ir::features::DesignParameter>,
 ) {
-    project_parameter_design_with_edge_identities(
+    project_parameter_design_with_edge_identities(&ProjectInputs {
         native,
         owners,
         scopes,
         construction_groups,
         fillet_radius_groups,
         edge_operands,
-        &[],
+        edge_identity_operands: &[],
         face_operands,
         placements,
-        &[],
-    )
+        body_bindings: &[],
+    })
 }
 
-#[allow(clippy::too_many_arguments)]
 /// Project Design parameters and feature scopes, including fixed edge identities.
 pub fn project_parameter_design_with_edge_identities(
-    native: &[DesignParameter],
-    owners: &[DesignParameterOwner],
-    scopes: &[DesignParameterScope],
-    construction_groups: &[DesignConstructionOperandGroup],
-    fillet_radius_groups: &[DesignFilletRadiusGroup],
-    edge_operands: &[DesignEdgeOperand],
-    edge_identity_operands: &[DesignEdgeIdentityOperand],
-    face_operands: &[DesignFaceOperand],
-    placements: &[DesignSketchPlacement],
-    body_bindings: &[DesignBodyBinding],
+    inputs: &ProjectInputs<'_>,
 ) -> (
     Vec<cadmpeg_ir::features::Feature>,
     Vec<cadmpeg_ir::features::DesignParameter>,
@@ -82,6 +90,19 @@ pub fn project_parameter_design_with_edge_identities(
         Length, ParameterId, ParameterValue, PatternForm, PatternKind,
     };
     use std::collections::BTreeMap;
+
+    let &ProjectInputs {
+        native,
+        owners,
+        scopes,
+        construction_groups,
+        edge_operands,
+        edge_identity_operands,
+        face_operands,
+        placements,
+        body_bindings,
+        ..
+    } = inputs;
 
     let scope_ids = scopes
         .iter()
@@ -139,17 +160,9 @@ pub fn project_parameter_design_with_edge_identities(
                         .collect(),
                     properties: native_scope_properties(scope, native_scope),
                 }),
-                Some(DesignFeatureFamily::Fillet) => project_fillet_arm(
-                    scope,
-                    parameters.as_slice(),
-                    native,
-                    native_scope,
-                    construction_groups,
-                    fillet_radius_groups,
-                    edge_operands,
-                    edge_identity_operands,
-                    placements,
-                ),
+                Some(DesignFeatureFamily::Fillet) => {
+                    project_fillet_arm(inputs, scope, parameters.as_slice(), native_scope)
+                }
                 Some(DesignFeatureFamily::Chamfer) => parameters
                     .is_empty()
                     .then(|| {
@@ -786,19 +799,23 @@ fn scope_properties(
     properties
 }
 
-#[allow(clippy::too_many_arguments)]
 fn project_fillet_arm(
+    inputs: &ProjectInputs<'_>,
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
-    native: &[DesignParameter],
     native_scope: &str,
-    construction_groups: &[DesignConstructionOperandGroup],
-    fillet_radius_groups: &[DesignFilletRadiusGroup],
-    edge_operands: &[DesignEdgeOperand],
-    edge_identity_operands: &[DesignEdgeIdentityOperand],
-    placements: &[DesignSketchPlacement],
 ) -> cadmpeg_ir::features::FeatureDefinition {
     use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FilletGroup, RadiusSpec};
+
+    let &ProjectInputs {
+        native,
+        construction_groups,
+        fillet_radius_groups,
+        edge_operands,
+        edge_identity_operands,
+        placements,
+        ..
+    } = inputs;
 
     if let Some(definition) = project_variable_fillet(
         scope,

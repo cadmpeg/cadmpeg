@@ -8509,19 +8509,21 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         .collect::<Vec<_>>();
 
     let constraints = project_dimension_constraints(
-        std::slice::from_ref(&placement),
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: std::slice::from_ref(&pair),
+            groups: std::slice::from_ref(&group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &points,
+            curves: &[],
+            entities: &entities,
+        },
         &[],
-        std::slice::from_ref(&parameter),
-        std::slice::from_ref(&owner),
-        std::slice::from_ref(&pair),
-        std::slice::from_ref(&group),
-        &[],
-        &[],
-        std::slice::from_ref(&companion),
-        &[],
-        &points,
-        &[],
-        &entities,
     );
 
     assert_eq!(constraints.len(), 1);
@@ -8538,35 +8540,39 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         native_ref: Some(placement.id.clone()),
     };
     assert!(project_dimension_constraints(
-        std::slice::from_ref(&placement),
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: std::slice::from_ref(&pair),
+            groups: std::slice::from_ref(&group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &points,
+            curves: &[],
+            entities: &entities,
+        },
         std::slice::from_ref(&spatial_sketch),
-        std::slice::from_ref(&parameter),
-        std::slice::from_ref(&owner),
-        std::slice::from_ref(&pair),
-        std::slice::from_ref(&group),
-        &[],
-        &[],
-        std::slice::from_ref(&companion),
-        &[],
-        &points,
-        &[],
-        &entities,
     )
     .is_empty());
     let spatial_constraints = project_spatial_dimension_constraints(
-        std::slice::from_ref(&placement),
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: std::slice::from_ref(&pair),
+            groups: std::slice::from_ref(&group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &points,
+            curves: &[],
+            entities: &[],
+        },
         std::slice::from_ref(&spatial_sketch),
-        std::slice::from_ref(&parameter),
-        std::slice::from_ref(&owner),
-        std::slice::from_ref(&pair),
-        std::slice::from_ref(&group),
-        &[],
-        &[],
-        std::slice::from_ref(&companion),
-        &[],
-        &points,
-        &[],
-        &[],
         &[],
     );
     assert_eq!(spatial_constraints.len(), 1, "{spatial_constraints:#?}");
@@ -8588,19 +8594,21 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let mut duplicate_pair = pair;
     duplicate_pair.second_geometry_record_index = duplicate_pair.first_geometry_record_index;
     let duplicate = project_dimension_constraints(
-        std::slice::from_ref(&placement),
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&zero_parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: std::slice::from_ref(&duplicate_pair),
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: &[],
+            recipe_records: &[],
+            points: &points,
+            curves: &[],
+            entities: &entities,
+        },
         &[],
-        std::slice::from_ref(&zero_parameter),
-        std::slice::from_ref(&owner),
-        std::slice::from_ref(&duplicate_pair),
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &points,
-        &[],
-        &entities,
     );
     assert_eq!(duplicate.len(), 1);
     assert!(matches!(
@@ -8616,19 +8624,21 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let mut group_owner = owner;
     group_owner.companion_record_index = group.companion_record_index;
     let grouped = project_dimension_constraints(
-        std::slice::from_ref(&placement),
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&zero_parameter),
+            owners: std::slice::from_ref(&group_owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: &[],
+            recipe_records: &[],
+            points: &points,
+            curves: &[],
+            entities: &entities,
+        },
         &[],
-        std::slice::from_ref(&zero_parameter),
-        std::slice::from_ref(&group_owner),
-        &[],
-        std::slice::from_ref(&group),
-        &[],
-        &[],
-        &[],
-        &[],
-        &points,
-        &[],
-        &entities,
     );
     assert!(matches!(
         grouped.as_slice(),
@@ -8902,19 +8912,21 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         line("fourth", Point2::new(12.0, 0.0), Point2::new(12.0, 4.0)),
     ];
     let constraints = project_dimension_constraints(
-        std::slice::from_ref(&placement),
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[recipe(1, 31), recipe(0, 30)],
+            points: &[],
+            curves: &[],
+            entities: &entities,
+        },
         &[],
-        std::slice::from_ref(&parameter),
-        std::slice::from_ref(&owner),
-        &[],
-        &[],
-        &[],
-        &[],
-        std::slice::from_ref(&companion),
-        &[recipe(1, 31), recipe(0, 30)],
-        &[],
-        &[],
-        &entities,
     );
     let [constraint] = constraints.as_slice() else {
         panic!("expected one recipe-backed dimension")
@@ -8940,19 +8952,21 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
     let mut incompatible_unit = parameter.clone();
     incompatible_unit.unit = Some("deg".into());
     let constraints = project_dimension_constraints(
-        std::slice::from_ref(&placement),
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&incompatible_unit),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[recipe(1, 31), recipe(0, 30)],
+            points: &[],
+            curves: &[],
+            entities: &entities,
+        },
         &[],
-        std::slice::from_ref(&incompatible_unit),
-        std::slice::from_ref(&owner),
-        &[],
-        &[],
-        &[],
-        &[],
-        std::slice::from_ref(&companion),
-        &[recipe(1, 31), recipe(0, 30)],
-        &[],
-        &[],
-        &entities,
     );
     assert!(matches!(
         constraints.as_slice(),
@@ -8963,18 +8977,20 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
     ));
 
     let retained = project_dimension_constraints(
-        std::slice::from_ref(&placement),
-        &[],
-        std::slice::from_ref(&parameter),
-        std::slice::from_ref(&owner),
-        &[],
-        &[],
-        &[],
-        &[],
-        std::slice::from_ref(&companion),
-        &[],
-        &[],
-        &[],
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &[],
+            curves: &[],
+            entities: &[],
+        },
         &[],
     );
     assert!(matches!(
@@ -9007,18 +9023,20 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
     let mut empty_companion = companion;
     empty_companion.payload_byte_length = 0;
     let retained = project_dimension_constraints(
-        std::slice::from_ref(&placement),
-        &[],
-        std::slice::from_ref(&parameter),
-        std::slice::from_ref(&owner),
-        &[],
-        &[],
-        &[],
-        &[],
-        std::slice::from_ref(&empty_companion),
-        &[],
-        &[],
-        &[],
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&empty_companion),
+            recipe_records: &[],
+            points: &[],
+            curves: &[],
+            entities: &[],
+        },
         &[],
     );
     assert!(matches!(

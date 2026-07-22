@@ -18,6 +18,20 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::u32_at;
 use std::collections::{HashMap, HashSet};
 
+/// Record slices every dimension-record decode pass reads: the container scan
+/// plus the parameter, owner, companion, scope, record-header, and sketch
+/// geometry tables that locate each dimension's owning companion and geometry.
+pub struct DimensionDecodeInputs<'a> {
+    pub(crate) scan: &'a ContainerScan,
+    pub(crate) parameters: &'a [DesignParameter],
+    pub(crate) owners: &'a [DesignParameterOwner],
+    pub(crate) companions: &'a [DesignParameterCompanion],
+    pub(crate) scopes: &'a [DesignParameterScope],
+    pub(crate) headers: &'a [DesignRecordHeader],
+    pub(crate) points: &'a [SketchPoint],
+    pub(crate) curves: &'a [SketchCurveIdentity],
+}
+
 /// Decode the indexed record that directly contains each construction recipe
 /// owned by a dimensional parameter companion.
 pub fn decode_dimension_recipe_records(
@@ -461,17 +475,19 @@ pub(crate) fn contiguous_i32_program(bytes: &[u8], start: usize, end: usize) -> 
 
 /// Decode paired typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
-#[allow(clippy::too_many_arguments)]
 pub fn decode_dimension_locus_pairs(
-    scan: &ContainerScan,
-    parameters: &[DesignParameter],
-    owners: &[DesignParameterOwner],
-    companions: &[DesignParameterCompanion],
-    scopes: &[DesignParameterScope],
-    headers: &[DesignRecordHeader],
-    points: &[SketchPoint],
-    curves: &[SketchCurveIdentity],
+    inputs: &DimensionDecodeInputs<'_>,
 ) -> Result<Vec<DesignDimensionLocusPair>, CodecError> {
+    let &DimensionDecodeInputs {
+        scan,
+        parameters,
+        owners,
+        companions,
+        scopes,
+        headers,
+        points,
+        curves,
+    } = inputs;
     let parameters = parameters
         .iter()
         .filter_map(|parameter| {
@@ -684,19 +700,21 @@ pub(crate) fn parse_dimension_locus_pair(
 
 /// Decode dimension frames whose ordered operand run contains a null record
 /// reference followed by one typed sketch-geometry reference.
-#[allow(clippy::too_many_arguments)]
 pub fn decode_dimension_null_locus_pairs(
-    scan: &ContainerScan,
-    parameters: &[DesignParameter],
-    owners: &[DesignParameterOwner],
-    companions: &[DesignParameterCompanion],
-    scopes: &[DesignParameterScope],
-    headers: &[DesignRecordHeader],
+    inputs: &DimensionDecodeInputs<'_>,
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
-    points: &[SketchPoint],
-    curves: &[SketchCurveIdentity],
 ) -> Result<Vec<DesignDimensionNullLocusPair>, CodecError> {
+    let &DimensionDecodeInputs {
+        scan,
+        parameters,
+        owners,
+        companions,
+        scopes,
+        headers,
+        points,
+        curves,
+    } = inputs;
     let parameters = parameters
         .iter()
         .filter_map(|parameter| {
@@ -891,18 +909,20 @@ pub(crate) fn parse_dimension_null_locus_pair(
 
 /// Decode paired `EntityGenesis` dimensional frames carrying annotation data
 /// and a direct backlink to the governed parameter owner.
-#[allow(clippy::too_many_arguments)]
 pub fn decode_dimension_annotation_frames(
-    scan: &ContainerScan,
-    parameters: &[DesignParameter],
-    owners: &[DesignParameterOwner],
-    companions: &[DesignParameterCompanion],
-    scopes: &[DesignParameterScope],
-    headers: &[DesignRecordHeader],
+    inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
-    points: &[SketchPoint],
-    curves: &[SketchCurveIdentity],
 ) -> Result<Vec<DesignDimensionAnnotationFrame>, CodecError> {
+    let &DimensionDecodeInputs {
+        scan,
+        parameters,
+        owners,
+        companions,
+        scopes,
+        headers,
+        points,
+        curves,
+    } = inputs;
     let parameters = parameters
         .iter()
         .filter_map(|parameter| {
@@ -1229,18 +1249,20 @@ pub(crate) fn parse_dimension_annotation_frame(
 
 /// Decode counted typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
-#[allow(clippy::too_many_arguments)]
 pub fn decode_dimension_locus_groups(
-    scan: &ContainerScan,
-    parameters: &[DesignParameter],
-    owners: &[DesignParameterOwner],
-    companions: &[DesignParameterCompanion],
-    scopes: &[DesignParameterScope],
-    headers: &[DesignRecordHeader],
+    inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
-    points: &[SketchPoint],
-    curves: &[SketchCurveIdentity],
 ) -> Result<Vec<DesignDimensionLocusGroup>, CodecError> {
+    let &DimensionDecodeInputs {
+        scan,
+        parameters,
+        owners,
+        companions,
+        scopes,
+        headers,
+        points,
+        curves,
+    } = inputs;
     let parameters = parameters
         .iter()
         .filter_map(|parameter| {
