@@ -2807,13 +2807,15 @@ mod history_reference_tests {
         assert!(matches!(
             projected[0].definition,
             FeatureDefinition::Hole {
-                kind: HoleKind::Simple,
+                kind: HoleKind::SimpleDrilled {
+                    drill_point_angle: Angle(drill_point_angle),
+                },
                 diameter: Some(Length(4.2)),
                 extent: Some(Extent::Blind {
                     length: Length(10.0),
                 }),
                 ..
-            }
+            } if (drill_point_angle - 118.0_f64.to_radians()).abs() < 1.0e-12
         ));
     }
 
