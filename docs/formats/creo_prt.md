@@ -2521,9 +2521,12 @@ kilograms. Time symbols `s`, `sec`, `second`, `Msec`, `min`, `minute`, `hr`,
 and `lbf` convert to kilogram-millimeters per square second. `erg` and `joule`
 are energy units; `kW` and `MW` are power units; `Pa`, `MPa`, `GPa`, `psi`, and
 `ksi` are pressure units. Angle symbols `deg`, `degree`, `rad`, and `radian`
-convert to relation degrees. Unit symbols are ASCII case-insensitive. Unit
-multiplication, division, parentheses, and signed integer powers form compound
-dimensions. Addition,
+convert to relation degrees. Temperature symbols `K`, `C`, `F`, and `R`
+convert Kelvin, Celsius, Fahrenheit, and Rankine to canonical kelvin values.
+Unit symbols are ASCII case-insensitive. Unit multiplication, division,
+parentheses, and signed integer powers form compound dimensions. Affine
+Celsius and Fahrenheit units cannot form compound units; Kelvin and Rankine
+can. Addition,
 subtraction, and comparison require equal dimensions. Multiplication and
 division add and subtract base-dimension powers. An integer power multiplies
 the powers, and `sqrt` divides even powers by two. `abs`, `min`, `max`, `near`,

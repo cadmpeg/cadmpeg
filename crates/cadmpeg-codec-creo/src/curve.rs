@@ -125,7 +125,7 @@ impl CurveExpressionValue {
 /// Canonically scaled relation quantity represented by physical base powers.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct CurveExpressionQuantity {
-    /// Numeric value in canonical millimeter-kilogram-second-degree units.
+    /// Numeric value in canonical millimeter-kilogram-second-degree-kelvin units.
     pub value: f64,
     /// Power of length.
     pub length_power: i8,
@@ -135,6 +135,8 @@ pub struct CurveExpressionQuantity {
     pub time_power: i8,
     /// Power of plane angle.
     pub angle_power: i8,
+    /// Power of temperature.
+    pub temperature_power: i8,
 }
 
 impl CurveExpressionQuantity {
@@ -144,6 +146,7 @@ impl CurveExpressionQuantity {
             mass: self.mass_power,
             time: self.time_power,
             angle: self.angle_power,
+            temperature: self.temperature_power,
         }
     }
 }
@@ -1011,6 +1014,7 @@ struct RelationDimension {
     mass: i8,
     time: i8,
     angle: i8,
+    temperature: i8,
 }
 
 impl RelationDimension {
@@ -1019,36 +1023,49 @@ impl RelationDimension {
         mass: 0,
         time: 0,
         angle: 0,
+        temperature: 0,
     };
     const MASS: Self = Self {
         length: 0,
         mass: 1,
         time: 0,
         angle: 0,
+        temperature: 0,
     };
     const TIME: Self = Self {
         length: 0,
         mass: 0,
         time: 1,
         angle: 0,
+        temperature: 0,
     };
     const ANGLE: Self = Self {
         length: 0,
         mass: 0,
         time: 0,
         angle: 1,
+        temperature: 0,
+    };
+    const TEMPERATURE: Self = Self {
+        length: 0,
+        mass: 0,
+        time: 0,
+        angle: 0,
+        temperature: 1,
     };
     const FORCE: Self = Self {
         length: 1,
         mass: 1,
         time: -2,
         angle: 0,
+        temperature: 0,
     };
     const ACCELERATION: Self = Self {
         length: 1,
         mass: 0,
         time: -2,
         angle: 0,
+        temperature: 0,
     };
 
     fn combine(self, right: Self, subtract: bool) -> Option<Self> {
@@ -1058,6 +1075,9 @@ impl RelationDimension {
             mass: self.mass.checked_add(right.mass.checked_mul(sign)?)?,
             time: self.time.checked_add(right.time.checked_mul(sign)?)?,
             angle: self.angle.checked_add(right.angle.checked_mul(sign)?)?,
+            temperature: self
+                .temperature
+                .checked_add(right.temperature.checked_mul(sign)?)?,
         })
     }
 
@@ -1067,6 +1087,7 @@ impl RelationDimension {
             mass: self.mass.checked_mul(exponent)?,
             time: self.time.checked_mul(exponent)?,
             angle: self.angle.checked_mul(exponent)?,
+            temperature: self.temperature.checked_mul(exponent)?,
         })
     }
 
@@ -1075,12 +1096,14 @@ impl RelationDimension {
             && self.length % degree == 0
             && self.mass % degree == 0
             && self.time % degree == 0
-            && self.angle % degree == 0)
+            && self.angle % degree == 0
+            && self.temperature % degree == 0)
             .then_some(Self {
                 length: self.length / degree,
                 mass: self.mass / degree,
                 time: self.time / degree,
                 angle: self.angle / degree,
+                temperature: self.temperature / degree,
             })
     }
 }
@@ -1088,11 +1111,13 @@ impl RelationDimension {
 #[derive(Clone, Copy)]
 struct RelationUnit {
     scale: f64,
+    offset: f64,
     dimension: RelationDimension,
 }
 
 impl RelationUnit {
     fn combine(self, right: Self, divide: bool) -> Option<Self> {
+        (self.offset == 0.0 && right.offset == 0.0).then_some(())?;
         let scale = if divide {
             self.scale / right.scale
         } else {
@@ -1100,14 +1125,17 @@ impl RelationUnit {
         };
         scale.is_finite().then_some(Self {
             scale,
+            offset: 0.0,
             dimension: self.dimension.combine(right.dimension, divide)?,
         })
     }
 
     fn power(self, exponent: i8) -> Option<Self> {
+        (self.offset == 0.0).then_some(())?;
         let scale = self.scale.powi(i32::from(exponent));
         scale.is_finite().then_some(Self {
             scale,
+            offset: 0.0,
             dimension: self.dimension.scale(exponent)?,
         })
     }
@@ -1206,7 +1234,30 @@ impl RelationUnitParser<'_> {
 }
 
 fn relation_unit_symbol(symbol: &str) -> Option<RelationUnit> {
-    let (scale, dimension) = match symbol.to_ascii_lowercase().as_str() {
+    let normalized = symbol.to_ascii_lowercase();
+    let (scale, offset, dimension) = match normalized.as_str() {
+        "k" => (1.0, 0.0, RelationDimension::TEMPERATURE),
+        "c" => (1.0, 273.15, RelationDimension::TEMPERATURE),
+        "f" => (
+            5.0 / 9.0,
+            459.67 * 5.0 / 9.0,
+            RelationDimension::TEMPERATURE,
+        ),
+        "r" => (5.0 / 9.0, 0.0, RelationDimension::TEMPERATURE),
+        symbol => {
+            let (scale, dimension) = multiplicative_relation_unit_symbol(symbol)?;
+            (scale, 0.0, dimension)
+        }
+    };
+    Some(RelationUnit {
+        scale,
+        offset,
+        dimension,
+    })
+}
+
+fn multiplicative_relation_unit_symbol(symbol: &str) -> Option<(f64, RelationDimension)> {
+    Some(match symbol {
         "mm" => (1.0, RelationDimension::LENGTH),
         "cm" => (10.0, RelationDimension::LENGTH),
         "m" => (1_000.0, RelationDimension::LENGTH),
@@ -1281,8 +1332,7 @@ fn relation_unit_symbol(symbol: &str) -> Option<RelationUnit> {
             RelationDimension::FORCE.combine(RelationDimension::LENGTH.scale(2)?, true)?,
         ),
         _ => return None,
-    };
-    Some(RelationUnit { scale, dimension })
+    })
 }
 
 trait ExpressionValue: Clone {
@@ -1322,7 +1372,7 @@ impl ExpressionValue for f64 {
     }
 
     fn with_unit(self, unit: RelationUnit) -> Option<Self> {
-        Some(self * unit.scale)
+        Some(self * unit.scale + unit.offset)
     }
 
     fn subtract(self, right: Self) -> Option<Self> {
@@ -1397,7 +1447,7 @@ impl ExpressionValue for AffineValue {
 
     fn with_unit(self, unit: RelationUnit) -> Option<Self> {
         Some(Self {
-            constant: self.constant * unit.scale,
+            constant: self.constant * unit.scale + unit.offset,
             linear: self.linear * unit.scale,
         })
     }
@@ -1500,7 +1550,10 @@ impl ExpressionValue for CurveExpressionValue {
         let Self::Number(value) = self else {
             return None;
         };
-        Some(quantity_value(value * unit.scale, unit.dimension))
+        Some(quantity_value(
+            value * unit.scale + unit.offset,
+            unit.dimension,
+        ))
     }
 
     fn add(self, right: Self) -> Option<Self> {
@@ -1654,6 +1707,7 @@ fn quantity_value(value: f64, dimension: RelationDimension) -> CurveExpressionVa
             mass_power: dimension.mass,
             time_power: dimension.time,
             angle_power: dimension.angle,
+            temperature_power: dimension.temperature,
         })
     }
 }
@@ -3836,6 +3890,7 @@ mod tests {
                 mass_power: 1,
                 time_power: -2,
                 angle_power: 0,
+                temperature_power: 0,
             }))
         );
         assert_eq!(
@@ -3878,6 +3933,39 @@ mod tests {
             ),
             Some(CurveExpressionValue::Number(6_894.757_293_168_361))
         );
+        for (expression, expected_kelvin) in [
+            ("0[C]", 273.15),
+            ("32[F]", 273.15),
+            ("273.15[K]", 273.15),
+            ("491.67[R]", 273.15),
+        ] {
+            let Some(CurveExpressionValue::Quantity(value)) = evaluate_relation_expression(
+                expression,
+                &values,
+                RelationEvaluationContext::default(),
+            ) else {
+                panic!("unexpected value kind for {expression}");
+            };
+            assert!(
+                (value.value - expected_kelvin).abs() < 1e-12,
+                "{expression}"
+            );
+            assert_eq!(value.temperature_power, 1, "{expression}");
+            assert_eq!(
+                [
+                    value.length_power,
+                    value.mass_power,
+                    value.time_power,
+                    value.angle_power,
+                ],
+                [0; 4],
+                "{expression}"
+            );
+        }
+        assert_eq!(
+            evaluate_relation_expression("1[C/s]", &values, RelationEvaluationContext::default(),),
+            None
+        );
         assert_eq!(
             evaluate_relation_expression("2[mm]^2", &values, RelationEvaluationContext::default(),),
             Some(CurveExpressionValue::Quantity(CurveExpressionQuantity {
@@ -3886,6 +3974,7 @@ mod tests {
                 mass_power: 0,
                 time_power: 0,
                 angle_power: 0,
+                temperature_power: 0,
             }))
         );
         assert_eq!(
