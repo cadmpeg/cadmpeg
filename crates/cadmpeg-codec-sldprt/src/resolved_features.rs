@@ -630,7 +630,9 @@ pub(crate) fn reference_cells(scalars: &[FeatureInputScalar]) -> Vec<FeatureInpu
 pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
     let relative = if marker_local_links(payload, offset).is_some() {
         88
-    } else if marker_coordinates(payload, offset).is_some() {
+    } else if marker_coordinates(payload, offset).is_some()
+        || marker_is_geometry_locus(payload, offset)
+    {
         let search_start = offset.checked_add(SKETCH_MARKER.len())?;
         let next = (search_start..payload.len().saturating_sub(SKETCH_MARKER.len() - 1))
             .find(|next| sketch_marker_prefix_at(payload, *next))?;
@@ -3273,6 +3275,21 @@ mod marker_tests {
         payload[138..142].copy_from_slice(&41u32.to_le_bytes());
         payload[142..147].copy_from_slice(super::SKETCH_MARKER);
         assert_eq!(marker_local_id(&payload, 0), Some(41));
+    }
+
+    #[test]
+    fn coordinate_less_geometry_locus_uses_the_variant_footer() {
+        let mut payload = vec![0; 142 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[138..142].copy_from_slice(&41u32.to_le_bytes());
+        payload[142..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(marker_local_id(&payload, 0), Some(41));
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        assert_eq!(marker_local_id(&payload, 0), None);
     }
 
     #[test]
