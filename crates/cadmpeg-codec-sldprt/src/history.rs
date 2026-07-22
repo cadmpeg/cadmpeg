@@ -2435,6 +2435,56 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn angular_plane_parameter_does_not_claim_offset_semantics() {
+        let mut plane = feature("plane", Some("90"), 0);
+        plane.input_class = Some("moRefPlane_c".into());
+        plane.parameters.insert("D1".into(), "0rad".into());
+        plane
+            .properties
+            .insert("Origin".into(), "0mm,70mm,0mm".into());
+        plane.properties.insert("Normal".into(), "0,1,0".into());
+        plane.properties.insert("UAxis".into(), "-1,0,0".into());
+
+        assert!(!is_offset_plane(&plane));
+        assert_eq!(
+            project_definition(
+                &plane,
+                &HashMap::new(),
+                &HashMap::new(),
+                &HashMap::new(),
+                std::slice::from_ref(&plane),
+            ),
+            FeatureDefinition::DatumPlane {
+                origin: Point3::new(0.0, 70.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(-1.0, 0.0, 0.0),
+            }
+        );
+    }
+
+    #[test]
+    fn length_plane_parameter_claims_offset_semantics() {
+        let mut plane = feature("plane", Some("90"), 0);
+        plane.input_class = Some("moRefPlane_c".into());
+        plane.parameters.insert("D1".into(), "70mm".into());
+
+        assert!(is_offset_plane(&plane));
+        assert_eq!(
+            project_definition(
+                &plane,
+                &HashMap::new(),
+                &HashMap::new(),
+                &HashMap::new(),
+                std::slice::from_ref(&plane),
+            ),
+            FeatureDefinition::DatumOffsetPlane {
+                reference: None,
+                distance: Length(70.0),
+            }
+        );
+    }
+
+    #[test]
     fn legacy_principal_plane_requires_a_complete_matching_triplet() {
         let front = feature("front", Some("2"), 0);
         let top = feature("top", Some("3"), 1);
@@ -4630,7 +4680,12 @@ fn is_helix(feature: &Feature) -> bool {
 }
 
 fn is_offset_plane(feature: &Feature) -> bool {
-    classify(feature) == Some(FeatureClass::ReferencePlane) && feature.parameters.contains_key("D1")
+    classify(feature) == Some(FeatureClass::ReferencePlane)
+        && feature
+            .parameters
+            .get("D1")
+            .and_then(|value| parse_dimension_length_mm(value))
+            .is_some()
 }
 
 fn principal_plane_in_history(
