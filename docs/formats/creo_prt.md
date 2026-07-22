@@ -522,10 +522,12 @@ In the terminal square-radial type-24 form, the final scalar frame has six
 through eight slots and reaches the body end or one complete terminal entity
 reference. Its final six slots are two opposite XYZ envelope corners;
 preceding slots and frames are auxiliary. Exactly two absolute coordinate
-spans are equal and nonzero. They are the radial diameters. The distinct
-nonzero span defines the cylinder axis and finite axial length. The two radial
+spans are equal and nonzero. They are the radial diameters. A distinct nonzero
+span defines the cylinder axis and finite axial length. The two radial
 midpoints and the first axial coordinate define the origin. Half the common
-radial span is the radius. A body occupying a repeated-diameter frame and
+radial span is the radius. When the distinct span is zero, the cylinder is
+unbounded, its axis is the positive omitted model coordinate, and it has no
+stored axial length. A finite body occupying a repeated-diameter frame and
 control shell remains a repeated-diameter body and is not a square-radial form.
 
 Cylinder and cone prototype local systems are parameter templates. Their terminal

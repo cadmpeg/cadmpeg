@@ -771,7 +771,7 @@ impl SurfaceParameterRecord {
         (self.boundary == SurfaceBodyBoundary::CompoundClose).then_some(())?;
         let terminal = self.scalar_frames.last()?;
         ((6..=8).contains(&terminal.slots.len())).then_some(())?;
-        if terminal.slots.len() == 7 {
+        let repeated_diameter_shell = if terminal.slots.len() == 7 {
             if let [leading, _] = self.scalar_frames.as_slice() {
                 let leading_end = leading
                     .slots
@@ -780,13 +780,16 @@ impl SurfaceParameterRecord {
                         (slot.offset == cursor).then(|| cursor + slot.length)
                     })?;
                 let control_length = terminal.offset.checked_sub(leading_end)?;
-                let repeated_diameter_shell = matches!(
+                matches!(
                     (leading.slots.len(), leading.offset, control_length),
                     (1, 1, 1 | 3) | (1, 3, 1) | (2, 0 | 1, 1) | (3, 0, 1)
-                );
-                (!repeated_diameter_shell).then_some(())?;
+                )
+            } else {
+                false
             }
-        }
+        } else {
+            false
+        };
         let terminal_end = terminal
             .slots
             .iter()
@@ -820,12 +823,18 @@ impl SurfaceParameterRecord {
         let axis_index = 3usize.checked_sub(first_radial + second_radial)?;
         let diameter = f64::midpoint(spans[*first_radial].abs(), spans[*second_radial].abs());
         let length = spans[axis_index].abs();
-        (diameter > 1e-12 * scale && length > 1e-12 * scale).then_some(())?;
+        (diameter > 1e-12 * scale).then_some(())?;
+        let bounded = length > 1e-12 * scale;
+        (!repeated_diameter_shell || !bounded).then_some(())?;
         let mut origin = first;
         origin[*first_radial] = f64::midpoint(first[*first_radial], second[*first_radial]);
         origin[*second_radial] = f64::midpoint(first[*second_radial], second[*second_radial]);
         let mut axis = [0.0; 3];
-        axis[axis_index] = spans[axis_index].signum();
+        axis[axis_index] = if bounded {
+            spans[axis_index].signum()
+        } else {
+            1.0
+        };
         let mut ref_direction = [0.0; 3];
         ref_direction[*first_radial] = spans[*first_radial].signum();
         Some(PositionalCylinderFrame {
@@ -833,7 +842,7 @@ impl SurfaceParameterRecord {
             axis,
             ref_direction,
             radius: 0.5 * diameter,
-            length: Some(length),
+            length: bounded.then_some(length),
         })
     }
 
@@ -6891,6 +6900,31 @@ mod tests {
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert!((frame.radius - 0.1).abs() < 1.0e-12);
         assert!((frame.length.unwrap() - 6.4).abs() < 1.0e-12);
+
+        let unbounded_body = [
+            0x18, 0x2d, 0x5f, 0x25, 0xa4, 0x69, 0xd7, 0x34, 0x2d, 0x00, 0x12, 0x00, 0x2d, 0x67,
+            0x06, 0x05, 0x68, 0x1e, 0xcd, 0x4a, 0x46, 0x3d, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xd0,
+            0x46, 0x16, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0x5c, 0x2e, 0x1f, 0x33, 0x2e, 0x3d, 0xcc,
+            0x46, 0x15, 0xff, 0xff, 0xff, 0xff, 0xff, 0x8f, 0x2f, 0x20, 0x00,
+        ];
+        let mut unbounded_payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        unbounded_payload.extend_from_slice(&unbounded_body);
+        unbounded_payload.push(0xe3);
+        let unbounded = parameter_records(&unbounded_payload).remove(0);
+        let frame = unbounded
+            .positional_cylinder_frame
+            .expect("complete zero-axial square-radial carrier");
+        assert!((frame.origin[0] - 29.8).abs() < 1.0e-12);
+        assert!((frame.origin[1] - 5.6).abs() < 1.0e-12);
+        assert!((frame.origin[2] - 7.9).abs() < 1.0e-12);
+        assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
+        assert_eq!(frame.ref_direction, [0.0, -1.0, 0.0]);
+        assert!((frame.radius - 0.1).abs() < 1.0e-12);
+        assert_eq!(frame.length, None);
+
+        let mut unequal_radials = unbounded;
+        unequal_radials.scalar_frames[1].slots[6].value = Some(8.1);
+        assert!(unequal_radials.type24_square_radial_round_frame().is_none());
     }
 
     #[test]
