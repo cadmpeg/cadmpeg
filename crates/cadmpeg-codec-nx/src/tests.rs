@@ -13081,30 +13081,38 @@ fn deltas_fin_partition_stream() -> Vec<u8> {
     stream
 }
 
-fn deltas_line_partition_stream() -> Vec<u8> {
+/// Build a deltas analytic-surface partition record: the shared transmit
+/// preamble, a `type`/`xmt`/`node_id` header, a five-reference run, the `+`
+/// status marker, and the shape's big-endian `f64` payload values.
+fn deltas_analytic_partition_stream(
+    type_code: u16,
+    xmt: u16,
+    node_id: u32,
+    values: &[f64],
+) -> Vec<u8> {
     let mut stream = DELTAS_PREAMBLE.to_vec();
-    stream.extend_from_slice(&30u16.to_be_bytes());
-    stream.extend_from_slice(&9u16.to_be_bytes());
-    stream.extend_from_slice(&906u32.to_be_bytes());
+    stream.extend_from_slice(&type_code.to_be_bytes());
+    stream.extend_from_slice(&xmt.to_be_bytes());
+    stream.extend_from_slice(&node_id.to_be_bytes());
     push_reference_run(&mut stream, 5);
     stream.push(b'+');
-    for value in [0.004f64, 0.005, 0.006, 0.0, 1.0, 0.0] {
+    for value in values {
         stream.extend_from_slice(&value.to_be_bytes());
     }
     stream
 }
 
+fn deltas_line_partition_stream() -> Vec<u8> {
+    deltas_analytic_partition_stream(30, 9, 906, &[0.004, 0.005, 0.006, 0.0, 1.0, 0.0])
+}
+
 fn deltas_plane_partition_stream() -> Vec<u8> {
-    let mut stream = DELTAS_PREAMBLE.to_vec();
-    stream.extend_from_slice(&50u16.to_be_bytes());
-    stream.extend_from_slice(&6u16.to_be_bytes());
-    stream.extend_from_slice(&907u32.to_be_bytes());
-    push_reference_run(&mut stream, 5);
-    stream.push(b'+');
-    for value in [0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0] {
-        stream.extend_from_slice(&value.to_be_bytes());
-    }
-    stream
+    deltas_analytic_partition_stream(
+        50,
+        6,
+        907,
+        &[0.001, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
+    )
 }
 
 fn deltas_offset_surface_partition_stream() -> Vec<u8> {
@@ -13216,16 +13224,12 @@ fn circle_topology_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_circle_partition_stream() -> Vec<u8> {
-    let mut stream = DELTAS_PREAMBLE.to_vec();
-    stream.extend_from_slice(&31u16.to_be_bytes());
-    stream.extend_from_slice(&12u16.to_be_bytes());
-    stream.extend_from_slice(&908u32.to_be_bytes());
-    push_reference_run(&mut stream, 5);
-    stream.push(b'+');
-    for value in [0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.025] {
-        stream.extend_from_slice(&value.to_be_bytes());
-    }
-    stream
+    deltas_analytic_partition_stream(
+        31,
+        12,
+        908,
+        &[0.001, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.025],
+    )
 }
 
 fn ellipse_topology_partition_stream() -> Vec<u8> {
@@ -13250,18 +13254,14 @@ fn ellipse_topology_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_ellipse_partition_stream() -> Vec<u8> {
-    let mut stream = DELTAS_PREAMBLE.to_vec();
-    stream.extend_from_slice(&32u16.to_be_bytes());
-    stream.extend_from_slice(&13u16.to_be_bytes());
-    stream.extend_from_slice(&909u32.to_be_bytes());
-    push_reference_run(&mut stream, 5);
-    stream.push(b'+');
-    for value in [
-        0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.03, 0.012,
-    ] {
-        stream.extend_from_slice(&value.to_be_bytes());
-    }
-    stream
+    deltas_analytic_partition_stream(
+        32,
+        13,
+        909,
+        &[
+            0.001, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.03, 0.012,
+        ],
+    )
 }
 
 fn cylinder_topology_partition_stream() -> Vec<u8> {
@@ -13283,16 +13283,12 @@ fn cylinder_topology_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_cylinder_partition_stream() -> Vec<u8> {
-    let mut stream = DELTAS_PREAMBLE.to_vec();
-    stream.extend_from_slice(&51u16.to_be_bytes());
-    stream.extend_from_slice(&12u16.to_be_bytes());
-    stream.extend_from_slice(&910u32.to_be_bytes());
-    push_reference_run(&mut stream, 5);
-    stream.push(b'+');
-    for value in [0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 0.025, 1.0, 0.0, 0.0] {
-        stream.extend_from_slice(&value.to_be_bytes());
-    }
-    stream
+    deltas_analytic_partition_stream(
+        51,
+        12,
+        910,
+        &[0.001, 0.002, 0.003, 0.0, 1.0, 0.0, 0.025, 1.0, 0.0, 0.0],
+    )
 }
 
 fn cone_topology_partition_stream() -> Vec<u8> {
@@ -13316,29 +13312,25 @@ fn cone_topology_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_cone_partition_stream() -> Vec<u8> {
-    let mut stream = DELTAS_PREAMBLE.to_vec();
-    stream.extend_from_slice(&52u16.to_be_bytes());
-    stream.extend_from_slice(&12u16.to_be_bytes());
-    stream.extend_from_slice(&911u32.to_be_bytes());
-    push_reference_run(&mut stream, 5);
-    stream.push(b'+');
-    for value in [
-        0.001f64,
-        0.002,
-        0.003,
-        0.0,
-        1.0,
-        0.0,
-        0.025,
-        0.5,
-        3.0f64.sqrt() / 2.0,
-        1.0,
-        0.0,
-        0.0,
-    ] {
-        stream.extend_from_slice(&value.to_be_bytes());
-    }
-    stream
+    deltas_analytic_partition_stream(
+        52,
+        12,
+        911,
+        &[
+            0.001,
+            0.002,
+            0.003,
+            0.0,
+            1.0,
+            0.0,
+            0.025,
+            0.5,
+            3.0f64.sqrt() / 2.0,
+            1.0,
+            0.0,
+            0.0,
+        ],
+    )
 }
 
 fn sphere_topology_partition_stream() -> Vec<u8> {
@@ -13360,16 +13352,12 @@ fn sphere_topology_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_sphere_partition_stream() -> Vec<u8> {
-    let mut stream = DELTAS_PREAMBLE.to_vec();
-    stream.extend_from_slice(&53u16.to_be_bytes());
-    stream.extend_from_slice(&12u16.to_be_bytes());
-    stream.extend_from_slice(&912u32.to_be_bytes());
-    push_reference_run(&mut stream, 5);
-    stream.push(b'+');
-    for value in [0.001f64, 0.002, 0.003, 0.025, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0] {
-        stream.extend_from_slice(&value.to_be_bytes());
-    }
-    stream
+    deltas_analytic_partition_stream(
+        53,
+        12,
+        912,
+        &[0.001, 0.002, 0.003, 0.025, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
+    )
 }
 
 fn torus_topology_partition_stream() -> Vec<u8> {
@@ -13392,18 +13380,14 @@ fn torus_topology_partition_stream() -> Vec<u8> {
 }
 
 fn deltas_torus_partition_stream() -> Vec<u8> {
-    let mut stream = DELTAS_PREAMBLE.to_vec();
-    stream.extend_from_slice(&54u16.to_be_bytes());
-    stream.extend_from_slice(&12u16.to_be_bytes());
-    stream.extend_from_slice(&913u32.to_be_bytes());
-    push_reference_run(&mut stream, 5);
-    stream.push(b'+');
-    for value in [
-        0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 0.04, 0.015, 1.0, 0.0, 0.0,
-    ] {
-        stream.extend_from_slice(&value.to_be_bytes());
-    }
-    stream
+    deltas_analytic_partition_stream(
+        54,
+        12,
+        913,
+        &[
+            0.001, 0.002, 0.003, 0.0, 1.0, 0.0, 0.04, 0.015, 1.0, 0.0, 0.0,
+        ],
+    )
 }
 
 fn bspline_partition_stream() -> Vec<u8> {
