@@ -190,7 +190,14 @@ pub(crate) fn spatial_sketches(
                 point_candidates.push((lane, points));
             }
         }
-        if let [(lane, points)] = point_candidates.as_slice() {
+        if let Some((lane, points)) = point_candidates.first().filter(|(_, points)| {
+            point_candidates.iter().all(|(_, candidate)| {
+                candidate
+                    .iter()
+                    .map(|(_, point)| point)
+                    .eq(points.iter().map(|(_, point)| point))
+            })
+        }) {
             let sketch_id = SpatialSketchId(feature.id.0.replacen(
                 ":model:feature#",
                 ":model:spatial-sketch#",
@@ -211,7 +218,11 @@ pub(crate) fn spatial_sketches(
             sketches.push(SpatialSketch {
                 id: sketch_id.clone(),
                 name: feature.name.clone(),
-                configuration: lane.configuration.clone(),
+                configuration: if point_candidates.len() == 1 {
+                    lane.configuration.clone()
+                } else {
+                    None
+                },
                 entities: entity_ids,
                 native_ref: Some(lane.id.clone()),
             });
