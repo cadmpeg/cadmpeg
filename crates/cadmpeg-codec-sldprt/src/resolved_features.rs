@@ -963,6 +963,48 @@ fn indexed_profile_vertex(payload: &[u8], offset: usize) -> bool {
         && marker_profile_curve_role(payload, offset) == Some(1)
 }
 
+fn current_linked_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(0)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
+        || payload.get(offset + 74..offset + 76) != Some(&[0; 2])
+        || payload.get(offset + 76..offset + 78) != Some(&2u16.to_le_bytes())
+        || payload.get(offset + 102..offset + 108)
+            != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        || payload.get(offset + 108..offset + 150) != Some(&[0; 42])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(154)?)
+    {
+        return None;
+    }
+    let first = payload.get(offset + 78..offset + 90)?;
+    let second = payload.get(offset + 90..offset + 102)?;
+    let typed_curve_link = |cell: &[u8]| {
+        operand_kind([cell[0], cell[1]]).is_some_and(|kind| {
+            operand_accepts_marker(kind, SketchInputKind::LineOrCircle)
+                && operand_accepts_marker(kind, SketchInputKind::Arc)
+        })
+    };
+    if !typed_curve_link(first)
+        || !typed_curve_link(second)
+        || first[2..4] == [0; 2]
+        || second[2..4] == [0; 2]
+        || first[2..4] == second[2..4]
+        || first[4..8] != [0xff; 4]
+        || second[4..8] != [0xff; 4]
+        || first[8..12] != [0; 4]
+        || second[8..12] != [0; 4]
+    {
+        return None;
+    }
+    finite_coordinate_pair(payload, offset + 58)
+}
+
 fn linked_profile_vertex(payload: &[u8], offset: usize) -> bool {
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -1052,7 +1094,8 @@ mod marker_tests {
         coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, cosmetic_thread_component_face_reference_at,
         cosmetic_thread_cylinder_reference_at, current_coordinate_linked_line_endpoints,
-        current_indexed_arc_reverses_center_sweep, current_wide_arc_direct_markers,
+        current_indexed_arc_reverses_center_sweep, current_linked_profile_point_coordinates,
+        current_wide_arc_direct_markers,
         current_wide_undetailed_line,
         direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
         explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
@@ -3770,6 +3813,38 @@ mod marker_tests {
                 assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
             }
         }
+    }
+
+    #[test]
+    fn current_linked_profile_point_carries_coordinates() {
+        let offset = 4;
+        let mut payload = vec![0; offset + 154 + SKETCH_MARKER.len()];
+        payload[..offset].copy_from_slice(&7u32.to_le_bytes());
+        payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[offset + 5..offset + 13].fill(0xff);
+        payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[offset + 23..offset + 29]
+            .copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[offset + 31..offset + 39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[offset + 56..offset + 58].copy_from_slice(&[0x1e, 0x00]);
+        payload[offset + 58..offset + 66].copy_from_slice(&1.25f64.to_le_bytes());
+        payload[offset + 66..offset + 74].copy_from_slice(&(-2.5f64).to_le_bytes());
+        payload[offset + 76..offset + 78].copy_from_slice(&2u16.to_le_bytes());
+        for (start, id) in [(78, 2u16), (90, 3u16)] {
+            payload[offset + start..offset + start + 2].copy_from_slice(&0x8178u16.to_le_bytes());
+            payload[offset + start + 2..offset + start + 4].copy_from_slice(&id.to_le_bytes());
+            payload[offset + start + 4..offset + start + 8].fill(0xff);
+        }
+        payload[offset + 102..offset + 108]
+            .copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        payload[offset + 154..].copy_from_slice(SKETCH_MARKER);
+
+        assert_eq!(
+            current_linked_profile_point_coordinates(&payload, offset),
+            Some([1.25, -2.5])
+        );
     }
 
     #[test]
@@ -9265,8 +9340,17 @@ fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
         let Some(key) = marker.feature_ref.clone().zip(marker.object_index) else {
             continue;
         };
-        if marker.coordinates_m.is_some() && endpoints.contains(&key) {
-            marker.kind = SketchInputKind::Point;
+        if endpoints.contains(&key) {
+            if marker.coordinates_m.is_none() {
+                marker.coordinates_m = usize::try_from(marker.offset)
+                    .ok()
+                    .and_then(|offset| {
+                        current_linked_profile_point_coordinates(&lane.native_payload, offset)
+                    });
+            }
+            if marker.coordinates_m.is_some() {
+                marker.kind = SketchInputKind::Point;
+            }
         }
     }
 }
