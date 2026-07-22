@@ -1637,6 +1637,298 @@ fn segment_om_record_area_with_input_store_payload() -> Vec<u8> {
     payload
 }
 
+/// Append one feature-history operation record (label header + object-index
+/// slots + typed payload) to a record area under construction.
+fn push_feature_operation(bytes: &mut Vec<u8>, object_indices: &[u8], label: &str, payload: &[u8]) {
+    const HEADER: &[u8] = &[
+        0x80, 0xcd, 0x01, 0x04, 0x01, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0xff, 0xff,
+    ];
+    bytes.extend_from_slice(HEADER);
+    bytes.extend_from_slice(object_indices);
+    bytes.push(0x03);
+    bytes.push((label.len() + 2) as u8);
+    bytes.extend_from_slice(label.as_bytes());
+    bytes.push(0x00);
+    bytes.extend_from_slice(payload);
+}
+
+/// A feature-history (`UGS::FEATURE_RECORD`) size-framed OM section whose record
+/// area packs the supplied operations. `operations` is `(object_index_slots,
+/// label, typed_payload)`.
+fn composed_feature_history_section(operations: &[(&[u8], &str, Vec<u8>)]) -> Vec<u8> {
+    let mut bytes = size_framed_om_section();
+    let record_area = bytes.len() + 20;
+    bytes.extend_from_slice(&(record_area as u32).to_le_bytes());
+    bytes.resize(record_area, 0);
+    bytes.extend_from_slice(&13u32.to_le_bytes());
+    bytes.extend_from_slice(&14u32.to_le_bytes());
+    bytes.extend_from_slice(&44u32.to_le_bytes());
+    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0");
+    for (slots, label, payload) in operations {
+        push_feature_operation(&mut bytes, slots, label, payload);
+    }
+    let payload_len = (bytes.len() - 16) as u32;
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    bytes
+}
+
+/// An offset-store indexed OM section carrying `records` as its object-id-less
+/// data blocks. The single product record lives in the control block (index 0)
+/// so the section validates; `records[i]` resolves to `block#{i + 1}`.
+fn composed_offset_store(records: &[&[u8]]) -> Vec<u8> {
+    let mut bytes = vec![0xaa; 8];
+    let class_name = b"UGS::ModlFeature";
+    bytes.push((class_name.len() + 1) as u8);
+    bytes.extend_from_slice(class_name);
+    bytes.push(0x81);
+    let index_start = bytes.len();
+    let offset_count = records.len() + 2;
+    bytes.resize(index_start + offset_count * 4, 0);
+    bytes.extend_from_slice(&(records.len() as u32).to_le_bytes());
+    let mut offsets = Vec::with_capacity(offset_count);
+    offsets.push(bytes.len());
+    bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
+    for record in records {
+        offsets.push(bytes.len());
+        bytes.extend_from_slice(record);
+    }
+    offsets.push(bytes.len());
+    for (index, offset) in offsets.iter().enumerate() {
+        bytes[index_start + index * 4..index_start + index * 4 + 4]
+            .copy_from_slice(&(*offset as u32).to_le_bytes());
+    }
+    bytes
+}
+
+/// Compose a UG_PART payload: segment-index header, one feature-history section
+/// with `operations`, and one appended offset store carrying `store_records`.
+fn composed_feature_history_payload(
+    operations: &[(&[u8], &str, Vec<u8>)],
+    store_records: &[&[u8]],
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    payload.extend_from_slice(&composed_feature_history_section(operations));
+
+    let mut store = composed_offset_store(store_records);
+    let base = payload.len() as u32;
+    let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
+    let offset_count = store_records.len() + 2;
+    for index in 0..offset_count {
+        let at = index_start + index * 4;
+        let value = u32::from_le_bytes(store[at..at + 4].try_into().unwrap());
+        store[at..at + 4].copy_from_slice(&(value + base).to_le_bytes());
+    }
+    payload.extend_from_slice(&store);
+    payload
+}
+
+type ComposedInputs = (
+    Vec<(&'static [u8], &'static str, Vec<u8>)>,
+    Vec<u8>,
+    Vec<u8>,
+    Vec<u8>,
+    Vec<u8>,
+    Vec<u8>,
+);
+
+/// A 31-character lowercase-hex identity (no `f`, so no `0x66` name markers)
+/// shared by the datum-CSYS descriptor in `block3` and the datum-plane
+/// descriptor in `block5`, joining them through `datum_plane_csys_identity_uses`.
+const COMPOSED_DESCRIPTOR_IDENTITY: &[u8] = b"0123456789abcde0123456789abcde0";
+
+/// Build the operation list and four offset-store data blocks for the composed
+/// feature-history fixture.
+///
+/// - block1+block2 form a two-block offset-store named point `Point7`;
+/// - block3+block4 carry rich sketch geometry (named points, scalar fields,
+///   coordinate and fixed pairs, and datum-CSYS pair discriminators).
+///
+/// Operations: `SKETCH` referencing the named point (object indices 1,2),
+/// `SKETCH` referencing the geometry (3,4), `DATUM_CSYS` (eight refs to 1) and
+/// `DATUM_PLANE`.
+fn composed_feature_history_inputs() -> ComposedInputs {
+    let sketch_named = vec![
+        0x01, 0x00, 0x01, 0x02, 0xf0, 0x01, 0x00, 0x00, 0xf0, 0x02, 0x01, 0x00, 0x00, 0x00,
+    ];
+    let sketch_geometry = vec![
+        0x01, 0x00, 0x01, 0x02, 0xf0, 0x03, 0x00, 0x00, 0xf0, 0x04, 0x01, 0x00, 0x00, 0x00,
+    ];
+    let mut datum_csys = vec![
+        0x13, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+    ];
+    for _ in 0..8 {
+        datum_csys.extend_from_slice(&[0xf0, 0x03]);
+    }
+    datum_csys.extend_from_slice(&[0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
+    // Single-reference datum-plane branch: descriptor index 5 (block5, a 40-byte
+    // descriptor) and object index 3 (block3, the object payload).
+    let datum_plane = vec![
+        0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x02, 0x23, 0x01, 0x02, 0x05, 0x01, 0xf0, 0x03, 0x00,
+        0x14, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00,
+    ];
+
+    // Additional container-level operations whose typed payloads each populate a
+    // reference/header/lane family directly (mirrors the per-parser white-box
+    // fixtures). Object indices in these payloads are intentionally large and do
+    // not resolve, so only the leading reference/header arenas populate.
+    let point = b"\x72\x00\x00\x01\x00\x00\x00\xf1\x1c\x8f\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0d\x01\x02\x01\x00\x00\x00\x89\x02\x01\x01\x01\x00\xa5\x57\x95\x01\x00\x00\xff\x02\xc0\x1f\xff\xfd\x01\x00\x00\x01\x01\x01\x03\x02\x01\x01\x01\x00\x00\x00\x00\x00\xaa".to_vec();
+    let draft = {
+        let prefix = b"\x67\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\xff\xff\xff\xff\xff\xff\xff\xff\x01\x03\x80\x94\x82\x49".as_slice();
+        let graph = b"\x01\x02\xf1\x1b\x7c\x01\x02\xf1\x1b\x7d\x68\x2f\x70\x62\x4d\xd2\xf1\xa9\xfc\x03\x50\x44\x00\x00\x01\x46\x8a\x2a\x01\xa3\x60\x10\x01\x01\x01\x04\x02\x01\x02\x01\x00\x00\x00\x00\x01\xf1\x1b\x7e\xff\x00\x00\x00\xf1\x1b\x7f\xff".as_slice();
+        let terminal =
+            b"\x81\x5e\x80\xb8\x01\x03\x02\x01\x02\x01\x01\x01\x00\x00\x00\x29\x29\x0c\x00"
+                .as_slice();
+        [prefix, graph, terminal].concat()
+    };
+    let surface = b"\x3f\x00\x00\x01\x00\xf1\x02\x46\xf1\x02\x47\xf1\x02\x48\x01\x09\x03\x03\x04\x05\x02\x01\x01\x01\x01\x09\xf1\x02\x49\xf1\x02\x4a\xf1\x02\x4b\xf1\x02\x4c\xf1\x02\x4d\xf1\x02\x4e\xf1\x02\x4f\xf1\x02\x50\x00\x03\x03\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xf1\x02\x56\xf1\x02\x57\xf1\x02\x58\x01\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x01\x02".to_vec();
+    let pattern_refs = b"\x44\x45\x00\xff\xff\xf1\x03\x21\x01\x02\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x01\x02".to_vec();
+    let pattern_lane = b"\xaa\x01\x03\x60\x01\x00\x00\x50\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\xd0\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x9f\xfe\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01".to_vec();
+    let extrude_profile = b"\x01\x02\x16\x01\x03\xf0\xff\xf1\x01\x00\x01\x03\x79\xaa\x01\x03\xf0\xff\xf1\x01\x00\x00\x00".to_vec();
+    let extrude_header =
+        b"\x0f\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x2f\xa3\x74\xbc\x6a\x7e\xf9\xdb"
+            .to_vec();
+    let extrude_footer = b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00".to_vec();
+    let block = {
+        let mut payload = vec![0x26u8, 0, 0, 1, 0, 0];
+        for value in 1..=18u8 {
+            payload.extend([0xf0, value]);
+        }
+        payload.extend([0x01, 0xf1, 0x01, 0x00]);
+        payload.extend([0xff; 11]);
+        payload.extend([0; 4]);
+        payload
+    };
+    let projected_curve =
+        b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0"
+            .to_vec();
+    // SIMPLE HOLE: two identical scalar runs, each followed by two block-reference
+    // tokens, then a canonical `Hole_...` template string.
+    let simple_hole = {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&shifted_f64_bytes(508.0));
+        payload.extend_from_slice(&shifted_f64_bytes(38.1));
+        payload.extend_from_slice(&[0xf0, 0x03, 0xf0, 0x04]);
+        payload.extend_from_slice(&shifted_f64_bytes(508.0));
+        payload.extend_from_slice(&shifted_f64_bytes(38.1));
+        payload.extend_from_slice(&[0xf0, 0x03, 0xf0, 0x04]);
+        let template = b"Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer";
+        payload.extend_from_slice(&[0x04, (template.len() + 2) as u8]);
+        payload.extend_from_slice(template);
+        payload.push(0x00);
+        payload
+    };
+
+    let operations: Vec<(&'static [u8], &'static str, Vec<u8>)> = vec![
+        (&[1, 0xff, 0xff, 0xff], "SKETCH", sketch_named),
+        (&[3, 0xff, 0xff, 0xff], "SKETCH", sketch_geometry),
+        (&[3, 0xff, 0xff, 0xff], "DATUM_CSYS", datum_csys),
+        (&[3, 0xff, 0xff, 0xff], "DATUM_PLANE", datum_plane),
+        (&[3, 0xff, 0xff, 0xff], "POINT", point),
+        (&[3, 0xff, 0xff, 0xff], "DRAFT", draft),
+        (&[3, 0xff, 0xff, 0xff], "SKIN", surface),
+        (&[3, 0xff, 0xff, 0xff], "Geometry Instance", pattern_refs),
+        (&[3, 0xff, 0xff, 0xff], "Pattern Feature", pattern_lane),
+        (&[3, 0xff, 0xff, 0xff], "EXTRUDE", extrude_profile),
+        (&[3, 0xff, 0xff, 0xff], "EXTRUDE", extrude_header),
+        (&[3, 0xff, 0xff, 0xff], "EXTRUDE", extrude_footer),
+        (&[3, 0xff, 0xff, 0xff], "BLOCK", block),
+        (&[3, 0xff, 0xff, 0xff], "CPROJ", projected_curve),
+        (&[3, 0xff, 0xff, 0xff], "SIMPLE HOLE", simple_hole),
+    ];
+
+    // Two-block offset-store named point `Point7` (leading name + scalar in
+    // block1, the second scalar in block2).
+    let mut block1: Vec<u8> = Vec::new();
+    block1.extend_from_slice(&[0x03, 0x08]);
+    block1.extend_from_slice(b"Point7");
+    block1.push(0x00);
+    block1.extend_from_slice(&[
+        0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
+    ]);
+    let block2: Vec<u8> = vec![
+        0x50, 0x59, 0x66, 0x59, 0x00, 0x31, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
+    ];
+
+    // Rich sketch geometry across block3 (payload) and block4 (terminal filler).
+    let mut block3: Vec<u8> = Vec::new();
+    // Point1: payload-leading name plus two PYf scalar fields.
+    block3.extend_from_slice(&[0x03, 0x08]);
+    block3.extend_from_slice(b"Point1");
+    block3.push(0x00);
+    block3.extend_from_slice(&[
+        0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
+    ]);
+    block3.extend_from_slice(&[
+        0x50, 0x59, 0x66, 0x59, 0x00, 0x31, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
+    ]);
+    // Point2: 66-form name plus one signed Q1.55 fixed pair (no scalars).
+    block3.extend_from_slice(&[0x66, 0x32, 0x03, 0x08]);
+    block3.extend_from_slice(b"Point2");
+    block3.push(0x00);
+    block3.extend_from_slice(&[
+        0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]);
+    // Point3: 66-form name closing Point2's named-record interval.
+    block3.extend_from_slice(&[0x66, 0x32, 0x03, 0x08]);
+    block3.extend_from_slice(b"Point3");
+    block3.push(0x00);
+    // Coordinate pair (object_payload_scalar_pairs SHORT discriminator).
+    block3.extend_from_slice(&[
+        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+        0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ]);
+    // datum_csys signed Q1.55 fixed pair (0b discriminator).
+    block3.extend_from_slice(&[
+        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+        0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ]);
+    // datum_plane object scalar pair (6d 00 f0 + coordinate discriminator).
+    block3.extend_from_slice(&[0x6d, 0x00, 0xf0]);
+    block3.extend_from_slice(&[
+        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+        0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ]);
+    // datum_csys descriptor identity: a maximal 31-char hex run bounded by nulls.
+    block3.push(0x00);
+    block3.extend_from_slice(COMPOSED_DESCRIPTOR_IDENTITY);
+    block3.push(0x00);
+    let block4: Vec<u8> = vec![0x00];
+
+    // block5: a 40-byte datum-plane descriptor block sharing the CSYS identity.
+    let mut block5: Vec<u8> = Vec::new();
+    block5.extend_from_slice(COMPOSED_DESCRIPTOR_IDENTITY); // hex identity (31)
+    block5.extend_from_slice(b"?A"); // delimiter + form marker
+    block5.push(0x03); // compact schema index
+    block5.extend_from_slice(&[0xff, 0x02, 0x01]); // fixed separator
+    block5.extend_from_slice(b"DPd"); // graphic label; pads block to 40 bytes
+    debug_assert_eq!(block5.len(), 40);
+
+    (operations, block1, block2, block3, block4, block5)
+}
+
+/// A `.prt` image whose single feature-history section and companion offset
+/// store drive the feature-history arena families that no other golden reaches:
+/// the complete sketch family (records, references, construction inputs and
+/// payloads, coordinate/fixed pairs, scalars, names, named records, points,
+/// fixed points, point groups, named-point/preceding/point uses, and the
+/// datum-CSYS dependency), the datum-CSYS and datum-plane families (constructions,
+/// payloads, pairs, scalars, descriptors, headers, block uses, identity uses),
+/// plus the point/draft/surface/pattern/extrude/block reference and header lanes.
+fn composed_feature_history_prt() -> Vec<u8> {
+    let (operations, block1, block2, block3, block4, block5) = composed_feature_history_inputs();
+    let store_records: Vec<&[u8]> = vec![&block1, &block2, &block3, &block4, &block5];
+    let payload = composed_feature_history_payload(&operations, &store_records);
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+}
+
 #[test]
 fn nx_expression_parameter_references_preserve_formula_order() {
     assert_eq!(
@@ -20099,7 +20391,7 @@ mod golden {
     /// Frozen from the generated snapshots; if a refactor drops an arena from
     /// every fixture, `arena_coverage_meets_floor` fails. Raise it (never lower
     /// it) when new covering fixtures are added.
-    const ARENA_COVERAGE_FLOOR: usize = 76;
+    const ARENA_COVERAGE_FLOOR: usize = 122;
 
     /// Build the covering fixture set: `(golden name, full `.prt` bytes)`. Each
     /// stream builder is wrapped exactly as its originating white-box test wraps
@@ -20242,6 +20534,7 @@ mod golden {
                 multi_section_feature_history_payload(),
             )]),
         ));
+        f.push(("composed_feature_history", composed_feature_history_prt()));
         f.push((
             "segment_index_rows",
             prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]),
