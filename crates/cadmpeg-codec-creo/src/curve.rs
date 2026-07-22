@@ -2118,7 +2118,7 @@ fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Opt
                 x.abs()
             }
         }
-        (CreoMathFunction::Mod, [x, y]) if *y != 0.0 => x - (x / y).trunc() * y,
+        (CreoMathFunction::Mod, [x, y]) if *y != 0.0 => x % y,
         (CreoMathFunction::If, [condition, when_true, when_false]) => {
             if *condition == 0.0 {
                 *when_false
@@ -2292,7 +2292,7 @@ fn evaluate_creo_relation_function(
             let (left, left_dimension) = quantity_parts_ref(left)?;
             let (right, right_dimension) = quantity_parts_ref(right)?;
             (left_dimension == right_dimension && right != 0.0).then_some(())?;
-            quantity_value(left - (left / right).trunc() * right, left_dimension)
+            quantity_value(left % right, left_dimension)
         }
         (CreoMathFunction::Bound, [value, lower, upper]) => {
             let (value, value_dimension) = quantity_parts_ref(value)?;
@@ -3825,6 +3825,27 @@ mod tests {
         assert_eq!(relation_round(f64::MAX, 8.0, false), Some(f64::MAX));
         assert_eq!(relation_round(-f64::MAX, 8.0, true), Some(-f64::MAX));
         assert_eq!(relation_round(-f64::MAX, 8.0, false), Some(-f64::MAX));
+        let tiny_divisor = f64::MIN_POSITIVE * 3.0;
+        let expected_remainder = f64::MIN_POSITIVE * 2.0;
+        assert_eq!(
+            evaluate_creo_math_function(CreoMathFunction::Mod, &[f64::MAX, tiny_divisor]),
+            Some(expected_remainder)
+        );
+        assert_eq!(
+            evaluate_creo_math_function(CreoMathFunction::Mod, &[-f64::MAX, tiny_divisor]),
+            Some(-expected_remainder)
+        );
+        assert_eq!(
+            evaluate_creo_relation_function(
+                CreoMathFunction::Mod,
+                &[
+                    CurveExpressionValue::Length(f64::MAX),
+                    CurveExpressionValue::Length(tiny_divisor),
+                ],
+                RelationEvaluationContext::default(),
+            ),
+            Some(CurveExpressionValue::Length(expected_remainder))
+        );
         let excessive_power_depth = format!("{}2", "2^".repeat(129));
         assert_eq!(evaluate_expression(&excessive_power_depth, &values), None);
         let long_unary_chain = format!("{}1", "-".repeat(1024));
