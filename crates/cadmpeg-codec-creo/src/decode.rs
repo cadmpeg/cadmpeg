@@ -3055,11 +3055,12 @@ fn transfer_curve_expression_features(
                 properties.insert(
                     "evaluated_dimension".to_string(),
                     format!(
-                        "length:{},mass:{},time:{},angle:{}",
+                        "length:{},mass:{},time:{},angle:{},temperature:{}",
                         quantity.length_power,
                         quantity.mass_power,
                         quantity.time_power,
-                        quantity.angle_power
+                        quantity.angle_power,
+                        quantity.temperature_power
                     ),
                 );
             }

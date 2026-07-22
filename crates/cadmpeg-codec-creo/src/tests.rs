@@ -4908,14 +4908,14 @@ fn decode_evaluates_relation_model_name_from_unique_counted_header() {
 #[test]
 fn decode_transfers_new_relation_parameter_unit_declarations() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x0aexpression\0\xf8\x04span[inch]=2\0copy=span+25.4[mm]\0\
-        stress[N/mm^2]=2\0angle=atan2(span,25.4[mm])\0"
+        \xe0\x0aexpression\0\xf8\x05span[inch]=2\0copy=span+25.4[mm]\0\
+        stress[N/mm^2]=2\0angle=atan2(span,25.4[mm])\0freezing[C]=0\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let parameters = &result.ir.model.parameters;
-    assert_eq!(parameters.len(), 4);
+    assert_eq!(parameters.len(), 5);
     assert_eq!(parameters[0].name, "span");
     assert_eq!(parameters[0].properties["declared_unit"], "inch");
     assert_eq!(
@@ -4938,7 +4938,7 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     );
     assert_eq!(
         parameters[2].properties["evaluated_dimension"],
-        "length:-1,mass:1,time:-2,angle:0"
+        "length:-1,mass:1,time:-2,angle:0,temperature:0"
     );
     assert_eq!(parameters[2].value, None);
     assert_eq!(native.fields["assignments"][2]["value"]["value"], 2_000.0);
@@ -4949,6 +4949,16 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
             cadmpeg_ir::features::Angle(2.0f64.atan())
         ))
     );
+    assert_eq!(parameters[4].properties["declared_unit"], "C");
+    assert_eq!(
+        parameters[4].properties["evaluated_dimension"],
+        "length:0,mass:0,time:0,angle:0,temperature:1"
+    );
+    assert_eq!(
+        parameters[4].properties["evaluated_canonical_value"],
+        "273.15"
+    );
+    assert_eq!(parameters[4].value, None);
 }
 
 #[test]
