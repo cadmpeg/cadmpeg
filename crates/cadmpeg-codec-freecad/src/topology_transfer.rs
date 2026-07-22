@@ -1203,6 +1203,22 @@ fn scale_pcurve_v(geometry: &mut PcurveGeometry, scale: f64) {
         PcurveGeometry::Nurbs { control_points, .. } => {
             control_points.iter_mut().for_each(scale_point);
         }
+        PcurveGeometry::PolarHarmonic {
+            axial_origin,
+            axial_cos,
+            axial_sin,
+            ..
+        } => {
+            *axial_origin *= scale;
+            *axial_cos *= scale;
+            *axial_sin *= scale;
+        }
+        PcurveGeometry::PolarNurbs {
+            axial_control_points,
+            ..
+        } => axial_control_points
+            .iter_mut()
+            .for_each(|value| *value *= scale),
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_v(basis, scale);
         }
@@ -1250,6 +1266,26 @@ fn scale_pcurve_u(geometry: &mut PcurveGeometry, scale: f64) {
         }
         PcurveGeometry::Nurbs { control_points, .. } => {
             control_points.iter_mut().for_each(scale_point);
+        }
+        PcurveGeometry::PolarHarmonic {
+            radial_center,
+            radial_cos,
+            radial_sin,
+            ..
+        } => {
+            debug_assert_eq!(scale, -1.0);
+            radial_center.v = -radial_center.v;
+            radial_cos.v = -radial_cos.v;
+            radial_sin.v = -radial_sin.v;
+        }
+        PcurveGeometry::PolarNurbs {
+            radial_control_points,
+            ..
+        } => {
+            debug_assert_eq!(scale, -1.0);
+            for point in radial_control_points {
+                point.v = -point.v;
+            }
         }
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_u(basis, scale);

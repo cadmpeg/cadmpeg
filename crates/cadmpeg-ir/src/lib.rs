@@ -111,7 +111,7 @@ pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
     SketchDistanceMeasurement, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchId, SketchNativeOperand, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId,
-    SpatialSketchGeometry, SpatialSketchId,
+    SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
 };
 pub use source_fidelity::{RetainedSourceRecord, SourceFidelity, SOURCE_FIDELITY_VERSION};
 pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};

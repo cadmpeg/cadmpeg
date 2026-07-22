@@ -46,6 +46,7 @@ serde-value = "0.7"
 schemars = "1.2"
 thiserror = "2"
 sha2 = "0.11"
+memchr = "2"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"

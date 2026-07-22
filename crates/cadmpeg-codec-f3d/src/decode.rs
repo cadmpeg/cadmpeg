@@ -249,19 +249,25 @@ fn constraint_parameters(
         | Definition::TextFrame { .. }
         | Definition::TextPath { .. }
         | Definition::CoincidentLoci { .. }
+        | Definition::AtIntersection { .. }
         | Definition::Midpoint { .. }
         | Definition::Concentric { .. }
+        | Definition::Coradial { .. }
         | Definition::Collinear { .. }
         | Definition::Symmetric { .. }
         | Definition::Horizontal { .. }
         | Definition::HorizontalLoci { .. }
+        | Definition::HorizontalPoints { .. }
         | Definition::Vertical { .. }
         | Definition::VerticalLoci { .. }
+        | Definition::VerticalPoints { .. }
         | Definition::Parallel { .. }
         | Definition::Perpendicular { .. }
         | Definition::Tangent { .. }
         | Definition::Curvature { .. }
         | Definition::Equal { .. }
+        | Definition::ArcAngle { .. }
+        | Definition::EllipseAngle { .. }
         | Definition::Fixed { .. } => Vec::new(),
         Definition::PointOnObject { .. }
         | Definition::InternalAlignment { .. }
@@ -504,6 +510,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         EdgeSelection::All
         | EdgeSelection::Edges(_)
         | EdgeSelection::Resolved { .. }
+        | EdgeSelection::Generated { .. }
         | EdgeSelection::Historical { .. } => {}
     };
     let mut face_selection = |selection: &FaceSelection| match selection {
@@ -513,6 +520,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         }
         FaceSelection::Faces(_)
         | FaceSelection::Resolved { .. }
+        | FaceSelection::Generated { .. }
         | FaceSelection::Historical { .. } => {}
     };
     for feature in &ir.model.features {

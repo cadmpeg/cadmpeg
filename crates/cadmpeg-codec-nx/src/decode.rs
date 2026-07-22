@@ -913,7 +913,11 @@ fn intersection_side(
             periodic: false,
         })
     });
-    IntcurveSupportSide { surface, pcurve }
+    IntcurveSupportSide {
+        surface,
+        pcurve,
+        pcurve_parameter_range: None,
+    }
 }
 
 fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Point2 {

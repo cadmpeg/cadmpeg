@@ -75,9 +75,31 @@ pub struct DesignConfiguration {
     /// Bodies present when this configuration is active.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bodies: Vec<BodyId>,
+    /// Evaluated parameter state when this configuration is active.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub parameter_values: BTreeMap<ParameterId, ParameterValue>,
+    /// Evaluated feature operation state when this configuration is active.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub feature_states: BTreeMap<FeatureId, ConfigurationFeatureState>,
     /// Identifier of the full-fidelity record in a native namespace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+/// Configuration-local evaluation state for one construction feature.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ConfigurationFeatureState {
+    /// Whether evaluation of this feature is disabled in the configuration.
+    #[serde(default)]
+    pub suppressed: bool,
+    /// Earlier features consumed during regeneration in source operand order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<FeatureId>,
+    /// Bodies produced or modified in the configuration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outputs: Vec<BodyId>,
+    /// Evaluated construction semantics in the configuration.
+    pub definition: FeatureDefinition,
 }
 
 /// Identifies a neutral design parameter.
@@ -148,6 +170,8 @@ pub struct ParameterPmi {
 pub enum PmiDimensionSubtype {
     /// Linear distance.
     Linear,
+    /// Angular extent in radians.
+    Angle,
     /// Diameter.
     Diameter,
     /// Radius.
@@ -188,7 +212,7 @@ pub enum ParameterValue {
 pub struct Length(pub f64);
 
 /// An angle in canonical radians.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
 pub struct Angle(pub f64);
 
@@ -296,6 +320,17 @@ pub enum FeatureDefinition {
         /// Ordered control cages committed by the session.
         cages: Vec<SubdId>,
     },
+    /// Non-geometric thread annotation attached to a cylindrical face.
+    CosmeticThread {
+        /// Cylindrical face carrying the annotation.
+        face: FaceSelection,
+        /// Nominal thread diameter, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        diameter: Option<Length>,
+        /// Axial extent of the annotation, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extent: Option<CosmeticThreadExtent>,
+    },
     /// Built-in world-origin reference plane.
     DatumPrincipalPlane {
         /// Canonical principal-plane role.
@@ -310,6 +345,8 @@ pub enum FeatureDefinition {
         /// In-plane u-axis.
         u_axis: Vector3,
     },
+    /// Constructed reference-plane family whose model-space frame is unresolved.
+    DatumPlaneUnresolved,
     /// Reference plane offset from another datum plane.
     DatumOffsetPlane {
         /// Source plane, when its feature reference is available.
@@ -474,6 +511,9 @@ pub enum FeatureDefinition {
         pitch: Length,
         /// Positive number of revolutions.
         revolutions: f64,
+        /// Angular position at the curve start.
+        #[serde(default)]
+        start_angle: Angle,
         /// Whether angular travel is clockwise when viewed along the axis.
         clockwise: bool,
         /// Radial growth per revolution for a planar spiral, when non-cylindrical.
@@ -493,10 +533,12 @@ pub enum FeatureDefinition {
     HelixNativeAxis {
         /// Source-native record carrying the unresolved construction axis.
         axis_native_ref: String,
-        /// Initial radial distance from the axis.
-        radius: Length,
         /// Signed total rise along the axis.
-        height: Length,
+        #[serde(alias = "radius")]
+        axial_rise: Length,
+        /// Signed axial rise per revolution.
+        #[serde(alias = "height")]
+        pitch: Length,
         /// Positive number of revolutions.
         revolutions: f64,
         /// Angular position at the curve start.
@@ -548,6 +590,7 @@ pub enum FeatureDefinition {
     /// Solved sketch node in the construction history.
     Sketch {
         /// Neutral planar sketch geometry owned by this history node, when resolved.
+        /// Neutral sketch geometry owned by this history node, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sketch: Option<crate::sketches::SketchId>,
     },
@@ -556,6 +599,21 @@ pub enum FeatureDefinition {
         /// Neutral model-space sketch geometry owned by this history node, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sketch: Option<crate::sketches::SpatialSketchId>,
+    },
+    /// Reusable planar sketch geometry.
+    SketchBlockDefinition {
+        /// Neutral sketch geometry owned by the block, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sketch: Option<crate::sketches::SketchId>,
+    },
+    /// Placement of one reusable sketch-block definition.
+    SketchBlockInstance {
+        /// Referenced block definition, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        block: Option<FeatureId>,
+        /// Affine placement in the owning sketch space, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        placement: Option<crate::transform::Transform>,
     },
     /// Directly stored geometry with no replayable parametric construction.
     ///
@@ -1039,13 +1097,16 @@ pub enum FeatureDefinition {
         /// Face the hole is placed on, when known.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         face: Option<FaceSelection>,
-        /// Hole placement position, when recorded independently of `face`.
+        /// Shared hole entry position when the construction carries one location separately.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         position: Option<Point3>,
-        /// Drilling direction, when recorded independently of the placement face.
+        /// Shared drilling direction when carried independently of complete placements.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         direction: Option<Vector3>,
-        /// Entry-shape family of the hole.
+        /// Complete one-or-many hole placements. Empty when placement is unresolved.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        placements: Vec<HolePlacement>,
+        /// Structural drilling, entry-treatment, and threading form.
         kind: HoleKind,
         /// Hole diameter, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1068,8 +1129,8 @@ pub enum FeatureDefinition {
     },
     /// Repetition or reflection of existing features.
     Pattern {
-        /// Features being repeated or reflected; empty when the source selection is unresolved.
-        seeds: Vec<FeatureId>,
+        /// Geometry being repeated or reflected; empty when the source selection is unresolved.
+        seeds: Vec<PatternSeed>,
         /// Spatial transform defining the repetition or reflection.
         pattern: PatternKind,
     },
@@ -1113,6 +1174,37 @@ impl ExtrudeDirection {
     pub fn is_profile_normal(&self) -> bool {
         matches!(self, Self::ProfileNormal)
     }
+}
+/// One complete spatial placement in a hole operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HolePlacement {
+    /// Position and directed drilling vector recorded by the feature definition.
+    Directed {
+        /// Hole entry position in model space.
+        position: Point3,
+        /// Directed drilling vector.
+        direction: Vector3,
+    },
+    /// Unoriented geometric axis inferred from a generated cylindrical surface.
+    Axis {
+        /// Point on the cylinder axis in model space.
+        origin: Point3,
+        /// Unoriented cylinder-axis vector; its sign has no semantic meaning.
+        axis: Vector3,
+    },
+}
+
+/// One geometric selection repeated or reflected by a pattern operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum PatternSeed {
+    /// Complete result of a preceding construction-history feature.
+    Feature(FeatureId),
+    /// Selected faces, including faces in an intermediate regenerated result.
+    Faces(FaceSelection),
+    /// Selected bodies, including bodies in an intermediate regenerated result.
+    Bodies(BodySelection),
 }
 
 /// External model format consumed by an imported-geometry feature.
@@ -1388,6 +1480,10 @@ pub enum FeatureTreeNodeRole {
     Comments,
     /// Design-binder container.
     DesignBinder,
+    /// Detail-item container.
+    Details,
+    /// Profile-selection handle generated from a dissectable sketch.
+    DissectedProfile,
     /// Directional scene light.
     DirectionalLight,
     /// Equation container.
@@ -1396,12 +1492,18 @@ pub enum FeatureTreeNodeRole {
     ExplodedViews,
     /// Favorites container.
     Favorites,
+    /// User-created feature folder.
+    FeatureFolder,
     /// Generic history folder.
     History,
     /// Lights, cameras, and scene container.
     LightsAndCameras,
     /// Markup container.
     Markups,
+    /// Built-in model origin node.
+    ModelOrigin,
+    /// Point scene light.
+    PointLight,
     /// Material container or assignment node.
     Materials,
     /// Note container.
@@ -1410,10 +1512,29 @@ pub enum FeatureTreeNodeRole {
     SelectionSets,
     /// Sensor container.
     Sensors,
+    /// Built-in sheet-metal state root.
+    SheetMetal,
     /// Solid-body container.
     SolidBodies,
+    /// Spot scene light.
+    SpotLight,
     /// Surface-body container.
     SurfaceBodies,
+    /// Table container.
+    Tables,
+}
+
+/// Axial termination of a cosmetic-thread annotation.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CosmeticThreadExtent {
+    /// Fixed thread length along the cylindrical face.
+    Blind {
+        /// Positive axial thread length.
+        length: Length,
+    },
+    /// Thread annotation spans the complete cylindrical face.
+    Through,
 }
 
 /// Canonical role of a built-in reference plane.
@@ -1621,6 +1742,59 @@ pub enum EdgeSelection {
         /// Format-native group selection reference.
         native: String,
     },
+    /// Edges in intermediate regenerated feature results, paired with the
+    /// format-native selection required for rewrite.
+    Generated {
+        /// Feature-local edge identities.
+        edges: Vec<GeneratedEdgeRef>,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
+    /// Format-native selection reference.
+    Native(String),
+}
+
+/// Persistent identity of an edge in one regenerated feature result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GeneratedEdgeRef {
+    /// Feature whose regenerated result owns the edge.
+    pub feature: FeatureId,
+    /// Feature-local persistent edge identity.
+    pub local_id: String,
+}
+
+/// Persistent identity of a face in one regenerated feature result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GeneratedFaceRef {
+    /// Feature whose regenerated result owns the face.
+    pub feature: FeatureId,
+    /// Feature-local persistent face identity.
+    pub local_id: String,
+}
+
+/// Persistent identity of a vertex in one regenerated feature result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GeneratedVertexRef {
+    /// Feature whose regenerated result owns the vertex.
+    pub feature: FeatureId,
+    /// Feature-local persistent vertex identity.
+    pub local_id: String,
+}
+
+/// Vertex operand resolved by the decoder or retained in native form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum VertexSelection {
+    /// Selection exists semantically but its operand is not resolved.
+    Unresolved,
+    /// Vertex in an intermediate regenerated feature result, paired with the
+    /// format-native selection required for rewrite.
+    Generated {
+        /// Feature-local vertex identity.
+        vertex: GeneratedVertexRef,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
     /// Format-native selection reference.
     Native(String),
 }
@@ -1660,6 +1834,14 @@ pub enum FaceSelection {
         /// Format-native selection reference.
         native: String,
     },
+    /// Faces in an intermediate regenerated feature result, paired with the
+    /// format-native selection required for rewrite.
+    Generated {
+        /// Feature-local face identities.
+        faces: Vec<GeneratedFaceRef>,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
     /// Format-native selection reference.
     Native(String),
 }
@@ -1688,8 +1870,32 @@ pub enum BodySelection {
         /// Format-native selection expression.
         native: String,
     },
+    /// Bodies in intermediate regenerated feature results, paired with the
+    /// format-native selection required for rewrite.
+    Generated {
+        /// Feature-local body identities.
+        bodies: Vec<GeneratedBodyRef>,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
+    /// Persistent bodies in the consuming feature's regeneration input state.
+    Local {
+        /// Ordered feature-input-local body identities.
+        bodies: Vec<String>,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
     /// Format-native selection expression.
     Native(String),
+}
+
+/// Persistent identity of a body in one regenerated feature result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GeneratedBodyRef {
+    /// Feature whose regenerated result owns the body.
+    pub feature: FeatureId,
+    /// Feature-local persistent body identity.
+    pub local_id: String,
 }
 
 /// Direct face-motion law.
@@ -1756,6 +1962,8 @@ pub enum ExtrudeStart {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Extent {
+    /// Native extent is present structurally but its termination is unresolved.
+    Unresolved,
     /// Fixed depth or angle in one direction.
     Blind {
         /// Fixed travel distance.
@@ -1787,6 +1995,10 @@ pub enum Extent {
     },
     /// Extends through all material.
     ThroughAll,
+    /// Extends through all material on both sides of the profile.
+    ThroughAllBoth,
+    /// Extends until it exits the next material region.
+    ThroughNext,
     /// Extends until the first encountered model face.
     ToFirst,
     /// Extends until the last encountered model face.
@@ -1798,6 +2010,18 @@ pub enum Extent {
         /// Signed displacement from the terminating face.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         offset: Option<Length>,
+    },
+    /// Extends until it reaches a target vertex.
+    ToVertex {
+        /// Vertex terminating the operation.
+        vertex: VertexSelection,
+    },
+    /// Extends to a fixed offset from a target face.
+    OffsetFromFace {
+        /// Face the termination is measured from.
+        face: FaceSelection,
+        /// Offset distance from the face.
+        offset: Length,
     },
     /// Extends until one of the faces in a selected target shape.
     ToShape {
@@ -2310,6 +2534,8 @@ pub enum BinderOffsetJoin {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum ProfileRef {
+    /// A profile is required by the identified native owner but its carrier is unresolved.
+    Unresolved(String),
     /// Opaque reference into a native feature-input record; no neutral geometry given.
     Native(String),
     /// Solved neutral sketch profile.
@@ -2358,6 +2584,16 @@ pub enum ProfileRef {
         /// Full-fidelity source selection groups in source order.
         native: Vec<String>,
     },
+    /// Complete curve result of an earlier construction-history feature.
+    Feature(FeatureId),
+    /// Curves in an intermediate regenerated feature result, paired with the
+    /// format-native persistent reference required for rewrite.
+    Generated {
+        /// Persistent feature-local curve identities.
+        curves: Vec<GeneratedCurveRef>,
+        /// Format-native persistent profile reference.
+        native: String,
+    },
     /// Profile given directly as a set of solved B-rep faces.
     Faces(Vec<FaceId>),
 }
@@ -2383,6 +2619,15 @@ pub enum LoftPointSection {
     Point(Point3),
     /// Solved B-rep vertex section.
     Vertex(VertexId),
+}
+
+/// Persistent identity of a curve in one regenerated feature result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GeneratedCurveRef {
+    /// Feature whose regenerated result owns the curve.
+    pub feature: FeatureId,
+    /// Complete ordered feature-local component identity.
+    pub local_id: String,
 }
 
 /// Trajectory consumed by a sweep or path-driven operation.
@@ -2527,7 +2772,7 @@ pub enum ChamferForm {
     DistanceAngle,
 }
 
-/// Shape at the entry of a hole.
+/// Structural drilling, entry-treatment, and threading form of a hole.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HoleKind {
@@ -2551,6 +2796,11 @@ pub enum HoleKind {
     },
     /// Plain cylindrical hole with no entry feature.
     Simple,
+    /// Plain cylindrical hole terminating in a conical drill point.
+    SimpleDrilled {
+        /// Included angle of the conical drill point.
+        drill_point_angle: Angle,
+    },
     /// Hole with a wider, flat-bottomed counterbore at the entry.
     Counterbore {
         /// Counterbore diameter, wider than the hole diameter.
@@ -2558,12 +2808,33 @@ pub enum HoleKind {
         /// Counterbore depth.
         depth: Length,
     },
+    /// Counterbored hole terminating in a conical drill point.
+    CounterboreDrilled {
+        /// Counterbore diameter, wider than the hole diameter.
+        diameter: Length,
+        /// Axial depth of the counterbore.
+        depth: Length,
+        /// Included angle of the conical drill point.
+        drill_point_angle: Angle,
+    },
     /// Hole with a conical countersink at the entry.
     Countersink {
         /// Countersink diameter at the surface, wider than the hole diameter.
         diameter: Length,
         /// Countersink included angle.
         angle: Angle,
+    },
+    /// Internally threaded hole terminating in a conical drill point.
+    Threaded {
+        /// Nominal major diameter of the internal thread.
+        major_diameter: Length,
+        /// Axial length over which the thread is cut.
+        thread_depth: Length,
+        /// Thread pitch, when carried independently of the nominal designation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pitch: Option<Length>,
+        /// Included angle of the conical drill point.
+        drill_point_angle: Angle,
     },
     /// Hole with a conical entry followed by a wider cylindrical recess.
     Counterdrill {
@@ -2748,6 +3019,9 @@ pub enum PatternKind {
         spacing: Length,
         /// Total number of instances, including the original.
         count: u32,
+        /// Optional complete second translation direction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        second: Option<LinearPatternDirection>,
     },
     /// Repeats seeds at explicitly located distances along a straight direction.
     LinearOffsets {
@@ -2841,6 +3115,17 @@ pub enum PatternStageCombination {
     CartesianProduct,
     /// Aligns transforms with equally sized slices of preceding occurrences.
     AlignedSlices,
+}
+
+/// Complete secondary direction of a two-direction linear pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LinearPatternDirection {
+    /// Unit translation direction.
+    pub direction: Vector3,
+    /// Distance between consecutive instances.
+    pub spacing: Length,
+    /// Total number of instances, including the original.
+    pub count: u32,
 }
 
 /// Structural form of a repeated or reflected feature operation.

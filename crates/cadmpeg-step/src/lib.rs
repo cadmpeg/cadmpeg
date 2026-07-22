@@ -1862,7 +1862,7 @@ impl<'a> Builder<'a> {
     fn emit_pcurve(&mut self, pcurve_id: &str, surface_id: &str) -> Option<Ref> {
         let pcurve = self.pcurves.get(pcurve_id).copied()?;
         let surface = self.emit_surface(surface_id)?;
-        let curve = geometry::pcurve(&mut self.emitter, &pcurve.geometry);
+        let curve = geometry::pcurve(&mut self.emitter, &pcurve.geometry)?;
         let context = if let Some(context) = self.pcurve_context {
             context
         } else {
@@ -2849,6 +2849,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::CurveBounded { .. }
                 | ProceduralSurfaceDefinition::Ruled { .. }
                 | ProceduralSurfaceDefinition::Blend { .. }
+                | ProceduralSurfaceDefinition::RollingBallJet { .. }
                 | ProceduralSurfaceDefinition::Unknown { .. } => true,
             })
             .count();

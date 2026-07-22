@@ -2521,6 +2521,7 @@ fn emit_carrier_curve(
                     sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                         surface: surfaces[side].clone(),
                         pcurve: pcurves[side].clone(),
+                        pcurve_parameter_range: None,
                     }),
                     parameter_range: embedded.parameter_range,
                     discontinuities: embedded.discontinuities,
@@ -2560,6 +2561,7 @@ fn emit_carrier_curve(
                     sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                         surface: surfaces[side].clone(),
                         pcurve: pcurves[side].clone(),
+                        pcurve_parameter_range: None,
                     }),
                     parameter_range: embedded.parameter_range,
                     discontinuities: embedded.discontinuities,
@@ -2595,6 +2597,7 @@ fn emit_carrier_curve(
                     sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                         surface: Some(surface_ids[side].clone()),
                         pcurve: Some(pcurves[side].clone()),
+                        pcurve_parameter_range: None,
                     }),
                     parameter_range: embedded.parameter_range,
                     discontinuities: embedded.discontinuities,
@@ -2603,6 +2606,7 @@ fn emit_carrier_curve(
                 third: cadmpeg_ir::geometry::IntcurveSupportSide {
                     surface: Some(surface_ids[2].clone()),
                     pcurve: Some(pcurves[2].clone()),
+                    pcurve_parameter_range: None,
                 },
             }
         } else if let Some((family, embedded, tail)) = procedural.8 {
@@ -2638,6 +2642,7 @@ fn emit_carrier_curve(
                     sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                         surface: surfaces[side].clone(),
                         pcurve: pcurves[side].clone(),
+                        pcurve_parameter_range: None,
                     }),
                     parameter_range: embedded.parameter_range,
                     discontinuities: embedded.discontinuities,
@@ -2773,6 +2778,7 @@ fn emit_silhouette_curve(
             sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                 surface: support_ids[side].clone(),
                 pcurve: pcurves[side].clone(),
+                pcurve_parameter_range: None,
             }),
             parameter_range: embedded.context.parameter_range,
             discontinuities: embedded.context.discontinuities,
@@ -2826,6 +2832,7 @@ fn emit_surface_offset_curve(
             sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                 surface: support_ids[side].clone(),
                 pcurve: pcurves[side].clone(),
+                pcurve_parameter_range: None,
             }),
             parameter_range: embedded.context.parameter_range,
             discontinuities: embedded.context.discontinuities,
@@ -2880,6 +2887,7 @@ fn emit_spring_curve(
             sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                 surface: support_ids[side].clone(),
                 pcurve: pcurves[side].clone(),
+                pcurve_parameter_range: None,
             }),
             parameter_range: embedded.parameter_range,
             discontinuities: embedded.discontinuities,
@@ -2933,6 +2941,7 @@ fn emit_projection_curve(
             sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                 surface: surfaces[side].clone(),
                 pcurve: pcurves[side].clone(),
+                pcurve_parameter_range: None,
             }),
             parameter_range: embedded.parameter_range,
             discontinuities: embedded.discontinuities,
@@ -3057,6 +3066,7 @@ fn emit_law_curve(
             sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                 surface: surfaces[side].clone(),
                 pcurve: pcurves[side].clone(),
+                pcurve_parameter_range: None,
             }),
             parameter_range: embedded.context.parameter_range,
             discontinuities: embedded.context.discontinuities,

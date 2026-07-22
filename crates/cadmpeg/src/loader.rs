@@ -12,6 +12,9 @@ use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
 use crate::registry::Registry;
 use crate::ForcedInput;
 
+/// Leading byte window available to content-based codec detection.
+pub const DETECTION_PREFIX_LEN: usize = 128 * 1024;
+
 /// CADIR loaded from an input path, with native-decoder diagnostics when used.
 pub struct LoadedIr {
     /// Loaded model data.
@@ -41,7 +44,7 @@ pub fn load_ir(
     options: DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedIr> {
-    let prefix = read_prefix(path, 512)?;
+    let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
     let detected = match forced {
         Some(ForcedInput::Codec(id)) => Some((
             registry

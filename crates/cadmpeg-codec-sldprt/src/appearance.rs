@@ -10,14 +10,14 @@ const TOKEN: &[u8] = b"moVisualProperties_c";
 pub struct Material {
     pub name: String,
     pub color: Color,
-    pub block_offset: usize,
+    pub source_name: String,
     pub record_offset: usize,
 }
 
 pub fn materials(scan: &ContainerScan) -> Vec<Material> {
     let mut out = Vec::new();
-    for block in &scan.blocks {
-        let bytes = &block.payload;
+    for section in scan.sections() {
+        let bytes = section.payload();
         for token_at in bytes
             .windows(TOKEN.len())
             .enumerate()
@@ -55,7 +55,7 @@ pub fn materials(scan: &ContainerScan) -> Vec<Material> {
                     b: ((packed >> 16) & 0xff) as f32 / 255.0,
                     a: 1.0,
                 },
-                block_offset: block.offset,
+                source_name: section.display_name(),
                 record_offset: token_at,
             });
         }

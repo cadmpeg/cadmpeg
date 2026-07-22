@@ -1160,7 +1160,8 @@ fn native_procedural_surface_definition(
                 procedural.id
             )))
         }
-        ProceduralSurfaceDefinition::LinearSweep { .. }
+        ProceduralSurfaceDefinition::RollingBallJet { .. }
+        | ProceduralSurfaceDefinition::LinearSweep { .. }
         | ProceduralSurfaceDefinition::AxisRevolution { .. }
         | ProceduralSurfaceDefinition::ParallelOffset { .. }
         | ProceduralSurfaceDefinition::DegenerateTorus { .. }
@@ -5337,6 +5338,16 @@ fn native_intcurve_support_context(
     target: &CadIr,
     context: &cadmpeg_ir::geometry::IntcurveSupportContext,
 ) -> Result<(), CodecError> {
+    if context
+        .sides
+        .iter()
+        .any(|side| side.pcurve_parameter_range.is_some())
+    {
+        return Err(CodecError::NotImplemented(
+            "F3D intcurve writing does not encode independent support-pcurve parameter intervals"
+                .into(),
+        ));
+    }
     for side in &context.sides {
         if let Some(surface_id) = &side.surface {
             let surface = target
@@ -5734,6 +5745,12 @@ fn native_pcurve_geometry(
                 periodic: false,
             })
         }
+        PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. } => Err(CodecError::NotImplemented(
+            "F3D analytic pcurve writing is not supported".into(),
+        )),
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -5751,9 +5768,7 @@ fn native_pcurve_geometry(
             parameter_range,
             basis,
         } => native_pcurve_geometry(basis, *parameter_range),
-        PcurveGeometry::Circle { .. }
-        | PcurveGeometry::Ellipse { .. }
-        | PcurveGeometry::Parabola { .. }
+        PcurveGeometry::Parabola { .. }
         | PcurveGeometry::Hyperbola { .. }
         | PcurveGeometry::Offset { .. } => Err(CodecError::NotImplemented(
             "F3D writing of this exact pcurve family is not implemented".into(),

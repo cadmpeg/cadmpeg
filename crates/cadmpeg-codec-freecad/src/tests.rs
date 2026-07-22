@@ -1932,6 +1932,7 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
                 direction: Some(direction),
                 spacing: cadmpeg_ir::features::Length(4.0),
                 count: 4,
+                ..
             },
         } if seeds.len() == 1 && direction.y == 1.0
     ));

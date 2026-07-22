@@ -163,6 +163,9 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
                 )
             })
         }
+        PcurveGeometry::PolarHarmonic { .. } | PcurveGeometry::PolarNurbs { .. } => {
+            cadmpeg_ir::eval::pcurve_uv(geometry, parameter)
+        }
     }
 }
 

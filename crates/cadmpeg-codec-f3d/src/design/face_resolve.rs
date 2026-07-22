@@ -203,6 +203,9 @@ pub(crate) fn bind_extrude_start_planes(
             | ProfileRef::SketchRegions { sketch, .. }
             | ProfileRef::SketchSelection { sketch, .. } => sketch,
             ProfileRef::Native(_)
+            | ProfileRef::Unresolved(_)
+            | ProfileRef::Feature(_)
+            | ProfileRef::Generated { .. }
             | ProfileRef::SpatialSketchProfiles { .. }
             | ProfileRef::SpatialSketchSelection { .. }
             | ProfileRef::HistoricalFaces { .. }

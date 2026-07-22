@@ -370,6 +370,7 @@ pub enum SpatialSketchConstraintDefinition {
 }
 
 /// Solved geometry in model coordinates.
+/// Solved model-space spatial-sketch geometry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SpatialSketchGeometry {
@@ -722,11 +723,27 @@ pub enum SketchConstraintDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameter_factor: Option<f64>,
     },
+    /// A point locus lies at the intersection of two entities.
+    AtIntersection {
+        /// Point constrained to the intersection.
+        point: SketchLocus,
+        /// First intersecting entity.
+        first: SketchEntityId,
+        /// Second intersecting entity.
+        second: SketchEntityId,
+    },
     /// Circular or elliptical entities share a center.
     Concentric {
         /// First centered entity.
         first: SketchEntityId,
         /// Second centered entity.
+        second: SketchEntityId,
+    },
+    /// Two circular entities share a center and radius.
+    Coradial {
+        /// First circular entity.
+        first: SketchEntityId,
+        /// Second circular entity.
         second: SketchEntityId,
     },
     /// Two line entities lie on one infinite line.
@@ -769,6 +786,20 @@ pub enum SketchConstraintDefinition {
         /// Second constrained locus.
         second: SketchLocus,
     },
+    /// Two explicit loci have equal horizontal sketch coordinates.
+    HorizontalPoints {
+        /// First aligned locus.
+        first: SketchLocus,
+        /// Second aligned locus.
+        second: SketchLocus,
+    },
+    /// Two explicit loci have equal vertical sketch coordinates.
+    VerticalPoints {
+        /// First aligned locus.
+        first: SketchLocus,
+        /// Second aligned locus.
+        second: SketchLocus,
+    },
     /// Two entities are parallel.
     Parallel {
         /// First entity.
@@ -808,6 +839,20 @@ pub enum SketchConstraintDefinition {
     Fixed {
         /// Fixed entity.
         entity: SketchEntityId,
+    },
+    /// Circular arc angle fixed by the relation kind.
+    ArcAngle {
+        /// Constrained circular arc.
+        entity: SketchEntityId,
+        /// Fixed positive arc angle in radians.
+        angle: Angle,
+    },
+    /// Bounded ellipse parameter sweep fixed by the relation kind.
+    EllipseAngle {
+        /// Constrained bounded ellipse.
+        entity: SketchEntityId,
+        /// Fixed positive parameter sweep in radians.
+        angle: Angle,
     },
     /// Distance controlled by a design parameter.
     Distance {

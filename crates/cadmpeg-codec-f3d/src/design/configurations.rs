@@ -210,6 +210,8 @@ pub fn project_configurations(
                 properties,
                 parameter_overrides: BTreeMap::new(),
                 suppressed_features: Vec::new(),
+                parameter_values: BTreeMap::new(),
+                feature_states: BTreeMap::new(),
                 bodies: Vec::new(),
                 native_ref: Some(table.id.clone()),
             });

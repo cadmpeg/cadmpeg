@@ -2277,6 +2277,7 @@ pub(crate) fn loft_path_from_edge_selection(
         EdgeSelection::All
         | EdgeSelection::Unresolved
         | EdgeSelection::Native(_)
+        | EdgeSelection::Generated { .. }
         | EdgeSelection::HistoricalPartial { .. } => PathRef::Native(native.to_owned()),
     }
 }

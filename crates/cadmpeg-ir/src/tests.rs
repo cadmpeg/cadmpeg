@@ -1280,6 +1280,8 @@ fn configuration_body_membership_round_trips_and_validates() {
         parameter_overrides: BTreeMap::from([(parameter_id.clone(), "25 mm".into())]),
         suppressed_features: Vec::new(),
         bodies: vec![body.clone()],
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
         native_ref: None,
     });
     ir.finalize();
@@ -1336,6 +1338,8 @@ fn configuration_body_membership_round_trips_and_validates() {
         parameter_overrides: BTreeMap::new(),
         suppressed_features: Vec::new(),
         bodies: Vec::new(),
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
         native_ref: None,
     });
     ir.model.configurations[0].active = true;
@@ -1782,34 +1786,6 @@ fn explicit_migration_upgrades_previous_version_without_semantic_changes() {
     assert!(CadIr::from_json(&legacy).is_err());
     let migrated = CadIr::migrate_json(&legacy).expect("previous-version migration");
     assert_eq!(migrated, current);
-}
-
-#[test]
-fn previous_external_occurrence_document_token_migrates_deterministically() {
-    let mut legacy = serde_json::to_value(unit_cube()).unwrap();
-    legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
-    legacy["model"]["occurrences"] = serde_json::json!([{
-        "id": "synthetic:test:occurrence#external",
-        "prototype": {
-            "scope": "external",
-            "document": "legacy-document",
-            "object": "Body"
-        },
-        "local_transform": crate::transform::Transform::identity().rows,
-        "resolved_transform": crate::transform::Transform::identity().rows,
-        "scale": [1.0, 1.0, 1.0]
-    }]);
-    let migrated = CadIr::migrate_json(&serde_json::to_string(&legacy).unwrap())
-        .expect("external occurrence migration");
-    let crate::ComponentReference::External { document, object } =
-        &migrated.model.occurrences[0].prototype
-    else {
-        panic!("migrated external prototype");
-    };
-    assert_eq!(document.path, None);
-    assert_eq!(document.document_id.as_deref(), Some("legacy-document"));
-    assert_eq!(document.resolution, crate::ExternalResolution::Unresolved);
-    assert_eq!(object.as_deref(), Some("Body"));
 }
 
 #[test]
@@ -3744,6 +3720,7 @@ fn feature_operation_geometry_is_validated() {
             bottom: None,
             taper_angle: None,
             specification: None,
+            placements: Vec::new(),
             allow_multi_profile_faces: None,
         },
         FeatureDefinition::Thicken {
@@ -3814,6 +3791,7 @@ fn feature_operation_geometry_is_validated() {
             radius: Length(-1.0),
             pitch: Length(f64::NAN),
             revolutions: 0.0,
+            start_angle: crate::features::Angle(0.0),
             clockwise: false,
             radial_growth: None,
             cone_angle: None,
@@ -3822,8 +3800,8 @@ fn feature_operation_geometry_is_validated() {
         },
         FeatureDefinition::HelixNativeAxis {
             axis_native_ref: String::new(),
-            radius: Length(-1.0),
-            height: Length(f64::NAN),
+            axial_rise: Length(f64::NAN),
+            pitch: Length(f64::NAN),
             revolutions: 0.0,
             start_angle: crate::features::Angle(f64::NAN),
             clockwise: false,
@@ -3906,6 +3884,7 @@ fn feature_operation_geometry_is_validated() {
                 direction: Some(Vector3::new(0.0, 0.0, 0.0)),
                 spacing: Length(-1.0),
                 count: 0,
+                second: None,
             },
         },
         FeatureDefinition::Pattern {
@@ -3925,6 +3904,7 @@ fn feature_operation_geometry_is_validated() {
                             direction: Some(Vector3::new(1.0, 0.0, 0.0)),
                             spacing: Length(1.0),
                             count: 3,
+                            second: None,
                         }),
                         combination: crate::features::PatternStageCombination::Initialize,
                     },
@@ -4252,6 +4232,6 @@ fn current_document_excludes_source_byte_accounting() {
     let ir = CadIr::empty(crate::units::Units::default());
     let json = serde_json::to_value(&ir).unwrap();
 
-    assert_eq!(json["ir_version"], "54");
+    assert_eq!(json["ir_version"], "55");
     assert!(json.get("byte_ledger").is_none());
 }
