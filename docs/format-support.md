@@ -254,7 +254,9 @@ See [`formats/f3d.md`](formats/f3d.md) and [`formats/f3d-open-items.md`](formats
 
 Open geometry gates include unresolved procedural-intersection branches, freeform NURBS-offset blend spines, and other unsupported record families. Open structural gates include unmatched tombstones, multi-partition feature composition, assembly records, and NX object-model field serialization.
 
-See [`formats/siemens_nx.md`](formats/siemens_nx.md) and [`formats/siemens_nx-open-items.md`](formats/siemens_nx-open-items.md).
+See the [format specification](formats/siemens_nx.md), [coverage
+contract](formats/siemens_nx-coverage.md), and [open
+items](formats/siemens_nx-open-items.md).
 
 ## CATIA V5 `.CATPart`
 
