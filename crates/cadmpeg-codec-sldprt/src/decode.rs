@@ -3592,6 +3592,8 @@ mod design_loss_tests {
             sketch: SpatialSketchId("spatial-sketch".into()),
             construction: false,
             native_ref: Some("native:spatial".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
             geometry: SpatialSketchGeometry::Native {
                 native_kind: "ReferenceCurve".into(),
             },

@@ -212,10 +212,11 @@ pub(crate) fn spatial_sketches(
                     sketch: sketch_id.clone(),
                     construction: false,
                     native_ref: Some(native_ref.clone()),
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
                     geometry: SpatialSketchGeometry::Point { position: *point },
                 })
                 .collect::<Vec<_>>();
-            let entity_ids = projected.iter().map(|entity| entity.id.clone()).collect();
             sketches.push(SpatialSketch {
                 id: sketch_id.clone(),
                 name: feature.name.clone(),
@@ -224,7 +225,7 @@ pub(crate) fn spatial_sketches(
                 } else {
                     None
                 },
-                entities: entity_ids,
+                profiles: Vec::new(),
                 native_ref: Some(lane.id.clone()),
             });
             entities.extend(projected);
@@ -277,7 +278,7 @@ pub(crate) fn spatial_sketches(
             id: sketch_id.clone(),
             name: feature.name.clone(),
             configuration: lane.configuration.clone(),
-            entities: vec![entity_id.clone()],
+            profiles: Vec::new(),
             native_ref: Some(lane.id.clone()),
         });
         entities.push(SpatialSketchEntity {
@@ -285,6 +286,8 @@ pub(crate) fn spatial_sketches(
             sketch: sketch_id.clone(),
             construction: false,
             native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
             geometry: SpatialSketchGeometry::Line {
                 start: *start,
                 end: *end,
@@ -11591,7 +11594,7 @@ fn compact_position_assignments(
 
 #[cfg(test)]
 mod hole_axis_tests {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind, Length, SketchSpace};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind, Length};
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -11959,7 +11962,6 @@ mod hole_axis_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
                 sketch: Some(SketchId("position-geometry".into())),
             },
             native_ref: Some("native-position-sketch".into()),
@@ -12166,11 +12168,7 @@ mod hole_axis_tests {
             id: sketch_id.clone(),
             name: Some("Position".into()),
             configuration: None,
-            entities: vec![
-                SpatialSketchEntityId("point".into()),
-                SpatialSketchEntityId("same-axis-endpoint".into()),
-                SpatialSketchEntityId("construction-point".into()),
-            ],
+            profiles: Vec::new(),
             native_ref: Some("lane".into()),
         };
         let point = Point3::new(12.0, 23.0, 30.0);
@@ -12179,6 +12177,8 @@ mod hole_axis_tests {
             sketch: sketch_id.clone(),
             construction: false,
             native_ref: Some("authored-point".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
             geometry: SpatialSketchGeometry::Point { position: point },
         };
         let same_axis_endpoint = SpatialSketchEntity {
@@ -12186,6 +12186,8 @@ mod hole_axis_tests {
             sketch: sketch_id.clone(),
             construction: false,
             native_ref: Some("same-axis-endpoint".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
             geometry: SpatialSketchGeometry::Point {
                 position: Point3::new(12.0, 23.0, 20.0),
             },
@@ -12195,6 +12197,8 @@ mod hole_axis_tests {
             sketch: sketch_id,
             construction: true,
             native_ref: Some("construction-point".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
             geometry: SpatialSketchGeometry::Point {
                 position: Point3::new(100.0, 100.0, 100.0),
             },
@@ -17849,10 +17853,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 feature.native_ref.as_deref() == Some(native_feature.id.as_str())
                     && matches!(
                         feature.definition,
-                        cadmpeg_ir::features::FeatureDefinition::Sketch {
-                            space: cadmpeg_ir::features::SketchSpace::Planar,
-                            sketch: None,
-                        }
+                        cadmpeg_ir::features::FeatureDefinition::Sketch { sketch: None }
                     )
             }) else {
                 continue;
@@ -17983,7 +17984,6 @@ pub(crate) fn project_compact_sketch_profiles(
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     };
                 continue;
@@ -18058,7 +18058,6 @@ pub(crate) fn project_compact_sketch_profiles(
                 sketches.push(sketch);
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     };
                 continue;
@@ -18166,7 +18165,6 @@ pub(crate) fn project_compact_sketch_profiles(
                 sketches.push(sketch);
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     };
                 continue;
@@ -18220,7 +18218,6 @@ pub(crate) fn project_compact_sketch_profiles(
             sketch.profiles.push(profile);
             sketches.push(sketch);
             features[feature_index].definition = cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id),
             };
         }
@@ -18263,10 +18260,8 @@ pub(crate) fn project_marker_backed_sketches(
                     if feature.native_ref.as_deref() != Some(native_feature.id.as_str()) {
                         return None;
                     }
-                    let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
-                        sketch,
-                    } = &feature.definition
+                    let cadmpeg_ir::features::FeatureDefinition::Sketch { sketch } =
+                        &feature.definition
                     else {
                         return None;
                     };
@@ -18331,7 +18326,6 @@ pub(crate) fn project_marker_backed_sketches(
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     };
                 continue;
@@ -18659,7 +18653,6 @@ pub(crate) fn project_marker_backed_sketches(
             sketch_entities.extend(projected);
             sketches.push(sketch);
             features[feature_index].definition = cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id),
             };
         }
@@ -19797,10 +19790,7 @@ fn bind_circular_profile_by_dimension(
             .filter(|(_, feature)| {
                 matches!(
                     feature.definition,
-                    cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
-                        ..
-                    }
+                    cadmpeg_ir::features::FeatureDefinition::Sketch { .. }
                 )
             })
             .filter(|(_, feature)| {
@@ -22253,10 +22243,7 @@ pub(crate) fn project_dissected_sketches(
         .filter(|feature| {
             matches!(
                 feature.definition,
-                FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
-                    sketch: None,
-                }
+                FeatureDefinition::Sketch { sketch: None }
             ) && feature
                 .native_ref
                 .as_deref()
@@ -29014,7 +29001,7 @@ mod profile_join_tests {
     use cadmpeg_ir::features::{
         Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, Extent, Feature,
         FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue, PathRef, PatternKind,
-        PatternSeed, ProfileRef, RadiusSpec, SketchSpace, SweepMode,
+        PatternSeed, ProfileRef, RadiusSpec, SweepMode,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
@@ -29062,10 +29049,7 @@ mod profile_join_tests {
         let producer = feature(
             "producer",
             "producer-native",
-            FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch: None,
-            },
+            FeatureDefinition::Sketch { sketch: None },
         );
         let target = feature(
             "target",
@@ -29237,10 +29221,7 @@ mod profile_join_tests {
                 "sketch",
                 "sketch-native",
                 1,
-                FeatureDefinition::Sketch {
-                    space: SketchSpace::Planar,
-                    sketch: None,
-                },
+                FeatureDefinition::Sketch { sketch: None },
             ),
         ];
         let mut payload = vec![0; 100];
@@ -29436,10 +29417,7 @@ mod profile_join_tests {
         ));
         let expected_sketch = sketches[0].id.clone();
         let mut configured_features = features.clone();
-        configured_features[1].definition = FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
-            sketch: None,
-        };
+        configured_features[1].definition = FeatureDefinition::Sketch { sketch: None };
         project_marker_backed_sketches(
             &mut configured_features,
             &mut sketches,
@@ -29467,7 +29445,6 @@ mod profile_join_tests {
         compact_entity.sketch = compact_id.clone();
         let mut replacement_features = features.clone();
         replacement_features[1].definition = FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
             sketch: Some(compact_id),
         };
         let mut replacement_sketches = vec![compact_sketch];
@@ -29613,7 +29590,6 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
                 sketch: Some(sketch_id.clone()),
             },
             native_ref: Some("feature-native".into()),
@@ -29758,10 +29734,7 @@ mod profile_join_tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch,
-            },
+            definition: FeatureDefinition::Sketch { sketch },
             native_ref: Some(native_ref.into()),
         };
         let single = SketchId("single".into());
@@ -30135,7 +30108,6 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
                 sketch: Some(sketch_id.clone()),
             },
             native_ref: Some("feature-native".into()),
@@ -30213,7 +30185,6 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
                 sketch: Some(sketch_id.clone()),
             },
             native_ref: Some("feature-native".into()),
@@ -31827,10 +31798,7 @@ mod profile_join_tests {
             model_feature(
                 "path",
                 "path-native",
-                FeatureDefinition::Sketch {
-                    space: SketchSpace::Planar,
-                    sketch: None,
-                },
+                FeatureDefinition::Sketch { sketch: None },
             ),
             model_feature(
                 "seed",
@@ -31859,7 +31827,6 @@ mod profile_join_tests {
         ));
         assert_eq!(features[0].dependencies, [features[2].id.clone()]);
         features[1].definition = FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
             sketch: Some(sketch.clone()),
         };
         bind_pattern_inputs(
@@ -32025,7 +31992,6 @@ mod profile_join_tests {
         sweep_history.features[1].input_class = Some("moSweep_c".into());
         let path_sketch = SketchId("sweep-path".into());
         features[2].definition = FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
             sketch: Some(path_sketch.clone()),
         };
         features[0].dependencies.clear();
@@ -32076,7 +32042,6 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
                 sketch: Some(sketch.clone()),
             },
             native_ref: Some("feature-native".into()),
@@ -32542,10 +32507,7 @@ mod profile_join_tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch: None,
-            },
+            definition: FeatureDefinition::Sketch { sketch: None },
             native_ref: Some("native-feature".into()),
         };
         let parameter = DesignParameter {
@@ -32790,7 +32752,6 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
                 sketch: Some(sketch.clone()),
             },
             native_ref: Some("feature-native".into()),
@@ -32961,7 +32922,6 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
                 sketch: Some(sketch),
             },
             native_ref: Some("feature-native".into()),
@@ -33507,7 +33467,6 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
                 sketch: Some(sketch),
             },
             native_ref: Some("feature-native".into()),
@@ -33706,7 +33665,6 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
                 sketch: Some(sketch),
             },
             native_ref: Some("feature-native".into()),
@@ -33775,7 +33733,6 @@ mod profile_join_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
                 sketch: Some(sketch.clone()),
             },
             native_ref: Some("feature-native".into()),
@@ -34133,10 +34090,7 @@ mod profile_join_tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch,
-            },
+            definition: FeatureDefinition::Sketch { sketch },
             native_ref: Some(format!("native-{id}")),
         };
         let mut features = vec![
@@ -34918,23 +34872,18 @@ fn patch_spatial_line_sketches(
                     sketch.id.0
                 ))
             })?;
-        let [entity_id] = sketch.entities.as_slice() else {
+        let entities = ir
+            .model
+            .spatial_sketch_entities
+            .iter()
+            .filter(|entity| entity.sketch == sketch.id)
+            .collect::<Vec<_>>();
+        let [entity] = entities.as_slice() else {
             return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
                 "SLDPRT spatial sketch {} requires exactly one retained line",
                 sketch.id.0
             )));
         };
-        let entity = ir
-            .model
-            .spatial_sketch_entities
-            .iter()
-            .find(|entity| entity.id == *entity_id && entity.sketch == sketch.id)
-            .ok_or_else(|| {
-                cadmpeg_ir::codec::CodecError::Malformed(format!(
-                    "SLDPRT spatial sketch {} references missing entity {}",
-                    sketch.id.0, entity_id.0
-                ))
-            })?;
         let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
             return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
                 "SLDPRT spatial sketch {} supports retained line geometry only",
@@ -35970,23 +35919,18 @@ fn source_less_lanes(
             },
             object_id,
         )?;
-        let [entity_id] = sketch.entities.as_slice() else {
+        let entities = ir
+            .model
+            .spatial_sketch_entities
+            .iter()
+            .filter(|entity| entity.sketch == sketch.id)
+            .collect::<Vec<_>>();
+        let [entity] = entities.as_slice() else {
             return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
                 "source-less SLDPRT spatial sketch {} requires exactly one line",
                 sketch.id.0
             )));
         };
-        let entity = ir
-            .model
-            .spatial_sketch_entities
-            .iter()
-            .find(|entity| entity.id == *entity_id && entity.sketch == sketch.id)
-            .ok_or_else(|| {
-                cadmpeg_ir::codec::CodecError::Malformed(format!(
-                    "source-less SLDPRT spatial sketch {} references missing entity {}",
-                    sketch.id.0, entity_id.0
-                ))
-            })?;
         let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
             return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
                 "source-less SLDPRT spatial sketch {} supports line geometry only",
@@ -36120,7 +36064,6 @@ mod source_less_lane_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: Default::default(),
                 sketch: Some(sketch.id.clone()),
             },
             native_ref: None,

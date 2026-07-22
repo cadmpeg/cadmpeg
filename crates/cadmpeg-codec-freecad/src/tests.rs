@@ -946,7 +946,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "53");
+    assert_eq!(result.ir.ir_version, cadmpeg_ir::IR_VERSION);
     let feature = |name: &str| {
         &result
             .ir

@@ -16,7 +16,7 @@ use cadmpeg_ir::features::{
     FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length,
     ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, PatternSeed, ProfileRef,
     RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft,
-    RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace, SweepMode, VariableRadius,
+    RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SweepMode, VariableRadius,
     VertexSelection, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
@@ -3515,7 +3515,7 @@ mod history_reference_tests {
     fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         use cadmpeg_ir::features::{
             ConfigurationFeatureState, DesignConfiguration, Feature as NeutralFeature,
-            FeatureDefinition, SketchSpace,
+            FeatureDefinition,
         };
         use cadmpeg_ir::sketches::{Sketch, SketchId, SpatialSketch, SpatialSketchId};
 
@@ -3529,10 +3529,7 @@ mod history_reference_tests {
             features: vec![native_feature],
         };
         let feature_id = cadmpeg_ir::features::FeatureId("sketch".into());
-        let unresolved = FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
-            sketch: None,
-        };
+        let unresolved = FeatureDefinition::Sketch { sketch: None };
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
         ir.model.features.push(NeutralFeature {
             id: feature_id.clone(),
@@ -3584,7 +3581,7 @@ mod history_reference_tests {
             id: spatial_sketch_id.clone(),
             name: Some("spatial-native".into()),
             configuration: Some("0".into()),
-            entities: Vec::new(),
+            profiles: Vec::new(),
             native_ref: Some("lane".into()),
         });
         ir.model.configurations.push(DesignConfiguration {
@@ -3769,15 +3766,7 @@ pub fn bind_unique_sketch_feature(
     let feature_indices = features
         .iter()
         .enumerate()
-        .filter(|(_, feature)| {
-            matches!(
-                feature.definition,
-                FeatureDefinition::Sketch {
-                    space: SketchSpace::Planar,
-                    ..
-                }
-            )
-        })
+        .filter(|(_, feature)| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     let mut bindings = Vec::new();
@@ -3825,7 +3814,6 @@ pub fn bind_unique_sketch_feature(
     }
     for (index, _, _, sketch, _) in &bindings {
         features[*index].definition = FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
             sketch: Some(sketch.clone()),
         };
     }
@@ -4322,10 +4310,7 @@ fn project_definition(
         {
             FeatureDefinition::SpatialSketch { sketch: None }
         } else {
-            FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch: None,
-            }
+            FeatureDefinition::Sketch { sketch: None }
         };
     }
     if class == Some(FeatureClass::SketchBlockDefinition) {
@@ -9709,6 +9694,12 @@ pub fn sync_neutral_features(
                     feature.source_properties.clone(),
                 )
             }
+            FeatureDefinition::DatumPlaneUnresolved => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved reference-plane construction",
+                    feature.id
+                )));
+            }
             FeatureDefinition::DatumPlane {
                 origin,
                 normal,
@@ -10357,30 +10348,12 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::Sketch { space, .. } => {
+            FeatureDefinition::Sketch { .. } => {
                 require_same_family(existing.as_deref(), &feature.id, &["Sketch"])?;
                 (
-                    existing.as_deref().map_or_else(
-                        || match space {
-                            SketchSpace::Planar => "Sketch".into(),
-                            SketchSpace::Spatial => "3DSketch".into(),
-                        },
-                        |record| {
-                            let native_space = if record.kind.eq_ignore_ascii_case("3DSketch") {
-                                SketchSpace::Spatial
-                            } else {
-                                SketchSpace::Planar
-                            };
-                            if native_space == *space {
-                                record.kind.clone()
-                            } else {
-                                match space {
-                                    SketchSpace::Planar => "Sketch".into(),
-                                    SketchSpace::Spatial => "3DSketch".into(),
-                                }
-                            }
-                        },
-                    ),
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Sketch".into(), |record| record.kind.clone()),
                     existing
                         .as_deref()
                         .map(|record| record.parameters.clone())
@@ -13207,6 +13180,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::CosmeticThread { .. } => "Feature",
         FeatureDefinition::DatumPrincipalPlane { .. } => "Feature",
         FeatureDefinition::DatumPlane { .. } => "ReferencePlane",
+        FeatureDefinition::DatumPlaneUnresolved => "ReferencePlane",
         FeatureDefinition::DatumOffsetPlane { .. } => "Feature",
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",
         FeatureDefinition::DatumPoint { .. } => "ReferencePoint",

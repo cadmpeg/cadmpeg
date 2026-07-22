@@ -53,6 +53,8 @@ pub enum LossCategory {
     Units,
     /// Attributes (names, colors, custom attribs) not transferred.
     Attribute,
+    /// Features, sketches, parameters, configurations, or design history not transferred.
+    DesignIntent,
     /// Anything else.
     Other,
 }
@@ -66,6 +68,7 @@ impl fmt::Display for LossCategory {
             Self::Metadata => "metadata",
             Self::Units => "units",
             Self::Attribute => "attribute",
+            Self::DesignIntent => "design_intent",
             Self::Other => "other",
         })
     }

@@ -1449,7 +1449,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         }
     }
     for sketch in &ir.model.spatial_sketches {
-        for entity in &sketch.entities {
+        for entity_use in sketch.profiles.iter().flat_map(|profile| &profile.boundary) {
+            let entity = &entity_use.entity;
             if !spatial_sketch_entities.contains(entity.0.as_str()) {
                 ref_error(findings, &sketch.id.0, "spatial sketch entity", &entity.0);
             } else if ir
@@ -2688,14 +2689,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "pattern geometry is invalid");
                 }
             }
-            FeatureDefinition::Sketch { space, sketch } => {
-                if matches!(space, crate::features::SketchSpace::Spatial) && sketch.is_some() {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "spatial sketch owns planar sketch geometry",
-                    );
-                }
+            FeatureDefinition::Sketch { sketch } => {
                 if let Some(sketch) = sketch {
                     if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
                         ref_error(findings, &feature.id.0, "owned sketch", &sketch.0);
@@ -3107,6 +3101,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::DatumPrincipalPlane { .. }
+            | FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }

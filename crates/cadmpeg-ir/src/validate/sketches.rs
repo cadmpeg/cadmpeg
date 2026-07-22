@@ -30,6 +30,15 @@ fn valid_vector(vector: crate::math::Vector3) -> bool {
     norm.is_finite() && norm > 0.0
 }
 
+fn perpendicular(first: crate::math::Vector3, second: crate::math::Vector3) -> bool {
+    let first_norm = first.norm();
+    let second_norm = second.norm();
+    valid_vector(first)
+        && valid_vector(second)
+        && (first.x * second.x + first.y * second.y + first.z * second.z).abs()
+            <= 1.0e-9 * first_norm * second_norm
+}
+
 pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
     let entity_geometry = ir
         .model
@@ -274,33 +283,65 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SpatialSketchGeometry::Circle {
                 center,
                 normal,
+                reference_direction,
                 radius,
             } => {
-                if !finite3(*center) || !valid_vector(*normal) || nonpositive(radius.0) {
+                if !finite3(*center)
+                    || !valid_vector(*normal)
+                    || !perpendicular(*normal, *reference_direction)
+                    || nonpositive(radius.0)
+                {
                     finding(findings, Check::Bounds, id, "invalid spatial sketch circle");
                 }
             }
             SpatialSketchGeometry::Arc {
                 center,
                 normal,
-                u_axis,
+                reference_direction,
                 radius,
                 start_angle,
                 end_angle,
             } => {
-                let perpendicular = normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z;
-                let perpendicular_tolerance = 1.0e-9
-                    * (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z).sqrt()
-                    * (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z).sqrt();
                 if !finite3(*center)
                     || !valid_vector(*normal)
-                    || !valid_vector(*u_axis)
-                    || perpendicular.abs() > perpendicular_tolerance
+                    || !perpendicular(*normal, *reference_direction)
                     || nonpositive(radius.0)
                     || !start_angle.0.is_finite()
                     || !end_angle.0.is_finite()
                 {
                     finding(findings, Check::Bounds, id, "invalid spatial sketch arc");
+                }
+            }
+            SpatialSketchGeometry::NurbsSurface {
+                u_degree,
+                v_degree,
+                u_knots,
+                v_knots,
+                control_points,
+            } => {
+                let columns = control_points.first().map_or(0, Vec::len);
+                if *u_degree == 0
+                    || *v_degree == 0
+                    || control_points.len() <= *u_degree as usize
+                    || columns <= *v_degree as usize
+                    || control_points
+                        .iter()
+                        .any(|row| row.len() != columns || row.iter().any(|point| !finite3(*point)))
+                    || u_knots.len() != control_points.len() + *u_degree as usize + 1
+                    || v_knots.len() != columns + *v_degree as usize + 1
+                    || u_knots
+                        .iter()
+                        .chain(v_knots)
+                        .any(|value| !value.is_finite())
+                    || u_knots.windows(2).any(|pair| pair[0] > pair[1])
+                    || v_knots.windows(2).any(|pair| pair[0] > pair[1])
+                {
+                    finding(
+                        findings,
+                        Check::ParameterDomain,
+                        id,
+                        "invalid spatial sketch NURBS surface",
+                    );
                 }
             }
             SpatialSketchGeometry::Nurbs {

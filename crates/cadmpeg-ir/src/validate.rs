@@ -159,7 +159,7 @@ mod tests {
     use super::validate;
     use crate::features::{
         ConfigurationFeatureState, ConfigurationId, DesignConfiguration, Feature,
-        FeatureDefinition, FeatureId, SketchSpace,
+        FeatureDefinition, FeatureId,
     };
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
@@ -184,10 +184,7 @@ mod tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch: None,
-            },
+            definition: FeatureDefinition::Sketch { sketch: None },
             native_ref: None,
         });
         ir.model.sketches.push(Sketch {
@@ -217,7 +214,6 @@ mod tests {
                     dependencies: Vec::new(),
                     outputs: Vec::new(),
                     definition: FeatureDefinition::Sketch {
-                        space: SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     },
                 },

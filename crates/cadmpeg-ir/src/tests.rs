@@ -1943,31 +1943,29 @@ fn explicit_migration_upgrades_previous_version_without_semantic_changes() {
 }
 
 #[test]
-fn previous_external_occurrence_document_token_migrates_deterministically() {
+fn previous_spatial_sketch_discriminator_migrates_to_its_own_feature_kind() {
     let mut legacy = serde_json::to_value(unit_cube()).unwrap();
     legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
-    legacy["model"]["occurrences"] = serde_json::json!([{
-        "id": "synthetic:test:occurrence#external",
-        "prototype": {
-            "scope": "external",
-            "document": "legacy-document",
-            "object": "Body"
-        },
-        "local_transform": crate::transform::Transform::identity().rows,
-        "resolved_transform": crate::transform::Transform::identity().rows,
-        "scale": [1.0, 1.0, 1.0]
+    legacy["model"]["features"] = serde_json::json!([{
+        "id": "synthetic:test:feature#migrated-spatial-sketch",
+        "ordinal": 0,
+        "definition": {
+            "definition": "sketch",
+            "space": "spatial",
+            "sketch": "synthetic:test:spatial-sketch#migrated"
+        }
     }]);
+
     let migrated = CadIr::migrate_json(&serde_json::to_string(&legacy).unwrap())
-        .expect("external occurrence migration");
-    let crate::ComponentReference::External { document, object } =
-        &migrated.model.occurrences[0].prototype
-    else {
-        panic!("migrated external prototype");
-    };
-    assert_eq!(document.path, None);
-    assert_eq!(document.document_id.as_deref(), Some("legacy-document"));
-    assert_eq!(document.resolution, crate::ExternalResolution::Unresolved);
-    assert_eq!(object.as_deref(), Some("Body"));
+        .expect("spatial sketch migration");
+    assert_eq!(
+        migrated.model.features[0].definition,
+        crate::features::FeatureDefinition::SpatialSketch {
+            sketch: Some(crate::sketches::SpatialSketchId(
+                "synthetic:test:spatial-sketch#migrated".into()
+            )),
+        }
+    );
 }
 
 #[test]
@@ -3095,7 +3093,6 @@ fn sketch_feature_ownership_and_order_are_validated() {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: crate::features::SketchSpace::Planar,
                 sketch: Some(sketch_id.clone()),
             },
             native_ref: None,
@@ -3108,48 +3105,6 @@ fn sketch_feature_ownership_and_order_are_validated() {
     assert!(findings
         .iter()
         .any(|finding| finding.message.contains("has multiple owning features")));
-}
-
-#[test]
-fn spatial_sketch_cannot_own_planar_geometry() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
-    use crate::sketches::{Sketch, SketchId};
-
-    let mut ir = unit_cube();
-    let sketch_id = SketchId("synthetic:test:sketch#planar".into());
-    ir.model.sketches.push(Sketch {
-        id: sketch_id.clone(),
-        name: None,
-        configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-        profiles: Vec::new(),
-        native_ref: None,
-    });
-    ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#spatial-sketch".into()),
-        ordinal: 0,
-        name: None,
-        suppressed: false,
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: std::collections::BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Spatial,
-            sketch: Some(sketch_id),
-        },
-        native_ref: None,
-    });
-
-    assert!(validate(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| { finding.message == "spatial sketch owns planar sketch geometry" }));
 }
 
 #[test]
@@ -3167,7 +3122,7 @@ fn spatial_sketch_line_round_trips_and_validates() {
         id: sketch_id.clone(),
         name: Some("Path".into()),
         configuration: None,
-        entities: vec![entity_id.clone()],
+        profiles: Vec::new(),
         native_ref: None,
     });
     ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
@@ -3175,6 +3130,8 @@ fn spatial_sketch_line_round_trips_and_validates() {
         sketch: sketch_id.clone(),
         construction: false,
         native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
         geometry: SpatialSketchGeometry::Line {
             start: Point3::new(1.0, 2.0, 3.0),
             end: Point3::new(4.0, 5.0, 6.0),
@@ -3730,6 +3687,6 @@ fn current_document_excludes_source_byte_accounting() {
     let ir = CadIr::empty(crate::units::Units::default());
     let json = serde_json::to_value(&ir).unwrap();
 
-    assert_eq!(json["ir_version"], "53");
+    assert_eq!(json["ir_version"], "55");
     assert!(json.get("byte_ledger").is_none());
 }

@@ -299,6 +299,8 @@ pub enum FeatureDefinition {
         /// In-plane u-axis.
         u_axis: Vector3,
     },
+    /// Constructed reference-plane family whose model-space frame is unresolved.
+    DatumPlaneUnresolved,
     /// Reference plane offset from another datum plane.
     DatumOffsetPlane {
         /// Source plane, when its feature reference is available.
@@ -512,16 +514,13 @@ pub enum FeatureDefinition {
     },
     /// Solved sketch node in the construction history.
     Sketch {
-        /// Coordinate space containing the sketch geometry.
-        #[serde(default)]
-        space: SketchSpace,
         /// Neutral sketch geometry owned by this history node, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sketch: Option<crate::sketches::SketchId>,
     },
     /// Solved spatial-sketch node in the construction history.
     SpatialSketch {
-        /// Neutral spatial sketch owned by this history node, when resolved.
+        /// Neutral model-space sketch geometry owned by this history node, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sketch: Option<crate::sketches::SpatialSketchId>,
     },
@@ -1420,17 +1419,6 @@ pub enum PrincipalPlane {
     Top,
     /// Right plane through the model origin.
     Right,
-}
-
-/// Coordinate space of a sketch history node.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum SketchSpace {
-    /// Geometry lies on one plane and may resolve into the planar sketch arena.
-    #[default]
-    Planar,
-    /// Geometry is spatial and cannot resolve into the planar sketch arena.
-    Spatial,
 }
 
 /// Selection interpretation for a delete/keep-body operation.

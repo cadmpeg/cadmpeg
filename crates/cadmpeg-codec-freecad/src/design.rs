@@ -15,8 +15,8 @@ use cadmpeg_ir::features::{
     ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternSeed, PatternStage,
     PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
     RevolutionConstruction, RevolutionFuseOrder, RuledCurveOrientation, ScaleCenter, ScaleFactors,
-    ShellJoin, ShellMode, SketchSpace, SurfaceProjectionMode, SweepMode, SweepOrientation,
-    SweepTransformation, SweepTransition, ThreadHand,
+    ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation,
+    SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -132,7 +132,6 @@ pub(crate) fn transfer(
             ir.model.sketch_constraints.extend(decoded.constraints);
             ir.model.parameters.extend(decoded.parameters);
             FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
                 sketch: Some(sketch_id),
             }
         } else if is_stored_geometry_feature(&object.type_name) {

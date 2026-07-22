@@ -2268,7 +2268,6 @@ fn encoder_writes_source_less_line_sketches() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: None,
@@ -2579,7 +2578,7 @@ fn encoder_writes_source_less_spatial_line_sketches() {
         id: sketch_id.clone(),
         name: Some("Spatial path".into()),
         configuration: Some("0".into()),
-        entities: vec![entity_id.clone()],
+        profiles: Vec::new(),
         native_ref: None,
     });
     ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
@@ -2587,6 +2586,8 @@ fn encoder_writes_source_less_spatial_line_sketches() {
         sketch: sketch_id.clone(),
         construction: false,
         native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
         geometry: SpatialSketchGeometry::Line { start, end },
     });
     ir.model.features.push(Feature {
@@ -2693,7 +2694,7 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
 fn encoder_writes_source_less_curved_sketches() {
     use cadmpeg_ir::features::{
         Angle, DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
-        ParameterId, ParameterValue, SketchSpace,
+        ParameterId, ParameterValue,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
@@ -2900,7 +2901,6 @@ fn encoder_writes_source_less_curved_sketches() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: None,
@@ -3515,7 +3515,6 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id),
             },
             native_ref: None,
@@ -18816,9 +18815,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
 fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     use std::collections::BTreeMap;
 
-    use cadmpeg_ir::features::{
-        BooleanOp, Extent, FeatureDefinition, FeatureId, ProfileRef, SketchSpace,
-    };
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, FeatureId, ProfileRef};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchId};
 
@@ -18857,28 +18854,19 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             "base",
             "Profile",
             "native-base",
-            FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch: None,
-            },
+            FeatureDefinition::Sketch { sketch: None },
         ),
         neutral(
             "alias",
             "Profile<3>",
             "native-alias",
-            FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch: None,
-            },
+            FeatureDefinition::Sketch { sketch: None },
         ),
         neutral(
             "different",
             "Profile<4>",
             "native-different",
-            FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch: None,
-            },
+            FeatureDefinition::Sketch { sketch: None },
         ),
         neutral(
             "consumer",
@@ -19033,7 +19021,7 @@ fn decode_does_not_bind_duplicate_sketch_names_by_order() {
 
 #[test]
 fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
-    use cadmpeg_ir::features::{FeatureDefinition, SketchSpace};
+    use cadmpeg_ir::features::FeatureDefinition;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -19053,10 +19041,7 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
     ));
     assert!(matches!(
         decoded.ir.model.features[1].definition,
-        FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
-            sketch: None,
-        }
+        FeatureDefinition::Sketch { sketch: None }
     ));
 
     decoded.ir.model.features[0].name = Some("Renamed spatial path".into());
