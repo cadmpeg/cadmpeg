@@ -643,12 +643,6 @@ pub(crate) fn reference_cells(scalars: &[FeatureInputScalar]) -> Vec<FeatureInpu
 }
 
 pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
-    if marker_is_geometry_locus(payload, offset)
-        && payload.get(offset + 31..offset + 37) == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00])
-    {
-        let id = u16::from_le_bytes(payload.get(offset + 37..offset + 39)?.try_into().ok()?);
-        return (id != u16::MAX).then_some(u32::from(id));
-    }
     let relative = if marker_local_links(payload, offset).is_some() {
         88
     } else if marker_coordinates(payload, offset).is_some() {
@@ -1659,17 +1653,6 @@ mod marker_tests {
     }
 
     #[test]
-    fn geometry_locus_local_id_is_the_body_u16() {
-        let mut payload = vec![0; 80];
-        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
-        payload[31..37].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00]);
-        payload[37..39].copy_from_slice(&5u16.to_le_bytes());
-        assert_eq!(marker_local_id(&payload, 0), Some(5));
-        payload[37..39].fill(0xff);
-        assert_eq!(marker_local_id(&payload, 0), None);
-    }
-
-    #[test]
     fn marker_object_index_precedes_the_marker() {
         let mut payload = 37u32.to_le_bytes().to_vec();
         payload.extend(super::SKETCH_MARKER);
@@ -2136,34 +2119,6 @@ mod marker_tests {
             resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x837b), 7,)
                 .map(|marker| marker.id.as_str()),
             Some("geometry")
-        );
-    }
-
-    #[test]
-    fn compact_point_operand_selects_the_authored_locus_from_placeholders() {
-        let marker = |id: &str, coordinates_m| SketchInputEntity {
-            id: id.into(),
-            parent: "lane".into(),
-            feature_ref: Some("feature".into()),
-            ordinal: 0,
-            offset: 0,
-            object_index: None,
-            local_id: Some(5),
-            kind: SketchInputKind::Point,
-            state_value: None,
-            coordinates_m: Some(coordinates_m),
-            links: Vec::new(),
-            link_selector: None,
-        };
-        let markers = [
-            marker("placeholder-a", [0.0, 0.0]),
-            marker("placeholder-b", [0.0, 0.0]),
-            marker("authored", [1.0, 2.0]),
-        ];
-        assert_eq!(
-            resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x8152), 5)
-                .map(|marker| marker.id.as_str()),
-            Some("authored")
         );
     }
 
@@ -9821,20 +9776,6 @@ fn resolve_operand_marker_excluding<'a>(
             .filter(|entity| !excluded.contains(&entity.id))
             .collect::<Vec<_>>()
     };
-    if kind == FeatureInputOperandKind::Native(0x8152) {
-        let nonzero = exact
-            .iter()
-            .copied()
-            .filter(|entity| {
-                entity
-                    .coordinates_m
-                    .is_some_and(|[u, v]| u != 0.0 || v != 0.0)
-            })
-            .collect::<Vec<_>>();
-        if let [entity] = nonzero.as_slice() {
-            return Some(*entity);
-        }
-    }
     match exact.as_slice() {
         [entity] => Some(*entity),
         [] => {
