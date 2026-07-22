@@ -15976,6 +15976,119 @@ fn counterbore_dimension_values<'a>(
         .then_some(first)
 }
 
+fn counterbore_patch_geometries(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<Vec<(u32, SurfaceGeometry)>> {
+    let (bore_diameter, counterbore_diameter, _) = counterbore_dimensions(scan, ir, feature_id)?;
+    let tables = scan
+        .feature_entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    let mut cylinders_by_source = BTreeMap::<u32, Vec<u32>>::new();
+    for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
+        let source_id = entry.source_entity_id?;
+        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, entry.entity_id)
+        else {
+            continue;
+        };
+        if row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder {
+            cylinders_by_source
+                .entry(source_id)
+                .or_default()
+                .push(entry.entity_id);
+        }
+    }
+    let cylinder_sources = cylinders_by_source
+        .values()
+        .filter(|ids| ids.len() == 2)
+        .cloned()
+        .collect::<Vec<_>>();
+    let existing_geometries = ir
+        .model
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            let id = surface
+                .id
+                .0
+                .strip_prefix("creo:visibgeom:surface#")?
+                .parse::<u32>()
+                .ok()?;
+            Some((id, surface.geometry.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    counterbore_source_patch_geometries(
+        &cylinder_sources,
+        &existing_geometries,
+        bore_diameter,
+        counterbore_diameter,
+    )
+}
+
+fn counterbore_source_patch_geometries(
+    cylinder_sources: &[Vec<u32>],
+    existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
+    bore_diameter: f64,
+    counterbore_diameter: f64,
+) -> Option<Vec<(u32, SurfaceGeometry)>> {
+    let [first_source, second_source] = cylinder_sources else {
+        return None;
+    };
+    let counterbore_radius = 0.5 * counterbore_diameter;
+    let source_carrier = |ids: &[u32]| {
+        let carriers = ids
+            .iter()
+            .filter_map(|id| existing_geometries.get(id))
+            .filter(|geometry| {
+                matches!(geometry, SurfaceGeometry::Cylinder { radius, .. } if (*radius - counterbore_radius).abs() <= 1e-9)
+            })
+            .collect::<Vec<_>>();
+        let first = (*carriers.first()?).clone();
+        carriers
+            .iter()
+            .all(|candidate| **candidate == first)
+            .then_some(first)
+    };
+    let (counterbore_source, bore_source, carrier) =
+        match (source_carrier(first_source), source_carrier(second_source)) {
+            (Some(carrier), None) => (first_source, second_source, carrier),
+            (None, Some(carrier)) => (second_source, first_source, carrier),
+            _ => return None,
+        };
+    let SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        ref_direction,
+        ..
+    } = carrier
+    else {
+        return None;
+    };
+    let geometry = |radius| SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+    };
+    Some(
+        counterbore_source
+            .iter()
+            .map(|id| (*id, geometry(counterbore_radius)))
+            .chain(
+                bore_source
+                    .iter()
+                    .map(|id| (*id, geometry(0.5 * bore_diameter))),
+            )
+            .collect(),
+    )
+}
+
 fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleHoleGeometry> {
     let cap_rows = feature_outline_planes(scan, feature_id)
         .into_iter()
@@ -17348,6 +17461,37 @@ mod resolved_sketch_tests {
         let conflicting = table(0.2);
         assert_eq!(
             counterbore_dimension_values([&first, &conflicting].into_iter(), &[0.3125]),
+            None
+        );
+    }
+
+    #[test]
+    fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
+        let carrier = SurfaceGeometry::Cylinder {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 0.3125,
+        };
+        let mut existing = BTreeMap::from([(30, carrier.clone()), (31, carrier.clone())]);
+        let sources = vec![vec![10, 11], vec![30, 31]];
+
+        let patches = counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625)
+            .expect("coaxial patches");
+
+        assert_eq!(patches.len(), 4);
+        assert!(patches
+            .iter()
+            .filter(|(id, _)| *id < 30)
+            .all(|(_, geometry)| {
+                matches!(geometry, SurfaceGeometry::Cylinder { origin, axis, radius, .. }
+                if *origin == Point3::new(1.0, 2.0, 3.0)
+                    && *axis == Vector3::new(0.0, 0.0, 1.0)
+                    && (*radius - 0.098).abs() < 1e-12)
+            }));
+        existing.insert(10, carrier);
+        assert_eq!(
+            counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625),
             None
         );
     }
@@ -33804,10 +33948,15 @@ fn transfer_hole_cylinders(
         .collect::<BTreeSet<_>>();
     let mut transferred = 0;
     for feature_id in hole_feature_ids {
-        let Some(hole) = simple_hole_geometry(scan, feature_id) else {
-            continue;
+        let cylinders = if let Some(hole) = simple_hole_geometry(scan, feature_id) {
+            hole.cylinder_ids
+                .into_iter()
+                .map(|id| (id, hole.geometry.clone()))
+                .collect::<Vec<_>>()
+        } else {
+            counterbore_patch_geometries(scan, ir, feature_id).unwrap_or_default()
         };
-        for cylinder_id in hole.cylinder_ids {
+        for (cylinder_id, geometry) in cylinders {
             let row = crate::surface::unique_surface_row(&scan.surface_rows, cylinder_id)
                 .expect("validated cylinder row");
             let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
@@ -33824,7 +33973,7 @@ fn transfer_hole_cylinders(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: hole.geometry.clone(),
+                geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: "creo".to_string(),
                     object_id: format!("VisibGeom:{cylinder_id}"),
@@ -36912,8 +37061,9 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              topology-bound `fc 05` \
              cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind \
              circular-sweep cylinders, \
-             four-entry simple-hole cylinders with complete cap outlines, and compact simple-hole \
-             cylinders with complete positional carriers, complementary split-outline cylinders \
+             four-entry simple-hole cylinders with complete cap outlines, radius-anchored \
+             class-911 counterbore and bore patches, and compact simple-hole cylinders with \
+             complete positional carriers, complementary split-outline cylinders \
              bound to an axis-normal plane, complete positional cylinder bodies, \
              complete support-apex and planar-envelope positional cones, and complete \
              local-system positional tori transfer as carriers; \
@@ -36940,7 +37090,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, \
              a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
              square cap outline establishes the complete axis placement and radius, or a compact \
-             class-911 table owns a complete positional cylinder carrier, or two same-feature \
+             class-911 table owns a complete positional cylinder carrier, a class-911 \
+             counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature \
              patches have complementary square outline bounds on one axis-normal plane. Later positional \
              instances do not inherit prototype placement or scalar \
              defaults; they require their per-instance parameter bodies \
