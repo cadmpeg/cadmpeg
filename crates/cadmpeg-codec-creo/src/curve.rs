@@ -1412,6 +1412,7 @@ enum CreoMathFunction {
     Floor,
     DblInTol,
     Itos,
+    Rtos,
     Search,
     Extract,
     StringLength,
@@ -1449,6 +1450,7 @@ fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
         "floor" => Some(CreoMathFunction::Floor),
         "dbl_in_tol" => Some(CreoMathFunction::DblInTol),
         "itos" => Some(CreoMathFunction::Itos),
+        "rtos" => Some(CreoMathFunction::Rtos),
         "search" => Some(CreoMathFunction::Search),
         "extract" => Some(CreoMathFunction::Extract),
         "string_length" => Some(CreoMathFunction::StringLength),
@@ -1532,6 +1534,19 @@ fn evaluate_creo_relation_function(
                 return None;
             }
         }
+        (CreoMathFunction::Rtos, [Number(value)]) => {
+            String(format_relation_real(*value, None, false)?)
+        }
+        (CreoMathFunction::Rtos, [Number(value), Number(decimals)]) => String(
+            format_relation_real(*value, Some(relation_precision(*decimals)?), false)?,
+        ),
+        (CreoMathFunction::Rtos, [Number(value), Number(decimals), Number(scientific)]) => {
+            String(format_relation_real(
+                *value,
+                Some(relation_precision(*decimals)?),
+                *scientific != 0.0,
+            )?)
+        }
         (CreoMathFunction::Search, [String(value), String(needle)]) => {
             let position = value
                 .find(needle)
@@ -1564,6 +1579,39 @@ fn evaluate_creo_relation_function(
         }
     };
     value.clone().finite().then_some(value)
+}
+
+const MAX_RELATION_STRING_PRECISION: usize = 128;
+
+fn relation_precision(value: f64) -> Option<usize> {
+    (value.is_finite()
+        && value.fract() == 0.0
+        && value >= 0.0
+        && value <= MAX_RELATION_STRING_PRECISION as f64)
+        .then_some(value as usize)
+}
+
+fn format_relation_real(value: f64, decimals: Option<usize>, scientific: bool) -> Option<String> {
+    if !value.is_finite() {
+        return None;
+    }
+    if value == 0.0 {
+        return Some(String::new());
+    }
+    let Some(decimals) = decimals else {
+        return Some(value.to_string());
+    };
+    if !scientific {
+        return Some(format!("{value:.decimals$}"));
+    }
+    let formatted = format!("{value:.decimals$e}");
+    let (mantissa, exponent) = formatted.split_once('e')?;
+    let exponent = exponent.parse::<i32>().ok()?;
+    Some(format!(
+        "{mantissa}e{}{magnitude:02}",
+        if exponent < 0 { "-" } else { "" },
+        magnitude = exponent.unsigned_abs()
+    ))
 }
 
 fn integer_pair(first: f64, second: f64) -> Option<(usize, usize)> {
@@ -2884,6 +2932,33 @@ mod tests {
             Some(CurveExpressionValue::String(String::new()))
         );
         assert_eq!(assignments[9].value, None);
+    }
+
+    #[test]
+    fn formats_relation_reals_with_creo_rtos_conventions() {
+        let values = BTreeMap::new();
+        let cases = [
+            ("rtos(123.456789)", "123.456789"),
+            ("rtos(123.456789,3)", "123.457"),
+            ("rtos(123.456789,4,YES)", "1.2346e02"),
+            ("rtos(0)", ""),
+            ("rtos(-0,3,YES)", ""),
+            ("rtos(0.01234,2,TRUE)", "1.23e-02"),
+        ];
+        for (expression, expected) in cases {
+            assert_eq!(
+                evaluate_relation_expression(expression, &values),
+                Some(CurveExpressionValue::String(expected.to_owned())),
+                "{expression}"
+            );
+        }
+        assert_eq!(evaluate_relation_expression("rtos(1,-1)", &values), None);
+        assert_eq!(evaluate_relation_expression("rtos(1,1.5)", &values), None);
+        assert_eq!(evaluate_relation_expression("rtos(1,129)", &values), None);
+        assert_eq!(
+            evaluate_relation_expression("rtos(1,2,YES,NO)", &values),
+            None
+        );
     }
 
     #[test]
