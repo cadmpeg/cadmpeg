@@ -1434,8 +1434,7 @@ pub fn positional_frame_planes(
         })();
         let terminal_corner_frame = (|| {
             let frame_end = record.body.len().checked_sub(2)?;
-            (record.body.first() == Some(&0x37) && record.body.ends_with(&[0xf7, 0x1f]))
-                .then_some(())?;
+            record.body.ends_with(&[0xf7, 0x1f]).then_some(())?;
             let [terminal] = record.scalar_frames.as_slice() else {
                 return None;
             };
@@ -7154,6 +7153,27 @@ mod tests {
                 normal: [1.0, 0.0, 0.0],
                 u_axis: [0.0, 1.0, 0.0],
                 offset: record.body_offset + 27,
+            }]
+        );
+
+        let unprefixed_body = [
+            0x48, 0x67, 0xd0, 0x46, 0x49, 0x43, 0xd8, 0x44, 0x0e, 0x17, 0x8e, 0x2f, 0x61, 0x90,
+            0x2d, 0x49, 0x43, 0xd8, 0x44, 0x0e, 0x17, 0x90, 0x48, 0x67, 0xd0, 0x48, 0x14, 0x00,
+            0x46, 0x49, 0x43, 0xd8, 0x44, 0x0e, 0x17, 0x8e, 0x2f, 0x61, 0x90, 0x48, 0x14, 0x00,
+            0x2d, 0x49, 0x43, 0xd8, 0x44, 0x0e, 0x17, 0x90, 0xf7, 0x1f,
+        ];
+        let mut unprefixed_payload = vec![7, 0x22, 4, 0x01, 0, 0];
+        unprefixed_payload.extend_from_slice(&unprefixed_body);
+        unprefixed_payload.push(0xe3);
+        let unprefixed = parameter_records(&unprefixed_payload).remove(0);
+        assert_eq!(
+            positional_frame_planes(&[unprefixed.clone()], &[row.clone()]),
+            vec![OutlinePlane {
+                surface_id: unprefixed.surface_id,
+                origin: [0.0, -5.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                u_axis: [1.0, 0.0, 0.0],
+                offset: unprefixed.body_offset + 22,
             }]
         );
 
