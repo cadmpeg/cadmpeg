@@ -26934,6 +26934,81 @@ fn canonical_profile_loci(
     loci
 }
 
+// Reduce candidate entity matches to the sole survivor by natural order:
+// sort, drop duplicates, and yield the value only when exactly one remains.
+// Serves both single-entity and entity-pair resolvers.
+fn sole_sorted<T: Ord + Clone>(mut candidates: Vec<T>) -> Option<T> {
+    candidates.sort();
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+// Find the unique sketch entity, other than `known`, for which `matches`
+// accepts the ordered pair `(known, candidate)`. The parameter kind guard and
+// the measurement both live in `matches`, so the straight-distance and angle
+// resolvers differ only in the closure they pass.
+fn unique_profile_matched_entity(
+    sketch: &SketchId,
+    known: &SketchEntityId,
+    sketch_entities: &[SketchEntity],
+    matches: impl Fn(&SketchEntity, &SketchEntity) -> bool,
+) -> Option<SketchEntityId> {
+    let known = sketch_entities.iter().find(|entity| entity.id == *known)?;
+    let candidates = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch && entity.id != known.id)
+        .filter(|candidate| matches(known, candidate))
+        .map(|candidate| candidate.id.clone())
+        .collect::<Vec<_>>();
+    sole_sorted(candidates)
+}
+
+// Find the unique unordered pair of sketch lines for which `matches` accepts
+// the pair. Only line entities participate; `matches` supplies both the
+// measurement and its comparison.
+fn unique_profile_matched_line_pair(
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    matches: impl Fn(&SketchEntity, &SketchEntity) -> bool,
+) -> Option<(SketchEntityId, SketchEntityId)> {
+    let lines = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for (first_index, first) in lines.iter().enumerate() {
+        for second in &lines[first_index + 1..] {
+            if matches(first, second) {
+                candidates.push((first.id.clone(), second.id.clone()));
+            }
+        }
+    }
+    sole_sorted(candidates)
+}
+
+// Repair an entity pair by resolving each supplied entity to its unique partner
+// via `partner`, forming the sorted pair, and keeping it only when the two
+// starting entities agree on exactly one pair.
+fn unique_repaired_entity_pair(
+    first: &SketchEntityId,
+    second: &SketchEntityId,
+    partner: impl Fn(&SketchEntityId) -> Option<SketchEntityId>,
+) -> Option<(SketchEntityId, SketchEntityId)> {
+    let candidates = [first, second]
+        .into_iter()
+        .filter_map(|known| {
+            let mut pair = [known.clone(), partner(known)?];
+            pair.sort();
+            Some((pair[0].clone(), pair[1].clone()))
+        })
+        .collect::<Vec<_>>();
+    sole_sorted(candidates)
+}
+
 fn unique_profile_line_distance_entity(
     sketch: &SketchId,
     known: &SketchEntityId,
@@ -26943,22 +27018,10 @@ fn unique_profile_line_distance_entity(
     let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
         return None;
     };
-    let known = sketch_entities.iter().find(|entity| entity.id == *known)?;
-    let mut candidates = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch && entity.id != known.id)
-        .filter_map(|candidate| {
-            line_line_distance(known, candidate)
-                .filter(|measured| same_dimension_length(*measured, distance.0))
-                .map(|_| candidate.id.clone())
-        })
-        .collect::<Vec<_>>();
-    candidates.sort();
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    unique_profile_matched_entity(sketch, known, sketch_entities, |known, candidate| {
+        line_line_distance(known, candidate)
+            .is_some_and(|measured| same_dimension_length(measured, distance.0))
+    })
 }
 
 fn unique_profile_line_distance_pair(
@@ -26969,27 +27032,10 @@ fn unique_profile_line_distance_pair(
     let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
         return None;
     };
-    let lines = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
-        .collect::<Vec<_>>();
-    let mut candidates = Vec::new();
-    for (first_index, first) in lines.iter().enumerate() {
-        for second in &lines[first_index + 1..] {
-            if line_line_distance(first, second)
-                .is_some_and(|measured| same_dimension_length(measured, distance.0))
-            {
-                candidates.push((first.id.clone(), second.id.clone()));
-            }
-        }
-    }
-    candidates.sort();
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    unique_profile_matched_line_pair(sketch, sketch_entities, |first, second| {
+        line_line_distance(first, second)
+            .is_some_and(|measured| same_dimension_length(measured, distance.0))
+    })
 }
 
 fn unique_repaired_profile_line_distance_pair(
@@ -26999,22 +27045,9 @@ fn unique_repaired_profile_line_distance_pair(
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchEntityId, SketchEntityId)> {
-    let mut candidates = [first, second]
-        .into_iter()
-        .filter_map(|known| {
-            let partner =
-                unique_profile_line_distance_entity(sketch, known, parameter, sketch_entities)?;
-            let mut pair = [known.clone(), partner];
-            pair.sort();
-            Some((pair[0].clone(), pair[1].clone()))
-        })
-        .collect::<Vec<_>>();
-    candidates.sort();
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    unique_repaired_entity_pair(first, second, |known| {
+        unique_profile_line_distance_entity(sketch, known, parameter, sketch_entities)
+    })
 }
 
 fn line_line_distance(first: &SketchEntity, second: &SketchEntity) -> Option<f64> {
@@ -27067,22 +27100,10 @@ fn unique_profile_line_angle_entity(
     let cadmpeg_ir::features::ParameterValue::Angle(angle) = parameter.value.as_ref()? else {
         return None;
     };
-    let known = sketch_entities.iter().find(|entity| entity.id == *known)?;
-    let mut candidates = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch && entity.id != known.id)
-        .filter_map(|candidate| {
-            line_line_angle(known, candidate)
-                .filter(|measured| same_dimension_angle(*measured, angle.0))
-                .map(|_| candidate.id.clone())
-        })
-        .collect::<Vec<_>>();
-    candidates.sort();
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    unique_profile_matched_entity(sketch, known, sketch_entities, |known, candidate| {
+        line_line_angle(known, candidate)
+            .is_some_and(|measured| same_dimension_angle(measured, angle.0))
+    })
 }
 
 fn unique_profile_line_angle_pair(
@@ -27093,27 +27114,10 @@ fn unique_profile_line_angle_pair(
     let cadmpeg_ir::features::ParameterValue::Angle(angle) = parameter.value.as_ref()? else {
         return None;
     };
-    let lines = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
-        .collect::<Vec<_>>();
-    let mut candidates = Vec::new();
-    for (first_index, first) in lines.iter().enumerate() {
-        for second in &lines[first_index + 1..] {
-            if line_line_angle(first, second)
-                .is_some_and(|measured| same_dimension_angle(measured, angle.0))
-            {
-                candidates.push((first.id.clone(), second.id.clone()));
-            }
-        }
-    }
-    candidates.sort();
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    unique_profile_matched_line_pair(sketch, sketch_entities, |first, second| {
+        line_line_angle(first, second)
+            .is_some_and(|measured| same_dimension_angle(measured, angle.0))
+    })
 }
 
 fn unique_repaired_profile_line_angle_pair(
@@ -27123,22 +27127,9 @@ fn unique_repaired_profile_line_angle_pair(
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchEntityId, SketchEntityId)> {
-    let mut candidates = [first, second]
-        .into_iter()
-        .filter_map(|known| {
-            let partner =
-                unique_profile_line_angle_entity(sketch, known, parameter, sketch_entities)?;
-            let mut pair = [known.clone(), partner];
-            pair.sort();
-            Some((pair[0].clone(), pair[1].clone()))
-        })
-        .collect::<Vec<_>>();
-    candidates.sort();
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    unique_repaired_entity_pair(first, second, |known| {
+        unique_profile_line_angle_entity(sketch, known, parameter, sketch_entities)
+    })
 }
 
 fn line_line_angle(first: &SketchEntity, second: &SketchEntity) -> Option<f64> {
