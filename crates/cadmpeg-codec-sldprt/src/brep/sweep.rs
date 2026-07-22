@@ -394,14 +394,30 @@ mod tests {
             Vector3::new(0.0, 0.0, 1.0),
         )
         .expect("spun surface");
+        // The revolution is the standard rational quadratic NURBS circle: four
+        // 90-degree Bézier segments with corner weights √2/2 and breakpoint
+        // knots at 0, π/2, π, 3π/2, 2π. Within a segment the parameter `v` is
+        // not the geometric angle — a quadratic cannot parameterize a circle by
+        // arc length — so the swept angle equals `v` only at the breakpoints.
+        // The expected angle is the exact segment map of the rational Bézier.
+        use std::f64::consts::{FRAC_PI_2, SQRT_2};
+        let expected_angle = |v: f64| {
+            let seg = (v / FRAC_PI_2).floor();
+            let t = (v - seg * FRAC_PI_2) / FRAC_PI_2;
+            let w = SQRT_2 / 2.0;
+            let nx = (1.0 - t).powi(2) + 2.0 * w * t * (1.0 - t);
+            let ny = 2.0 * w * t * (1.0 - t) + t * t;
+            seg * FRAC_PI_2 + ny.atan2(nx)
+        };
         for &(u, v) in &[(0.25, 0.3), (0.5, 2.0), (0.9, 5.5)] {
             let p = eval_surface(&surface, u, v);
             let r = (p.x * p.x + p.y * p.y).sqrt();
             assert!((r - 2.0).abs() < 1e-12, "radius {r} at ({u}, {v})");
             assert!((p.z - u).abs() < 1e-12, "height {} at ({u}, {v})", p.z);
-            // Angle follows A × x_hat.
+            // Angle follows A × x_hat, in the direction of revolution.
             let angle = p.y.atan2(p.x).rem_euclid(2.0 * std::f64::consts::PI);
-            assert!((angle - v).abs() < 1e-12, "angle {angle} at ({u}, {v})");
+            let want = expected_angle(v);
+            assert!((angle - want).abs() < 1e-12, "angle {angle} at ({u}, {v})");
         }
     }
 
