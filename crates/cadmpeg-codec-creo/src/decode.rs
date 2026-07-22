@@ -18316,6 +18316,14 @@ mod resolved_sketch_tests {
             reference_cap_bound_round_frame(envelope, &[&first, &second, &x_first, &x_second])
                 .is_none()
         );
+
+        let crossed_first = circle(369, [0.0, 0.0, -1.0], [5.5, 8.0, -6.0], [3.5, 10.0, -6.0]);
+        let crossed_second = circle(370, [0.0, 0.0, 1.0], [3.5, 10.0, -4.0], [5.5, 8.0, -4.0]);
+        assert_eq!(
+            reference_cap_bound_round_frame(envelope, &[&crossed_first, &crossed_second]),
+            Some(frame)
+        );
+        assert!(reference_cap_bound_round_frame(envelope, &[&first, &crossed_second]).is_none());
     }
 
     #[test]
@@ -33774,9 +33782,15 @@ fn reference_cap_bound_round_frame(
         {
             continue;
         }
-        let cap_pair = |coordinate: f64| {
-            let mut diagonal = second;
-            diagonal[axis_index] = coordinate;
+        let cap_pair = |coordinate: f64, crossed: bool| {
+            let mut first_corner = first;
+            let mut second_corner = second;
+            first_corner[axis_index] = coordinate;
+            second_corner[axis_index] = coordinate;
+            if crossed {
+                first_corner[radial_indices[1]] = second[radial_indices[1]];
+                second_corner[radial_indices[1]] = first[radial_indices[1]];
+            }
             circles.iter().any(|circle| {
                 circle.axis.iter().enumerate().all(|(index, component)| {
                     if index == axis_index {
@@ -33784,28 +33798,15 @@ fn reference_cap_bound_round_frame(
                     } else {
                         component.abs() <= 1.0e-9
                     }
-                }) && ((point_matches(circle.start, first) && point_matches(circle.end, diagonal))
-                    || (point_matches(circle.end, first) && point_matches(circle.start, diagonal)))
+                }) && ((point_matches(circle.start, first_corner)
+                    && point_matches(circle.end, second_corner))
+                    || (point_matches(circle.end, first_corner)
+                        && point_matches(circle.start, second_corner)))
             })
         };
-        if !cap_pair(first[axis_index]) {
-            continue;
-        }
-        let mut opposite_first = first;
-        opposite_first[axis_index] = second[axis_index];
-        let opposite_pair = |circle: &&crate::reference::ReferenceCircle| {
-            circle.axis.iter().enumerate().all(|(index, component)| {
-                if index == axis_index {
-                    (component.abs() - 1.0).abs() <= 1.0e-9
-                } else {
-                    component.abs() <= 1.0e-9
-                }
-            }) && ((point_matches(circle.start, opposite_first)
-                && point_matches(circle.end, second))
-                || (point_matches(circle.end, opposite_first)
-                    && point_matches(circle.start, second)))
-        };
-        if !circles.iter().any(opposite_pair) {
+        if ![false, true].into_iter().any(|crossed| {
+            cap_pair(first[axis_index], crossed) && cap_pair(second[axis_index], crossed)
+        }) {
             continue;
         }
         let mut origin = first;
