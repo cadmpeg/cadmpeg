@@ -1008,6 +1008,16 @@ a per-side orientation-flag array, not a tangent vector. For pcurve endpoint
 pairs, `01` traverses endpoint A to endpoint B and `f6` traverses endpoint B to
 endpoint A. The two half-edge sides store complementary flags.
 
+The two half-edge sides of one curve have opposite endpoint order. Their start
+vertices therefore define the curve's oriented endpoint pair when either
+side's closed loop supplies an end vertex. If both sides supply end vertices,
+each must equal the opposite side's start vertex. A missing successor on one
+face does not erase the endpoint relation proved by the other closed face.
+
+Every edge represented in a topological vertex orbit contributes both of its
+non-null face carriers to that vertex. The orbit stores outgoing half-edges;
+carrier incidence is not limited to the stored side of each edge.
+
 The raw `type_byte` does not by itself identify a curve family.
 
 The parameter body is the byte range after the two direction flags and before

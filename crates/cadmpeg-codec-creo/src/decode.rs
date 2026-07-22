@@ -28148,31 +28148,23 @@ fn solved_topological_vertices(
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
 ) -> BTreeMap<u32, [f64; 3]> {
-    let half_edges = scan
-        .half_edges
-        .iter()
-        .map(|half_edge| (half_edge.id, half_edge))
-        .collect::<BTreeMap<_, _>>();
+    let vertex_faces =
+        crate::topology::vertex_incident_faces(&scan.topological_vertices, &scan.half_edges);
     let carrier_points = scan
         .topological_vertices
         .iter()
         .filter_map(|vertex| {
-            let incident_carriers = vertex
-                .half_edges
+            let incident_carriers = vertex_faces
+                .get(&vertex.id)?
                 .iter()
-                .filter_map(|half_edge| half_edges.get(half_edge))
-                .filter_map(|half_edge| carriers.get(&half_edge.face_id))
+                .filter_map(|face_id| carriers.get(face_id))
                 .copied()
                 .collect::<Vec<_>>();
             solve_carriers(&incident_carriers).map(|point| (vertex.id, point))
         })
         .collect::<BTreeMap<_, _>>();
     let edge_endpoints = pcurve_edge_endpoints(scan, ir);
-    let incidence = scan
-        .half_edge_vertex_incidence
-        .iter()
-        .map(|binding| (binding.half_edge, binding))
-        .collect::<BTreeMap<_, _>>();
+    let edge_vertices = crate::topology::edge_vertex_pairs(&scan.half_edge_vertex_incidence);
     let mut fixed_points = carrier_points
         .into_iter()
         .map(|(vertex, point)| (vertex, Some(point)))
@@ -28182,26 +28174,9 @@ fn solved_topological_vertices(
         let Some(points) = edge_endpoints.get(&row.id).copied() else {
             continue;
         };
-        let Some(forward) = incidence.get(&HalfEdgeId {
-            curve_id: row.id,
-            side: 0,
-        }) else {
+        let Some(vertices) = edge_vertices.get(&row.id).copied() else {
             continue;
         };
-        let Some(reverse) = incidence.get(&HalfEdgeId {
-            curve_id: row.id,
-            side: 1,
-        }) else {
-            continue;
-        };
-        let Some(end) = forward.end_vertex_id else {
-            continue;
-        };
-        if reverse.start_vertex_id != end || reverse.end_vertex_id != Some(forward.start_vertex_id)
-        {
-            continue;
-        }
-        let vertices = [forward.start_vertex_id, end];
         constraints.push((vertices, points));
         if let Some(ordered) = directed_pcurve_points(row.directions, points) {
             for (vertex, point) in vertices.into_iter().zip(ordered) {
@@ -30424,24 +30399,16 @@ fn transfer_native_brep(
             .or_default()
             .push((face_1_endpoints, offset));
     }
+    let native_edge_vertices = crate::topology::edge_vertex_pairs(&scan.half_edge_vertex_incidence);
     let edge_vertices = scan
         .curve_topology_rows
         .iter()
         .filter_map(|row| {
-            let forward = incidence.get(&HalfEdgeId {
-                curve_id: row.id,
-                side: 0,
-            })?;
-            let reverse = incidence.get(&HalfEdgeId {
-                curve_id: row.id,
-                side: 1,
-            })?;
-            let end = forward.end_vertex_id?;
-            (reverse.start_vertex_id == end
-                && reverse.end_vertex_id == Some(forward.start_vertex_id)
-                && solved_vertices.contains_key(&forward.start_vertex_id)
-                && solved_vertices.contains_key(&end))
-            .then_some((row.id, [forward.start_vertex_id, end]))
+            let vertices = native_edge_vertices.get(&row.id).copied()?;
+            vertices
+                .iter()
+                .all(|vertex| solved_vertices.contains_key(vertex))
+                .then_some((row.id, vertices))
         })
         .collect::<BTreeMap<_, _>>();
     let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
@@ -33668,11 +33635,7 @@ fn transfer_carrier_intersection_curves(
     let mut transferred = BTreeSet::new();
     let carriers = placed_carriers(scan, ir);
     let solved_vertices = solved_topological_vertices(scan, ir, &carriers);
-    let incidence = scan
-        .half_edge_vertex_incidence
-        .iter()
-        .map(|binding| (binding.half_edge, binding))
-        .collect::<BTreeMap<_, _>>();
+    let edge_vertices = crate::topology::edge_vertex_pairs(&scan.half_edge_vertex_incidence);
     for row in crate::topology::uniquely_identified_rows(&scan.curve_topology_rows) {
         let (Some(first), Some(second)) = (
             carriers.get(&row.faces[0]).copied(),
@@ -33681,23 +33644,10 @@ fn transfer_carrier_intersection_curves(
             continue;
         };
         let points = (|| {
-            let forward = incidence.get(&HalfEdgeId {
-                curve_id: row.id,
-                side: 0,
-            })?;
-            let reverse = incidence.get(&HalfEdgeId {
-                curve_id: row.id,
-                side: 1,
-            })?;
-            let end = forward.end_vertex_id?;
-            if reverse.start_vertex_id != end
-                || reverse.end_vertex_id != Some(forward.start_vertex_id)
-            {
-                return None;
-            }
+            let vertices = edge_vertices.get(&row.id)?;
             let points = [
-                *solved_vertices.get(&forward.start_vertex_id)?,
-                *solved_vertices.get(&end)?,
+                *solved_vertices.get(&vertices[0])?,
+                *solved_vertices.get(&vertices[1])?,
             ];
             Some(points)
         })();
