@@ -888,7 +888,10 @@ fn native_parameter_is_length(feature: &Feature, name: &str, expression: Option<
         }
         _ => {
             is_extrude(feature)
-                && feature.properties.get("EndCondition").map(String::as_str) == Some("Symmetric")
+                && matches!(
+                    feature.properties.get("EndCondition").map(String::as_str),
+                    Some("Blind" | "Symmetric")
+                )
                 && feature.parameters.len() == 1
                 && feature.parameters.contains_key(name)
         }
@@ -1972,6 +1975,28 @@ mod history_reference_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         }
+    }
+
+    #[test]
+    fn blind_extrusion_uses_its_sole_dimension_as_depth() {
+        let mut feature = feature("sldprt:history:feature#1:2", Some("12"), 2);
+        feature.xml_tag = "Extrusion".into();
+        feature.input_class = Some("moExtrusion_c".into());
+        feature.parameters.insert("s".into(), "2.1".into());
+        feature
+            .properties
+            .insert("EndCondition".into(), "Blind".into());
+
+        assert!(native_parameter_is_length(&feature, "s", Some("2.1")));
+        assert!(matches!(
+            project_extrude(&feature, &HashMap::new()),
+            Some(FeatureDefinition::Extrude {
+                extent: Extent::Blind {
+                    length: Length(2.1)
+                },
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -4825,6 +4850,13 @@ fn project_extrude(
         .and_then(|value| parse_boolean_op(value))
         .or_else(|| extrude_feature_op(feature))
         .unwrap_or(BooleanOp::Unresolved);
+    let sole_length = || {
+        let mut values = feature.parameters.values();
+        let sole = values.next().filter(|_| values.next().is_none())?;
+        parse_positive_length_mm(sole)
+            .or_else(|| parse_positive_dimension_length_mm(sole))
+            .map(Length)
+    };
     let length = |name| {
         feature
             .parameters
@@ -4845,18 +4877,9 @@ fn project_extrude(
             Extent::Unresolved
         }
         None | Some("Blind") => Extent::Blind {
-            length: length("Depth")?,
+            length: length("Depth").or_else(sole_length)?,
         },
-        Some("Symmetric") => match length("Depth").or_else(|| {
-            if feature.parameters.contains_key("Depth") || feature.parameters.contains_key("D1") {
-                return None;
-            }
-            let mut values = feature.parameters.values();
-            let sole = values.next().filter(|_| values.next().is_none())?;
-            parse_positive_length_mm(sole)
-                .or_else(|| parse_positive_dimension_length_mm(sole))
-                .map(Length)
-        }) {
+        Some("Symmetric") => match length("Depth").or_else(sole_length) {
             Some(length) => Extent::Symmetric { length },
             None => Extent::Unresolved,
         },
@@ -4873,16 +4896,7 @@ fn project_extrude(
         Some("ToVertex") => Extent::ToVertex {
             vertex: VertexSelection::Native(feature.properties.get("Vertex")?.clone()),
         },
-        Some("OffsetFromFace") => match length("Depth").or_else(|| {
-            if feature.parameters.contains_key("Depth") || feature.parameters.contains_key("D1") {
-                return None;
-            }
-            let mut values = feature.parameters.values();
-            let sole = values.next().filter(|_| values.next().is_none())?;
-            parse_positive_length_mm(sole)
-                .or_else(|| parse_positive_dimension_length_mm(sole))
-                .map(Length)
-        }) {
+        Some("OffsetFromFace") => match length("Depth").or_else(sole_length) {
             Some(offset) => Extent::OffsetFromFace {
                 face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
                 offset,

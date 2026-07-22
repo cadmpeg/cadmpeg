@@ -1124,7 +1124,8 @@ mod marker_tests {
         compact_body_state_ids, compact_bounded_curve_tangent, compact_combine_operation_at,
         compact_component_plane_frame, compact_curve_endpoint_indices,
         compact_edge_component_path_at, compact_edge_selection_at,
-        compact_extrusion_blind_through_all_second_at, compact_extrusion_mid_plane_at,
+        compact_extrusion_blind_at, compact_extrusion_blind_through_all_second_at,
+        compact_extrusion_mid_plane_at,
         compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
         compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
         compact_extrusion_to_face_at, compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
@@ -3072,6 +3073,27 @@ mod marker_tests {
         payload.extend_from_slice(b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c");
         dimension_tail(&mut payload);
         assert!(compact_extrusion_mid_plane_at(&payload, 0));
+    }
+
+    #[test]
+    fn compact_extrusion_blind_requires_code_zero_and_the_dimension_child() {
+        let mut payload = vec![0; 26];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+        payload[4] = 1;
+        payload.extend_from_slice(b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c");
+        let block = payload.len();
+        payload.resize(block + 16, 0);
+        payload[block + 9] = 0x20;
+        payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
+        payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+        payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+
+        assert!(compact_extrusion_blind_at(&payload, 0));
+        payload[18] = 1;
+        assert!(!compact_extrusion_blind_at(&payload, 0));
+        payload[18] = 0;
+        payload[22] = 1;
+        assert!(!compact_extrusion_blind_at(&payload, 0));
     }
 
     #[test]
@@ -19770,6 +19792,9 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .map_or(lane.id.as_str(), |(_, key)| key);
             let candidates = (start..end.saturating_sub(103))
                 .filter_map(|offset| {
+                    if compact_extrusion_blind_at(&lane.native_payload, offset) {
+                        return Some(("Blind".to_string(), None, None));
+                    }
                     if compact_extrusion_mid_plane_at(&lane.native_payload, offset) {
                         return Some(("Symmetric".to_string(), None, None));
                     }
@@ -20461,6 +20486,12 @@ pub(crate) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) ->
         && (compact_extrusion_traversal_tail_at(payload, offset)
             || (payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
                 && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()))
+}
+
+pub(crate) fn compact_extrusion_blind_at(payload: &[u8], offset: usize) -> bool {
+    compact_extrusion_end_spec_header(payload, offset, 0)
+        && payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
+        && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()
 }
 
 pub(crate) fn compact_extrusion_through_next_at(payload: &[u8], offset: usize) -> bool {
