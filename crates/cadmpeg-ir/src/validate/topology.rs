@@ -1523,7 +1523,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 (loci.iter().map(locus_entity).cloned().collect(), None)
             }
             Definition::HorizontalPoints { first, second }
-            | Definition::VerticalPoints { first, second } => (
+            | Definition::VerticalPoints { first, second }
+            | Definition::TangentLoci { first, second }
+            | Definition::SameCoordinate { first, second, .. } => (
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 None,
             ),
@@ -1550,6 +1552,18 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     locus_entity(first).clone(),
                     locus_entity(second).clone(),
                     axis.clone(),
+                ],
+                None,
+            ),
+            Definition::PointSymmetric {
+                first,
+                second,
+                center,
+            } => (
+                vec![
+                    locus_entity(first).clone(),
+                    locus_entity(second).clone(),
+                    locus_entity(center).clone(),
                 ],
                 None,
             ),
@@ -1634,6 +1648,7 @@ enum ParameterValueKind {
     Real,
     Integer,
     Boolean,
+    String,
 }
 
 fn check_parameter_value_kinds(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -1745,6 +1760,7 @@ fn parameter_value_kind(value: &ParameterValue) -> ParameterValueKind {
         ParameterValue::Real(_) => ParameterValueKind::Real,
         ParameterValue::Integer(_) => ParameterValueKind::Integer,
         ParameterValue::Boolean(_) => ParameterValueKind::Boolean,
+        ParameterValue::String(_) => ParameterValueKind::String,
     }
 }
 
@@ -2382,7 +2398,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 face_selections.push(faces);
                 face_selections.push(neutral_plane);
-                if !valid_feature_direction(*pull_direction) || !angle.0.is_finite() {
+                if pull_direction.is_some_and(|direction| !valid_feature_direction(direction))
+                    || angle.is_some_and(|angle| !angle.0.is_finite())
+                {
                     feature_geometry_error(findings, feature, "draft geometry is invalid");
                 }
             }
@@ -3103,6 +3121,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlaneUnresolved
+            | FeatureDefinition::BoundarySurfaceUnresolved
             | FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }
@@ -3308,6 +3327,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     _ => {}
                 }
                 let valid_magnitude = match extent {
+                    Extent::Unresolved => true,
                     Extent::Blind { length } | Extent::Symmetric { length } => {
                         length.0.is_finite() && length.0 != 0.0
                     }
@@ -3335,7 +3355,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     | Extent::ToVertex { .. }
                     | Extent::ToShape { .. } => true,
                     Extent::OffsetFromFace { offset, .. } => offset.0.is_finite() && offset.0 > 0.0,
-                    Extent::Unresolved => true,
                     Extent::TwoSidedExtents { .. } | Extent::SymmetricExtent { .. } => {
                         unreachable!("composite extents are expanded above")
                     }
@@ -3574,7 +3593,7 @@ fn parameter_value_is_finite(value: &ParameterValue) -> bool {
         ParameterValue::Length(value) => value.0.is_finite(),
         ParameterValue::Angle(value) => value.0.is_finite(),
         ParameterValue::Real(value) => value.is_finite(),
-        ParameterValue::Integer(_) | ParameterValue::Boolean(_) => true,
+        ParameterValue::Integer(_) | ParameterValue::Boolean(_) | ParameterValue::String(_) => true,
     }
 }
 

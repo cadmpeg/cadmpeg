@@ -87,6 +87,7 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
                 format: "catia".to_string(),
                 container_only: false,
                 geometry_transferred: true,
+                coverage: std::collections::BTreeMap::new(),
                 losses,
                 notes: container::summarize(scan).notes,
             },
@@ -156,6 +157,7 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
+        coverage: std::collections::BTreeMap::new(),
         losses: vec![LossNote {
             category: LossCategory::Topology,
             severity: Severity::Blocking,

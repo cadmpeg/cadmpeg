@@ -259,6 +259,7 @@ impl CadIr {
         match version {
             Some(IR_VERSION) => serde_json::from_value(value),
             Some(PREVIOUS_IR_VERSION) => {
+                migrate_previous_sketch_placements(&mut value);
                 migrate_previous_sketch_spaces(&mut value);
                 value
                     .as_object_mut()
@@ -276,6 +277,37 @@ impl CadIr {
     pub fn finalize(&mut self) {
         self.model.finalize();
         self.native.finalize();
+    }
+}
+
+fn migrate_previous_sketch_placements(value: &mut serde_json::Value) {
+    let Some(sketches) = value
+        .get_mut("model")
+        .and_then(|model| model.get_mut("sketches"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    for sketch in sketches {
+        let Some(sketch) = sketch.as_object_mut() else {
+            continue;
+        };
+        let (Some(origin), Some(normal), Some(u_axis)) = (
+            sketch.remove("origin"),
+            sketch.remove("normal"),
+            sketch.remove("u_axis"),
+        ) else {
+            continue;
+        };
+        sketch.insert(
+            "placement".into(),
+            serde_json::json!({
+                "kind": "resolved",
+                "origin": origin,
+                "normal": normal,
+                "u_axis": u_axis
+            }),
+        );
     }
 }
 
@@ -329,7 +361,6 @@ fn migrate_previous_sketch_definition(definition: &mut serde_json::Value) {
     }
     definition.remove("space");
 }
-
 /// Source-container metadata preserved for reporting.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SourceMeta {

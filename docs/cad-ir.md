@@ -177,7 +177,7 @@ outputs identify any retained exact bodies. `native` is the sole escape hatch fo
 no neutral definition and carries its source kind, parameter map, and non-parameter property map.
 Length wrappers are millimeters and angle wrappers are radians.
 
-Extents are blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles reference native profile identity or solved faces. Fillets use constant or sampled variable radii. Chamfers use distance, two distances, or distance-angle. Holes are simple, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
+Datum planes retain their operation family when placement is unresolved and carry a model-space frame when resolved. Extents are unresolved, blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles are unresolved, reference native profile identity, or resolve to sketches or faces. Draft faces, neutral plane, pull direction, angle, and side state resolve independently. Filled-surface boundaries, supports, continuity, and merge state also resolve independently. Boundary surfaces retain their operation family when their directional curve networks are unresolved. Surface-knit operands, entity merging, solid conversion, and tolerance resolve independently. Fillets use constant or sampled variable radii. Chamfers use distance, two distances, or distance-angle. Holes are simple, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
 
 `native_ref` identifies the full-fidelity native record corresponding to a neutral projection. It does not change the neutral definition's meaning.
 
@@ -220,7 +220,7 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "55"`. `CadIr::migrate_json` explicitly migrates version 54. The `model.subds` arena is required, including when empty. Source-byte accounting is excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version. Source-fidelity accounting versions independently as described in [byte-accounting.md](byte-accounting.md).
+Readers accept exactly `ir_version: "55"`. `CadIr::migrate_json` explicitly migrates version 54. A planar sketch placement is either unresolved or a complete model-space frame containing an origin, normal, and u-axis. The `model.subds` arena is required, including when empty. Source-byte accounting is excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version. Source-fidelity accounting versions independently as described in [byte-accounting.md](byte-accounting.md).
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 

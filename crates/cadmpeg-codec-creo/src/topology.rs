@@ -9,6 +9,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::curve::CurveTopologyRow;
 
+/// Return rows whose native curve identifier occurs exactly once.
+pub(crate) fn uniquely_identified_rows(rows: &[CurveTopologyRow]) -> Vec<&CurveTopologyRow> {
+    let mut counts = BTreeMap::<u32, usize>::new();
+    for row in rows {
+        *counts.entry(row.id).or_default() += 1;
+    }
+    rows.iter()
+        .filter(|row| counts.get(&row.id) == Some(&1))
+        .collect()
+}
+
 /// A curve identifier paired with one of its two native sides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct HalfEdgeId {
@@ -75,6 +86,80 @@ pub struct HalfEdgeVertexIncidence {
     pub end_vertex_id: Option<u32>,
 }
 
+/// Return every non-null face incident to a vertex orbit.
+///
+/// Each orbit member identifies an edge endpoint. Both half-edge sides of that
+/// edge contribute face carriers at the endpoint, even when only one side is a
+/// member of the outgoing orbit.
+pub fn vertex_incident_faces(
+    vertices: &[TopologicalVertex],
+    edges: &[HalfEdge],
+) -> BTreeMap<u32, BTreeSet<u32>> {
+    let by_id = edges
+        .iter()
+        .map(|edge| (edge.id, edge.face_id))
+        .collect::<BTreeMap<_, _>>();
+    vertices
+        .iter()
+        .map(|vertex| {
+            let faces = vertex
+                .half_edges
+                .iter()
+                .flat_map(|half_edge| {
+                    [
+                        *half_edge,
+                        HalfEdgeId {
+                            curve_id: half_edge.curve_id,
+                            side: 1 - half_edge.side,
+                        },
+                    ]
+                })
+                .filter_map(|half_edge| by_id.get(&half_edge).copied())
+                .filter(|face_id| *face_id != 0)
+                .collect();
+            (vertex.id, faces)
+        })
+        .collect()
+}
+
+/// Resolve a curve's side-0 start and side-1 start as its oriented endpoint
+/// pair when at least one face loop supplies the corresponding end relation.
+/// Any supplied relation must agree with the opposite side's start vertex.
+pub fn edge_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMap<u32, [u32; 2]> {
+    let mut by_curve = BTreeMap::<u32, [Vec<&HalfEdgeVertexIncidence>; 2]>::new();
+    for binding in incidence {
+        let Some(side) = by_curve
+            .entry(binding.half_edge.curve_id)
+            .or_default()
+            .get_mut(usize::from(binding.half_edge.side))
+        else {
+            continue;
+        };
+        side.push(binding);
+    }
+    by_curve
+        .into_iter()
+        .filter_map(|(curve_id, sides)| {
+            let [forward] = sides[0].as_slice() else {
+                return None;
+            };
+            let [reverse] = sides[1].as_slice() else {
+                return None;
+            };
+            forward
+                .end_vertex_id
+                .is_none_or(|end| end == reverse.start_vertex_id)
+                .then_some(())?;
+            reverse
+                .end_vertex_id
+                .is_none_or(|end| end == forward.start_vertex_id)
+                .then_some(())?;
+            (forward.end_vertex_id.is_some() || reverse.end_vertex_id.is_some())
+                .then_some((curve_id, [forward.start_vertex_id, reverse.start_vertex_id]))
+        })
+        .collect()
+}
+
 /// Build topological vertex orbits under `twin(previous(h))` and bind each
 /// half-edge's start and end vertex.
 pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdgeVertexIncidence>) {
@@ -88,13 +173,31 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdg
             predecessors.entry(next).or_default().push(edge.id);
         }
     }
-    let vertex_step = |half_edge: HalfEdgeId| {
-        let previous = predecessors.get(&half_edge)?;
-        (previous.len() == 1).then_some(HalfEdgeId {
+    let mut vertex_adjacency = BTreeMap::<HalfEdgeId, BTreeSet<HalfEdgeId>>::new();
+    for half_edge in by_id.keys().copied() {
+        vertex_adjacency.entry(half_edge).or_default();
+        let Some(previous) = predecessors.get(&half_edge) else {
+            continue;
+        };
+        if previous.len() != 1 {
+            continue;
+        }
+        let twin_previous = HalfEdgeId {
             curve_id: previous[0].curve_id,
             side: 1 - previous[0].side,
-        })
-    };
+        };
+        if !by_id.contains_key(&twin_previous) {
+            continue;
+        }
+        vertex_adjacency
+            .entry(half_edge)
+            .or_default()
+            .insert(twin_previous);
+        vertex_adjacency
+            .entry(twin_previous)
+            .or_default()
+            .insert(half_edge);
+    }
     let mut visited = BTreeSet::new();
     let mut vertices = Vec::new();
     for start in by_id.keys().copied() {
@@ -102,14 +205,20 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdg
             continue;
         }
         let mut orbit = BTreeSet::new();
-        let mut current = Some(start);
-        while let Some(half_edge) = current {
-            if orbit.contains(&half_edge) || visited.contains(&half_edge) {
-                break;
+        let mut pending = vec![start];
+        while let Some(half_edge) = pending.pop() {
+            if !visited.insert(half_edge) {
+                continue;
             }
             orbit.insert(half_edge);
-            visited.insert(half_edge);
-            current = vertex_step(half_edge).filter(|next| by_id.contains_key(next));
+            pending.extend(
+                vertex_adjacency
+                    .get(&half_edge)
+                    .into_iter()
+                    .flatten()
+                    .filter(|next| !visited.contains(next))
+                    .copied(),
+            );
         }
         vertices.push(TopologicalVertex {
             id: u32::try_from(vertices.len() + 1).unwrap_or(u32::MAX),
@@ -138,14 +247,16 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdg
     (vertices, incidence)
 }
 
-/// Group non-null face references connected by curve topology rows.
+/// Group non-null face references connected by uniquely identified curve
+/// topology rows.
 ///
 /// Face identifier zero is a boundary sentinel, never a shell face. A curve
 /// contributes to a component when either of its sides names a nonzero face.
 pub fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
+    let rows = uniquely_identified_rows(rows);
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut face_curves = BTreeMap::<u32, BTreeSet<u32>>::new();
-    for row in rows {
+    for row in &rows {
         let [left, right] = row.faces;
         for face in [left, right].into_iter().filter(|face| *face != 0) {
             adjacency.entry(face).or_default();
@@ -182,12 +293,15 @@ pub fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
     components
 }
 
-/// Build half-edges and closed loops from curve topology rows.
+/// Build half-edges and closed loops from uniquely identified curve topology
+/// rows. Repeated curve identifiers define no derived topology because a
+/// half-edge identity cannot distinguish their sides.
 ///
 /// Ambiguous or missing successors remain `None` and cannot form loops.
 pub fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
+    let rows = uniquely_identified_rows(rows);
     let mut face_sides: BTreeMap<u32, Vec<HalfEdgeId>> = BTreeMap::new();
-    for row in rows {
+    for row in &rows {
         for side in 0..2 {
             face_sides
                 .entry(row.faces[side])
@@ -300,13 +414,28 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn duplicate_curve_identities_do_not_contribute_derived_topology() {
+        let rows = [row(1, 2), row(2, 1), row(2, 1)];
+
+        let (half_edges, loops) = build(&rows);
+        assert_eq!(half_edges.len(), 2);
+        assert!(half_edges.iter().all(|edge| edge.id.curve_id == 1));
+        assert!(half_edges.iter().all(|edge| edge.next.is_none()));
+        assert!(loops.is_empty());
+
+        let components = face_components(&rows);
+        assert_eq!(components.len(), 1);
+        assert_eq!(components[0].face_ids, [10, 20]);
+        assert_eq!(components[0].curve_ids, [1]);
+    }
     #[test]
     fn withholds_ambiguous_successors() {
         let (half_edges, loops) = build(&[
             row(1, 2),
-            row(2, 1),
             CurveTopologyRow {
-                faces: [10, 30],
+                faces: [10, 10],
                 ..row(2, 1)
             },
         ]);
@@ -317,5 +446,146 @@ mod tests {
             }
             && edge.next.is_none()));
         assert!(loops.is_empty());
+    }
+
+    #[test]
+    fn vertex_orbits_close_predecessor_relations_in_both_directions() {
+        let edges = vec![
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 1,
+                    side: 0,
+                },
+                face_id: 10,
+                next: None,
+            },
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 1,
+                    side: 1,
+                },
+                face_id: 20,
+                next: Some(HalfEdgeId {
+                    curve_id: 2,
+                    side: 0,
+                }),
+            },
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 2,
+                    side: 0,
+                },
+                face_id: 20,
+                next: None,
+            },
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 2,
+                    side: 1,
+                },
+                face_id: 10,
+                next: None,
+            },
+        ];
+
+        let (vertices, _) = vertex_orbits(&edges);
+        assert!(vertices.iter().any(|vertex| vertex.half_edges
+            == vec![
+                HalfEdgeId {
+                    curve_id: 1,
+                    side: 0,
+                },
+                HalfEdgeId {
+                    curve_id: 2,
+                    side: 0,
+                },
+            ]));
+    }
+
+    #[test]
+    fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
+        let edges = vec![
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 7,
+                    side: 0,
+                },
+                face_id: 10,
+                next: None,
+            },
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 7,
+                    side: 1,
+                },
+                face_id: 20,
+                next: None,
+            },
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 8,
+                    side: 0,
+                },
+                face_id: 10,
+                next: None,
+            },
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 8,
+                    side: 1,
+                },
+                face_id: 30,
+                next: None,
+            },
+        ];
+        let vertex = TopologicalVertex {
+            id: 1,
+            half_edges: vec![
+                HalfEdgeId {
+                    curve_id: 7,
+                    side: 0,
+                },
+                HalfEdgeId {
+                    curve_id: 8,
+                    side: 0,
+                },
+            ],
+        };
+
+        assert_eq!(
+            vertex_incident_faces(&[vertex], &edges).get(&1).cloned(),
+            Some(BTreeSet::from([10, 20, 30]))
+        );
+    }
+
+    #[test]
+    fn edge_vertex_pair_accepts_one_closed_face_and_rejects_disagreement() {
+        let incidence = |reverse_end| {
+            vec![
+                HalfEdgeVertexIncidence {
+                    half_edge: HalfEdgeId {
+                        curve_id: 7,
+                        side: 0,
+                    },
+                    start_vertex_id: 10,
+                    end_vertex_id: Some(20),
+                },
+                HalfEdgeVertexIncidence {
+                    half_edge: HalfEdgeId {
+                        curve_id: 7,
+                        side: 1,
+                    },
+                    start_vertex_id: 20,
+                    end_vertex_id: reverse_end,
+                },
+            ]
+        };
+
+        assert_eq!(edge_vertex_pairs(&incidence(None)).get(&7), Some(&[10, 20]));
+        assert_eq!(
+            edge_vertex_pairs(&incidence(Some(10))).get(&7),
+            Some(&[10, 20])
+        );
+        assert!(!edge_vertex_pairs(&incidence(Some(30))).contains_key(&7));
     }
 }

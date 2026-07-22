@@ -182,6 +182,7 @@ pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses,
             notes: container::summarize(scan).notes,
         },

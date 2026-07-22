@@ -1332,7 +1332,7 @@ fn negate_parameter_value(value: &ParameterValue) -> Option<ParameterValue> {
         ParameterValue::Angle(Angle(value)) => ParameterValue::Angle(Angle(-*value)),
         ParameterValue::Real(value) => ParameterValue::Real(-*value),
         ParameterValue::Integer(value) => ParameterValue::Integer(value.checked_neg()?),
-        ParameterValue::Boolean(_) => return None,
+        ParameterValue::Boolean(_) | ParameterValue::String(_) => return None,
     })
 }
 
@@ -1387,6 +1387,7 @@ fn compare_parameter_values(
             compare_integer_real(*left, *right)?
         }
         (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => left.cmp(right),
+        (ParameterValue::String(left), ParameterValue::String(right)) => left.cmp(right),
         _ => return None,
     };
     Some(match operator {
@@ -1431,7 +1432,8 @@ fn conditional_parameter_value(
         | (ParameterValue::Angle(_), ParameterValue::Angle(_))
         | (ParameterValue::Real(_), ParameterValue::Real(_))
         | (ParameterValue::Integer(_), ParameterValue::Integer(_))
-        | (ParameterValue::Boolean(_), ParameterValue::Boolean(_)) => {
+        | (ParameterValue::Boolean(_), ParameterValue::Boolean(_))
+        | (ParameterValue::String(_), ParameterValue::String(_)) => {
             Some(if *condition { when_true } else { when_false })
         }
         (ParameterValue::Real(_), ParameterValue::Integer(_))
@@ -1530,7 +1532,10 @@ fn exponentiate_parameter_value(
                 ParameterValue::Real((*base as f64).powf(exponent))
             }
         }
-        ParameterValue::Length(_) | ParameterValue::Angle(_) | ParameterValue::Boolean(_) => {
+        ParameterValue::Length(_)
+        | ParameterValue::Angle(_)
+        | ParameterValue::Boolean(_)
+        | ParameterValue::String(_) => {
             return None;
         }
     })
@@ -1558,7 +1563,7 @@ fn apply_parameter_function(name: &str, argument: &ParameterValue) -> Option<Par
             ParameterValue::Angle(Angle(value)) => ParameterValue::Angle(Angle(value.abs())),
             ParameterValue::Real(value) => ParameterValue::Real(value.abs()),
             ParameterValue::Integer(value) => ParameterValue::Integer(value.checked_abs()?),
-            ParameterValue::Boolean(_) => return None,
+            ParameterValue::Boolean(_) | ParameterValue::String(_) => return None,
         },
         "sin" | "cos" | "tan" | "sec" | "cosec" | "cotan" => {
             let ParameterValue::Angle(Angle(angle)) = argument else {
@@ -1598,7 +1603,10 @@ fn apply_parameter_function(name: &str, argument: &ParameterValue) -> Option<Par
                 }
                 ParameterValue::Integer(value as i64)
             }
-            ParameterValue::Length(_) | ParameterValue::Angle(_) | ParameterValue::Boolean(_) => {
+            ParameterValue::Length(_)
+            | ParameterValue::Angle(_)
+            | ParameterValue::Boolean(_)
+            | ParameterValue::String(_) => {
                 return None;
             }
         },
@@ -1631,7 +1639,7 @@ fn parameter_numeric_value(value: &ParameterValue) -> Option<f64> {
         | ParameterValue::Angle(Angle(value))
         | ParameterValue::Real(value) => Some(*value),
         ParameterValue::Integer(value) => Some(*value as f64),
-        ParameterValue::Boolean(_) => None,
+        ParameterValue::Boolean(_) | ParameterValue::String(_) => None,
     }
 }
 
@@ -3571,9 +3579,11 @@ mod history_reference_tests {
             id: sketch_id.clone(),
             name: Some("sketch-native".into()),
             configuration: Some("0".into()),
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: Some("lane".into()),
         });
@@ -4709,6 +4719,7 @@ fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
         FeatureTreeNodeRole::Annotations => "Annotations",
         FeatureTreeNodeRole::AmbientLight => "Ambient",
         FeatureTreeNodeRole::Comments => "Comments",
+        FeatureTreeNodeRole::CrossSections => "Cross Sections",
         FeatureTreeNodeRole::DesignBinder => "Design Binder",
         FeatureTreeNodeRole::Details => "Details",
         FeatureTreeNodeRole::DissectedProfile => "Profile Selection",
@@ -6117,16 +6128,20 @@ fn project_knit_surface(feature: &Feature) -> Option<FeatureDefinition> {
     };
     Some(FeatureDefinition::KnitSurface {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        merge_entities: feature
-            .properties
-            .get("MergeEntities")
-            .and_then(|value| parse_bool(value))
-            .unwrap_or(true),
-        create_solid: feature
-            .properties
-            .get("CreateSolid")
-            .and_then(|value| parse_bool(value))
-            .unwrap_or(false),
+        merge_entities: Some(
+            feature
+                .properties
+                .get("MergeEntities")
+                .and_then(|value| parse_bool(value))
+                .unwrap_or(true),
+        ),
+        create_solid: Some(
+            feature
+                .properties
+                .get("CreateSolid")
+                .and_then(|value| parse_bool(value))
+                .unwrap_or(false),
+        ),
         gap_tolerance: gap_tolerance.map(Length),
     })
 }
@@ -6137,12 +6152,14 @@ fn project_filled_surface(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::FilledSurface {
         boundary: EdgeSelection::Native(feature.properties.get("Boundary")?.clone()),
         support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
-        continuity,
-        merge_result: feature
-            .properties
-            .get("MergeResult")
-            .and_then(|value| parse_bool(value))
-            .unwrap_or(false),
+        continuity: Some(continuity),
+        merge_result: Some(
+            feature
+                .properties
+                .get("MergeResult")
+                .and_then(|value| parse_bool(value))
+                .unwrap_or(false),
+        ),
     })
 }
 
@@ -6214,14 +6231,14 @@ fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
             .get("NeutralPlane")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        pull_direction,
-        angle: Angle(
+        pull_direction: Some(pull_direction),
+        angle: Some(Angle(
             feature
                 .parameters
                 .get("Angle")
                 .and_then(|value| parse_angle_rad(value))?,
-        ),
-        outward: parse_bool(feature.properties.get("Outward")?)?,
+        )),
+        outward: Some(parse_bool(feature.properties.get("Outward")?)?),
     })
 }
 
@@ -7236,6 +7253,7 @@ fn format_parameter_value(value: &ParameterValue) -> String {
         ParameterValue::Real(value) => format_f64_literal(*value),
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
+        ParameterValue::String(value) => value.clone(),
     }
 }
 
@@ -8622,6 +8640,12 @@ fn patch_configuration_parameter_scalars(
                     ))
                 })?,
                 ParameterValue::Boolean(value) => f64::from(*value),
+                ParameterValue::String(_) => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT configuration parameter {} is textual and cannot be represented by a native scalar",
+                        parameter.id.0
+                    )));
+                }
             };
             let scalar = &mut lane.scalars[*scalar_index];
             let offset = usize::try_from(scalar.offset).map_err(|_| {
@@ -9696,7 +9720,13 @@ pub fn sync_neutral_features(
             }
             FeatureDefinition::DatumPlaneUnresolved => {
                 return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} has unresolved reference-plane construction",
+                    "SLDPRT feature {} has unresolved datum-plane construction",
+                    feature.id
+                )));
+            }
+            FeatureDefinition::BoundarySurfaceUnresolved => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved boundary-surface construction",
                     feature.id
                 )));
             }
@@ -11117,6 +11147,18 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
+                let merge_entities = merge_entities.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved knit merge state",
+                        feature.id
+                    ))
+                })?;
+                let create_solid = create_solid.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved knit solid state",
+                        feature.id
+                    ))
+                })?;
                 require_same_family(existing.as_deref(), &feature.id, &["KnitSurface", "Knit"])?;
                 let mut parameters = existing
                     .as_deref()
@@ -11166,6 +11208,18 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
+                let continuity = continuity.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved filled-surface continuity",
+                        feature.id
+                    ))
+                })?;
+                let merge_result = merge_result.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved filled-surface merge state",
+                        feature.id
+                    ))
+                })?;
                 require_same_family(
                     existing.as_deref(),
                     &feature.id,
@@ -11176,7 +11230,7 @@ pub fn sync_neutral_features(
                 properties.insert("SupportFaces".into(), support_faces);
                 properties.insert(
                     "Continuity".into(),
-                    crate::feature_schema::surface_continuity_token(*continuity).into(),
+                    crate::feature_schema::surface_continuity_token(continuity).into(),
                 );
                 properties.insert("MergeResult".into(), merge_result.to_string());
                 (
@@ -11208,14 +11262,18 @@ pub fn sync_neutral_features(
                     .is_some_and(|record| !feature_family(record, "Draft"))
                     || !operands_supported(face_selection, faces.as_ref())
                     || !operands_supported(plane_selection, neutral_plane.as_ref())
+                    || existing.is_none()
+                        && (pull_direction.is_none() || angle.is_none() || outward.is_none())
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported draft semantics",
                         feature.id
                     )));
                 }
-                require_direction(*pull_direction, &feature.id, "draft direction")?;
-                if !angle.0.is_finite() {
+                if let Some(pull_direction) = pull_direction {
+                    require_direction(*pull_direction, &feature.id, "draft direction")?;
+                }
+                if angle.is_some_and(|angle| !angle.0.is_finite()) {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has a non-finite draft angle",
                         feature.id
@@ -11225,7 +11283,9 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                if let Some(angle) = angle {
+                    parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                }
                 let mut properties = feature.source_properties.clone();
                 let fallback = existing.as_deref().map_or("", |record| record.id.as_str());
                 if let Some(faces) = faces {
@@ -11239,8 +11299,12 @@ pub fn sync_neutral_features(
                         fallback,
                     );
                 }
-                properties.insert("Direction".into(), format_vector3(*pull_direction));
-                properties.insert("Outward".into(), outward.to_string());
+                if let Some(pull_direction) = pull_direction {
+                    properties.insert("Direction".into(), format_vector3(*pull_direction));
+                }
+                if let Some(outward) = outward {
+                    properties.insert("Outward".into(), outward.to_string());
+                }
                 (
                     existing
                         .as_deref()
@@ -13215,6 +13279,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::OffsetSurface { .. } => "OffsetSurface",
         FeatureDefinition::KnitSurface { .. } => "KnitSurface",
         FeatureDefinition::FilledSurface { .. } => "FilledSurface",
+        FeatureDefinition::BoundarySurfaceUnresolved => "BoundarySurface",
         FeatureDefinition::TrimSurface { .. } => "TrimSurface",
         FeatureDefinition::ExtendSurface { .. } => "ExtendSurface",
         FeatureDefinition::RuledSurface { .. } => "RuledSurface",

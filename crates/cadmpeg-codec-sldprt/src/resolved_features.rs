@@ -7309,9 +7309,11 @@ mod marker_tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, -1.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, -1.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, -1.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -7472,9 +7474,11 @@ mod marker_tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, -1.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, -1.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, -1.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -7549,9 +7553,11 @@ mod marker_tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, -1.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, -1.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, -1.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -8992,6 +8998,7 @@ fn profile_roster_construction_axis(
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
     const QUANTUM: f64 = 1.0e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
 
     let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
     let mut axes = lane
@@ -9047,12 +9054,12 @@ fn profile_roster_construction_axis(
     };
     let start = project(native_start)?;
     let end = project(native_end)?;
-    let v_axis = cross(sketch.normal, sketch.u_axis);
+    let v_axis = cross(normal, u_axis);
     let point = |point: Point2| {
         Point3::new(
-            sketch.origin.x + point.u * sketch.u_axis.x + point.v * v_axis.x,
-            sketch.origin.y + point.u * sketch.u_axis.y + point.v * v_axis.y,
-            sketch.origin.z + point.u * sketch.u_axis.z + point.v * v_axis.z,
+            origin.x + point.u * u_axis.x + point.v * v_axis.x,
+            origin.y + point.u * u_axis.y + point.v * v_axis.y,
+            origin.z + point.u * u_axis.z + point.v * v_axis.z,
         )
     };
     let start = point(start);
@@ -9076,26 +9083,27 @@ fn profile_generated_surface_axis(
     const QUANTUM: f64 = 1.0e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
     const LINE_TOLERANCE: f64 = 1.0e-6;
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
 
     let mut axis = common_generated_surface_axis(surfaces)?;
     let relative_origin = Vector3::new(
-        axis.origin.x - sketch.origin.x,
-        axis.origin.y - sketch.origin.y,
-        axis.origin.z - sketch.origin.z,
+        axis.origin.x - origin.x,
+        axis.origin.y - origin.y,
+        axis.origin.z - origin.z,
     );
-    if dot(axis.direction, sketch.normal).abs() > 1.0e-9
-        || dot(relative_origin, sketch.normal).abs() > LINE_TOLERANCE
+    if dot(axis.direction, normal).abs() > 1.0e-9
+        || dot(relative_origin, normal).abs() > LINE_TOLERANCE
     {
         return None;
     }
     let origin_offset = Vector3::new(
-        sketch.origin.x - axis.origin.x,
-        sketch.origin.y - axis.origin.y,
-        sketch.origin.z - axis.origin.z,
+        origin.x - axis.origin.x,
+        origin.y - axis.origin.y,
+        origin.z - axis.origin.z,
     );
     let perpendicular = cross(origin_offset, axis.direction);
     if dot(perpendicular, perpendicular).sqrt() <= LINE_TOLERANCE {
-        axis.origin = sketch.origin;
+        axis.origin = origin;
     } else {
         let projection = dot(origin_offset, axis.direction);
         axis.origin = Point3::new(
@@ -9112,7 +9120,7 @@ fn profile_generated_surface_axis(
         .filter(|endpoint| endpoint.object_index.is_some())
         .collect::<Vec<_>>();
     let mut endpoint_ids = HashSet::new();
-    let v_axis = cross(sketch.normal, sketch.u_axis);
+    let v_axis = cross(normal, u_axis);
     let mut sides = Vec::new();
     for endpoint in curve_endpoints {
         if !endpoint_ids.insert(endpoint.id.as_str()) {
@@ -9124,22 +9132,16 @@ fn profile_generated_surface_axis(
             QUANTUM,
         ))?;
         let point = Point3::new(
-            sketch.origin.x
-                + point.0 as f64 * QUANTUM * sketch.u_axis.x
-                + point.1 as f64 * QUANTUM * v_axis.x,
-            sketch.origin.y
-                + point.0 as f64 * QUANTUM * sketch.u_axis.y
-                + point.1 as f64 * QUANTUM * v_axis.y,
-            sketch.origin.z
-                + point.0 as f64 * QUANTUM * sketch.u_axis.z
-                + point.1 as f64 * QUANTUM * v_axis.z,
+            origin.x + point.0 as f64 * QUANTUM * u_axis.x + point.1 as f64 * QUANTUM * v_axis.x,
+            origin.y + point.0 as f64 * QUANTUM * u_axis.y + point.1 as f64 * QUANTUM * v_axis.y,
+            origin.z + point.0 as f64 * QUANTUM * u_axis.z + point.1 as f64 * QUANTUM * v_axis.z,
         );
         let relative = Vector3::new(
             point.x - axis.origin.x,
             point.y - axis.origin.y,
             point.z - axis.origin.z,
         );
-        sides.push(dot(cross(axis.direction, relative), sketch.normal));
+        sides.push(dot(cross(axis.direction, relative), normal));
     }
     if sides.len() < 2
         || !sides.iter().any(|side| side.abs() > LINE_TOLERANCE)
@@ -10555,6 +10557,9 @@ pub(crate) fn project_hole_position_sketches(
         let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
             continue;
         };
+        let Some((origin, normal, u_axis)) = sketch.resolved_placement() else {
+            continue;
+        };
         let authored_markers = lanes
             .iter()
             .filter(|lane| lane.configuration == sketch.configuration)
@@ -10572,7 +10577,7 @@ pub(crate) fn project_hole_position_sketches(
         if authored_markers.is_empty() {
             continue;
         }
-        let v_axis = cross(sketch.normal, sketch.u_axis);
+        let v_axis = cross(normal, u_axis);
         let mut resolved = Vec::with_capacity(authored_markers.len());
         for marker in &authored_markers {
             let mut entities = sketch_entities.iter().filter(|entity| {
@@ -10593,11 +10598,11 @@ pub(crate) fn project_hole_position_sketches(
             };
             resolved.push(HolePlacement::Axis {
                 origin: Point3::new(
-                    sketch.origin.x + position.u * sketch.u_axis.x + position.v * v_axis.x,
-                    sketch.origin.y + position.u * sketch.u_axis.y + position.v * v_axis.y,
-                    sketch.origin.z + position.u * sketch.u_axis.z + position.v * v_axis.z,
+                    origin.x + position.u * u_axis.x + position.v * v_axis.x,
+                    origin.y + position.u * u_axis.y + position.v * v_axis.y,
+                    origin.z + position.u * u_axis.z + position.v * v_axis.z,
                 ),
-                axis: sketch.normal,
+                axis: normal,
             });
         }
         if resolved.len() == authored_markers.len() {
@@ -12030,9 +12035,11 @@ mod hole_axis_tests {
             id: SketchId("position-geometry".into()),
             name: Some("Position".into()),
             configuration: None,
-            origin: Point3::new(10.0, 20.0, 30.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(10.0, 20.0, 30.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: Some("lane".into()),
         };
@@ -17992,9 +17999,11 @@ pub(crate) fn project_compact_sketch_profiles(
                 id: sketch_id.clone(),
                 name: Some(native_feature.name.clone()),
                 configuration: lane.configuration.clone(),
-                origin,
-                normal,
-                u_axis,
+                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                    origin,
+                    normal,
+                    u_axis,
+                },
                 profiles: Vec::new(),
                 native_ref: Some(lane.id.clone()),
             };
@@ -18340,9 +18349,11 @@ pub(crate) fn project_marker_backed_sketches(
                 id: sketch_id.clone(),
                 name: Some(native_feature.name.clone()),
                 configuration: lane.configuration.clone(),
-                origin,
-                normal,
-                u_axis,
+                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                    origin,
+                    normal,
+                    u_axis,
+                },
                 profiles: Vec::new(),
                 native_ref: Some(lane.id.clone()),
             };
@@ -28258,14 +28269,15 @@ fn axis_aligned_sketch_frame_marker_transform(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
 ) -> Option<MarkerTransform> {
-    let normal = [sketch.normal.x, sketch.normal.y, sketch.normal.z];
-    let u_axis = [sketch.u_axis.x, sketch.u_axis.y, sketch.u_axis.z];
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
+    let normal = [normal.x, normal.y, normal.z];
+    let u_axis = [u_axis.x, u_axis.y, u_axis.z];
     let v_axis = [
-        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
-        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
-        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+        normal[1] * u_axis[2] - normal[2] * u_axis[1],
+        normal[2] * u_axis[0] - normal[0] * u_axis[2],
+        normal[0] * u_axis[1] - normal[1] * u_axis[0],
     ];
-    let origin = [sketch.origin.x, sketch.origin.y, sketch.origin.z];
+    let origin = [origin.x, origin.y, origin.z];
     let axis = |vector: [f64; 3]| {
         let matches = vector
             .iter()
@@ -28316,14 +28328,15 @@ fn affine_sketch_frame_marker_transform(
     quantum: f64,
 ) -> Option<MarkerTransform> {
     const SCALE: f64 = 1_000_000_000_000.0;
-    let normal = [sketch.normal.x, sketch.normal.y, sketch.normal.z];
-    let u_axis = [sketch.u_axis.x, sketch.u_axis.y, sketch.u_axis.z];
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
+    let normal = [normal.x, normal.y, normal.z];
+    let u_axis = [u_axis.x, u_axis.y, u_axis.z];
     let v_axis = [
-        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
-        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
-        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+        normal[1] * u_axis[2] - normal[2] * u_axis[1],
+        normal[2] * u_axis[0] - normal[0] * u_axis[2],
+        normal[0] * u_axis[1] - normal[1] * u_axis[0],
     ];
-    let origin = [sketch.origin.x, sketch.origin.y, sketch.origin.z];
+    let origin = [origin.x, origin.y, origin.z];
     if !(normal
         .into_iter()
         .chain(u_axis)
@@ -28429,10 +28442,13 @@ fn dimensioned_circle_surface_transforms(
     if circles.is_empty() {
         return Vec::new();
     }
+    let Some((frame_origin, normal, u_axis)) = sketch.resolved_placement() else {
+        return Vec::new();
+    };
     let v_axis = cadmpeg_ir::math::Vector3::new(
-        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
-        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
-        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+        normal.y * u_axis.z - normal.z * u_axis.y,
+        normal.z * u_axis.x - normal.x * u_axis.z,
+        normal.x * u_axis.y - normal.y * u_axis.x,
     );
     let mut targets_by_radius = HashMap::<i64, HashSet<(i64, i64)>>::new();
     for surface in surfaces {
@@ -28445,8 +28461,7 @@ fn dimensioned_circle_surface_transforms(
         else {
             continue;
         };
-        let alignment =
-            axis.x * sketch.normal.x + axis.y * sketch.normal.y + axis.z * sketch.normal.z;
+        let alignment = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
         if !alignment.is_finite() || (alignment.abs() - 1.0).abs() > 1.0e-8 {
             continue;
         }
@@ -28458,12 +28473,12 @@ fn dimensioned_circle_surface_transforms(
             continue;
         }
         let delta = cadmpeg_ir::math::Vector3::new(
-            origin.x - sketch.origin.x,
-            origin.y - sketch.origin.y,
-            origin.z - sketch.origin.z,
+            origin.x - frame_origin.x,
+            origin.y - frame_origin.y,
+            origin.z - frame_origin.z,
         );
         let center = Point2::new(
-            delta.x * sketch.u_axis.x + delta.y * sketch.u_axis.y + delta.z * sketch.u_axis.z,
+            delta.x * u_axis.x + delta.y * u_axis.y + delta.z * u_axis.z,
             delta.x * v_axis.x + delta.y * v_axis.y + delta.z * v_axis.z,
         );
         targets_by_radius
@@ -29598,9 +29613,11 @@ mod profile_join_tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: Some("lane".into()),
         }];
@@ -29805,9 +29822,11 @@ mod profile_join_tests {
             id,
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: (0..profile_count)
                 .map(|index| {
                     vec![SketchEntityUse {
@@ -30089,9 +30108,11 @@ mod profile_join_tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -30166,9 +30187,11 @@ mod profile_join_tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -32677,9 +32700,11 @@ mod profile_join_tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(28.65, -35.0, 0.35),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, -1.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(28.65, -35.0, 0.35),
+                normal: Vector3::new(0.0, -1.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, -1.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -32721,9 +32746,11 @@ mod profile_join_tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(10.0, 3.0, 20.0),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(diagonal, 0.0, -diagonal),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(10.0, 3.0, 20.0),
+                normal: Vector3::new(0.0, -1.0, 0.0),
+                u_axis: Vector3::new(diagonal, 0.0, -diagonal),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -34041,9 +34068,11 @@ mod profile_join_tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
-            origin: Point3::new(20.0, 20.0, 0.0),
-            normal: Vector3::new(-1.0, 0.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(20.0, 20.0, 0.0),
+                normal: Vector3::new(-1.0, 0.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, 1.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         };
@@ -34118,9 +34147,11 @@ mod profile_join_tests {
             id: sketch_id.clone(),
             name: Some("Sketch2".into()),
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: vec![vec![cadmpeg_ir::sketches::SketchEntityUse {
                 entity: entity_id.clone(),
                 reversed: false,
@@ -34538,9 +34569,11 @@ fn project_brep(
             id: sketch_id,
             name: (!sketch_name.is_empty()).then(|| sketch_name.to_string()),
             configuration: configuration.map(str::to_string),
-            origin: *origin,
-            normal: *normal,
-            u_axis: *u_axis,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: *origin,
+                normal: *normal,
+                u_axis: *u_axis,
+            },
             profiles,
             native_ref: Some(native_ref.to_string()),
         });
@@ -36030,9 +36063,11 @@ mod source_less_lane_tests {
             id: SketchId("sketch".into()),
             name: Some("Sketch".into()),
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         }
@@ -37172,6 +37207,12 @@ fn sketch_brep(
     source: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
 ) -> Result<cadmpeg_ir::CadIr, cadmpeg_ir::codec::CodecError> {
+    let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT sketch {} requires resolved model-space placement",
+            sketch.id.0
+        ))
+    })?;
     let mut ir = cadmpeg_ir::CadIr::empty(source.units.clone());
     let prefix = format!("generated:sldprt:sketch:{}", sketch.id.0);
     let body_id = BodyId(format!("{prefix}:body"));
@@ -37179,13 +37220,13 @@ fn sketch_brep(
     let shell_id = ShellId(format!("{prefix}:shell"));
     let face_id = FaceId(format!("{prefix}:face"));
     let surface_id = SurfaceId(format!("{prefix}:surface"));
-    let v_axis = cross(sketch.normal, sketch.u_axis);
+    let v_axis = cross(normal, u_axis);
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {
-            origin: sketch.origin,
-            normal: sketch.normal,
-            u_axis: sketch.u_axis,
+            origin,
+            normal,
+            u_axis,
         },
         source_object: None,
     });
@@ -37262,7 +37303,8 @@ fn sketch_brep(
                 &mut vertex_by_position,
                 &prefix,
                 generated.start,
-                sketch,
+                origin,
+                u_axis,
                 v_axis,
             );
             let end_vertex = sketch_vertex(
@@ -37270,11 +37312,12 @@ fn sketch_brep(
                 &mut vertex_by_position,
                 &prefix,
                 generated.end,
-                sketch,
+                origin,
+                u_axis,
                 v_axis,
             );
-            let start_3d = lift_point(generated.start, sketch.origin, sketch.u_axis, v_axis);
-            let end_3d = lift_point(generated.end, sketch.origin, sketch.u_axis, v_axis);
+            let start_3d = lift_point(generated.start, origin, u_axis, v_axis);
+            let end_3d = lift_point(generated.end, origin, u_axis, v_axis);
             let delta = Vector3::new(
                 end_3d.x - start_3d.x,
                 end_3d.y - start_3d.y,
@@ -37348,7 +37391,7 @@ fn sketch_brep(
         let vertex_id = VertexId(format!("{prefix}:free-vertex:{ordinal}"));
         ir.model.points.push(Point {
             id: point_id.clone(),
-            position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+            position: lift_point(position, origin, u_axis, v_axis),
             source_object: None,
         });
         ir.model.vertices.push(Vertex {
@@ -37439,12 +37482,18 @@ fn generated_sketch_curve(
     sketch: &Sketch,
     v_axis: Vector3,
 ) -> Result<GeneratedSketchCurve, cadmpeg_ir::codec::CodecError> {
-    let lift = |point| lift_point(point, sketch.origin, sketch.u_axis, v_axis);
+    let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT sketch {} requires resolved model-space placement",
+            sketch.id.0
+        ))
+    })?;
+    let lift = |point| lift_point(point, origin, u_axis, v_axis);
     let vector = |u: f64, v: f64| {
         Vector3::new(
-            sketch.u_axis.x * u + v_axis.x * v,
-            sketch.u_axis.y * u + v_axis.y * v,
-            sketch.u_axis.z * u + v_axis.z * v,
+            u_axis.x * u + v_axis.x * v,
+            u_axis.y * u + v_axis.y * v,
+            u_axis.z * u + v_axis.z * v,
         )
     };
     match geometry {
@@ -37481,8 +37530,8 @@ fn generated_sketch_curve(
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Circle {
                     center: lift(*center),
-                    axis: sketch.normal,
-                    ref_direction: sketch.u_axis,
+                    axis: normal,
+                    ref_direction: u_axis,
                     radius: radius.0,
                 },
                 start: point,
@@ -37498,8 +37547,8 @@ fn generated_sketch_curve(
         } => Ok(GeneratedSketchCurve {
             curve: CurveGeometry::Circle {
                 center: lift(*center),
-                axis: sketch.normal,
-                ref_direction: sketch.u_axis,
+                axis: normal,
+                ref_direction: u_axis,
                 radius: radius.0,
             },
             start: offset_point(*center, polar(radius.0, start_angle.0)),
@@ -37531,7 +37580,7 @@ fn generated_sketch_curve(
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Ellipse {
                     center: lift(*center),
-                    axis: sketch.normal,
+                    axis: normal,
                     major_direction: vector(major_angle.0.cos(), major_angle.0.sin()),
                     major_radius: major_radius.0,
                     minor_radius: minor_radius.0,
@@ -37588,7 +37637,8 @@ fn sketch_vertex(
     vertices: &mut HashMap<(u64, u64), VertexId>,
     prefix: &str,
     position: Point2,
-    sketch: &Sketch,
+    origin: Point3,
+    u_axis: Vector3,
     v_axis: Vector3,
 ) -> VertexId {
     if let Some((_, id)) = vertices.iter().find(|((u, v), _)| {
@@ -37605,7 +37655,7 @@ fn sketch_vertex(
     let vertex_id = VertexId(format!("{prefix}:vertex:{ordinal}"));
     ir.model.points.push(Point {
         id: point_id.clone(),
-        position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+        position: lift_point(position, origin, u_axis, v_axis),
         source_object: None,
     });
     ir.model.vertices.push(Vertex {
@@ -37634,7 +37684,13 @@ fn patch_line_profiles(
                 "SLDPRT sketch write-back requires native sketch provenance".into(),
             )
         })?;
-        let v_axis = cross(sketch.normal, sketch.u_axis);
+        let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "SLDPRT sketch write-back requires resolved placement for {}",
+                sketch.id.0
+            ))
+        })?;
+        let v_axis = cross(normal, u_axis);
         for entity in ir
             .model
             .sketch_entities
@@ -37651,7 +37707,7 @@ fn patch_line_profiles(
                 SketchGeometry::Point { position } => {
                     let reference = &entity.endpoint_refs[0];
                     let (stream, attr) = parse_point_ref(reference)?;
-                    let point = lift_point(*position, sketch.origin, sketch.u_axis, v_axis);
+                    let point = lift_point(*position, origin, u_axis, v_axis);
                     let key = (lane_id.clone(), stream, attr);
                     if let Some(previous) = requested.insert(key, point) {
                         if distance(previous, point) > 1.0e-9 {
@@ -37664,7 +37720,7 @@ fn patch_line_profiles(
                 SketchGeometry::Line { start, end } => {
                     for (reference, point) in entity.endpoint_refs.iter().zip([start, end]) {
                         let (stream, attr) = parse_point_ref(reference)?;
-                        let point = lift_point(*point, sketch.origin, sketch.u_axis, v_axis);
+                        let point = lift_point(*point, origin, u_axis, v_axis);
                         let key = (lane_id.clone(), stream, attr);
                         if let Some(previous) = requested.insert(key, point) {
                             if distance(previous, point) > 1.0e-9 {
@@ -37690,7 +37746,7 @@ fn patch_line_profiles(
                     if let Some(endpoints) = bounded_endpoints(geometry) {
                         for (reference, point) in entity.endpoint_refs.iter().zip(endpoints) {
                             let (point_stream, attr) = parse_point_ref(reference)?;
-                            let point = lift_point(point, sketch.origin, sketch.u_axis, v_axis);
+                            let point = lift_point(point, origin, u_axis, v_axis);
                             let key = (lane_id.clone(), point_stream, attr);
                             if let Some(previous) = requested.insert(key, point) {
                                 if distance(previous, point) > 1.0e-9 {
@@ -37708,8 +37764,8 @@ fn patch_line_profiles(
                         start_attr,
                         end_attr,
                         geometry: geometry.clone(),
-                        origin: sketch.origin,
-                        u_axis: sketch.u_axis,
+                        origin,
+                        u_axis,
                         v_axis,
                     });
                 }

@@ -194,6 +194,8 @@ pub enum ParameterValue {
     Integer(i64),
     /// Boolean scalar.
     Boolean(bool),
+    /// Unicode string scalar.
+    String(String),
 }
 
 /// A length in canonical millimeters.
@@ -827,10 +829,12 @@ pub enum FeatureDefinition {
     KnitSurface {
         /// Faces participating in the knit operation.
         faces: FaceSelection,
-        /// Whether coincident face and edge entities are merged.
-        merge_entities: bool,
-        /// Whether a closed result is converted to a solid body.
-        create_solid: bool,
+        /// Whether coincident face and edge entities are merged, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        merge_entities: Option<bool>,
+        /// Whether a closed result is converted to a solid body, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        create_solid: Option<bool>,
         /// Maximum boundary gap accepted by the operation.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         gap_tolerance: Option<Length>,
@@ -841,11 +845,15 @@ pub enum FeatureDefinition {
         boundary: EdgeSelection,
         /// Adjacent faces supplying tangent or curvature conditions.
         support_faces: FaceSelection,
-        /// Continuity imposed against the support faces.
-        continuity: SurfaceContinuity,
-        /// Whether the generated patch is merged into adjacent surface bodies.
-        merge_result: bool,
+        /// Continuity imposed against the support faces, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        continuity: Option<SurfaceContinuity>,
+        /// Whether the generated patch is merged into adjacent surface bodies, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        merge_result: Option<bool>,
     },
+    /// Boundary-surface operation whose directional curve networks remain unresolved.
+    BoundarySurfaceUnresolved,
     /// Restricts selected surface faces to one side of a trimming path.
     TrimSurface {
         /// Surface faces modified by the operation.
@@ -879,12 +887,15 @@ pub enum FeatureDefinition {
         faces: FaceSelection,
         /// Neutral plane that remains fixed during the operation.
         neutral_plane: FaceSelection,
-        /// Pull direction used to measure the draft angle.
-        pull_direction: Vector3,
-        /// Signed draft angle.
-        angle: Angle,
-        /// Whether material is added away from the pull direction.
-        outward: bool,
+        /// Pull direction used to measure the draft angle, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pull_direction: Option<Vector3>,
+        /// Signed draft angle, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angle: Option<Angle>,
+        /// Whether material is added away from the pull direction, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outward: Option<bool>,
     },
     /// Boolean operation between existing bodies.
     Combine {
@@ -1350,6 +1361,8 @@ pub enum FeatureTreeNodeRole {
     AmbientLight,
     /// Comment container.
     Comments,
+    /// Non-modeling cross-section definition or container.
+    CrossSections,
     /// Design-binder container.
     DesignBinder,
     /// Detail-item container.

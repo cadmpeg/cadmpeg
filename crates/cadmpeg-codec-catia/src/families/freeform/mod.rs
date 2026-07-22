@@ -110,6 +110,7 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses,
             notes: container::summarize(scan).notes,
         },

@@ -935,7 +935,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             } => {
                 incomplete_edge_selection(boundary)
                     || if *continuity
-                        == cadmpeg_ir::features::SurfaceContinuity::Contact
+                        == Some(cadmpeg_ir::features::SurfaceContinuity::Contact)
                     {
                         incomplete_optional_face_selection(support_faces)
                     } else {
@@ -2056,6 +2056,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         format: "sldprt".to_string(),
         container_only: false,
         geometry_transferred: true,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: container::summarize(scan).notes,
     }
@@ -2705,6 +2706,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         format: "sldprt".to_string(),
         container_only,
         geometry_transferred: false,
+        coverage: std::collections::BTreeMap::new(),
         losses,
         notes: summary.notes,
     }
@@ -2768,6 +2770,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -2860,6 +2863,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -2931,6 +2935,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -2992,6 +2997,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3070,8 +3076,8 @@ mod design_loss_tests {
                 FeatureDefinition::FilledSurface {
                     boundary: EdgeSelection::Edges(vec![EdgeId("boundary".into())]),
                     support_faces: FaceSelection::Faces(Vec::new()),
-                    continuity: SurfaceContinuity::Contact,
-                    merge_result: false,
+                    continuity: Some(SurfaceContinuity::Contact),
+                    merge_result: Some(false),
                 },
             ),
             feature(
@@ -3090,6 +3096,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3254,6 +3261,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3320,6 +3328,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3371,6 +3380,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3449,6 +3459,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3486,6 +3497,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3525,6 +3537,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3562,6 +3575,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3602,6 +3616,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3914,6 +3929,7 @@ mod design_loss_tests {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
+            coverage: std::collections::BTreeMap::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };

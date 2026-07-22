@@ -197,9 +197,11 @@ mod tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: crate::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         });
