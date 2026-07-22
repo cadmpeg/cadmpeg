@@ -387,8 +387,10 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
         }
         // Unknown surfaces have no STEP representation; the writer filters faces
         // resting on them in `emit_face` before ever reaching here.
-        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => {
-            unreachable!("unknown surfaces are filtered before surface emission")
+        SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => {
+            unreachable!("non-explicit surfaces are filtered before surface emission")
         }
     }
 }
@@ -471,8 +473,8 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
         CurveGeometry::Composite { .. } => {
             unreachable!("composite curves are emitted from their child graph")
         }
-        CurveGeometry::Unknown { .. } => {
-            unreachable!("unknown curves are filtered before emission")
+        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {
+            unreachable!("non-explicit curves are filtered before emission")
         }
     }
 }

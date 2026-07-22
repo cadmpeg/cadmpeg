@@ -1,0 +1,843 @@
+{
+  "decode": {
+    "ir": {
+      "ir_version": "55",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "assembly_joints": [],
+        "attributes": [],
+        "bodies": [],
+        "coedges": [],
+        "components": [],
+        "configurations": [],
+        "curves": [],
+        "drawings": [],
+        "edges": [],
+        "faces": [],
+        "features": [],
+        "loops": [],
+        "occurrences": [],
+        "parameters": [],
+        "pcurves": [],
+        "pmi": [],
+        "points": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "product_occurrences": [],
+        "products": [],
+        "regions": [],
+        "semantic_annotations": [],
+        "shells": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "subds": [],
+        "surfaces": [],
+        "tessellations": [],
+        "vertices": [],
+        "view_presentations": []
+      },
+      "native": {
+        "nx": {
+          "arenas": {
+            "rmfastload_object_id_tables": [
+              {
+                "id": "nx:rmfastload:object-id-table#0",
+                "members": [
+                  "nx:rmfastload:object-id#0000000000",
+                  "nx:rmfastload:object-id#0000000001",
+                  "nx:rmfastload:object-id#0000000002",
+                  "nx:rmfastload:object-id#0000000003",
+                  "nx:rmfastload:object-id#0000000004",
+                  "nx:rmfastload:object-id#0000000005",
+                  "nx:rmfastload:object-id#0000000006",
+                  "nx:rmfastload:object-id#0000000007",
+                  "nx:rmfastload:object-id#0000000008",
+                  "nx:rmfastload:object-id#0000000009",
+                  "nx:rmfastload:object-id#0000000010",
+                  "nx:rmfastload:object-id#0000000011",
+                  "nx:rmfastload:object-id#0000000012",
+                  "nx:rmfastload:object-id#0000000013",
+                  "nx:rmfastload:object-id#0000000014",
+                  "nx:rmfastload:object-id#0000000015",
+                  "nx:rmfastload:object-id#0000000016",
+                  "nx:rmfastload:object-id#0000000017",
+                  "nx:rmfastload:object-id#0000000018",
+                  "nx:rmfastload:object-id#0000000019",
+                  "nx:rmfastload:object-id#0000000020",
+                  "nx:rmfastload:object-id#0000000021",
+                  "nx:rmfastload:object-id#0000000022",
+                  "nx:rmfastload:object-id#0000000023",
+                  "nx:rmfastload:object-id#0000000024",
+                  "nx:rmfastload:object-id#0000000025",
+                  "nx:rmfastload:object-id#0000000026",
+                  "nx:rmfastload:object-id#0000000027",
+                  "nx:rmfastload:object-id#0000000028",
+                  "nx:rmfastload:object-id#0000000029",
+                  "nx:rmfastload:object-id#0000000030",
+                  "nx:rmfastload:object-id#0000000031",
+                  "nx:rmfastload:object-id#0000000032",
+                  "nx:rmfastload:object-id#0000000033",
+                  "nx:rmfastload:object-id#0000000034",
+                  "nx:rmfastload:object-id#0000000035",
+                  "nx:rmfastload:object-id#0000000036",
+                  "nx:rmfastload:object-id#0000000037",
+                  "nx:rmfastload:object-id#0000000038",
+                  "nx:rmfastload:object-id#0000000039",
+                  "nx:rmfastload:object-id#0000000040",
+                  "nx:rmfastload:object-id#0000000041",
+                  "nx:rmfastload:object-id#0000000042",
+                  "nx:rmfastload:object-id#0000000043",
+                  "nx:rmfastload:object-id#0000000044",
+                  "nx:rmfastload:object-id#0000000045",
+                  "nx:rmfastload:object-id#0000000046",
+                  "nx:rmfastload:object-id#0000000047",
+                  "nx:rmfastload:object-id#0000000048",
+                  "nx:rmfastload:object-id#0000000049"
+                ],
+                "raw_count": [
+                  50,
+                  0,
+                  0,
+                  0
+                ],
+                "registry_source_offset": 76,
+                "source_entry": "/Root/FastLoad/RMFastLoad",
+                "source_offset": 93
+              }
+            ],
+            "rmfastload_object_ids": [
+              {
+                "id": "nx:rmfastload:object-id#0000000000",
+                "ordinal": 0,
+                "raw": [
+                  1,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 97,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 1
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000001",
+                "ordinal": 1,
+                "raw": [
+                  2,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 101,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 2
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000002",
+                "ordinal": 2,
+                "raw": [
+                  3,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 105,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 3
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000003",
+                "ordinal": 3,
+                "raw": [
+                  4,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 109,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 4
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000004",
+                "ordinal": 4,
+                "raw": [
+                  5,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 113,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 5
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000005",
+                "ordinal": 5,
+                "raw": [
+                  6,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 117,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 6
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000006",
+                "ordinal": 6,
+                "raw": [
+                  7,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 121,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 7
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000007",
+                "ordinal": 7,
+                "raw": [
+                  8,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 125,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 8
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000008",
+                "ordinal": 8,
+                "raw": [
+                  9,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 129,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 9
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000009",
+                "ordinal": 9,
+                "raw": [
+                  10,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 133,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 10
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000010",
+                "ordinal": 10,
+                "raw": [
+                  11,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 137,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 11
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000011",
+                "ordinal": 11,
+                "raw": [
+                  12,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 141,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 12
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000012",
+                "ordinal": 12,
+                "raw": [
+                  13,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 145,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 13
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000013",
+                "ordinal": 13,
+                "raw": [
+                  14,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 149,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 14
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000014",
+                "ordinal": 14,
+                "raw": [
+                  15,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 153,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 15
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000015",
+                "ordinal": 15,
+                "raw": [
+                  16,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 157,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 16
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000016",
+                "ordinal": 16,
+                "raw": [
+                  17,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 161,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 17
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000017",
+                "ordinal": 17,
+                "raw": [
+                  18,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 165,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 18
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000018",
+                "ordinal": 18,
+                "raw": [
+                  19,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 169,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 19
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000019",
+                "ordinal": 19,
+                "raw": [
+                  20,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 173,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 20
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000020",
+                "ordinal": 20,
+                "raw": [
+                  21,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 177,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 21
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000021",
+                "ordinal": 21,
+                "raw": [
+                  22,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 181,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 22
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000022",
+                "ordinal": 22,
+                "raw": [
+                  23,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 185,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 23
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000023",
+                "ordinal": 23,
+                "raw": [
+                  24,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 189,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 24
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000024",
+                "ordinal": 24,
+                "raw": [
+                  25,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 193,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 25
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000025",
+                "ordinal": 25,
+                "raw": [
+                  26,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 197,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 26
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000026",
+                "ordinal": 26,
+                "raw": [
+                  27,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 201,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 27
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000027",
+                "ordinal": 27,
+                "raw": [
+                  28,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 205,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 28
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000028",
+                "ordinal": 28,
+                "raw": [
+                  29,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 209,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 29
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000029",
+                "ordinal": 29,
+                "raw": [
+                  30,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 213,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 30
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000030",
+                "ordinal": 30,
+                "raw": [
+                  31,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 217,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 31
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000031",
+                "ordinal": 31,
+                "raw": [
+                  32,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 221,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 32
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000032",
+                "ordinal": 32,
+                "raw": [
+                  33,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 225,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 33
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000033",
+                "ordinal": 33,
+                "raw": [
+                  34,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 229,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 34
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000034",
+                "ordinal": 34,
+                "raw": [
+                  35,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 233,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 35
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000035",
+                "ordinal": 35,
+                "raw": [
+                  36,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 237,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 36
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000036",
+                "ordinal": 36,
+                "raw": [
+                  37,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 241,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 37
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000037",
+                "ordinal": 37,
+                "raw": [
+                  38,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 245,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 38
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000038",
+                "ordinal": 38,
+                "raw": [
+                  39,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 249,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 39
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000039",
+                "ordinal": 39,
+                "raw": [
+                  40,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 253,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 40
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000040",
+                "ordinal": 40,
+                "raw": [
+                  41,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 257,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 41
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000041",
+                "ordinal": 41,
+                "raw": [
+                  42,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 261,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 42
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000042",
+                "ordinal": 42,
+                "raw": [
+                  43,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 265,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 43
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000043",
+                "ordinal": 43,
+                "raw": [
+                  44,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 269,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 44
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000044",
+                "ordinal": 44,
+                "raw": [
+                  45,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 273,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 45
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000045",
+                "ordinal": 45,
+                "raw": [
+                  46,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 277,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 46
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000046",
+                "ordinal": 46,
+                "raw": [
+                  47,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 281,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 47
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000047",
+                "ordinal": 47,
+                "raw": [
+                  48,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 285,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 48
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000048",
+                "ordinal": 48,
+                "raw": [
+                  49,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 289,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 49
+              },
+              {
+                "id": "nx:rmfastload:object-id#0000000049",
+                "ordinal": 49,
+                "raw": [
+                  50,
+                  0,
+                  0,
+                  0
+                ],
+                "source_offset": 293,
+                "table": "nx:rmfastload:object-id-table#0",
+                "value": 50
+              }
+            ],
+            "unknowns": []
+          },
+          "version": 155
+        }
+      },
+      "source": {
+        "attributes": {
+          "deltas_streams": "0",
+          "directory_entries": "1",
+          "file_size": "297",
+          "footer_offset": "0",
+          "jpeg_preview_count": "0",
+          "partition_streams": "0",
+          "plain_streams": "0",
+          "rmfastload_active_object_count": "50"
+        },
+        "format": "nx"
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "container_only": false,
+      "format": "nx",
+      "geometry_transferred": false,
+      "losses": [
+        {
+          "category": "geometry",
+          "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
+          "severity": "blocking"
+        }
+      ],
+      "notes": [
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+        "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
+      ]
+    },
+    "source_fidelity": {
+      "annotations": {
+        "streams": [
+          "nx:container"
+        ]
+      },
+      "byte_ledger": {
+        "source_length": 0,
+        "spans": []
+      },
+      "schema_version": "1"
+    }
+  },
+  "inspect": {
+    "container_kind": "splmsstr",
+    "entries": [
+      {
+        "attributes": {
+          "file_offset": "76",
+          "region": "HEADER"
+        },
+        "compressed_size": 221,
+        "compression": "none",
+        "name": "/Root/FastLoad/RMFastLoad",
+        "role": "stream",
+        "uncompressed_size": 221
+      }
+    ],
+    "format": "nx",
+    "notes": [
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+      "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
+    ]
+  }
+}

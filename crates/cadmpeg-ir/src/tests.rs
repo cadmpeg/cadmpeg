@@ -23,6 +23,7 @@ use crate::tessellation::TessellationChannel;
 use crate::topology::Color;
 use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 use crate::validate::validate;
+use crate::ConfigurationBodies;
 use crate::{diff, CadIr, LossProvenance};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
@@ -816,7 +817,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         id: FeatureId("synthetic:test:feature#sketch-ref".into()),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -854,7 +855,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: Some(feature_id.clone()),
         dependencies: vec![feature_id.clone(), feature_id.clone()],
         source_properties: std::collections::BTreeMap::new(),
@@ -891,7 +892,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         id: FeatureId("synthetic:test:feature#duplicate-order".into()),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -940,7 +941,7 @@ fn datum_plane_references_follow_graph_not_serialized_order() {
         id: FeatureId(id.into()),
         ordinal,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -1026,7 +1027,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         id: owner.clone(),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -1079,7 +1080,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         id: owner.clone(),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -1212,7 +1213,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         name: "Default".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: vec![body.clone()],
+        bodies: ConfigurationBodies::Resolved(vec![body.clone()]),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -1220,7 +1221,10 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.finalize();
     assert!(validate(&ir, Vec::new()).is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
-    assert_eq!(round_trip.model.configurations[0].bodies, vec![body]);
+    assert_eq!(
+        round_trip.model.configurations[0].bodies.resolved(),
+        Some([body].as_slice())
+    );
 
     let missing_parameter = ParameterId("synthetic:test:parameter#missing".into());
     ir.model.configurations[0]
@@ -1240,7 +1244,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].feature_states.insert(
         FeatureId("synthetic:test:feature#missing".into()),
         ConfigurationFeatureState {
-            suppressed: false,
+            suppressed: Some(false),
             dependencies: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::TreeNode {
@@ -1261,10 +1265,10 @@ fn configuration_body_membership_round_trips_and_validates() {
     }));
     ir.model.configurations[0].feature_states.clear();
 
-    ir.model.configurations[0].bodies = vec![
+    ir.model.configurations[0].bodies = ConfigurationBodies::Resolved(vec![
         BodyId("synthetic:test:body#missing".into()),
         BodyId("synthetic:test:body#missing".into()),
-    ];
+    ]);
     let report = validate(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
@@ -1283,7 +1287,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         name: "Alternate".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Vec::new(),
+        bodies: ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -1342,7 +1346,7 @@ fn configuration_feature_definitions_use_global_feature_validation() {
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
@@ -1365,12 +1369,12 @@ fn configuration_feature_definitions_use_global_feature_validation() {
         name: "Configured".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Vec::new(),
+        bodies: ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::from([(
             feature_id,
             ConfigurationFeatureState {
-                suppressed: false,
+                suppressed: Some(false),
                 dependencies: vec![FeatureId("synthetic:test:feature#missing".into())],
                 outputs: vec![BodyId("synthetic:test:body#missing".into())],
                 definition: FeatureDefinition::Extrude {
@@ -1427,7 +1431,7 @@ fn parameter_dimensional_kinds_are_consistent_across_design_graphs() {
         id: owner.clone(),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
@@ -1499,7 +1503,7 @@ fn parameter_dimensional_kinds_are_consistent_across_design_graphs() {
         name: "Kinds".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Vec::new(),
+        bodies: ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::from([(
             distance,
             ParameterValue::Angle(Angle(std::f64::consts::PI)),
@@ -3124,7 +3128,7 @@ fn feature_extent_magnitudes_are_validated() {
             id: FeatureId("synthetic:test:feature#invalid-extent".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -3182,7 +3186,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
         id: FeatureId("synthetic:test:feature#consumer".into()),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -3215,7 +3219,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
             id: FeatureId(format!("synthetic:test:feature#{suffix}")),
             ordinal,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -3224,6 +3228,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
+                space: crate::features::SketchSpace::Planar,
                 sketch: Some(sketch_id.clone()),
             },
             native_ref: None,
@@ -3272,7 +3277,7 @@ fn spatial_sketch_line_round_trips_and_validates() {
         id: FeatureId("synthetic:test:feature#spatial-sketch".into()),
         ordinal: 0,
         name: Some("Path".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -3335,6 +3340,7 @@ fn feature_operation_geometry_is_validated() {
             kind: HoleKind::Simple,
             diameter: Some(Length(0.0)),
             extent: Some(Extent::ThroughAll),
+            exit_kind: None,
             bottom: None,
             taper_angle: None,
             specification: None,
@@ -3347,7 +3353,7 @@ fn feature_operation_geometry_is_validated() {
         },
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Unresolved,
-            distance: Length(f64::NAN),
+            distance: Some(Length(f64::NAN)),
         },
         FeatureDefinition::KnitSurface {
             faces: FaceSelection::Unresolved,
@@ -3357,7 +3363,7 @@ fn feature_operation_geometry_is_validated() {
         },
         FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Unresolved,
-            distance: Length(0.0),
+            distance: Some(Length(0.0)),
             method: crate::features::SurfaceExtension::Natural,
         },
         FeatureDefinition::RuledSurface {
@@ -3395,8 +3401,10 @@ fn feature_operation_geometry_is_validated() {
         FeatureDefinition::ProjectedCurve {
             source: crate::features::PathRef::Native("source".into()),
             target_faces: FaceSelection::Unresolved,
-            direction: Some(Vector3::new(0.0, 0.0, 0.0)),
-            bidirectional: false,
+            direction: crate::features::CurveProjectionDirection::Vector(Vector3::new(
+                0.0, 0.0, 0.0,
+            )),
+            bidirectional: Some(false),
         },
         FeatureDefinition::CompositeCurve {
             segments: Vec::new(),
@@ -3574,7 +3582,7 @@ fn feature_operation_geometry_is_validated() {
             id: FeatureId(format!("synthetic:test:feature#invalid-{ordinal}")),
             ordinal: ordinal as u64,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -3612,7 +3620,7 @@ fn flex_modes_round_trip_and_validate() {
         id: FeatureId("synthetic:test:feature#flex".into()),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),

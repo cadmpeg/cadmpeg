@@ -129,6 +129,7 @@ pub(super) fn pcurve_geometry(
         | SurfaceGeometry::Torus { .. }
         | SurfaceGeometry::Nurbs(_) => (1.0 / factor, 1.0 / factor),
         SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => return None,
     };

@@ -1220,6 +1220,7 @@ fn fold_surface_frame(
             }
             SurfaceGeometry::Transformed { basis, .. } => geometry = basis,
             SurfaceGeometry::Nurbs(_)
+            | SurfaceGeometry::Procedural { .. }
             | SurfaceGeometry::Polygonal { .. }
             | SurfaceGeometry::Unknown { .. } => break,
         }
@@ -1251,6 +1252,7 @@ fn annotate_surface_frame(
             }
             SurfaceGeometry::Transformed { basis, .. } => geometry = basis,
             SurfaceGeometry::Nurbs(_)
+            | SurfaceGeometry::Procedural { .. }
             | SurfaceGeometry::Polygonal { .. }
             | SurfaceGeometry::Unknown { .. } => break,
         }

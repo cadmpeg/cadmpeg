@@ -324,6 +324,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             let mut bodies = std::collections::HashSet::new();
             configuration
                 .bodies
+                .resolved()
+                .unwrap_or_default()
                 .iter()
                 .any(|body| !bodies.insert(body) || !model_body_ids.contains(body))
         })
@@ -804,7 +806,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     let incomplete_path = |path: &PathRef| match path {
         PathRef::Edges(edges) => edges.is_empty(),
         PathRef::Curves(curves) => curves.is_empty(),
-        PathRef::Native(_) => true,
+        PathRef::Unresolved | PathRef::Native(_) => true,
         PathRef::Sketch(_) => false,
     };
     let incomplete_extent = |extent: &Extent| {
@@ -2433,7 +2435,7 @@ fn assign_configuration_bodies(
             continue;
         };
         if let Some(bodies) = partition_map.remove(&source_index) {
-            configuration.bodies = bodies;
+            configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
             *is_assigned = true;
         }
     }
@@ -2465,7 +2467,7 @@ fn assign_configuration_bodies(
                 let position = matches[0];
                 let configuration = &mut ir.model.configurations[position];
                 configuration.source_index = Some(active_index);
-                configuration.bodies = bodies;
+                configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
                 assigned[position] = true;
             }
         }
@@ -2477,7 +2479,7 @@ fn assign_configuration_bodies(
         let source_index = configuration.ordinal;
         if let Some(bodies) = partition_map.remove(&source_index) {
             configuration.source_index = Some(source_index);
-            configuration.bodies = bodies;
+            configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
             *is_assigned = true;
         }
     }
@@ -2502,11 +2504,16 @@ fn assign_configuration_bodies(
                 name: format!("Config-{source_index}"),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
-                bodies,
+                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(bodies),
                 parameter_values: std::collections::BTreeMap::new(),
                 feature_states: std::collections::BTreeMap::new(),
                 native_ref: None,
             });
+    }
+    for configuration in &mut ir.model.configurations {
+        if configuration.bodies.is_unresolved() {
+            configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new());
+        }
     }
 }
 
@@ -2751,7 +2758,7 @@ mod design_loss_tests {
             id: FeatureId("combine".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -2791,7 +2798,7 @@ mod design_loss_tests {
             id: feature_id.clone(),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::from([("Scope".into(), "Body1".into())]),
@@ -2839,12 +2846,12 @@ mod design_loss_tests {
                 name: format!("Configuration {ordinal}"),
                 material: None,
                 properties: BTreeMap::new(),
-                bodies: Vec::new(),
+                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::from([(
                     feature_id.clone(),
                     ConfigurationFeatureState {
-                        suppressed: false,
+                        suppressed: Some(false),
                         dependencies: (ordinal == 0)
                             .then(|| FeatureId("missing-dependency".into()))
                             .into_iter()
@@ -2890,7 +2897,7 @@ mod design_loss_tests {
             id: feature_id.clone(),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -2926,7 +2933,7 @@ mod design_loss_tests {
             name: "Configuration".into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Vec::new(),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: None,
@@ -2955,7 +2962,7 @@ mod design_loss_tests {
             id: FeatureId(id.into()),
             ordinal,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -3017,7 +3024,7 @@ mod design_loss_tests {
             id: FeatureId(format!("feature-{ordinal}")),
             ordinal,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -3117,7 +3124,7 @@ mod design_loss_tests {
             id: owner.clone(),
             ordinal: 0,
             name: Some("Boss-Extrude1".into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -3288,7 +3295,7 @@ mod design_loss_tests {
             id,
             ordinal,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent,
             dependencies,
             source_properties: BTreeMap::new(),
@@ -3355,7 +3362,7 @@ mod design_loss_tests {
             id: FeatureId(id.into()),
             ordinal,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -3404,7 +3411,7 @@ mod design_loss_tests {
             name: id.into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Vec::new(),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: Some(format!("native:{id}")),
@@ -3449,7 +3456,7 @@ mod design_loss_tests {
                 name: id.into(),
                 material: None,
                 properties: BTreeMap::new(),
-                bodies: Vec::new(),
+                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
                 native_ref: Some(format!("native:{id}")),
@@ -3487,7 +3494,7 @@ mod design_loss_tests {
                 name: name.into(),
                 material: None,
                 properties: BTreeMap::new(),
-                bodies: Vec::new(),
+                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
                 native_ref: Some(format!("native:{position}")),
@@ -3528,7 +3535,7 @@ mod design_loss_tests {
             name: "Default".into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Vec::new(),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: Some("native:configuration".into()),
@@ -3568,8 +3575,16 @@ mod design_loss_tests {
             native_ref: Some(format!("native:{id}")),
         };
         ir.model.configurations = vec![
-            configuration("duplicate", 0, vec![body.clone(), body]),
-            configuration("missing", 1, vec![BodyId("missing-body".into())]),
+            configuration(
+                "duplicate",
+                0,
+                cadmpeg_ir::ConfigurationBodies::Resolved(vec![body.clone(), body]),
+            ),
+            configuration(
+                "missing",
+                1,
+                cadmpeg_ir::ConfigurationBodies::Resolved(vec![BodyId("missing-body".into())]),
+            ),
         ];
         let mut report = DecodeReport {
             format: "sldprt".into(),
@@ -3889,7 +3904,7 @@ mod design_loss_tests {
             id: owner.clone(),
             ordinal: 0,
             name: Some("Feature".into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),

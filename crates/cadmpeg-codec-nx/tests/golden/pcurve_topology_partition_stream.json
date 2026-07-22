@@ -1,0 +1,462 @@
+{
+  "decode": {
+    "ir": {
+      "ir_version": "55",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "assembly_joints": [],
+        "attributes": [],
+        "bodies": [
+          {
+            "id": "nx:s0:body#2",
+            "kind": "sheet",
+            "regions": [
+              "nx:s0:region#12"
+            ]
+          }
+        ],
+        "coedges": [
+          {
+            "edge": "nx:s0:edge#8",
+            "id": "nx:s0:fin#7",
+            "next": "nx:s0:fin#7",
+            "owner_loop": "nx:s0:loop#5",
+            "pcurves": [
+              {
+                "pcurve": "nx:s0:pcurve#0"
+              }
+            ],
+            "previous": "nx:s0:fin#7",
+            "radial_next": "nx:s0:fin#7",
+            "sense": "forward"
+          }
+        ],
+        "components": [],
+        "configurations": [],
+        "curves": [
+          {
+            "geometry": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:crv#0"
+          }
+        ],
+        "drawings": [],
+        "edges": [
+          {
+            "curve": "nx:s0:crv#0",
+            "end": "nx:s0:vertex#10",
+            "id": "nx:s0:edge#8",
+            "start": "nx:s0:vertex#10",
+            "tolerance": 0.3
+          }
+        ],
+        "faces": [
+          {
+            "id": "nx:s0:face#4",
+            "loops": [
+              "nx:s0:loop#5"
+            ],
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#0",
+            "tolerance": 0.2
+          }
+        ],
+        "features": [],
+        "loops": [
+          {
+            "boundary_role": "unspecified",
+            "coedges": [
+              "nx:s0:fin#7"
+            ],
+            "face": "nx:s0:face#4",
+            "id": "nx:s0:loop#5"
+          }
+        ],
+        "occurrences": [],
+        "parameters": [],
+        "pcurves": [
+          {
+            "fit_tolerance": 0.01,
+            "geometry": {
+              "control_points": [
+                {
+                  "u": 10.0,
+                  "v": 20.0
+                },
+                {
+                  "u": 10.0,
+                  "v": 20.0
+                }
+              ],
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false
+            },
+            "id": "nx:s0:pcurve#0"
+          }
+        ],
+        "pmi": [],
+        "points": [
+          {
+            "id": "nx:s0:pt#0",
+            "position": {
+              "x": 10.0,
+              "y": 20.0,
+              "z": 0.0
+            }
+          }
+        ],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "product_occurrences": [],
+        "products": [],
+        "regions": [
+          {
+            "body": "nx:s0:body#2",
+            "id": "nx:s0:region#12",
+            "shells": [
+              "nx:s0:shell#3"
+            ]
+          }
+        ],
+        "semantic_annotations": [],
+        "shells": [
+          {
+            "faces": [
+              "nx:s0:face#4"
+            ],
+            "id": "nx:s0:shell#3",
+            "region": "nx:s0:region#12"
+          }
+        ],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "subds": [],
+        "surfaces": [
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#0"
+          }
+        ],
+        "tessellations": [],
+        "vertices": [
+          {
+            "id": "nx:s0:vertex#10",
+            "point": "nx:s0:pt#0",
+            "tolerance": 0.1
+          }
+        ],
+        "view_presentations": []
+      },
+      "native": {
+        "nx": {
+          "arenas": {
+            "parasolid_surface_curve_records": [
+              {
+                "id": "nx:s0:surface-curve-record#25",
+                "inflated_offset": 603,
+                "original_curve_xmt": 9,
+                "pcurve_xmt": 20,
+                "stream_ordinal": 0,
+                "surface_xmt": 6,
+                "tolerance_to_original": 0.00001,
+                "xmt": 25
+              }
+            ],
+            "unknowns": [
+              {
+                "id": "nx:container:parasolid#0",
+                "links": [
+                  "nx:s0:surf#0",
+                  "nx:s0:crv#0"
+                ]
+              }
+            ]
+          },
+          "version": 155
+        }
+      },
+      "source": {
+        "attributes": {
+          "deltas_streams": "0",
+          "directory_entries": "1",
+          "file_size": "412",
+          "footer_offset": "0",
+          "jpeg_preview_count": "0",
+          "parasolid_schema": "SCH_TEST_1_9999",
+          "partition_streams": "1",
+          "plain_streams": "0"
+        },
+        "format": "nx"
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "container_only": false,
+      "format": "nx",
+      "geometry_transferred": true,
+      "losses": [
+        {
+          "category": "geometry",
+          "message": "Decoded 1 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 1 analytic surface carrier(s) (1 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 1 analytic curve carrier(s) (1 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
+          "severity": "info"
+        },
+        {
+          "category": "attribute",
+          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
+          "severity": "warning"
+        }
+      ],
+      "notes": [
+        "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+        "Parasolid schema: SCH_TEST_1_9999"
+      ]
+    },
+    "source_fidelity": {
+      "annotations": {
+        "exactness": {
+          "nx:container:parasolid#0": {
+            "entity": "derived",
+            "fields": {
+              "links": "derived"
+            }
+          },
+          "nx:s0:crv#0": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:edge#8": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:face#4": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          },
+          "nx:s0:pcurve#0": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:pt#0": {
+            "entity": "byte_exact",
+            "fields": {
+              "position": "derived"
+            }
+          },
+          "nx:s0:region#12": {
+            "entity": "byte_exact",
+            "fields": {
+              "body": "derived"
+            }
+          },
+          "nx:s0:surf#0": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
+          },
+          "nx:s0:vertex#10": {
+            "entity": "byte_exact",
+            "fields": {
+              "tolerance": "derived"
+            }
+          }
+        },
+        "provenance": {
+          "nx:container:parasolid#0": {
+            "offset": 72,
+            "stream": 1,
+            "tag": "partition"
+          },
+          "nx:s0:body#2": {
+            "offset": 70,
+            "stream": 0,
+            "tag": "BODY"
+          },
+          "nx:s0:crv#0": {
+            "offset": 319,
+            "stream": 0,
+            "tag": "LINE"
+          },
+          "nx:s0:edge#8": {
+            "offset": 196,
+            "stream": 0,
+            "tag": "EDGE"
+          },
+          "nx:s0:face#4": {
+            "offset": 118,
+            "stream": 0,
+            "tag": "FACE"
+          },
+          "nx:s0:fin#7": {
+            "offset": 173,
+            "stream": 0,
+            "tag": "FIN"
+          },
+          "nx:s0:loop#5": {
+            "offset": 157,
+            "stream": 0,
+            "tag": "LOOP"
+          },
+          "nx:s0:pcurve#0": {
+            "offset": 470,
+            "stream": 0,
+            "tag": "B_CURVE_2D"
+          },
+          "nx:s0:pt#0": {
+            "offset": 430,
+            "stream": 0,
+            "tag": "POINT"
+          },
+          "nx:s0:region#12": {
+            "offset": 414,
+            "stream": 0,
+            "tag": "REGION"
+          },
+          "nx:s0:shell#3": {
+            "offset": 94,
+            "stream": 0,
+            "tag": "SHELL"
+          },
+          "nx:s0:surf#0": {
+            "offset": 228,
+            "stream": 0,
+            "tag": "PLANE"
+          },
+          "nx:s0:vertex#10": {
+            "offset": 386,
+            "stream": 0,
+            "tag": "VERTEX"
+          }
+        },
+        "streams": [
+          "nx:parasolid#0:partition",
+          "nx:container",
+          "nx:s0"
+        ]
+      },
+      "byte_ledger": {
+        "source_length": 0,
+        "spans": []
+      },
+      "retained_records": [
+        {
+          "byte_len": 636,
+          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAYrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgAGQAAKwAQAAgAAAAAAAA/M6kqMFUyYQAHAAAAAAAJAAAAAAAAADIABgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAkAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEgAKAAAAAAAAAAAAAAAAAAs/Gjbi6xxDLQAAABMADAAAAAAAAAAAAAAAAAAdAAsAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7AAAAAAAAAAAAhgAUAAAAAAAAAAAAAAAAAAArABUAFgCIABUAAQAAAAIAAgAAAAIFAAAAAAAAABcAGACHABYAAAAAAAAAAAQAAD+EeuFHrhR7P5R64UeuFHs/hHrhR64Uez+UeuFHrhR7AH8AAAACABcAAgACAIAAAAACABgAAAAAAAAAAD/wAAAAAAAAAIkAGQAAAAAAAAAAAAAAAAAAKwAGABQACT7k+LWI42jx",
+          "id": "nx:container:parasolid#0",
+          "offset": 72,
+          "sha256": "c2fa95fe56d9265d6b166267d19ec76ce24a765cec737a786970ac0248114a3a",
+          "stream": "nx:container"
+        }
+      ],
+      "schema_version": "1"
+    }
+  },
+  "inspect": {
+    "container_kind": "splmsstr",
+    "entries": [
+      {
+        "attributes": {
+          "file_offset": "72",
+          "region": "HEADER"
+        },
+        "compressed_size": 340,
+        "compression": "none",
+        "name": "/Root/UG_PART/UG_PART",
+        "role": "stream",
+        "uncompressed_size": 340
+      },
+      {
+        "attributes": {
+          "file_offset": "72",
+          "kind": "partition",
+          "records.body": "1",
+          "records.edge": "1",
+          "records.face": "1",
+          "records.fin": "1",
+          "records.live.body": "1",
+          "records.live.edge": "1",
+          "records.live.face": "1",
+          "records.live.fin": "1",
+          "records.live.loop": "1",
+          "records.live.region": "1",
+          "records.live.shell": "1",
+          "records.live.vertex": "1",
+          "records.loop": "1",
+          "records.region": "1",
+          "records.shell": "1",
+          "records.vertex": "1",
+          "schema": "SCH_TEST_1_9999"
+        },
+        "compressed_size": 0,
+        "compression": "zlib",
+        "name": "parasolid#0",
+        "role": "parasolid-stream",
+        "uncompressed_size": 636
+      }
+    ],
+    "format": "nx",
+    "notes": [
+      "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+      "Parasolid schema: SCH_TEST_1_9999"
+    ]
+  }
+}

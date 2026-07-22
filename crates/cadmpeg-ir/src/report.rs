@@ -45,6 +45,8 @@ pub enum LossCategory {
     Geometry,
     /// Topology (graph structure) not transferred.
     Topology,
+    /// Parametric features, sketches, constraints, or expressions not transferred.
+    Feature,
     /// Materials/appearances not transferred.
     Material,
     /// Document metadata not transferred.
@@ -64,6 +66,7 @@ impl fmt::Display for LossCategory {
         f.write_str(match self {
             Self::Geometry => "geometry",
             Self::Topology => "topology",
+            Self::Feature => "feature",
             Self::Material => "material",
             Self::Metadata => "metadata",
             Self::Units => "units",

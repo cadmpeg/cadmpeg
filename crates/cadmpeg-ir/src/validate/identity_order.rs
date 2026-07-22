@@ -158,6 +158,14 @@ pub(super) fn entity_counts(ir: &CadIr) -> BTreeMap<String, usize> {
             .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
             .count(),
     );
+    counts.insert(
+        "surfaces_procedural_geometry".into(),
+        ir.model
+            .surfaces
+            .iter()
+            .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Procedural { .. }))
+            .count(),
+    );
     for loss in ir.native.loss_counts() {
         counts.insert(format!("native.{}.{}", loss.format, loss.kind), loss.count);
     }

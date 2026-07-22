@@ -124,7 +124,7 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         let Some(transform) = curve_transforms.get(curve.id.0.as_str()).copied() else {
             continue;
         };
-        transform_curve(&mut curve.geometry, transform);
+        transform_curve(&mut curve.geometry, transform)?;
     }
     if !ir.model.tessellations.is_empty() {
         let transforms = ir
@@ -318,9 +318,9 @@ fn transform_surface(
         SurfaceGeometry::Polygonal { vertices, .. } => vertices
             .iter_mut()
             .for_each(|point| *point = transform_point(transform, *point)),
-        SurfaceGeometry::Unknown { .. } => {
+        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
-                "SLDPRT cannot transform an opaque surface".into(),
+                "SLDPRT cannot transform a non-explicit surface".into(),
             ))
         }
         SurfaceGeometry::Transformed {
@@ -330,7 +330,7 @@ fn transform_surface(
     Ok(())
 }
 
-fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) {
+fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result<(), CodecError> {
     match geometry {
         CurveGeometry::Line { origin, direction } => {
             *origin = transform_point(transform, *origin);
@@ -381,11 +381,16 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) {
             *point = transform_point(transform, *point);
         }
         CurveGeometry::Composite { .. } => {}
-        CurveGeometry::Unknown { .. } => {}
         CurveGeometry::Transformed {
             transform: carrier, ..
         } => *carrier = multiply(transform, *carrier),
+        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {
+            return Err(CodecError::NotImplemented(
+                "cannot bake a transform into a non-explicit curve".into(),
+            ));
+        }
     }
+    Ok(())
 }
 
 fn multiply(left: Transform, right: Transform) -> Transform {
@@ -410,4 +415,18 @@ fn cross(left: Vector3, right: Vector3) -> Vector3 {
         left.z * right.x - left.x * right.z,
         left.x * right.y - left.y * right.x,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transform_curve_rejects_non_explicit_geometry() {
+        let mut geometry = CurveGeometry::Unknown { record: None };
+        assert!(matches!(
+            transform_curve(&mut geometry, Transform::identity()),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
 }

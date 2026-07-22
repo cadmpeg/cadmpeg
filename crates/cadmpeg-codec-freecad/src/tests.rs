@@ -776,7 +776,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
                 distance: cadmpeg_ir::features::Length(1.5),
                 angle,
             },
-            flip_direction: true,
+            flip_direction: Some(true),
             ..
         } if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12
     ));
@@ -4537,7 +4537,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         body.source_properties.get("Tip").map(String::as_str),
         Some("fcstd:native:object#Pocket")
     );
-    assert!(pocket.suppressed);
+    assert_eq!(pocket.suppressed, Some(true));
     assert_eq!(
         pocket
             .source_properties
