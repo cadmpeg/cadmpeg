@@ -2973,7 +2973,31 @@ fn uniquely_bounded_parameter_records(
         .collect()
 }
 
-/// Interpret complete eight-scalar parameter lanes for pcurve-family rows.
+fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
+    record.references.is_empty().then_some(())?;
+    let mut tokens = record.scalar_tokens.iter().peekable();
+    let mut values = Vec::with_capacity(8);
+    let mut cursor = 0;
+    while cursor < record.body.len() {
+        if let Some(token) = tokens.peek().filter(|token| token.offset == cursor) {
+            (token.length != 0
+                && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
+            .then_some(())?;
+            values.push(token.value);
+            cursor += token.length;
+            tokens.next();
+        } else if record.body[cursor] == 0x12 {
+            values.push(0.0);
+            cursor += 1;
+        } else {
+            return None;
+        }
+    }
+    tokens.next().is_none().then_some(())?;
+    values.try_into().ok()
+}
+
+/// Interpret complete eight-slot parameter lanes for pcurve-family rows.
 pub fn pcurve_endpoints(
     parameters: &[CurveParameterRecord],
     topology: &[CurveTopologyRow],
@@ -2981,16 +3005,11 @@ pub fn pcurve_endpoints(
     let mut result = uniquely_bounded_parameter_records(parameters)
         .into_iter()
         .filter(|record| matches!(record.type_byte, 0x00 | 0x01 | 0x06 | 0x08))
-        .filter(|record| {
-            record.scalar_tokens.len() == 8
-                && record.references.is_empty()
-                && record.opaque_spans.is_empty()
-        })
         .filter_map(|record| {
+            let values = complete_pcurve_values(record)?;
             let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
             let topology = matching.next()?;
             matching.next().is_none().then_some(())?;
-            let values = &record.scalar_values;
             Some(PcurveEndpoints {
                 curve_id: record.curve_id,
                 faces: topology.faces,
