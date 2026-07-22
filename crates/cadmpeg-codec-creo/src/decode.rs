@@ -26314,6 +26314,60 @@ fn refine_plane_conic_intersection(
     [u, v]
 }
 
+fn common_plane_conic_parameters(
+    first: PlaneConicEquation,
+    second: PlaneConicEquation,
+) -> Vec<[f64; 2]> {
+    let resultant = conic_resultant(first, second);
+    let mut parameters = Vec::<[f64; 2]>::new();
+    for u in real_polynomial_roots(&resultant) {
+        let first_v_roots = quadratic_real_roots(
+            first.vv,
+            first.uv.mul_add(u, first.v),
+            first.uu * u * u + first.u * u + first.constant,
+        );
+        let second_v_roots = quadratic_real_roots(
+            second.vv,
+            second.uv.mul_add(u, second.v),
+            second.uu * u * u + second.u * u + second.constant,
+        );
+        for v in first_v_roots.into_iter().chain(second_v_roots) {
+            let candidate = refine_plane_conic_intersection(first, second, u, v);
+            let scale = candidate[0].abs().max(candidate[1].abs()).max(1.0);
+            let coefficient_scale = [
+                first.uu,
+                first.uv,
+                first.vv,
+                first.u,
+                first.v,
+                first.constant,
+                second.uu,
+                second.uv,
+                second.vv,
+                second.u,
+                second.v,
+                second.constant,
+            ]
+            .into_iter()
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+            let tolerance = 1e-8 * coefficient_scale * scale * scale;
+            if plane_conic_value(first, candidate[0], candidate[1]).abs() <= tolerance
+                && plane_conic_value(second, candidate[0], candidate[1]).abs() <= tolerance
+                && !parameters.iter().any(|known| {
+                    (known[0] - candidate[0])
+                        .abs()
+                        .max((known[1] - candidate[1]).abs())
+                        <= 1e-7 * scale
+                })
+            {
+                parameters.push(candidate);
+            }
+        }
+    }
+    parameters
+}
+
 fn intersect_plane_with_two_quadrics(
     plane: PlaneEquation,
     first: CarrierEquation,
@@ -26342,54 +26396,7 @@ fn intersect_plane_with_two_quadrics(
     };
     let first_conic = restrict_quadric_to_plane(first_quadric, plane.origin, u_axis, v_axis);
     let second_conic = restrict_quadric_to_plane(second_quadric, plane.origin, u_axis, v_axis);
-    let resultant = conic_resultant(first_conic, second_conic);
-    let mut parameters = Vec::<[f64; 2]>::new();
-    for u in real_polynomial_roots(&resultant) {
-        let first_v_roots = quadratic_real_roots(
-            first_conic.vv,
-            first_conic.uv.mul_add(u, first_conic.v),
-            first_conic.uu * u * u + first_conic.u * u + first_conic.constant,
-        );
-        let second_v_roots = quadratic_real_roots(
-            second_conic.vv,
-            second_conic.uv.mul_add(u, second_conic.v),
-            second_conic.uu * u * u + second_conic.u * u + second_conic.constant,
-        );
-        for v in first_v_roots.into_iter().chain(second_v_roots) {
-            let candidate = refine_plane_conic_intersection(first_conic, second_conic, u, v);
-            let scale = candidate[0].abs().max(candidate[1].abs()).max(1.0);
-            let coefficient_scale = [
-                first_conic.uu,
-                first_conic.uv,
-                first_conic.vv,
-                first_conic.u,
-                first_conic.v,
-                first_conic.constant,
-                second_conic.uu,
-                second_conic.uv,
-                second_conic.vv,
-                second_conic.u,
-                second_conic.v,
-                second_conic.constant,
-            ]
-            .into_iter()
-            .map(f64::abs)
-            .fold(1.0, f64::max);
-            let tolerance = 1e-8 * coefficient_scale * scale * scale;
-            if plane_conic_value(first_conic, candidate[0], candidate[1]).abs() <= tolerance
-                && plane_conic_value(second_conic, candidate[0], candidate[1]).abs() <= tolerance
-                && !parameters.iter().any(|known| {
-                    (known[0] - candidate[0])
-                        .abs()
-                        .max((known[1] - candidate[1]).abs())
-                        <= 1e-7 * scale
-                })
-            {
-                parameters.push(candidate);
-            }
-        }
-    }
-    parameters
+    common_plane_conic_parameters(first_conic, second_conic)
         .into_iter()
         .map(|[u, v]| {
             std::array::from_fn(|index| plane.origin[index] + u * u_axis[index] + v * v_axis[index])
@@ -28013,93 +28020,108 @@ fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<
         .collect()
 }
 
-fn circle_circle_intersections(first: &CurveGeometry, second: &CurveGeometry) -> Vec<[f64; 3]> {
-    let (
-        CurveGeometry::Circle {
-            center: first_center,
-            axis: first_axis,
-            radius: first_radius,
-            ..
-        },
-        CurveGeometry::Circle {
-            center: second_center,
-            axis: second_axis,
-            radius: second_radius,
-            ..
-        },
-    ) = (first, second)
-    else {
-        return Vec::new();
-    };
-    if !first_radius.is_finite()
-        || !second_radius.is_finite()
-        || *first_radius <= 0.0
-        || *second_radius <= 0.0
-    {
-        return Vec::new();
+fn restrict_planar_conic_to_chart(
+    conic: PlanarConicEquation,
+    origin: [f64; 3],
+    u_axis: [f64; 3],
+    v_axis: [f64; 3],
+) -> PlaneConicEquation {
+    let offset: [f64; 3] =
+        std::array::from_fn(|coordinate| origin[coordinate] - conic.origin[coordinate]);
+    let x = [
+        dot(offset, conic.x_axis),
+        dot(u_axis, conic.x_axis),
+        dot(v_axis, conic.x_axis),
+    ];
+    let y = [
+        dot(offset, conic.y_axis),
+        dot(u_axis, conic.y_axis),
+        dot(v_axis, conic.y_axis),
+    ];
+    PlaneConicEquation {
+        uu: conic.quadratic[0].mul_add(x[1].powi(2), conic.quadratic[1] * y[1].powi(2)),
+        uv: 2.0 * conic.quadratic[0].mul_add(x[1] * x[2], conic.quadratic[1] * y[1] * y[2]),
+        vv: conic.quadratic[0].mul_add(x[2].powi(2), conic.quadratic[1] * y[2].powi(2)),
+        u: 2.0 * conic.quadratic[0].mul_add(x[0] * x[1], conic.quadratic[1] * y[0] * y[1])
+            + conic.linear[0].mul_add(x[1], conic.linear[1] * y[1]),
+        v: 2.0 * conic.quadratic[0].mul_add(x[0] * x[2], conic.quadratic[1] * y[0] * y[2])
+            + conic.linear[0].mul_add(x[2], conic.linear[1] * y[2]),
+        constant: conic.quadratic[0].mul_add(x[0].powi(2), conic.quadratic[1] * y[0].powi(2))
+            + conic.linear[0].mul_add(x[0], conic.linear[1] * y[0])
+            + conic.constant,
     }
-    let first_center = [first_center.x, first_center.y, first_center.z];
-    let second_center = [second_center.x, second_center.y, second_center.z];
-    let Some(first_axis) = normalized([first_axis.x, first_axis.y, first_axis.z]) else {
+}
+
+fn conic_conic_intersections(first: &CurveGeometry, second: &CurveGeometry) -> Vec<[f64; 3]> {
+    let Some(first_equation) = planar_conic_equation(first) else {
         return Vec::new();
     };
-    let Some(second_axis) = normalized([second_axis.x, second_axis.y, second_axis.z]) else {
+    let Some(second_equation) = planar_conic_equation(second) else {
         return Vec::new();
     };
-    let axis_cross = cross(first_axis, second_axis);
-    if dot(axis_cross, axis_cross) > 1e-18 {
-        let mut points = intersect_plane_with_circle(
+    let normal_cross = cross(first_equation.normal, second_equation.normal);
+    if dot(normal_cross, normal_cross) > 1e-18 {
+        let Some((origin, direction)) = plane_intersection_line(
             PlaneEquation {
-                origin: second_center,
-                normal: second_axis,
+                origin: first_equation.origin,
+                normal: first_equation.normal,
             },
-            first_center,
-            first_axis,
-            *first_radius,
-        );
+            PlaneEquation {
+                origin: second_equation.origin,
+                normal: second_equation.normal,
+            },
+        ) else {
+            return Vec::new();
+        };
+        let line = CurveGeometry::Line {
+            origin: Point3::new(origin[0], origin[1], origin[2]),
+            direction: Vector3::new(direction[0], direction[1], direction[2]),
+        };
+        let mut points = line_conic_intersections(&line, first);
         points.retain(|point| curve_contains_points(second, [*point, *point]));
         return points;
     }
-    let delta: [f64; 3] =
-        std::array::from_fn(|coordinate| second_center[coordinate] - first_center[coordinate]);
-    let scale = first_center
+    let delta: [f64; 3] = std::array::from_fn(|coordinate| {
+        second_equation.origin[coordinate] - first_equation.origin[coordinate]
+    });
+    let scale = first_equation
+        .origin
         .into_iter()
-        .chain(second_center)
+        .chain(second_equation.origin)
         .map(f64::abs)
-        .fold(first_radius.max(*second_radius).max(1.0), f64::max);
-    if dot(delta, first_axis).abs() > 1e-9 * scale {
+        .fold(
+            first_equation.scale.max(second_equation.scale).max(1.0),
+            f64::max,
+        );
+    if dot(delta, first_equation.normal).abs() > 1e-9 * scale {
         return Vec::new();
     }
-    let distance = dot(delta, delta).sqrt();
-    if !distance.is_finite() || distance <= 1e-12 * scale {
-        return Vec::new();
-    }
-    let along = (first_radius.mul_add(*first_radius, -(second_radius * second_radius))
-        + distance * distance)
-        / (2.0 * distance);
-    let remaining = first_radius.mul_add(*first_radius, -(along * along));
-    let tolerance = 1e-9 * scale * scale;
-    if !remaining.is_finite() || remaining < -tolerance {
-        return Vec::new();
-    }
-    let direction = delta.map(|value| value / distance);
-    let Some(perpendicular) = normalized(cross(first_axis, direction)) else {
-        return Vec::new();
-    };
-    let base: [f64; 3] = std::array::from_fn(|coordinate| {
-        direction[coordinate].mul_add(along, first_center[coordinate])
-    });
-    let height = remaining.max(0.0).sqrt();
-    let first = std::array::from_fn(|coordinate| {
-        perpendicular[coordinate].mul_add(height, base[coordinate])
-    });
-    if height <= 1e-9 * scale {
-        return vec![first];
-    }
-    let second = std::array::from_fn(|coordinate| {
-        (-perpendicular[coordinate]).mul_add(height, base[coordinate])
-    });
-    vec![first, second]
+    let first_chart = restrict_planar_conic_to_chart(
+        first_equation,
+        first_equation.origin,
+        first_equation.x_axis,
+        first_equation.y_axis,
+    );
+    let second_chart = restrict_planar_conic_to_chart(
+        second_equation,
+        first_equation.origin,
+        first_equation.x_axis,
+        first_equation.y_axis,
+    );
+    common_plane_conic_parameters(first_chart, second_chart)
+        .into_iter()
+        .map(|[u, v]| {
+            std::array::from_fn(|coordinate| {
+                first_equation.origin[coordinate]
+                    + u * first_equation.x_axis[coordinate]
+                    + v * first_equation.y_axis[coordinate]
+            })
+        })
+        .filter(|point| {
+            curve_contains_points(first, [*point, *point])
+                && curve_contains_points(second, [*point, *point])
+        })
+        .collect()
 }
 
 fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3]> {
@@ -28111,7 +28133,7 @@ fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3]> {
                     .into_iter()
                     .chain(line_conic_intersections(curves[first], curves[second]))
                     .chain(line_conic_intersections(curves[second], curves[first]))
-                    .chain(circle_circle_intersections(curves[first], curves[second])),
+                    .chain(conic_conic_intersections(curves[first], curves[second])),
             );
         }
     }
@@ -28646,7 +28668,7 @@ mod topological_vertex_tests {
     }
 
     #[test]
-    fn circle_circle_candidates_cover_coplanar_and_transverse_planes() {
+    fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         let circle = |center: [f64; 3], axis: [f64; 3], radius| {
             let reference = if axis[0].abs() > 0.5 {
                 [0.0, 1.0, 0.0]
@@ -28665,22 +28687,66 @@ mod topological_vertex_tests {
         let tangent = circle([4.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0);
         let transverse = circle([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 2.0);
 
-        let secant_points = circle_circle_intersections(&first, &secant);
+        assert!(conic_conic_intersections(&first, &first).is_empty());
+        assert!(
+            conic_conic_intersections(&first, &circle([0.0, 0.0, 1.0], [0.0, 0.0, 1.0], 2.0),)
+                .is_empty()
+        );
+        let secant_points = conic_conic_intersections(&first, &secant);
         assert_eq!(secant_points.len(), 2);
         assert!(secant_points.iter().all(|point| {
             model_points_agree(*point, [1.0, 3.0_f64.sqrt(), 0.0])
                 || model_points_agree(*point, [1.0, -3.0_f64.sqrt(), 0.0])
         }));
         assert_eq!(
-            circle_circle_intersections(&first, &tangent),
+            conic_conic_intersections(&first, &tangent),
             [[2.0, 0.0, 0.0]]
         );
-        let transverse_points = circle_circle_intersections(&first, &transverse);
+        let transverse_points = conic_conic_intersections(&first, &transverse);
         assert_eq!(transverse_points.len(), 2);
         assert!(transverse_points.iter().all(|point| {
             model_points_agree(*point, [0.0, 2.0, 0.0])
                 || model_points_agree(*point, [0.0, -2.0, 0.0])
         }));
+
+        let ellipse = CurveGeometry::Ellipse {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        };
+        let ellipse_points = conic_conic_intersections(&first, &ellipse);
+        assert_eq!(ellipse_points.len(), 2);
+        assert!(ellipse_points.iter().all(|point| {
+            model_points_agree(*point, [0.0, 2.0, 0.0])
+                || model_points_agree(*point, [0.0, -2.0, 0.0])
+        }));
+        let diagonal_ellipse = CurveGeometry::Ellipse {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 1.0, 0.0),
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        };
+        let larger_circle = circle([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.5);
+        let diagonal_points = conic_conic_intersections(&larger_circle, &diagonal_ellipse);
+        assert_eq!(diagonal_points.len(), 4);
+        assert!(diagonal_points.iter().all(|point| {
+            curve_contains_points(&larger_circle, [*point, *point])
+                && curve_contains_points(&diagonal_ellipse, [*point, *point])
+        }));
+
+        let parabola = CurveGeometry::Parabola {
+            vertex: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            focal_distance: 1.0,
+        };
+        let tangent_circle = circle([1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0);
+        let tangent_points = conic_conic_intersections(&parabola, &tangent_circle);
+        assert_eq!(tangent_points.len(), 1);
+        assert!(model_points_agree(tangent_points[0], [0.0, 0.0, 0.0]));
     }
 }
 
