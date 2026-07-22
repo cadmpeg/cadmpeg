@@ -2948,6 +2948,72 @@ fn offset_only_indexed_om_section() -> Vec<u8> {
     bytes
 }
 
+/// An offset-store indexed OM section whose control block is replaced by
+/// `control_block`. The first record remains the single supported product
+/// record (so the section validates), leaving the control block free to carry
+/// persistent-handle references or an index-value array for the
+/// `data_block_control_*` extractors.
+fn offset_only_indexed_om_section_with_control(control_block: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![0xaa; 8];
+    let class_name = b"UGS::ModlFeature";
+    bytes.push((class_name.len() + 1) as u8);
+    bytes.extend_from_slice(class_name);
+    bytes.push(0x81);
+    let index_start = bytes.len();
+    bytes.extend_from_slice(&[0; 16]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    let metadata = bytes.len();
+    bytes.extend_from_slice(control_block);
+    let first = bytes.len();
+    bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0hostglobalvariables");
+    let second = bytes.len();
+    let text = b"(Number [mm]) length: 25; ";
+    bytes.extend_from_slice(&[0x04, 0x00, 0x2a, 0x02, 0x0b]);
+    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(text);
+    bytes.push(0);
+    let end = bytes.len();
+    for (index, offset) in [metadata, first, second, end].into_iter().enumerate() {
+        bytes[index_start + index * 4..index_start + index * 4 + 4]
+            .copy_from_slice(&(offset as u32).to_le_bytes());
+    }
+    bytes
+}
+
+/// An offset-store indexed OM section whose single product record lives inside
+/// the control block, preceded by a zero-prefixed aligned index-value array.
+/// The two column records carry no product marker, so the section still holds
+/// exactly one product record and `data_block_control_index_values` decodes the
+/// array. Mirrors the `om_offset_store_index_values_*` white-box test.
+fn offset_only_indexed_om_section_with_index_values() -> Vec<u8> {
+    let mut control = Vec::new();
+    control.extend_from_slice(&[0, 0]); // two-byte zero prefix
+    control.extend_from_slice(&7u32.to_le_bytes());
+    control.extend_from_slice(&0x1020u32.to_le_bytes());
+    control.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0"); // the one product record
+
+    let mut bytes = vec![0xaa; 8];
+    let class_name = b"UGS::ModlFeature";
+    bytes.push((class_name.len() + 1) as u8);
+    bytes.extend_from_slice(class_name);
+    bytes.push(0x81);
+    let index_start = bytes.len();
+    bytes.extend_from_slice(&[0; 16]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    let metadata = bytes.len();
+    bytes.extend_from_slice(&control);
+    let first = bytes.len();
+    bytes.extend_from_slice(&[0xbb; 12]); // column record, no product marker
+    let second = bytes.len();
+    bytes.extend_from_slice(&[0xcc; 12]); // column record, no product marker
+    let end = bytes.len();
+    for (index, offset) in [metadata, first, second, end].into_iter().enumerate() {
+        bytes[index_start + index * 4..index_start + index * 4 + 4]
+            .copy_from_slice(&(offset as u32).to_le_bytes());
+    }
+    bytes
+}
+
 fn control_root_offset_only_indexed_om_section() -> Vec<u8> {
     let mut bytes = vec![0xaa; 8];
     let class_name = b"UGS::ModlFeature";
@@ -19655,7 +19721,7 @@ mod golden {
     /// Frozen from the generated snapshots; if a refactor drops an arena from
     /// every fixture, `arena_coverage_meets_floor` fails. Raise it (never lower
     /// it) when new covering fixtures are added.
-    const ARENA_COVERAGE_FLOOR: usize = 55;
+    const ARENA_COVERAGE_FLOOR: usize = 59;
 
     /// Build the covering fixture set: `(golden name, full `.prt` bytes)`. Each
     /// stream builder is wrapped exactly as its originating white-box test wraps
@@ -19715,6 +19781,29 @@ mod golden {
                 ("/Root/UG_PART/DisplayJT", display_jt_basic_stream()),
             ]),
         ));
+
+        // Offset-store control blocks: the plain form resolves class-registry
+        // ordinals; the handle form carries two adjacent persistent handles.
+        f.push((
+            "data_block_control_class_references",
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]),
+        ));
+        f.push((
+            "data_block_control_index_values",
+            prt_with_named_payloads(&[(
+                "/Root/UG_PART/UG_PART",
+                offset_only_indexed_om_section_with_index_values(),
+            )]),
+        ));
+        f.push(("data_block_control_handles", {
+            let mut control = Vec::new();
+            control.extend_from_slice(&[0xe0, 0, 0, 0, 1]);
+            control.extend_from_slice(&[0xe0, 0, 0, 0, 2]);
+            prt_with_named_payloads(&[(
+                "/Root/UG_PART/UG_PART",
+                offset_only_indexed_om_section_with_control(&control),
+            )])
+        }));
 
         // OM record areas / feature history, wrapped as a named UG_PART payload.
         f.push((
