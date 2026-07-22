@@ -2214,31 +2214,23 @@ fn reflected_first_coordinate_plane_corner_tokens(
     };
     let mut candidates = (0..frame_end).filter_map(|start| {
         (start >= 3 && body.get(start - 3..start) == Some(&[0x00, 0x0c, 0x9a])).then_some(())?;
-        let (stored_held, first_end) =
+        let (stored_first_x, first_end) =
             scalar::decode_tabulated_cylinder_first_coordinate(body, start, cache)?;
-        (first_end == start + 7 && stored_held.is_finite() && stored_held < 0.0).then_some(())?;
-        let (first_other, second_start) =
-            scalar::decode_in_surface_row_lane(body, first_end, cache)?;
-        let (first_axial, repeated_start) =
-            scalar::decode_in_surface_row_lane(body, second_start, cache)?;
-        let (repeated_held, second_other_start) =
-            scalar::decode_tabulated_cylinder_first_coordinate(body, repeated_start, cache)?;
-        let (second_other, second_axial_start) =
-            scalar::decode_in_surface_row_lane(body, second_other_start, cache)?;
-        let (second_axial, end) =
-            scalar::decode_in_surface_row_lane(body, second_axial_start, cache)?;
+        (first_end > start && stored_first_x.is_finite() && stored_first_x < 0.0).then_some(())?;
+        let (first_y, first_z_start) = scalar::decode_in_surface_row_lane(body, first_end, cache)?;
+        let (first_z, second_x_start) =
+            scalar::decode_in_surface_row_lane(body, first_z_start, cache)?;
+        let (stored_second_x, second_y_start) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, second_x_start, cache)?;
+        let (second_y, second_z_start) =
+            scalar::decode_in_surface_row_lane(body, second_y_start, cache)?;
+        let (second_z, end) = scalar::decode_in_surface_row_lane(body, second_z_start, cache)?;
         (end == frame_end
-            && [
-                first_other,
-                first_axial,
-                repeated_held,
-                second_other,
-                second_axial,
-            ]
-            .iter()
-            .all(|value| value.is_finite())
-            && repeated_held < 0.0
-            && second_other_start == repeated_start + 7)
+            && [first_y, first_z, stored_second_x, second_y, second_z]
+                .iter()
+                .all(|value| value.is_finite())
+            && stored_second_x < 0.0
+            && second_y_start > second_x_start)
             .then_some(())?;
         let slot = |value, offset, end| SurfaceParameterScalar {
             value: Some(value),
@@ -2247,12 +2239,12 @@ fn reflected_first_coordinate_plane_corner_tokens(
             length: end - offset,
         };
         Some(vec![
-            slot(-stored_held, start, first_end),
-            slot(first_other, first_end, second_start),
-            slot(first_axial, second_start, repeated_start),
-            slot(-repeated_held, repeated_start, second_other_start),
-            slot(second_other, second_other_start, second_axial_start),
-            slot(second_axial, second_axial_start, end),
+            slot(-stored_first_x, start, first_end),
+            slot(first_y, first_end, first_z_start),
+            slot(first_z, first_z_start, second_x_start),
+            slot(-stored_second_x, second_x_start, second_y_start),
+            slot(second_y, second_y_start, second_z_start),
+            slot(second_z, second_z_start, end),
         ])
     });
     let candidate = candidates.next()?;
@@ -6286,6 +6278,30 @@ mod tests {
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [0.0, 6.777_498_012_261_868, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                u_axis: [1.0, 0.0, 0.0],
+                offset: 23,
+            }]
+        );
+
+        let mut mixed_width = record.clone();
+        mixed_width.body = vec![
+            0x18, 0xe4, 0x2c, 0xbe, 0x45, 0x9b, 0x33, 0x33, 0x33, 0x00, 0x0c, 0x9a, 0x4a, 0x19,
+            0x29, 0x8e, 0x22, 0xd2, 0x2c, 0x46, 0x1a, 0x29, 0xfb, 0x8f, 0x4b, 0x8f, 0x16, 0x2f,
+            0x20, 0x00, 0x46, 0x18, 0xb0, 0x77, 0xb6, 0x05, 0x5f, 0x34, 0x46, 0x1a, 0x29, 0xfb,
+            0x8f, 0x4b, 0x8f, 0x16, 0x2e, 0x20, 0x33,
+        ];
+        mixed_width.scalar_tokens = scalar_tokens(
+            SurfaceKind::Plane,
+            &mixed_width.body,
+            &scalar::ScalarCache::default(),
+        );
+        mixed_width.scalar_frames = scalar_frames(&mixed_width.scalar_tokens);
+        assert_eq!(
+            positional_frame_planes(&[mixed_width], &[row.clone()]),
+            vec![OutlinePlane {
+                surface_id: 41,
+                origin: [0.0, 6.540_998_686_777_831, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 u_axis: [1.0, 0.0, 0.0],
                 offset: 23,

@@ -844,11 +844,11 @@ final frame do not participate in the corner coordinates.
 A reflected-first-coordinate positional plane body stores two XYZ corners as
 six contiguous scalars immediately after `00 0c 9a`. The frame reaches the
 bounded body end or is followed only by `f7 0c`. The first coordinate of each
-corner uses a negative seven-byte token from the tabulated-cylinder
-first-coordinate DICT lane. Negating each stored value gives its model-space X
-coordinate. The other four slots use the positional surface-row scalar lane
-and give the two YZ coordinate pairs. The resulting corners use the
-unique-held-coordinate plane rule.
+corner uses a negative token from the tabulated-cylinder first-coordinate lane;
+the two slots can independently use that lane's seven- and eight-byte forms.
+Negating each stored value gives its model-space X coordinate. The other four
+slots use the positional surface-row scalar lane and give the two YZ coordinate
+pairs. The resulting corners use the unique-held-coordinate plane rule.
 
 For a generated section plane selected through the parent-datum rule, multiple
 held envelope coordinates are filtered against the orientation plane. The
