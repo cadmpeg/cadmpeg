@@ -3089,11 +3089,17 @@ mod marker_tests {
         payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
 
         assert!(compact_extrusion_blind_at(&payload, 0));
+        payload[block + 8] = 0x40;
+        assert!(compact_extrusion_blind_at(&payload, 0));
         payload[18] = 1;
         assert!(!compact_extrusion_blind_at(&payload, 0));
         payload[18] = 0;
         payload[22] = 1;
         assert!(!compact_extrusion_blind_at(&payload, 0));
+
+        let mut compact = payload[..22].to_vec();
+        compact.extend_from_slice(&payload[26..]);
+        assert!(compact_extrusion_blind_at(&compact, 0));
     }
 
     #[test]
@@ -19739,6 +19745,51 @@ pub(crate) fn enrich_history_extrusion_terminations(
     type TerminationVote = (String, Option<String>, Option<String>);
     let mut terminations = HashMap::<String, Vec<Option<TerminationVote>>>::new();
     for lane in lanes {
+        let names_by_id = lane
+            .names
+            .iter()
+            .map(|name| (name.id.as_str(), name.value.as_str()))
+            .collect::<HashMap<_, _>>();
+        let blind_offsets = (0..lane.native_payload.len().saturating_sub(103))
+            .filter(|offset| compact_extrusion_blind_at(&lane.native_payload, *offset))
+            .collect::<Vec<_>>();
+        let mut grouped_blind = HashMap::<String, Vec<TerminationVote>>::new();
+        for &offset in &blind_offsets {
+            let Some(scalar) = lane
+                .scalars
+                .iter()
+                .filter(|scalar| {
+                    u64::try_from(offset).is_ok_and(|offset| scalar.offset > offset)
+                })
+                .min_by_key(|scalar| scalar.offset)
+            else {
+                continue;
+            };
+            let Some(name) = names_by_id.get(scalar.name.as_str()) else {
+                continue;
+            };
+            let owners = histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .filter(|feature| matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut"))
+                .filter(|feature| feature.parameters.len() == 1)
+                .filter(|feature| {
+                    feature.parameters.get(*name).is_some_and(|value| {
+                        crate::history::parse_dimension_length_mm(value).is_some_and(|value| {
+                            (value - scalar.value * 1000.0).abs() <= 1.0e-9
+                        })
+                    })
+                })
+                .collect::<Vec<_>>();
+            let [owner] = owners.as_slice() else {
+                continue;
+            };
+            grouped_blind.entry(owner.id.clone()).or_default().push((
+                "Blind".to_string(),
+                None,
+                None,
+            ));
+        }
         let mut objects = histories
             .iter()
             .flat_map(|history| &history.features)
@@ -19856,12 +19907,19 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     }
                 })
                 .collect::<Vec<_>>();
+            let grouped = grouped_blind.get(feature_id).and_then(|candidates| {
+                let [candidate] = candidates.as_slice() else {
+                    return None;
+                };
+                Some(candidate.clone())
+            });
             terminations.entry(feature_id.clone()).or_default().push(
                 candidates
                     .as_slice()
                     .first()
                     .cloned()
-                    .filter(|_| candidates.len() == 1),
+                    .filter(|_| candidates.len() == 1)
+                    .or(grouped),
             );
         }
     }
@@ -20490,8 +20548,9 @@ pub(crate) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) ->
 
 pub(crate) fn compact_extrusion_blind_at(payload: &[u8], offset: usize) -> bool {
     compact_extrusion_end_spec_header(payload, offset, 0)
-        && payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
-        && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()
+        && ((payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
+            && compact_extrusion_dimension_child_at(payload, offset + 26).is_some())
+            || compact_extrusion_dimension_child_at(payload, offset + 22).is_some())
 }
 
 pub(crate) fn compact_extrusion_through_next_at(payload: &[u8], offset: usize) -> bool {
@@ -20601,10 +20660,11 @@ fn compact_extrusion_dimension_child_at(payload: &[u8], child: usize) -> Option<
         return None;
     };
     (payload.get(block..block + 16).is_some_and(|bytes| {
-        bytes
-            .iter()
-            .enumerate()
-            .all(|(index, byte)| *byte == 0 || (index == 9 && byte.trailing_zeros() >= 3))
+        bytes.iter().enumerate().all(|(index, byte)| match index {
+            8 => matches!(*byte, 0 | 0x40),
+            9 => byte.trailing_zeros() >= 3,
+            _ => *byte == 0,
+        })
     }) && payload.get(block + 16..block + 20) == Some(&[0xff, 0xff, 0, 0])
         && payload
             .get(block + 20)
