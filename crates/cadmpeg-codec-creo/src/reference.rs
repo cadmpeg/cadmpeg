@@ -424,26 +424,25 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
             search = block_end.max(fields_start);
             continue;
         }
+        let parameter_start =
+            named_coordinate(payload, b"\xe0\x02t0\0", after_flip, local_label, &cache);
+        let parameter_end =
+            find_in(payload, b"\xe0\x02t1\0", after_flip, local_label).and_then(|label| {
+                let value_offset = label + b"\xe0\x02t1\0".len();
+                if payload.get(value_offset) == Some(&0x11) {
+                    parameter_start.map(|value| value + std::f64::consts::PI)
+                } else {
+                    coordinate(payload, value_offset, &cache).map(|(value, _)| value)
+                }
+            });
         result.push(ReferenceConic {
             entity_id,
             type_id,
             flip,
             start,
             end,
-            parameter_start: named_coordinate(
-                payload,
-                b"\xe0\x02t0\0",
-                after_flip,
-                local_label,
-                &cache,
-            ),
-            parameter_end: named_coordinate(
-                payload,
-                b"\xe0\x02t1\0",
-                after_flip,
-                local_label,
-                &cache,
-            ),
+            parameter_start,
+            parameter_end,
             coefficient_1,
             coefficient_2,
             local_system: conic_local_system(&payload[local_start..local_end], &cache),
@@ -459,10 +458,14 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
 fn conic_parameter(
     body: &[u8],
     offset: usize,
+    opposite_of: Option<f64>,
     cache: &ScalarCache,
 ) -> Option<(Option<f64>, usize)> {
     if body.get(offset) == Some(&0x11) {
-        return Some((None, offset + 1));
+        return Some((
+            opposite_of.map(|value| value + std::f64::consts::PI),
+            offset + 1,
+        ));
     }
     coordinate(body, offset, cache).map(|(value, next)| (Some(value), next))
 }
@@ -486,9 +489,9 @@ fn positional_conic_body(
             cursor = next;
         }
     }
-    let (parameter_start, next) = conic_parameter(body, cursor, cache)?;
+    let (parameter_start, next) = conic_parameter(body, cursor, None, cache)?;
     cursor = next;
-    let (parameter_end, next) = conic_parameter(body, cursor, cache)?;
+    let (parameter_end, next) = conic_parameter(body, cursor, parameter_start, cache)?;
     cursor = next;
     let (coefficient_1, next) = coordinate(body, cursor, cache)?;
     cursor = next;
@@ -926,7 +929,7 @@ mod tests {
             \xe0\x01flip\0\x01\
             \xe0\x02end1\0\xf8\x03\xe4\x0f\x0f\
             \xe0\x02end2\0\xf8\x03\x43\xf0\x00\x0f\x0f\
-            \xe0\x02t0\0\x0f\xe0\x02t1\0\xe4\
+            \xe0\x02t0\0\x0f\xe0\x02t1\0\x11\
             \xe0\x02c1\0\x43\xf0\x00\xe0\x02c2\0\xe4\
             \xe0\x02local_sys\0\xf9\x04\x03\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6\
             \xf2\xf7\x0e\xe3";
@@ -941,7 +944,7 @@ mod tests {
         assert_eq!(conic.start, [1.0, 0.0, 0.0]);
         assert_eq!(conic.end, [-1.0, 0.0, 0.0]);
         assert_eq!(conic.parameter_start, Some(0.0));
-        assert_eq!(conic.parameter_end, Some(1.0));
+        assert_eq!(conic.parameter_end, Some(std::f64::consts::PI));
         assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
         assert_eq!(
             conic.local_system,
@@ -963,7 +966,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_positional_conic_with_an_opaque_parameter_token() {
+    fn decodes_positional_conic_with_an_opposite_endpoint_parameter() {
         let payload = b"ent_list(conic)\0\xf2\xf7\x0e\xe2\x2b\xe3\
             \x2b\x1e\xe2\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\x01\
             \xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\x0f\x11\x43\xf0\x00\xe4\
@@ -979,9 +982,18 @@ mod tests {
         assert_eq!(conic.start, [1.0, 0.0, 0.0]);
         assert_eq!(conic.end, [-1.0, 0.0, 0.0]);
         assert_eq!(conic.parameter_start, Some(0.0));
-        assert_eq!(conic.parameter_end, None);
+        assert_eq!(conic.parameter_end, Some(std::f64::consts::PI));
         assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
         assert_eq!(conic.local_system.expect("complete local system")[9], -1.0);
+    }
+
+    #[test]
+    fn opposite_endpoint_parameter_requires_a_decoded_start_parameter() {
+        let body = [0x11];
+        assert_eq!(
+            conic_parameter(&body, 0, None, &ScalarCache::from_section(&body)),
+            Some((None, 1))
+        );
     }
 
     #[test]

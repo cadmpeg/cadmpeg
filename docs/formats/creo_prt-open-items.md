@@ -27,8 +27,7 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - The remaining `fc` curve-body grammars are unspecified, including `fc 05` variants, `fc 08`, `fc 13` field roles, `fc 02` slot semantics, and `fc 04`, `fc 07`, `fc 09`, and `fc 0a`. The decoded `fc 13` body contains repeated full sample groups followed by a shortened held-coordinate-plus-two-field terminal form; whether that form is a final sample or a trailer is unspecified.
 - The equations relating `MdlRefInfo` conic types other than the defined
   type-30 ellipse to `t0`, `t1`, `c1`, `c2`, and `local_sys` are unspecified,
-  including parabola and hyperbola carrier parameters. The compact `0x11`
-  `t1` form is also unspecified.
+  including parabola and hyperbola carrier parameters.
 - Rotational-sweep angular termination selectors other than the defined
   full-turn `angle_choice` form are unspecified, including one-sided,
   symmetric, and two-sided travel.
