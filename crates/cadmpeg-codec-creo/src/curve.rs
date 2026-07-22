@@ -1363,7 +1363,7 @@ trait ExpressionValue: Clone {
         context: RelationEvaluationContext<'_>,
     ) -> Option<Self>;
     fn negate(self) -> Option<Self>;
-    fn finite(self) -> bool;
+    fn finite(&self) -> bool;
 }
 
 impl ExpressionValue for f64 {
@@ -1423,7 +1423,7 @@ impl ExpressionValue for f64 {
         Some(-self)
     }
 
-    fn finite(self) -> bool {
+    fn finite(&self) -> bool {
         self.is_finite()
     }
 }
@@ -1528,7 +1528,7 @@ impl ExpressionValue for AffineValue {
         })
     }
 
-    fn finite(self) -> bool {
+    fn finite(&self) -> bool {
         self.constant.is_finite() && self.linear.is_finite()
     }
 }
@@ -1667,7 +1667,7 @@ impl ExpressionValue for CurveExpressionValue {
         }
     }
 
-    fn finite(self) -> bool {
+    fn finite(&self) -> bool {
         match self {
             Self::Number(value) | Self::Length(value) | Self::Angle(value) => value.is_finite(),
             Self::Quantity(value) => value.value.is_finite(),
@@ -1763,6 +1763,10 @@ impl ComparisonOperator {
 }
 
 impl<V: ExpressionValue> ExpressionParser<'_, V> {
+    fn finite_value(value: V) -> Option<V> {
+        value.finite().then_some(value)
+    }
+
     fn whitespace(&mut self) {
         while self
             .source
@@ -1781,7 +1785,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 return Some(value);
             }
             self.cursor += 1;
-            value = value.logical_or(self.logical_and()?)?;
+            value = Self::finite_value(value.logical_or(self.logical_and()?)?)?;
         }
     }
 
@@ -1793,7 +1797,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 return Some(value);
             }
             self.cursor += 1;
-            value = value.logical_and(self.comparison()?)?;
+            value = Self::finite_value(value.logical_and(self.comparison()?)?)?;
         }
     }
 
@@ -1810,7 +1814,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             _ => return Some(value),
         };
         self.cursor += width;
-        value.compare(self.expression()?, operator)
+        Self::finite_value(value.compare(self.expression()?, operator)?)
     }
 
     fn expression(&mut self) -> Option<V> {
@@ -1820,11 +1824,11 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             match self.source.get(self.cursor) {
                 Some(b'+') => {
                     self.cursor += 1;
-                    value = value.add(self.term()?)?;
+                    value = Self::finite_value(value.add(self.term()?)?)?;
                 }
                 Some(b'-') => {
                     self.cursor += 1;
-                    value = value.subtract(self.term()?)?;
+                    value = Self::finite_value(value.subtract(self.term()?)?)?;
                 }
                 _ => return Some(value),
             }
@@ -1838,11 +1842,11 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             match self.source.get(self.cursor) {
                 Some(b'*') => {
                     self.cursor += 1;
-                    value = value.multiply(self.unary()?)?;
+                    value = Self::finite_value(value.multiply(self.unary()?)?)?;
                 }
                 Some(b'/') => {
                     self.cursor += 1;
-                    value = value.divide(self.unary()?)?;
+                    value = Self::finite_value(value.divide(self.unary()?)?)?;
                 }
                 _ => return Some(value),
             }
@@ -1869,11 +1873,11 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         }
         let mut value = self.power()?;
         for operator in operators.into_iter().rev() {
-            value = if operator == b'-' {
+            value = Self::finite_value(if operator == b'-' {
                 value.negate()?
             } else {
                 value.logical_not()?
-            };
+            })?;
         }
         Some(value)
     }
@@ -1889,7 +1893,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         self.nesting += 1;
         let exponent = self.unary()?;
         self.nesting -= 1;
-        value.power(exponent)
+        Self::finite_value(value.power(exponent)?)
     }
 
     fn primary(&mut self) -> Option<V> {
@@ -1920,10 +1924,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 .position(|byte| *byte == b']')?;
             let unit_end = unit_start + unit_length;
             let unit = std::str::from_utf8(&self.source[unit_start..unit_end]).ok()?;
-            value = value.with_unit(relation_unit(unit)?)?;
+            value = Self::finite_value(value.with_unit(relation_unit(unit)?)?)?;
             self.cursor = unit_end + 1;
         }
-        Some(value)
+        Self::finite_value(value)
     }
 
     fn string(&mut self) -> Option<V> {
@@ -2388,7 +2392,7 @@ fn evaluate_creo_relation_function(
             Number(evaluate_creo_math_function(name, &numbers)?)
         }
     };
-    value.clone().finite().then_some(value)
+    value.finite().then_some(value)
 }
 
 fn relation_string_pattern(value: &str, pattern: &str) -> Option<bool> {
@@ -2459,7 +2463,7 @@ fn evaluate_relation_expression(
     };
     let value = parser.logical_or()?;
     parser.whitespace();
-    (parser.cursor == parser.source.len() && value.clone().finite()).then_some(value)
+    (parser.cursor == parser.source.len() && value.finite()).then_some(value)
 }
 
 #[cfg(test)]
@@ -3845,6 +3849,18 @@ mod tests {
         assert_eq!(evaluate_expression("ceil(1.2,-1)", &values), None);
         assert_eq!(evaluate_expression("sin()", &values), None);
         assert_eq!(evaluate_expression("1<2<3", &values), None);
+        for expression in [
+            "1e309==1e309",
+            "1e308*1e308>0",
+            "if(1,2,1e308*1e308)",
+            "0 & (1/0)",
+        ] {
+            assert_eq!(
+                evaluate_expression(expression, &values),
+                None,
+                "{expression}"
+            );
+        }
         assert_eq!(relation_round(f64::MAX, 8.0, true), Some(f64::MAX));
         assert_eq!(relation_round(f64::MAX, 8.0, false), Some(f64::MAX));
         assert_eq!(relation_round(-f64::MAX, 8.0, true), Some(-f64::MAX));
@@ -4426,6 +4442,15 @@ mod tests {
             CurveExpressionActivation::Conditional
         );
         assert_eq!(assignments[0].value, None);
+
+        let overflow = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x0aexpression\0\xf8\x06IF 1e308*1e308>0\0x=1\0ELSE\0x=2\0ENDIF\0y=x+1\0";
+        let assignments = &expression_records(overflow)[0].assignments;
+        assert!(assignments[..2]
+            .iter()
+            .all(|assignment| assignment.activation == CurveExpressionActivation::Conditional));
+        assert_eq!(assignments[2].activation, CurveExpressionActivation::Active);
+        assert_eq!(assignments[2].value, None);
     }
 
     #[test]
