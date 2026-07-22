@@ -30734,28 +30734,74 @@ fn prototype_local_frame(
     let middle: [f64; 3] = slots[3..6].try_into().ok()?;
     let third: [f64; 3] = slots[6..9].try_into().ok()?;
     let first_norm = dot(first, first).sqrt();
-    let middle_norm = dot(middle, middle).sqrt();
-    let third_norm = dot(third, third).sqrt();
-    let second = if middle_norm <= 1e-10
-        && third_norm > 1e-10
-        && (first_norm - third_norm).abs() <= 1e-10 * first_norm.max(third_norm)
-    {
-        normalized(third)?
-    } else if matches!(record.family, crate::surface::SurfacePrototypeFamily::Torus)
-        && middle_norm > 1e-10
-        && (first_norm - middle_norm).abs() <= 1e-10 * first_norm.max(middle_norm)
-    {
-        normalized(middle)?
-    } else {
-        return None;
-    };
     let reference = normalized(first)?;
-    if dot(reference, second).abs() > 1e-10 {
-        return None;
-    }
+    let torus = matches!(record.family, crate::surface::SurfacePrototypeFamily::Torus);
+    let mut second_candidates =
+        [(middle, torus), (third, true)]
+            .into_iter()
+            .filter_map(|(candidate, eligible)| {
+                let candidate_norm = dot(candidate, candidate).sqrt();
+                let equal_scale =
+                    (first_norm - candidate_norm).abs() <= 1e-10 * first_norm.max(candidate_norm);
+                eligible
+                    .then_some(())
+                    .filter(|()| {
+                        equal_scale && dot(reference, candidate).abs() <= 1e-10 * candidate_norm
+                    })
+                    .and_then(|()| normalized(candidate))
+            });
+    let second = second_candidates.next()?;
+    second_candidates.next().is_none().then_some(())?;
     let axis = normalized(cross(reference, second))?;
     let origin = slots[9..12].try_into().ok()?;
     Some((origin, axis, reference))
+}
+
+#[cfg(test)]
+mod prototype_local_frame_tests {
+    use super::*;
+    use crate::surface::{
+        SurfaceNamedParameter, SurfaceNamedValue, SurfacePrototypeFamily, SurfacePrototypeRecord,
+    };
+
+    fn record(values: [f64; 12]) -> SurfacePrototypeRecord {
+        SurfacePrototypeRecord {
+            declared_family: "torus".to_string(),
+            family: SurfacePrototypeFamily::Torus,
+            parameters: vec![SurfaceNamedParameter {
+                name: "local_sys".to_string(),
+                value: SurfaceNamedValue::ScalarArray {
+                    dimensions: 4,
+                    count: 3,
+                    values: values.into_iter().map(Some).collect(),
+                    tokens: Vec::new(),
+                },
+                body: Vec::new(),
+                offset: 0,
+                value_offset: 0,
+            }],
+            offset: 0,
+        }
+    }
+
+    #[test]
+    fn selects_the_unique_orthogonal_equal_scale_support_candidate() {
+        let record = record([
+            0.8, 0.6, 0.0, 1.0, 0.0, 0.0, -0.6, 0.8, 0.0, -180.0, -3.0, 40.0,
+        ]);
+
+        assert_eq!(
+            prototype_local_frame(&record),
+            Some(([-180.0, -3.0, 40.0], [0.0, -0.0, 1.0], [0.8, 0.6, 0.0]))
+        );
+    }
+
+    #[test]
+    fn rejects_ambiguous_support_candidates() {
+        let record = record([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0]);
+
+        assert_eq!(prototype_local_frame(&record), None);
+    }
 }
 
 fn unique_surface_prototype_associations(

@@ -391,10 +391,14 @@ pub fn decode_tabulated_cylinder_second_coordinate(
 pub fn decode_named_local_system_coordinate(
     data: &[u8],
     offset: usize,
+    slot: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
     if data.get(offset) == Some(&0x0e) {
         return Some((0.5, offset + 1));
+    }
+    if slot == 6 && data.get(offset) == Some(&0x41) {
+        return ieee8(data, offset, 0xbf);
     }
     decode_tabulated_cylinder_second_coordinate(data, offset, cache)
 }
