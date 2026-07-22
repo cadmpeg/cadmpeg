@@ -12,14 +12,15 @@
 //! native loops, units, feature identifiers, and datum planes. [`summarize`]
 //! converts that scan into the codec-neutral container summary.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 
 use crate::curve::{
-    self, BoundPrototypePcurve, CurveExpressionRecord, CurveParameterRecord, CurvePrototype,
-    CurvePrototypeTopology, CurveTopologyRow, DepdbCurveRow, Fc05Circle, Fc05CylinderCapPair,
-    FcCurveCoordinates, PcurveEndpoints, PrototypePcurveEndpoints,
+    self, BoundPrototypePcurve, CurveExpressionRecord, CurveExpressionValue, CurveParameterRecord,
+    CurvePrototype, CurvePrototypeTopology, CurveTopologyRow, DepdbCurveRow,
+    ExternalRelationSymbols, Fc05Circle, Fc05CylinderCapPair, FcCurveCoordinates, PcurveEndpoints,
+    PrototypePcurveEndpoints,
 };
 use crate::datum::{self, DatumPlane};
 use crate::feature::{
@@ -1779,12 +1780,22 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         &feature_operations,
         &section_owner_ranges,
     );
-    let relation_dimension_symbols = feature_definitions
+    let mut relation_dimension_symbols = ExternalRelationSymbols::default();
+    for dimension in feature_definitions
         .iter()
         .filter_map(|definition| definition.dimensions.as_ref())
         .flat_map(|table| table.rows.iter())
-        .map(|dimension| format!("d{}", dimension.external_id))
-        .collect::<BTreeSet<_>>();
+    {
+        let value = dimension.value.map(|value| {
+            CurveExpressionValue::Number(match dimension.value_unit {
+                feature::DimensionUnit::Radians => value.to_degrees(),
+                feature::DimensionUnit::Millimeters | feature::DimensionUnit::SchemaDefined => {
+                    value
+                }
+            })
+        });
+        relation_dimension_symbols.observe(&format!("d{}", dimension.external_id), value);
+    }
     curve::reevaluate_expression_records(
         &mut curve_expressions,
         model_name.as_deref().and_then(relation_model_name),

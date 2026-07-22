@@ -3907,7 +3907,13 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     payload.extend_from_slice(b"\xf3\xf7\x81\x02\xe2");
     payload.extend_from_slice(&[10, 0x60, 0xc8, 0x1e, 0x15, 0xd4, 0xaf, 0x9f, 0, 0x18, 44]);
     payload.extend_from_slice(b"\xe0\x00relat_ptr\0");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let expressions = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x02angle=d42\0length=d43+2\0"
+        .to_vec();
+    let scan = container::scan_bytes(build_prt(
+        "c",
+        &[("FeatDefs", payload), ("DEPDB_DATA", expressions)],
+    ));
 
     let dimensions = scan.feature_definitions[0]
         .dimensions
@@ -3939,6 +3945,17 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
         ]))
     );
     assert_eq!(dimensions.rows[2].external_id, 44);
+    assert_eq!(scan.curve_expressions.len(), 1);
+    assert_eq!(
+        scan.curve_expressions[0].assignments[0].value,
+        Some(crate::curve::CurveExpressionValue::Number(
+            1.0f64.to_degrees()
+        ))
+    );
+    assert_eq!(
+        scan.curve_expressions[0].assignments[1].value,
+        Some(crate::curve::CurveExpressionValue::Number(5.0))
+    );
 }
 
 #[test]

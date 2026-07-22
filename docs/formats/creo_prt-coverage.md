@@ -43,8 +43,10 @@ fixtures, claims above L1 remain unproven.
   the reserved `PI` constant evaluates, and nested `IF`/`ELSE`/`ENDIF`
   activation is evaluated without selecting unresolved branches. Positive
   `exists()` queries resolve against the complete local assignment namespace
-  and decoded `d<external_id>` section-dimension identities; other namespaces
-  remain unresolved. Affine
+  and decoded `d<external_id>` section-dimension identities. Unambiguous
+  decoded dimension values initialize those relation symbols in millimeters or
+  degrees; conflicting and unresolved occurrences remain symbolic. Other
+  namespaces remain unresolved. Affine
   cylindrical-coordinate programs transfer as helices.
 - Feature rows, parent/input tables, affected geometry and edge identifiers,
   recipe effects, saved sections, and operation states retain stable native

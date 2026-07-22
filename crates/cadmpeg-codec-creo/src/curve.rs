@@ -564,7 +564,11 @@ pub(crate) fn expression_records_with_model_name(
             cursor = line_end + 1;
         }
         if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
-            let assignments = evaluate_expression_program(&lines, model_name, &BTreeSet::new());
+            let assignments = evaluate_expression_program(
+                &lines,
+                model_name,
+                &ExternalRelationSymbols::default(),
+            );
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
@@ -582,11 +586,32 @@ pub(crate) fn expression_records_with_model_name(
 pub(crate) fn reevaluate_expression_records(
     records: &mut [CurveExpressionRecord],
     model_name: Option<&str>,
-    external_symbols: &BTreeSet<String>,
+    external_symbols: &ExternalRelationSymbols,
 ) {
     for record in records {
         record.assignments =
             evaluate_expression_program(&record.lines, model_name, external_symbols);
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct ExternalRelationSymbols {
+    values: BTreeMap<String, Option<CurveExpressionValue>>,
+}
+
+impl ExternalRelationSymbols {
+    pub(crate) fn observe(&mut self, name: &str, value: Option<CurveExpressionValue>) {
+        use std::collections::btree_map::Entry;
+
+        match self.values.entry(expression_identifier_key(name)) {
+            Entry::Vacant(entry) => {
+                entry.insert(value);
+            }
+            Entry::Occupied(mut entry) if entry.get() != &value => {
+                entry.insert(None);
+            }
+            Entry::Occupied(_) => {}
+        }
     }
 }
 
@@ -802,7 +827,7 @@ fn branch_activation(
 fn evaluate_expression_program(
     lines: &[CurveExpressionLine],
     model_name: Option<&str>,
-    external_symbols: &BTreeSet<String>,
+    external_symbols: &ExternalRelationSymbols,
 ) -> Vec<CurveExpressionAssignment> {
     if !expression_program_control_is_valid(lines) {
         return lines
@@ -815,7 +840,11 @@ fn evaluate_expression_program(
             .collect();
     }
 
-    let mut existing_symbols = external_symbols.clone();
+    let mut existing_symbols = external_symbols
+        .values
+        .keys()
+        .cloned()
+        .collect::<BTreeSet<_>>();
     existing_symbols.extend(
         lines
             .iter()
@@ -826,7 +855,11 @@ fn evaluate_expression_program(
         model_name,
         existing_symbols: Some(&existing_symbols),
     };
-    let mut values = BTreeMap::new();
+    let mut values = external_symbols
+        .values
+        .iter()
+        .filter_map(|(name, value)| value.clone().map(|value| (name.clone(), value)))
+        .collect::<BTreeMap<_, _>>();
     let mut stack = Vec::<ConditionalFrame>::new();
     let mut activity = CurveExpressionActivation::Active;
     let mut assignments = Vec::new();
@@ -2984,7 +3017,8 @@ mod tests {
                 offset,
             })
             .collect::<Vec<_>>();
-        let assignments = evaluate_expression_program(&lines, None, &BTreeSet::new());
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
 
         assert!(assignments[0].dependencies.is_empty());
         assert_eq!(
@@ -3112,8 +3146,9 @@ mod tests {
                 offset,
             })
             .collect::<Vec<_>>();
-        let assignments =
-            evaluate_expression_program(&lines, None, &BTreeSet::from(["d42".to_owned()]));
+        let mut external_symbols = ExternalRelationSymbols::default();
+        external_symbols.observe("d42", None);
+        let assignments = evaluate_expression_program(&lines, None, &external_symbols);
 
         assert_eq!(assignments.len(), 5);
         assert!(assignments[0].dependencies.is_empty());
@@ -3144,12 +3179,35 @@ mod tests {
             records[0].assignments[0].activation,
             CurveExpressionActivation::Conditional
         );
-        reevaluate_expression_records(&mut records, None, &BTreeSet::from(["d42".to_owned()]));
+        let mut external_symbols = ExternalRelationSymbols::default();
+        external_symbols.observe("d42", None);
+        reevaluate_expression_records(&mut records, None, &external_symbols);
         assert_eq!(
             records[0].assignments[0].activation,
             CurveExpressionActivation::Active
         );
         assert_eq!(records[0].assignments[0].value, number(1.0));
+    }
+
+    #[test]
+    fn external_symbol_values_require_agreeing_observations() {
+        let lines = [CurveExpressionLine {
+            text: "value=d42+1".to_owned(),
+            offset: 0,
+        }];
+        let mut external_symbols = ExternalRelationSymbols::default();
+        external_symbols.observe("D42", number(2.0));
+        external_symbols.observe("d42", number(2.0));
+        assert_eq!(
+            evaluate_expression_program(&lines, None, &external_symbols)[0].value,
+            number(3.0)
+        );
+
+        external_symbols.observe("d42", number(4.0));
+        assert_eq!(
+            evaluate_expression_program(&lines, None, &external_symbols)[0].value,
+            None
+        );
     }
 
     #[test]
