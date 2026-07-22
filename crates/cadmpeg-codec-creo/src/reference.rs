@@ -666,7 +666,9 @@ fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3]
             && (distance - stored_length).abs() <= 1e-9 * scale)
             .then_some((start, first, second, stored_length))
     });
-    let (_, first, second, stored_length) = candidates.min_by_key(|(start, _, _, _)| *start)?;
+    let mut candidates = candidates;
+    let (_, first, second, stored_length) = candidates.next()?;
+    candidates.next().is_none().then_some(())?;
     Some((first, second, stored_length))
 }
 
@@ -812,9 +814,6 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
             offset: start,
         })
     });
-    if let Some(circle) = explicit.min_by_key(|circle| circle.offset) {
-        return Some(circle);
-    }
     let diametric = (0..body.len()).filter_map(|start| {
         let values = scalar_run(start, 7)?;
         let radius = values[0].abs();
@@ -840,7 +839,9 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
                 offset: start,
             })
     });
-    diametric.min_by_key(|circle| circle.offset)
+    let mut candidates = explicit.chain(diametric);
+    let circle = candidates.next()?;
+    candidates.next().is_none().then_some(circle)
 }
 
 /// Decode complete positional `arc_z` rows whose stored center, radius, and
@@ -1113,6 +1114,13 @@ mod tests {
     }
 
     #[test]
+    fn line3d_withholds_competing_scalar_runs() {
+        let body = b"\x0f\x0f\x0f\xe4\x0f\x0f\xe4\x0f\x0f\x0f\xe4\x0f\x0f\xe4";
+
+        assert!(line3d_fields(body, &ScalarCache::from_section(body)).is_none());
+    }
+
+    #[test]
     fn decodes_arc_z_diameter_rows() {
         let body = b"\x01\xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f";
         let circle = arc_z_fields(body, &ScalarCache::from_section(body), 7).expect("diameter row");
@@ -1148,5 +1156,12 @@ mod tests {
         assert_eq!(circle.start[0], -30.0);
         assert_eq!(circle.end[0], -30.0);
         assert!((circle.axis[0].abs() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn arc_z_withholds_competing_diameter_runs() {
+        let body = b"\xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f";
+
+        assert!(arc_z_fields(body, &ScalarCache::from_section(body), 7).is_none());
     }
 }

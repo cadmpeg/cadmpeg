@@ -2836,7 +2836,8 @@ body fields include `end1.xyz`, `end2.xyz`, and `orig_len` as seven consecutive
 scalars. A complete spatial line has a nonzero endpoint distance equal to the
 absolute stored `orig_len`. The scalar run precedes the remaining positional
 fields. Entity references and display fields before or after that run do not
-contribute coordinates.
+contribute coordinates. Exactly one seven-scalar run may satisfy the endpoint
+distance and stored-length invariant.
 
 An `ent_list(arc_z)` positional row uses the same repeated-identifier and
 `e2` body framing. Its explicit scalar form stores `center.xyz`, positive
@@ -2846,7 +2847,9 @@ ordered radial vectors define the circle-plane normal by their cross product.
 A compressed diameter form omits the explicit center; its endpoint distance is
 twice the radius, their midpoint is the center, and their shared model Z value
 selects the model-Z plane. The first endpoint defines the reference direction.
-The later parameter fields do not alter this carrier equation.
+The later parameter fields do not alter this carrier equation. Exactly one
+explicit or compressed scalar run may satisfy the corresponding circle
+invariant.
 
 The named entity in `ent_list(conic)` declares compact `id`, `type`, and
 `flip` fields; model-coordinate arrays `end1 f8 03` and `end2 f8 03`; scalar
