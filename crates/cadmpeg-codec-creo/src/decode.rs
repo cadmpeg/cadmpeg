@@ -10128,7 +10128,7 @@ fn close_sketch_constraint_parameter_references(ir: &mut CadIr) {
     });
 }
 
-fn relation_incidence(
+fn joined_relation_incidence(
     definition: &crate::feature::FeatureDefinition,
     relation_id: u32,
 ) -> Option<&crate::feature::FeatureSkamp> {
@@ -10157,7 +10157,15 @@ fn relation_incidence(
     let [incidence] = incidences.as_slice() else {
         return None;
     };
-    section_skamp_active(incidence.status).then_some(*incidence)
+    Some(*incidence)
+}
+
+fn relation_incidence(
+    definition: &crate::feature::FeatureDefinition,
+    relation_id: u32,
+) -> Option<&crate::feature::FeatureSkamp> {
+    let incidence = joined_relation_incidence(definition, relation_id)?;
+    section_skamp_active(incidence.status).then_some(incidence)
 }
 
 fn relation_incidence_entities(
@@ -10522,6 +10530,10 @@ fn section_dimension_constraints(
             } else {
                 Vec::new()
             };
+            let active = unique_relation_id
+                .then(|| joined_relation_incidence(definition, relation.relation_id))
+                .flatten()
+                .map(|incidence| section_skamp_active(incidence.status));
             let constraint_definition =
                 typed.unwrap_or_else(|| SketchConstraintDefinition::Native {
                     native_kind: format!("creo:relation:{}", relation.relation_type),
@@ -10550,7 +10562,7 @@ fn section_dimension_constraints(
                     definition: constraint_definition,
                     name: None,
                     driving: None,
-                    active: None,
+                    active,
                     virtual_space: None,
                     visible: None,
                     orientation: None,
@@ -22786,6 +22798,33 @@ mod resolved_sketch_tests {
                 )),
                 parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
             }
+        );
+        assert_eq!(
+            section_dimension_constraints(
+                &incidence_distance,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .active,
+            Some(true)
+        );
+        let mut inactive_incidence = incidence_distance.clone();
+        inactive_incidence
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0]
+            .status = 2;
+        assert!(joined_relation_incidence(&inactive_incidence, 8).is_some());
+        assert!(relation_incidence(&inactive_incidence, 8).is_none());
+        assert_eq!(
+            section_dimension_constraints(
+                &inactive_incidence,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .active,
+            Some(false)
         );
         let mut incomplete_triples = incidence_distance.clone();
         incomplete_triples

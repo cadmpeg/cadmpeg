@@ -1263,6 +1263,10 @@ Rows sharing a `rel_id` do not inherit `triples_ptr` joins and remain separate
 native constraints identified by their byte offsets.
 A relation joined to exactly one incidence through `rel_id` and `skamp_id`
 inherits that incidence's ordered section-entity references and locus senses.
+It also inherits the incidence activity state: an odd `status` is active and an
+even `status` is inactive. Activity transfers independently of whether the
+relation has a neutral typed mapping. An absent or ambiguous incidence join
+leaves relation activity unspecified.
 When the incidence contains exactly two items whose senses resolve to section
 loci, those loci define the measured endpoints in stored order. This join is
 independent of whether the relation discriminator has a neutral typed mapping.
