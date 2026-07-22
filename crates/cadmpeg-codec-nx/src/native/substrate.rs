@@ -81,7 +81,7 @@ pub(crate) fn topology_streams(scan: &Scan) -> Vec<Vec<u8>> {
 /// restricting the delta candidates to those the segment stream links mark as `deltas`
 /// when any links are present.
 pub(crate) fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
-    let links = super::segment_stream_links(&scan.container, &scan.streams);
+    let links = super::segments::segment_stream_links(&scan.container, &scan.streams);
     let linked_deltas = links
         .iter()
         .filter(|link| link.stream_kind == "deltas")

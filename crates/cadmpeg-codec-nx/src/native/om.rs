@@ -3,6 +3,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::native::segments::segment_om_links;
 
 /// Semantic family declared by a linked OM section's class registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -4452,5 +4453,157 @@ mod tests {
             "findings: {:?}",
             validation.findings
         );
+    }
+
+    #[test]
+    fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
+        use super::{
+            data_block_column_index_tables, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
+        };
+
+        let linked = |id: &str, target: u32, mode: u8, offset: u64| DataBlockLinkedIndexRow {
+            id: id.into(),
+            section_ordinal: 2,
+            ordinal: 0,
+            first_index: 20,
+            raw_first_index: vec![20],
+            discriminator: 0x16,
+            target_index: target,
+            raw_target_index: vec![target as u8],
+            indices: [5, 6, 7],
+            raw_indices: [vec![5], vec![6], vec![7]],
+            data_blocks: [
+                format!("block#{target}"),
+                "block#5".into(),
+                "block#6".into(),
+                "block#7".into(),
+            ],
+            flag: 3,
+            mode,
+            source_entry: "entry".into(),
+            opening_data_block: format!("opening-block-{id}"),
+            opening_block_offset: 8,
+            source_offset: offset,
+            first_index_source_offset: offset + 2,
+            target_index_source_offset: offset + 7,
+            index_source_offsets: [offset + 12, offset + 13, offset + 14],
+        };
+        let target = |id: &str, index: u32, mode: u8, offset: u64| DataBlockTargetIndexRow {
+            id: id.into(),
+            section_ordinal: 2,
+            ordinal: 0,
+            target_index: index,
+            raw_target_index: vec![index as u8],
+            indices: [5, 6, 7],
+            raw_indices: [vec![5], vec![6], vec![7]],
+            data_blocks: [
+                format!("block#{index}"),
+                "block#5".into(),
+                "block#6".into(),
+                "block#7".into(),
+            ],
+            mode,
+            source_entry: "entry".into(),
+            opening_data_block: format!("opening-block-{id}"),
+            opening_block_offset: 8,
+            source_offset: offset,
+            target_index_source_offset: offset + 5,
+            index_source_offsets: [offset + 10, offset + 11, offset + 12],
+        };
+        let linked_rows = [
+            linked("opening", 63, 7, 100),
+            linked("linked-59", 59, 4, 200),
+            linked("linked-58", 58, 4, 225),
+        ];
+        let target_rows = [
+            target("target-62", 62, 7, 125),
+            target("target-61", 61, 7, 150),
+            target("target-60", 60, 4, 175),
+        ];
+
+        let tables = data_block_column_index_tables(&linked_rows, &target_rows);
+        assert_eq!(tables.len(), 1);
+        assert_eq!(tables[0].id, "nx:om-data-block-column-index-tables:table#2");
+        assert_eq!(tables[0].opening_linked_row, "opening");
+        assert_eq!(
+            tables[0].target_rows,
+            ["target-62", "target-61", "target-60"]
+        );
+        assert_eq!(tables[0].linked_rows, ["linked-59", "linked-58"]);
+        assert_eq!(tables[0].first_target_index, 63);
+        assert_eq!(tables[0].last_target_index, 58);
+        assert_eq!(tables[0].source_offset, 100);
+
+        let mut gap = target_rows.clone();
+        gap[1].target_index = 60;
+        assert!(data_block_column_index_tables(&linked_rows, &gap).is_empty());
+        let mut incomplete_mode = target_rows.clone();
+        incomplete_mode[2].mode = 7;
+        assert!(data_block_column_index_tables(&linked_rows, &incomplete_mode).is_empty());
+    }
+
+    #[test]
+    fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
+        use super::{
+            external_reference_record_children, external_reference_record_string_uses,
+            ExternalReference, ExternalReferenceRecord,
+        };
+
+        let references = (0..4)
+            .map(|ordinal| ExternalReference {
+                id: format!("reference#{ordinal}"),
+                ordinal,
+                path: format!("value-{ordinal}"),
+                source_entry: "stream".into(),
+                source_offset: 100 + u64::from(ordinal),
+            })
+            .collect::<Vec<_>>();
+        let record = ExternalReferenceRecord {
+            id: "record#7".into(),
+            record_id: 7,
+            declared_count: 2,
+            id_slots: [0, 3, 1, 2],
+            handles: vec![10, 20],
+            closing_duplicate: true,
+            prefix_byte_len: 40,
+            tail_byte_len: 5,
+            source_entry: "stream".into(),
+            source_offset: 20,
+        };
+        let uses = external_reference_record_string_uses(&[record.clone()], &references);
+        assert_eq!(uses.len(), 4);
+        assert_eq!(uses[0].id, "nx:external-reference:record-string-use#7-0");
+        assert_eq!(
+            uses.iter().map(|use_| use_.slot).collect::<Vec<_>>(),
+            [0, 1, 2, 3]
+        );
+        assert_eq!(
+            uses.iter()
+                .map(|use_| use_.string_index)
+                .collect::<Vec<_>>(),
+            [0, 3, 1, 2]
+        );
+        assert_eq!(uses[1].external_reference, "reference#3");
+        assert_eq!(uses[1].source_offset, 31);
+        let mut child_references = references.clone();
+        child_references[0].path = "child.prt".into();
+        let child_uses =
+            external_reference_record_string_uses(&[record.clone()], &child_references);
+        let children =
+            external_reference_record_children(&[record.clone()], &child_references, &child_uses);
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].external_record, record.id);
+        assert_eq!(children[0].name_reference, "reference#0");
+        assert_eq!(children[0].directory_reference, "reference#1");
+        assert!(
+            external_reference_record_children(&[record.clone()], &references, &uses).is_empty()
+        );
+
+        let mut out_of_range = record.clone();
+        out_of_range.id_slots[2] = 4;
+        assert!(external_reference_record_string_uses(&[out_of_range], &references).is_empty());
+        let mut duplicate = references.clone();
+        duplicate.push(references[0].clone());
+        assert!(external_reference_record_string_uses(&[record], &duplicate).is_empty());
     }
 }

@@ -41,7 +41,7 @@ use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
 
 pub(crate) fn attach(
     ir: &mut CadIr,
-    model: &crate::native::NativeModel,
+    model: &crate::native::model::NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
@@ -237,9 +237,9 @@ pub(crate) fn attach(
 
 fn attach_feature_operations(
     ir: &mut CadIr,
-    features: &crate::native::FeatureRecords,
-    expressions: &[crate::native::Expression],
-    body_bindings: &[crate::native::SegmentBodyBinding],
+    features: &crate::native::model::FeatureRecords,
+    expressions: &[crate::native::om::Expression],
+    body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
 ) {
     let labels = features.feature_operation_labels.as_slice();
@@ -357,7 +357,7 @@ fn attach_feature_operations(
         })
         .collect::<BTreeMap<_, _>>();
     let mut body_reference_occurrences_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureBodyReferenceOccurrence>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyReferenceOccurrence>>::new();
     for reference in body_reference_occurrences {
         body_reference_occurrences_by_operation
             .entry(reference.operation_label.as_str())
@@ -365,11 +365,12 @@ fn attach_feature_operations(
             .push(reference);
     }
     let mut last_body_writer = BTreeMap::<u32, FeatureId>::new();
-    let body_alias_roots = crate::native::body_alias_roots(body_bindings).unwrap_or_default();
+    let body_alias_roots =
+        crate::native::segments::body_alias_roots(body_bindings).unwrap_or_default();
     let canonical_body =
         |identity: u32| body_alias_roots.get(&identity).copied().unwrap_or(identity);
     let mut input_blocks_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureInputBlock>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureInputBlock>>::new();
     for input in input_blocks {
         input_blocks_by_operation
             .entry(input.operation_label.as_str())
@@ -392,7 +393,7 @@ fn attach_feature_operations(
     let datum_csys_payloads_by_operation =
         records_by_operation(datum_csys_payloads, |payload| &payload.operation_label);
     let mut datum_csys_uses_by_input_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureDatumCsysBlockUse>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumCsysBlockUse>>::new();
     for block_use in datum_csys_block_uses {
         datum_csys_uses_by_input_operation
             .entry(block_use.input_operation_label.as_str())
@@ -408,7 +409,7 @@ fn attach_feature_operations(
         .map(|payload| (payload.operation_label.as_str(), payload))
         .collect::<BTreeMap<_, _>>();
     let mut datum_plane_uses_by_input_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureDatumPlaneBlockUse>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneBlockUse>>::new();
     for block_use in datum_plane_block_uses {
         datum_plane_uses_by_input_operation
             .entry(block_use.input_operation_label.as_str())
@@ -439,7 +440,7 @@ fn attach_feature_operations(
         .map(|dependency| (dependency.datum_csys_operation_label.as_str(), dependency))
         .collect::<BTreeMap<_, _>>();
     let mut datum_identity_uses_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureDatumPlaneCsysIdentityUse>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneCsysIdentityUse>>::new();
     for identity_use in datum_plane_csys_identity_uses {
         datum_identity_uses_by_operation
             .entry(identity_use.datum_plane_operation_label.as_str())
@@ -451,7 +452,7 @@ fn attach_feature_operations(
             .push(identity_use);
     }
     let mut sketch_references_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureSketchReference>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchReference>>::new();
     for reference in sketch_references {
         sketch_references_by_operation
             .entry(reference.operation_label.as_str())
@@ -543,7 +544,7 @@ fn attach_feature_operations(
             &branch.operation_label
         });
     let mut sketch_named_point_uses_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureSketchNamedPointBlockUse>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchNamedPointBlockUse>>::new();
     for block_use in sketch_named_point_block_uses {
         sketch_named_point_uses_by_operation
             .entry(block_use.operation_label.as_str())
@@ -551,7 +552,7 @@ fn attach_feature_operations(
             .push(block_use);
     }
     let mut sketch_preceding_named_point_uses_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureSketchPrecedingNamedPointUse>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPrecedingNamedPointUse>>::new();
     for point_use in sketch_preceding_named_point_uses {
         sketch_preceding_named_point_uses_by_operation
             .entry(point_use.operation_label.as_str())
@@ -559,7 +560,7 @@ fn attach_feature_operations(
             .push(point_use);
     }
     let mut sketch_point_uses_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureSketchPointUse>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPointUse>>::new();
     for point_use in sketch_point_uses {
         sketch_point_uses_by_operation
             .entry(point_use.operation_label.as_str())
@@ -567,7 +568,7 @@ fn attach_feature_operations(
             .push(point_use);
     }
     let mut sketch_point_groups_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureSketchPointGroup>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPointGroup>>::new();
     for group in sketch_point_groups {
         sketch_point_groups_by_operation
             .entry(group.operation_label.as_str())
@@ -575,7 +576,7 @@ fn attach_feature_operations(
             .push(group);
     }
     let mut extrude_profile_references_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureExtrudeProfileReference>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureExtrudeProfileReference>>::new();
     for reference in extrude_profile_references {
         extrude_profile_references_by_operation
             .entry(reference.operation_label.as_str())
@@ -587,7 +588,7 @@ fn attach_feature_operations(
         .map(|profile| (profile.operation_label.as_str(), profile))
         .collect::<BTreeMap<_, _>>();
     let mut operation_body_operands_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureOperationBodyOperand>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyOperand>>::new();
     for operand in operation_body_operands {
         operation_body_operands_by_operation
             .entry(operand.operation_label.as_str())
@@ -605,7 +606,7 @@ fn attach_feature_operations(
             &payload.operation_label
         });
     let mut sketch_coordinate_pairs_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureSketchPayloadCoordinatePair>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadCoordinatePair>>::new();
     for pair in sketch_coordinate_pairs {
         sketch_coordinate_pairs_by_operation
             .entry(pair.operation_label.as_str())
@@ -613,7 +614,7 @@ fn attach_feature_operations(
             .push(pair);
     }
     let mut sketch_fixed_pairs_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureSketchPayloadFixedPair>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadFixedPair>>::new();
     for pair in sketch_fixed_pairs {
         sketch_fixed_pairs_by_operation
             .entry(pair.operation_label.as_str())
@@ -621,7 +622,7 @@ fn attach_feature_operations(
             .push(pair);
     }
     let mut sketch_fixed_points_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureSketchFixedPoint>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchFixedPoint>>::new();
     for point in sketch_fixed_points {
         sketch_fixed_points_by_operation
             .entry(point.operation_label.as_str())
@@ -641,7 +642,7 @@ fn attach_feature_operations(
         .map(|dimensions| (dimensions.operation_label.as_str(), dimensions))
         .collect::<BTreeMap<_, _>>();
     let mut block_payload_points_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureBlockPayloadPoint>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureBlockPayloadPoint>>::new();
     for point in block_payload_points {
         block_payload_points_by_operation
             .entry(point.operation_label.as_str())
@@ -649,7 +650,7 @@ fn attach_feature_operations(
             .push(point);
     }
     let mut block_payload_point_groups_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureBlockPayloadPointGroup>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureBlockPayloadPointGroup>>::new();
     for group in block_payload_point_groups {
         block_payload_point_groups_by_operation
             .entry(group.operation_label.as_str())
@@ -673,7 +674,7 @@ fn attach_feature_operations(
             &branch.operation_label
         });
     let mut operation_body_scalar_triples_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureOperationBodyScalarTriple>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyScalarTriple>>::new();
     for triple in operation_body_scalar_triples {
         operation_body_scalar_triples_by_operation
             .entry(triple.operation_label.as_str())
@@ -684,7 +685,7 @@ fn attach_feature_operations(
         triples.sort_by_key(|triple| triple.body_reference_ordinal);
     }
     let mut operation_body_members_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureOperationBodyMember>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyMember>>::new();
     for member in operation_body_members {
         operation_body_members_by_operation
             .entry(member.operation_label.as_str())
@@ -692,7 +693,7 @@ fn attach_feature_operations(
             .push(member);
     }
     let mut operation_body_11_continuations_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureOperationBody11Continuation>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBody11Continuation>>::new();
     for continuation in operation_body_11_continuations {
         operation_body_11_continuations_by_operation
             .entry(continuation.operation_label.as_str())
@@ -700,7 +701,7 @@ fn attach_feature_operations(
             .push(continuation);
     }
     let mut operation_body_reference_lanes_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureOperationBodyReferenceLane>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyReferenceLane>>::new();
     for lane in operation_body_reference_lanes {
         operation_body_reference_lanes_by_operation
             .entry(lane.operation_label.as_str())
@@ -776,7 +777,7 @@ fn attach_feature_operations(
         hole_positions_for_operations(ir, &hole_package_operations, &hole_package_outputs);
     let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
     let mut parameter_bindings_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
         parameter_bindings_by_operation
             .entry(binding.operation_label.as_str())
@@ -784,7 +785,7 @@ fn attach_feature_operations(
             .push(binding);
     }
     let mut parameter_uses_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeatureParameterUse>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterUse>>::new();
     for parameter_use in parameter_uses {
         parameter_uses_by_operation
             .entry(parameter_use.operation_label.as_str())
@@ -796,7 +797,7 @@ fn attach_feature_operations(
         .map(|record| (record.id.as_str(), record.operation_label.as_str()))
         .collect::<BTreeMap<_, _>>();
     let mut payload_strings_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::FeaturePayloadString>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeaturePayloadString>>::new();
     for value in payload_strings {
         let Some(operation) = operation_labels_by_record.get(value.operation_record.as_str())
         else {
@@ -933,13 +934,15 @@ fn attach_feature_operations(
                 dependency.sketch_point_use.clone(),
             );
             match &dependency.block_relation {
-                crate::native::FeatureSketchDatumCsysBlockRelation::Shared { data_block } => {
+                crate::native::features::FeatureSketchDatumCsysBlockRelation::Shared {
+                    data_block,
+                } => {
                     source_properties.insert(
                         "sketch_point_dependency_shared_block".to_string(),
                         data_block.clone(),
                     );
                 }
-                crate::native::FeatureSketchDatumCsysBlockRelation::Consecutive {
+                crate::native::features::FeatureSketchDatumCsysBlockRelation::Consecutive {
                     point_data_block,
                     construction_data_block,
                 } => {
@@ -1816,11 +1819,11 @@ fn records_by_operation<'a, T>(
 
 pub(crate) fn attach_parasolid_topology_string_attributes(
     ir: &mut CadIr,
-    topology_references: &[crate::native::ParasolidTopologyAttributeListReference],
-    class_uses: &[crate::native::ParasolidTopologyAttributeClassUse],
-    definitions: &[crate::native::ParasolidAttributeDefinition],
-    string_uses: &[crate::native::ParasolidEntity51StringUse],
-    strings: &[crate::native::ParasolidEntity54StringRecord],
+    topology_references: &[crate::native::parasolid::ParasolidTopologyAttributeListReference],
+    class_uses: &[crate::native::parasolid::ParasolidTopologyAttributeClassUse],
+    definitions: &[crate::native::parasolid::ParasolidAttributeDefinition],
+    string_uses: &[crate::native::parasolid::ParasolidEntity51StringUse],
+    strings: &[crate::native::parasolid::ParasolidEntity54StringRecord],
     annotations: &mut AnnotationBuilder,
 ) {
     let class_names = parasolid_topology_attribute_class_names(class_uses, definitions);
@@ -1829,7 +1832,7 @@ pub(crate) fn attach_parasolid_topology_string_attributes(
         .map(|record| (record.id.as_str(), record))
         .collect::<BTreeMap<_, _>>();
     let mut uses_by_entity =
-        BTreeMap::<&str, Vec<&crate::native::ParasolidEntity51StringUse>>::new();
+        BTreeMap::<&str, Vec<&crate::native::parasolid::ParasolidEntity51StringUse>>::new();
     for string_use in string_uses {
         uses_by_entity
             .entry(string_use.entity_51_record.as_str())
@@ -1839,8 +1842,10 @@ pub(crate) fn attach_parasolid_topology_string_attributes(
     for uses in uses_by_entity.values_mut() {
         uses.sort_by_key(|string_use| string_use.reference_ordinal);
     }
-    let mut references_by_target =
-        BTreeMap::<String, Vec<&crate::native::ParasolidTopologyAttributeListReference>>::new();
+    let mut references_by_target = BTreeMap::<
+        String,
+        Vec<&crate::native::parasolid::ParasolidTopologyAttributeListReference>,
+    >::new();
     for reference in topology_references {
         let Some(kind) = parasolid_topology_kind(reference.topology_type) else {
             continue;
@@ -1903,17 +1908,18 @@ pub(crate) fn attach_parasolid_topology_string_attributes(
 }
 
 pub(crate) struct ParasolidNumericAttributeSources<'a> {
-    pub(crate) topology_references: &'a [crate::native::ParasolidTopologyAttributeListReference],
-    pub(crate) class_uses: &'a [crate::native::ParasolidTopologyAttributeClassUse],
-    pub(crate) definitions: &'a [crate::native::ParasolidAttributeDefinition],
-    pub(crate) numeric_uses: &'a [crate::native::ParasolidEntity51NumericUse],
-    pub(crate) integers: &'a [crate::native::ParasolidEntity52IntegerRecord],
-    pub(crate) doubles: &'a [crate::native::ParasolidEntity53DoubleRecord],
+    pub(crate) topology_references:
+        &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
+    pub(crate) class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
+    pub(crate) definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
+    pub(crate) numeric_uses: &'a [crate::native::parasolid::ParasolidEntity51NumericUse],
+    pub(crate) integers: &'a [crate::native::parasolid::ParasolidEntity52IntegerRecord],
+    pub(crate) doubles: &'a [crate::native::parasolid::ParasolidEntity53DoubleRecord],
 }
 
 fn parasolid_topology_attribute_class_names<'a>(
-    class_uses: &'a [crate::native::ParasolidTopologyAttributeClassUse],
-    definitions: &'a [crate::native::ParasolidAttributeDefinition],
+    class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
+    definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
 ) -> BTreeMap<&'a str, &'a str> {
     let definitions = definitions
         .iter()
@@ -1998,7 +2004,7 @@ pub(crate) fn attach_parasolid_topology_numeric_attributes(
         .map(|record| (record.id.as_str(), record))
         .collect::<BTreeMap<_, _>>();
     let mut uses_by_entity =
-        BTreeMap::<&str, Vec<&crate::native::ParasolidEntity51NumericUse>>::new();
+        BTreeMap::<&str, Vec<&crate::native::parasolid::ParasolidEntity51NumericUse>>::new();
     for numeric_use in sources.numeric_uses {
         uses_by_entity
             .entry(numeric_use.entity_51_record.as_str())
@@ -2008,8 +2014,10 @@ pub(crate) fn attach_parasolid_topology_numeric_attributes(
     for uses in uses_by_entity.values_mut() {
         uses.sort_by_key(|numeric_use| numeric_use.reference_ordinal);
     }
-    let mut references_by_target =
-        BTreeMap::<String, Vec<&crate::native::ParasolidTopologyAttributeListReference>>::new();
+    let mut references_by_target = BTreeMap::<
+        String,
+        Vec<&crate::native::parasolid::ParasolidTopologyAttributeListReference>,
+    >::new();
     for reference in sources.topology_references {
         let Some(kind) = parasolid_topology_kind(reference.topology_type) else {
             continue;
@@ -2036,7 +2044,7 @@ pub(crate) fn attach_parasolid_topology_numeric_attributes(
         };
         for numeric_use in uses_by_entity.get(entity).into_iter().flatten() {
             let (values, source_offset, tag, lane) = match numeric_use.kind {
-                crate::native::ParasolidEntity51NumericKind::UnsignedIntegers => {
+                crate::native::parasolid::ParasolidEntity51NumericKind::UnsignedIntegers => {
                     let Some(record) = integers_by_id.get(numeric_use.value_record.as_str()) else {
                         continue;
                     };
@@ -2051,7 +2059,7 @@ pub(crate) fn attach_parasolid_topology_numeric_attributes(
                         "integer",
                     )
                 }
-                crate::native::ParasolidEntity51NumericKind::Doubles => {
+                crate::native::parasolid::ParasolidEntity51NumericKind::Doubles => {
                     let Some(record) = doubles_by_id.get(numeric_use.value_record.as_str()) else {
                         continue;
                     };
@@ -2693,8 +2701,8 @@ fn uniform_face_sense(senses: &[Sense]) -> Option<Sense> {
 }
 
 pub(crate) fn feature_source_content(
-    payload_strings: &[&crate::native::FeaturePayloadString],
-    parameter_uses: &[&crate::native::FeatureParameterUse],
+    payload_strings: &[&crate::native::features::FeaturePayloadString],
+    parameter_uses: &[&crate::native::features::FeatureParameterUse],
 ) -> Vec<FeatureSourceContent> {
     let mut content = payload_strings
         .iter()
@@ -2737,10 +2745,10 @@ pub(crate) fn append_feature_expression_content<const N: usize>(
 
 pub(crate) fn simple_hole_native_properties(
     operation_label: &str,
-    templates: &[crate::native::FeatureSimpleHoleTemplate],
-    repeated_lanes: &[crate::native::FeatureSimpleHoleRepeatedScalarLane],
-    block_references: &[crate::native::FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
-    construction_groups: &[crate::native::FeatureSimpleHoleConstructionGroup],
+    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    repeated_lanes: &[crate::native::features::FeatureSimpleHoleRepeatedScalarLane],
+    block_references: &[crate::native::features::FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
+    construction_groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
 ) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
     if let Some(template) = templates
@@ -3188,8 +3196,8 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
 }
 
 pub(crate) fn native_feature_parameters(
-    uses: &[&crate::native::FeatureParameterUse],
-    expressions: &[crate::native::Expression],
+    uses: &[&crate::native::features::FeatureParameterUse],
+    expressions: &[crate::native::om::Expression],
 ) -> BTreeMap<String, String> {
     let by_id = expressions
         .iter()
@@ -3218,8 +3226,8 @@ pub(crate) fn native_feature_parameters(
 /// unmatched operation or bore wall reject the projection atomically.
 pub(crate) fn simple_hole_diameters(
     ir: &CadIr,
-    templates: &[crate::native::FeatureSimpleHoleTemplate],
-    groups: &[crate::native::FeatureSimpleHoleConstructionGroup],
+    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, Length> {
     let Some(operations) = simple_hole_operations(templates, groups) else {
@@ -3230,14 +3238,14 @@ pub(crate) fn simple_hole_diameters(
 }
 
 pub(crate) fn simple_hole_operations(
-    templates: &[crate::native::FeatureSimpleHoleTemplate],
-    groups: &[crate::native::FeatureSimpleHoleConstructionGroup],
+    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
 ) -> Option<Vec<String>> {
     let template_operations = templates
         .iter()
         .filter(|template| {
-            template.form == crate::native::SimpleHoleForm::Simple
-                && template.extent == crate::native::SimpleHoleExtent::Through
+            template.form == crate::native::features::SimpleHoleForm::Simple
+                && template.extent == crate::native::features::SimpleHoleExtent::Through
         })
         .map(|template| template.operation_label.as_str())
         .collect::<BTreeSet<_>>();
@@ -3560,16 +3568,18 @@ fn through_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<(Point
 /// bounded by the bore circle and one equal larger circle.
 pub(crate) fn simple_hole_chamfers(
     ir: &CadIr,
-    templates: &[crate::native::FeatureSimpleHoleTemplate],
+    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, HoleKind> {
     let operations = templates
         .iter()
         .filter(|template| {
-            template.form == crate::native::SimpleHoleForm::Simple
-                && template.extent == crate::native::SimpleHoleExtent::Through
-                && template.start_treatment == crate::native::SimpleHoleEndTreatment::Chamfer
-                && template.end_treatment == crate::native::SimpleHoleEndTreatment::Chamfer
+            template.form == crate::native::features::SimpleHoleForm::Simple
+                && template.extent == crate::native::features::SimpleHoleExtent::Through
+                && template.start_treatment
+                    == crate::native::features::SimpleHoleEndTreatment::Chamfer
+                && template.end_treatment
+                    == crate::native::features::SimpleHoleEndTreatment::Chamfer
         })
         .map(|template| template.operation_label.clone())
         .collect::<BTreeSet<_>>();
@@ -3726,11 +3736,11 @@ pub(crate) fn simple_hole_chamfers(
 fn unique_simple_hole_template(
     payload_strings: &[&str],
 ) -> Option<(
-    crate::native::SimpleHoleFamily,
-    crate::native::SimpleHoleForm,
-    crate::native::SimpleHoleExtent,
-    crate::native::SimpleHoleEndTreatment,
-    crate::native::SimpleHoleEndTreatment,
+    crate::native::features::SimpleHoleFamily,
+    crate::native::features::SimpleHoleForm,
+    crate::native::features::SimpleHoleExtent,
+    crate::native::features::SimpleHoleEndTreatment,
+    crate::native::features::SimpleHoleEndTreatment,
 )> {
     let mut candidates = payload_strings
         .iter()
@@ -3740,7 +3750,7 @@ fn unique_simple_hole_template(
     if candidates.next().is_some() {
         return None;
     }
-    crate::native::parse_simple_hole_template(candidate)
+    crate::native::features::parse_simple_hole_template(candidate)
 }
 
 pub(crate) fn feature_body_selection(
@@ -3791,7 +3801,7 @@ fn atomic_disjoint_body_selections(
 }
 
 pub(crate) fn boolean_feature_definition(
-    operation: &crate::native::FeatureBooleanOperation,
+    operation: &crate::native::features::FeatureBooleanOperation,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> FeatureDefinition {
     let (target, tools) = atomic_disjoint_body_selections(
@@ -3818,9 +3828,9 @@ pub(crate) fn boolean_feature_definition(
         target,
         tools,
         op: match operation.kind {
-            crate::native::FeatureBooleanKind::Unite => BooleanOp::Join,
-            crate::native::FeatureBooleanKind::Subtract => BooleanOp::Cut,
-            crate::native::FeatureBooleanKind::Intersect => BooleanOp::Intersect,
+            crate::native::features::FeatureBooleanKind::Unite => BooleanOp::Join,
+            crate::native::features::FeatureBooleanKind::Subtract => BooleanOp::Cut,
+            crate::native::features::FeatureBooleanKind::Intersect => BooleanOp::Intersect,
         },
     }
 }
@@ -3845,7 +3855,7 @@ pub(crate) fn delete_body_feature_definition(
 
 pub(crate) fn sew_body_feature_definition(
     primary_body_object_index: u32,
-    operands: &[&crate::native::FeatureOperationBodyOperand],
+    operands: &[&crate::native::features::FeatureOperationBodyOperand],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
     (!operands.is_empty()).then(|| {
@@ -3872,7 +3882,7 @@ pub(crate) fn sew_body_feature_definition(
 
 pub(crate) fn trim_body_feature_definition(
     target_object_index: u32,
-    operands: &[&crate::native::FeatureOperationBodyOperand],
+    operands: &[&crate::native::features::FeatureOperationBodyOperand],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
     let tool_object_indices = operands
@@ -3919,16 +3929,16 @@ pub(crate) fn feature_body_outputs(
 
 pub(crate) fn attach_expression_parameters(
     ir: &mut CadIr,
-    expressions: &[crate::native::Expression],
-    declarations: &[crate::native::ExpressionDeclaration],
-    parameter_uses: &[crate::native::FeatureParameterUse],
+    expressions: &[crate::native::om::Expression],
+    declarations: &[crate::native::om::ExpressionDeclaration],
+    parameter_uses: &[crate::native::features::FeatureParameterUse],
     annotations: &mut AnnotationBuilder,
 ) {
     let declarations = declarations
         .iter()
         .map(|declaration| (declaration.id.as_str(), declaration))
         .collect::<BTreeMap<_, _>>();
-    let mut tables = BTreeMap::<String, Vec<&crate::native::Expression>>::new();
+    let mut tables = BTreeMap::<String, Vec<&crate::native::om::Expression>>::new();
     for expression in expressions {
         let table = if expression.source_table.is_empty() {
             let Some((section, _)) = expression.id.split_once(":expression#") else {
@@ -3944,7 +3954,8 @@ pub(crate) fn attach_expression_parameters(
             .push(expression);
     }
     let stream = annotations.stream("nx:container");
-    let mut uses_by_expression = BTreeMap::<&str, Vec<&crate::native::FeatureParameterUse>>::new();
+    let mut uses_by_expression =
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterUse>>::new();
     for parameter_use in parameter_uses {
         uses_by_expression
             .entry(parameter_use.expression.as_str())
@@ -4041,7 +4052,7 @@ pub(crate) fn attach_expression_parameters(
             annotations.derived(&id.0, "native_ref");
             let dependencies = if dependency_ordered_expressions.contains(&expression.id) {
                 let mut seen_dependencies = BTreeSet::new();
-                crate::native::expression_parameter_names(&expression.expression)
+                crate::native::om::expression_parameter_names(&expression.expression)
                     .into_iter()
                     .filter_map(|name| {
                         let candidates = parameter_ids.get(name)?;
@@ -4056,8 +4067,10 @@ pub(crate) fn attach_expression_parameters(
                 annotations.derived(&id.0, "dependencies");
             }
             let value = expression.value.map(|value| match expression.unit {
-                crate::native::ExpressionUnit::Millimeter => ParameterValue::Length(Length(value)),
-                crate::native::ExpressionUnit::Degree => {
+                crate::native::om::ExpressionUnit::Millimeter => {
+                    ParameterValue::Length(Length(value))
+                }
+                crate::native::om::ExpressionUnit::Degree => {
                     ParameterValue::Angle(Angle(value.to_radians()))
                 }
             });
@@ -4110,7 +4123,7 @@ pub(crate) fn attach_expression_parameters(
 }
 
 fn order_expression_dependencies(
-    expressions: &mut Vec<&crate::native::Expression>,
+    expressions: &mut Vec<&crate::native::om::Expression>,
 ) -> BTreeSet<String> {
     let mut indices_by_name = BTreeMap::<&str, Vec<usize>>::new();
     for (index, expression) in expressions.iter().enumerate() {
@@ -4122,7 +4135,7 @@ fn order_expression_dependencies(
     let dependencies = expressions
         .iter()
         .map(|expression| {
-            crate::native::expression_parameter_names(&expression.expression)
+            crate::native::om::expression_parameter_names(&expression.expression)
                 .into_iter()
                 .filter_map(|name| {
                     let [index] = indices_by_name.get(name)?.as_slice() else {
@@ -4161,7 +4174,7 @@ fn order_expression_dependencies(
 
 pub(crate) fn attach_block_dimension_parameter_consumers(
     ir: &mut CadIr,
-    dimensions: &[crate::native::FeatureBlockDimensions],
+    dimensions: &[crate::native::features::FeatureBlockDimensions],
     annotations: &mut AnnotationBuilder,
 ) {
     let mut parameters = ir

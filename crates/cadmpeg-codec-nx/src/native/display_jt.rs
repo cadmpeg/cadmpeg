@@ -3240,22 +3240,22 @@ struct DisplayJtPath {
 
 #[derive(Clone, Copy)]
 pub(crate) struct DisplayJtTessellationInputs<'a> {
-    pub(crate) meshes: &'a [crate::native::DisplayJtPolygonMesh],
-    pub(crate) coordinates: &'a [crate::native::DisplayJtVertexCoordinates],
-    pub(crate) normals: &'a [crate::native::DisplayJtVertexNormals],
-    pub(crate) colors: &'a [crate::native::DisplayJtVertexColors],
-    pub(crate) texture_coordinates: &'a [crate::native::DisplayJtVertexTextureCoordinates],
-    pub(crate) vertex_flags: &'a [crate::native::DisplayJtVertexFlags],
-    pub(crate) vertex_headers: &'a [crate::native::DisplayJtCompressedVertexRecordsHeader],
-    pub(crate) coordinate_headers: &'a [crate::native::DisplayJtVertexCoordinateArrayHeader],
-    pub(crate) shape_elements: &'a [crate::native::DisplayJtShapeLodElement],
-    pub(crate) bindings: &'a [crate::native::DisplayJtShapeLodBinding],
-    pub(crate) shape_nodes: &'a [crate::native::DisplayJtTriStripShapeNode],
-    pub(crate) base_nodes: &'a [crate::native::DisplayJtBaseNodeData],
-    pub(crate) group_nodes: &'a [crate::native::DisplayJtGroupNodeData],
-    pub(crate) instance_nodes: &'a [crate::native::DisplayJtInstanceNode],
-    pub(crate) transforms: &'a [crate::native::DisplayJtGeometricTransformAttribute],
-    pub(crate) compressed_elements: &'a [crate::native::DisplayJtCompressedElement],
+    pub(crate) meshes: &'a [DisplayJtPolygonMesh],
+    pub(crate) coordinates: &'a [DisplayJtVertexCoordinates],
+    pub(crate) normals: &'a [DisplayJtVertexNormals],
+    pub(crate) colors: &'a [DisplayJtVertexColors],
+    pub(crate) texture_coordinates: &'a [DisplayJtVertexTextureCoordinates],
+    pub(crate) vertex_flags: &'a [DisplayJtVertexFlags],
+    pub(crate) vertex_headers: &'a [DisplayJtCompressedVertexRecordsHeader],
+    pub(crate) coordinate_headers: &'a [DisplayJtVertexCoordinateArrayHeader],
+    pub(crate) shape_elements: &'a [DisplayJtShapeLodElement],
+    pub(crate) bindings: &'a [DisplayJtShapeLodBinding],
+    pub(crate) shape_nodes: &'a [DisplayJtTriStripShapeNode],
+    pub(crate) base_nodes: &'a [DisplayJtBaseNodeData],
+    pub(crate) group_nodes: &'a [DisplayJtGroupNodeData],
+    pub(crate) instance_nodes: &'a [DisplayJtInstanceNode],
+    pub(crate) transforms: &'a [DisplayJtGeometricTransformAttribute],
+    pub(crate) compressed_elements: &'a [DisplayJtCompressedElement],
 }
 
 fn multiply_jt_matrices(left: DisplayJtMatrix, right: DisplayJtMatrix) -> Option<DisplayJtMatrix> {
@@ -3275,10 +3275,10 @@ fn multiply_jt_matrices(left: DisplayJtMatrix, right: DisplayJtMatrix) -> Option
 
 fn resolve_display_jt_node_transform(
     object_id: u32,
-    by_object: &BTreeMap<u32, &crate::native::DisplayJtBaseNodeData>,
+    by_object: &BTreeMap<u32, &DisplayJtBaseNodeData>,
     parents: &BTreeMap<u32, Vec<u32>>,
     instance_ids: &BTreeMap<u32, String>,
-    transforms: &[&crate::native::DisplayJtGeometricTransformAttribute],
+    transforms: &[&DisplayJtGeometricTransformAttribute],
     visiting: &mut BTreeSet<u32>,
 ) -> Option<Vec<DisplayJtPath>> {
     let base = by_object.get(&object_id)?;
@@ -4714,5 +4714,57 @@ mod tests {
         body[range_offset..range_offset + 4].copy_from_slice(&5.0_f32.to_le_bytes());
         body[range_offset + 4..range_offset + 8].copy_from_slice(&4.0_f32.to_le_bytes());
         assert!(super::parse_jt9_range_lod_node_body(&body).is_none());
+    }
+
+    #[test]
+    fn jt9_topology_packets_retain_decoded_primal_values() {
+        use super::{display_jt_topology_packet_sequences, DisplayJtShapeLodElement};
+
+        let mut representation = vec![0; 24 * 4];
+        representation.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
+        representation.extend_from_slice(&10_u64.to_le_bytes());
+        representation.extend_from_slice(&[24, 13, 16, 8]);
+        representation.extend_from_slice(&0_u32.to_le_bytes());
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&1_u16.to_le_bytes());
+        body.extend_from_slice(&1_u16.to_le_bytes());
+        body.extend_from_slice(&10_u64.to_le_bytes());
+        body.extend_from_slice(&1_u16.to_le_bytes());
+        body.extend_from_slice(&7_u32.to_le_bytes());
+        body.extend_from_slice(&1_u16.to_le_bytes());
+        body.extend_from_slice(&representation);
+        let source_offset = 64_u64;
+        let mut data = vec![0; source_offset as usize + 25];
+        data.extend_from_slice(&body);
+        let container = crate::container::Container {
+            data,
+            version: 1,
+            file_tag: 0,
+            footer_offset: 0,
+            entries: Vec::new(),
+        };
+        let elements = [DisplayJtShapeLodElement {
+            id: "shape-lod".into(),
+            segment: "segment".into(),
+            ordinal: 0,
+            object_type_id: vec![
+                0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb,
+                0x59, 0x97,
+            ],
+            object_base_type: 4,
+            object_id: 1,
+            body_byte_len: body.len() as u32,
+            body_sha256: String::new(),
+            source_offset,
+        }];
+
+        let (sequences, _, _) = display_jt_topology_packet_sequences(&container, &elements);
+        assert_eq!(sequences.len(), 1);
+        assert_eq!(sequences[0].packets.len(), 24);
+        assert!(sequences[0]
+            .packets
+            .iter()
+            .all(|packet| packet.values == Some(Vec::new())));
     }
 }

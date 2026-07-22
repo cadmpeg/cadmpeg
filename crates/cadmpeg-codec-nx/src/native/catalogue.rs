@@ -24,7 +24,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, NativeConvertError, NativeNamespa
 
 use super::model::NativeModel;
 #[allow(clippy::wildcard_imports)]
-use super::*;
+use super::{display_jt::*, features::*, om::*, parasolid::*, segments::*};
 
 /// One native record family: its arena, note metadata, and the fns that
 /// serialize and (optionally) annotate it.

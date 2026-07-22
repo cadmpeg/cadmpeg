@@ -10,7 +10,7 @@ use crate::container::Container;
 use crate::parasolid::Stream;
 
 #[allow(clippy::wildcard_imports)]
-use super::*;
+use super::{display_jt::*, features::*, om::*, parasolid::*, segments::*, substrate::*};
 
 /// Records extracted from the `display_jt` domain.
 #[allow(clippy::struct_field_names)]
@@ -240,134 +240,105 @@ impl NativeModel {
         streams: &[Stream],
         parsed: &ParsedStreams,
     ) -> Self {
-        let segment_index_rows = crate::native::segment_index_rows(container);
-        let segment_om_links = crate::native::segment_om_links(container);
-        let segment_stream_links = crate::native::segment_stream_links(container, streams);
-        let segment_body_bindings = crate::native::segment_body_bindings(container, streams);
-        let parasolid_blend_surface_records =
-            crate::native::parasolid_blend_surface_records(parsed);
-        let parasolid_blend_bound_records = crate::native::parasolid_blend_bound_records(streams);
-        let parasolid_offset_surface_records =
-            crate::native::parasolid_offset_surface_records(parsed);
-        let parasolid_trimmed_curve_records =
-            crate::native::parasolid_trimmed_curve_records(parsed);
-        let parasolid_surface_curve_records =
-            crate::native::parasolid_surface_curve_records(parsed);
-        let parasolid_intersection_records = crate::native::parasolid_intersection_records(parsed);
-        let parasolid_term_use_records = crate::native::parasolid_term_use_records(streams);
-        let parasolid_support_uv_records = crate::native::parasolid_support_uv_records(streams);
-        let parasolid_chart_records = crate::native::parasolid_chart_records(streams);
-        let parasolid_attribute_definitions =
-            crate::native::parasolid_attribute_definitions(streams);
-        let parasolid_entity_51_records = crate::native::parasolid_entity_51_records(streams);
-        let parasolid_entity_52_integer_records =
-            crate::native::parasolid_entity_52_integer_records(streams);
-        let parasolid_entity_53_double_records =
-            crate::native::parasolid_entity_53_double_records(streams);
-        let parasolid_entity_54_string_records =
-            crate::native::parasolid_entity_54_string_records(streams);
-        let parasolid_entity_51_numeric_uses = crate::native::parasolid_entity_51_numeric_uses(
+        let segment_index_rows = segment_index_rows(container);
+        let segment_om_links = segment_om_links(container);
+        let segment_stream_links = segment_stream_links(container, streams);
+        let segment_body_bindings = segment_body_bindings(container, streams);
+        let parasolid_blend_surface_records = parasolid_blend_surface_records(parsed);
+        let parasolid_blend_bound_records = parasolid_blend_bound_records(streams);
+        let parasolid_offset_surface_records = parasolid_offset_surface_records(parsed);
+        let parasolid_trimmed_curve_records = parasolid_trimmed_curve_records(parsed);
+        let parasolid_surface_curve_records = parasolid_surface_curve_records(parsed);
+        let parasolid_intersection_records = parasolid_intersection_records(parsed);
+        let parasolid_term_use_records = parasolid_term_use_records(streams);
+        let parasolid_support_uv_records = parasolid_support_uv_records(streams);
+        let parasolid_chart_records = parasolid_chart_records(streams);
+        let parasolid_attribute_definitions = parasolid_attribute_definitions(streams);
+        let parasolid_entity_51_records = parasolid_entity_51_records(streams);
+        let parasolid_entity_52_integer_records = parasolid_entity_52_integer_records(streams);
+        let parasolid_entity_53_double_records = parasolid_entity_53_double_records(streams);
+        let parasolid_entity_54_string_records = parasolid_entity_54_string_records(streams);
+        let parasolid_entity_51_numeric_uses = parasolid_entity_51_numeric_uses(
             &parasolid_entity_51_records,
             &parasolid_entity_52_integer_records,
             &parasolid_entity_53_double_records,
         );
-        let parasolid_entity_51_string_uses = crate::native::parasolid_entity_51_string_uses(
+        let parasolid_entity_51_string_uses = parasolid_entity_51_string_uses(
             &parasolid_entity_51_records,
             &parasolid_entity_54_string_records,
         );
-        let parasolid_attribute_class_uses = crate::native::parasolid_attribute_class_uses(
+        let parasolid_attribute_class_uses = parasolid_attribute_class_uses(
             &parasolid_entity_51_records,
             &parasolid_attribute_definitions,
         );
         let parasolid_topology_attribute_list_references =
-            crate::native::parasolid_topology_attribute_list_references(
-                parsed,
-                &parasolid_entity_51_records,
-            );
-        let parasolid_topology_attribute_class_uses =
-            crate::native::parasolid_topology_attribute_class_uses(
-                &parasolid_topology_attribute_list_references,
-                &parasolid_attribute_class_uses,
-            );
-        let om_record_areas = crate::native::om_record_areas(container);
-        let feature_operation_labels = crate::native::feature_operation_labels(container);
-        let feature_operation_records = crate::native::feature_operation_records(container);
-        let feature_payload_strings = crate::native::feature_payload_strings(container);
-        let feature_simple_hole_templates = crate::native::feature_simple_hole_templates(
+            parasolid_topology_attribute_list_references(parsed, &parasolid_entity_51_records);
+        let parasolid_topology_attribute_class_uses = parasolid_topology_attribute_class_uses(
+            &parasolid_topology_attribute_list_references,
+            &parasolid_attribute_class_uses,
+        );
+        let om_record_areas = om_record_areas(container);
+        let feature_operation_labels = feature_operation_labels(container);
+        let feature_operation_records = feature_operation_records(container);
+        let feature_payload_strings = feature_payload_strings(container);
+        let feature_simple_hole_templates = feature_simple_hole_templates(
             &feature_operation_labels,
             &feature_operation_records,
             &feature_payload_strings,
         );
         let feature_simple_hole_repeated_scalar_lanes =
-            crate::native::feature_simple_hole_repeated_scalar_lanes(container);
+            feature_simple_hole_repeated_scalar_lanes(container);
         let feature_simple_hole_repeated_scalar_lane_block_references =
-            crate::native::feature_simple_hole_repeated_scalar_lane_block_references(container);
-        let feature_simple_hole_construction_groups =
-            crate::native::feature_simple_hole_construction_groups(
-                &feature_simple_hole_repeated_scalar_lanes,
-                &feature_simple_hole_repeated_scalar_lane_block_references,
-            );
-        let feature_body_references = crate::native::feature_body_references(container);
-        let feature_body_segment_uses = crate::native::feature_body_segment_uses(
-            &feature_body_references,
-            &segment_body_bindings,
+            feature_simple_hole_repeated_scalar_lane_block_references(container);
+        let feature_simple_hole_construction_groups = feature_simple_hole_construction_groups(
+            &feature_simple_hole_repeated_scalar_lanes,
+            &feature_simple_hole_repeated_scalar_lane_block_references,
         );
-        let feature_body_reference_occurrences =
-            crate::native::feature_body_reference_occurrences(container);
-        let feature_input_blocks = crate::native::feature_input_blocks(container);
+        let feature_body_references = feature_body_references(container);
+        let feature_body_segment_uses =
+            feature_body_segment_uses(&feature_body_references, &segment_body_bindings);
+        let feature_body_reference_occurrences = feature_body_reference_occurrences(container);
+        let feature_input_blocks = feature_input_blocks(container);
         let feature_input_block_identity_groups =
-            crate::native::feature_input_block_identity_groups(&feature_input_blocks);
-        let display_jt_indices = crate::native::display_jt_indices(container);
-        let display_jt_documents =
-            crate::native::display_jt_documents(container, &display_jt_indices);
-        let display_jt_segments =
-            crate::native::display_jt_segments(container, &display_jt_documents);
+            feature_input_block_identity_groups(&feature_input_blocks);
+        let display_jt_indices = display_jt_indices(container);
+        let display_jt_documents = display_jt_documents(container, &display_jt_indices);
+        let display_jt_segments = display_jt_segments(container, &display_jt_documents);
         let display_jt_shape_lod_elements =
-            crate::native::display_jt_shape_lod_elements(container, &display_jt_segments);
-        let display_jt_tri_strip_lod_headers = crate::native::display_jt_tri_strip_lod_headers(
-            container,
-            &display_jt_shape_lod_elements,
-        );
+            display_jt_shape_lod_elements(container, &display_jt_segments);
+        let display_jt_tri_strip_lod_headers =
+            display_jt_tri_strip_lod_headers(container, &display_jt_shape_lod_elements);
         let display_jt_initial_face_degree_symbols =
-            crate::native::display_jt_initial_face_degree_symbols(
-                container,
-                &display_jt_shape_lod_elements,
-            );
+            display_jt_initial_face_degree_symbols(container, &display_jt_shape_lod_elements);
         let (
             display_jt_topology_packet_sequences,
             display_jt_vertex_records_headers,
             display_jt_coordinate_array_headers,
-        ) = crate::native::display_jt_topology_packet_sequences(
-            container,
-            &display_jt_shape_lod_elements,
-        );
-        let display_jt_vertex_coordinates = crate::native::display_jt_vertex_coordinates(
-            container,
-            &display_jt_coordinate_array_headers,
-        );
-        let display_jt_vertex_normals = crate::native::display_jt_vertex_normals(
+        ) = display_jt_topology_packet_sequences(container, &display_jt_shape_lod_elements);
+        let display_jt_vertex_coordinates =
+            display_jt_vertex_coordinates(container, &display_jt_coordinate_array_headers);
+        let display_jt_vertex_normals = display_jt_vertex_normals(
             container,
             &display_jt_vertex_records_headers,
             &display_jt_coordinate_array_headers,
             &display_jt_vertex_coordinates,
         );
-        let display_jt_vertex_colors = crate::native::display_jt_vertex_colors(
+        let display_jt_vertex_colors = display_jt_vertex_colors(
             container,
             &display_jt_vertex_records_headers,
             &display_jt_coordinate_array_headers,
             &display_jt_vertex_coordinates,
             &display_jt_vertex_normals,
         );
-        let display_jt_vertex_texture_coordinates =
-            crate::native::display_jt_vertex_texture_coordinates(
-                container,
-                &display_jt_vertex_records_headers,
-                &display_jt_coordinate_array_headers,
-                &display_jt_vertex_coordinates,
-                &display_jt_vertex_normals,
-                &display_jt_vertex_colors,
-            );
-        let display_jt_vertex_flags = crate::native::display_jt_vertex_flags(
+        let display_jt_vertex_texture_coordinates = display_jt_vertex_texture_coordinates(
+            container,
+            &display_jt_vertex_records_headers,
+            &display_jt_coordinate_array_headers,
+            &display_jt_vertex_coordinates,
+            &display_jt_vertex_normals,
+            &display_jt_vertex_colors,
+        );
+        let display_jt_vertex_flags = display_jt_vertex_flags(
             container,
             &display_jt_vertex_records_headers,
             &display_jt_coordinate_array_headers,
@@ -376,331 +347,239 @@ impl NativeModel {
             &display_jt_vertex_colors,
             &display_jt_vertex_texture_coordinates,
         );
-        let display_jt_polygon_meshes = crate::native::display_jt_polygon_meshes(
+        let display_jt_polygon_meshes = display_jt_polygon_meshes(
             &display_jt_topology_packet_sequences,
             &display_jt_coordinate_array_headers,
         );
         let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
-            crate::native::display_jt_compressed_element_sequences(container, &display_jt_segments);
+            display_jt_compressed_element_sequences(container, &display_jt_segments);
         let display_jt_string_property_atoms =
-            crate::native::display_jt_string_property_atoms(container, &display_jt_segments);
+            display_jt_string_property_atoms(container, &display_jt_segments);
         let display_jt_shape_lod_bindings =
-            crate::native::display_jt_shape_lod_bindings(container, &display_jt_segments);
-        let display_jt_base_node_data = crate::native::display_jt_base_node_data(
+            display_jt_shape_lod_bindings(container, &display_jt_segments);
+        let display_jt_base_node_data =
+            display_jt_base_node_data(container, &display_jt_segments, &display_jt_documents);
+        let display_jt_group_node_data =
+            display_jt_group_node_data(container, &display_jt_segments, &display_jt_documents);
+        let display_jt_instance_nodes =
+            display_jt_instance_nodes(container, &display_jt_segments, &display_jt_documents);
+        let display_jt_geometric_transform_attributes = display_jt_geometric_transform_attributes(
             container,
             &display_jt_segments,
             &display_jt_documents,
         );
-        let display_jt_group_node_data = crate::native::display_jt_group_node_data(
+        let display_jt_partition_nodes =
+            display_jt_partition_nodes(container, &display_jt_segments, &display_jt_documents);
+        let display_jt_range_lod_nodes =
+            display_jt_range_lod_nodes(container, &display_jt_segments, &display_jt_documents);
+        let display_jt_tri_strip_shape_nodes = display_jt_tri_strip_shape_nodes(
             container,
             &display_jt_segments,
             &display_jt_documents,
         );
-        let display_jt_instance_nodes = crate::native::display_jt_instance_nodes(
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        );
-        let display_jt_geometric_transform_attributes =
-            crate::native::display_jt_geometric_transform_attributes(
-                container,
-                &display_jt_segments,
-                &display_jt_documents,
-            );
-        let display_jt_partition_nodes = crate::native::display_jt_partition_nodes(
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        );
-        let display_jt_range_lod_nodes = crate::native::display_jt_range_lod_nodes(
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        );
-        let display_jt_tri_strip_shape_nodes = crate::native::display_jt_tri_strip_shape_nodes(
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        );
-        let feature_datum_csys_constructions =
-            crate::native::feature_datum_csys_constructions(container);
-        let feature_datum_csys_payloads = crate::native::feature_datum_csys_payloads(
-            container,
-            &feature_datum_csys_constructions,
-        );
+        let feature_datum_csys_constructions = feature_datum_csys_constructions(container);
+        let feature_datum_csys_payloads =
+            feature_datum_csys_payloads(container, &feature_datum_csys_constructions);
         let feature_datum_csys_payload_scalar_pairs =
-            crate::native::feature_datum_csys_payload_scalar_pairs(
-                container,
-                &feature_datum_csys_payloads,
-            );
+            feature_datum_csys_payload_scalar_pairs(container, &feature_datum_csys_payloads);
         let feature_datum_csys_payload_fixed_pairs =
-            crate::native::feature_datum_csys_payload_fixed_pairs(
-                container,
-                &feature_datum_csys_payloads,
-            );
-        let feature_datum_csys_payload_scalars = crate::native::feature_datum_csys_payload_scalars(
-            container,
-            &feature_datum_csys_payloads,
-        );
-        let feature_datum_csys_descriptors = crate::native::feature_datum_csys_descriptors(
-            container,
-            &feature_datum_csys_constructions,
-        );
-        let feature_datum_plane_headers = crate::native::feature_datum_plane_headers(container);
-        let feature_datum_plane_block_uses = crate::native::feature_datum_plane_block_uses(
-            &feature_datum_plane_headers,
-            &feature_input_blocks,
-        );
+            feature_datum_csys_payload_fixed_pairs(container, &feature_datum_csys_payloads);
+        let feature_datum_csys_payload_scalars =
+            feature_datum_csys_payload_scalars(container, &feature_datum_csys_payloads);
+        let feature_datum_csys_descriptors =
+            feature_datum_csys_descriptors(container, &feature_datum_csys_constructions);
+        let feature_datum_plane_headers = feature_datum_plane_headers(container);
+        let feature_datum_plane_block_uses =
+            feature_datum_plane_block_uses(&feature_datum_plane_headers, &feature_input_blocks);
         let feature_datum_plane_payloads =
-            crate::native::feature_datum_plane_payloads(container, &feature_datum_plane_headers);
+            feature_datum_plane_payloads(container, &feature_datum_plane_headers);
         let feature_datum_plane_payload_scalar_pairs =
-            crate::native::feature_datum_plane_payload_scalar_pairs(
-                container,
-                &feature_datum_plane_payloads,
-            );
+            feature_datum_plane_payload_scalar_pairs(container, &feature_datum_plane_payloads);
         let feature_datum_plane_descriptors =
-            crate::native::feature_datum_plane_descriptors(container, &feature_datum_plane_headers);
-        let feature_datum_plane_csys_identity_uses =
-            crate::native::feature_datum_plane_csys_identity_uses(
-                &feature_datum_plane_descriptors,
-                &feature_datum_csys_descriptors,
-            );
-        let feature_datum_csys_block_uses = crate::native::feature_datum_csys_block_uses(
-            &feature_datum_csys_constructions,
-            &feature_input_blocks,
+            feature_datum_plane_descriptors(container, &feature_datum_plane_headers);
+        let feature_datum_plane_csys_identity_uses = feature_datum_plane_csys_identity_uses(
+            &feature_datum_plane_descriptors,
+            &feature_datum_csys_descriptors,
         );
-        let feature_sketch_references = crate::native::feature_sketch_references(container);
-        let feature_projected_curve_references =
-            crate::native::feature_projected_curve_references(container);
+        let feature_datum_csys_block_uses =
+            feature_datum_csys_block_uses(&feature_datum_csys_constructions, &feature_input_blocks);
+        let feature_sketch_references = feature_sketch_references(container);
+        let feature_projected_curve_references = feature_projected_curve_references(container);
         let feature_projected_curve_construction_payloads =
-            crate::native::feature_projected_curve_construction_payloads(
+            feature_projected_curve_construction_payloads(
                 container,
                 &feature_operation_labels,
                 &feature_projected_curve_references,
             );
         let feature_projected_curve_construction_strings =
-            crate::native::feature_projected_curve_construction_strings(
+            feature_projected_curve_construction_strings(
                 container,
                 &feature_projected_curve_construction_payloads,
             );
-        let feature_pattern_references = crate::native::feature_pattern_references(container);
-        let feature_pattern_construction_payloads =
-            crate::native::feature_pattern_construction_payloads(
-                container,
-                &feature_operation_labels,
-                &feature_pattern_references,
-            );
+        let feature_pattern_references = feature_pattern_references(container);
+        let feature_pattern_construction_payloads = feature_pattern_construction_payloads(
+            container,
+            &feature_operation_labels,
+            &feature_pattern_references,
+        );
         let feature_pattern_construction_strings =
-            crate::native::feature_pattern_construction_strings(
-                container,
-                &feature_pattern_construction_payloads,
-            );
-        let feature_pattern_construction_fixed_lanes =
-            crate::native::feature_pattern_construction_fixed_lanes(
-                container,
-                &feature_pattern_construction_payloads,
-            );
-        let feature_pattern_transform_lanes =
-            crate::native::feature_pattern_transform_lanes(container);
-        let feature_point_construction_headers =
-            crate::native::feature_point_construction_headers(container);
+            feature_pattern_construction_strings(container, &feature_pattern_construction_payloads);
+        let feature_pattern_construction_fixed_lanes = feature_pattern_construction_fixed_lanes(
+            container,
+            &feature_pattern_construction_payloads,
+        );
+        let feature_pattern_transform_lanes = feature_pattern_transform_lanes(container);
+        let feature_point_construction_headers = feature_point_construction_headers(container);
         let feature_point_construction_scalar_lanes =
-            crate::native::feature_point_construction_scalar_lanes(
-                container,
-                &feature_point_construction_headers,
-            );
+            feature_point_construction_scalar_lanes(container, &feature_point_construction_headers);
         let feature_draft_construction_references =
-            crate::native::feature_draft_construction_references(container);
+            feature_draft_construction_references(container);
         let feature_draft_construction_index_lanes =
-            crate::native::feature_draft_construction_index_lanes(container);
+            feature_draft_construction_index_lanes(container);
         let feature_draft_construction_payloads =
-            crate::native::feature_draft_construction_payloads(
-                container,
-                &feature_draft_construction_index_lanes,
-            );
-        let feature_draft_construction_graph_payloads =
-            crate::native::feature_draft_construction_graph_payloads(
-                container,
-                &feature_draft_construction_index_lanes,
-                &feature_draft_construction_references,
-            );
-        let feature_draft_construction_fixed_lanes =
-            crate::native::feature_draft_construction_fixed_lanes(
-                container,
-                &feature_draft_construction_graph_payloads,
-            );
-        let feature_draft_construction_binary32_lanes =
-            crate::native::feature_draft_construction_binary32_lanes(
-                container,
-                &feature_draft_construction_graph_payloads,
-            );
-        let feature_draft_construction_graph_strings =
-            crate::native::feature_draft_construction_graph_strings(
-                container,
-                &feature_draft_construction_graph_payloads,
-            );
-        let feature_draft_construction_identity_frames =
-            crate::native::feature_draft_construction_identity_frames(
-                container,
-                &feature_draft_construction_payloads,
-            );
+            feature_draft_construction_payloads(container, &feature_draft_construction_index_lanes);
+        let feature_draft_construction_graph_payloads = feature_draft_construction_graph_payloads(
+            container,
+            &feature_draft_construction_index_lanes,
+            &feature_draft_construction_references,
+        );
+        let feature_draft_construction_fixed_lanes = feature_draft_construction_fixed_lanes(
+            container,
+            &feature_draft_construction_graph_payloads,
+        );
+        let feature_draft_construction_binary32_lanes = feature_draft_construction_binary32_lanes(
+            container,
+            &feature_draft_construction_graph_payloads,
+        );
+        let feature_draft_construction_graph_strings = feature_draft_construction_graph_strings(
+            container,
+            &feature_draft_construction_graph_payloads,
+        );
+        let feature_draft_construction_identity_frames = feature_draft_construction_identity_frames(
+            container,
+            &feature_draft_construction_payloads,
+        );
         let feature_draft_construction_terminal_lanes =
-            crate::native::feature_draft_construction_terminal_lanes(container);
+            feature_draft_construction_terminal_lanes(container);
         let feature_surface_construction_references =
-            crate::native::feature_surface_construction_references(container);
-        let feature_surface_construction_payloads =
-            crate::native::feature_surface_construction_payloads(
-                container,
-                &feature_surface_construction_references,
-            );
-        let feature_surface_construction_scalar_pairs =
-            crate::native::feature_surface_construction_scalar_pairs(
-                container,
-                &feature_surface_construction_payloads,
-            );
+            feature_surface_construction_references(container);
+        let feature_surface_construction_payloads = feature_surface_construction_payloads(
+            container,
+            &feature_surface_construction_references,
+        );
+        let feature_surface_construction_scalar_pairs = feature_surface_construction_scalar_pairs(
+            container,
+            &feature_surface_construction_payloads,
+        );
         let feature_surface_construction_strings =
-            crate::native::feature_surface_construction_strings(
-                container,
-                &feature_surface_construction_payloads,
-            );
+            feature_surface_construction_strings(container, &feature_surface_construction_payloads);
         let feature_surface_construction_branches =
-            crate::native::feature_surface_construction_branches(container);
-        let feature_extrude_profile_references =
-            crate::native::feature_extrude_profile_references(container);
-        let feature_extrude_payload_headers =
-            crate::native::feature_extrude_payload_headers(container);
-        let feature_extrude_payload_footers =
-            crate::native::feature_extrude_payload_footers(container);
+            feature_surface_construction_branches(container);
+        let feature_extrude_profile_references = feature_extrude_profile_references(container);
+        let feature_extrude_payload_headers = feature_extrude_payload_headers(container);
+        let feature_extrude_payload_footers = feature_extrude_payload_footers(container);
         let feature_operation_body_scalar_triples =
-            crate::native::feature_operation_body_scalar_triples(container);
-        let feature_operation_body_members =
-            crate::native::feature_operation_body_members(container);
-        let feature_operation_body_operands = crate::native::feature_operation_body_operands(
+            feature_operation_body_scalar_triples(container);
+        let feature_operation_body_members = feature_operation_body_members(container);
+        let feature_operation_body_operands = feature_operation_body_operands(
             &feature_operation_body_members,
             &feature_body_reference_occurrences,
             &segment_body_bindings,
         );
         let feature_operation_body_11_continuations =
-            crate::native::feature_operation_body_11_continuations(container);
+            feature_operation_body_11_continuations(container);
         let feature_operation_body_reference_lanes =
-            crate::native::feature_operation_body_reference_lanes(container);
-        let feature_extrude_construction_profiles =
-            crate::native::feature_extrude_construction_profiles(
-                &feature_extrude_profile_references,
-                &feature_operation_body_reference_lanes,
-            );
-        let feature_extrude_payload_32_branches =
-            crate::native::feature_extrude_payload_32_branches(container);
-        let feature_extrude_32_constructions = crate::native::feature_extrude_32_constructions(
+            feature_operation_body_reference_lanes(container);
+        let feature_extrude_construction_profiles = feature_extrude_construction_profiles(
+            &feature_extrude_profile_references,
+            &feature_operation_body_reference_lanes,
+        );
+        let feature_extrude_payload_32_branches = feature_extrude_payload_32_branches(container);
+        let feature_extrude_32_constructions = feature_extrude_32_constructions(
             &feature_extrude_profile_references,
             &feature_extrude_payload_32_branches,
         );
         let feature_block_construction_references =
-            crate::native::feature_block_construction_references(container);
+            feature_block_construction_references(container);
         let feature_block_constructions =
-            crate::native::feature_block_constructions(&feature_block_construction_references);
+            feature_block_constructions(&feature_block_construction_references);
         let feature_block_construction_payloads =
-            crate::native::feature_block_construction_payloads(
-                container,
-                &feature_block_constructions,
-            );
-        let feature_block_payload_scalars = crate::native::feature_block_payload_scalars(
-            container,
+            feature_block_construction_payloads(container, &feature_block_constructions);
+        let feature_block_payload_scalars =
+            feature_block_payload_scalars(container, &feature_block_construction_payloads);
+        let feature_block_payload_names =
+            feature_block_payload_names(container, &feature_block_construction_payloads);
+        let feature_block_payload_named_records = feature_block_payload_named_records(
             &feature_block_construction_payloads,
+            &feature_block_payload_names,
+            &feature_block_payload_scalars,
         );
-        let feature_block_payload_names = crate::native::feature_block_payload_names(
-            container,
-            &feature_block_construction_payloads,
-        );
-        let feature_block_payload_named_records =
-            crate::native::feature_block_payload_named_records(
-                &feature_block_construction_payloads,
-                &feature_block_payload_names,
-                &feature_block_payload_scalars,
-            );
-        let feature_block_payload_points = crate::native::feature_block_payload_points(
+        let feature_block_payload_points = feature_block_payload_points(
             &feature_block_payload_named_records,
             &feature_block_payload_names,
             &feature_block_payload_scalars,
         );
         let feature_block_payload_point_groups =
-            crate::native::feature_block_payload_point_groups(&feature_block_payload_points);
-        let feature_sketch_records = crate::native::feature_sketch_records(
+            feature_block_payload_point_groups(&feature_block_payload_points);
+        let feature_sketch_records = feature_sketch_records(
             &feature_operation_labels,
             &feature_operation_records,
             &feature_input_blocks,
             &feature_sketch_references,
         );
-        let feature_sketch_construction_inputs = crate::native::feature_sketch_construction_inputs(
-            &feature_sketch_records,
-            &feature_sketch_references,
-        );
+        let feature_sketch_construction_inputs =
+            feature_sketch_construction_inputs(&feature_sketch_records, &feature_sketch_references);
         let feature_sketch_construction_payloads =
-            crate::native::feature_sketch_construction_payloads(
-                container,
-                &feature_sketch_construction_inputs,
-            );
-        let feature_sketch_payload_coordinate_pairs =
-            crate::native::feature_sketch_payload_coordinate_pairs(
-                container,
-                &feature_sketch_construction_payloads,
-            );
-        let feature_sketch_payload_fixed_pairs = crate::native::feature_sketch_payload_fixed_pairs(
+            feature_sketch_construction_payloads(container, &feature_sketch_construction_inputs);
+        let feature_sketch_payload_coordinate_pairs = feature_sketch_payload_coordinate_pairs(
             container,
             &feature_sketch_construction_payloads,
         );
-        let feature_sketch_payload_scalars = crate::native::feature_sketch_payload_scalars(
-            container,
-            &feature_sketch_construction_inputs,
+        let feature_sketch_payload_fixed_pairs =
+            feature_sketch_payload_fixed_pairs(container, &feature_sketch_construction_payloads);
+        let feature_sketch_payload_scalars =
+            feature_sketch_payload_scalars(container, &feature_sketch_construction_inputs);
+        let feature_sketch_payload_names =
+            feature_sketch_payload_names(container, &feature_sketch_construction_inputs);
+        let feature_sketch_payload_named_records = feature_sketch_payload_named_records(
+            &feature_sketch_construction_payloads,
+            &feature_sketch_payload_names,
+            &feature_sketch_payload_scalars,
+            &feature_sketch_payload_fixed_pairs,
         );
-        let feature_sketch_payload_names = crate::native::feature_sketch_payload_names(
-            container,
-            &feature_sketch_construction_inputs,
-        );
-        let feature_sketch_payload_named_records =
-            crate::native::feature_sketch_payload_named_records(
-                &feature_sketch_construction_payloads,
-                &feature_sketch_payload_names,
-                &feature_sketch_payload_scalars,
-                &feature_sketch_payload_fixed_pairs,
-            );
-        let feature_sketch_fixed_points = crate::native::feature_sketch_fixed_points(
+        let feature_sketch_fixed_points = feature_sketch_fixed_points(
             &feature_sketch_payload_named_records,
             &feature_sketch_payload_names,
             &feature_sketch_payload_fixed_pairs,
         );
-        let feature_sketch_points = crate::native::feature_sketch_points(
+        let feature_sketch_points = feature_sketch_points(
             &feature_sketch_payload_named_records,
             &feature_sketch_payload_names,
             &feature_sketch_payload_scalars,
         );
-        let feature_sketch_point_groups =
-            crate::native::feature_sketch_point_groups(&feature_sketch_points);
-        let offset_store_named_points = crate::native::offset_store_named_points(container);
-        let feature_sketch_named_point_block_uses =
-            crate::native::feature_sketch_named_point_block_uses(
-                &feature_sketch_references,
-                &offset_store_named_points,
-            );
-        let feature_sketch_preceding_named_point_uses =
-            crate::native::feature_sketch_preceding_named_point_uses(
-                &feature_sketch_references,
-                &offset_store_named_points,
-            );
-        let feature_sketch_point_uses = crate::native::feature_sketch_point_uses(
+        let feature_sketch_point_groups = feature_sketch_point_groups(&feature_sketch_points);
+        let offset_store_named_points = offset_store_named_points(container);
+        let feature_sketch_named_point_block_uses = feature_sketch_named_point_block_uses(
+            &feature_sketch_references,
+            &offset_store_named_points,
+        );
+        let feature_sketch_preceding_named_point_uses = feature_sketch_preceding_named_point_uses(
+            &feature_sketch_references,
+            &offset_store_named_points,
+        );
+        let feature_sketch_point_uses = feature_sketch_point_uses(
             &feature_sketch_point_groups,
             &offset_store_named_points,
             &feature_sketch_named_point_block_uses,
         );
-        let feature_sketch_datum_csys_dependencies =
-            crate::native::feature_sketch_datum_csys_dependencies(
-                &feature_operation_labels,
-                &offset_store_named_points,
-                &feature_sketch_point_uses,
-                &feature_datum_csys_constructions,
-            );
-        let feature_boolean_operations = crate::native::feature_boolean_operations(container);
-        let segment_body_lineage_statuses = crate::native::segment_body_lineage_statuses(
+        let feature_sketch_datum_csys_dependencies = feature_sketch_datum_csys_dependencies(
+            &feature_operation_labels,
+            &offset_store_named_points,
+            &feature_sketch_point_uses,
+            &feature_datum_csys_constructions,
+        );
+        let feature_boolean_operations = feature_boolean_operations(container);
+        let segment_body_lineage_statuses = segment_body_lineage_statuses(
             &feature_operation_labels,
             &feature_body_references,
             &feature_boolean_operations,
@@ -708,100 +587,84 @@ impl NativeModel {
             &segment_body_bindings,
         )
         .unwrap_or_default();
-        let expression_declarations = crate::native::expression_declarations(container);
-        let data_block_object_frames = crate::native::data_block_object_frames(container);
-        let expressions = crate::native::expressions(container);
-        let classes = crate::native::class_definitions(container);
-        let fields = crate::native::field_definitions(container);
-        let object_records = crate::native::object_records(container);
+        let expression_declarations = expression_declarations(container);
+        let data_block_object_frames = data_block_object_frames(container);
+        let expressions = expressions(container);
+        let classes = class_definitions(container);
+        let fields = field_definitions(container);
+        let object_records = object_records(container);
         let (rmfastload_object_id_tables, rmfastload_object_ids) =
-            match crate::native::rmfastload_object_id_table(container) {
+            match rmfastload_object_id_table(container) {
                 Some((table, object_ids)) => (vec![table], object_ids),
                 None => (Vec::new(), Vec::new()),
             };
-        let data_blocks = crate::native::data_blocks(container);
-        let data_block_control_values = crate::native::data_block_control_values(container);
-        let data_block_control_class_references =
-            crate::native::data_block_control_class_references(container);
-        let data_block_control_index_values =
-            crate::native::data_block_control_index_values(container);
-        let data_block_control_references = crate::native::data_block_control_references(container);
+        let data_blocks = data_blocks(container);
+        let data_block_control_values = data_block_control_values(container);
+        let data_block_control_class_references = data_block_control_class_references(container);
+        let data_block_control_index_values = data_block_control_index_values(container);
+        let data_block_control_references = data_block_control_references(container);
         let data_block_control_handle_pairs =
-            crate::native::data_block_control_handle_pairs(&data_block_control_references);
-        let data_block_references = crate::native::data_block_references(container);
-        let data_block_counted_index_lanes =
-            crate::native::data_block_counted_index_lanes(container);
-        let data_block_abr_reference_lanes =
-            crate::native::data_block_abr_reference_lanes(container);
-        let data_block_index_rows = crate::native::data_block_index_rows(container);
-        let data_block_linked_index_rows = crate::native::data_block_linked_index_rows(container);
-        let data_block_target_index_rows = crate::native::data_block_target_index_rows(container);
-        let data_block_column_index_tables = crate::native::data_block_column_index_tables(
+            data_block_control_handle_pairs(&data_block_control_references);
+        let data_block_references = data_block_references(container);
+        let data_block_counted_index_lanes = data_block_counted_index_lanes(container);
+        let data_block_abr_reference_lanes = data_block_abr_reference_lanes(container);
+        let data_block_index_rows = data_block_index_rows(container);
+        let data_block_linked_index_rows = data_block_linked_index_rows(container);
+        let data_block_target_index_rows = data_block_target_index_rows(container);
+        let data_block_column_index_tables = data_block_column_index_tables(
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
         );
-        let feature_input_column_row_uses = crate::native::feature_input_column_row_uses(
+        let feature_input_column_row_uses = feature_input_column_row_uses(
             &feature_input_blocks,
             &data_block_index_rows,
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
             &data_block_column_index_tables,
         );
-        let feature_input_column_targets = crate::native::feature_input_column_targets(
+        let feature_input_column_targets = feature_input_column_targets(
             &feature_input_blocks,
             &feature_input_column_row_uses,
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
         );
-        let feature_parameter_bindings = crate::native::feature_parameter_bindings(
-            &feature_input_blocks,
-            &data_block_references,
-            &expressions,
-        );
-        let feature_parameter_uses =
-            crate::native::feature_parameter_uses(&feature_parameter_bindings);
-        let feature_block_dimensions = crate::native::feature_block_dimensions(
+        let feature_parameter_bindings =
+            feature_parameter_bindings(&feature_input_blocks, &data_block_references, &expressions);
+        let feature_parameter_uses = feature_parameter_uses(&feature_parameter_bindings);
+        let feature_block_dimensions = feature_block_dimensions(
             &feature_block_constructions,
             &feature_parameter_bindings,
             &expression_declarations,
             &expressions,
         );
-        let store_headers = crate::native::store_headers(container);
-        let string_values = crate::native::string_values(container);
-        let object_references = crate::native::object_references(container);
-        let configurations = crate::native::configurations(container);
-        let part_attributes = crate::native::part_attributes(container);
+        let store_headers = store_headers(container);
+        let string_values = string_values(container);
+        let object_references = object_references(container);
+        let configurations = configurations(container);
+        let part_attributes = part_attributes(container);
         let configuration_attribute_uses =
-            crate::native::configuration_attribute_uses(&configurations, &part_attributes);
-        let external_references = crate::native::external_references(container);
-        let external_reference_records = crate::native::external_reference_records(container);
-        let external_reference_indexed_records = crate::native::external_reference_indexed_records(
-            container,
-            &external_reference_records,
-        );
-        let external_reference_empty_records = crate::native::external_reference_empty_records(
-            container,
-            &external_reference_indexed_records,
-        );
+            configuration_attribute_uses(&configurations, &part_attributes);
+        let external_references = external_references(container);
+        let external_reference_records = external_reference_records(container);
+        let external_reference_indexed_records =
+            external_reference_indexed_records(container, &external_reference_records);
+        let external_reference_empty_records =
+            external_reference_empty_records(container, &external_reference_indexed_records);
         let external_reference_tail_reference_pairs =
-            crate::native::external_reference_tail_reference_pairs(
-                container,
-                &external_reference_records,
-            );
-        let external_reference_record_string_uses =
-            crate::native::external_reference_record_string_uses(
-                &external_reference_records,
-                &external_references,
-            );
-        let external_reference_record_children = crate::native::external_reference_record_children(
+            external_reference_tail_reference_pairs(container, &external_reference_records);
+        let external_reference_record_string_uses = external_reference_record_string_uses(
+            &external_reference_records,
+            &external_references,
+        );
+        let external_reference_record_children = external_reference_record_children(
             &external_reference_records,
             &external_references,
             &external_reference_record_string_uses,
         );
-        let material_texture_assets = crate::native::material_texture_assets(container);
+        let material_texture_assets = material_texture_assets(container);
         let material_texture_catalog_entries =
-            crate::native::material_texture_catalog_entries(container, &material_texture_assets);
-        let persistent_handles = crate::native::persistent_handles(
+            material_texture_catalog_entries(container, &material_texture_assets);
+        let persistent_handles = persistent_handles(
             &object_references,
             &data_block_control_references,
             &external_reference_records,
@@ -1002,11 +865,11 @@ impl NativeModel {
     }
 
     /// Whether every emptiness-counting record family is empty. Derived from
-    /// [`CATALOGUE`](crate::native::catalogue::CATALOGUE): the fold visits
+    /// [`CATALOGUE`](super::catalogue::CATALOGUE): the fold visits
     /// exactly the rows whose `counts_toward_emptiness` flag is set (133 of the
     /// 179 families), reproducing the operand set of the legacy hand-written
     /// all-empty guard. The 46 non-counting families are documented on
-    /// [`CatalogueRow::counts_toward_emptiness`](crate::native::catalogue::CatalogueRow::counts_toward_emptiness).
+    /// [`CatalogueRow::counts_toward_emptiness`](super::catalogue::CatalogueRow::counts_toward_emptiness).
     /// The fold is order-insensitive — the legacy guard was a pure `&&` of
     /// `is_empty()` calls on plain `Vec`s — so it is behavior-identical to the
     /// conjunction it replaces.
@@ -1014,7 +877,7 @@ impl NativeModel {
     /// The caller additionally checks `object_sections`, the sole non-model
     /// operand of the legacy guard, which this method does not cover.
     pub(crate) fn is_empty(&self) -> bool {
-        crate::native::catalogue::CATALOGUE
+        super::catalogue::CATALOGUE
             .iter()
             .filter(|row| row.counts_toward_emptiness)
             .all(|row| (row.len)(self) == 0)

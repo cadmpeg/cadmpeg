@@ -26,16 +26,15 @@ mod segments;
 mod substrate;
 pub(crate) mod vector;
 
-#[cfg(test)]
-pub(crate) use attach::*;
-pub use display_jt::*;
-pub use features::*;
-pub(crate) use model::*;
-pub use om::*;
-pub use parasolid::*;
-pub use segments::*;
-#[cfg(test)]
-pub(crate) use substrate::pair_stream_indices;
+// The record families, extractors, and enums each domain module owns stay
+// private to the `native` subtree: internal consumers (`model`, `attach`,
+// `catalogue`) reach them through direct `super::<module>::X` / `crate::native::
+// <module>::X` paths, and the per-module `#[cfg(test)] mod tests` reach them
+// through `super::`. Only the symbols the decode tier (`decode.rs`, `lib.rs`)
+// consumes from outside the subtree are re-exported here.
+pub(crate) use model::NativeModel;
+pub(crate) use om::expression_parameter_names;
+pub(crate) use segments::segment_body_lineage_statuses;
 pub(crate) use substrate::{paired_delta_streams, topology_streams, ParsedStreams};
 
 /// Attach the pre-extracted native object model to `ir`: emit annotations, the

@@ -3,6 +3,12 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::native::om::{
+    data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
+    DataBlockReference, DataBlockTargetIndexRow, Expression, ExpressionDeclaration, ExpressionUnit,
+    OmSchemaRole,
+};
+use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 
 /// Ordered feature operation label from a feature-history record area.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -8438,5 +8444,832 @@ mod tests {
         assert_eq!(first, "nx:om-data-block-object-frames-2:block-frame#17-0");
         assert_eq!(second, "nx:om-data-block-object-frames-3:block-frame#17-0");
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn feature_input_identity_groups_require_distinct_operations_and_preserve_order() {
+        use super::{feature_input_block_identity_groups, FeatureInputBlock};
+
+        let input =
+            |id: &str, operation: &str, slot: u8, block: &str, offset: u64| FeatureInputBlock {
+                id: id.to_string(),
+                operation_label: operation.to_string(),
+                input_slot: slot,
+                object_index: 7,
+                raw_object_index: vec![7],
+                data_block: block.to_string(),
+                source_offset: offset,
+            };
+        let groups = feature_input_block_identity_groups(&[
+            input("late", "operation-b", 1, "block-7", 30),
+            input("single-a", "operation-a", 0, "block-8", 10),
+            input("early", "operation-a", 2, "block-7", 20),
+            input("single-b", "operation-a", 3, "block-8", 40),
+        ]);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].data_block, "block-7");
+        assert_eq!(groups[0].input_blocks, ["early", "late"]);
+        assert_eq!(groups[0].operation_labels, ["operation-a", "operation-b"]);
+        assert_eq!(groups[0].input_slots, [2, 1]);
+        assert_eq!(groups[0].source_offsets, [20, 30]);
+    }
+
+    #[test]
+    fn feature_input_column_row_uses_preserve_index_row_slots() {
+        use super::{feature_input_column_row_uses, ColumnIndexRowKind, FeatureInputBlock};
+        use crate::native::om::DataBlockIndexRow;
+
+        let input = FeatureInputBlock {
+            id: "input#0000000001".into(),
+            operation_label: "operation#1".into(),
+            input_slot: 2,
+            object_index: 7,
+            raw_object_index: vec![7],
+            data_block: "block#4".into(),
+            source_offset: 10,
+        };
+        let row = DataBlockIndexRow {
+            id: "row#3".into(),
+            section_ordinal: 0,
+            ordinal: 3,
+            first_index: 20,
+            raw_first_index: vec![20],
+            flag: 3,
+            indices: [4, 4, 5, 6],
+            raw_indices: [vec![4], vec![4], vec![5], vec![6]],
+            data_blocks: [
+                "block#4".into(),
+                "block#4".into(),
+                "block#5".into(),
+                "block#6".into(),
+            ],
+            source_entry: "entry".into(),
+            opening_data_block: "opening-block".into(),
+            opening_block_offset: 8,
+            source_offset: 100,
+            first_index_source_offset: 103,
+            index_source_offsets: [108, 109, 110, 111],
+        };
+
+        let uses = feature_input_column_row_uses(&[input], &[row], &[], &[], &[]);
+        assert_eq!(uses.len(), 2);
+        assert_eq!(uses[0].input_block, "input#0000000001");
+        assert_eq!(uses[0].operation_label, "operation#1");
+        assert_eq!(uses[0].input_slot, 2);
+        assert_eq!(uses[0].row_kind, ColumnIndexRowKind::Index);
+        assert_eq!(uses[0].column_row, "row#3");
+        assert_eq!(uses[0].row_slot, 0);
+        assert_eq!(uses[0].source_offset, 108);
+        assert_eq!(uses[1].row_slot, 1);
+        assert_eq!(uses[1].source_offset, 109);
+    }
+
+    #[test]
+    fn feature_input_column_row_uses_preserve_linked_row_slots() {
+        use super::{
+            feature_input_column_row_uses, feature_input_column_targets, ColumnIndexRowKind,
+            FeatureInputBlock,
+        };
+        use crate::native::om::{DataBlockColumnIndexTable, DataBlockLinkedIndexRow};
+
+        let input = FeatureInputBlock {
+            id: "input#0000000001".into(),
+            operation_label: "operation#1".into(),
+            input_slot: 2,
+            object_index: 4,
+            raw_object_index: vec![4],
+            data_block: "block#4".into(),
+            source_offset: 10,
+        };
+        let row = DataBlockLinkedIndexRow {
+            id: "linked-row#3".into(),
+            section_ordinal: 0,
+            ordinal: 3,
+            first_index: 20,
+            raw_first_index: vec![20],
+            discriminator: 0x16,
+            target_index: 4,
+            raw_target_index: vec![4],
+            indices: [5, 6, 4],
+            raw_indices: [vec![5], vec![6], vec![4]],
+            data_blocks: [
+                "block#4".into(),
+                "block#5".into(),
+                "block#6".into(),
+                "block#4".into(),
+            ],
+            flag: 3,
+            mode: 4,
+            source_entry: "entry".into(),
+            opening_data_block: "opening-block".into(),
+            opening_block_offset: 8,
+            source_offset: 100,
+            first_index_source_offset: 102,
+            target_index_source_offset: 107,
+            index_source_offsets: [112, 113, 114],
+        };
+
+        let table = DataBlockColumnIndexTable {
+            id: "column-table".into(),
+            section_ordinal: 0,
+            opening_linked_row: row.id.clone(),
+            target_rows: vec!["target-row".into()],
+            linked_rows: vec!["suffix-row".into()],
+            first_target_index: 4,
+            last_target_index: 2,
+            source_entry: "entry".into(),
+            source_offset: 100,
+        };
+        let uses =
+            feature_input_column_row_uses(&[input.clone()], &[], &[row.clone()], &[], &[table]);
+        assert_eq!(uses.len(), 2);
+        assert_eq!(uses[0].input_block, "input#0000000001");
+        assert_eq!(uses[0].operation_label, "operation#1");
+        assert_eq!(uses[0].input_slot, 2);
+        assert_eq!(uses[0].row_kind, ColumnIndexRowKind::LinkedIndex);
+        assert_eq!(uses[0].column_row, "linked-row#3");
+        assert_eq!(uses[0].row_slot, 0);
+        assert_eq!(uses[0].source_offset, 107);
+        assert_eq!(uses[1].row_slot, 3);
+        assert_eq!(uses[1].source_offset, 114);
+        let targets = feature_input_column_targets(&[input], &uses, &[row], &[]);
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].leading_index, Some(20));
+        assert_eq!(targets[0].leading_index_source_offset, Some(102));
+        assert_eq!(targets[0].discriminator, Some(0x16));
+        assert_eq!(targets[0].field_indices, [5, 6, 4]);
+        assert_eq!(targets[0].flag, Some(3));
+        assert_eq!(targets[0].mode, 4);
+    }
+
+    #[test]
+    fn feature_input_column_row_uses_preserve_target_row_slots() {
+        use super::{
+            feature_input_column_row_uses, feature_input_column_targets, ColumnIndexRowKind,
+            FeatureInputBlock,
+        };
+        use crate::native::om::{DataBlockColumnIndexTable, DataBlockTargetIndexRow};
+
+        let input = FeatureInputBlock {
+            id: "input#0000000001".into(),
+            operation_label: "operation#1".into(),
+            input_slot: 2,
+            object_index: 4,
+            raw_object_index: vec![4],
+            data_block: "block#4".into(),
+            source_offset: 10,
+        };
+        let row = DataBlockTargetIndexRow {
+            id: "target-row#3".into(),
+            section_ordinal: 0,
+            ordinal: 3,
+            target_index: 4,
+            raw_target_index: vec![4],
+            indices: [5, 6, 4],
+            raw_indices: [vec![5], vec![6], vec![4]],
+            data_blocks: [
+                "block#4".into(),
+                "block#5".into(),
+                "block#6".into(),
+                "block#4".into(),
+            ],
+            mode: 7,
+            source_entry: "entry".into(),
+            opening_data_block: "opening-block".into(),
+            opening_block_offset: 8,
+            source_offset: 100,
+            target_index_source_offset: 105,
+            index_source_offsets: [110, 111, 112],
+        };
+
+        let table = DataBlockColumnIndexTable {
+            id: "column-table".into(),
+            section_ordinal: 0,
+            opening_linked_row: "opening-row".into(),
+            target_rows: vec!["target-row#3".into()],
+            linked_rows: vec!["suffix-row".into()],
+            first_target_index: 5,
+            last_target_index: 3,
+            source_entry: "entry".into(),
+            source_offset: 50,
+        };
+        let ambiguous = feature_input_column_row_uses(
+            &[input.clone()],
+            &[],
+            &[],
+            &[row.clone()],
+            &[table.clone(), table.clone()],
+        );
+        assert!(ambiguous.iter().all(|use_| use_.column_table.is_none()));
+        let uses =
+            feature_input_column_row_uses(&[input.clone()], &[], &[], &[row.clone()], &[table]);
+        assert_eq!(uses.len(), 2);
+        assert_eq!(uses[0].input_block, "input#0000000001");
+        assert_eq!(uses[0].operation_label, "operation#1");
+        assert_eq!(uses[0].input_slot, 2);
+        assert_eq!(uses[0].row_kind, ColumnIndexRowKind::TargetIndex);
+        assert_eq!(uses[0].column_row, "target-row#3");
+        assert_eq!(uses[0].column_table.as_deref(), Some("column-table"));
+        assert_eq!(uses[0].row_slot, 0);
+        assert_eq!(uses[0].source_offset, 105);
+        assert_eq!(uses[1].row_slot, 3);
+        assert_eq!(uses[1].source_offset, 112);
+        let targets = feature_input_column_targets(&[input.clone()], &uses, &[], &[row.clone()]);
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].input_block, input.id);
+        assert_eq!(targets[0].column_row, "target-row#3");
+        assert_eq!(targets[0].column_table, "column-table");
+        assert_eq!(targets[0].field_indices, [5, 6, 4]);
+        assert_eq!(
+            targets[0].field_data_blocks,
+            ["block#5", "block#6", "block#4"]
+        );
+        assert_eq!(targets[0].field_source_offsets, [110, 111, 112]);
+        assert_eq!(targets[0].mode, 7);
+        assert_eq!(targets[0].leading_index, None);
+        let mut duplicate = uses.clone();
+        duplicate.push(uses[0].clone());
+        assert!(feature_input_column_targets(&[input], &duplicate, &[], &[row]).is_empty());
+    }
+
+    #[test]
+    fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
+        use super::{
+            feature_sketch_fixed_points, feature_sketch_payload_named_records,
+            FeatureSketchConstructionPayload, FeatureSketchPayloadFixedPair,
+            FeatureSketchPayloadName,
+        };
+        let payload = FeatureSketchConstructionPayload {
+            id: "payload".to_string(),
+            operation_label: "sketch".to_string(),
+            construction_inputs: "inputs".to_string(),
+            data_blocks: vec!["block".to_string()],
+            byte_len: 100,
+            sha256: "00".repeat(32),
+            block_payload_offsets: vec![0],
+            block_byte_lengths: vec![100],
+            block_source_offsets: vec![1000],
+        };
+        let name = |id: &str, ordinal, offset| FeatureSketchPayloadName {
+            id: id.to_string(),
+            operation_label: "sketch".to_string(),
+            construction_payload: "payload".to_string(),
+            ordinal,
+            type_code: Some(1),
+            raw_type_code: Some(vec![1]),
+            type_code_payload_offset: Some(offset + 1),
+            type_code_source_offset: Some(1001 + offset),
+            payload_leading: false,
+            value: format!("Point{}", ordinal + 1),
+            payload_offset: offset,
+            source_offset: 1000 + offset,
+        };
+        let pair = FeatureSketchPayloadFixedPair {
+            id: "pair".to_string(),
+            operation_label: "sketch".to_string(),
+            construction_payload: "payload".to_string(),
+            ordinal: 0,
+            values: [0.5, -0.5],
+            raw_values: [[0; 7]; 2],
+            payload_offset: 20,
+            value_payload_offsets: [28, 37],
+            source_offset: 1020,
+            value_source_offsets: [1028, 1037],
+        };
+
+        let names = [name("first", 0, 10), name("second", 1, 50)];
+        let pairs = [pair];
+        let records = feature_sketch_payload_named_records(&[payload], &names, &[], &pairs);
+        assert_eq!(records[0].fixed_pairs, ["pair"]);
+        assert!(records[1].fixed_pairs.is_empty());
+        let points = feature_sketch_fixed_points(&records, &names, &pairs);
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].name, "Point1");
+        assert_eq!(points[0].values, [0.5, -0.5]);
+    }
+
+    #[test]
+    fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
+        use super::{
+            feature_sketch_named_point_block_uses, FeatureSketchReference, OffsetStoreNamedPoint,
+        };
+
+        let point = OffsetStoreNamedPoint {
+            id: "nx:offset-store:named-point#2-10".to_string(),
+            name: "Point1".to_string(),
+            data_blocks: vec!["block-10".to_string(), "block-11".to_string()],
+            values: [1.0, 2.0],
+            raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
+            value_source_offsets: [100, 120],
+            source_offset: 90,
+        };
+        let reference = |id: &str, ordinal: u32, block: Option<&str>| FeatureSketchReference {
+            id: id.to_string(),
+            operation_label: "nx:feature-history:operation-label#1-4".to_string(),
+            ordinal,
+            declared_count: 2,
+            terminal: ordinal == 1,
+            object_index: 10 + ordinal,
+            raw_object_index: vec![0xf0, (10 + ordinal) as u8],
+            data_block: block.map(str::to_string),
+            source_offset: 200 + u64::from(ordinal),
+        };
+        let uses = feature_sketch_named_point_block_uses(
+            &[
+                reference("miss", 0, Some("block-9")),
+                reference("hit", 1, Some("block-11")),
+                reference("unresolved", 2, None),
+            ],
+            &[point],
+        );
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].sketch_reference, "hit");
+        assert_eq!(uses[0].reference_ordinal, 1);
+        assert_eq!(uses[0].point_block_ordinal, 1);
+        assert_eq!(uses[0].data_block, "block-11");
+    }
+
+    #[test]
+    fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane() {
+        use super::{
+            feature_sketch_preceding_named_point_uses, FeatureSketchReference,
+            OffsetStoreNamedPoint,
+        };
+
+        let reference = |ordinal, terminal, block: Option<&str>| FeatureSketchReference {
+            id: format!("reference-{ordinal}"),
+            operation_label: "nx:feature-history:operation-label#1-4".to_string(),
+            ordinal,
+            declared_count: 2,
+            terminal,
+            object_index: 12 + ordinal,
+            raw_object_index: vec![0xf0, (12 + ordinal) as u8],
+            data_block: block.map(str::to_string),
+            source_offset: 300 + u64::from(ordinal),
+        };
+        let references = [
+            reference(0, false, Some("nx:om-data-blocks-2:block#12")),
+            reference(1, true, Some("nx:om-data-blocks-2:block#13")),
+        ];
+        let point = |id: &str, blocks: &[&str]| OffsetStoreNamedPoint {
+            id: id.to_string(),
+            name: "Point1".to_string(),
+            data_blocks: blocks.iter().map(|block| (*block).to_string()).collect(),
+            values: [1.0, 2.0],
+            raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
+            value_source_offsets: [200, 220],
+            source_offset: 190,
+        };
+        let preceding = point(
+            "nx:offset-store:named-point#2-10",
+            &[
+                "nx:om-data-blocks-2:block#10",
+                "nx:om-data-blocks-2:block#11",
+            ],
+        );
+        let uses = feature_sketch_preceding_named_point_uses(
+            &references,
+            std::slice::from_ref(&preceding),
+        );
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].first_sketch_reference, references[0].id);
+        assert_eq!(uses[0].named_point, preceding.id);
+        assert_eq!(uses[0].following_data_block, "nx:om-data-blocks-2:block#12");
+
+        let ambiguous = point(
+            "nx:offset-store:named-point#2-11",
+            &["nx:om-data-blocks-2:block#11"],
+        );
+        assert!(feature_sketch_preceding_named_point_uses(
+            &references,
+            &[preceding.clone(), ambiguous]
+        )
+        .is_empty());
+        let gap = point(
+            "nx:offset-store:named-point#2-9",
+            &["nx:om-data-blocks-2:block#9"],
+        );
+        let other_store = point(
+            "nx:offset-store:named-point#3-11",
+            &["nx:om-data-blocks-3:block#11"],
+        );
+        assert!(
+            feature_sketch_preceding_named_point_uses(&references, &[gap, other_store]).is_empty()
+        );
+
+        let unresolved = [references[0].clone(), reference(1, true, None)];
+        assert!(feature_sketch_preceding_named_point_uses(
+            &unresolved,
+            std::slice::from_ref(&preceding)
+        )
+        .is_empty());
+        let noncontiguous = [
+            references[0].clone(),
+            reference(2, true, Some("nx:om-data-blocks-2:block#13")),
+        ];
+        assert!(feature_sketch_preceding_named_point_uses(
+            &noncontiguous,
+            std::slice::from_ref(&preceding),
+        )
+        .is_empty());
+        let bad_terminal = [
+            references[0].clone(),
+            reference(1, false, Some("nx:om-data-blocks-2:block#13")),
+        ];
+        assert!(feature_sketch_preceding_named_point_uses(&bad_terminal, &[preceding]).is_empty());
+    }
+
+    #[test]
+    fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
+        use super::{
+            feature_sketch_point_groups, feature_sketch_point_uses,
+            FeatureSketchNamedPointBlockUse, FeatureSketchPoint, OffsetStoreNamedPoint,
+        };
+
+        let operation_label = "nx:feature-history:operation-label#1-4".to_string();
+        let point = FeatureSketchPoint {
+            id: "payload-point".to_string(),
+            operation_label: operation_label.clone(),
+            named_record: "named-record".to_string(),
+            name: "Point1".to_string(),
+            coordinates: [1.0, 2.0],
+            scalar_fields: ["scalar-1".to_string(), "scalar-2".to_string()],
+        };
+        let named_point = OffsetStoreNamedPoint {
+            id: "named-point".to_string(),
+            name: "Point1".to_string(),
+            data_blocks: vec!["block-10".to_string()],
+            values: [1.0, 2.0],
+            raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
+            value_source_offsets: [200, 220],
+            source_offset: 190,
+        };
+        let block_use = FeatureSketchNamedPointBlockUse {
+            id: "nx:feature-history:sketch-named-point-block-use#1-4-0".to_string(),
+            operation_label,
+            sketch_reference: "reference".to_string(),
+            reference_ordinal: 0,
+            named_point: named_point.id.clone(),
+            data_block: "block-10".to_string(),
+            point_block_ordinal: 0,
+            source_offset: 300,
+        };
+        let mut second_block_use = block_use.clone();
+        second_block_use.id = "nx:feature-history:sketch-named-point-block-use#1-4-1".to_string();
+        second_block_use.sketch_reference = "reference-2".to_string();
+        second_block_use.reference_ordinal = 1;
+        second_block_use.source_offset = 301;
+
+        let groups = feature_sketch_point_groups(std::slice::from_ref(&point));
+        let uses = feature_sketch_point_uses(
+            &groups,
+            std::slice::from_ref(&named_point),
+            &[second_block_use.clone(), block_use.clone()],
+        );
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].sketch_point_group, groups[0].id);
+        assert_eq!(uses[0].named_point, named_point.id);
+        assert_eq!(uses[0].sketch_references, ["reference", "reference-2"]);
+        assert_eq!(uses[0].block_uses.len(), 2);
+        assert_eq!(uses[0].source_offsets, [300, 301]);
+
+        let mut different = point.clone();
+        different.id = "different".to_string();
+        different.coordinates[1] = f64::from_bits(2.0_f64.to_bits() + 1);
+        let different_groups = feature_sketch_point_groups(std::slice::from_ref(&different));
+        assert!(feature_sketch_point_uses(
+            &different_groups,
+            std::slice::from_ref(&named_point),
+            std::slice::from_ref(&block_use),
+        )
+        .is_empty());
+        let mut duplicate = point.clone();
+        duplicate.id = "payload-point-2".to_string();
+        let duplicate_groups = feature_sketch_point_groups(&[point.clone(), duplicate.clone()]);
+        assert_eq!(duplicate_groups[0].points, [point.id.clone(), duplicate.id]);
+        let uses = feature_sketch_point_uses(
+            &duplicate_groups,
+            std::slice::from_ref(&named_point),
+            std::slice::from_ref(&block_use),
+        );
+        assert_eq!(uses[0].sketch_point_group, duplicate_groups[0].id);
+        let conflicting_groups = feature_sketch_point_groups(&[point, different]);
+        assert!(conflicting_groups.is_empty());
+        assert!(
+            feature_sketch_point_uses(&conflicting_groups, &[named_point], &[block_use]).is_empty()
+        );
+    }
+
+    #[test]
+    fn segment_body_lineage_statuses_cover_every_bound_image() {
+        use super::{
+            FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
+            FeatureOperationLabel,
+        };
+        use crate::native::segments::{segment_body_lineage_statuses, SegmentBodyBinding};
+        let labels = [
+            FeatureOperationLabel {
+                id: "operation#0".to_string(),
+                section_link: "history#0".to_string(),
+                ordinal: 0,
+                value: "EXTRUDE".to_string(),
+                object_indices: [None; 4],
+                raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+                source_offset: 0,
+            },
+            FeatureOperationLabel {
+                id: "operation#1".to_string(),
+                section_link: "history#0".to_string(),
+                ordinal: 1,
+                value: "UNITE".to_string(),
+                object_indices: [None; 4],
+                raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+                source_offset: 1,
+            },
+        ];
+        let references = [FeatureBodyReference {
+            id: "reference#0".to_string(),
+            operation_label: "operation#0".to_string(),
+            body_object_index: 10,
+            raw_body_object_index: vec![10],
+            source_offset: 0,
+        }];
+        let booleans = [FeatureBooleanOperation {
+            id: "boolean#0".to_string(),
+            operation_label: "operation#1".to_string(),
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: 10,
+            raw_target_object_index: vec![10],
+            target_source_offset: 1,
+            tool_object_indices: vec![21],
+            raw_tool_object_indices: vec![vec![21]],
+            tool_source_offsets: vec![1],
+            source_offset: 1,
+        }];
+        let binding =
+            |id: &str, stream_ordinal: u32, stream_kind: &str, body, alias| SegmentBodyBinding {
+                id: id.to_string(),
+                stream_link: format!("stream#{stream_ordinal}"),
+                stream_ordinal,
+                stream_kind: stream_kind.to_string(),
+                body_object_index: body,
+                body_alias_object_index: alias,
+                stream_role: 19,
+                source_offset: u64::from(stream_ordinal),
+            };
+        let statuses = segment_body_lineage_statuses(
+            &labels,
+            &references,
+            &booleans,
+            &[],
+            &[
+                binding("binding#0", 0, "partition", 10, 11),
+                binding("binding#1", 1, "plain", 20, 21),
+            ],
+        )
+        .unwrap();
+        assert_eq!(statuses.len(), 2);
+        assert!(statuses[0].terminal);
+        assert!(!statuses[1].terminal);
+    }
+
+    #[test]
+    fn feature_body_segment_uses_require_one_alias_pair() {
+        use super::{feature_body_segment_uses, FeatureBodyReference};
+        use crate::native::segments::SegmentBodyBinding;
+        let reference = FeatureBodyReference {
+            id: "nx:feature-history:body-reference#0".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 11,
+            raw_body_object_index: vec![11],
+            source_offset: 90,
+        };
+        let binding = SegmentBodyBinding {
+            id: "binding#0".into(),
+            stream_link: "stream#3".into(),
+            stream_ordinal: 3,
+            stream_kind: "plain".into(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 40,
+        };
+        let uses = feature_body_segment_uses(&[reference.clone()], &[binding.clone()]);
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].feature_body_reference, reference.id);
+        assert_eq!(uses[0].segment_body_binding, binding.id);
+        assert!(feature_body_segment_uses(&[reference], &[binding.clone(), binding]).is_empty());
+    }
+
+    #[test]
+    fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
+        use super::{
+            FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
+            FeatureOperationLabel,
+        };
+        use crate::native::segments::{segment_body_lineage_statuses, SegmentBodyBinding};
+
+        let label = |ordinal: u32, value: &str| FeatureOperationLabel {
+            id: format!("operation#{ordinal}"),
+            section_link: "history#0".to_string(),
+            ordinal,
+            value: value.to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
+        };
+        let labels = [label(0, "EXTRUDE"), label(1, "UNITE")];
+        let references = [FeatureBodyReference {
+            id: "reference#30".to_string(),
+            operation_label: "operation#0".to_string(),
+            body_object_index: 30,
+            raw_body_object_index: vec![30],
+            source_offset: 0,
+        }];
+        let booleans = [FeatureBooleanOperation {
+            id: "boolean#0".to_string(),
+            operation_label: "operation#1".to_string(),
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: 99,
+            raw_target_object_index: vec![99],
+            target_source_offset: 1,
+            tool_object_indices: vec![10],
+            raw_tool_object_indices: vec![vec![10]],
+            tool_source_offsets: vec![1],
+            source_offset: 1,
+        }];
+        let binding = |id: &str, stream_ordinal, body, alias| SegmentBodyBinding {
+            id: id.to_string(),
+            stream_link: format!("stream#{stream_ordinal}"),
+            stream_ordinal,
+            stream_kind: "partition".to_string(),
+            body_object_index: body,
+            body_alias_object_index: alias,
+            stream_role: 19,
+            source_offset: u64::from(stream_ordinal),
+        };
+        let bindings = [
+            binding("binding#0", 0, 10, 20),
+            binding("binding#1", 1, 30, 20),
+            binding("binding#2", 2, 40, 20),
+        ];
+
+        let statuses =
+            segment_body_lineage_statuses(&labels, &references, &booleans, &[], &bindings).unwrap();
+        assert_eq!(statuses.len(), 3);
+        assert!(statuses.iter().all(|status| !status.terminal));
+    }
+
+    #[test]
+    fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
+        use super::{
+            feature_simple_hole_construction_groups, FeatureSimpleHoleRepeatedScalarLane,
+            FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
+        };
+        let lane = |operation: &str| FeatureSimpleHoleRepeatedScalarLane {
+            id: format!("lane-{operation}"),
+            operation_label: operation.into(),
+            values: vec![25.4],
+            raw_values: vec![[0x30; 8]],
+            first_witness_offsets: vec![1],
+            second_witness_offsets: vec![2],
+        };
+        let reference =
+            |operation: &str, last: &str| FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
+                id: format!("reference-{operation}"),
+                operation_label: operation.into(),
+                first_data_blocks: ["block-1".into(), "block-2".into()],
+                second_data_blocks: ["block-3".into(), last.into()],
+                first_reference_offsets: [3, 4],
+                second_reference_offsets: [5, 6],
+            };
+        let lanes = [
+            lane("operation#1-2"),
+            lane("operation#1-3"),
+            lane("operation#1-4"),
+        ];
+        let references = [
+            reference("operation#1-4", "block-5"),
+            reference("operation#1-3", "block-4"),
+            reference("operation#1-2", "block-4"),
+        ];
+        let groups = feature_simple_hole_construction_groups(&lanes, &references);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(
+            groups[0].operation_labels,
+            ["operation#1-2", "operation#1-3"]
+        );
+        assert_eq!(
+            groups[0].scalar_lanes,
+            ["lane-operation#1-2", "lane-operation#1-3"]
+        );
+        assert_eq!(
+            groups[0].block_references,
+            ["reference-operation#1-2", "reference-operation#1-3"]
+        );
+
+        let duplicate_references = [
+            reference("operation#1-2", "block-4"),
+            reference("operation#1-2", "block-4"),
+        ];
+        assert!(feature_simple_hole_construction_groups(&lanes, &duplicate_references).is_empty());
+
+        let duplicate_lanes = [
+            lane("operation#1-2"),
+            lane("operation#1-2"),
+            lane("operation#1-3"),
+            lane("operation#1-4"),
+        ];
+        let shared_references = [
+            reference("operation#1-2", "block-4"),
+            reference("operation#1-3", "block-4"),
+            reference("operation#1-4", "block-4"),
+        ];
+        assert!(
+            feature_simple_hole_construction_groups(&duplicate_lanes, &shared_references)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn nx_block_payload_points_require_exactly_two_named_scalars() {
+        use super::{
+            feature_block_payload_point_groups, feature_block_payload_points,
+            FeatureBlockPayloadName, FeatureBlockPayloadNamedRecord, FeatureBlockPayloadScalar,
+        };
+
+        let operation_label = "operation".to_string();
+        let construction_payload = "payload".to_string();
+        let name = FeatureBlockPayloadName {
+            id: "name".to_string(),
+            operation_label: operation_label.clone(),
+            construction_payload: construction_payload.clone(),
+            ordinal: 0,
+            type_code: Some(131),
+            raw_type_code: Some(vec![0x80, 0x83]),
+            type_code_payload_offset: Some(11),
+            type_code_source_offset: Some(101),
+            payload_leading: false,
+            value: "Point7".to_string(),
+            payload_offset: 10,
+            source_offset: 100,
+        };
+        let scalar = |id: &str, ordinal: u32, value: f64| {
+            let mut raw_value = value.to_be_bytes();
+            raw_value[0] -= 0x10;
+            FeatureBlockPayloadScalar {
+                id: id.to_string(),
+                operation_label: operation_label.clone(),
+                construction_payload: construction_payload.clone(),
+                ordinal,
+                field_code: 100,
+                value,
+                raw_value,
+                payload_offset: 20 + u64::from(ordinal) * 13,
+                source_offset: 110 + u64::from(ordinal) * 13,
+            }
+        };
+        let scalars = [scalar("first", 0, 1.25), scalar("second", 1, -2.5)];
+        let record = FeatureBlockPayloadNamedRecord {
+            id: "record".to_string(),
+            operation_label,
+            construction_payload,
+            name_field: name.id.clone(),
+            scalar_fields: scalars.iter().map(|scalar| scalar.id.clone()).collect(),
+            payload_start_offset: 10,
+            payload_end_offset: 50,
+        };
+
+        let points = feature_block_payload_points(
+            std::slice::from_ref(&record),
+            std::slice::from_ref(&name),
+            &scalars,
+        );
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].name, "Point7");
+        assert_eq!(points[0].coordinates, [1.25, -2.5]);
+
+        let mut duplicate = points[0].clone();
+        duplicate.id = "point-2".to_string();
+        let groups = feature_block_payload_point_groups(&[points[0].clone(), duplicate]);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].points.len(), 2);
+        assert_eq!(groups[0].coordinates, [1.25, -2.5]);
+
+        let mut conflicting = points[0].clone();
+        conflicting.id = "conflicting".to_string();
+        conflicting.coordinates[1] = f64::from_bits((-2.5_f64).to_bits() + 1);
+        assert!(feature_block_payload_point_groups(&[points[0].clone(), conflicting]).is_empty());
+
+        let mut incomplete = record.clone();
+        incomplete.scalar_fields.pop();
+        assert!(
+            feature_block_payload_points(&[incomplete], std::slice::from_ref(&name), &scalars,)
+                .is_empty()
+        );
+        let mut malformed = name;
+        malformed.value = "Point0".to_string();
+        assert!(feature_block_payload_points(&[record], &[malformed], &scalars).is_empty());
     }
 }

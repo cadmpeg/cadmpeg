@@ -3,6 +3,11 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::native::features::{
+    FeatureBodyReference, FeatureBooleanOperation, FeatureOperationBodyOperand,
+    FeatureOperationLabel,
+};
+use crate::native::om::OmSchemaRole;
 
 /// One row retained from the canonical `UG_PART` segment index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
