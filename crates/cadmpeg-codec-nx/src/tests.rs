@@ -3014,6 +3014,43 @@ fn offset_only_indexed_om_section_with_index_values() -> Vec<u8> {
     bytes
 }
 
+/// An offset-store indexed OM section whose first (object-id-less) record is an
+/// offset-store named point (`Point7` with two `57.15` scalars). The single
+/// product record lives in the control block so the section validates while the
+/// column records carry the point payload. Mirrors the
+/// `om_offset_store_named_point_*` white-box test.
+fn offset_only_indexed_om_section_with_named_point() -> Vec<u8> {
+    let mut named_point = vec![
+        0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'7', 0x00, 0x50, 0x59, 0x66, 0x58, 0x00, 0x30,
+        0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
+    ];
+    named_point.extend_from_slice(&[
+        0x45, 0x04, 0x00, 0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33,
+        0x07,
+    ]);
+
+    let mut bytes = vec![0xaa; 8];
+    let class_name = b"UGS::ModlFeature";
+    bytes.push((class_name.len() + 1) as u8);
+    bytes.extend_from_slice(class_name);
+    bytes.push(0x81);
+    let index_start = bytes.len();
+    bytes.extend_from_slice(&[0; 16]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    let metadata = bytes.len();
+    bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0"); // product record in control block
+    let first = bytes.len();
+    bytes.extend_from_slice(&named_point); // first record: the named point
+    let second = bytes.len();
+    bytes.extend_from_slice(&[0xbb; 8]); // trailing column record, no point payload
+    let end = bytes.len();
+    for (index, offset) in [metadata, first, second, end].into_iter().enumerate() {
+        bytes[index_start + index * 4..index_start + index * 4 + 4]
+            .copy_from_slice(&(offset as u32).to_le_bytes());
+    }
+    bytes
+}
+
 fn control_root_offset_only_indexed_om_section() -> Vec<u8> {
     let mut bytes = vec![0xaa; 8];
     let class_name = b"UGS::ModlFeature";
@@ -20062,7 +20099,7 @@ mod golden {
     /// Frozen from the generated snapshots; if a refactor drops an arena from
     /// every fixture, `arena_coverage_meets_floor` fails. Raise it (never lower
     /// it) when new covering fixtures are added.
-    const ARENA_COVERAGE_FLOOR: usize = 75;
+    const ARENA_COVERAGE_FLOOR: usize = 76;
 
     /// Build the covering fixture set: `(golden name, full `.prt` bytes)`. Each
     /// stream builder is wrapped exactly as its originating white-box test wraps
@@ -20152,6 +20189,13 @@ mod golden {
         f.push((
             "data_block_control_class_references",
             prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]),
+        ));
+        f.push((
+            "offset_store_named_point",
+            prt_with_named_payloads(&[(
+                "/Root/UG_PART/UG_PART",
+                offset_only_indexed_om_section_with_named_point(),
+            )]),
         ));
         f.push((
             "data_block_control_index_values",
