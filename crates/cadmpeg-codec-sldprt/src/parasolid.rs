@@ -9,6 +9,7 @@
 
 use crate::container::parasolid_offset;
 use cadmpeg_ir::compression::inflate_zlib_prefix;
+use cadmpeg_ir::math::Point3;
 
 /// The constant 16-byte prefix of the wrapped Parasolid transmit-container
 /// magic. When it is present, the actual `PS\0\0` stream is a nested zlib member
@@ -121,4 +122,66 @@ pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
 pub fn is_body_stream(header: &StreamHeader) -> bool {
     let d = header.description.to_ascii_lowercase();
     d.contains("partition") || d.contains("deltas")
+}
+
+/// Decode the unique counted XYZ polyline carried by a mesh stream.
+///
+/// Mesh coordinate arrays use a big-endian scalar count followed by the
+/// `0x0022` array tag and consecutive f64 values. The scalar count is three
+/// times the point count.
+pub(crate) fn mesh_polyline(payload: &[u8]) -> Option<Vec<Point3>> {
+    let header = stream_header(payload)?;
+    let schema = header.schema.to_ascii_lowercase();
+    if !schema.ends_with("_13006") {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for tag_at in header.body_offset..payload.len().saturating_sub(2) {
+        if payload.get(tag_at..tag_at + 2) != Some(&[0x00, 0x22]) || tag_at < 4 {
+            continue;
+        }
+        let Some(count_bytes) = payload
+            .get(tag_at - 4..tag_at)
+            .and_then(|bytes| bytes.try_into().ok())
+        else {
+            continue;
+        };
+        let Ok(scalar_count) = usize::try_from(u32::from_be_bytes(count_bytes)) else {
+            continue;
+        };
+        if scalar_count < 6 || scalar_count % 3 != 0 {
+            continue;
+        }
+        let Some(byte_count) = scalar_count.checked_mul(8) else {
+            continue;
+        };
+        let Some(values) = payload.get(tag_at + 2..tag_at + 2 + byte_count) else {
+            continue;
+        };
+        let mut points = Vec::with_capacity(scalar_count / 3);
+        for xyz in values.chunks_exact(24) {
+            let point = Point3::new(
+                f64::from_be_bytes(xyz[0..8].try_into().expect("eight-byte chunk")),
+                f64::from_be_bytes(xyz[8..16].try_into().expect("eight-byte chunk")),
+                f64::from_be_bytes(xyz[16..24].try_into().expect("eight-byte chunk")),
+            );
+            if ![point.x, point.y, point.z].into_iter().all(f64::is_finite) {
+                points.clear();
+                break;
+            }
+            points.push(point);
+        }
+        if points.len() >= 2 {
+            candidates.push((scalar_count, points));
+        }
+    }
+    candidates.sort_by_key(|(scalar_count, _)| std::cmp::Reverse(*scalar_count));
+    let (largest_count, points) = candidates.first()?;
+    if candidates
+        .get(1)
+        .is_some_and(|(count, _)| count == largest_count)
+    {
+        return None;
+    }
+    Some(points.clone())
 }
