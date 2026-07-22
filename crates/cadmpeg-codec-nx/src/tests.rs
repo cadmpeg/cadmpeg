@@ -10927,6 +10927,193 @@ fn display_jt_basic_stream() -> Vec<u8> {
     data
 }
 
+/// Frame one JT logical element: length-prefixed `[type_id][base_type][object_id]
+/// [body]`, matching `parse_jt_element_sequence`.
+fn jt_scene_element(type_id: [u8; 16], base_type: u8, object_id: u32, body: &[u8]) -> Vec<u8> {
+    let mut element = Vec::new();
+    let byte_len = 16 + 1 + 4 + body.len();
+    element.extend_from_slice(&(byte_len as u32).to_le_bytes());
+    element.extend_from_slice(&type_id);
+    element.push(base_type);
+    element.extend_from_slice(&object_id.to_le_bytes());
+    element.extend_from_slice(body);
+    element
+}
+
+/// Raw bytes for a `/Root/UG_PART/DisplayJT` container entry whose single type-1
+/// scene-graph segment inflates to an element sequence of one instance, group,
+/// partition, range-LOD, tri-strip shape, and geometric-transform node. Each
+/// node's object-type UUID, base type, and body match the corresponding
+/// `display_jt9_*` white-box test, so decoding populates
+/// `display_jt_base_node_data`, `_group_node_data`, `_instance_nodes`,
+/// `_partition_nodes`, `_range_lod_nodes`, `_tri_strip_shape_nodes`, and
+/// `_geometric_transform_attributes`.
+fn display_jt_scene_graph_stream() -> Vec<u8> {
+    const INSTANCE: [u8; 16] = [
+        0x2a, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    const PARTITION: [u8; 16] = [
+        0x3e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    const RANGE_LOD: [u8; 16] = [
+        0x4c, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    const TRI_STRIP_SHAPE: [u8; 16] = [
+        0x77, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    const GEOMETRIC_TRANSFORM: [u8; 16] = [
+        0x83, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    // A group node whose object-type UUID matches no specialized scene node, so
+    // only the base-node and group-node extractors decode it.
+    const GROUP: [u8; 16] = [0x11; 16];
+
+    // Instance node body: base header (attribute id 7) then a one-child family.
+    let mut instance = Vec::new();
+    instance.extend_from_slice(&1u16.to_le_bytes());
+    instance.extend_from_slice(&0x20u32.to_le_bytes());
+    instance.extend_from_slice(&1u32.to_le_bytes());
+    instance.extend_from_slice(&7u32.to_le_bytes());
+    instance.extend_from_slice(&1u16.to_le_bytes());
+    instance.extend_from_slice(&9u32.to_le_bytes());
+
+    // Group node body: base header (no attributes) then ordered children.
+    let mut group = Vec::new();
+    group.extend_from_slice(&1u16.to_le_bytes());
+    group.extend_from_slice(&0u32.to_le_bytes());
+    group.extend_from_slice(&0u32.to_le_bytes());
+    group.extend_from_slice(&1u16.to_le_bytes());
+    group.extend_from_slice(&2u32.to_le_bytes());
+    group.extend_from_slice(&7u32.to_le_bytes());
+    group.extend_from_slice(&9u32.to_le_bytes());
+    group.extend_from_slice(&[4, 3, 2, 1]);
+
+    // Partition node body.
+    let mut partition = Vec::new();
+    partition.extend_from_slice(&1u16.to_le_bytes());
+    partition.extend_from_slice(&0u32.to_le_bytes());
+    partition.extend_from_slice(&0u32.to_le_bytes());
+    partition.extend_from_slice(&1u16.to_le_bytes());
+    partition.extend_from_slice(&1u32.to_le_bytes());
+    partition.extend_from_slice(&2u32.to_le_bytes());
+    partition.extend_from_slice(&1u32.to_le_bytes());
+    partition.extend_from_slice(&1u32.to_le_bytes());
+    partition.extend_from_slice(&u16::from(b'x').to_le_bytes());
+    for value in [0.0f32, 1.0, 2.0, 3.0, 4.0, 5.0] {
+        partition.extend_from_slice(&value.to_le_bytes());
+    }
+    partition.extend_from_slice(&6.0f32.to_le_bytes());
+    for value in [1i32, 2, 3, 4, 5, 6] {
+        partition.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [-3.0f32, -2.0, -1.0, 0.0, 1.0, 2.0] {
+        partition.extend_from_slice(&value.to_le_bytes());
+    }
+
+    // Range-LOD node body.
+    let mut range = Vec::new();
+    range.extend_from_slice(&1u16.to_le_bytes());
+    range.extend_from_slice(&0u32.to_le_bytes());
+    range.extend_from_slice(&0u32.to_le_bytes());
+    range.extend_from_slice(&1u16.to_le_bytes());
+    range.extend_from_slice(&2u32.to_le_bytes());
+    range.extend_from_slice(&7u32.to_le_bytes());
+    range.extend_from_slice(&9u32.to_le_bytes());
+    range.extend_from_slice(&1u16.to_le_bytes());
+    range.extend_from_slice(&1u32.to_le_bytes());
+    range.extend_from_slice(&0.25f32.to_le_bytes());
+    range.extend_from_slice(&(-2i32).to_le_bytes());
+    range.extend_from_slice(&1u16.to_le_bytes());
+    range.extend_from_slice(&2u32.to_le_bytes());
+    range.extend_from_slice(&10.0f32.to_le_bytes());
+    range.extend_from_slice(&20.0f32.to_le_bytes());
+    for value in [1.0f32, 2.0, 3.0] {
+        range.extend_from_slice(&value.to_le_bytes());
+    }
+
+    // Tri-strip shape node body.
+    let mut tri_strip = Vec::new();
+    tri_strip.extend_from_slice(&1u16.to_le_bytes());
+    tri_strip.extend_from_slice(&0x20u32.to_le_bytes());
+    tri_strip.extend_from_slice(&0u32.to_le_bytes());
+    tri_strip.extend_from_slice(&1u16.to_le_bytes());
+    for value in [0.0f32, 1.0, 2.0, 3.0, 4.0, 5.0] {
+        tri_strip.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [-3.0f32, -2.0, -1.0, 0.0, 1.0, 2.0] {
+        tri_strip.extend_from_slice(&value.to_le_bytes());
+    }
+    tri_strip.extend_from_slice(&6.0f32.to_le_bytes());
+    for value in [7i32, 8, 9, 10, 11, 12] {
+        tri_strip.extend_from_slice(&value.to_le_bytes());
+    }
+    tri_strip.extend_from_slice(&4096u32.to_le_bytes());
+    tri_strip.extend_from_slice(&0.75f32.to_le_bytes());
+    tri_strip.extend_from_slice(&2u16.to_le_bytes());
+    tri_strip.extend_from_slice(&0x102u64.to_le_bytes());
+    tri_strip.extend_from_slice(&[24, 13, 16, 8]);
+    tri_strip.extend_from_slice(&0x304u64.to_le_bytes());
+
+    // Geometric-transform attribute body (sparse affine matrix).
+    let mut geom = Vec::new();
+    geom.extend_from_slice(&1u16.to_le_bytes());
+    geom.push(0x08);
+    geom.extend_from_slice(&0u32.to_le_bytes());
+    geom.extend_from_slice(&1u16.to_le_bytes());
+    geom.extend_from_slice(&0x000eu16.to_le_bytes());
+    for value in [1.25f32, -2.5, 4.0] {
+        geom.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let mut inflated = Vec::new();
+    inflated.extend_from_slice(&jt_scene_element(INSTANCE, 0, 1, &instance));
+    inflated.extend_from_slice(&jt_scene_element(GROUP, 1, 2, &group));
+    inflated.extend_from_slice(&jt_scene_element(PARTITION, 1, 3, &partition));
+    inflated.extend_from_slice(&jt_scene_element(RANGE_LOD, 1, 4, &range));
+    inflated.extend_from_slice(&jt_scene_element(TRI_STRIP_SHAPE, 2, 5, &tri_strip));
+    inflated.extend_from_slice(&jt_scene_element(GEOMETRIC_TRANSFORM, 3, 6, &geom));
+    // End-of-sequence marker.
+    inflated.extend_from_slice(&16u32.to_le_bytes());
+    inflated.extend_from_slice(&[0xff; 16]);
+
+    let compressed = zlib_compress_at_level(&inflated, 1);
+    let segment_byte_len = 24 + 9 + compressed.len() as u32;
+
+    let mut data = Vec::new();
+    data.extend_from_slice(&9_u32.to_le_bytes());
+    data.extend_from_slice(&1_u32.to_le_bytes());
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&100_u32.to_le_bytes());
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&28_u32.to_le_bytes());
+    data.extend_from_slice(&[0; 4]);
+    let mut version = [b' '; 80];
+    version[..14].copy_from_slice(b"Version 9.4 JT");
+    data.extend_from_slice(&version);
+    data.push(0);
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&105_u32.to_le_bytes());
+    data.extend_from_slice(&[1; 16]);
+    data.extend_from_slice(&1_u32.to_le_bytes());
+    data.extend_from_slice(&[2; 16]);
+    data.extend_from_slice(&137_u32.to_le_bytes());
+    data.extend_from_slice(&segment_byte_len.to_le_bytes());
+    data.extend_from_slice(&1_u32.to_be_bytes());
+    data.extend_from_slice(&[2; 16]);
+    data.extend_from_slice(&1_u32.to_le_bytes());
+    data.extend_from_slice(&segment_byte_len.to_le_bytes());
+    data.extend_from_slice(&2_u32.to_le_bytes());
+    data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
+    data.push(2);
+    data.extend_from_slice(&compressed);
+    data
+}
+
 /// A Parasolid `(partition)` stream carrying the neutral-binary attribute and
 /// typed-entity records (`00 4f`/`00 50` class declaration, `00 51` framed
 /// entity, `00 52`/`00 53` counted value records, `00 54` string record) whose
@@ -19766,7 +19953,7 @@ mod golden {
     /// Frozen from the generated snapshots; if a refactor drops an arena from
     /// every fixture, `arena_coverage_meets_floor` fails. Raise it (never lower
     /// it) when new covering fixtures are added.
-    const ARENA_COVERAGE_FLOOR: usize = 65;
+    const ARENA_COVERAGE_FLOOR: usize = 72;
 
     /// Build the covering fixture set: `(golden name, full `.prt` bytes)`. Each
     /// stream builder is wrapped exactly as its originating white-box test wraps
@@ -19824,6 +20011,13 @@ mod golden {
             prt_with_named_payloads(&[
                 ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
                 ("/Root/UG_PART/DisplayJT", display_jt_basic_stream()),
+            ]),
+        ));
+        f.push((
+            "display_jt_scene_graph",
+            prt_with_named_payloads(&[
+                ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+                ("/Root/UG_PART/DisplayJT", display_jt_scene_graph_stream()),
             ]),
         ));
 
