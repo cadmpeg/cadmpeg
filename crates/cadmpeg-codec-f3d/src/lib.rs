@@ -3484,7 +3484,7 @@ impl F3dCodec {
             ));
         }
         if decode::semantic_hash(ir) != *expected {
-            return writer::write_semantic(ir, data, writer);
+            return writer::patch::write_semantic(ir, data, writer);
         }
         writer.write_all(data)?;
         Ok(())
@@ -3541,7 +3541,7 @@ impl Encoder for F3dCodec {
         if replay {
             self.write_preserved(ir, writer)?;
         } else {
-            writer::write_new(ir, writer)?;
+            writer::generate::write_new(ir, writer)?;
         }
         let validation = cadmpeg_ir::validate(ir, Vec::new());
         let total_entities = validation.entity_counts.values().sum();
