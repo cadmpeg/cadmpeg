@@ -466,3 +466,434 @@ pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<S
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(unused_imports)]
+    use std::io::{Cursor, Write};
+
+    use flate2::write::ZlibEncoder;
+    use flate2::Compression;
+
+    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+    use cadmpeg_ir::geometry::{
+        BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
+        ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::report::LossCategory;
+    use cadmpeg_ir::Exactness;
+
+    use crate::container;
+    use crate::parasolid::{self, StreamKind};
+    use crate::test_support::*;
+    use crate::NxCodec;
+
+    use super::*;
+
+    #[test]
+    fn decode_retains_ordered_ug_part_segment_index_rows() {
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let namespace = result.ir.native.namespace("nx").expect("NX namespace");
+        assert_eq!(namespace.version, 155);
+        let rows = namespace
+            .arena_as::<super::SegmentIndexRow>("segment_index_rows")
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].ordinal, 0);
+        assert_eq!(rows[1].value, 28);
+        assert_eq!(rows[1].source_entry, "/Root/UG_PART/UG_PART");
+        assert_eq!(rows[1].source_offset, rows[0].source_offset + 12);
+    }
+
+    #[test]
+    fn decode_links_segment_index_word_to_validated_stream_wrapper() {
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let links = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::SegmentStreamLink>("segment_stream_links")
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].row, "nx:segment-index:row#0");
+        assert_eq!(links[0].slot, super::SegmentIndexSlot::TypeCode);
+        assert_eq!(links[0].stream_ordinal, 0);
+        assert_eq!(links[0].stream_kind, "deltas");
+        assert_eq!(links[0].wrapper_byte_len, 8);
+    }
+
+    #[test]
+    fn decode_binds_segment_body_object_index_to_partition_stream() {
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            segment_body_binding_payload("partition"),
+        )]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let bindings = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::SegmentBodyBinding>("segment_body_bindings")
+            .unwrap();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].stream_ordinal, 0);
+        assert_eq!(bindings[0].stream_kind, "partition");
+        assert_eq!(bindings[0].body_object_index, 94);
+        assert_eq!(bindings[0].body_alias_object_index, 150);
+        assert_eq!(bindings[0].stream_role, 19);
+        assert_eq!(bindings[0].source_offset, 104);
+    }
+
+    #[test]
+    fn decode_binds_segment_body_object_index_to_plain_cached_body_stream() {
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            segment_body_binding_payload("plain"),
+        )]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let bindings = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::SegmentBodyBinding>("segment_body_bindings")
+            .unwrap();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].stream_ordinal, 0);
+        assert_eq!(bindings[0].stream_kind, "plain");
+        assert_eq!(bindings[0].body_object_index, 94);
+        assert_eq!(bindings[0].body_alias_object_index, 150);
+        assert_eq!(bindings[0].stream_role, 19);
+    }
+
+    #[test]
+    fn decode_links_extended_partition_wrapper_and_body_identity() {
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            segment_extended_wrapper_payload(),
+        )]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let namespace = result.ir.native.namespace("nx").unwrap();
+        let links = namespace
+            .arena_as::<super::SegmentStreamLink>("segment_stream_links")
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].wrapper_byte_len, 38);
+        let bindings = namespace
+            .arena_as::<super::SegmentBodyBinding>("segment_body_bindings")
+            .unwrap();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].body_object_index, 94);
+        assert_eq!(bindings[0].body_alias_object_index, 150);
+        assert_eq!(bindings[0].stream_role, 19);
+    }
+
+    #[test]
+    fn decode_links_segment_index_words_to_direct_and_separated_om_sections() {
+        for (separated, expected_separator) in [(false, 0), (true, 4)] {
+            let file = prt_with_named_payloads(&[(
+                "/Root/UG_PART/UG_PART",
+                segment_om_payload(separated),
+            )]);
+            let result = NxCodec
+                .decode(&mut Cursor::new(file), &DecodeOptions::default())
+                .unwrap();
+            let links = result
+                .ir
+                .native
+                .namespace("nx")
+                .unwrap()
+                .arena_as::<super::SegmentOmLink>("segment_om_links")
+                .unwrap();
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].row, "nx:segment-index:row#0");
+            assert_eq!(links[0].slot, super::SegmentIndexSlot::TypeCode);
+            assert_eq!(
+                links[0].schema_role,
+                crate::native::om::OmSchemaRole::FeatureHistory
+            );
+            assert_eq!(links[0].separator_byte_len, expected_separator);
+            assert_eq!(
+                links[0].section_offset,
+                links[0].source_offset + u64::from(expected_separator)
+            );
+        }
+    }
+
+    #[test]
+    fn feature_body_lineage_excludes_tools_consumed_after_their_latest_writer() {
+        use crate::native::features::{
+            FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
+            FeatureOperationLabel,
+        };
+
+        let label = |ordinal: u32, value: &str| FeatureOperationLabel {
+            id: format!("operation#{ordinal}"),
+            section_link: "history#0".to_string(),
+            ordinal,
+            value: value.to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: ordinal as u64,
+        };
+        let labels = [label(0, "EXTRUDE"), label(1, "EXTRUDE"), label(2, "UNITE")];
+        let reference = |operation: &str, body_object_index| FeatureBodyReference {
+            id: format!("reference#{body_object_index}"),
+            operation_label: operation.to_string(),
+            body_object_index,
+            raw_body_object_index: vec![body_object_index as u8],
+            source_offset: 0,
+        };
+        let references = [reference("operation#0", 10), reference("operation#1", 20)];
+        let booleans = [FeatureBooleanOperation {
+            id: "boolean#0".to_string(),
+            operation_label: "operation#2".to_string(),
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: 10,
+            raw_target_object_index: vec![10],
+            target_source_offset: 0,
+            tool_object_indices: vec![20],
+            raw_tool_object_indices: vec![vec![20]],
+            tool_source_offsets: vec![0],
+            source_offset: 0,
+        }];
+
+        assert_eq!(
+            super::terminal_feature_body_indices(&labels, &references, &booleans, &[], &[]),
+            Some([10].into_iter().collect())
+        );
+    }
+
+    #[test]
+    fn feature_body_lineage_consumes_delete_body_references() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{FeatureBodyReference, FeatureOperationLabel};
+
+        let labels = [FeatureOperationLabel {
+            id: "operation#delete".to_string(),
+            section_link: "history#0".to_string(),
+            ordinal: 0,
+            value: "DELETE".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: 0,
+        }];
+        let references = [FeatureBodyReference {
+            id: "reference#10".to_string(),
+            operation_label: "operation#delete".to_string(),
+            body_object_index: 10,
+            raw_body_object_index: vec![10],
+            source_offset: 0,
+        }];
+        let bindings = [SegmentBodyBinding {
+            id: "binding#0".to_string(),
+            stream_link: "stream#0".to_string(),
+            stream_ordinal: 0,
+            stream_kind: "partition".to_string(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 0,
+        }];
+
+        assert_eq!(
+            super::terminal_feature_body_indices(&labels, &references, &[], &[], &bindings,),
+            Some(std::collections::BTreeSet::new())
+        );
+    }
+
+    #[test]
+    fn feature_body_lineage_allows_a_writer_after_delete() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{FeatureBodyReference, FeatureOperationLabel};
+
+        let label = |ordinal: u32, value: &str| FeatureOperationLabel {
+            id: format!("operation#{ordinal}"),
+            section_link: "history#0".to_string(),
+            ordinal,
+            value: value.to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
+        };
+        let labels = [label(0, "DELETE"), label(1, "EXTRUDE")];
+        let reference = |ordinal: u32| FeatureBodyReference {
+            id: format!("reference#{ordinal}"),
+            operation_label: format!("operation#{ordinal}"),
+            body_object_index: 10,
+            raw_body_object_index: vec![10],
+            source_offset: u64::from(ordinal),
+        };
+        let references = [reference(0), reference(1)];
+        let bindings = [SegmentBodyBinding {
+            id: "binding#0".to_string(),
+            stream_link: "stream#0".to_string(),
+            stream_ordinal: 0,
+            stream_kind: "partition".to_string(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 0,
+        }];
+
+        assert_eq!(
+            super::terminal_feature_body_indices(&labels, &references, &[], &[], &bindings,),
+            Some([10, 11].into_iter().collect())
+        );
+    }
+
+    #[test]
+    fn feature_body_lineage_continues_across_ordered_history_sections() {
+        use crate::native::features::{
+            FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
+            FeatureOperationLabel,
+        };
+
+        let label = |id: &str, section_link: &str, ordinal, value: &str| FeatureOperationLabel {
+            id: id.to_string(),
+            section_link: section_link.to_string(),
+            ordinal,
+            value: value.to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
+        };
+        let labels = [
+            label("operation#early", "history#0", 0, "EXTRUDE"),
+            label("operation#late", "history#1", 0, "UNITE"),
+        ];
+        let references = [FeatureBodyReference {
+            id: "reference#20".to_string(),
+            operation_label: "operation#early".to_string(),
+            body_object_index: 20,
+            raw_body_object_index: vec![20],
+            source_offset: 0,
+        }];
+        let booleans = [FeatureBooleanOperation {
+            id: "boolean#0".to_string(),
+            operation_label: "operation#late".to_string(),
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: 10,
+            raw_target_object_index: vec![10],
+            target_source_offset: 1,
+            tool_object_indices: vec![20],
+            raw_tool_object_indices: vec![vec![20]],
+            tool_source_offsets: vec![1],
+            source_offset: 1,
+        }];
+
+        assert_eq!(
+            super::terminal_feature_body_indices(&labels, &references, &booleans, &[], &[],),
+            Some(std::collections::BTreeSet::new())
+        );
+    }
+
+    #[test]
+    fn feature_body_lineage_treats_segment_tuple_indices_as_one_identity() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{
+            FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
+            FeatureOperationLabel,
+        };
+
+        let label = |ordinal: u32, value: &str| FeatureOperationLabel {
+            id: format!("operation#{ordinal}"),
+            section_link: "history#0".to_string(),
+            ordinal,
+            value: value.to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: ordinal as u64,
+        };
+        let labels = [label(0, "EXTRUDE"), label(1, "UNITE")];
+        let references = [FeatureBodyReference {
+            id: "reference#150".to_string(),
+            operation_label: "operation#0".to_string(),
+            body_object_index: 150,
+            raw_body_object_index: vec![0x80, 150],
+            source_offset: 0,
+        }];
+        let booleans = [FeatureBooleanOperation {
+            id: "boolean#0".to_string(),
+            operation_label: "operation#1".to_string(),
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: 10,
+            raw_target_object_index: vec![10],
+            target_source_offset: 0,
+            tool_object_indices: vec![94],
+            raw_tool_object_indices: vec![vec![94]],
+            tool_source_offsets: vec![0],
+            source_offset: 0,
+        }];
+        let bindings = [SegmentBodyBinding {
+            id: "binding#0".to_string(),
+            stream_link: "stream#0".to_string(),
+            stream_ordinal: 0,
+            stream_kind: "partition".to_string(),
+            body_object_index: 94,
+            body_alias_object_index: 150,
+            stream_role: 19,
+            source_offset: 0,
+        }];
+
+        assert_eq!(
+            super::terminal_feature_body_indices(&labels, &references, &booleans, &[], &bindings,),
+            Some(std::collections::BTreeSet::new())
+        );
+    }
+
+    #[test]
+    fn feature_body_lineage_consumes_segment_bound_sew_operands() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{FeatureOperationBodyOperand, FeatureOperationLabel};
+        let labels = [FeatureOperationLabel {
+            id: "operation#0".to_string(),
+            section_link: "history#0".to_string(),
+            ordinal: 0,
+            value: "SEW".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: 0,
+        }];
+        let bindings = [SegmentBodyBinding {
+            id: "binding#0".to_string(),
+            stream_link: "stream#0".to_string(),
+            stream_ordinal: 0,
+            stream_kind: "partition".to_string(),
+            body_object_index: 20,
+            body_alias_object_index: 30,
+            stream_role: 0,
+            source_offset: 0,
+        }];
+        let operands = [FeatureOperationBodyOperand {
+            id: "operand#0".to_string(),
+            operation_label: "operation#0".to_string(),
+            body_object_index: 10,
+            body_reference_ordinal: 0,
+            ordinal: 0,
+            operand_object_index: 30,
+            raw_operand_object_index: vec![30],
+            segment_body_bindings: vec!["binding#0".to_string()],
+            source_offset: 0,
+        }];
+        assert_eq!(
+            super::terminal_feature_body_indices(&labels, &[], &[], &operands, &bindings),
+            Some(std::collections::BTreeSet::new())
+        );
+    }
+}

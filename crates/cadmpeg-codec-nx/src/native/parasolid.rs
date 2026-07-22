@@ -1184,3 +1184,591 @@ pub fn parasolid_attribute_class_uses(
     uses.sort_by(|first, second| first.id.cmp(&second.id));
     uses
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(unused_imports)]
+    use std::io::{Cursor, Write};
+
+    use flate2::write::ZlibEncoder;
+    use flate2::Compression;
+
+    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+    use cadmpeg_ir::geometry::{
+        BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
+        ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::report::LossCategory;
+    use cadmpeg_ir::Exactness;
+
+    use crate::container;
+    use crate::parasolid::{self, StreamKind};
+    use crate::test_support::*;
+    use crate::NxCodec;
+
+    use super::*;
+
+    #[test]
+    fn topology_retains_entity_attribute_list_references() {
+        let mut stream = topology_partition_stream();
+        for (kind, attribute) in [(14, 41), (15, 42), (17, 43), (16, 44), (18, 45)] {
+            let at = stream
+                .windows(2)
+                .position(|window| window == [0, kind])
+                .expect("topology record");
+            put_ref(&mut stream, at + if kind == 17 { 4 } else { 8 }, attribute);
+        }
+        stream.extend_from_slice(&[0, 0x51]);
+        stream.extend_from_slice(&1u32.to_be_bytes());
+        stream.extend_from_slice(&41u16.to_be_bytes());
+        stream.extend_from_slice(&1u32.to_be_bytes());
+        stream.extend_from_slice(&0x21u16.to_be_bytes());
+        for reference in [4u16, 1, 1, 1, 1, 42] {
+            stream.extend_from_slice(&reference.to_be_bytes());
+        }
+        stream.extend_from_slice(&[0, 0x54]);
+        stream.extend_from_slice(&8u32.to_be_bytes());
+        stream.extend_from_slice(&42u16.to_be_bytes());
+        stream.extend_from_slice(b"deadbeef\0");
+
+        let graph = crate::topology::Graph::parse(&stream);
+        assert_eq!(
+            graph.get(14, 4).unwrap().face_fields().unwrap().attributes,
+            41
+        );
+        assert_eq!(
+            graph.get(15, 5).unwrap().loop_fields().unwrap().attributes,
+            42
+        );
+        assert_eq!(
+            graph.get(17, 7).unwrap().fin_fields().unwrap().attributes,
+            43
+        );
+        assert_eq!(
+            graph.get(16, 8).unwrap().edge_fields().unwrap().attributes,
+            44
+        );
+        assert_eq!(
+            graph
+                .get(18, 10)
+                .unwrap()
+                .vertex_fields()
+                .unwrap()
+                .attributes,
+            45
+        );
+
+        let result = NxCodec
+            .decode(
+                &mut Cursor::new(prt_with_partition(&stream)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let references = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::ParasolidTopologyAttributeListReference>(
+                "parasolid_topology_attribute_list_references",
+            )
+            .unwrap();
+        assert_eq!(references.len(), 5);
+        assert_eq!(references[0].topology_type, 14);
+        assert_eq!(references[0].topology_xmt, 4);
+        assert_eq!(references[0].attribute_list_xmt, 41);
+        assert!(references[0].attribute_list_record.is_some());
+        assert_eq!(result.ir.model.attributes.len(), 1);
+        assert_eq!(
+            result.ir.model.attributes[0].target,
+            cadmpeg_ir::attributes::AttributeTarget::Face(cadmpeg_ir::ids::FaceId(
+                "nx:s0:face#4".into()
+            ))
+        );
+        assert_eq!(
+            result.ir.model.attributes[0].name,
+            "parasolid_type_84_reference_5"
+        );
+        assert_eq!(
+            result.ir.model.attributes[0].values,
+            [cadmpeg_ir::attributes::AttributeValue::String(
+                "deadbeef".into()
+            )]
+        );
+    }
+
+    #[test]
+    fn topology_attribute_class_uses_resolve_instance_discriminators_by_xmt() {
+        use super::{
+            ParasolidAttributeDefinition, ParasolidEntity51Record,
+            ParasolidTopologyAttributeListReference,
+        };
+
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 3,
+            xmt: 34,
+            name: "UG2/PMARK_ATTRIBUTE".into(),
+            field_count: 1,
+            field_record_xmt: 19,
+            field_record_references: [21, 22],
+            field_record_header_words: [0, 9000],
+            field_descriptor_prefix: [0; 26],
+            field_storage: None,
+            field_codes: vec![1],
+            inflated_offset: 100,
+        };
+        let entity = ParasolidEntity51Record {
+            id: "entity".into(),
+            stream_ordinal: 3,
+            xmt: 50,
+            flags: 1,
+            sequence: 7,
+            discriminator: 0x21,
+            references: vec![60, 61, 1, 62, 63, 64],
+            byte_len: 26,
+            inflated_offset: 200,
+        };
+        let reference = ParasolidTopologyAttributeListReference {
+            id: "topology-reference".into(),
+            stream_ordinal: 3,
+            topology_type: 14,
+            topology_xmt: 60,
+            attribute_list_xmt: 50,
+            attribute_list_record: Some(entity.id.clone()),
+            inflated_offset: 300,
+        };
+
+        let instance_uses = super::parasolid_attribute_class_uses(
+            std::slice::from_ref(&entity),
+            std::slice::from_ref(&definition),
+        );
+        assert_eq!(instance_uses.len(), 1);
+        assert_eq!(instance_uses[0].entity_51_record, entity.id);
+        assert_eq!(instance_uses[0].class_discriminator, 0x21);
+        assert_eq!(instance_uses[0].definition_xmt, 34);
+        assert_eq!(instance_uses[0].attribute_definition, definition.id);
+
+        let uses = super::parasolid_topology_attribute_class_uses(
+            std::slice::from_ref(&reference),
+            &instance_uses,
+        );
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].class_discriminator, 0x21);
+        assert_eq!(uses[0].definition_xmt, 34);
+        assert_eq!(uses[0].attribute_definition, definition.id);
+
+        let mut invalid = entity;
+        invalid.discriminator = 0x20;
+        assert!(super::parasolid_attribute_class_uses(
+            std::slice::from_ref(&invalid),
+            std::slice::from_ref(&definition),
+        )
+        .is_empty());
+        assert!(super::parasolid_topology_attribute_class_uses(
+            &[reference],
+            &super::parasolid_attribute_class_uses(&[invalid], &[definition]),
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn parasolid_attribute_definition_requires_declared_printable_name_and_field_record() {
+        let mut bytes = vec![0xaa, 0x00, 0x4f, 0xff];
+        bytes.extend_from_slice(&16u32.to_be_bytes());
+        bytes.extend_from_slice(&0x012au16.to_be_bytes());
+        bytes.extend_from_slice(b"SDL/TYSA_DENSITY");
+        bytes.extend_from_slice(&[0x00, 0x50, 0x00, 0x00, 0x00, 0x01]);
+        bytes.extend_from_slice(&0x012bu16.to_be_bytes());
+        bytes.extend_from_slice(&0x0030u16.to_be_bytes());
+        bytes.extend_from_slice(&0x0031u16.to_be_bytes());
+        bytes.extend_from_slice(&[0x00, 0x00, 0x23, 0x28]);
+        let descriptor = [
+            0x00, 0x00, 0x00, 0x00, 0x03, 0x06, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+        ];
+        bytes.extend_from_slice(&descriptor);
+        bytes.push(1);
+        let definitions = crate::parasolid::attribute_definitions(&bytes);
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions[0].offset, 1);
+        assert_eq!(definitions[0].xmt, 0x12a);
+        assert_eq!(definitions[0].name, "SDL/TYSA_DENSITY");
+        assert_eq!(definitions[0].field_count, 1);
+        assert_eq!(definitions[0].field_record_xmt, 0x12b);
+        assert_eq!(definitions[0].field_record_references, [0x30, 0x31]);
+        assert_eq!(definitions[0].field_record_header_words, [0, 0x2328]);
+        assert_eq!(definitions[0].field_descriptor_prefix, descriptor);
+        assert_eq!(
+            super::parasolid_attribute_field_storage(&definitions[0].field_descriptor_prefix),
+            Some(super::ParasolidAttributeFieldStorage::Double)
+        );
+        assert_eq!(definitions[0].field_codes, [1]);
+
+        let truncated = &bytes[..bytes.len() - 1];
+        assert!(crate::parasolid::attribute_definitions(truncated).is_empty());
+
+        bytes[20] = 0;
+        assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
+    }
+
+    #[test]
+    fn decode_emits_offset_surface_construction() {
+        let stream = offset_surface_topology_partition_stream();
+        let mut cur = Cursor::new(prt_with_partition(&stream));
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+        let procedural = result
+            .ir
+            .model
+            .procedural_surfaces
+            .first()
+            .expect("offset surface");
+        let ProceduralSurfaceDefinition::Offset {
+            support,
+            distance,
+            u_sense,
+            v_sense,
+            extension_flags,
+        } = &procedural.definition
+        else {
+            panic!("offset definition");
+        };
+        assert_eq!(*distance, 2.5);
+        assert_eq!(*u_sense, Some(0));
+        assert_eq!(*v_sense, Some(0));
+        assert!(extension_flags.is_empty());
+        assert_ne!(procedural.surface, *support);
+        assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
+        let records = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::ParasolidOffsetSurfaceRecord>("parasolid_offset_surface_records")
+            .unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].discriminator, 'V');
+        assert!(records[0].true_offset);
+        assert_eq!(records[0].support_xmt, 6);
+        assert_eq!(records[0].distance, 2.5);
+        let carrier = result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == procedural.surface)
+            .expect("offset carrier");
+        assert_eq!(
+            carrier
+                .source_object
+                .as_ref()
+                .map(|source| &source.object_id),
+            Some(&records[0].id)
+        );
+        assert!(matches!(
+            &carrier.geometry,
+            SurfaceGeometry::Procedural { construction } if construction == &procedural.id
+        ));
+        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    }
+
+    #[test]
+    fn decode_resolves_surface_curve_to_its_basis_curve() {
+        let stream = surface_curve_topology_partition_stream();
+        let mut cur = Cursor::new(prt_with_partition(&stream));
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+        assert_eq!(result.ir.model.edges.len(), 1);
+        let records = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::ParasolidSurfaceCurveRecord>("parasolid_surface_curve_records")
+            .unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].surface_xmt, 6);
+        assert_eq!(records[0].pcurve_xmt, 9);
+        assert_eq!(records[0].original_curve_xmt, 9);
+        assert_eq!(records[0].tolerance_to_original, 0.000_01);
+        assert_eq!(
+            result.ir.model.edges[0].curve.as_ref(),
+            Some(&result.ir.model.curves[0].id)
+        );
+        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    }
+
+    #[test]
+    fn decode_emits_rolling_ball_blend_surface() {
+        let stream = blend_surface_topology_partition_stream();
+        let mut cur = Cursor::new(prt_with_partition(&stream));
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+        let procedural = result
+            .ir
+            .model
+            .procedural_surfaces
+            .first()
+            .expect("blend surface");
+        let ProceduralSurfaceDefinition::Blend {
+            supports,
+            radius,
+            cross_section,
+            spine,
+            native,
+        } = &procedural.definition
+        else {
+            panic!("blend definition");
+        };
+        assert_eq!(*cross_section, BlendCrossSection::Circular);
+        assert_eq!(
+            *radius,
+            BlendRadiusLaw::Constant {
+                signed_radius: -3.0
+            }
+        );
+        assert_eq!(supports[0].as_ref().map(|side| side.reversed), Some(true));
+        assert_eq!(supports[1].as_ref().map(|side| side.reversed), Some(false));
+        assert!(spine.is_none());
+        assert!(native.is_none());
+        assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
+        let records = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::ParasolidBlendSurfaceRecord>("parasolid_blend_surface_records")
+            .unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].support_xmts, [6, 6]);
+        assert_eq!(records[0].spine_xmt, 1);
+        assert_eq!(records[0].offsets, [-3.0, 3.0]);
+        assert_eq!(records[0].thumb_weights, [1.0, 1.0]);
+        let carrier = result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == procedural.surface)
+            .unwrap();
+        assert_eq!(
+            carrier
+                .source_object
+                .as_ref()
+                .map(|association| association.object_id.as_str()),
+            Some(records[0].id.as_str())
+        );
+        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    }
+
+    #[test]
+    fn decode_preserves_intersection_curve_as_connected_carrier() {
+        let stream = intersection_curve_topology_partition_stream();
+        let mut cur = Cursor::new(prt_with_partition(&stream));
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+        let edge_curve = result.ir.model.edges[0].curve.as_ref().expect("edge curve");
+        let curve = result
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| &curve.id == edge_curve)
+            .expect("intersection carrier");
+        assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
+        let records = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::ParasolidIntersectionRecord>("parasolid_intersection_records")
+            .unwrap();
+        assert_eq!(records.len(), 1);
+        assert!(!records[0].delta_twin);
+        assert_eq!(records[0].header_references[0], 1);
+        assert_eq!(records[0].construction_references, [6, 6, 1, 1, 1, 1]);
+        assert_eq!(
+            curve.source_object.as_ref().map(|source| &source.object_id),
+            Some(&records[0].id)
+        );
+        assert_eq!(result.ir.model.procedural_curves.len(), 1);
+        assert_eq!(result.ir.model.procedural_curves[0].curve, curve.id);
+        assert!(result.report.losses.iter().any(|loss| {
+            loss.category == LossCategory::Geometry
+                && loss.message.starts_with("1 surface-intersection record(s)")
+        }));
+        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    }
+
+    #[test]
+    fn decode_preserves_deltas_intersection_data_curve() {
+        let stream = deltas_intersection_curve_stream();
+        let mut cur = Cursor::new(prt_with_partition(&stream));
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+        assert_eq!(result.ir.model.procedural_curves.len(), 1);
+        let records = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::ParasolidIntersectionRecord>("parasolid_intersection_records")
+            .unwrap();
+        assert_eq!(records.len(), 1);
+        assert!(records[0].delta_twin);
+        assert_eq!(records[0].header_references[0], 1);
+        assert_eq!(records[0].construction_references, [6, 6, 1, 1, 1, 1]);
+        assert_eq!(
+            result.ir.model.edges[0].curve.as_ref(),
+            Some(&result.ir.model.procedural_curves[0].curve)
+        );
+        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    }
+
+    #[test]
+    fn decode_emits_charted_surface_intersection_construction() {
+        let stream = charted_intersection_curve_topology_partition_stream();
+        let mut cur = Cursor::new(prt_with_partition(&stream));
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+        let terms = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::ParasolidTermUseRecord>("parasolid_term_use_records")
+            .unwrap();
+        assert_eq!(terms.len(), 2);
+        assert_eq!(terms[0].count, 1);
+        assert_eq!(terms[0].form, "L?");
+        assert_eq!(terms[0].point, [0.0, 0.0, 0.0]);
+        assert_eq!(terms[1].point, [10.0, 0.0, 0.0]);
+        assert!(terms
+            .iter()
+            .all(|term| matches!(term.framing, crate::intersection::TermUseFraming::Direct)));
+        let support_uv = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::ParasolidSupportUvRecord>("parasolid_support_uv_records")
+            .unwrap();
+        assert_eq!(support_uv.len(), 1);
+        assert_eq!(support_uv[0].count, 4);
+        assert_eq!(support_uv[0].marker, 2);
+        assert_eq!(support_uv[0].values, [0.0, 0.0, 0.01, 0.0]);
+        assert!(matches!(
+            support_uv[0].framing,
+            crate::intersection::SupportUvFraming::Direct
+        ));
+        let charts = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::ParasolidChartRecord>("parasolid_chart_records")
+            .unwrap();
+        assert_eq!(charts.len(), 1);
+        assert_eq!(charts[0].count, 2);
+        assert_eq!(charts[0].base_parameter, 0.0);
+        assert_eq!(charts[0].base_scale, 1.0);
+        assert_eq!(charts[0].chart_count, 2);
+        assert_eq!(charts[0].chordal_error, 0.000_01);
+        assert_eq!(charts[0].angular_error, 0.001);
+        assert_eq!(charts[0].points, [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]);
+        assert!(matches!(
+            charts[0].point_layout,
+            crate::intersection::ChartPointLayout::Xyz3
+        ));
+
+        let procedural = result
+            .ir
+            .model
+            .procedural_curves
+            .first()
+            .expect("intersection construction");
+        let curve = result
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == procedural.curve)
+            .expect("solved chart cache");
+        let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+            panic!("charted NURBS cache");
+        };
+        assert_eq!(nurbs.degree, 1);
+        assert_eq!(nurbs.control_points[0].x, 0.0);
+        assert_eq!(nurbs.control_points[1].x, 10.0);
+        assert_eq!(procedural.cache_fit_tolerance, Some(0.01));
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+            &procedural.definition
+        else {
+            panic!("typed surface intersection");
+        };
+        assert!(context.sides[0].surface.is_some());
+        assert!(context.sides[0].pcurve.is_some());
+        assert!(context.sides[1].surface.is_none());
+        assert_eq!(context.parameter_range, [0.0, 0.01]);
+        assert!(result.ir.model.coedges[0].pcurves.is_empty());
+        assert!(!result.report.losses.iter().any(|loss| {
+            loss.category == LossCategory::Geometry
+                && loss.message.contains("surface-intersection record(s)")
+        }));
+        let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+        assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+    }
+
+    #[test]
+    fn decode_resolves_intersection_second_support_through_blend_bound() {
+        let stream = blend_bound_charted_intersection_curve_stream();
+        let mut cur = Cursor::new(prt_with_partition(&stream));
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+        let records = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::ParasolidBlendBoundRecord>("parasolid_blend_bound_records")
+            .unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].header_references, [1; 5]);
+        assert!(records[0].sense);
+        assert_eq!(records[0].boundary_index, 0);
+        assert_eq!(records[0].blend_surface_xmt, 13);
+        assert!(!records[0].escaped);
+
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+            &result.ir.model.procedural_curves[0].definition
+        else {
+            panic!("typed intersection");
+        };
+        let second = context.sides[1].surface.as_ref().expect("bridged support");
+        assert_ne!(context.sides[0].surface.as_ref(), Some(second));
+        assert!(context.sides[1].pcurve.is_some());
+    }
+
+    #[test]
+    fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
+        let mut cur = Cursor::new(prt_with_partition(&trimmed_topology_partition_stream()));
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let edge = result.ir.model.edges.first().expect("edge");
+        assert_eq!(edge.curve.as_ref(), Some(&result.ir.model.curves[0].id));
+        assert_eq!(edge.param_range, Some([0.25, 0.75]));
+        let records = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::ParasolidTrimmedCurveRecord>("parasolid_trimmed_curve_records")
+            .unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].basis_xmt, 9);
+        assert_eq!(records[0].points, [[0.0; 3]; 2]);
+        assert_eq!(records[0].parameters, [0.000_25, 0.000_75]);
+        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    }
+}
