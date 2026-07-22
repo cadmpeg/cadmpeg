@@ -7268,7 +7268,19 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 dimensions,
                 placement,
             } if dimensions.is_none() || placement.is_none() => "block",
-            FeatureDefinition::DatumOffsetPlane { reference, .. } if reference.is_none() => {
+            FeatureDefinition::DatumOffsetPlane {
+                reference,
+                distance,
+            } if !distance.0.is_finite()
+                || reference.as_ref().is_none_or(|reference| {
+                    ir.model
+                        .features
+                        .iter()
+                        .find(|candidate| candidate.id == *reference)
+                        .is_none_or(|source| source.ordinal >= feature.ordinal)
+                        || !feature.dependencies.contains(reference)
+                }) =>
+            {
                 "datum plane"
             }
             FeatureDefinition::ExtractBody { source } if body_selection_is_incomplete(source) => {

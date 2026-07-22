@@ -4147,6 +4147,44 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("datum plane (1)"));
 
+    let datum = FeatureId("test:feature#datum-source".into());
+    ir.model.features[0].definition = FeatureDefinition::DatumOffsetPlane {
+        reference: Some(datum.clone()),
+        distance: Length(5.0),
+    };
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("datum plane (1)"));
+
+    ir.model.features[0].ordinal = 1;
+    ir.model.features.push(Feature {
+        id: datum.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumPrincipalPlane {
+            plane: cadmpeg_ir::features::PrincipalPlane::Top,
+        },
+        native_ref: None,
+    });
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("datum plane (1)"));
+
+    ir.model.features[0].dependencies.push(datum);
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+
     ir.model.features[0].definition = FeatureDefinition::SewBodies {
         bodies: cadmpeg_ir::features::BodySelection::Bodies(vec![output.clone()]),
         gap_tolerance: Some(Length(0.01)),
