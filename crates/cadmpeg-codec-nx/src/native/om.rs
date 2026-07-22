@@ -3305,8 +3305,8 @@ mod tests {
         operation_owned.model.features[0].definition =
             cadmpeg_ir::features::FeatureDefinition::Native {
                 kind: "TEST_OPERATION".into(),
-                properties: Default::default(),
-                parameters: Default::default(),
+                properties: BTreeMap::default(),
+                parameters: BTreeMap::default(),
             };
         assert_eq!(
             crate::decode::incomplete_expression_parameters(&operation_owned),
@@ -3693,7 +3693,7 @@ mod tests {
     fn native_catalog_separates_offset_only_blocks_from_object_records() {
         let file =
             prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
-        let container = container::scan_bytes(file).unwrap();
+        let container = container::scan_bytes(file).expect("required invariant");
 
         assert!(super::object_records(&container).is_empty());
         let blocks = super::data_blocks(&container);
@@ -3728,14 +3728,18 @@ mod tests {
         let mut store = offset_only_indexed_om_section();
         let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
         let end_at = index_start + 3 * 4;
-        let end = u32::from_le_bytes(store[end_at..end_at + 4].try_into().unwrap()) as usize;
+        let end = u32::from_le_bytes(
+            store[end_at..end_at + 4]
+                .try_into()
+                .expect("required invariant"),
+        ) as usize;
         let mut lane = vec![0x11, 0x02];
         lane.extend_from_slice(&[0xff; 15]);
         lane.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03]);
         store.splice(end..end, lane.iter().copied());
         store[end_at..end_at + 4].copy_from_slice(&((end + lane.len()) as u32).to_le_bytes());
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
-        let container = container::scan_bytes(file).unwrap();
+        let container = container::scan_bytes(file).expect("required invariant");
 
         let lanes = super::data_block_abr_reference_lanes(&container);
         assert_eq!(lanes.len(), 1);
@@ -3771,15 +3775,25 @@ mod tests {
     #[test]
     fn decode_retains_typed_nx_numeric_expression() {
         let mut cur = Cursor::new(prt_with_indexed_om_section());
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
         let expressions = result
             .ir
             .native
             .namespace("nx")
             .expect("NX namespace")
             .arena_as::<super::Expression>("expressions")
-            .unwrap();
-        assert_eq!(result.ir.native.namespace("nx").unwrap().version, 155);
+            .expect("required invariant");
+        assert_eq!(
+            result
+                .ir
+                .native
+                .namespace("nx")
+                .expect("required invariant")
+                .version,
+            155
+        );
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, Some(0x102));
         assert_eq!(expressions[0].parameter_index, Some(8));
@@ -3804,7 +3818,7 @@ mod tests {
             .namespace("nx")
             .expect("NX namespace")
             .arena_as::<super::ExpressionDeclaration>("expression_declarations")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(declarations.len(), 1);
         assert_eq!(declarations[0].object_id, 0x102);
         assert_eq!(declarations[0].parameter_index, 8);
@@ -3819,7 +3833,7 @@ mod tests {
             .parameters
             .iter()
             .find(|parameter| parameter.name == expressions[0].name)
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(
             parameter.properties.get("declaration"),
             Some(&declarations[0].id)
@@ -3847,7 +3861,7 @@ mod tests {
             .namespace("nx")
             .expect("NX namespace")
             .arena_as::<super::ObjectRecord>("object_records")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(object_records.len(), 2);
         let headers = result
             .ir
@@ -3855,7 +3869,7 @@ mod tests {
             .namespace("nx")
             .expect("NX namespace")
             .arena_as::<super::StoreHeader>("store_headers")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(headers.len(), 1);
         assert_eq!(headers[0].version, "NX 2027.3102");
         assert_eq!(headers[0].object_id, Some(0x101));
@@ -3888,7 +3902,7 @@ mod tests {
             .namespace("nx")
             .expect("NX namespace")
             .arena_as::<super::StringValue>("string_values")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(strings.len(), 1);
         assert_eq!(strings[0].record, object_records[1].id);
         assert_eq!(strings[0].object_id, Some(0x102));
@@ -3899,7 +3913,7 @@ mod tests {
             .namespace("nx")
             .expect("NX namespace")
             .arena_as::<super::ObjectReference>("object_references")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(references.len(), 2);
         assert_eq!(references[0].record, object_records[1].id);
         assert_eq!(references[0].object_id, Some(0x102));
@@ -3920,7 +3934,7 @@ mod tests {
             .namespace("nx")
             .expect("NX namespace")
             .arena_as::<super::PersistentHandle>("persistent_handles")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(handles.len(), 1);
         assert_eq!(handles[0].value, 0x1234_5678);
         assert_eq!(handles[0].records, vec![object_records[1].id.clone()]);
@@ -3986,21 +4000,23 @@ mod tests {
                     .copy_from_slice(b"maybe");
                 malformed
             })
-            .unwrap();
+            .expect("required invariant");
         assert!(super::parse_part_attributes(&malformed, 7, "/Root/part/attrs", 100).is_none());
     }
 
     #[test]
     fn decode_retains_length_framed_nx_class_definition() {
         let mut cur = Cursor::new(prt_with_indexed_om_section());
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
         let classes = result
             .ir
             .native
             .namespace("nx")
             .expect("NX namespace")
             .arena_as::<super::ClassDefinition>("class_definitions")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].name, "UGS::EXP_expression");
         assert_eq!(classes[0].ordinal, 0);
@@ -4011,14 +4027,16 @@ mod tests {
     #[test]
     fn decode_retains_length_framed_nx_field_definitions() {
         let mut cur = Cursor::new(prt_with_size_framed_om_section());
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
         let fields = result
             .ir
             .native
             .namespace("nx")
             .expect("NX namespace")
             .arena_as::<super::FieldDefinition>("field_definitions")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].name, "m_target");
         assert_eq!(fields[0].ordinal, 0);
@@ -4033,7 +4051,7 @@ mod tests {
             .namespace("nx")
             .expect("NX namespace")
             .arena_as::<super::ClassDefinition>("class_definitions")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(classes[0].layout_prefix, &[0x81, 0x21]);
         assert_eq!(
             classes[0].schema_fingerprint,
@@ -4045,14 +4063,16 @@ mod tests {
     #[test]
     fn decode_retains_nx_arrangement_configurations() {
         let mut cur = Cursor::new(prt_with_arrangements());
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
         let configurations = result
             .ir
             .native
             .namespace("nx")
             .expect("NX namespace")
             .arena_as::<super::Configuration>("configurations")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(configurations.len(), 2);
         assert_eq!(configurations[0].name, "Model");
         assert!(configurations[0].is_default);
@@ -4084,9 +4104,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::ConfigurationAttributeUse>("configuration_attribute_uses")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].configuration, configurations[0].id);
         assert_eq!(uses[0].name, "Model");
@@ -4098,9 +4118,9 @@ mod tests {
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::PartAttribute>("part_attributes")
-            .unwrap();
+            .expect("required invariant");
         let mut mismatch = attributes.clone();
         mismatch[0].value = "Other".to_string();
         assert!(super::configuration_attribute_uses(&configurations, &mismatch).is_empty());
@@ -4115,14 +4135,16 @@ mod tests {
     fn nx_neutral_active_configuration_requires_the_exact_attribute_join() {
         for active_name in [None, Some("Other")] {
             let mut cur = Cursor::new(prt_with_arrangement_attribute(active_name));
-            let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+            let result = NxCodec
+                .decode(&mut cur, &DecodeOptions::default())
+                .expect("required invariant");
             let native = result
                 .ir
                 .native
                 .namespace("nx")
-                .unwrap()
+                .expect("required invariant")
                 .arena_as::<super::Configuration>("configurations")
-                .unwrap();
+                .expect("required invariant");
             assert!(native[0].is_default);
             assert!(
                 result
@@ -4148,14 +4170,14 @@ mod tests {
 
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         let assets = result
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::MaterialTextureAsset>("material_texture_assets")
-            .unwrap();
+            .expect("required invariant");
 
         assert_eq!(assets.len(), 1);
         assert_eq!(assets[0].name, "AISI Steel 4340");
@@ -4183,14 +4205,18 @@ mod tests {
 
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
-        let namespace = result.ir.native.namespace("nx").unwrap();
+            .expect("required invariant");
+        let namespace = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("required invariant");
         let assets = namespace
             .arena_as::<super::MaterialTextureAsset>("material_texture_assets")
-            .unwrap();
+            .expect("required invariant");
         let catalog = namespace
             .arena_as::<super::MaterialTextureCatalogEntry>("material_texture_catalog_entries")
-            .unwrap();
+            .expect("required invariant");
 
         assert_eq!(assets.len(), 1);
         assert_eq!(catalog.len(), 1);
@@ -4216,11 +4242,11 @@ mod tests {
                 ("/Root/part/arrangements", arrangements.to_vec()),
             ]);
             let mut cur = Cursor::new(file);
-            let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+            let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).expect("required invariant");
             assert!(result.ir.native.namespace("nx").is_none_or(|namespace| {
                 namespace
                     .arena_as::<super::Configuration>("configurations")
-                    .unwrap()
+                    .expect("required invariant")
                     .is_empty()
             }));
             assert!(result.ir.model.configurations.is_empty());
@@ -4240,7 +4266,7 @@ mod tests {
         ]);
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         assert!(result.ir.model.configurations.is_empty());
 
         let file = prt_with_named_payloads(&[
@@ -4251,14 +4277,14 @@ mod tests {
         ]);
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(result.ir.model.configurations.len(), 1);
         assert!(!result.ir.model.configurations[0].active);
         assert!(result.ir.model.configurations[0].bodies.is_unresolved());
         assert!(result.ir.native.namespace("nx").is_none_or(|namespace| {
             namespace
                 .arena_as::<super::PartAttribute>("part_attributes")
-                .unwrap()
+                .expect("required invariant")
                 .is_empty()
         }));
     }
@@ -4266,7 +4292,9 @@ mod tests {
     #[test]
     fn assembly_metadata_lists_external_child_paths() {
         let mut cur = Cursor::new(assembly_with_external_paths());
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
         let attrs = &result.ir.source.expect("source").attributes;
         assert_eq!(
             attrs.get("external_reference.0").map(String::as_str),
@@ -4376,7 +4404,7 @@ mod tests {
 
     #[test]
     fn native_retains_rmfastload_table_and_member_words() {
-        let container = container::scan_bytes(rmfastload_prt()).unwrap();
+        let container = container::scan_bytes(rmfastload_prt()).expect("required invariant");
         let entry_offset = container
             .entries
             .iter()
@@ -4408,7 +4436,9 @@ mod tests {
     #[test]
     fn decode_selects_dominant_rmfastload_body() {
         let mut cur = Cursor::new(prt_with_two_bodies_and_rmfastload());
-        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let result = NxCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .expect("required invariant");
         let namespace = result.ir.native.namespace("nx").expect("NX namespace");
         let tables = namespace
             .arena_as::<super::RmFastLoadObjectIdTable>("rmfastload_object_id_tables")
@@ -4570,7 +4600,8 @@ mod tests {
             source_entry: "stream".into(),
             source_offset: 20,
         };
-        let uses = external_reference_record_string_uses(&[record.clone()], &references);
+        let uses =
+            external_reference_record_string_uses(std::slice::from_ref(&record), &references);
         assert_eq!(uses.len(), 4);
         assert_eq!(uses[0].id, "nx:external-reference:record-string-use#7-0");
         assert_eq!(
@@ -4588,16 +4619,22 @@ mod tests {
         let mut child_references = references.clone();
         child_references[0].path = "child.prt".into();
         let child_uses =
-            external_reference_record_string_uses(&[record.clone()], &child_references);
-        let children =
-            external_reference_record_children(&[record.clone()], &child_references, &child_uses);
+            external_reference_record_string_uses(std::slice::from_ref(&record), &child_references);
+        let children = external_reference_record_children(
+            std::slice::from_ref(&record),
+            &child_references,
+            &child_uses,
+        );
         assert_eq!(children.len(), 1);
         assert_eq!(children[0].external_record, record.id);
         assert_eq!(children[0].name_reference, "reference#0");
         assert_eq!(children[0].directory_reference, "reference#1");
-        assert!(
-            external_reference_record_children(&[record.clone()], &references, &uses).is_empty()
-        );
+        assert!(external_reference_record_children(
+            std::slice::from_ref(&record),
+            &references,
+            &uses
+        )
+        .is_empty());
 
         let mut out_of_range = record.clone();
         out_of_range.id_slots[2] = 4;

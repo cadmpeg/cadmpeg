@@ -37,6 +37,11 @@ use crate::solve::missing_edge::{
 };
 use crate::solve::UnionFind;
 
+fn repeated_domain(domain: HashSet<usize>, count: usize) -> Vec<Arc<HashSet<usize>>> {
+    let domain = Arc::new(domain);
+    vec![domain; count]
+}
+
 fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
     let mut bytes = vec![0x01, 0x41, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00];
     for handle in handles {
@@ -500,7 +505,7 @@ fn incidence_candidate_defers_global_quotient_validation_until_selection() {
     )];
     let quotient = MeshQuotient {
         union: UnionFind::new(2),
-        domains: vec![Arc::new(HashSet::from([0])); 2],
+        domains: repeated_domain(HashSet::from([0]), 2),
         members: vec![vec![0], vec![1]],
     };
     let budget = MeshConstraintBudget::new(0);
@@ -869,7 +874,7 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     let candidates = vec![vec![[0, 0]], vec![[0, 0]]];
     let mut quotient = MeshQuotient {
         union: UnionFind::new(4),
-        domains: vec![Arc::new(HashSet::from([0])); 4],
+        domains: repeated_domain(HashSet::from([0]), 4),
         members: (0..4).map(|node| vec![node]).collect(),
     };
     quotient.merge(0, 1).expect("first closed edge");
@@ -992,7 +997,7 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
     let candidates = vec![Vec::new(), Vec::new()];
     let mut quotient = MeshQuotient {
         union: UnionFind::new(4),
-        domains: vec![Arc::new(HashSet::from([0, 1])); 4],
+        domains: repeated_domain(HashSet::from([0, 1]), 4),
         members: (0..4).map(|node| vec![node]).collect(),
     };
 
@@ -1036,7 +1041,7 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
 fn unordered_component_enumeration_is_atomic_at_its_state_limit() {
     let quotient = MeshQuotient {
         union: UnionFind::new(16),
-        domains: vec![Arc::new(HashSet::from([0])); 16],
+        domains: repeated_domain(HashSet::from([0]), 16),
         members: (0..16).map(|node| vec![node]).collect(),
     };
     let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
@@ -1395,7 +1400,7 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
     };
     let quotient = MeshQuotient {
         union: UnionFind::new(EDGE_COUNT * 2),
-        domains: vec![Arc::new(HashSet::from([0])); EDGE_COUNT * 2],
+        domains: repeated_domain(HashSet::from([0]), EDGE_COUNT * 2),
         members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
     };
     let candidates = vec![vec![[0, 0]]; EDGE_COUNT];
@@ -1576,7 +1581,7 @@ fn quotient_assignment_requires_one_consistent_closed_orientation() {
 fn quotient_assignment_declines_when_its_work_budget_is_exhausted() {
     let quotient = MeshQuotient {
         union: UnionFind::new(2),
-        domains: vec![Arc::new(HashSet::from([0])); 2],
+        domains: repeated_domain(HashSet::from([0]), 2),
         members: (0..2).map(|node| vec![node]).collect(),
     };
     let assignment = MeshFaceBoundaryAssignment {
@@ -1613,7 +1618,7 @@ fn fixed_boundary_option_has_no_recursive_depth_limit() {
     const EDGE_COUNT: usize = 10_000;
     let quotient = MeshQuotient {
         union: UnionFind::new(EDGE_COUNT * 2),
-        domains: vec![Arc::new(HashSet::from([0])); EDGE_COUNT * 2],
+        domains: repeated_domain(HashSet::from([0]), EDGE_COUNT * 2),
         members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
     };
     let assignment = MeshFaceBoundaryAssignment {
@@ -1691,7 +1696,7 @@ fn quotient_options_reject_an_interior_pair_contradiction() {
 fn quotient_options_decline_when_their_work_budget_is_exhausted() {
     let quotient = MeshQuotient {
         union: UnionFind::new(2),
-        domains: vec![Arc::new(HashSet::from([0])); 2],
+        domains: repeated_domain(HashSet::from([0]), 2),
         members: (0..2).map(|node| vec![node]).collect(),
     };
     let assignment = MeshFaceBoundaryAssignment {
@@ -1743,7 +1748,7 @@ fn quotient_point_assignment_preserves_endpoint_pair_relations() {
 fn quotient_point_existence_declines_when_its_work_budget_is_exhausted() {
     let mut quotient = MeshQuotient {
         union: UnionFind::new(2),
-        domains: vec![Arc::new(HashSet::from([0, 1])); 2],
+        domains: repeated_domain(HashSet::from([0, 1]), 2),
         members: (0..2).map(|node| vec![node]).collect(),
     };
     let budget = MeshConstraintBudget::new(0);
@@ -2168,7 +2173,7 @@ fn mesh_assignment_distinguishes_quotient_work_from_direction_only_work() {
     };
     let mut quotient = MeshQuotient {
         union: UnionFind::new(4),
-        domains: vec![Arc::new(HashSet::from([0, 1])); 4],
+        domains: repeated_domain(HashSet::from([0, 1]), 4),
         members: (0..4).map(|node| vec![node]).collect(),
     };
 
@@ -2219,7 +2224,7 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
     };
     let mut quotient = MeshQuotient {
         union: UnionFind::new(4),
-        domains: vec![Arc::new(HashSet::from([0, 1])); 4],
+        domains: repeated_domain(HashSet::from([0, 1]), 4),
         members: (0..4).map(|node| vec![node]).collect(),
     };
 
@@ -2273,7 +2278,7 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
     };
     let mut quotient = MeshQuotient {
         union: UnionFind::new(4),
-        domains: vec![Arc::new(HashSet::from([0, 1])); 4],
+        domains: repeated_domain(HashSet::from([0, 1]), 4),
         members: (0..4).map(|node| vec![node]).collect(),
     };
 
@@ -2568,7 +2573,7 @@ fn forced_face_selection_does_not_consume_the_branch_budget() {
     };
     let quotient = MeshQuotient {
         union: UnionFind::new(2),
-        domains: vec![Arc::new(HashSet::from([0])); 2],
+        domains: repeated_domain(HashSet::from([0]), 2),
         members: (0..2).map(|node| vec![node]).collect(),
     };
 
@@ -2626,7 +2631,7 @@ fn overmerged_face_options_do_not_consume_the_branch_budget() {
     };
     let quotient = MeshQuotient {
         union: UnionFind::new(4),
-        domains: vec![Arc::new(HashSet::from([0, 1, 2])); 4],
+        domains: repeated_domain(HashSet::from([0, 1, 2]), 4),
         members: (0..4).map(|node| vec![node]).collect(),
     };
 
@@ -3018,7 +3023,7 @@ fn singleton_coordinate_root_merges_are_batched() {
     const ROOT_COUNT: usize = 10_000;
     let mut quotient = MeshQuotient {
         union: UnionFind::new(ROOT_COUNT),
-        domains: vec![Arc::new(HashSet::from([0])); ROOT_COUNT],
+        domains: repeated_domain(HashSet::from([0]), ROOT_COUNT),
         members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
     };
     let candidates = vec![Vec::new(); ROOT_COUNT / 2];
@@ -3059,7 +3064,7 @@ fn quotient_closes_coordinate_roots_forced_by_joint_edge_pairs() {
 fn quotient_coordinate_closure_declines_when_its_work_budget_is_exhausted() {
     let mut quotient = MeshQuotient {
         union: UnionFind::new(2),
-        domains: vec![Arc::new(HashSet::from([0])); 2],
+        domains: repeated_domain(HashSet::from([0]), 2),
         members: (0..2).map(|node| vec![node]).collect(),
     };
     let budget = MeshConstraintBudget::new(0);
@@ -3075,7 +3080,7 @@ fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
     const ROOT_COUNT: usize = 100;
     let mut quotient = MeshQuotient {
         union: UnionFind::new(ROOT_COUNT),
-        domains: vec![Arc::new(HashSet::from([0])); ROOT_COUNT],
+        domains: repeated_domain(HashSet::from([0]), ROOT_COUNT),
         members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
     };
     let budget = MeshConstraintBudget::new(2 * ROOT_COUNT + 1);
@@ -3094,7 +3099,7 @@ fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search
     const EDGE_COUNT: usize = 50;
     let mut quotient = MeshQuotient {
         union: UnionFind::new(EDGE_COUNT * 2),
-        domains: vec![Arc::new(HashSet::from([0, 1])); EDGE_COUNT * 2],
+        domains: repeated_domain(HashSet::from([0, 1]), EDGE_COUNT * 2),
         members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
     };
     let candidates = (0..EDGE_COUNT)
@@ -3118,7 +3123,7 @@ fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search
 fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
     let mut quotient = MeshQuotient {
         union: UnionFind::new(6),
-        domains: vec![Arc::new(HashSet::from([0, 1])); 6],
+        domains: repeated_domain(HashSet::from([0, 1]), 6),
         members: (0..6).map(|node| vec![node]).collect(),
     };
     quotient.merge(1, 2).expect("shared relation root");
@@ -3406,7 +3411,7 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
         union: UnionFind::new(COMPONENT_COUNT * 6),
         domains: (0..COMPONENT_COUNT)
             .flat_map(|component| {
-                let points = Arc::new(HashSet::from_iter(component * 3..component * 3 + 3));
+                let points = Arc::new((component * 3..component * 3 + 3).collect::<HashSet<_>>());
                 std::iter::repeat_n(points, 6)
             })
             .collect(),
@@ -3446,7 +3451,7 @@ fn quotient_closure_does_not_budget_forced_component_depth() {
     const ROOT_COUNT: usize = 10_000;
     let mut quotient = MeshQuotient {
         union: UnionFind::new(ROOT_COUNT),
-        domains: vec![Arc::new(HashSet::from([0])); ROOT_COUNT],
+        domains: repeated_domain(HashSet::from([0]), ROOT_COUNT),
         members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
     };
     let candidates = vec![vec![[0, 0]]; ROOT_COUNT / 2];
@@ -3479,7 +3484,7 @@ fn quotient_does_not_guess_an_ambiguous_coordinate_closure() {
 fn quotient_closure_requires_every_coordinate_row_in_a_domain() {
     let mut quotient = MeshQuotient {
         union: UnionFind::new(4),
-        domains: vec![Arc::new(HashSet::from([0])); 4],
+        domains: repeated_domain(HashSet::from([0]), 4),
         members: (0..4).map(|node| vec![node]).collect(),
     };
     quotient.merge(1, 2).expect("shared endpoint");
@@ -3506,7 +3511,7 @@ fn quotient_accepts_diagonal_domain_for_closed_edge() {
 fn quotient_point_assignment_accepts_a_closed_diagonal_edge() {
     let mut quotient = MeshQuotient {
         union: UnionFind::new(2),
-        domains: vec![Arc::new(HashSet::from([0])); 2],
+        domains: repeated_domain(HashSet::from([0]), 2),
         members: vec![vec![0], vec![1]],
     };
     let root = quotient.merge(0, 1).expect("closed endpoint merge");
@@ -4068,7 +4073,7 @@ mod record_decoders {
 
         assert_eq!(
             crate::families::standard::fbb::standard_vertex_points(&bytes)
-                .unwrap()
+                .expect("required invariant")
                 .len(),
             4
         );
@@ -4190,7 +4195,8 @@ mod record_decoders {
         assert_eq!(quotient.logical_vertex_count(), 4);
         assert_eq!(
             quotient.edge_vertices().expect("edge vertices"),
-            native_ports.map(|pair| pair.map(|identity| usize::try_from(identity - 100).unwrap()))
+            native_ports.map(|pair| pair
+                .map(|identity| usize::try_from(identity - 100).expect("required invariant")))
         );
         assert_eq!(
             quotient
@@ -4213,7 +4219,7 @@ mod record_decoders {
         assert!(runs.iter().all(|run| run.segment_count == 1));
         assert_eq!(
             crate::families::standard::fbb::standard_vertex_points(&bytes)
-                .unwrap()
+                .expect("required invariant")
                 .len(),
             4
         );
@@ -4514,34 +4520,34 @@ mod record_decoders {
             bytes
         }
 
-        let mut bytes = bounds_record(0x010203, [1.0, 2.0, 3.0], [1.0; 3], [1.0, 2.0, 3.0], 4.0);
+        let mut bytes = bounds_record(0x0001_0203, [1.0, 2.0, 3.0], [1.0; 3], [1.0, 2.0, 3.0], 4.0);
         bytes.extend(bounds_record(
-            0x040506,
+            0x0004_0506,
             [4.0, 5.0, 6.0],
             [1.0; 3],
             [4.0, 5.0, 6.0],
             4.0,
         ));
         bytes.extend(bounds_record(
-            0x070809,
+            0x0007_0809,
             [0.0, 0.0, 50.0],
             [2.5, 2.5, 0.0],
             [5.2e-7, 1.6e-7, 50.0],
             2.5,
         ));
         let normals = HashMap::from([
-            (0x040506, [0.0, 1.0, 0.0]),
-            (0x010203, [1.0, 0.0, 0.0]),
-            (0x070809, [0.0, 0.0, 1.0]),
+            (0x0004_0506, [0.0, 1.0, 0.0]),
+            (0x0001_0203, [1.0, 0.0, 0.0]),
+            (0x0007_0809, [0.0, 0.0, 1.0]),
         ]);
         let planes = crate::families::standard::records::plane_params(&bytes, &normals);
 
         assert_eq!(planes.len(), 3);
-        assert_eq!(planes[0].target, 0x010203);
+        assert_eq!(planes[0].target, 0x0001_0203);
         assert_eq!(planes[0].normal, Vector3::new(1.0, 0.0, 0.0));
-        assert_eq!(planes[1].target, 0x040506);
+        assert_eq!(planes[1].target, 0x0004_0506);
         assert_eq!(planes[1].normal, Vector3::new(0.0, 1.0, 0.0));
-        assert_eq!(planes[2].target, 0x070809);
+        assert_eq!(planes[2].target, 0x0007_0809);
         assert_eq!(
             planes[2].origin,
             Point3::new(f64::from(5.2e-7f32), f64::from(1.6e-7f32), 50.0)
@@ -4588,7 +4594,7 @@ mod record_decoders {
         let vertex_start = stream
             .windows(3)
             .position(|bytes| bytes == [0x05, 0x08, 0x01])
-            .unwrap();
+            .expect("required invariant");
         let mut unresolved_face = Vec::new();
         append_b5_record(
             &mut unresolved_face,

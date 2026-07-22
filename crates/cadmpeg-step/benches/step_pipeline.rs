@@ -1,5 +1,6 @@
 //! Release-mode scaling benchmark for the STEP pipeline.
 
+use std::fmt::Write as _;
 use std::hint::black_box;
 use std::io::Cursor;
 use std::time::{Duration, Instant};
@@ -23,8 +24,13 @@ fn exchange(entity: &str) -> Vec<u8> {
     );
     for id in 1..=ENTITY_COUNT {
         match entity {
-            "point" => source.push_str(&format!("#{id}=CARTESIAN_POINT('',(1.,2.,3.));")),
-            "opaque" => source.push_str(&format!("#{id}=OPAQUE_VALUE('x');")),
+            "point" => {
+                write!(source, "#{id}=CARTESIAN_POINT('',(1.,2.,3.));")
+                    .expect("writing to String cannot fail");
+            }
+            "opaque" => {
+                write!(source, "#{id}=OPAQUE_VALUE('x');").expect("writing to String cannot fail");
+            }
             _ => unreachable!(),
         }
     }
@@ -64,27 +70,38 @@ fn main() {
     let codec = StepCodec::default();
 
     measure("parse typed", || {
-        black_box(parse::parse(black_box(&points)).unwrap());
+        black_box(parse::parse(black_box(&points)).expect("required invariant"));
     });
     measure("decode typed", || {
         let mut input = Cursor::new(&points);
-        black_box(codec.decode(&mut input, &DecodeOptions::default()).unwrap());
+        black_box(
+            codec
+                .decode(&mut input, &DecodeOptions::default())
+                .expect("required invariant"),
+        );
     });
     measure("decode opaque", || {
         let mut input = Cursor::new(&opaque);
-        black_box(codec.decode(&mut input, &DecodeOptions::default()).unwrap());
+        black_box(
+            codec
+                .decode(&mut input, &DecodeOptions::default())
+                .expect("required invariant"),
+        );
     });
     measure("inspect opaque", || {
         let mut input = Cursor::new(&opaque);
         black_box(
             codec
                 .inspect(&mut input, &cadmpeg_ir::decode::InspectOptions::default())
-                .unwrap(),
+                .expect("required invariant"),
         );
     });
     measure("encode points", || {
         let mut output = Vec::new();
-        black_box(write_step(black_box(&ir), &mut output, &StepWriteOptions::default()).unwrap());
+        black_box(
+            write_step(black_box(&ir), &mut output, &StepWriteOptions::default())
+                .expect("required invariant"),
+        );
         black_box(output);
     });
 }

@@ -613,7 +613,7 @@ fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
 /// Add a generated inline 2D `nubs` pcurve to the first coedge of the base
 /// topology fixture. The new record is appended at `RecordTable` index 19.
 fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
-    synthetic_geometry_with_pcurve_block_smbh(generated_pcurve_block())
+    synthetic_geometry_with_pcurve_block_smbh(&generated_pcurve_block())
 }
 
 fn synthetic_geometry_with_short_pcurve_tail_smbh() -> Vec<u8> {
@@ -653,15 +653,15 @@ fn synthetic_geometry_with_additional_out_of_scope_pcurve_cache_smbh() -> Vec<u8
         .position(|window| window == [0x10, 0x0a, 0x0b, 0x0a, 0x0b])
         .map(|offset| subtype + offset)
         .expect("generated inline pcurve subtype close");
-    bytes.splice(tail + 1..tail + 1, generated_pcurve_block());
+    bytes.splice((tail + 1)..=tail, generated_pcurve_block());
     bytes
 }
 
 fn synthetic_geometry_with_rational_pcurve_smbh() -> Vec<u8> {
-    synthetic_geometry_with_pcurve_block_smbh(generated_rational_pcurve_block())
+    synthetic_geometry_with_pcurve_block_smbh(&generated_rational_pcurve_block())
 }
 
-fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
+fn synthetic_geometry_with_pcurve_block_smbh(block: &[u8]) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -698,7 +698,7 @@ fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     pcurve.push(0x0b);
     pcurve.push(0x0f);
     t_ident(&mut pcurve, "exp_par_cur");
-    pcurve.extend_from_slice(&block);
+    pcurve.extend_from_slice(block);
     t_dbl(&mut pcurve, 0.001);
     pcurve.push(0x10);
     pcurve.extend_from_slice(&[0x0a, 0x0b, 0x0a, 0x0b]);
@@ -776,7 +776,7 @@ fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<u8> {
     bytes
 }
 
-fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8> {
+fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: [u8; 8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
@@ -791,7 +791,7 @@ fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8>
         .position(|window| window == b"intcurve")
         .map(|offset| companion.offset + offset)
         .expect("generated intcurve companion name");
-    bytes[head..head + name.len()].copy_from_slice(name);
+    bytes[head..head + name.len()].copy_from_slice(&name);
     bytes
 }
 
@@ -15785,7 +15785,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         assert_eq!(*round_extension, 0);
         match (&expected_data, round_data) {
             (DeformableCurveData::VectorField { .. }, DeformableCurveData::VectorField { .. }) => {
-                assert_eq!(round_data, &expected_data)
+                assert_eq!(round_data, &expected_data);
             }
             (DeformableCurveData::Surface { .. }, DeformableCurveData::Surface { surface }) => {
                 assert!(round_trip
@@ -15793,7 +15793,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                     .model
                     .surfaces
                     .iter()
-                    .any(|item| item.id == *surface))
+                    .any(|item| item.id == *surface));
             }
             _ => panic!("round-trip deformable discriminator changed"),
         }
@@ -16070,7 +16070,7 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
         synthetic_geometry_with_out_of_scope_pcurve_cache_smbh(),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 0),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 7),
-        with_ref_pcurve_companion_name(synthetic_geometry_with_ref_pcurve_smbh(), b"badcurve"),
+        with_ref_pcurve_companion_name(synthetic_geometry_with_ref_pcurve_smbh(), *b"badcurve"),
     ] {
         let result = F3dCodec
             .decode(
@@ -16128,7 +16128,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated pcurve decode");
-    assert_eq!(round_trip.ir.model.pcurves, [expected.clone()]);
+    assert_eq!(round_trip.ir.model.pcurves, std::slice::from_ref(&expected));
 }
 
 #[test]
@@ -16219,7 +16219,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated ref-form pcurve decode");
-    assert_eq!(round_trip.ir.model.pcurves, [expected.clone()]);
+    assert_eq!(round_trip.ir.model.pcurves, std::slice::from_ref(&expected));
 
     edited.source = None;
     edited.set_native_unknowns("f3d", &[]).unwrap();
@@ -16799,14 +16799,14 @@ fn browser_body_record(entity: u64, name: Option<&str>, visual: &str) -> Vec<u8>
 #[test]
 fn browser_body_appearance_decodes_named_and_nameless_records() {
     let visual = "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015";
-    let mut bytes = browser_body_record(200598, Some("Hexagon 1"), visual);
-    bytes.extend(browser_body_record(454966, None, visual));
+    let mut bytes = browser_body_record(200_598, Some("Hexagon 1"), visual);
+    bytes.extend(browser_body_record(454_966, None, visual));
     let out = crate::materials::browser_body_appearances(&bytes);
     assert_eq!(
         out,
         vec![
-            (200598, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
-            (454966, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
+            (200_598, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
+            (454_966, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
         ]
     );
 }
@@ -16814,9 +16814,9 @@ fn browser_body_appearance_decodes_named_and_nameless_records() {
 #[test]
 fn browser_body_appearance_requires_head_and_node_entity_agreement() {
     let visual = "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015";
-    let mut bytes = browser_body_record(200598, Some("Hexagon 1"), visual);
+    let mut bytes = browser_body_record(200_598, Some("Hexagon 1"), visual);
     // Corrupt the node entity so it no longer equals the head entity plus one.
-    let node = (200599u64).to_le_bytes();
+    let node = (200_599_u64).to_le_bytes();
     let at = bytes
         .windows(8)
         .position(|window| window == node)

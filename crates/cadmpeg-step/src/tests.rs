@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
@@ -95,11 +97,8 @@ fn parser_rejects_excessive_parameter_nesting_without_recursing_unboundedly() {
 fn parser_bounds_exponential_anchor_expansion() {
     let mut anchors = String::from("<a0>=(1,1);\n");
     for index in 1..40 {
-        anchors.push_str(&format!(
-            "<a{index}>=(<a{}>,<a{}>);\n",
-            index - 1,
-            index - 1
-        ));
+        writeln!(anchors, "<a{index}>=(<a{}>,<a{}>);", index - 1, index - 1)
+            .expect("writing to String cannot fail");
     }
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
@@ -112,15 +111,13 @@ fn parser_bounds_exponential_anchor_expansion() {
 fn parser_bounds_aggregate_anchor_materialization() {
     let mut anchors = String::from("<a0>=(1,1);\n");
     for index in 1..18 {
-        anchors.push_str(&format!(
-            "<a{index}>=(<a{}>,<a{}>);\n",
-            index - 1,
-            index - 1
-        ));
+        writeln!(anchors, "<a{index}>=(<a{}>,<a{}>);", index - 1, index - 1)
+            .expect("writing to String cannot fail");
     }
-    let records = (1..=8)
-        .map(|id| format!("#{id}=ITEM(<a17>);"))
-        .collect::<String>();
+    let mut records = String::new();
+    for id in 1..=8 {
+        write!(records, "#{id}=ITEM(<a17>);").expect("writing to String cannot fail");
+    }
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
@@ -1424,7 +1421,7 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert_eq!(mesh.triangles, [[0, 1, 2]]);
     assert_eq!(mesh.normals.len(), 3);
     assert_eq!(
-        mesh.body.as_ref().map(|body| body.as_str()),
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
     let complex = result
@@ -1700,17 +1697,19 @@ fn mapped_representation_dag_is_memoized() {
         let map = 1_000 + level;
         let first = 2_000 + level * 2;
         let second = first + 1;
-        records.push_str(&format!(
+        write!(
+            records,
             "#{representation}=SHAPE_REPRESENTATION('',(#{first},#{second}),$);\n\
 #{map}=REPRESENTATION_MAP($,#{next});\n\
 #{first}=MAPPED_ITEM('',#{map},$);\n\
 #{second}=MAPPED_ITEM('',#{map},$);\n"
-        ));
+        )
+        .expect("writing to String cannot fail");
     }
-    records.push_str(&format!(
+    write!(records,
         "#{}=SHAPE_REPRESENTATION('',(#9000),$);\n#9000=MANIFOLD_SOLID_BREP('',#9001);\n#9001=CLOSED_SHELL('',());",
         100 + depth
-    ));
+    ).expect("writing to String cannot fail");
 
     let result = decode_inline(&records);
     assert_eq!(result.ir.model.products.len(), 1);
@@ -3073,7 +3072,7 @@ fn source_native_record_reduction_is_reported() {
         "asm_histories".into(),
         vec![cadmpeg_ir::NativeRecord {
             id: "asm-history-0".into(),
-            fields: Default::default(),
+            fields: <_>::default(),
         }],
     );
     ir.finalize();
@@ -3093,7 +3092,7 @@ fn strict_writer_rejects_before_emitting_bytes() {
         "asm_histories".into(),
         vec![cadmpeg_ir::NativeRecord {
             id: "asm-history-0".into(),
-            fields: Default::default(),
+            fields: <_>::default(),
         }],
     );
     ir.finalize();
@@ -3211,7 +3210,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
             b: 0.125,
             a: 1.0,
         }),
-        properties: Default::default(),
+        properties: BTreeMap::default(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#face".to_string(),
@@ -3219,7 +3218,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
-        channels: Default::default(),
+        channels: BTreeMap::default(),
     });
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.125,0.125,0.125)"));
@@ -3263,7 +3262,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
             b: 0.0,
             a: 1.0,
         }),
-        properties: Default::default(),
+        properties: BTreeMap::default(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#face".to_string(),
@@ -3271,7 +3270,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
-        channels: Default::default(),
+        channels: BTreeMap::default(),
     });
 
     let s = export(&ir);
@@ -3282,7 +3281,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     // Each color's style chain is emitted once and shared; grouping the styled
     // items by their style ref must yield exactly two groups sized 1 and
     // face_count - 1 (the lone override plus every inherited face).
-    let mut per_style: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut per_style: std::collections::BTreeMap<String, usize> = BTreeMap::default();
     for item in &styled {
         let psa = item
             .split_once(",(")

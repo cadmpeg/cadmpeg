@@ -2521,7 +2521,7 @@ mod tests {
         bytes.extend(7_i32.to_le_bytes());
         bytes.extend(utf16("fixtures"));
         bytes.extend([0x44; 16]);
-        let group = parse_group(&bytes, 0..bytes.len(), 120).unwrap();
+        let group = parse_group(&bytes, 0..bytes.len(), 120).expect("required invariant");
         assert_eq!(group.archive_index, 7);
         assert_eq!(group.name, "fixtures");
         assert_eq!(group.source_offset, 120);
@@ -2553,7 +2553,7 @@ mod tests {
             bytes.extend(value.to_le_bytes());
         }
         bytes.extend(0.8_f64.to_le_bytes());
-        let light = parse_light(&bytes, 0..bytes.len(), 10.0, 0, None).unwrap();
+        let light = parse_light(&bytes, 0..bytes.len(), 10.0, 0, None).expect("required invariant");
         assert_eq!(light.location, [10.0, 20.0, 30.0]);
         assert_eq!(light.direction, [0.0, 0.0, -1.0]);
         assert_eq!(light.length, [40.0, 0.0, 0.0]);
@@ -2562,7 +2562,7 @@ mod tests {
 
     #[test]
     fn legacy_material_preserves_core_appearance_and_switches() {
-        let mut body = vec![[0x11; 16].as_slice(), 2_i32.to_le_bytes().as_slice()].concat();
+        let mut body = [[0x11; 16].as_slice(), 2_i32.to_le_bytes().as_slice()].concat();
         body.extend(utf16("steel"));
         body.extend([0x22; 16]);
         for color in [
@@ -2585,7 +2585,8 @@ mod tests {
         let inner = anonymous(3, &body);
         let mut bytes = vec![0x20];
         bytes.extend(inner);
-        let material = parse_material(&bytes, 0..bytes.len(), ArchiveVersion::V5, 0).unwrap();
+        let material = parse_material(&bytes, 0..bytes.len(), ArchiveVersion::V5, 0)
+            .expect("required invariant");
         assert_eq!(material.name, "steel");
         assert_eq!(material.diffuse, [5, 6, 7, 8]);
         assert_eq!(material.index_of_refraction, 1.5);
@@ -2604,7 +2605,8 @@ mod tests {
         body.extend(1_u32.to_le_bytes());
         body.extend([0x66; 16]);
         let bytes = anonymous(1, &body);
-        let value = parse_linetype(&bytes, 0..bytes.len(), ArchiveVersion::V5, 10.0, 0).unwrap();
+        let value = parse_linetype(&bytes, 0..bytes.len(), ArchiveVersion::V5, 10.0, 0)
+            .expect("required invariant");
         assert_eq!(value.name, "dash");
         assert_eq!(value.segments[0].length_millimeters, 20.0);
         assert_eq!(value.segments[1].segment_type, 1);
@@ -2627,8 +2629,8 @@ mod tests {
         bytes.extend(5.0_f64.to_le_bytes());
         bytes.extend((-2.0_f64).to_le_bytes());
         bytes.extend([0x77; 16]);
-        let value =
-            parse_hatch_pattern(&bytes, 0..bytes.len(), ArchiveVersion::V5, 10.0, 0).unwrap();
+        let value = parse_hatch_pattern(&bytes, 0..bytes.len(), ArchiveVersion::V5, 10.0, 0)
+            .expect("required invariant");
         assert_eq!(value.lines[0].base_millimeters, [10.0, 20.0]);
         assert_eq!(value.lines[0].offset_millimeters, [30.0, 40.0]);
         assert_eq!(value.lines[0].dashes_millimeters, [50.0, -20.0]);

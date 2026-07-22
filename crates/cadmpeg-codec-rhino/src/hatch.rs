@@ -299,7 +299,7 @@ mod tests {
         let hatch = crate::decode::with_expand_bytes(&payload, |expand| {
             decode(expand, 0..payload.len(), 10.0, ArchiveVersion::V8)
         })
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(hatch.pattern_index, 7);
         assert_eq!(hatch.pattern_scale, 2.5);
         assert_eq!(hatch.pattern_rotation, 0.25);

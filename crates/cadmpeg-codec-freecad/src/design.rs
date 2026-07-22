@@ -1900,48 +1900,6 @@ fn near(a: Point2, b: Point2) -> bool {
     (a.u - b.u).abs() <= 1e-9 && (a.v - b.v).abs() <= 1e-9
 }
 
-#[cfg(test)]
-mod profile_tests {
-    use super::*;
-
-    fn entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
-        SketchEntity {
-            id: cadmpeg_ir::sketches::SketchEntityId(id.into()),
-            sketch: SketchId("test:sketch#curved".into()),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry,
-        }
-    }
-
-    #[test]
-    fn curved_segments_chain_by_their_evaluated_endpoints() {
-        let entities = [
-            entity(
-                "test:entity#line",
-                SketchGeometry::Line {
-                    start: Point2::new(0.0, 1.0),
-                    end: Point2::new(0.0, 0.0),
-                },
-            ),
-            entity(
-                "test:entity#arc",
-                SketchGeometry::Arc {
-                    center: Point2::new(0.0, 0.0),
-                    radius: Length(1.0),
-                    start_angle: cadmpeg_ir::features::Angle(0.0),
-                    end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
-                },
-            ),
-        ];
-        let profiles = build_profiles(&entities);
-        assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].len(), 2);
-    }
-}
-
 fn profile_ref(
     owner: &str,
     properties: &[&PropertyRecord],
@@ -4257,4 +4215,46 @@ pub(crate) fn census(
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+
+    fn entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
+        SketchEntity {
+            id: cadmpeg_ir::sketches::SketchEntityId(id.into()),
+            sketch: SketchId("test:sketch#curved".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        }
+    }
+
+    #[test]
+    fn curved_segments_chain_by_their_evaluated_endpoints() {
+        let entities = [
+            entity(
+                "test:entity#line",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, 1.0),
+                    end: Point2::new(0.0, 0.0),
+                },
+            ),
+            entity(
+                "test:entity#arc",
+                SketchGeometry::Arc {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length(1.0),
+                    start_angle: cadmpeg_ir::features::Angle(0.0),
+                    end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+                },
+            ),
+        ];
+        let profiles = build_profiles(&entities);
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].len(), 2);
+    }
 }

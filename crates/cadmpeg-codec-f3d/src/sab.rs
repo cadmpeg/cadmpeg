@@ -893,11 +893,13 @@ mod tests {
             assert!(payload_subtype_span(&bytes, record, 4, ref_width, "exp_par_cur").is_none());
             assert!(payload_subtype_span(&bytes, record, 5, ref_width, "bad_par_cur").is_none());
             assert_eq!(
-                bytes[payload_token_offset(&bytes, record, ref_width, 4).unwrap()],
+                bytes[payload_token_offset(&bytes, record, ref_width, 4)
+                    .expect("required invariant")],
                 0x0b
             );
             assert_eq!(
-                bytes[payload_token_offset(&bytes, record, ref_width, 5).unwrap()],
+                bytes[payload_token_offset(&bytes, record, ref_width, 5)
+                    .expect("required invariant")],
                 0x0f
             );
             assert!(payload_token_offset(&bytes, record, ref_width, 8).is_none());
@@ -915,7 +917,11 @@ mod tests {
                     .expect("range field offset");
                 assert_eq!(bytes[offset], 0x06);
                 assert_eq!(
-                    f64::from_le_bytes(bytes[offset + 1..offset + 9].try_into().unwrap()),
+                    f64::from_le_bytes(
+                        bytes[offset + 1..offset + 9]
+                            .try_into()
+                            .expect("required invariant")
+                    ),
                     expected
                 );
             }

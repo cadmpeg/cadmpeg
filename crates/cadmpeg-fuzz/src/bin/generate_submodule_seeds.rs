@@ -16,8 +16,8 @@ fn main() {
 
 fn write_seed(dir: &str, name: &str, data: &[u8]) {
     let path = Path::new(dir);
-    fs::create_dir_all(path).unwrap();
-    fs::write(path.join(name), data).unwrap();
+    fs::create_dir_all(path).expect("required invariant");
+    fs::write(path.join(name), data).expect("required invariant");
     println!("  {}/{} ({} bytes)", dir, name, data.len());
 }
 
@@ -300,10 +300,10 @@ fn generate_ir_submodule_seeds() {
 
     let empty = cadmpeg_ir::CadIr::empty(Default::default())
         .to_canonical_json()
-        .unwrap();
+        .expect("required invariant");
     let cube = cadmpeg_ir::examples::unit_cube()
         .to_canonical_json()
-        .unwrap();
+        .expect("required invariant");
 
     for (name, right) in [("empty_vs_cube", &cube), ("empty_vs_empty", &empty)] {
         let mut input = vec![0];
@@ -324,14 +324,14 @@ fn generate_ir_submodule_seeds() {
 
 fn clear_seed_directory(directory: &str) {
     let path = Path::new(directory);
-    fs::create_dir_all(path).unwrap();
-    for entry in fs::read_dir(path).unwrap() {
-        let entry = entry.unwrap();
+    fs::create_dir_all(path).expect("required invariant");
+    for entry in fs::read_dir(path).expect("required invariant") {
+        let entry = entry.expect("required invariant");
         let entry_path = entry.path();
         if entry_path.is_dir() {
-            fs::remove_dir_all(entry_path).unwrap();
+            fs::remove_dir_all(entry_path).expect("required invariant");
         } else {
-            fs::remove_file(entry_path).unwrap();
+            fs::remove_file(entry_path).expect("required invariant");
         }
     }
 }

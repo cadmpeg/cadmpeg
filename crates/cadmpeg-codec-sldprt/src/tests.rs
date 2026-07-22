@@ -2454,15 +2454,15 @@ fn encoder_writes_source_less_line_sketches() {
                 SketchConstraintDefinition::Fixed { .. }
             )
         }));
-    assert!(
+    assert_eq!(
         decoded
             .ir
             .model
             .sketch_entities
             .iter()
             .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
-            .count()
-            == 3
+            .count(),
+        3
     );
     assert!(decoded
         .ir
@@ -3254,14 +3254,20 @@ fn encoder_writes_source_less_curved_sketches() {
                 .model
                 .sketch_constraints
                 .iter()
-                .any(|constraint| match (expected, &constraint.definition) {
+                .any(|constraint| matches!(
+                    (expected, &constraint.definition),
                     ("line-line", SketchConstraintDefinition::Distance { .. })
-                    | ("horizontal", SketchConstraintDefinition::HorizontalDistance { .. })
-                    | ("vertical", SketchConstraintDefinition::VerticalDistance { .. })
-                    | ("angle", SketchConstraintDefinition::Angle { .. })
-                    | ("diameter", SketchConstraintDefinition::Diameter { .. }) => true,
-                    _ => false,
-                }),
+                        | (
+                            "horizontal",
+                            SketchConstraintDefinition::HorizontalDistance { .. }
+                        )
+                        | (
+                            "vertical",
+                            SketchConstraintDefinition::VerticalDistance { .. }
+                        )
+                        | ("angle", SketchConstraintDefinition::Angle { .. })
+                        | ("diameter", SketchConstraintDefinition::Diameter { .. })
+                )),
             "missing regenerated {expected} dimension"
         );
     }
@@ -5051,9 +5057,11 @@ fn semantic_writer_allocates_one_index_for_unassigned_configuration_sections() {
     assert!(!scan.blocks.iter().any(|block| {
         matches!(
             block.section.as_deref(),
-            Some("Contents/ResolvedFeatures")
-                | Some("Contents/Config-3-Partition")
-                | Some("Contents/Config-3-ResolvedFeatures")
+            Some(
+                "Contents/ResolvedFeatures"
+                    | "Contents/Config-3-Partition"
+                    | "Contents/Config-3-ResolvedFeatures"
+            )
         )
     }));
     let round_trip = SldprtCodec
@@ -7806,14 +7814,13 @@ fn decode_rejects_inconsistent_display_list_table() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(result.ir.model.tessellations.is_empty());
-    assert!(result
+    assert!(!result
         .ir
         .source
         .as_ref()
         .unwrap()
         .attributes
-        .get("displaylist_vertices")
-        .is_none());
+        .contains_key("displaylist_vertices"));
 }
 
 #[test]
@@ -9730,14 +9737,10 @@ fn semantic_writer_applies_history_root_ordinals() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     for feature in &mut decoded.ir.model.features {
-        feature.ordinal = if feature.name.as_deref() == Some("First") {
-            1
-        } else {
-            0
-        };
+        feature.ordinal = u64::from(feature.name.as_deref() == Some("First"));
     }
     for configuration in &mut decoded.ir.model.configurations {
-        configuration.ordinal = if configuration.name == "A" { 1 } else { 0 };
+        configuration.ordinal = u32::from(configuration.name == "A");
     }
 
     let mut encoded = Vec::new();
@@ -10537,7 +10540,7 @@ fn decode_resolves_feature_topology_selections() {
             profile: Some(ProfileRef::Faces(faces)),
             path: Some(PathRef::Edges(edges)),
             ..
-        } if faces == &[face_id.clone()] && edges == &[edge_id.clone()]
+        } if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id)
     ));
 
     if let FeatureDefinition::Fillet { edges, .. } = &mut decoded.ir.model.features[0].definition {
@@ -13489,7 +13492,7 @@ fn semantic_writer_round_trips_wrap() {
             face: FaceSelection::Resolved { faces: targets, native },
             mode: WrapMode::Emboss,
             depth: Some(Length(2.0)),
-        } if faces == &[face_id.clone()] && targets == &[face_id.clone()] && native == &face
+        } if faces == std::slice::from_ref(&face_id) && targets == std::slice::from_ref(&face_id) && native == &face
     ));
 
     let FeatureDefinition::Wrap {
@@ -13588,7 +13591,7 @@ fn semantic_writer_round_trips_move_copy_body() {
                 angle: Angle(angle),
             }),
             copies: 2,
-        } if bodies == &[body_id.clone()] && native == &body
+        } if bodies == std::slice::from_ref(&body_id) && native == &body
             && (*angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
 
@@ -13687,7 +13690,7 @@ fn semantic_writer_round_trips_offset_surface() {
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Resolved { faces, native },
             distance: Some(Length(2.0)),
-        } if faces == &[face_id.clone()] && native == &face
+        } if faces == std::slice::from_ref(&face_id) && native == &face
     ));
 
     let FeatureDefinition::OffsetSurface { faces, distance } =
@@ -13746,7 +13749,7 @@ fn semantic_writer_round_trips_knit_surface() {
             merge_entities: Some(false),
             create_solid: Some(false),
             gap_tolerance: Some(Length(0.01)),
-        } if faces == &[face_id.clone()] && native == &face
+        } if faces == std::slice::from_ref(&face_id) && native == &face
     ));
 
     let FeatureDefinition::KnitSurface {
@@ -13816,8 +13819,8 @@ fn semantic_writer_round_trips_cut_with_surface() {
             targets: BodySelection::Resolved { bodies, native: body_native },
             tools: FaceSelection::Resolved { faces, native: face_native },
             reverse: false,
-        } if bodies == &[body_id.clone()] && body_native == &body
-            && faces == &[face_id.clone()] && face_native == &face
+        } if bodies == std::slice::from_ref(&body_id) && body_native == &body
+            && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
     let FeatureDefinition::CutWithSurface {
@@ -13882,8 +13885,8 @@ fn semantic_writer_round_trips_filled_surface() {
             support_faces: FaceSelection::Resolved { faces, native: face_native },
             continuity: Some(SurfaceContinuity::Tangent),
             merge_result: Some(false),
-        } if edges == &[edge_id.clone()] && edge_native == &edge
-            && faces == &[face_id.clone()] && face_native == &face
+        } if edges == std::slice::from_ref(&edge_id) && edge_native == &edge
+            && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
     let FeatureDefinition::FilledSurface {
@@ -13952,7 +13955,7 @@ fn semantic_writer_round_trips_trim_surface() {
             faces: FaceSelection::Resolved { faces, native },
             tool: PathRef::Edges(edges),
             keep: TrimRegion::Inside,
-        } if faces == &[face_id.clone()] && native == &face && edges == &[edge_id.clone()]
+        } if faces == std::slice::from_ref(&face_id) && native == &face && edges == std::slice::from_ref(&edge_id)
     ));
 
     let FeatureDefinition::TrimSurface { faces, tool, keep } =
@@ -14012,7 +14015,7 @@ fn semantic_writer_round_trips_extend_surface() {
             faces: FaceSelection::Resolved { faces, native },
             distance: Some(Length(2.0)),
             method: SurfaceExtension::Natural,
-        } if faces == &[face_id.clone()] && native == &face
+        } if faces == std::slice::from_ref(&face_id) && native == &face
     ));
 
     let FeatureDefinition::ExtendSurface {
@@ -14084,8 +14087,8 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
                 direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
                 distance: Length(2.0),
             },
-        } if edges == &[edge_id.clone()] && edge_native == &edge
-            && faces == &[face_id.clone()] && face_native == &face
+        } if edges == std::slice::from_ref(&edge_id) && edge_native == &edge
+            && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
     let FeatureDefinition::RuledSurface {
@@ -14176,7 +14179,7 @@ fn semantic_writer_round_trips_projected_curve() {
             target_faces: FaceSelection::Resolved { faces, native },
             direction: cadmpeg_ir::features::CurveProjectionDirection::Vector(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
             bidirectional: Some(false),
-        } if edges == &[edge_id.clone()] && faces == &[face_id.clone()] && native == &face
+        } if edges == std::slice::from_ref(&edge_id) && faces == std::slice::from_ref(&face_id) && native == &face
     ));
 
     let FeatureDefinition::ProjectedCurve {

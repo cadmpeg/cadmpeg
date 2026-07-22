@@ -5044,7 +5044,7 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
         .find(|parameter| parameter.name == "result")
         .expect("relation parameter");
 
-    assert_eq!(relation.dependencies, [dimension.id.clone()]);
+    assert_eq!(relation.dependencies, std::slice::from_ref(&dimension.id));
     assert!(!relation.properties.contains_key("external_dependencies"));
     assert_eq!(
         relation.value,

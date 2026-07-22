@@ -3502,11 +3502,18 @@ mod tests {
             (RhinoArchiveVersion::V8, "80"),
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
-            assert_eq!(std::str::from_utf8(&bytes[24..32]).unwrap().trim(), value);
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
+            assert_eq!(
+                std::str::from_utf8(&bytes[24..32])
+                    .expect("required invariant")
+                    .trim(),
+                value
+            );
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             assert_eq!(decoded.ir.model.points.len(), 1);
             assert_eq!(
                 decoded.ir.model.points[0].position,
@@ -3594,17 +3601,19 @@ mod tests {
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&ir, &mut bytes)
-            .unwrap();
+            .expect("required invariant");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(decoded.ir.model.curves.len(), 1);
         assert_eq!(
             decoded.ir.model.curves[0].geometry,
             ir.model.curves[0].geometry
         );
         let digest = Sha256::digest(b"curve:circle");
-        let expected = crate::wire::Uuid::from_wire(digest[..16].try_into().unwrap()).to_string();
+        let expected =
+            crate::wire::Uuid::from_wire(digest[..16].try_into().expect("required invariant"))
+                .to_string();
         assert_eq!(
             decoded.ir.model.curves[0]
                 .source_object
@@ -3638,10 +3647,10 @@ mod tests {
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&ir, &mut bytes)
-            .unwrap();
+            .expect("required invariant");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(
             decoded.ir.model.curves[0].geometry,
             ir.model.curves[0].geometry
@@ -3719,10 +3728,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             let actual = decoded
                 .ir
                 .model
@@ -3762,10 +3773,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             assert!(
                 decoded
                     .report
@@ -3807,20 +3820,20 @@ mod tests {
         let mut v5 = Vec::new();
         let v5_report = RhinoEncoder::new(RhinoArchiveVersion::V5)
             .encode(&ir, &mut v5)
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(v5_report.losses.len(), 1);
         let decoded_v5 = RhinoCodec
             .decode(&mut Cursor::new(v5), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         assert_ne!(decoded_v5.ir.model.tessellations[0].vertices[0].x, 0.1);
         let mut v8 = Vec::new();
         let v8_report = RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&ir, &mut v8)
-            .unwrap();
+            .expect("required invariant");
         assert!(v8_report.losses.is_empty());
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(v8), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(decoded.ir.model.tessellations[0].vertices[0].x, 0.1);
     }
 
@@ -3866,10 +3879,10 @@ mod tests {
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&ir, &mut bytes)
-            .unwrap();
+            .expect("required invariant");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         let actual = &decoded.ir.model.tessellations[0].channels;
         for expected in channels {
             assert_eq!(
@@ -3975,10 +3988,10 @@ mod tests {
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&ir, &mut bytes)
-            .unwrap();
+            .expect("required invariant");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(decoded.ir.model.bodies.len(), 1);
         assert_eq!(decoded.ir.model.vertices.len(), 2);
         assert_eq!(decoded.ir.model.points.len(), 2);
@@ -4001,20 +4014,20 @@ mod tests {
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&source, &mut bytes)
-            .unwrap();
+            .expect("required invariant");
         let mut decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         assert!(decoded.ir.native.namespace("rhino").is_some());
         decoded.ir.model.points[0].position = Point3::new(4.0, 5.0, 6.0);
 
         let mut output = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&decoded.ir, &mut output)
-            .unwrap();
+            .expect("required invariant");
         let rewritten = RhinoCodec
             .decode(&mut Cursor::new(output), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(
             rewritten.ir.model.points[0].position,
             Point3::new(4.0, 5.0, 6.0)
@@ -4032,10 +4045,10 @@ mod tests {
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&source, &mut bytes)
-            .unwrap();
+            .expect("required invariant");
         let mut decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         decoded
             .ir
             .native
@@ -4051,7 +4064,7 @@ mod tests {
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&decoded.ir, &mut output)
-            .unwrap_err();
+            .expect_err("expected error");
         assert!(error.to_string().contains("survival handling"));
         assert_eq!(output, [0xaa]);
     }
@@ -4126,10 +4139,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             let body = &decoded.ir.model.bodies[0];
             assert_eq!(body.name.as_deref(), Some("named sheet"), "{version:?}");
             assert_eq!(body.color, ir.model.bodies[0].color, "{version:?}");
@@ -4167,10 +4182,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
             assert_eq!(
                 decoded.ir.model.bodies[0].kind,
@@ -4244,10 +4261,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             let shared = decoded
                 .ir
                 .model
@@ -4344,10 +4363,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             let explicit = decoded
                 .ir
                 .model
@@ -4394,7 +4415,7 @@ mod tests {
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&ir, &mut output)
-            .unwrap_err();
+            .expect_err("expected error");
         assert!(error.to_string().contains("does not exactly match"));
         assert_eq!(output, [0xaa]);
     }
@@ -4429,10 +4450,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             let pcurve = decoded
                 .ir
                 .model
@@ -4465,10 +4488,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
             assert_eq!(
                 decoded.ir.model.bodies[0].kind,
@@ -4509,10 +4534,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
             assert_eq!(
                 decoded.ir.model.bodies[0].kind,
@@ -4623,10 +4650,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             assert_eq!(decoded.ir.model.surfaces[0].geometry, expected_surface);
             assert_eq!(decoded.ir.model.curves[0].geometry, expected_curve);
             assert_eq!(decoded.ir.model.loops.len(), 2, "{version:?}");
@@ -4658,7 +4687,7 @@ mod tests {
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&ir, &mut output)
-            .unwrap_err();
+            .expect_err("expected error");
         assert!(error.to_string().contains("misses directed edge curve"));
         assert_eq!(output, [0xaa]);
     }
@@ -4673,7 +4702,7 @@ mod tests {
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&ir, &mut output)
-            .unwrap_err();
+            .expect_err("expected error");
         assert!(error.to_string().contains("explicit pcurve"));
         assert_eq!(output, [0xaa]);
     }
@@ -4688,10 +4717,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
             assert_eq!(
                 decoded.ir.model.bodies[0].kind,
@@ -4756,10 +4787,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             assert!(
                 decoded
                     .report
@@ -4819,10 +4852,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(&ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             assert_eq!(decoded.ir.model.bodies.len(), 2, "{version:?}");
             assert!(decoded
                 .ir
@@ -4851,7 +4886,7 @@ mod tests {
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&ir, &mut output)
-            .unwrap_err();
+            .expect_err("expected error");
         assert!(error.to_string().contains("incidence"));
         assert_eq!(output, [0xaa]);
     }
@@ -4864,10 +4899,12 @@ mod tests {
             RhinoArchiveVersion::V8,
         ] {
             let mut bytes = Vec::new();
-            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            RhinoEncoder::new(version)
+                .encode(ir, &mut bytes)
+                .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             assert!(
                 decoded
                     .report
@@ -4960,8 +4997,8 @@ mod tests {
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face,
-            boundary_role: Default::default(),
-            coedges: coedge_ids.to_vec(),
+            boundary_role: LoopBoundaryRole::default(),
+            coedges: coedge_ids.clone(),
             vertex_uses: Vec::new(),
         });
         ir.model.surfaces.push(Surface {
@@ -5051,7 +5088,7 @@ mod tests {
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face,
-            boundary_role: Default::default(),
+            boundary_role: LoopBoundaryRole::default(),
             coedges: coedge_ids.clone(),
             vertex_uses: Vec::new(),
         });
@@ -5194,14 +5231,14 @@ mod tests {
         ir.model.loops.push(Loop {
             id: loop_ids[0].clone(),
             face: face_ids[0].clone(),
-            boundary_role: Default::default(),
+            boundary_role: LoopBoundaryRole::default(),
             coedges: coedge_ids[0..4].to_vec(),
             vertex_uses: Vec::new(),
         });
         ir.model.loops.push(Loop {
             id: loop_ids[1].clone(),
             face: face_ids[1].clone(),
-            boundary_role: Default::default(),
+            boundary_role: LoopBoundaryRole::default(),
             coedges: coedge_ids[4..8].to_vec(),
             vertex_uses: Vec::new(),
         });
@@ -5431,7 +5468,7 @@ mod tests {
             ir.model.loops.push(Loop {
                 id: loop_ids[face].clone(),
                 face: face_ids[face].clone(),
-                boundary_role: Default::default(),
+                boundary_role: LoopBoundaryRole::default(),
                 coedges: coedge_ids[start..start + 3].to_vec(),
                 vertex_uses: Vec::new(),
             });
@@ -5458,13 +5495,13 @@ mod tests {
                 });
             }
         }
-        for edge in 0..6 {
+        for edge_id in &edge_ids {
             let uses = ir
                 .model
                 .coedges
                 .iter()
                 .enumerate()
-                .filter(|(_, coedge)| coedge.edge == edge_ids[edge])
+                .filter(|(_, coedge)| coedge.edge == *edge_id)
                 .map(|(index, _)| index)
                 .collect::<Vec<_>>();
             ir.model.coedges[uses[0]].radial_next = coedge_ids[uses[1]].clone();

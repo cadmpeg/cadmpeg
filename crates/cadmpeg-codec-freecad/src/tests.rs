@@ -1,5 +1,10 @@
 use std::io::{Cursor, Write};
 
+use cadmpeg_ir::features::{
+    Angle, BooleanOp, Extent, ExtrusionDirectionSource, FeatureDefinition, InnerWireTaper, Length,
+    PathRef, ShellJoin, ShellMode, SweepOrientation, SweepTransformation, SweepTransition,
+};
+use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind as Kind;
 use cadmpeg_ir::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 use zip::write::SimpleFileOptions;
 
@@ -862,7 +867,6 @@ fn transfers_non_default_revolution_branches() {
             .unwrap_or_else(|| panic!("missing {name}"))
             .definition
     };
-    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition};
     assert!(matches!(
         definition("ToFirst"),
         FeatureDefinition::Revolve {
@@ -1161,7 +1165,6 @@ fn transfers_part_construction_geometry_features() {
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
     };
-    use cadmpeg_ir::features::FeatureDefinition;
     assert!(
         matches!(feature("Vertex").definition, FeatureDefinition::PointGeometry { position } if position == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
@@ -1798,9 +1801,6 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
             .unwrap_or_else(|| panic!("missing {name}"))
             .definition
     };
-    use cadmpeg_ir::features::{
-        FeatureDefinition, SweepOrientation, SweepTransformation, SweepTransition,
-    };
     assert!(matches!(
         definition("Fixed"),
         FeatureDefinition::Sweep {
@@ -2049,7 +2049,7 @@ fn distinguishes_stored_base_and_application_owned_features() {
         cadmpeg_ir::features::FeatureDefinition::DerivedGeometry { source }
             if source.0 == "fcstd:design:feature#Source"
     ));
-    assert_eq!(base.dependencies, [source.id.clone()]);
+    assert_eq!(base.dependencies, std::slice::from_ref(&source.id));
     assert!(result.ir.model.features.iter().all(|feature| {
         !matches!(
             feature.name.as_deref(),
@@ -2733,7 +2733,6 @@ fn transfers_part_thickness_and_shape_offset_construction() {
             .unwrap_or_else(|| panic!("missing {name}"))
             .definition
     };
-    use cadmpeg_ir::features::{FeatureDefinition, Length, ShellJoin, ShellMode};
     assert!(matches!(
         definition("Thickness"),
         FeatureDefinition::Shell {
@@ -4108,7 +4107,6 @@ fn transfers_remaining_semantic_annotation_families_and_assets() {
             &DecodeOptions::default(),
         )
         .expect("annotation families");
-    use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind as Kind;
     let kinds = result
         .ir
         .model
@@ -4216,10 +4214,6 @@ fn transfers_non_default_extrusion_termination_branches() {
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
             .definition
-    };
-    use cadmpeg_ir::features::{
-        Angle, BooleanOp, Extent, ExtrusionDirectionSource, FeatureDefinition, InnerWireTaper,
-        PathRef,
     };
     assert!(matches!(
         definition("ToLast"),
@@ -4396,9 +4390,6 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
             .definition
-    };
-    use cadmpeg_ir::features::{
-        Angle, Extent, ExtrusionDirectionSource, FeatureDefinition, Length, PathRef,
     };
     assert!(matches!(
         definition("Mixed"),
@@ -5159,15 +5150,19 @@ Co 1001000 +2 0 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("persistent element map");
-    let namespace = result.ir.native.namespace("fcstd").unwrap();
+    let namespace = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("required invariant");
     let tables = namespace
         .arena_as::<crate::native::StringTableRecord>("string_tables")
-        .unwrap();
+        .expect("required invariant");
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].entries[0].string_id, 10);
     let maps = namespace
         .arena_as::<crate::native::ElementMapRecord>("element_maps")
-        .unwrap();
+        .expect("required invariant");
     assert_eq!(maps.len(), 1);
     assert_eq!(maps[0].hasher_index, Some(0));
     let groups = &maps[0].maps[0].groups;
@@ -5388,14 +5383,14 @@ Co 1001000 +2 1 +2 3 *
                 .vertices
                 .iter()
                 .find(|candidate| &candidate.id == vertex)
-                .unwrap();
+                .expect("required invariant");
             result
                 .ir
                 .model
                 .points
                 .iter()
                 .find(|point| point.id == vertex.point)
-                .unwrap()
+                .expect("required invariant")
                 .position
         })
         .collect::<Vec<_>>();
@@ -5413,7 +5408,7 @@ Co 1001000 +2 1 +2 3 *
         .surfaces
         .iter()
         .find(|surface| surface.id == face.surface)
-        .unwrap();
+        .expect("required invariant");
     let cadmpeg_ir::geometry::SurfaceGeometry::Transformed { basis, transform } = &surface.geometry
     else {
         panic!("located face must retain its exact transformed basis");
@@ -5424,7 +5419,8 @@ Co 1001000 +2 1 +2 3 *
     ));
     assert_eq!(transform.rows[0][0], -2.0);
     assert_eq!(transform.rows[1][1], 2.0);
-    let origin = cadmpeg_ir::eval::surface_point(&surface.geometry, 0.0, 0.0).unwrap();
+    let origin =
+        cadmpeg_ir::eval::surface_point(&surface.geometry, 0.0, 0.0).expect("required invariant");
     assert_eq!([origin.x, origin.y], [10.0, 5.0]);
     for edge in &result.ir.model.edges {
         let curve = result
@@ -5433,10 +5429,12 @@ Co 1001000 +2 1 +2 3 *
             .curves
             .iter()
             .find(|curve| Some(&curve.id) == edge.curve.as_ref())
-            .unwrap();
+            .expect("required invariant");
         let range = edge.param_range.expect("located edge parameter range");
-        let start = cadmpeg_ir::eval::curve_point(&curve.geometry, range[0]).unwrap();
-        let end = cadmpeg_ir::eval::curve_point(&curve.geometry, range[1]).unwrap();
+        let start =
+            cadmpeg_ir::eval::curve_point(&curve.geometry, range[0]).expect("required invariant");
+        let end =
+            cadmpeg_ir::eval::curve_point(&curve.geometry, range[1]).expect("required invariant");
         assert_eq!((start.x - end.x).abs(), 2.0);
     }
     let report = cadmpeg_ir::validate(&result.ir, Vec::new());

@@ -715,7 +715,7 @@ mod tests {
         let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
             decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
         })
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(morph.captive_ids.len(), 1);
         assert_eq!(morph.tolerance, 0.1);
         assert!(morph.quick_preview);
@@ -762,7 +762,7 @@ mod tests {
         let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
             decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
         })
-        .unwrap();
+        .expect("required invariant");
         let Control::Curve { start, end } = &morph.control else {
             panic!("expected curve morph");
         };

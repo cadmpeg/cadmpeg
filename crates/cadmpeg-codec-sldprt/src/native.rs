@@ -1224,30 +1224,6 @@ impl SldprtNative {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{SldprtNative, SLDPRT_NATIVE_VERSION};
-
-    #[test]
-    fn version_twelve_adds_generated_surface_identity_arena() {
-        let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        SldprtNative::default().store(&mut namespace).unwrap();
-        namespace.version = 12;
-        namespace
-            .arenas
-            .remove("feature_input_generated_surface_identities");
-
-        let migrated = SldprtNative::load(&namespace).unwrap();
-        let mut current = cadmpeg_ir::NativeNamespace::default();
-        migrated.store(&mut current).unwrap();
-
-        assert_eq!(current.version, SLDPRT_NATIVE_VERSION);
-        assert!(current
-            .arenas
-            .contains_key("feature_input_generated_surface_identities"));
-    }
-}
-
 fn relation_instance_shape_valid(
     record: &FeatureInputRelationInstance,
     lane: &FeatureInputLane,
@@ -1327,5 +1303,31 @@ fn relation_instance_shape_valid(
                 && *position > operand_scalars.last().expect("nonempty operand scalars").0
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SldprtNative, SLDPRT_NATIVE_VERSION};
+
+    #[test]
+    fn version_twelve_adds_generated_surface_identity_arena() {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        SldprtNative::default()
+            .store(&mut namespace)
+            .expect("required invariant");
+        namespace.version = 12;
+        namespace
+            .arenas
+            .remove("feature_input_generated_surface_identities");
+
+        let migrated = SldprtNative::load(&namespace).expect("required invariant");
+        let mut current = cadmpeg_ir::NativeNamespace::default();
+        migrated.store(&mut current).expect("required invariant");
+
+        assert_eq!(current.version, SLDPRT_NATIVE_VERSION);
+        assert!(current
+            .arenas
+            .contains_key("feature_input_generated_surface_identities"));
     }
 }

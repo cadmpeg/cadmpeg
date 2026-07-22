@@ -468,7 +468,7 @@ mod tests {
                 0.0, 0.0, 0.0067, 0.0, 0.0, -1.0, 0.0015, root_half, root_half, -1.0, 0.0, 0.0,
             ],
         );
-        let carrier = parse_carrier(&bytes, 0).unwrap();
+        let carrier = parse_carrier(&bytes, 0).expect("required invariant");
         let CarrierGeometry::Surface(SurfaceGeometry::Cone {
             origin,
             axis,
@@ -497,7 +497,7 @@ mod tests {
                 0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, 0.0022, 0.0002, -1.0, 0.0, 0.0,
             ],
         );
-        let carrier = parse_carrier(&bytes, 0).unwrap();
+        let carrier = parse_carrier(&bytes, 0).expect("required invariant");
         let CarrierGeometry::Surface(SurfaceGeometry::Torus {
             center,
             axis,

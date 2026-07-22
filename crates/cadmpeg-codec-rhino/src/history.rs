@@ -1618,7 +1618,8 @@ mod tests {
             extended_geometry_json(expand, &geometry, ArchiveVersion::V8, None, 10.0)
         })
         .expect("cage semantics");
-        let semantic: serde_json::Value = serde_json::from_str(&semantic).unwrap();
+        let semantic: serde_json::Value =
+            serde_json::from_str(&semantic).expect("required invariant");
         assert_eq!(semantic["kind"], "nurbs_cage");
         assert_eq!(semantic["orders"], serde_json::json!([2, 2, 2]));
         assert_eq!(
@@ -1637,7 +1638,7 @@ mod tests {
         })
         .expect("empty SubD semantics");
         assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&semantic).unwrap(),
+            serde_json::from_str::<serde_json::Value>(&semantic).expect("required invariant"),
             serde_json::json!({"kind": "subd", "empty": true})
         );
 
@@ -1651,10 +1652,29 @@ mod tests {
             extended_geometry_json(expand, &geometry, ArchiveVersion::V8, None, 10.0)
         })
         .expect("Brep topology semantics");
-        let semantic: serde_json::Value = serde_json::from_str(&semantic).unwrap();
+        let semantic: serde_json::Value =
+            serde_json::from_str(&semantic).expect("required invariant");
         assert_eq!(semantic["kind"], "brep");
-        assert_eq!(semantic["bodies"].as_array().unwrap().len(), 1);
-        assert_eq!(semantic["faces"].as_array().unwrap().len(), 1);
-        assert_eq!(semantic["vertices"].as_array().unwrap().len(), 3);
+        assert_eq!(
+            semantic["bodies"]
+                .as_array()
+                .expect("required invariant")
+                .len(),
+            1
+        );
+        assert_eq!(
+            semantic["faces"]
+                .as_array()
+                .expect("required invariant")
+                .len(),
+            1
+        );
+        assert_eq!(
+            semantic["vertices"]
+                .as_array()
+                .expect("required invariant")
+                .len(),
+            3
+        );
     }
 }

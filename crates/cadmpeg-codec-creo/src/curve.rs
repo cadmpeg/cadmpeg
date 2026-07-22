@@ -3675,11 +3675,7 @@ fn unique_find_in(data: &[u8], needle: &[u8], from: usize, end: usize) -> Option
 mod tests {
     use super::*;
 
-    fn number(value: f64) -> Option<CurveExpressionValue> {
-        Some(CurveExpressionValue::Number(value))
-    }
-
-    fn numeric_value(value: &Option<CurveExpressionValue>) -> f64 {
+    fn numeric_value(value: Option<&CurveExpressionValue>) -> f64 {
         let Some(CurveExpressionValue::Number(value)) = value else {
             panic!("expected evaluated numeric value")
         };
@@ -3707,7 +3703,7 @@ mod tests {
     fn typed_parameter_rows_require_unique_identity_and_suffix_boundary() {
         let unique = parameter_record(7, CurveSuffixStatus::Unique);
         assert_eq!(
-            uniquely_bounded_parameter_records(&[unique.clone()]).len(),
+            uniquely_bounded_parameter_records(std::slice::from_ref(&unique)).len(),
             1
         );
 
@@ -3804,14 +3800,20 @@ mod tests {
         assert_eq!(records[0].assignments[0].name, "r");
         assert_eq!(records[0].assignments[0].expression, "5");
         assert!(records[0].assignments[0].dependencies.is_empty());
-        assert_eq!(records[0].assignments[0].value, number(5.0));
+        assert_eq!(
+            records[0].assignments[0].value,
+            Some(CurveExpressionValue::Number(5.0))
+        );
         assert_eq!(records[0].assignments[1].name, "theta");
         assert_eq!(records[0].assignments[1].expression, "t*360");
         assert_eq!(records[0].assignments[1].dependencies, ["t"]);
         assert_eq!(records[0].assignments[1].value, None);
         assert_eq!(records[0].assignments[2].value, None);
         assert_eq!(records[0].assignments[3].dependencies, ["r"]);
-        assert_eq!(records[0].assignments[3].value, number(11.0));
+        assert_eq!(
+            records[0].assignments[3].value,
+            Some(CurveExpressionValue::Number(11.0))
+        );
     }
 
     #[test]
@@ -3832,7 +3834,10 @@ mod tests {
         assert_eq!(assignments[0].name, "seen");
         assert_eq!(assignments[0].value, None);
         assert_eq!(assignments[1].name, "flag");
-        assert_eq!(assignments[1].value, number(1.0));
+        assert_eq!(
+            assignments[1].value,
+            Some(CurveExpressionValue::Number(1.0))
+        );
     }
 
     #[test]
@@ -3877,15 +3882,21 @@ mod tests {
         let assignments = &records[0].assignments;
 
         assert!(assignments[0].dependencies.is_empty());
-        assert!((numeric_value(&assignments[0].value) - 0.5).abs() < 1e-12);
+        assert!((numeric_value(assignments[0].value.as_ref()) - 0.5).abs() < 1e-12);
         assert_eq!(assignments[1].dependencies, ["a"]);
-        assert!((numeric_value(&assignments[1].value) - 3.25).abs() < 1e-12);
+        assert!((numeric_value(assignments[1].value.as_ref()) - 3.25).abs() < 1e-12);
         assert!(assignments[2].dependencies.is_empty());
-        assert_eq!(assignments[2].value, number(11.0));
+        assert_eq!(
+            assignments[2].value,
+            Some(CurveExpressionValue::Number(11.0))
+        );
         assert_eq!(assignments[3].dependencies, ["custom", "a"]);
         assert_eq!(assignments[3].value, None);
         assert!(assignments[4].dependencies.is_empty());
-        assert_eq!(assignments[4].value, number(1000.0));
+        assert_eq!(
+            assignments[4].value,
+            Some(CurveExpressionValue::Number(1000.0))
+        );
 
         let values = BTreeMap::new();
         let cases = [
@@ -4039,18 +4050,42 @@ mod tests {
             assignments[1].value,
             Some(CurveExpressionValue::String("steel-2".into()))
         );
-        assert_eq!(assignments[2].value, number(3.0));
+        assert_eq!(
+            assignments[2].value,
+            Some(CurveExpressionValue::Number(3.0))
+        );
         assert_eq!(
             assignments[3].value,
             Some(CurveExpressionValue::String("tee".into()))
         );
-        assert_eq!(assignments[4].value, number(3.0));
-        assert_eq!(assignments[5].value, number(1.0));
-        assert_eq!(assignments[6].value, number(1.0));
-        assert_eq!(assignments[7].value, number(1.0));
-        assert_eq!(assignments[8].value, number(1.0));
-        assert_eq!(assignments[9].value, number(1.0));
-        assert_eq!(assignments[10].value, number(0.0));
+        assert_eq!(
+            assignments[4].value,
+            Some(CurveExpressionValue::Number(3.0))
+        );
+        assert_eq!(
+            assignments[5].value,
+            Some(CurveExpressionValue::Number(1.0))
+        );
+        assert_eq!(
+            assignments[6].value,
+            Some(CurveExpressionValue::Number(1.0))
+        );
+        assert_eq!(
+            assignments[7].value,
+            Some(CurveExpressionValue::Number(1.0))
+        );
+        assert_eq!(
+            assignments[8].value,
+            Some(CurveExpressionValue::Number(1.0))
+        );
+        assert_eq!(
+            assignments[9].value,
+            Some(CurveExpressionValue::Number(1.0))
+        );
+        assert_eq!(
+            assignments[10].value,
+            Some(CurveExpressionValue::Number(0.0))
+        );
         assert_eq!(
             assignments[11].value,
             Some(CurveExpressionValue::String(String::new()))
@@ -4447,15 +4482,24 @@ mod tests {
         assert_eq!(assignments.len(), 5);
         assert!(assignments[0].dependencies.is_empty());
         assert_eq!(assignments[0].activation, CurveExpressionActivation::Active);
-        assert_eq!(assignments[0].value, number(1.0));
+        assert_eq!(
+            assignments[0].value,
+            Some(CurveExpressionValue::Number(1.0))
+        );
         assert_eq!(
             assignments[1].activation,
             CurveExpressionActivation::Inactive
         );
         assert_eq!(assignments[1].value, None);
-        assert_eq!(assignments[2].value, number(5.0));
+        assert_eq!(
+            assignments[2].value,
+            Some(CurveExpressionValue::Number(5.0))
+        );
         assert_eq!(assignments[3].activation, CurveExpressionActivation::Active);
-        assert_eq!(assignments[3].value, number(3.0));
+        assert_eq!(
+            assignments[3].value,
+            Some(CurveExpressionValue::Number(3.0))
+        );
         assert_eq!(
             assignments[4].activation,
             CurveExpressionActivation::Conditional
@@ -4490,14 +4534,14 @@ mod tests {
             offset: 0,
         }];
         let mut external_symbols = ExternalRelationSymbols::default();
-        external_symbols.observe("D42", number(2.0));
-        external_symbols.observe("d42", number(2.0));
+        external_symbols.observe("D42", Some(CurveExpressionValue::Number(2.0)));
+        external_symbols.observe("d42", Some(CurveExpressionValue::Number(2.0)));
         assert_eq!(
             evaluate_expression_program(&lines, None, &external_symbols)[0].value,
-            number(3.0)
+            Some(CurveExpressionValue::Number(3.0))
         );
 
-        external_symbols.observe("d42", number(4.0));
+        external_symbols.observe("d42", Some(CurveExpressionValue::Number(4.0)));
         assert_eq!(
             evaluate_expression_program(&lines, None, &external_symbols)[0].value,
             None
@@ -4512,10 +4556,16 @@ mod tests {
         let assignments = &expression_records(payload)[0].assignments;
 
         assert_eq!(assignments[1].dependencies, ["radius"]);
-        assert_eq!(assignments[1].value, number(5.0 + std::f64::consts::PI));
+        assert_eq!(
+            assignments[1].value,
+            Some(CurveExpressionValue::Number(5.0 + std::f64::consts::PI))
+        );
         assert_eq!(assignments[2].dependencies, ["d1:2", "PARAM:FID_20"]);
         assert_eq!(assignments[2].value, None);
-        assert_eq!(assignments[3].value, number(7.0));
+        assert_eq!(
+            assignments[3].value,
+            Some(CurveExpressionValue::Number(7.0))
+        );
         assert_eq!(
             evaluate_expression("pi", &BTreeMap::new()),
             Some(std::f64::consts::PI)
@@ -4533,22 +4583,40 @@ mod tests {
             evaluate_expression_program(&record.lines, None, &ExternalRelationSymbols::default());
 
         assert_eq!(assignments.len(), 8);
-        assert_eq!(assignments[0].value, number(0.0));
-        assert_eq!(assignments[1].value, number(5.0));
+        assert_eq!(
+            assignments[0].value,
+            Some(CurveExpressionValue::Number(0.0))
+        );
+        assert_eq!(
+            assignments[1].value,
+            Some(CurveExpressionValue::Number(5.0))
+        );
         assert_eq!(
             assignments[2].activation,
             CurveExpressionActivation::Inactive
         );
         assert_eq!(assignments[2].value, None);
-        assert_eq!(assignments[3].value, number(6.0));
+        assert_eq!(
+            assignments[3].value,
+            Some(CurveExpressionValue::Number(6.0))
+        );
         assert_eq!(
             assignments[4].activation,
             CurveExpressionActivation::Inactive
         );
-        assert_eq!(assignments[5].value, number(5.0));
-        assert_eq!(assignments[6].value, number(5.0));
+        assert_eq!(
+            assignments[5].value,
+            Some(CurveExpressionValue::Number(5.0))
+        );
+        assert_eq!(
+            assignments[6].value,
+            Some(CurveExpressionValue::Number(5.0))
+        );
         assert_eq!(assignments[7].name, "iffy");
-        assert_eq!(assignments[7].value, number(9.0));
+        assert_eq!(
+            assignments[7].value,
+            Some(CurveExpressionValue::Number(9.0))
+        );
     }
 
     #[test]
@@ -4564,7 +4632,7 @@ mod tests {
             .iter()
             .all(|assignment| assignment.value.is_none()));
         let mut symbols = ExternalRelationSymbols::default();
-        symbols.observe("external", number(5.0));
+        symbols.observe("external", Some(CurveExpressionValue::Number(5.0)));
         reevaluate_expression_records(&mut records, None, &symbols);
         assert!(records[0]
             .assignments
@@ -4616,8 +4684,14 @@ mod tests {
         let records = expression_records(payload);
         let assignments = &records[0].assignments;
 
-        assert_eq!(assignments[0].value, number(5.0));
-        assert_eq!(assignments[1].value, number(6.0));
+        assert_eq!(
+            assignments[0].value,
+            Some(CurveExpressionValue::Number(5.0))
+        );
+        assert_eq!(
+            assignments[1].value,
+            Some(CurveExpressionValue::Number(6.0))
+        );
         assert_eq!(assignments[2].value, None);
         assert_eq!(assignments[3].value, None);
     }

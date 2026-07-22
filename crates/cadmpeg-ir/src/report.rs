@@ -470,7 +470,7 @@ mod tests {
             message: "topology graph not transferred".to_owned(),
             provenance: None,
         };
-        let value: serde_json::Value = serde_json::to_value(&note).unwrap();
+        let value: serde_json::Value = serde_json::to_value(&note).expect("required invariant");
         assert_eq!(value["code"], "topology_not_transferred");
         assert_eq!(value["code"], LossCode::TopologyNotTransferred.as_str());
     }

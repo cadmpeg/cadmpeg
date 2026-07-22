@@ -830,7 +830,10 @@ pub(crate) mod tests {
         }
         push_i32(&mut payload, point_count as i32);
         for value in 0..point_count {
-            push_f64(&mut payload, f64::from(u32::try_from(value).unwrap()));
+            push_f64(
+                &mut payload,
+                f64::from(u32::try_from(value).expect("required invariant")),
+            );
         }
         push_i32(&mut payload, 2);
         let wire_uuid = [
@@ -1046,7 +1049,7 @@ pub(crate) mod tests {
                 1.0,
                 &mut crate::mesh::MeshBudget::new(),
             )
-            .unwrap();
+            .expect("required invariant");
             assert_eq!(decoded.boundaries.len(), 1);
             assert_eq!(decoded.laterals[0].v_knots, vec![4.0, 4.0, 9.0, 9.0]);
             assert_eq!(
@@ -1073,7 +1076,7 @@ pub(crate) mod tests {
             25.4,
             &mut crate::mesh::MeshBudget::new(),
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(decoded.cap_origins[0], Point3::new(254.0, 508.0, 825.5));
         assert_eq!(decoded.cap_origins[1], Point3::new(254.0, 508.0, 952.5));
         let first = decoded.boundaries[0].start_nurbs.control_points[1];
@@ -1093,7 +1096,7 @@ pub(crate) mod tests {
             1.0,
             &mut crate::mesh::MeshBudget::new(),
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(decoded.caps, [false, false]);
         assert_eq!(decoded.laterals.len(), 1);
         let capped = payload_with_profile(2, [true, false], None, open);
@@ -1111,15 +1114,15 @@ pub(crate) mod tests {
     #[test]
     fn orientation_is_exact_only_for_closed_nondegenerate_supported_profiles() {
         assert_eq!(
-            exact_orientation(&decoded_polygon(false, true), 0).unwrap(),
+            exact_orientation(&decoded_polygon(false, true), 0).expect("required invariant"),
             1
         );
         assert_eq!(
-            exact_orientation(&decoded_polygon(true, true), 0).unwrap(),
+            exact_orientation(&decoded_polygon(true, true), 0).expect("required invariant"),
             -1
         );
         assert_eq!(
-            exact_orientation(&decoded_polygon(false, false), 0).unwrap(),
+            exact_orientation(&decoded_polygon(false, false), 0).expect("required invariant"),
             0
         );
         let mut off_plane = decoded_polygon(false, true);
@@ -1142,7 +1145,12 @@ pub(crate) mod tests {
             }),
             warnings: Vec::new(),
         };
-        assert_eq!(split_profiles(profile.clone(), 2, 0).unwrap().len(), 2);
+        assert_eq!(
+            split_profiles(profile.clone(), 2, 0)
+                .expect("required invariant")
+                .len(),
+            2
+        );
         assert!(split_profiles(profile, 3, 0).is_err());
     }
 
@@ -1224,7 +1232,7 @@ pub(crate) mod tests {
             None,
             0,
         )
-        .unwrap();
+        .expect("required invariant");
         let mitered = cap_frame(
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -1232,7 +1240,7 @@ pub(crate) mod tests {
             Some(Vector3::new(0.0, 0.6, 0.8)),
             0,
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(plain.2, Vector3::new(0.0, 0.0, 1.0));
         assert!((mitered.2.y - 0.6).abs() < 1.0e-12);
         assert!((mitered.2.z - 0.8).abs() < 1.0e-12);
@@ -1250,7 +1258,7 @@ pub(crate) mod tests {
             1.0,
             &mut crate::mesh::MeshBudget::new(),
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(decoded.laterals.len(), 1);
         assert!(decoded.meshes.is_empty());
         assert_eq!(decoded.warnings.len(), 1);
@@ -1267,7 +1275,7 @@ pub(crate) mod tests {
             1.0,
             &mut crate::mesh::MeshBudget::new(),
         )
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(decoded.laterals.len(), 1);
         assert_eq!(decoded.meshes.len(), 1);
         assert!(decoded.warnings.is_empty());
@@ -1278,7 +1286,7 @@ pub(crate) mod tests {
         let mut bytes = payload(2, [false, false], None);
         let crc_offset = bytes.len() - 4;
         bytes.insert(crc_offset, 0xff);
-        let body_len = i64::from_le_bytes(bytes[4..12].try_into().unwrap()) + 1;
+        let body_len = i64::from_le_bytes(bytes[4..12].try_into().expect("required invariant")) + 1;
         bytes[4..12].copy_from_slice(&body_len.to_le_bytes());
         let body = &bytes[12..bytes.len() - 4];
         let crc = crc32fast::hash(body);

@@ -189,7 +189,7 @@ mod tests {
                 .per_arena
                 .iter()
                 .find(|a| a.kind == "points")
-                .unwrap()
+                .expect("required invariant")
                 .modified[0]
                 .fields,
             ["position"]
@@ -199,7 +199,7 @@ mod tests {
                 .per_arena
                 .iter()
                 .find(|a| a.kind == "loops")
-                .unwrap()
+                .expect("required invariant")
                 .removed
                 .len(),
             1
@@ -209,7 +209,7 @@ mod tests {
                 .per_arena
                 .iter()
                 .find(|a| a.kind == "coedges")
-                .unwrap()
+                .expect("required invariant")
                 .removed
                 .len(),
             1

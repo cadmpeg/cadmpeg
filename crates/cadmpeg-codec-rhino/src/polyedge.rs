@@ -326,7 +326,7 @@ mod tests {
         let decoded = crate::decode::with_expand_bytes(&payload, |expand| {
             decode(expand, 0..payload.len(), ArchiveVersion::V8)
         })
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(decoded.parameters, [0.0, 10.0]);
         assert_eq!(decoded.segments[0].component, [2, 17]);
         assert_eq!(decoded.segments[0].edge_domain, [0.0, 4.0]);

@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn decodes_named_standard_plane_from_zero_slots() {
         let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x18\x18\x46\x08\0\0\0\0\0\0\x18";
-        let plane = named_plane(data).unwrap();
+        let plane = named_plane(data).expect("required invariant");
         assert_eq!(plane.id, 2);
         assert_eq!(plane.feature_id, 1);
         assert_eq!(plane.normal, [1.0, 0.0, 0.0]);

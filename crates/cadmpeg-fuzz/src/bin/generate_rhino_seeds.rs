@@ -22,24 +22,24 @@ fn main() {
 
 fn replace(directory: &str, seeds: &[(&str, Vec<u8>)]) {
     let path = Path::new(directory);
-    fs::create_dir_all(path).unwrap();
-    for entry in fs::read_dir(path).unwrap() {
-        let entry = entry.unwrap().path();
+    fs::create_dir_all(path).expect("required invariant");
+    for entry in fs::read_dir(path).expect("required invariant") {
+        let entry = entry.expect("required invariant").path();
         if entry.is_dir() {
-            fs::remove_dir_all(entry).unwrap();
+            fs::remove_dir_all(entry).expect("required invariant");
         } else {
-            fs::remove_file(entry).unwrap();
+            fs::remove_file(entry).expect("required invariant");
         }
     }
     for (name, bytes) in seeds {
-        fs::write(path.join(name), bytes).unwrap();
+        fs::write(path.join(name), bytes).expect("required invariant");
     }
 }
 
 fn write_seed(directory: &str, name: &str, bytes: &[u8]) {
     let path = Path::new(directory);
-    fs::create_dir_all(path).unwrap();
-    fs::write(path.join(name), bytes).unwrap();
+    fs::create_dir_all(path).expect("required invariant");
+    fs::write(path.join(name), bytes).expect("required invariant");
 }
 
 fn header(version: u64) -> Vec<u8> {
@@ -127,7 +127,7 @@ fn generate_chunk_seeds() {
     let long = long_chunk(50, 0x1234, b"body");
     let crc = crc_chunk(50, 0x1234, b"body");
     let mut mismatch = crc.clone();
-    *mismatch.last_mut().unwrap() ^= 0xff;
+    *mismatch.last_mut().expect("required invariant") ^= 0xff;
     replace(
         "seeds/rhino_chunks",
         &[
@@ -275,8 +275,8 @@ fn mesh_buffer(raw: &[u8], method: u8) -> Vec<u8> {
         raw.to_vec()
     } else {
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-        encoder.write_all(raw).unwrap();
-        encoder.finish().unwrap()
+        encoder.write_all(raw).expect("required invariant");
+        encoder.finish().expect("required invariant")
     };
     let mut bytes = (raw.len() as u16).to_le_bytes().to_vec();
     bytes.extend((raw.len() as u32).to_le_bytes());

@@ -297,12 +297,12 @@ mod tests {
         let cage = crate::decode::with_expand_bytes(&bytes, |expand| {
             decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
         })
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(cage.orders, [2, 2, 2]);
         assert_eq!(cage.counts, [2, 2, 2]);
         assert_eq!(cage.knots[2], [0.0, 3.0]);
         assert_eq!(cage.control_points[7], [70.0, 0.0, 0.0]);
-        assert_eq!(cage.weights.as_ref().unwrap()[7], 2.0);
+        assert_eq!(cage.weights.as_ref().expect("required invariant")[7], 2.0);
     }
 
     #[test]

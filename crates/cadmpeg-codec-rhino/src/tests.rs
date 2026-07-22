@@ -159,7 +159,7 @@ fn parses_exact_header_and_scope() {
         Err(FramingError::InvalidHeader)
     ));
     assert!(parse_header(&header("1234567")).is_ok());
-    assert!(matches!(parse_header(&header("12345678")), Ok(_)));
+    assert!(parse_header(&header("12345678")).is_ok());
 }
 
 #[test]
@@ -167,20 +167,23 @@ fn parses_widths_short_long_and_bounds() {
     let short = (TCODE_SHORT | 7).to_le_bytes();
     let mut bytes = short.to_vec();
     bytes.extend(42_i32.to_le_bytes());
-    let parsed = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).unwrap();
+    let parsed =
+        chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).expect("required invariant");
     assert!(parsed.short);
     assert_eq!(parsed.value, 42);
     assert_eq!(parsed.next_offset, 8);
 
     let bytes = long_chunk(ArchiveVersion::V4, 9, &[1, 2, 3]);
-    let parsed = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).unwrap();
+    let parsed =
+        chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).expect("required invariant");
     assert_eq!(parsed.body, 8..11);
     assert_eq!(parsed.header_start, 0);
     assert_eq!(parsed.range(), 0..11);
     assert_eq!(parsed.next_offset, 11);
 
     let bytes = long_chunk(ArchiveVersion::V5, 9, &[1, 2, 3]);
-    let parsed = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).unwrap();
+    let parsed =
+        chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).expect("required invariant");
     assert_eq!(parsed.body, 12..15);
     assert_eq!(parsed.header_start, 0);
     assert_eq!(parsed.range(), 0..15);
@@ -214,9 +217,10 @@ fn verifies_crc_vectors_and_recoverable_mismatch() {
     bytes.extend(((body.len() + 4) as i32).to_le_bytes());
     bytes.extend(body);
     bytes.extend(crc32fast::hash(body).to_le_bytes());
-    let chunk = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V2, false).unwrap();
+    let chunk =
+        chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V2, false).expect("required invariant");
     assert_eq!(verify_checksum(&bytes, &chunk), Ok(ChecksumStatus::Valid));
-    *bytes.last_mut().unwrap() ^= 1;
+    *bytes.last_mut().expect("required invariant") ^= 1;
     assert!(matches!(
         verify_checksum(&bytes, &chunk),
         Ok(ChecksumStatus::Mismatch { .. })
@@ -280,7 +284,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
         ArchiveVersion::V4,
         &mut Vec::new(),
     )
-    .unwrap();
+    .expect("required invariant");
     assert!(!hidden.visible);
 
     let definition = fixed_attributes(1, 0xf3, None);
@@ -291,7 +295,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
         ArchiveVersion::V4,
         &mut Vec::new(),
     )
-    .unwrap();
+    .expect("required invariant");
     assert_eq!(definition.object_mode & 0x0f, 3);
 }
 
@@ -305,7 +309,7 @@ fn fixed_explicit_visibility_overrides_hidden_mode_default() {
         ArchiveVersion::V4,
         &mut Vec::new(),
     )
-    .unwrap();
+    .expect("required invariant");
     assert!(parsed.visible);
 }
 
@@ -445,7 +449,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
         ArchiveVersion::V8,
         &mut Vec::new(),
     )
-    .unwrap();
+    .expect("required invariant");
     assert_eq!(parsed.name, "N");
     assert_eq!(parsed.url, "U");
     assert_eq!(parsed.object_mode & 0x0f, 3);
@@ -569,20 +573,40 @@ fn identity_resolution_defers_material_and_parent_colors() {
         ArchiveVersion::V4,
         &mut Vec::new(),
     )
-    .unwrap();
+    .expect("required invariant");
     attributes.layer_index = -1;
     attributes.color_source = 2;
     let mut material = vec![descriptor(attributes.clone(), 10)];
     let mut warnings = Vec::new();
     super::objects::resolve_identities(&mut material, &metadata, &mut warnings);
-    assert_eq!(material[0].identity.as_ref().unwrap().effective_color, None);
+    assert_eq!(
+        material[0]
+            .identity
+            .as_ref()
+            .expect("required invariant")
+            .effective_color,
+        None
+    );
 
     attributes.color_source = 3;
     attributes.object_mode = 0xf3;
     let mut parent = vec![descriptor(attributes, 20)];
     super::objects::resolve_identities(&mut parent, &metadata, &mut warnings);
-    assert_eq!(parent[0].identity.as_ref().unwrap().effective_color, None);
-    assert!(parent[0].identity.as_ref().unwrap().definition_member);
+    assert_eq!(
+        parent[0]
+            .identity
+            .as_ref()
+            .expect("required invariant")
+            .effective_color,
+        None
+    );
+    assert!(
+        parent[0]
+            .identity
+            .as_ref()
+            .expect("required invariant")
+            .definition_member
+    );
 }
 
 #[test]
@@ -595,7 +619,7 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         ArchiveVersion::V4,
         &mut Vec::new(),
     )
-    .unwrap();
+    .expect("required invariant");
     let mut duplicate = attributes.clone();
     duplicate.object_id = Uuid::from_wire([1; 16]);
     let mut duplicate_again = duplicate.clone();
@@ -613,8 +637,16 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         &mut warnings,
     );
     assert_ne!(
-        objects[0].identity.as_ref().unwrap().source_id,
-        objects[2].identity.as_ref().unwrap().source_id
+        objects[0]
+            .identity
+            .as_ref()
+            .expect("required invariant")
+            .source_id,
+        objects[2]
+            .identity
+            .as_ref()
+            .expect("required invariant")
+            .source_id
     );
     assert!(warnings
         .iter()
@@ -623,7 +655,11 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         .iter()
         .any(|warning| warning.contains("duplicate object UUID")));
     assert_eq!(
-        objects[0].identity.as_ref().unwrap().class_uuid,
+        objects[0]
+            .identity
+            .as_ref()
+            .expect("required invariant")
+            .class_uuid,
         Uuid::from_wire([9; 16])
     );
 }
@@ -656,8 +692,11 @@ fn attribute_userdata_recovers_after_malformed_bounded_record() {
 fn keeps_packed_and_anonymous_versions_distinct() {
     assert_eq!(packed_version(0x21), (2, 1));
     let bytes = [2, 0, 0, 0, 1, 0, 0, 0];
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-    assert_eq!(anonymous_version(&mut reader).unwrap(), (2, 1));
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+    assert_eq!(
+        anonymous_version(&mut reader).expect("required invariant"),
+        (2, 1)
+    );
 }
 
 #[test]
@@ -680,8 +719,8 @@ fn validates_eof_width_size_and_truncation() {
         bytes[marker_start..].copy_from_slice(&replacement);
         assert_eq!(
             parse_eof(&bytes, marker_start, archive)
-                .unwrap()
-                .unwrap()
+                .expect("required invariant")
+                .expect("required invariant")
                 .file_size,
             size as u64
         );
@@ -700,7 +739,10 @@ fn validates_eof_width_size_and_truncation() {
         assert!(parse_eof(&bytes[..bytes.len() - 1], marker_start, archive).is_err());
     }
     let bytes = vec![0; 32];
-    assert_eq!(parse_eof(&bytes, 32, ArchiveVersion::V1).unwrap(), None);
+    assert_eq!(
+        parse_eof(&bytes, 32, ArchiveVersion::V1).expect("required invariant"),
+        None
+    );
     assert!(matches!(
         parse_eof(&bytes, 32, ArchiveVersion::V2),
         Err(FramingError::MissingEof)
@@ -713,7 +755,8 @@ fn nested_bounds_and_unknown_skip_are_exact() {
     let sibling = long_chunk(ArchiveVersion::V5, 0x2345, &[1]);
     let mut parent = long_chunk(ArchiveVersion::V5, 0x1000, &child);
     parent.extend(sibling);
-    let first = chunk_at(&parent, 0, parent.len(), ArchiveVersion::V5, false).unwrap();
+    let first =
+        chunk_at(&parent, 0, parent.len(), ArchiveVersion::V5, false).expect("required invariant");
     let nested = chunk_at(
         &parent,
         first.body.start,
@@ -721,7 +764,7 @@ fn nested_bounds_and_unknown_skip_are_exact() {
         ArchiveVersion::V5,
         false,
     )
-    .unwrap();
+    .expect("required invariant");
     assert_eq!(nested.next_offset, first.body.start + child.len());
     let next = chunk_at(
         &parent,
@@ -730,7 +773,7 @@ fn nested_bounds_and_unknown_skip_are_exact() {
         ArchiveVersion::V5,
         false,
     )
-    .unwrap();
+    .expect("required invariant");
     assert_eq!(next.typecode, 0x2345);
     assert!(matches!(
         chunk_at(
@@ -746,7 +789,10 @@ fn nested_bounds_and_unknown_skip_are_exact() {
 
 #[test]
 fn checked_counts_never_allocate_from_invalid_values() {
-    assert_eq!(checked_count_bytes(3, 4, 12, 100, 0).unwrap(), 12);
+    assert_eq!(
+        checked_count_bytes(3, 4, 12, 100, 0).expect("required invariant"),
+        12
+    );
     assert!(checked_count_bytes(-1, 4, 12, 100, 0).is_err());
     assert!(checked_count_bytes(4, 4, 12, 100, 0).is_err());
     assert!(checked_count_bytes(3, 4, 12, 2, 0).is_err());
@@ -755,8 +801,8 @@ fn checked_counts_never_allocate_from_invalid_values() {
 #[test]
 fn bounded_reader_fixed_arrays_preserve_absolute_cursor_bounds() {
     let bytes = [9, 8, 7, 6, 5];
-    let mut reader = BoundedReader::new(&bytes, 1, 5).unwrap();
-    assert_eq!(reader.array::<3>().unwrap(), [8, 7, 6]);
+    let mut reader = BoundedReader::new(&bytes, 1, 5).expect("required invariant");
+    assert_eq!(reader.array::<3>().expect("required invariant"), [8, 7, 6]);
     assert_eq!(reader.position(), 4);
     assert!(reader.array::<2>().is_err());
     assert_eq!(reader.position(), 4);
@@ -992,14 +1038,21 @@ fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
         &[v5],
         &[],
     ))
-    .unwrap();
+    .expect("required invariant");
     let parsed = &scan.definitions.definitions[0];
     assert_eq!(parsed.kind, super::instances::DefinitionKind::Linked);
     assert_eq!(parsed.members, vec![Uuid::from_wire(member_id)]);
     assert_eq!(parsed.units.unit, 2);
     assert_eq!(parsed.units.meters_per_unit, 0.001);
     assert_eq!(parsed.linked_appearance, 2);
-    assert_eq!(parsed.legacy_checksum_range.as_ref().unwrap().len(), 48);
+    assert_eq!(
+        parsed
+            .legacy_checksum_range
+            .as_ref()
+            .expect("required invariant")
+            .len(),
+        48
+    );
     assert!(parsed.file_reference_range.is_none());
 
     let v6 = definition_record(
@@ -1012,7 +1065,7 @@ fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
         &[v6],
         &[],
     ))
-    .unwrap();
+    .expect("required invariant");
     let parsed = &scan.definitions.definitions[0];
     assert!(parsed.file_reference_range.is_some());
 }
@@ -1048,7 +1101,7 @@ fn parses_source_shaped_v6_v7_v8_static_and_linked_definitions() {
             &[static_record, linked_record, embedded_record, unset_record],
             &[],
         ))
-        .unwrap();
+        .expect("required invariant");
         assert_eq!(scan.definitions.definitions.len(), 4);
         let static_definition = &scan.definitions.definitions[0];
         assert_eq!(
@@ -1116,7 +1169,7 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
         &[first, second, malformed, later],
         &objects,
     ))
-    .unwrap();
+    .expect("required invariant");
     assert!(scan
         .definitions
         .ambiguous_ids
@@ -1275,7 +1328,9 @@ fn object_record_with_unknown_trailer(archive: ArchiveVersion, class_uuid: [u8; 
 }
 
 fn minimal_document(version: &str, tables: &[Vec<u8>]) -> Vec<u8> {
-    let archive = parse_header(&header(version)).unwrap().archive_version;
+    let archive = parse_header(&header(version))
+        .expect("required invariant")
+        .archive_version;
     let mut bytes = header(version);
     bytes.extend(long_chunk(archive, 1, b"comment"));
     for table in tables {
@@ -1522,7 +1577,7 @@ fn scans_metadata_tables_and_reports_offsets() {
     );
     let summary = RhinoCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
-        .unwrap();
+        .expect("required invariant");
     assert_eq!(summary.container_kind, "3dm-chunks");
     assert_eq!(summary.entries.len(), 4);
     assert!(summary
@@ -1554,7 +1609,7 @@ fn aggregates_object_classes_after_table_entries() {
     );
     let summary = RhinoCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
-        .unwrap();
+        .expect("required invariant");
     assert_eq!(summary.entries.len(), 5);
     assert_eq!(summary.entries[3].role, "object-class");
     assert_eq!(
@@ -1570,7 +1625,9 @@ fn aggregates_object_classes_after_table_entries() {
 #[test]
 fn container_only_returns_empty_current_ir_for_full_bands() {
     for version in ["50", "60", "70", "80"] {
-        let archive = parse_header(&header(version)).unwrap().archive_version;
+        let archive = parse_header(&header(version))
+            .expect("required invariant")
+            .archive_version;
         let bytes = minimal_document(
             version,
             &[
@@ -1587,7 +1644,7 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
                     ..Default::default()
                 },
             )
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(result.ir.ir_version, IR_VERSION);
         assert!(result.ir.model.bodies.is_empty());
         assert!(result.ir.model.subds.is_empty());
@@ -1599,7 +1656,9 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
 #[test]
 fn container_only_returns_empty_current_ir_for_v3_and_v4() {
     for version in ["3", "4"] {
-        let archive = parse_header(&header(version)).unwrap().archive_version;
+        let archive = parse_header(&header(version))
+            .expect("required invariant")
+            .archive_version;
         let bytes = minimal_document(
             version,
             &[
@@ -1616,7 +1675,7 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
                     ..Default::default()
                 },
             )
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(result.ir.ir_version, IR_VERSION);
         assert!(result.ir.model.bodies.is_empty());
         assert!(result.ir.model.subds.is_empty());
@@ -1630,7 +1689,7 @@ fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
         let bytes = header(version);
         let summary = RhinoCodec
             .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
-            .unwrap();
+            .expect("required invariant");
         assert!(summary.entries.is_empty());
         assert_eq!(summary.container_kind, "3dm-chunks");
         let result = RhinoCodec.decode(
@@ -1702,7 +1761,14 @@ fn malformed_bounded_object_is_retained_and_later_point_decodes() {
         assert!(scan.objects[0].framing_degraded);
         set_test_units(&mut scan, 1.0);
         let result = super::decode::decode_for_test(&scan);
-        assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 2);
+        assert_eq!(
+            result
+                .ir
+                .native_unknowns("rhino")
+                .expect("required invariant")
+                .len(),
+            2
+        );
         assert_eq!(result.ir.model.points.len(), 1);
         assert!(result
             .report
@@ -1755,7 +1821,7 @@ fn crc_mismatch_is_a_summary_warning_and_later_record_survives() {
     );
     let summary = RhinoCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
-        .unwrap();
+        .expect("required invariant");
     assert!(summary
         .notes
         .iter()
@@ -1781,7 +1847,7 @@ fn object_warning_lists_do_not_inherit_global_warnings() {
             table(archive, 0x1000_0013, &[first, second]),
         ],
     );
-    let scan = super::container::scan_owned(bytes).unwrap();
+    let scan = super::container::scan_owned(bytes).expect("required invariant");
     assert!(scan.objects[0].checksum_warnings.is_empty());
     assert!(scan.objects[1].checksum_warnings.is_empty());
     assert_eq!(
@@ -1808,7 +1874,7 @@ fn repeated_consecutive_user_tables_are_allowed() {
     );
     let summary = RhinoCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
-        .unwrap();
+        .expect("required invariant");
     assert_eq!(summary.entries.len(), 5);
 }
 
@@ -1859,7 +1925,7 @@ fn accepts_table_crc_with_its_declared_bound() {
     );
     let summary = RhinoCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
-        .unwrap();
+        .expect("required invariant");
     assert_eq!(summary.entries.len(), 3);
 }
 
@@ -1893,7 +1959,7 @@ fn rejects_short_object_and_unknown_table_records() {
     );
     let summary = RhinoCodec
         .inspect(&mut Cursor::new(unknown), &InspectOptions::default())
-        .unwrap();
+        .expect("required invariant");
     assert!(summary
         .notes
         .iter()
@@ -1907,7 +1973,10 @@ fn decodes_bounded_utf8_and_utf16_strings() {
     utf8_bytes.extend_from_slice("é\0".as_bytes());
     let mut utf8_reader =
         BoundedReader::new(&utf8_bytes, 0, utf8_bytes.len()).expect("bounded UTF-8 reader");
-    assert_eq!(settings::utf8(&mut utf8_reader).unwrap(), "é");
+    assert_eq!(
+        settings::utf8(&mut utf8_reader).expect("required invariant"),
+        "é"
+    );
 
     let mut utf16_bytes = Vec::new();
     utf16_bytes.extend(3_u32.to_le_bytes());
@@ -1916,7 +1985,10 @@ fn decodes_bounded_utf8_and_utf16_strings() {
     utf16_bytes.extend(0_u16.to_le_bytes());
     let mut utf16_reader =
         BoundedReader::new(&utf16_bytes, 0, utf16_bytes.len()).expect("bounded UTF-16 reader");
-    assert_eq!(settings::utf16(&mut utf16_reader).unwrap(), "😀");
+    assert_eq!(
+        settings::utf16(&mut utf16_reader).expect("required invariant"),
+        "😀"
+    );
 
     let mut missing_nul = Vec::new();
     missing_nul.extend(2_u32.to_le_bytes());
@@ -1957,7 +2029,7 @@ fn parses_units_with_single_scale_transfer_and_legacy_order() {
     body.extend(0.01_f64.to_le_bytes());
     body.extend(0.001_f64.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, body);
-    let units = settings::parse_units(&data, &record).unwrap();
+    let units = settings::parse_units(&data, &record).expect("required invariant");
     assert_eq!(units.millimeters_per_unit, Some(25.4));
     assert_eq!(units.absolute_tolerance, 0.5);
     assert_eq!(units.absolute_tolerance_millimeters, Some(12.7));
@@ -1971,7 +2043,7 @@ fn parses_units_with_single_scale_transfer_and_legacy_order() {
     legacy.extend(0.002_f64.to_le_bytes());
     legacy.extend(0.01_f64.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, legacy);
-    let units = settings::parse_units(&data, &record).unwrap();
+    let units = settings::parse_units(&data, &record).expect("required invariant");
     assert_eq!(units.relative_tolerance, 0.002);
     assert_eq!(units.angular_tolerance, 0.01);
 }
@@ -2132,7 +2204,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         archive,
         &mut wrapper_warnings,
     )
-    .unwrap();
+    .expect("required invariant");
     assert_eq!(class_descriptor.class_data_range.len(), payload.len());
     let table = super::container::Table {
         typecode: 0x1000_0011,
@@ -2175,7 +2247,8 @@ fn parses_selector_widths_from_their_serialized_forms() {
         short: false,
         value: 8,
     };
-    settings::parse_setting(&material_data, &material_record, &mut settings_value).unwrap();
+    settings::parse_setting(&material_data, &material_record, &mut settings_value)
+        .expect("required invariant");
     assert_eq!(settings_value.current_material, Some(42));
     assert_eq!(settings_value.current_material_source, Some(3));
 
@@ -2188,7 +2261,8 @@ fn parses_selector_widths_from_their_serialized_forms() {
         short: false,
         value: 8,
     };
-    settings::parse_setting(&color_data, &color_record, &mut settings_value).unwrap();
+    settings::parse_setting(&color_data, &color_record, &mut settings_value)
+        .expect("required invariant");
     assert_eq!(settings_value.current_color, Some([1, 2, 3, 4]));
     assert_eq!(settings_value.current_color_source, Some(2));
 
@@ -2205,7 +2279,7 @@ fn parses_selector_widths_from_their_serialized_forms() {
             short: true,
             value,
         };
-        settings::parse_setting(&[], &record, &mut settings_value).unwrap();
+        settings::parse_setting(&[], &record, &mut settings_value).expect("required invariant");
     }
     assert_eq!(settings_value.current_layer, Some(3));
     assert_eq!(settings_value.current_wire_density, Some(5));
@@ -2225,7 +2299,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             table(archive, 0x1000_0013, &[object]),
         ],
     );
-    let scan = super::container::scan_owned(bytes).unwrap();
+    let scan = super::container::scan_owned(bytes).expect("required invariant");
     super::decode::with_expand(&scan, |expand| {
         let mut context = super::decode::DecodeContext::new(&scan, expand);
         assert!(context.object(0).is_some());
@@ -2236,21 +2310,32 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         assert!(context.append_link(0, "rhino:curve#1".to_string()));
         assert!(context.append_link(0, "rhino:curve#2".to_string()));
         assert_eq!(
-            context.unknown(0).unwrap().links,
+            context.unknown(0).expect("required invariant").links,
             vec!["rhino:curve#1".to_string(), "rhino:curve#2".to_string()]
         );
         assert!(context.mark_decoded(0));
         assert!(!context.mark_decoded(0));
         assert!(!context.mark_failed(0));
         assert_eq!(context.ir_mut().model.bodies.len(), 0);
-        context.unknown_mut(0).unwrap().links.clear();
+        context
+            .unknown_mut(0)
+            .expect("required invariant")
+            .links
+            .clear();
         let result = context.commit();
         assert!(result
             .report
             .losses
             .iter()
             .any(|loss| loss.severity == Severity::Info));
-        assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 1);
+        assert_eq!(
+            result
+                .ir
+                .native_unknowns("rhino")
+                .expect("required invariant")
+                .len(),
+            1
+        );
         let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
         assert_eq!(validation.error_count(), 0);
     });
@@ -2268,15 +2353,24 @@ fn rejected_candidate_detaches_payload_clone_and_preserves_live_bytes() {
             table(archive, 0x1000_0013, &[object]),
         ],
     );
-    let scan = super::container::scan_owned(bytes).unwrap();
+    let scan = super::container::scan_owned(bytes).expect("required invariant");
     super::decode::with_expand(&scan, |expand| {
         let mut context = super::decode::DecodeContext::new(&scan, expand);
-        let original = context.unknown(0).unwrap().data.clone().unwrap();
+        let original = context
+            .unknown(0)
+            .expect("required invariant")
+            .data
+            .clone()
+            .expect("required invariant");
         let (payloads_detached, findings) = context.reject_duplicate_unknown_candidate();
         assert!(payloads_detached);
         assert!(findings.contains("identity"));
         assert_eq!(
-            context.unknown(0).unwrap().data.as_deref(),
+            context
+                .unknown(0)
+                .expect("required invariant")
+                .data
+                .as_deref(),
             Some(original.as_slice())
         );
         assert_eq!(context.unknown_count(), 1);
@@ -2490,7 +2584,7 @@ fn scan_with_objects(objects: &[Vec<u8>]) -> super::container::Scan<'static> {
             table(archive, 0x1000_0013, objects),
         ],
     );
-    let mut scan = super::container::scan_owned(bytes).unwrap();
+    let mut scan = super::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 1.0);
     scan
 }
@@ -2547,7 +2641,7 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
             .model
             .bodies
             .iter()
-            .map(|body| body.transform.unwrap().rows[0][3])
+            .map(|body| body.transform.expect("required invariant").rows[0][3])
             .collect::<Vec<_>>(),
         vec![10.0, 20.0]
     );
@@ -2560,18 +2654,36 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
         .collect::<Vec<_>>();
     assert_ne!(body_ids[0], body_ids[1]);
     assert_eq!(
-        result.ir.native_unknowns("rhino").unwrap()[0].links,
+        result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")[0]
+            .links,
         body_ids
     );
     assert_eq!(
-        result.ir.native_unknowns("rhino").unwrap()[1].links.len(),
+        result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")[1]
+            .links
+            .len(),
         1
     );
     assert_eq!(
-        result.ir.native_unknowns("rhino").unwrap()[2].links.len(),
+        result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")[2]
+            .links
+            .len(),
         1
     );
-    let native = result.ir.native.namespace("rhino").unwrap();
+    let native = result
+        .ir
+        .native
+        .namespace("rhino")
+        .expect("required invariant");
     assert_eq!(native.arenas["product_definitions"].len(), 1);
     assert_eq!(native.arenas["product_occurrences"].len(), 2);
     assert_eq!(
@@ -2651,14 +2763,22 @@ fn nested_instance_composes_parent_child_and_records_outer_to_inner_path() {
     assert_eq!(nurbs.control_points[0].x, 12.0);
     assert_eq!(nurbs.control_points[1].x, 14.0);
     assert_eq!(
-        curve.source_object.as_ref().unwrap().instance_path,
+        curve
+            .source_object
+            .as_ref()
+            .expect("required invariant")
+            .instance_path,
         vec![
             Uuid::from_wire(world_reference_id).to_string(),
             Uuid::from_wire(nested_reference_id).to_string()
         ]
     );
     assert_eq!(
-        curve.source_object.as_ref().unwrap().color,
+        curve
+            .source_object
+            .as_ref()
+            .expect("required invariant")
+            .color,
         Some(cadmpeg_ir::topology::Color {
             r: 1.0,
             g: 0.0,
@@ -2666,7 +2786,14 @@ fn nested_instance_composes_parent_child_and_records_outer_to_inner_path() {
             a: 1.0,
         })
     );
-    assert_eq!(curve.source_object.as_ref().unwrap().visible, Some(false));
+    assert_eq!(
+        curve
+            .source_object
+            .as_ref()
+            .expect("required invariant")
+            .visible,
+        Some(false)
+    );
     assert!(curve.id.to_string().contains(&format!(
         "{}.{}",
         Uuid::from_wire(world_reference_id),
@@ -2735,7 +2862,14 @@ fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments() {
         .model
         .curves
         .iter()
-        .map(|curve| curve.source_object.as_ref().unwrap().instance_path.clone())
+        .map(|curve| {
+            curve
+                .source_object
+                .as_ref()
+                .expect("required invariant")
+                .instance_path
+                .clone()
+        })
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(paths.len(), 4);
     assert!(paths
@@ -2743,7 +2877,12 @@ fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments() {
         .flatten()
         .all(|segment| segment.starts_with("record-")));
     assert_eq!(
-        result.ir.native_unknowns("rhino").unwrap()[0].links.len(),
+        result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")[0]
+            .links
+            .len(),
         4
     );
     assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
@@ -2868,7 +3007,7 @@ fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     assert_eq!(nurbs.control_points[0].x, 2.0);
     assert_eq!(nurbs.control_points[2].y, 1.0);
     assert_eq!(
-        nurbs.weights.as_ref().unwrap()[1],
+        nurbs.weights.as_ref().expect("required invariant")[1],
         std::f64::consts::FRAC_1_SQRT_2
     );
     assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
@@ -3106,14 +3245,26 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
     assert_eq!(result.ir.model.points.len(), 1);
     assert!(result.ir.model.surfaces.is_empty());
     assert_eq!(
-        result.ir.model.bodies[0].transform.unwrap().rows[0][3],
+        result.ir.model.bodies[0]
+            .transform
+            .expect("required invariant")
+            .rows[0][3],
         30.0
     );
-    for unknown in &result.ir.native_unknowns("rhino").unwrap()[6..15] {
+    for unknown in &result
+        .ir
+        .native_unknowns("rhino")
+        .expect("required invariant")[6..15]
+    {
         assert!(unknown.links.is_empty());
     }
     assert_eq!(
-        result.ir.native_unknowns("rhino").unwrap()[15].links.len(),
+        result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")[15]
+            .links
+            .len(),
         1
     );
     assert!(result.report.losses.iter().any(|loss| {
@@ -3145,7 +3296,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
             table(archive, 0x1000_0013, &[object]),
         ],
     );
-    let mut scan = super::container::scan_owned(bytes).unwrap();
+    let mut scan = super::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 25.4);
     let result = super::decode::decode_for_test(&scan);
     assert_eq!(result.ir.model.subds.len(), 1);
@@ -3162,7 +3313,11 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
         Some(cadmpeg_ir::Exactness::Derived)
     );
     assert_eq!(
-        result.ir.native_unknowns("rhino").unwrap()[0].links,
+        result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")[0]
+            .links,
         vec![subd.id.to_string()]
     );
     assert!(result.report.geometry_transferred);
@@ -3191,11 +3346,18 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
             table(archive, 0x1000_0013, &[malformed, empty]),
         ],
     );
-    let mut scan = super::container::scan_owned(bytes).unwrap();
+    let mut scan = super::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 1.0);
     let result = super::decode::decode_for_test(&scan);
     assert!(result.ir.model.subds.is_empty());
-    assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 2);
+    assert_eq!(
+        result
+            .ir
+            .native_unknowns("rhino")
+            .expect("required invariant")
+            .len(),
+        2
+    );
     assert!(result
         .report
         .losses
@@ -3221,7 +3383,7 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
             table(archive, 0x1000_0013, &[object]),
         ],
     );
-    let mut scan = super::container::scan_owned(bytes).unwrap();
+    let mut scan = super::container::scan_owned(bytes).expect("required invariant");
     scan.objects[0].attributes_degraded = true;
     super::decode::with_expand(&scan, |expand| {
         let mut context = super::decode::DecodeContext::new(&scan, expand);
@@ -3282,7 +3444,7 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
             table(archive, 0x1000_0013, &[object]),
         ],
     );
-    let scan = super::container::scan_owned(bytes).unwrap();
+    let scan = super::container::scan_owned(bytes).expect("required invariant");
     let offset = scan.objects[0].range.start as u64;
     let class = scan.objects[0].class_uuid.to_string();
     let result = super::decode::decode_for_test(&scan);

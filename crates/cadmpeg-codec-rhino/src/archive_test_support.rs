@@ -465,7 +465,6 @@ fn brep_payload_with_topology(singular_seam: bool, malformed: bool) -> Vec<u8> {
     };
     let edges = edge_records
         .iter()
-        .into_iter()
         .enumerate()
         .map(|(index, (vertices, trims))| {
             let mut record = (index as i32).to_le_bytes().to_vec();

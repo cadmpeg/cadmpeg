@@ -2070,7 +2070,7 @@ mod history_reference_tests {
             ("d", "12"),
             ("e", "<MOD-DIAM>5.5"),
         ]);
-        let construction = hole_sketch_construction(&counterbore).unwrap();
+        let construction = hole_sketch_construction(&counterbore).expect("required invariant");
         assert_eq!(construction.diameter, Length(5.5));
         assert_eq!(construction.depth, Some(Length(12.0)));
         assert!(matches!(
@@ -2089,7 +2089,7 @@ mod history_reference_tests {
             ("d", "10"),
             ("e", "118°"),
         ]);
-        let construction = hole_sketch_construction(&threaded).unwrap();
+        let construction = hole_sketch_construction(&threaded).expect("required invariant");
         assert_eq!(construction.diameter, Length(4.2));
         assert_eq!(construction.depth, Some(Length(12.4)));
         assert!(matches!(
@@ -2536,7 +2536,12 @@ mod history_reference_tests {
         let right = feature("right", Some("4"), 2);
         let features = [&front, &top, &right]
             .into_iter()
-            .map(|feature| (feature.source_id.as_deref().unwrap(), feature))
+            .map(|feature| {
+                (
+                    feature.source_id.as_deref().expect("required invariant"),
+                    feature,
+                )
+            })
             .collect::<HashMap<_, _>>();
         assert_eq!(
             principal_plane_in_history(&front, &features, &[]),
@@ -2547,7 +2552,12 @@ mod history_reference_tests {
         mismatched.kind = "Different".into();
         let features = [&front, &top, &mismatched]
             .into_iter()
-            .map(|feature| (feature.source_id.as_deref().unwrap(), feature))
+            .map(|feature| {
+                (
+                    feature.source_id.as_deref().expect("required invariant"),
+                    feature,
+                )
+            })
             .collect::<HashMap<_, _>>();
         assert_eq!(principal_plane_in_history(&front, &features, &[]), None);
     }
@@ -2604,8 +2614,13 @@ mod history_reference_tests {
             feature_input_lanes: Vec::new(),
             pmi_dimensions: Vec::new(),
         });
-        sync_neutral_features(&[], &[], &[], &mut native).unwrap();
-        assert_eq!(native.unwrap().feature_histories[0].features.len(), 1);
+        sync_neutral_features(&[], &[], &[], &mut native).expect("required invariant");
+        assert_eq!(
+            native.expect("required invariant").feature_histories[0]
+                .features
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -3099,8 +3114,8 @@ mod history_reference_tests {
     fn native_with_configuration_lanes(
         configurations: Vec<Configuration>,
         lanes: Vec<crate::records::FeatureInputLane>,
-    ) -> Option<crate::native::SldprtNative> {
-        Some(crate::native::SldprtNative {
+    ) -> crate::native::SldprtNative {
+        crate::native::SldprtNative {
             feature_histories: vec![FeatureHistory {
                 id: "history".into(),
                 part_name: None,
@@ -3111,7 +3126,7 @@ mod history_reference_tests {
             }],
             feature_input_lanes: lanes,
             ..crate::native::SldprtNative::default()
-        })
+        }
     }
     #[test]
     fn repeated_aliases_from_one_parameter_remain_unambiguous() {
@@ -3364,13 +3379,14 @@ mod history_reference_tests {
         let mut native = native_with_configuration_lanes(
             vec![native_configuration("native-configuration", 0, None)],
             vec![feature_input_lane("global-lane", None)],
-        );
+        )
+        .into();
         let mut configuration =
             design_configuration("configuration", 0, Some(0), Some("native-configuration"));
         configuration.active = true;
         sync_neutral_configurations(&[configuration], &mut native);
 
-        let native = native.unwrap();
+        let native = native.expect("required invariant");
         assert_eq!(
             native.feature_histories[0].configurations[0].source_index,
             Some(0)
@@ -3401,7 +3417,8 @@ mod history_reference_tests {
         let mut native = native_with_configuration_lanes(
             native_configurations,
             vec![feature_input_lane("explicit-lane", Some("1"))],
-        );
+        )
+        .into();
         let configurations = [
             design_configuration("explicit", 0, Some(1), Some("explicit-native")),
             design_configuration("fallback", 2, None, Some("fallback-native")),
@@ -3410,7 +3427,7 @@ mod history_reference_tests {
         sync_neutral_configurations(&configurations, &mut native);
 
         assert_eq!(
-            native.unwrap().feature_input_lanes[0]
+            native.expect("required invariant").feature_input_lanes[0]
                 .configuration
                 .as_deref(),
             Some("1")
@@ -3428,7 +3445,8 @@ mod history_reference_tests {
                 feature_input_lane("first-lane", Some("1")),
                 feature_input_lane("second-lane", Some("2")),
             ],
-        );
+        )
+        .into();
         let configurations = [
             design_configuration("first", 0, Some(2), Some("first-native")),
             design_configuration("second", 1, Some(1), Some("second-native")),
@@ -3438,7 +3456,7 @@ mod history_reference_tests {
 
         assert_eq!(
             native
-                .unwrap()
+                .expect("required invariant")
                 .feature_input_lanes
                 .into_iter()
                 .map(|lane| lane.configuration)
@@ -3458,7 +3476,8 @@ mod history_reference_tests {
                 feature_input_lane("kept-lane", Some("1")),
                 feature_input_lane("deleted-lane", Some("2")),
             ],
-        );
+        )
+        .into();
 
         sync_neutral_configurations(
             &[design_configuration(
@@ -3470,7 +3489,7 @@ mod history_reference_tests {
             &mut native,
         );
 
-        let native = native.unwrap();
+        let native = native.expect("required invariant");
         assert_eq!(native.feature_input_lanes.len(), 1);
         assert_eq!(native.feature_input_lanes[0].id, "kept-lane");
 
@@ -3480,9 +3499,10 @@ mod history_reference_tests {
                 feature_input_lane("global-lane", None),
                 feature_input_lane("deleted-lane", Some("1")),
             ],
-        );
+        )
+        .into();
         sync_neutral_configurations(&[], &mut native);
-        let native = native.unwrap();
+        let native = native.expect("required invariant");
         assert!(native.feature_histories[0].configurations.is_empty());
         assert_eq!(native.feature_input_lanes.len(), 1);
         assert_eq!(native.feature_input_lanes[0].id, "global-lane");
@@ -3501,7 +3521,8 @@ mod history_reference_tests {
                     previous_source,
                 )],
                 vec![feature_input_lane("lane", Some(previous_lane))],
-            );
+            )
+            .into();
             let mut configuration = design_configuration(
                 "configuration",
                 ordinal,
@@ -3512,7 +3533,7 @@ mod history_reference_tests {
             sync_neutral_configurations(&[configuration], &mut native);
 
             assert_eq!(
-                native.unwrap().feature_input_lanes[0]
+                native.expect("required invariant").feature_input_lanes[0]
                     .configuration
                     .as_deref(),
                 Some(expected)
@@ -6746,7 +6767,7 @@ mod literal_tests {
             -5.486_124_068_793_69e307,
         ] {
             let literal = format_f64_literal(value);
-            let parsed = literal.parse::<f64>().unwrap();
+            let parsed = literal.parse::<f64>().expect("required invariant");
             assert_eq!(parsed.to_bits(), value.to_bits(), "{literal}");
         }
         assert_eq!(format_f64_literal(0.125), "0.125");

@@ -6707,9 +6707,13 @@ mod width_tests {
 
             let layout = rolling_ball_patch_layout(&bytes, int_width)
                 .unwrap_or_else(|| panic!("rolling-ball layout at width {int_width}"));
-            let values = layout
-                .radii
-                .map(|offset| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()));
+            let values = layout.radii.map(|offset| {
+                f64::from_le_bytes(
+                    bytes[offset..offset + 8]
+                        .try_into()
+                        .expect("required invariant"),
+                )
+            });
             assert_eq!(values, [-0.3, -0.6]);
 
             let mut compact = vec![0x0f];
@@ -6726,9 +6730,13 @@ mod width_tests {
             compact.push(0x10);
             let layout = rolling_ball_patch_layout(&compact, int_width)
                 .unwrap_or_else(|| panic!("compact rolling-ball layout at width {int_width}"));
-            let values = layout
-                .radii
-                .map(|offset| f64::from_le_bytes(compact[offset..offset + 8].try_into().unwrap()));
+            let values = layout.radii.map(|offset| {
+                f64::from_le_bytes(
+                    compact[offset..offset + 8]
+                        .try_into()
+                        .expect("required invariant"),
+                )
+            });
             assert_eq!(values, [-1.5, -2.5]);
         }
     }
@@ -6754,14 +6762,18 @@ mod width_tests {
                 let layout = extrusion_patch_layout(&bytes, int_width)
                     .unwrap_or_else(|| panic!("extrusion layout {name} at width {int_width}"));
                 let interval = layout.parameter_interval.map(|offset| {
-                    f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap())
+                    f64::from_le_bytes(
+                        bytes[offset..offset + 8]
+                            .try_into()
+                            .expect("required invariant"),
+                    )
                 });
                 assert_eq!(interval, [-2.0, 3.0]);
                 assert_eq!(
                     f64::from_le_bytes(
                         bytes[layout.direction..layout.direction + 8]
                             .try_into()
-                            .unwrap()
+                            .expect("required invariant")
                     ),
                     4.0
                 );
@@ -6769,7 +6781,7 @@ mod width_tests {
                     f64::from_le_bytes(
                         bytes[layout.native_position..layout.native_position + 8]
                             .try_into()
-                            .unwrap()
+                            .expect("required invariant")
                     ),
                     7.0
                 );
@@ -6804,15 +6816,19 @@ mod width_tests {
 
             let layout = helix_patch_layout(&bytes, int_width)
                 .unwrap_or_else(|| panic!("helix layout at width {int_width}"));
-            let range = layout
-                .angle_range
-                .map(|offset| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()));
+            let range = layout.angle_range.map(|offset| {
+                f64::from_le_bytes(
+                    bytes[offset..offset + 8]
+                        .try_into()
+                        .expect("required invariant"),
+                )
+            });
             assert_eq!(range, [-1.0, 2.0]);
             assert_eq!(
                 f64::from_le_bytes(
                     bytes[layout.frame_vectors[0]..layout.frame_vectors[0] + 8]
                         .try_into()
-                        .unwrap()
+                        .expect("required invariant")
                 ),
                 3.0
             );
@@ -6820,12 +6836,16 @@ mod width_tests {
                 f64::from_le_bytes(
                     bytes[layout.apex_factor..layout.apex_factor + 8]
                         .try_into()
-                        .unwrap()
+                        .expect("required invariant")
                 ),
                 15.0
             );
             assert_eq!(
-                f64::from_le_bytes(bytes[layout.axis..layout.axis + 8].try_into().unwrap()),
+                f64::from_le_bytes(
+                    bytes[layout.axis..layout.axis + 8]
+                        .try_into()
+                        .expect("required invariant")
+                ),
                 16.0
             );
         }
@@ -6853,12 +6873,20 @@ mod width_tests {
 
             let layout = vector_offset_patch_layout(&bytes, int_width)
                 .unwrap_or_else(|| panic!("vector-offset layout at width {int_width}"));
-            let range = layout
-                .parameter_range
-                .map(|offset| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()));
+            let range = layout.parameter_range.map(|offset| {
+                f64::from_le_bytes(
+                    bytes[offset..offset + 8]
+                        .try_into()
+                        .expect("required invariant"),
+                )
+            });
             assert_eq!(range, [-2.0, 5.0]);
             assert_eq!(
-                f64::from_le_bytes(bytes[layout.offset..layout.offset + 8].try_into().unwrap()),
+                f64::from_le_bytes(
+                    bytes[layout.offset..layout.offset + 8]
+                        .try_into()
+                        .expect("required invariant")
+                ),
                 0.5
             );
         }
@@ -6879,9 +6907,13 @@ mod width_tests {
 
             let layout = subset_patch_layout(&bytes, int_width)
                 .unwrap_or_else(|| panic!("subset layout at width {int_width}"));
-            let range = layout
-                .parameter_range
-                .map(|offset| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()));
+            let range = layout.parameter_range.map(|offset| {
+                f64::from_le_bytes(
+                    bytes[offset..offset + 8]
+                        .try_into()
+                        .expect("required invariant"),
+                )
+            });
             assert_eq!(range, [-1.5, 3.5]);
         }
     }
@@ -6913,12 +6945,24 @@ mod width_tests {
             let parameters = layout
                 .parameters
                 .iter()
-                .map(|offset| f64::from_le_bytes(bytes[*offset..*offset + 8].try_into().unwrap()))
+                .map(|offset| {
+                    f64::from_le_bytes(
+                        bytes[*offset..*offset + 8]
+                            .try_into()
+                            .expect("required invariant"),
+                    )
+                })
                 .collect::<Vec<_>>();
             let component_parameters = layout
                 .component_parameters
                 .iter()
-                .map(|offset| f64::from_le_bytes(bytes[*offset..*offset + 8].try_into().unwrap()))
+                .map(|offset| {
+                    f64::from_le_bytes(
+                        bytes[*offset..*offset + 8]
+                            .try_into()
+                            .expect("required invariant"),
+                    )
+                })
                 .collect::<Vec<_>>();
             assert_eq!(parameters, [0.0, 0.5, 1.0]);
             assert_eq!(component_parameters, [-2.0, 4.0]);

@@ -846,7 +846,10 @@ mod tests {
         let cache = ScalarCache::default();
         assert_eq!(
             decode_model_reference_coordinate(&data, 0, &cache),
-            Some((f64::from_be_bytes(data[1..].try_into().unwrap()), 9))
+            Some((
+                f64::from_be_bytes(data[1..].try_into().expect("required invariant")),
+                9
+            ))
         );
         assert_eq!(
             decode_model_reference_coordinate(&data[..8], 0, &cache),

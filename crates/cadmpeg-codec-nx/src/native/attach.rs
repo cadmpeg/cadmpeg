@@ -5787,8 +5787,12 @@ mod tests {
             super::simple_hole_chamfers(&chamfered, &templates, &outputs)
         );
         let mut unequal_chamfers = chamfered;
-        let CurveGeometry::Circle { radius, .. } =
-            &mut unequal_chamfers.model.curves.last_mut().unwrap().geometry
+        let CurveGeometry::Circle { radius, .. } = &mut unequal_chamfers
+            .model
+            .curves
+            .last_mut()
+            .expect("required invariant")
+            .geometry
         else {
             unreachable!()
         };
@@ -6061,7 +6065,7 @@ mod tests {
         let (definition, supports) =
             super::thicken_feature_definition(&ir, std::slice::from_ref(&output))
                 .expect("matched symmetric offsets");
-        assert_eq!(supports, [support.clone()]);
+        assert_eq!(supports, std::slice::from_ref(&support));
         assert!(matches!(
             definition,
             FeatureDefinition::Thicken {
@@ -6241,7 +6245,7 @@ mod tests {
             std::slice::from_ref(&output),
             super::NxBlendFamily::Edge,
         )
-        .unwrap();
+        .expect("required invariant");
         assert!(matches!(
             definition,
             FeatureDefinition::Fillet {
@@ -6257,7 +6261,8 @@ mod tests {
         attach_test_body_surface(&mut ir, &output, conflicting.surface.clone());
         ir.model.procedural_surfaces.push(conflicting);
         let (definition, _) =
-            super::blend_feature_definition(&ir, &[output], super::NxBlendFamily::Edge).unwrap();
+            super::blend_feature_definition(&ir, &[output], super::NxBlendFamily::Edge)
+                .expect("required invariant");
         assert!(matches!(
             definition,
             FeatureDefinition::Fillet {

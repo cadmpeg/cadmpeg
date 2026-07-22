@@ -501,12 +501,12 @@ mod tests {
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         let namespace = result.ir.native.namespace("nx").expect("NX namespace");
         assert_eq!(namespace.version, 155);
         let rows = namespace
             .arena_as::<super::SegmentIndexRow>("segment_index_rows")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].ordinal, 0);
         assert_eq!(rows[1].value, 28);
@@ -519,14 +519,14 @@ mod tests {
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         let links = result
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::SegmentStreamLink>("segment_stream_links")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].row, "nx:segment-index:row#0");
         assert_eq!(links[0].slot, super::SegmentIndexSlot::TypeCode);
@@ -543,14 +543,14 @@ mod tests {
         )]);
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         let bindings = result
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::SegmentBodyBinding>("segment_body_bindings")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].stream_ordinal, 0);
         assert_eq!(bindings[0].stream_kind, "partition");
@@ -568,14 +568,14 @@ mod tests {
         )]);
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
+            .expect("required invariant");
         let bindings = result
             .ir
             .native
             .namespace("nx")
-            .unwrap()
+            .expect("required invariant")
             .arena_as::<super::SegmentBodyBinding>("segment_body_bindings")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].stream_ordinal, 0);
         assert_eq!(bindings[0].stream_kind, "plain");
@@ -592,16 +592,20 @@ mod tests {
         )]);
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
-            .unwrap();
-        let namespace = result.ir.native.namespace("nx").unwrap();
+            .expect("required invariant");
+        let namespace = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("required invariant");
         let links = namespace
             .arena_as::<super::SegmentStreamLink>("segment_stream_links")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].wrapper_byte_len, 38);
         let bindings = namespace
             .arena_as::<super::SegmentBodyBinding>("segment_body_bindings")
-            .unwrap();
+            .expect("required invariant");
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].body_object_index, 94);
         assert_eq!(bindings[0].body_alias_object_index, 150);
@@ -617,14 +621,14 @@ mod tests {
             )]);
             let result = NxCodec
                 .decode(&mut Cursor::new(file), &DecodeOptions::default())
-                .unwrap();
+                .expect("required invariant");
             let links = result
                 .ir
                 .native
                 .namespace("nx")
-                .unwrap()
+                .expect("required invariant")
                 .arena_as::<super::SegmentOmLink>("segment_om_links")
-                .unwrap();
+                .expect("required invariant");
             assert_eq!(links.len(), 1);
             assert_eq!(links[0].row, "nx:segment-index:row#0");
             assert_eq!(links[0].slot, super::SegmentIndexSlot::TypeCode);

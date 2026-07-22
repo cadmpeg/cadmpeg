@@ -129,7 +129,7 @@ fn b2_link_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
     assert!(links.iter().all(|link| link.header_token == 5));
     assert_eq!(
         links.iter().map(|link| link.target).collect::<Vec<_>>(),
-        [0x5d, 0x025d, 0x01025d, 0x0101_025d]
+        [0x5d, 0x025d, 0x0001_025d, 0x0101_025d]
     );
 
     let malformed = [

@@ -1451,13 +1451,16 @@ mod tests {
             compound: None,
             warnings: Vec::new(),
         };
-        let nurbs = exact_nurbs(&decoded, 0).unwrap();
+        let nurbs = exact_nurbs(&decoded, 0).expect("required invariant");
         assert_eq!(nurbs.degree, 2);
         assert_eq!(nurbs.control_points.len(), 9);
         assert_eq!(nurbs.knots.len(), 12);
         assert_eq!(nurbs.knots[0], 0.0);
-        assert_eq!(*nurbs.knots.last().unwrap(), TAU);
-        assert_eq!(nurbs.weights.unwrap()[1], 2.0_f64.sqrt() / 2.0);
+        assert_eq!(*nurbs.knots.last().expect("required invariant"), TAU);
+        assert_eq!(
+            nurbs.weights.expect("required invariant")[1],
+            2.0_f64.sqrt() / 2.0
+        );
     }
 
     #[test]
@@ -1481,7 +1484,7 @@ mod tests {
             }),
             warnings: Vec::new(),
         };
-        let converted = exact_nurbs(&nested, 0).unwrap();
+        let converted = exact_nurbs(&nested, 0).expect("required invariant");
         assert_eq!(converted.knots, vec![2.0, 2.0, 3.0, 3.0, 5.0, 5.0]);
         assert_eq!(converted.control_points.len(), 4);
     }

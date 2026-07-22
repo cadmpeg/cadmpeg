@@ -406,15 +406,19 @@ impl<'a> DecodeContext<'a> {
     pub(crate) fn reject_duplicate_unknown_candidate(&mut self) -> (bool, String) {
         let mut payloads_detached = false;
         let result = self.validate_candidate(|candidate, _annotations| {
-            let mut unknowns = candidate.native_unknowns("rhino").unwrap();
+            let mut unknowns = candidate
+                .native_unknowns("rhino")
+                .expect("required invariant");
             payloads_detached = unknowns.iter().all(|record| {
-                let value = serde_json::to_value(record).unwrap();
+                let value = serde_json::to_value(record).expect("required invariant");
                 value.get("data").is_none()
             });
             if let Some(record) = unknowns.first().cloned() {
                 unknowns.push(record);
             }
-            candidate.set_native_unknowns("rhino", &unknowns).unwrap();
+            candidate
+                .set_native_unknowns("rhino", &unknowns)
+                .expect("required invariant");
         });
         (
             payloads_detached,
@@ -4803,7 +4807,8 @@ mod tests {
             equation: [0.0, 0.0, 1.0, -30.0],
         };
         let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
-        transform_decoded_curve(&mut curve, hatch_plane_transform(&plane, 10.0)).unwrap();
+        transform_decoded_curve(&mut curve, hatch_plane_transform(&plane, 10.0))
+            .expect("required invariant");
         let CurveGeometry::Nurbs(curve) = curve.geometry else {
             panic!("hatch loop must remain NURBS");
         };
@@ -4839,7 +4844,10 @@ mod tests {
         };
         compose_body_transform(&mut body, instance);
         assert_eq!(
-            crate::instances::point(body.transform.unwrap(), Point3::new(1.0, 0.0, 0.0)),
+            crate::instances::point(
+                body.transform.expect("required invariant"),
+                Point3::new(1.0, 0.0, 0.0)
+            ),
             Point3::new(12.0, 0.0, 0.0)
         );
     }
@@ -5169,7 +5177,7 @@ mod tests {
                     links: Vec::new(),
                 }],
             )
-            .unwrap();
+            .expect("required invariant");
         let staged = StagedBrep {
             kind: BrepTransferKind::FreeCarrierFallback,
             curves: vec![Curve {
@@ -5184,7 +5192,10 @@ mod tests {
         staged.apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
         append_record_links(&mut candidate, &unknown, &links);
         assert_eq!(
-            candidate.native_unknowns("rhino").unwrap()[0].links,
+            candidate
+                .native_unknowns("rhino")
+                .expect("required invariant")[0]
+                .links,
             vec![curve_id.to_string()]
         );
         let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
@@ -5278,7 +5289,7 @@ mod tests {
                     links: Vec::new(),
                 }],
             )
-            .unwrap();
+            .expect("required invariant");
         staged.apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
         append_record_links(&mut candidate, &unknown, &links);
         let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
@@ -5297,8 +5308,14 @@ mod tests {
 
     #[test]
     fn tolerance_scaling_maps_unset_and_zero_to_none() {
-        assert_eq!(scaled_tolerance(0.0, 25.4).unwrap(), None);
-        assert_eq!(scaled_tolerance(0.5, 25.4).unwrap(), Some(12.7));
+        assert_eq!(
+            scaled_tolerance(0.0, 25.4).expect("required invariant"),
+            None
+        );
+        assert_eq!(
+            scaled_tolerance(0.5, 25.4).expect("required invariant"),
+            Some(12.7)
+        );
         assert_eq!(finite_tolerance(0.5), Some(0.5));
         assert_eq!(finite_tolerance(-1.0), None);
     }
@@ -5485,12 +5502,12 @@ mod tests {
         assert!(c2_curve_to_nurbs(compound, 0).is_err());
     }
 
-    fn cap_boundary(points: Vec<Point3>) -> crate::extrusion::ExtrusionBoundary {
+    fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
         let knots = vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0];
         let start = NurbsCurve {
             degree: 1,
             knots: knots.clone(),
-            control_points: points.clone(),
+            control_points: points.to_vec(),
             weights: None,
             periodic: false,
         };
@@ -5526,14 +5543,14 @@ mod tests {
     }
 
     fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
-        let outer = cap_boundary(vec![
+        let outer = cap_boundary(&[
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(4.0, 0.0, 0.0),
             Point3::new(4.0, 4.0, 0.0),
             Point3::new(0.0, 4.0, 0.0),
             Point3::new(0.0, 0.0, 0.0),
         ]);
-        let inner = cap_boundary(vec![
+        let inner = cap_boundary(&[
             Point3::new(1.0, 1.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
             Point3::new(2.0, 2.0, 0.0),

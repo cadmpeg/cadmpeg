@@ -159,7 +159,8 @@ mod tests {
         content.extend(0.5_f64.to_le_bytes());
         let bytes = anonymous(1, &content);
 
-        let detail = decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8).unwrap();
+        let detail =
+            decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8).expect("required invariant");
         assert_eq!(detail.page_per_model_ratio, 0.5);
         assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
         let CurveGeometry::Nurbs(boundary) = detail.boundary.geometry else {
