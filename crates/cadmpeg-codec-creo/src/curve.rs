@@ -2169,6 +2169,9 @@ fn relation_round(value: f64, decimal_places: f64, upward: bool) -> Option<f64> 
     }
     let scale = 10_f64.powi(decimal_places as i32);
     let scaled = (value + if upward { -1e-9 } else { 1e-9 }) * scale;
+    if !scaled.is_finite() {
+        return Some(value);
+    }
     Some(
         if upward {
             scaled.ceil()
@@ -3820,6 +3823,10 @@ mod tests {
         assert_eq!(evaluate_expression("ceil(1.2,-1)", &values), None);
         assert_eq!(evaluate_expression("sin()", &values), None);
         assert_eq!(evaluate_expression("1<2<3", &values), None);
+        assert_eq!(relation_round(f64::MAX, 8.0, true), Some(f64::MAX));
+        assert_eq!(relation_round(f64::MAX, 8.0, false), Some(f64::MAX));
+        assert_eq!(relation_round(-f64::MAX, 8.0, true), Some(-f64::MAX));
+        assert_eq!(relation_round(-f64::MAX, 8.0, false), Some(-f64::MAX));
         let excessive_power_depth = format!("{}2", "2^".repeat(129));
         assert_eq!(evaluate_expression(&excessive_power_depth, &values), None);
         let long_unary_chain = format!("{}1", "-".repeat(1024));
