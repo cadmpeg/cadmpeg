@@ -1650,6 +1650,60 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
 }
 
 #[test]
+fn datum_feature_uses_its_unique_complete_local_system() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .definitions
+        .push(crate::feature::FeatureDefinition {
+            id: 5,
+            owner_feature_id: Some(5),
+            body: Vec::new(),
+            parameter_frames: vec![
+                crate::feature::FeatureParameterFrame {
+                    kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
+                    body: Vec::new(),
+                    decoded_values: Some(vec![
+                        1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 3.0, 4.0, 5.0,
+                    ]),
+                    offset: 1,
+                },
+                crate::feature::FeatureParameterFrame {
+                    kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
+                    body: vec![0xff],
+                    decoded_values: None,
+                    offset: 2,
+                },
+            ],
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        });
+
+    assert_eq!(
+        schema_feature_definition(
+            &scan,
+            &CadIr::empty(Units::default()),
+            5,
+            923,
+            "Datum Plane"
+        ),
+        IrFeatureDefinition::DatumPlane {
+            origin: Point3::new(3.0, 4.0, 5.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        }
+    );
+}
+
+#[test]
 fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     let feature = |definition, outputs| Feature {
         id: IrFeatureId("creo:model:feature#1".to_string()),

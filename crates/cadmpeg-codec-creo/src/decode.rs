@@ -13797,41 +13797,68 @@ fn schema_feature_definition(
             .map(|row| row.id)
             .collect::<BTreeSet<_>>();
         let plane_ids = plane_ids.into_iter().collect::<Vec<_>>();
-        let [surface_id] = plane_ids.as_slice() else {
-            return IrFeatureDefinition::DatumPlaneUnresolved;
-        };
-        if crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_none() {
+        if plane_ids.len() > 1 {
             return IrFeatureDefinition::DatumPlaneUnresolved;
         }
-        if let Some(plane) = placed_planes(scan).get(surface_id) {
-            let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
-            return IrFeatureDefinition::DatumPlane {
-                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-                normal,
-                u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
-            };
-        }
-        let surface_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
-        let planes = ir
-            .model
-            .surfaces
-            .iter()
-            .filter(|surface| surface.id == surface_id)
-            .filter_map(|surface| match surface.geometry {
-                SurfaceGeometry::Plane {
-                    origin,
+        if let [surface_id] = plane_ids.as_slice() {
+            if crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_none() {
+                return IrFeatureDefinition::DatumPlaneUnresolved;
+            }
+            if let Some(plane) = placed_planes(scan).get(surface_id) {
+                let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+                return IrFeatureDefinition::DatumPlane {
+                    origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
                     normal,
-                    u_axis,
-                } => Some((origin, normal, u_axis)),
-                _ => None,
-            })
+                    u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+                };
+            }
+            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            let planes = ir
+                .model
+                .surfaces
+                .iter()
+                .filter(|surface| surface.id == surface_id)
+                .filter_map(|surface| match surface.geometry {
+                    SurfaceGeometry::Plane {
+                        origin,
+                        normal,
+                        u_axis,
+                    } => Some((origin, normal, u_axis)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            if let [(origin, normal, u_axis)] = planes.as_slice() {
+                return IrFeatureDefinition::DatumPlane {
+                    origin: *origin,
+                    normal: *normal,
+                    u_axis: *u_axis,
+                };
+            }
+            return IrFeatureDefinition::DatumPlaneUnresolved;
+        }
+        let definitions = scan
+            .features
+            .definitions
+            .iter()
+            .filter(|definition| definition.owner_feature_id == Some(feature_id))
             .collect::<Vec<_>>();
-        if let [(origin, normal, u_axis)] = planes.as_slice() {
-            return IrFeatureDefinition::DatumPlane {
-                origin: *origin,
-                normal: *normal,
-                u_axis: *u_axis,
-            };
+        if let [definition] = definitions.as_slice() {
+            if let Some(values) = crate::placement::unique_complete_local_system(definition) {
+                let raw_normal: [f64; 3] = values[6..9].try_into().expect("three values");
+                let raw_u_axis: [f64; 3] = values[0..3].try_into().expect("three values");
+                if let (Some(normal), Some(u_axis)) =
+                    (normalized(raw_normal), normalized(raw_u_axis))
+                {
+                    if dot(normal, u_axis).abs() <= 1e-12 {
+                        let origin: [f64; 3] = values[9..12].try_into().expect("three values");
+                        return IrFeatureDefinition::DatumPlane {
+                            origin: Point3::new(origin[0], origin[1], origin[2]),
+                            normal: Vector3::new(normal[0], normal[1], normal[2]),
+                            u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+                        };
+                    }
+                }
+            }
         }
         return IrFeatureDefinition::DatumPlaneUnresolved;
     }

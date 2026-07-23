@@ -423,19 +423,22 @@ fn plane_equation(
 }
 
 fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<([f64; 3], f64)> {
-    let frames = definition
-        .parameter_frames
-        .iter()
-        .filter(|frame| frame.kind == FeatureParameterFrameKind::LocalSystem)
-        .collect::<Vec<_>>();
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    let values: [f64; 12] = frame.decoded_values.clone()?.try_into().ok()?;
+    let values = unique_complete_local_system(definition)?;
     let raw_normal: [f64; 3] = values[6..9].try_into().ok()?;
     let normal = normalize(raw_normal)?;
     let origin: [f64; 3] = values[9..12].try_into().ok()?;
     Some((normal, dot(normal, origin)))
+}
+
+pub(crate) fn unique_complete_local_system(definition: &FeatureDefinition) -> Option<[f64; 12]> {
+    let mut frames = definition
+        .parameter_frames
+        .iter()
+        .filter(|frame| frame.kind == FeatureParameterFrameKind::LocalSystem)
+        .filter_map(|frame| frame.decoded_values.as_deref())
+        .filter_map(|values| <&[f64; 12]>::try_from(values).ok());
+    let values = *frames.next()?;
+    frames.next().is_none().then_some(values)
 }
 
 fn definition_local_frame_transform(
@@ -443,15 +446,7 @@ fn definition_local_frame_transform(
     section: &crate::feature::FeatureSection3d,
 ) -> Option<FeatureSectionTransform> {
     let feature_id = definition.owner_feature_id?;
-    let frames = definition
-        .parameter_frames
-        .iter()
-        .filter(|frame| frame.kind == FeatureParameterFrameKind::LocalSystem)
-        .collect::<Vec<_>>();
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    let values: [f64; 12] = frame.decoded_values.clone()?.try_into().ok()?;
+    let values = unique_complete_local_system(definition)?;
     let mut reference_axis = normalize(values[0..3].try_into().ok()?)?;
     let mut normal = normalize(values[6..9].try_into().ok()?)?;
     (dot(reference_axis, normal).abs() <= 1e-12).then_some(())?;
@@ -1111,7 +1106,7 @@ mod tests {
     }
 
     #[test]
-    fn unique_local_system_supplies_section_plane_equation() {
+    fn unique_complete_local_system_supplies_section_plane_equation() {
         let mut definition = blank_definition();
         definition.parameter_frames = vec![FeatureParameterFrame {
             kind: FeatureParameterFrameKind::LocalSystem,
@@ -1130,8 +1125,19 @@ mod tests {
         definition.parameter_frames.push(FeatureParameterFrame {
             kind: FeatureParameterFrameKind::LocalSystem,
             body: Vec::new(),
-            decoded_values: Some(vec![0.0; 12]),
+            decoded_values: None,
             offset: 2,
+        });
+        assert_eq!(
+            definition_local_plane_equation(&definition),
+            Some(([1.0, 0.0, 0.0], 3.0))
+        );
+
+        definition.parameter_frames.push(FeatureParameterFrame {
+            kind: FeatureParameterFrameKind::LocalSystem,
+            body: Vec::new(),
+            decoded_values: Some(vec![0.0; 12]),
+            offset: 3,
         });
         assert_eq!(definition_local_plane_equation(&definition), None);
     }
