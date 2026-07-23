@@ -2763,7 +2763,7 @@ pub(crate) fn standard_spline_plane_line(
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
-) -> Option<CurveGeometry> {
+) -> Option<(CurveGeometry, [f64; 2])> {
     const TOLERANCE: f64 = 2e-3;
 
     let surfaces = support
@@ -2808,10 +2808,13 @@ pub(crate) fn standard_spline_plane_line(
     if direction.cross(intersection).norm() > TOLERANCE {
         return None;
     }
-    Some(CurveGeometry::Line {
-        origin: start,
-        direction,
-    })
+    Some((
+        CurveGeometry::Line {
+            origin: start,
+            direction: direction.scale(1.0 / length),
+        },
+        [0.0, length],
+    ))
 }
 
 pub(crate) fn build_standard_edge_curve(
@@ -2901,14 +2904,17 @@ pub(crate) fn build_standard_edge_curve(
                 param_range,
             )
         }
-        crate::families::standard::records::StandardCurveGeometry::Bspline => (
-            standard_spline_plane_line(ir, bindings, surface_indices, support, points).unwrap_or(
-                CurveGeometry::Unknown {
-                    record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
-                },
-            ),
-            None,
-        ),
+        crate::families::standard::records::StandardCurveGeometry::Bspline => {
+            match standard_spline_plane_line(ir, bindings, surface_indices, support, points) {
+                Some((geometry, range)) => (geometry, Some(range)),
+                None => (
+                    CurveGeometry::Unknown {
+                        record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
+                    },
+                    None,
+                ),
+            }
+        }
     };
     let id = CurveId(format!("catia:standard:curve#{}", support.pos));
     annotate(
@@ -2968,20 +2974,21 @@ pub(crate) fn build_standard_edge_curve(
             annotations
                 .derived(&procedural_id, "curve")
                 .derived(&procedural_id, "definition");
+            let parameter_range = param_range.unwrap_or([0.0, 1.0]);
             ir.model.procedural_curves.push(ProceduralCurve {
                 id: procedural_id,
                 curve: id.clone(),
                 definition: ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext {
                         sides,
-                        parameter_range: [0.0, 1.0],
+                        parameter_range,
                         discontinuities: std::array::from_fn(|_| Vec::new()),
                     },
                     discontinuity_flag: false,
                 },
                 cache_fit_tolerance: None,
             });
-            param_range = Some([0.0, 1.0]);
+            param_range = Some(parameter_range);
         }
     }
     (Some(id), param_range)
@@ -3540,13 +3547,13 @@ mod route_tests {
             [0, 1],
         );
         let id = id.expect("spline support identifies a curve carrier");
-        assert_eq!(range, Some([0.0, 1.0]));
+        assert_eq!(range, Some([0.0, 3.0]));
         assert_eq!(ir.model.curves[0].id, id);
         assert_eq!(
             ir.model.curves[0].geometry,
             CurveGeometry::Line {
                 origin: Point3::new(1.0, 0.0, 0.0),
-                direction: Vector3::new(3.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
             }
         );
         assert!(matches!(
@@ -3558,7 +3565,7 @@ mod route_tests {
             }] if curve == &id
                 && context.sides[0].surface.as_ref().is_some_and(|id| id.0 == "surface-0")
                 && context.sides[1].surface.as_ref().is_some_and(|id| id.0 == "surface-1")
-                && context.parameter_range == [0.0, 1.0]
+                && context.parameter_range == [0.0, 3.0]
         ));
     }
 
