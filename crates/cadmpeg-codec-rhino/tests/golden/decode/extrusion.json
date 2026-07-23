@@ -1,0 +1,540 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "rhino:object:body#record-000000-offset-177.caps",
+          "kind": "sheet",
+          "regions": [
+            "rhino:object:region#record-000000-offset-177.cap-0"
+          ],
+          "visible": true
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "rhino:object:edge#record-000000-offset-177.cap-0.profile-0",
+          "id": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
+          "next": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
+          "owner_loop": "rhino:object:loop#record-000000-offset-177.cap-0.profile-0",
+          "pcurves": [
+            {
+              "pcurve": "rhino:object:pcurve#record-000000-offset-177.cap-0.profile-0"
+            }
+          ],
+          "previous": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
+          "radial_next": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
+          "sense": "forward"
+        }
+      ],
+      "components": [],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "control_points": [
+              {
+                "x": 10.0,
+                "y": 20.0,
+                "z": 32.5
+              },
+              {
+                "x": 12.0,
+                "y": 20.0,
+                "z": 32.5
+              },
+              {
+                "x": 12.0,
+                "y": 21.0,
+                "z": 32.5
+              },
+              {
+                "x": 10.0,
+                "y": 21.0,
+                "z": 32.5
+              },
+              {
+                "x": 10.0,
+                "y": 20.0,
+                "z": 32.5
+              }
+            ],
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              2.0,
+              3.0,
+              4.0,
+              4.0
+            ],
+            "periodic": false
+          },
+          "id": "rhino:object:curve#record-000000-offset-177.profile-0.start",
+          "source_object": {
+            "format": "rhino",
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
+          }
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "curve": "rhino:object:curve#record-000000-offset-177.profile-0.start",
+          "end": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0",
+          "id": "rhino:object:edge#record-000000-offset-177.cap-0.profile-0",
+          "param_range": [
+            0.0,
+            4.0
+          ],
+          "start": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0"
+        }
+      ],
+      "faces": [
+        {
+          "id": "rhino:object:face#record-000000-offset-177.cap-0",
+          "loops": [
+            "rhino:object:loop#record-000000-offset-177.cap-0.profile-0"
+          ],
+          "sense": "reversed",
+          "shell": "rhino:object:shell#record-000000-offset-177.cap-0",
+          "surface": "rhino:object:surface#record-000000-offset-177.cap-0"
+        }
+      ],
+      "features": [],
+      "loops": [
+        {
+          "boundary_role": "unspecified",
+          "coedges": [
+            "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0"
+          ],
+          "face": "rhino:object:face#record-000000-offset-177.cap-0",
+          "id": "rhino:object:loop#record-000000-offset-177.cap-0.profile-0"
+        }
+      ],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [
+        {
+          "geometry": {
+            "control_points": [
+              {
+                "u": 0.0,
+                "v": 0.0
+              },
+              {
+                "u": 2.0,
+                "v": 0.0
+              },
+              {
+                "u": 2.0,
+                "v": 1.0
+              },
+              {
+                "u": 0.0,
+                "v": 1.0
+              },
+              {
+                "u": 0.0,
+                "v": 0.0
+              }
+            ],
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              2.0,
+              3.0,
+              4.0,
+              4.0
+            ],
+            "periodic": false
+          },
+          "id": "rhino:object:pcurve#record-000000-offset-177.cap-0.profile-0",
+          "parameter_range": [
+            0.0,
+            4.0
+          ]
+        }
+      ],
+      "pmi": [],
+      "points": [
+        {
+          "id": "rhino:object:point#record-000000-offset-177.cap-0.profile-0",
+          "position": {
+            "x": 10.0,
+            "y": 20.0,
+            "z": 32.5
+          },
+          "source_object": {
+            "format": "rhino",
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [
+        {
+          "definition": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 5.0
+            },
+            "directrix": "rhino:object:curve#record-000000-offset-177.profile-0.start",
+            "kind": "extrusion"
+          },
+          "id": "rhino:object:procedural-surface#record-000000-offset-177.lateral-0",
+          "surface": "rhino:object:surface#record-000000-offset-177.lateral-0"
+        }
+      ],
+      "product_occurrences": [],
+      "products": [],
+      "regions": [
+        {
+          "body": "rhino:object:body#record-000000-offset-177.caps",
+          "id": "rhino:object:region#record-000000-offset-177.cap-0",
+          "shells": [
+            "rhino:object:shell#record-000000-offset-177.cap-0"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "faces": [
+            "rhino:object:face#record-000000-offset-177.cap-0"
+          ],
+          "id": "rhino:object:shell#record-000000-offset-177.cap-0",
+          "region": "rhino:object:region#record-000000-offset-177.cap-0"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 10.0,
+              "y": 20.0,
+              "z": 32.5
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "rhino:object:surface#record-000000-offset-177.cap-0",
+          "source_object": {
+            "format": "rhino",
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
+          }
+        },
+        {
+          "geometry": {
+            "control_points": [
+              {
+                "x": 10.0,
+                "y": 20.0,
+                "z": 32.5
+              },
+              {
+                "x": 10.0,
+                "y": 20.0,
+                "z": 37.5
+              },
+              {
+                "x": 12.0,
+                "y": 20.0,
+                "z": 32.5
+              },
+              {
+                "x": 12.0,
+                "y": 20.0,
+                "z": 37.5
+              },
+              {
+                "x": 12.0,
+                "y": 21.0,
+                "z": 32.5
+              },
+              {
+                "x": 12.0,
+                "y": 21.0,
+                "z": 37.5
+              },
+              {
+                "x": 10.0,
+                "y": 21.0,
+                "z": 32.5
+              },
+              {
+                "x": 10.0,
+                "y": 21.0,
+                "z": 37.5
+              },
+              {
+                "x": 10.0,
+                "y": 20.0,
+                "z": 32.5
+              },
+              {
+                "x": 10.0,
+                "y": 20.0,
+                "z": 37.5
+              }
+            ],
+            "kind": "nurbs",
+            "u_count": 5,
+            "u_degree": 1,
+            "u_knots": [
+              0.0,
+              0.0,
+              1.0,
+              2.0,
+              3.0,
+              4.0,
+              4.0
+            ],
+            "u_periodic": false,
+            "v_count": 2,
+            "v_degree": 1,
+            "v_knots": [
+              4.0,
+              4.0,
+              9.0,
+              9.0
+            ],
+            "v_periodic": false
+          },
+          "id": "rhino:object:surface#record-000000-offset-177.lateral-0",
+          "source_object": {
+            "format": "rhino",
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
+          }
+        }
+      ],
+      "tessellations": [
+        {
+          "channels": [],
+          "id": "rhino:object:tessellation#record-000000-offset-177.cache-0",
+          "normals": [],
+          "source_object": {
+            "format": "rhino",
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
+          },
+          "strip_lengths": [],
+          "triangles": [],
+          "vertices": [
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          ]
+        }
+      ],
+      "vertices": [
+        {
+          "id": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0",
+          "point": "rhino:object:point#record-000000-offset-177.cap-0.profile-0"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {
+      "rhino": {
+        "arenas": {
+          "annotation_settings": [],
+          "annotations": [],
+          "applications": [],
+          "construction_planes": [],
+          "dimension_styles": [],
+          "document_notes": [],
+          "document_settings": [
+            {
+              "archive_file_name": null,
+              "current_color": null,
+              "current_color_source": null,
+              "current_dimension_style_index": null,
+              "current_font_index": null,
+              "current_layer_index": null,
+              "current_material_index": null,
+              "current_material_source": null,
+              "current_wire_density": null,
+              "id": "rhino:document:settings#current",
+              "model_url": null,
+              "writer_version": null
+            }
+          ],
+          "embedded_images": [],
+          "external_references": [],
+          "grid_defaults": [],
+          "groups": [],
+          "hatch_patterns": [],
+          "history_records": [],
+          "layers": [],
+          "lights": [],
+          "linetypes": [],
+          "materials": [],
+          "object_presentation": [],
+          "previews": [],
+          "product_definitions": [],
+          "product_occurrences": [],
+          "render_settings": [],
+          "revisions": [],
+          "setting_records": [],
+          "text_dots": [],
+          "text_styles": [],
+          "texture_mappings": [],
+          "unknowns": [
+            {
+              "id": "rhino:object:record#000000",
+              "links": [
+                "rhino:object:body#record-000000-offset-177.caps",
+                "rhino:object:surface#record-000000-offset-177.lateral-0",
+                "rhino:object:tessellation#record-000000-offset-177.cache-0"
+              ]
+            }
+          ],
+          "views": [],
+          "windows_bitmaps": []
+        },
+        "version": 2
+      }
+    },
+    "source": {
+      "attributes": {
+        "absolute_tolerance_millimeters": "0.01",
+        "absolute_tolerance_native": "0.01",
+        "angular_tolerance": "0.1",
+        "archive_version": "50",
+        "container_kind": "3dm-chunks",
+        "millimeters_per_unit": "1",
+        "relative_tolerance": "0.001",
+        "unit_system": "standard:2",
+        "unit_value": "2"
+      },
+      "format": "rhino"
+    },
+    "tolerances": {
+      "angular": 0.1,
+      "linear": 0.01
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "rhino",
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "category": "geometry",
+        "code": "object_records_untransferred",
+        "message": "decoded 1/1 Rhino object records",
+        "severity": "info"
+      },
+      {
+        "category": "other",
+        "code": "decode_diagnostic",
+        "message": "object at 177 has nil object UUID",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "decoded 1/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {
+        "rhino:object:body#record-000000-offset-177.caps": {
+          "entity": "derived"
+        },
+        "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0": {
+          "entity": "derived"
+        },
+        "rhino:object:curve#record-000000-offset-177.profile-0.start": {
+          "entity": "derived"
+        },
+        "rhino:object:edge#record-000000-offset-177.cap-0.profile-0": {
+          "entity": "derived"
+        },
+        "rhino:object:face#record-000000-offset-177.cap-0": {
+          "entity": "derived"
+        },
+        "rhino:object:loop#record-000000-offset-177.cap-0.profile-0": {
+          "entity": "derived"
+        },
+        "rhino:object:pcurve#record-000000-offset-177.cap-0.profile-0": {
+          "entity": "derived"
+        },
+        "rhino:object:point#record-000000-offset-177.cap-0.profile-0": {
+          "entity": "derived"
+        },
+        "rhino:object:procedural-surface#record-000000-offset-177.lateral-0": {
+          "entity": "derived"
+        },
+        "rhino:object:region#record-000000-offset-177.cap-0": {
+          "entity": "derived"
+        },
+        "rhino:object:shell#record-000000-offset-177.cap-0": {
+          "entity": "derived"
+        },
+        "rhino:object:surface#record-000000-offset-177.cap-0": {
+          "entity": "derived"
+        },
+        "rhino:object:surface#record-000000-offset-177.lateral-0": {
+          "entity": "derived"
+        },
+        "rhino:object:tessellation#record-000000-offset-177.cache-0": {
+          "entity": "derived"
+        },
+        "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0": {
+          "entity": "derived"
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "byte_len": 883,
+        "data": "cIAAIGcDAAAAAAAAcQAAghAAAAAAAAAA+n8CAD8DAAAAAAAA+/8CABQAAAAAAAAAdTH1NrhyR02/H7Tm/CT0uXhA+nj8/wIABwMAAAAAAAAAgABA9wIAAAAAAAABAAAAAwAAAPp/AgDpAAAAAAAAAPv/AgAUAAAAAAAAAObU105H6dMRv+UAEIMBIvBOnLvb/P8CALEAAAAAAAAAEAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAACEAAAAAAAAAQQAIAAAB1W915/38CgAAAAAAAAAAAAAAAAAAAJEAAAAAAAAA0QAAAAAAAAD5AAAAAAAAAJEAAAAAAAAA0QAAAAAAAAERAAAAAAAAA0D8AAAAAAADoPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAAAAAAAAAiQAABAAAAAQAAgABASQEAAAAAAAABAAAAAAAAAAEAgABALwEAAAAAAAABAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwf6fwIABwEAAAAAAAD7/wIAFAAAAAAAAADk1NdOR+nTEb/lABCDASLwLbkbXPz/AgDPAAAAAAAAADABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAMAAAAb8bVewAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeoHjFv9/AoAAAAAAAAAAAFN4PUcAL1CpyO4eA5nWfrQf/38CgAAAAAAAAAAAfwAAggAAAAAAAAAAd4Waxw==",
+        "id": "rhino:object:record#000000",
+        "offset": 177,
+        "sha256": "048579feb6c1572ab2903bd6815c3bdc1af1c735f7b7ce44d8fe0a37a35443c5",
+        "stream": "source"
+      }
+    ],
+    "version": "3"
+  }
+}

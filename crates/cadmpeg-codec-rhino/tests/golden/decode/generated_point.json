@@ -1,0 +1,323 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.0,
+            "g": 0.0,
+            "r": 0.0
+          },
+          "id": "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742",
+          "kind": "general",
+          "regions": [
+            "rhino:object:region#d000213c-3fed-dfd4-5d93-120ab2084742"
+          ],
+          "visible": true
+        }
+      ],
+      "coedges": [],
+      "components": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742",
+          "position": {
+            "x": 1.0,
+            "y": 2.0,
+            "z": 3.0
+          },
+          "source_object": {
+            "color": {
+              "a": 1.0,
+              "b": 0.0,
+              "g": 0.0,
+              "r": 0.0
+            },
+            "format": "rhino",
+            "layer": "284434a6-8100-1c94-6093-9b8d5a958003",
+            "object_id": "d000213c-3fed-dfd4-5d93-120ab2084742",
+            "visible": true
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_occurrences": [],
+      "products": [],
+      "regions": [
+        {
+          "body": "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742",
+          "id": "rhino:object:region#d000213c-3fed-dfd4-5d93-120ab2084742",
+          "shells": [
+            "rhino:object:shell#d000213c-3fed-dfd4-5d93-120ab2084742"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "faces": [],
+          "free_vertices": [
+            "rhino:object:vertex#d000213c-3fed-dfd4-5d93-120ab2084742"
+          ],
+          "id": "rhino:object:shell#d000213c-3fed-dfd4-5d93-120ab2084742",
+          "region": "rhino:object:region#d000213c-3fed-dfd4-5d93-120ab2084742"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "rhino:object:vertex#d000213c-3fed-dfd4-5d93-120ab2084742",
+          "point": "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {
+      "rhino": {
+        "arenas": {
+          "annotation_settings": [],
+          "annotations": [],
+          "applications": [],
+          "construction_planes": [],
+          "dimension_styles": [],
+          "document_notes": [],
+          "document_settings": [
+            {
+              "archive_file_name": null,
+              "current_color": null,
+              "current_color_source": null,
+              "current_dimension_style_index": null,
+              "current_font_index": null,
+              "current_layer_index": null,
+              "current_material_index": null,
+              "current_material_source": null,
+              "current_wire_density": null,
+              "id": "rhino:document:settings#current",
+              "model_url": null,
+              "writer_version": 200712190
+            }
+          ],
+          "embedded_images": [],
+          "external_references": [],
+          "grid_defaults": [],
+          "groups": [],
+          "hatch_patterns": [],
+          "history_records": [],
+          "layers": [
+            {
+              "archive_index": 0,
+              "clipping_planes_enabled": null,
+              "color": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "display_material_uuid": null,
+              "expanded": null,
+              "id": "rhino:presentation:layer#284434a6-8100-1c94-6093-9b8d5a958003",
+              "linetype_index": -1,
+              "locked": false,
+              "material_index": -1,
+              "name": "Default",
+              "parent_uuid": null,
+              "plot_color": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "plot_weight_mm": 0.0,
+              "rendering_materials": [],
+              "source_offset": 267,
+              "source_uuid": "284434a6-8100-1c94-6093-9b8d5a958003",
+              "visible": true
+            }
+          ],
+          "lights": [],
+          "linetypes": [],
+          "materials": [],
+          "object_presentation": [
+            {
+              "active_space": 0,
+              "clipping_plane_label_style": 0,
+              "clipping_plane_uuids": [],
+              "clipping_proof": false,
+              "color": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "color_source": 0,
+              "decoration": 0,
+              "display_materials": [],
+              "display_order": 0,
+              "group_indexes": [],
+              "hatch_background": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "hatch_boundary_visible": false,
+              "hatch_pattern_index": -1,
+              "id": "rhino:presentation:object#d000213c-3fed-dfd4-5d93-120ab2084742",
+              "layer_index": 0,
+              "linetype_index": -1,
+              "linetype_pattern_scale": 1.0,
+              "linetype_source": 0,
+              "links": [
+                "rhino:object:record#000000"
+              ],
+              "material_index": -1,
+              "material_source": 0,
+              "name": "",
+              "object_mode": 0,
+              "plot_color": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "plot_color_source": 0,
+              "plot_weight_mm": 0.0,
+              "plot_weight_source": 0,
+              "rendering_materials": [],
+              "section_fill_rule": 0,
+              "section_hatch_rotation": 0.0,
+              "section_hatch_scale": 1.0,
+              "source_offset": 622,
+              "source_uuid": "d000213c-3fed-dfd4-5d93-120ab2084742",
+              "url": "",
+              "viewport_uuid": null,
+              "visible": true,
+              "wire_density": 1
+            }
+          ],
+          "previews": [],
+          "product_definitions": [],
+          "product_occurrences": [],
+          "render_settings": [],
+          "revisions": [],
+          "setting_records": [],
+          "text_dots": [],
+          "text_styles": [],
+          "texture_mappings": [],
+          "unknowns": [
+            {
+              "id": "rhino:object:record#000000",
+              "links": [
+                "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742"
+              ]
+            }
+          ],
+          "views": [],
+          "windows_bitmaps": []
+        },
+        "version": 2
+      }
+    },
+    "source": {
+      "attributes": {
+        "absolute_tolerance_millimeters": "0.000001",
+        "absolute_tolerance_native": "0.000001",
+        "angular_tolerance": "0.0000000001",
+        "archive_version": "80",
+        "container_kind": "3dm-chunks",
+        "layer.0.locked": "false",
+        "layer.0.name": "Default",
+        "layer.0.uuid": "284434a6-8100-1c94-6093-9b8d5a958003",
+        "layer.0.visible": "true",
+        "millimeters_per_unit": "1",
+        "relative_tolerance": "0.01",
+        "unit_system": "standard:2",
+        "unit_value": "2"
+      },
+      "format": "rhino"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "rhino",
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "category": "geometry",
+        "code": "object_records_untransferred",
+        "message": "decoded 1/1 Rhino object records",
+        "severity": "info"
+      }
+    ],
+    "notes": [
+      "decoded 1/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {
+        "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742": {
+          "entity": "derived"
+        },
+        "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742": {
+          "entity": "byte_exact"
+        },
+        "rhino:object:region#d000213c-3fed-dfd4-5d93-120ab2084742": {
+          "entity": "derived"
+        },
+        "rhino:object:shell#d000213c-3fed-dfd4-5d93-120ab2084742": {
+          "entity": "derived"
+        },
+        "rhino:object:vertex#d000213c-3fed-dfd4-5d93-120ab2084742": {
+          "entity": "derived"
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "byte_len": 175,
+        "data": "cIAAIKMAAAAAAAAAcQAAggEAAAAAAAAA+n8CAFUAAAAAAAAA+/8CABQAAAAAAAAAHRoQw1fx0xG/5wAQgwEi8ExUB6T8/wIAHQAAAAAAAAAQAAAAAAAA8D8AAAAAAAAAQAAAAAAAAAhA5Qs8Sf9/AoAAAAAAAAAAAHKAAAIaAAAAAAAAACA8IQDQ7T/U312TEgqyCEdCAAAAAAA+vfBQfwAAggAAAAAAAAAAAAAAAA==",
+        "id": "rhino:object:record#000000",
+        "offset": 622,
+        "sha256": "5d5bbee13c365a2f619a8fae45c0a0f1bccf9f8cd0287e54cde415d46084ddeb",
+        "stream": "source"
+      }
+    ],
+    "version": "3"
+  }
+}

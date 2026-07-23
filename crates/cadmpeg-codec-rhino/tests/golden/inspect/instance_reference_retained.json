@@ -1,0 +1,76 @@
+{
+  "container_kind": "3dm-chunks",
+  "entries": [
+    {
+      "attributes": {
+        "body_offset": "63",
+        "offset": "51",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000014",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "87",
+        "offset": "75",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000015",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "111",
+        "offset": "99",
+        "record_count": "1",
+        "size": "423"
+      },
+      "compressed_size": 423,
+      "compression": "none",
+      "name": "table-0x10000021",
+      "role": "table",
+      "uncompressed_size": 411
+    },
+    {
+      "attributes": {
+        "body_offset": "534",
+        "object_typecode_0x1000": "1",
+        "offset": "522",
+        "record_count": "1",
+        "size": "329"
+      },
+      "compressed_size": 329,
+      "compression": "none",
+      "name": "table-0x10000013",
+      "role": "table",
+      "uncompressed_size": 317
+    },
+    {
+      "attributes": {
+        "class_uuid": "f9cfb638-b9d4-4340-87e3-c56e7865d96a",
+        "count": "1",
+        "nil_uuid": "false",
+        "total_record_bytes": "305"
+      },
+      "compressed_size": 305,
+      "compression": "none",
+      "name": "class-f9cfb638-b9d4-4340-87e3-c56e7865d96a",
+      "role": "object-class",
+      "uncompressed_size": 305
+    }
+  ],
+  "format": "rhino",
+  "notes": [
+    "archive version 60",
+    "object at 534 has nil object UUID"
+  ]
+}

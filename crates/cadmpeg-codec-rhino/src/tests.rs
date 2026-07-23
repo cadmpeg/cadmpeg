@@ -3510,3 +3510,675 @@ fn typed_class_constants_preserve_canonical_uuid_display() {
         "f09ba4d9-455b-42c3-ba3b-e6ccacef853b"
     );
 }
+
+/// Golden-snapshot harness pinning the Rhino `.3dm` codec before refactoring.
+///
+/// Regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-rhino golden`,
+/// then review the diff before committing. Rhino fixtures build raw 3DM chunk
+/// bytes with no zlib compression on the input side, and the encoder performs no
+/// compression, so every committed artifact is a byte-for-byte function of the
+/// input alone — snapshots are identical under the crate-only build this harness
+/// runs and the workspace build CI runs. `golden_output_is_deterministic`
+/// confirms decode, inspect, and encode are pure functions of the input bytes.
+///
+/// Layout under `tests/golden/`:
+///   `fixtures/<name>.3dm`     committed input bytes; the frozen decode input.
+///   `decode/<name>.json`      `{ir, report, source_fidelity}` or `{decode_error}`.
+///   `inspect/<name>.json`     `ContainerSummary` or `{inspect_error}`.
+///   `encode/<name>.v5.bin`    decoded IR the writer accepts, re-encoded at V5.
+///   `encode/<name>.v8.bin`    decoded IR the writer accepts, re-encoded at V8.
+///   `encode/<name>.v5.err.txt`  the writer's refusal message at V5 (verbatim).
+///   `encode/<name>.v8.err.txt`  the writer's refusal message at V8 (verbatim).
+///
+/// The Rhino writer is generation-only: it rewrites just the native namespace it
+/// itself emits, so it refuses IR decoded from any archive it did not write. Every
+/// synthetic-archive fixture therefore pins a `.err.txt` (`Rhino native records
+/// require explicit survival handling`) rather than bytes. The `generated_*`
+/// fixtures are the writer's own output, so their decoded IR is rewritable and
+/// pins real `.bin` bytes — the only path that exercises the writer's byte
+/// generation here. A fixture the decoder refuses (V1/V2) has no IR and no encode
+/// golden of either kind.
+mod golden {
+    use std::io::Cursor;
+    use std::path::{Path, PathBuf};
+
+    use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, DecodeResult, Encoder};
+    use cadmpeg_ir::decode::InspectOptions;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::ids::PointId;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::Point;
+    use cadmpeg_ir::units::Units;
+
+    use crate::archive_test_support::{
+        arc_payload, archive, archive_unit, archive_version, brep_payload, line_payload,
+        mesh_payload, object_record, point_cloud_payload, point_payload, polycurve_payload,
+        polyline_payload, singular_seam_brep_payload, ARC_CLASS, BREP_CLASS, EXTRUSION_CLASS,
+        LINE_CLASS, MESH_CLASS, POINT_CLASS, POINT_CLOUD_CLASS, POLYCURVE_CLASS, POLYLINE_CLASS,
+        SUBD_CLASS,
+    };
+    use crate::chunks::ArchiveVersion;
+    use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+
+    // Version-parameterized builders and class constants owned by the enclosing
+    // test module (`super`); these express object types and archive bands the
+    // eight-byte-only `archive_test_support` builders cannot.
+    use super::{
+        circle_payload, crc_chunk, definition_record, document_with_definitions,
+        instance_reference_payload, minimal_document, nurbs_curve_payload,
+        object_record_with_payload, table, transform, v6_definition_payload, ARC_CURVE_CLASS,
+        INSTANCE_REFERENCE_CLASS, NURBS_CURVE_CLASS, REV_SURFACE_CLASS,
+    };
+
+    const TCODE_PROPERTIES: u32 = 0x1000_0014;
+    const TCODE_SETTINGS: u32 = 0x1000_0015;
+    const TCODE_OBJECTS: u32 = 0x1000_0013;
+
+    /// The covering fixture set as `(golden name, full `.3dm` bytes)`.
+    ///
+    /// Geometry fixtures use the `archive_test_support` builders that back
+    /// `archive_tests.rs`; SubD spans all four decode bands; instances go through
+    /// a real instance-definition table; V3/V4 exercise the metadata-only decode
+    /// path; V1/V2 exercise the refusal path.
+    fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
+        let mut f: Vec<(&'static str, Vec<u8>)> = Vec::new();
+
+        // --- Simple curves and points (archive version 50). ---
+        f.push((
+            "point",
+            archive(&[object_record(
+                1,
+                POINT_CLASS,
+                &point_payload([1.25, -2.5, 3.75]),
+            )]),
+        ));
+        f.push((
+            "point_cloud",
+            archive(&[object_record(
+                2,
+                POINT_CLOUD_CLASS,
+                &point_cloud_payload(&[[4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]),
+            )]),
+        ));
+        f.push((
+            "line",
+            archive(&[object_record(
+                4,
+                LINE_CLASS,
+                &line_payload([10.0, 20.0, 30.0], [2.0, 0.0, 0.0], [3.0, 7.0]),
+            )]),
+        ));
+        f.push((
+            "arc",
+            archive(&[object_record(
+                4,
+                ARC_CLASS,
+                &arc_payload([0.0, std::f64::consts::FRAC_PI_2], [4.0, 9.0]),
+            )]),
+        ));
+        f.push((
+            "polyline",
+            archive(&[object_record(
+                4,
+                POLYLINE_CLASS,
+                &polyline_payload(
+                    &[[0.0, 0.0, 0.0], [1.0, 2.0, 0.0], [4.0, 2.0, 0.0]],
+                    &[2.0, 3.5, 9.0],
+                ),
+            )]),
+        ));
+        f.push((
+            "polycurve",
+            archive(&[object_record(4, POLYCURVE_CLASS, &nested_polycurve())]),
+        ));
+        f.push(("curves_mixed", archive(&mixed_simple_geometry())));
+        f.push((
+            "nurbs_curve",
+            archive(&[object_record(
+                4,
+                NURBS_CURVE_CLASS,
+                &nurbs_curve_payload([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]),
+            )]),
+        ));
+        f.push((
+            "circle",
+            archive(&[object_record(4, ARC_CURVE_CLASS, &circle_payload())]),
+        ));
+
+        // --- Meshes across serialized major/minor bands. ---
+        f.push((
+            "mesh_v1_0",
+            archive(&[object_record(
+                0x20,
+                MESH_CLASS,
+                &mesh_payload(1, 0, false, false),
+            )]),
+        ));
+        f.push((
+            "mesh_v3_5",
+            archive(&[object_record(
+                0x20,
+                MESH_CLASS,
+                &mesh_payload(3, 5, false, false),
+            )]),
+        ));
+        f.push((
+            "mesh_v3_8",
+            archive_version(
+                "60",
+                &[object_record(
+                    0x20,
+                    MESH_CLASS,
+                    &mesh_payload(3, 8, false, false),
+                )],
+            ),
+        ));
+
+        // --- Breps (unit index 3 scales the fixture tolerances as its white-box
+        // test expects). ---
+        f.push((
+            "brep",
+            archive_unit(3, &[object_record(0x10, BREP_CLASS, &brep_payload(false))]),
+        ));
+        f.push((
+            "brep_singular_seam",
+            archive(&[object_record(
+                0x10,
+                BREP_CLASS,
+                &singular_seam_brep_payload(false),
+            )]),
+        ));
+
+        // --- Extrusions: capped profile with a mesh cache, and a holed profile. ---
+        f.push((
+            "extrusion",
+            archive(&[object_record(
+                0x10,
+                EXTRUSION_CLASS,
+                &crate::extrusion::tests::archive_payload(3, [true, false], false, true),
+            )]),
+        ));
+        f.push((
+            "extrusion_hole",
+            archive(&[object_record(
+                0x10,
+                EXTRUSION_CLASS,
+                &crate::extrusion::tests::archive_payload(2, [true, true], true, false),
+            )]),
+        ));
+
+        // --- Procedural surface of revolution. ---
+        f.push((
+            "rev_surface",
+            archive(&[object_record(
+                8,
+                REV_SURFACE_CLASS,
+                &crate::surfaces::tests::valid_revolution_payload(0x20),
+            )]),
+        ));
+
+        // --- SubD in each supported decode band (50/60/70/80). ---
+        for (version, band) in [
+            ("50", ArchiveVersion::V5),
+            ("60", ArchiveVersion::V6),
+            ("70", ArchiveVersion::V7),
+            ("80", ArchiveVersion::V8),
+        ] {
+            f.push((
+                match version {
+                    "50" => "subd_v50",
+                    "60" => "subd_v60",
+                    "70" => "subd_v70",
+                    _ => "subd_v80",
+                },
+                archive_version(
+                    version,
+                    &[object_record(
+                        0x0004_0000,
+                        SUBD_CLASS,
+                        &crate::subd::tests::quad_payload(band),
+                    )],
+                ),
+            ));
+        }
+
+        // --- Instance definition table plus a reference. Without document units,
+        // expansion is declined and the reference is retained; with units, the
+        // reference expands through `expand_reference`. The builders cannot assign
+        // a non-nil object UUID, so the static definition carries no matchable
+        // members and expansion yields the transform-only body set (empty here);
+        // both pins exercise definition-table parsing and the reference path. ---
+        f.push((
+            "instance_reference_retained",
+            instance_reference_fixture(false),
+        ));
+        f.push((
+            "instance_reference_expanded",
+            instance_reference_fixture(true),
+        ));
+
+        // --- V3/V4 metadata-only decode: the archive scans but geometry decode is
+        // gated off, so the point object is retained without semantic geometry. ---
+        f.push((
+            "metadata_only_v3",
+            metadata_only_document("3", ArchiveVersion::V3),
+        ));
+        f.push((
+            "metadata_only_v4",
+            metadata_only_document("4", ArchiveVersion::V4),
+        ));
+
+        // --- V1/V2 refusal: decode returns NotImplemented; inspect summarizes the
+        // header only. The 32-byte header is sufficient because the refusal fires
+        // before any table scan. ---
+        f.push(("reject_v1", super::header("1")));
+        f.push(("reject_v2", super::header("2")));
+
+        // --- Encoder-generated round-trip fixtures. The `.3dm` bytes are the
+        // writer's own V8 output for a neutral IR, so decoding them yields a rhino
+        // namespace the writer recognizes as rewritable; re-encoding therefore
+        // produces real bytes (an `encode/*.bin`), pinning the writer's byte
+        // generation. Fixtures decoded from synthetic archives above instead pin
+        // the writer's refusal to re-emit foreign native records. ---
+        f.push(("generated_point", encoder_generated_point()));
+
+        f
+    }
+
+    /// A valid `.3dm` produced by encoding a neutral single-point IR through the
+    /// writer. Deterministic: the writer performs no compression and uses no
+    /// hash-map iteration or clocks.
+    fn encoder_generated_point() -> Vec<u8> {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.points.push(Point {
+            id: PointId("cadir:model:point#generated".into()),
+            position: Point3::new(1.0, 2.0, 3.0),
+            source_object: None,
+        });
+        let mut bytes = Vec::new();
+        RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&ir, &mut bytes)
+            .expect("encode neutral point IR");
+        bytes
+    }
+
+    /// A two-level polycurve: an outer compound whose second component is itself a
+    /// polycurve, mirroring the `archive_tests` compound-order fixture.
+    fn nested_polycurve() -> Vec<u8> {
+        let inner = polycurve_payload(
+            &[10.0, 20.0],
+            &[(
+                LINE_CLASS,
+                line_payload([2.0, 0.0, 0.0], [3.0, 0.0, 0.0], [10.0, 20.0]),
+            )],
+        );
+        polycurve_payload(
+            &[0.0, 2.0, 5.0],
+            &[
+                (
+                    LINE_CLASS,
+                    line_payload([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0]),
+                ),
+                (POLYCURVE_CLASS, inner),
+            ],
+        )
+    }
+
+    /// Point, point cloud, line, arc, polyline, and a nested polycurve in one
+    /// archive, exercising the multi-object commit and compound-order paths.
+    fn mixed_simple_geometry() -> Vec<Vec<u8>> {
+        vec![
+            object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0])),
+            object_record(
+                2,
+                POINT_CLOUD_CLASS,
+                &point_cloud_payload(&[[4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]),
+            ),
+            object_record(
+                4,
+                LINE_CLASS,
+                &line_payload([0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [-1.0, 3.0]),
+            ),
+            object_record(
+                4,
+                ARC_CLASS,
+                &arc_payload([0.0, std::f64::consts::FRAC_PI_2], [4.0, 9.0]),
+            ),
+            object_record(
+                4,
+                POLYLINE_CLASS,
+                &polyline_payload(
+                    &[[0.0, 0.0, 0.0], [1.0, 2.0, 0.0], [4.0, 2.0, 0.0]],
+                    &[2.0, 3.5, 9.0],
+                ),
+            ),
+            object_record(4, POLYCURVE_CLASS, &nested_polycurve()),
+        ]
+    }
+
+    /// An instance-definition table with one static, empty-member definition plus
+    /// one reference to it, as a version-60 archive. `with_units` adds the document
+    /// unit record that `expand_reference` needs; without it the reference is
+    /// retained instead.
+    fn instance_reference_fixture(with_units: bool) -> Vec<u8> {
+        let archive = ArchiveVersion::V6;
+        let definition_id = [0x61_u8; 16];
+        let definition = definition_record(
+            archive,
+            &v6_definition_payload(archive, definition_id, &[], 1, false, false),
+        );
+        let reference = object_record_with_payload(
+            archive,
+            0x1000,
+            INSTANCE_REFERENCE_CLASS,
+            &instance_reference_payload(definition_id, transform(1.0, [10.0, 0.0, 0.0])),
+        );
+        if with_units {
+            minimal_document(
+                "60",
+                &[
+                    table(archive, TCODE_PROPERTIES, &[]),
+                    table(archive, TCODE_SETTINGS, &[document_units_record(archive)]),
+                    table(archive, 0x1000_0021, &[definition]),
+                    table(archive, TCODE_OBJECTS, &[reference]),
+                ],
+            )
+        } else {
+            document_with_definitions("60", archive, &[definition], &[reference])
+        }
+    }
+
+    /// The document `UNITS` record (typecode `0x2000_8031`) the metadata parser
+    /// reads to expose millimeters-per-unit, matching the record the
+    /// `archive_test_support` archives embed for unit system 2.
+    fn document_units_record(archive: ArchiveVersion) -> Vec<u8> {
+        let mut body = 100_i32.to_le_bytes().to_vec();
+        body.extend(2_i32.to_le_bytes());
+        body.extend(0.01_f64.to_le_bytes());
+        body.extend(0.1_f64.to_le_bytes());
+        body.extend(0.001_f64.to_le_bytes());
+        crc_chunk(archive, 0x2000_8031, &body)
+    }
+
+    /// A minimal V3/V4 document with the required property, setting, and object
+    /// tables and a single point object.
+    fn metadata_only_document(version: &str, archive: ArchiveVersion) -> Vec<u8> {
+        minimal_document(
+            version,
+            &[
+                table(archive, TCODE_PROPERTIES, &[]),
+                table(archive, TCODE_SETTINGS, &[]),
+                table(
+                    archive,
+                    TCODE_OBJECTS,
+                    &[object_record_with_payload(
+                        archive,
+                        1,
+                        POINT_CLASS,
+                        &point_payload([1.0, 2.0, 3.0]),
+                    )],
+                ),
+            ],
+        )
+    }
+
+    fn decode_result(bytes: &[u8]) -> Result<DecodeResult, cadmpeg_ir::codec::CodecError> {
+        RhinoCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+    }
+
+    /// Canonical decode snapshot: the finalized IR, the decode report, and the
+    /// source-fidelity sidecar. A refused decode freezes its error string; that
+    /// refusal is contract-relevant behavior, so this never panics on codec output.
+    fn decode_snapshot(bytes: &[u8]) -> String {
+        let value = match decode_result(bytes) {
+            Ok(result) => serde_json::json!({
+                "ir": serde_json::to_value(&result.ir).expect("serialize ir"),
+                "report": serde_json::to_value(&result.report).expect("serialize report"),
+                "source_fidelity": serde_json::to_value(&result.source_fidelity)
+                    .expect("serialize source_fidelity"),
+            }),
+            Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
+        };
+        let mut text = serde_json::to_string_pretty(&value).expect("serialize decode snapshot");
+        text.push('\n');
+        text
+    }
+
+    /// Container inspection snapshot: the `ContainerSummary`, or the inspect error.
+    fn inspect_snapshot(bytes: &[u8]) -> String {
+        let value = match RhinoCodec
+            .inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default())
+        {
+            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
+            Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
+        };
+        let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
+        text.push('\n');
+        text
+    }
+
+    /// Re-encode a fixture's decoded IR through the version-parameterized encoder.
+    ///
+    /// `None` when the fixture does not decode: there is no IR to encode. Otherwise
+    /// the encoder's own outcome: `Ok(bytes)` when it accepts the IR (pinned as an
+    /// `encode/*.bin`), or `Err(message)` when it refuses (pinned as an
+    /// `encode/*.err.txt`). The Rhino writer is generation-only and rewrites just
+    /// the native namespace it itself emits, so decoded synthetic IR is refused
+    /// with `Rhino native records require explicit survival handling`; this
+    /// snapshots that refusal verbatim rather than hiding it.
+    fn encode_outcome(
+        bytes: &[u8],
+        version: RhinoArchiveVersion,
+    ) -> Option<Result<Vec<u8>, String>> {
+        let result = decode_result(bytes).ok()?;
+        let mut out = Vec::new();
+        Some(
+            match RhinoEncoder::new(version).encode(&result.ir, &mut out) {
+                Ok(_) => Ok(out),
+                Err(err) => Err(err.to_string()),
+            },
+        )
+    }
+
+    fn golden_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
+    }
+
+    fn update_requested() -> bool {
+        std::env::var_os("UPDATE_GOLDEN").is_some()
+    }
+
+    /// First differing line, 1-based, both sides truncated for readable failure.
+    fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
+        let mut exp = expected.lines();
+        let mut act = actual.lines();
+        let mut line = 0usize;
+        loop {
+            line += 1;
+            match (exp.next(), act.next()) {
+                (Some(e), Some(a)) if e == a => {}
+                (e, a) => {
+                    let trunc = |s: Option<&str>| match s {
+                        Some(s) if s.len() > 200 => format!("{}…", &s[..200]),
+                        Some(s) => s.to_string(),
+                        None => "<end of file>".to_string(),
+                    };
+                    return (line, trunc(e), trunc(a));
+                }
+            }
+        }
+    }
+
+    fn first_byte_diff(expected: &[u8], actual: &[u8]) -> String {
+        let offset = expected
+            .iter()
+            .zip(actual)
+            .position(|(e, a)| e != a)
+            .unwrap_or_else(|| expected.len().min(actual.len()));
+        let describe = |bytes: &[u8]| match bytes.get(offset) {
+            Some(byte) => format!("0x{byte:02x}"),
+            None => "<end of file>".to_string(),
+        };
+        format!(
+            "first byte difference at offset {offset}: golden {}, actual {} (lengths: {} and {})",
+            describe(expected),
+            describe(actual),
+            expected.len(),
+            actual.len(),
+        )
+    }
+
+    fn compare_text(update: bool, path: &Path, actual: &str, failures: &mut Vec<String>) {
+        if update {
+            std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
+                .expect("create golden dir");
+            std::fs::write(path, actual.as_bytes())
+                .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+            return;
+        }
+        match std::fs::read_to_string(path) {
+            Ok(expected) if expected == actual => {}
+            Ok(expected) => {
+                let (line, exp, act) = first_line_diff(&expected, actual);
+                failures.push(format!(
+                    "{}: diverged at line {line}\n    golden: {exp}\n    actual: {act}",
+                    path.display()
+                ));
+            }
+            Err(e) => failures.push(format!(
+                "{}: cannot read golden ({e}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-rhino golden`",
+                path.display()
+            )),
+        }
+    }
+
+    fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<String>) {
+        if update {
+            std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
+                .expect("create golden dir");
+            std::fs::write(path, actual)
+                .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+            return;
+        }
+        match std::fs::read(path) {
+            Ok(expected) if expected == actual => {}
+            Ok(expected) => failures.push(format!("{}: {}", path.display(), first_byte_diff(&expected, actual))),
+            Err(e) => failures.push(format!(
+                "{}: cannot read golden ({e}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-rhino golden`",
+                path.display()
+            )),
+        }
+    }
+
+    fn remove_if_exists(path: &Path) {
+        if path.exists() {
+            std::fs::remove_file(path).unwrap_or_else(|e| panic!("remove {}: {e}", path.display()));
+        }
+    }
+
+    #[test]
+    fn golden_snapshots_are_byte_identical() {
+        let update = update_requested();
+        let root = golden_root();
+        let mut failures = Vec::new();
+        for (name, bytes) in fixtures() {
+            let fixture_path = root.join("fixtures").join(format!("{name}.3dm"));
+            // The committed `.3dm` is the frozen decode input. On update, rewrite
+            // it from the builder; then snapshot the exact committed bytes so the
+            // pin does not depend on the builder staying constant.
+            if update {
+                std::fs::create_dir_all(fixture_path.parent().expect("fixtures dir"))
+                    .expect("create fixtures dir");
+                std::fs::write(&fixture_path, &bytes)
+                    .unwrap_or_else(|e| panic!("write fixture {name}: {e}"));
+            }
+            let input = if update {
+                bytes.clone()
+            } else {
+                match std::fs::read(&fixture_path) {
+                    Ok(value) => value,
+                    Err(e) => {
+                        failures.push(format!(
+                            "fixture `{name}`: cannot read {} ({e}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-rhino golden`",
+                            fixture_path.display()
+                        ));
+                        continue;
+                    }
+                }
+            };
+
+            compare_text(
+                update,
+                &root.join("decode").join(format!("{name}.json")),
+                &decode_snapshot(&input),
+                &mut failures,
+            );
+            compare_text(
+                update,
+                &root.join("inspect").join(format!("{name}.json")),
+                &inspect_snapshot(&input),
+                &mut failures,
+            );
+            for (version, suffix) in [
+                (RhinoArchiveVersion::V5, "v5"),
+                (RhinoArchiveVersion::V8, "v8"),
+            ] {
+                let bin_path = root.join("encode").join(format!("{name}.{suffix}.bin"));
+                let err_path = root.join("encode").join(format!("{name}.{suffix}.err.txt"));
+                match encode_outcome(&input, version) {
+                    Some(Ok(encoded)) => {
+                        if update {
+                            remove_if_exists(&err_path);
+                        }
+                        compare_bytes(update, &bin_path, &encoded, &mut failures);
+                    }
+                    Some(Err(message)) => {
+                        if update {
+                            remove_if_exists(&bin_path);
+                        }
+                        compare_text(update, &err_path, &format!("{message}\n"), &mut failures);
+                    }
+                    None if update => {
+                        remove_if_exists(&bin_path);
+                        remove_if_exists(&err_path);
+                    }
+                    None => {}
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} golden artifact(s) drifted; if the change is intended regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-rhino golden` and review the diff:\n\n{}",
+            failures.len(),
+            failures.join("\n\n"),
+        );
+    }
+
+    /// Guards against nondeterministic output (hash-map iteration order,
+    /// timestamps): every artifact must be a pure function of the input bytes.
+    #[test]
+    fn golden_output_is_deterministic() {
+        for (name, bytes) in fixtures() {
+            let decode_first = decode_snapshot(&bytes);
+            let decode_second = decode_snapshot(&bytes);
+            if decode_first != decode_second {
+                let (line, a, b) = first_line_diff(&decode_first, &decode_second);
+                panic!("fixture `{name}`: nondeterministic decode at line {line}\n    run 1: {a}\n    run 2: {b}");
+            }
+            let inspect_first = inspect_snapshot(&bytes);
+            let inspect_second = inspect_snapshot(&bytes);
+            if inspect_first != inspect_second {
+                let (line, a, b) = first_line_diff(&inspect_first, &inspect_second);
+                panic!("fixture `{name}`: nondeterministic inspect at line {line}\n    run 1: {a}\n    run 2: {b}");
+            }
+            for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
+                let encode_first = encode_outcome(&bytes, version);
+                let encode_second = encode_outcome(&bytes, version);
+                assert_eq!(
+                    encode_first, encode_second,
+                    "fixture `{name}`: nondeterministic encode for {version:?}"
+                );
+            }
+        }
+    }
+}

@@ -1,0 +1,63 @@
+{
+  "container_kind": "3dm-chunks",
+  "entries": [
+    {
+      "attributes": {
+        "body_offset": "55",
+        "offset": "47",
+        "record_count": "0",
+        "size": "16"
+      },
+      "compressed_size": 16,
+      "compression": "none",
+      "name": "table-0x10000014",
+      "role": "table",
+      "uncompressed_size": 8
+    },
+    {
+      "attributes": {
+        "body_offset": "71",
+        "offset": "63",
+        "record_count": "0",
+        "size": "16"
+      },
+      "compressed_size": 16,
+      "compression": "none",
+      "name": "table-0x10000015",
+      "role": "table",
+      "uncompressed_size": 8
+    },
+    {
+      "attributes": {
+        "body_offset": "87",
+        "object_typecode_0x1": "1",
+        "offset": "79",
+        "record_count": "1",
+        "size": "125"
+      },
+      "compressed_size": 125,
+      "compression": "none",
+      "name": "table-0x10000013",
+      "role": "table",
+      "uncompressed_size": 117
+    },
+    {
+      "attributes": {
+        "class_uuid": "c3101a1d-f157-11d3-bfe7-0010830122f0",
+        "count": "1",
+        "nil_uuid": "false",
+        "total_record_bytes": "109"
+      },
+      "compressed_size": 109,
+      "compression": "none",
+      "name": "class-c3101a1d-f157-11d3-bfe7-0010830122f0",
+      "role": "object-class",
+      "uncompressed_size": 109
+    }
+  ],
+  "format": "rhino",
+  "notes": [
+    "archive version 3",
+    "object at 87 has nil object UUID"
+  ]
+}
