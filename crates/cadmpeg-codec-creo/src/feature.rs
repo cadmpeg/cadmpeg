@@ -5713,6 +5713,14 @@ fn replay_extent(
     }
 }
 
+fn skip_replay_position_reference(run: &[u8], cursor: usize) -> Option<usize> {
+    if run.get(cursor) != Some(&psb::token::ENTITY_REF) {
+        return Some(cursor);
+    }
+    let (_, after) = psb::reference_id(run, cursor + 1).ok()?;
+    (run.get(after) == Some(&psb::token::ARRAY_OPEN)).then_some(after)
+}
+
 fn replay_ids(run: &[u8], count: u32, mut cursor: usize) -> Option<(Vec<u32>, usize)> {
     // Each id is a compact int of at least one byte, so the count cannot exceed
     // the unread bytes of the run.
@@ -5735,7 +5743,9 @@ fn replay_ids(run: &[u8], count: u32, mut cursor: usize) -> Option<(Vec<u32>, us
 /// An omitted `f8` opener reuses the preceding extent at the same array
 /// position.
 pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds> {
-    const ANCHOR: &[u8] = &[0xf1, 0xf7, 0x42, 0xd8, 0x80, 0x01, 0xe3];
+    const ANCHOR_PREFIX: &[u8] = &[0xf1, 0xf7, 0x42];
+    const ANCHOR_SUFFIX: &[u8] = &[0x80, 0x01, 0xe3];
+    const ANCHOR_LEN: usize = ANCHOR_PREFIX.len() + 1 + ANCHOR_SUFFIX.len();
     const TERMINATOR: &[u8] = &[0xf5, 0x96, 0x92];
     let mut result = Vec::new();
     let mut extents = BTreeMap::<usize, [Option<u32>; 2]>::new();
@@ -5743,14 +5753,14 @@ pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds>
         if row.root_schema_class != Some(913) {
             continue;
         }
-        let Some(anchor) = row
-            .body
-            .windows(ANCHOR.len())
-            .rposition(|window| window == ANCHOR)
-        else {
+        let Some(anchor) = row.body.windows(ANCHOR_LEN).rposition(|window| {
+            window.starts_with(ANCHOR_PREFIX)
+                && matches!(window[ANCHOR_PREFIX.len()], 0xc8 | 0xd8)
+                && window.ends_with(ANCHOR_SUFFIX)
+        }) else {
             continue;
         };
-        let run_start = anchor + ANCHOR.len();
+        let run_start = anchor + ANCHOR_LEN;
         let Some(term_relative) = row.body[run_start..]
             .windows(TERMINATOR.len())
             .position(|window| window == TERMINATOR)
@@ -5765,6 +5775,9 @@ pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds>
             continue;
         };
         let Some((geometry_ids, cursor)) = replay_ids(run, geometry_count, cursor) else {
+            continue;
+        };
+        let Some(cursor) = skip_replay_position_reference(run, cursor) else {
             continue;
         };
         let Some((edge_count, edge_extent, cursor)) =
@@ -6959,15 +6972,18 @@ mod tests {
 
     #[test]
     fn positional_round_replay_inherits_each_array_extent() {
-        let rows = [
-            replay_row(1, &[0xf8, 2, 10, 11, 0xf8, 3, 20, 21, 22]),
+        let mut rows = [
+            replay_row(1, &[0xf8, 2, 10, 11, 0xf7, 42, 0xf8, 3, 20, 21, 22]),
             replay_row(2, &[12, 13, 23, 24, 25]),
             replay_row(3, &[0xf8, 1, 14, 26, 27, 28]),
         ];
+        rows[0].body[3] = 0xc8;
 
         let decoded = replay_affected_ids(&rows);
 
         assert_eq!(decoded.len(), 3);
+        assert_eq!(decoded[0].geometry_ids, vec![10, 11]);
+        assert_eq!(decoded[0].edge_ids, vec![20, 21, 22]);
         assert_eq!(decoded[1].geometry_ids, vec![12, 13]);
         assert_eq!(decoded[1].edge_ids, vec![23, 24, 25]);
         assert_eq!(decoded[1].geometry_extent, ReplayExtentSource::Inherited);

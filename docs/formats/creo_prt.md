@@ -1883,7 +1883,11 @@ within one `AllFeatur` stream. `f8 <count>` replaces that position's current
 extent; omission of `f8` reuses its preceding extent. Exactly that many compact
 identifiers belong to the position before the next position begins. The first
 row can carry the field labels; positional rows omit them without changing the
-two positions.
+two positions. The positional pair begins after `f1 f7 42 <variant> 80 01 e3`,
+where `<variant>` is `c8` or `d8`. Before an explicit second-position `f8`,
+`f7 <canonical-reference>` identifies the replayed schema position and does
+not belong to either identifier array. An omitted second-position extent also
+omits that reference.
 
 Repeated named affected-ID arrays for one feature and namespace are distinct
 stored states. They define a neutral edge selection, parent set, generated
