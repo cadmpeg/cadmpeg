@@ -562,7 +562,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         &face_bindings,
         brep,
     );
-    let topology_attached = attach_standard_topology(
+    let topology_result = attach_standard_topology(
         &mut topology_ir,
         &mut topology_annotations,
         &face_bindings,
@@ -571,7 +571,13 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         &scan.data,
         &object_evidence.edge_owner_faces,
         &object_evidence.edge_supports,
-    ) && neutral_model_is_admissible(&topology_ir, &unknowns);
+    )
+    .and_then(|()| {
+        neutral_model_is_admissible(&topology_ir, &unknowns)
+            .then_some(())
+            .ok_or(StandardTopologyFailure::InadmissibleNeutralModel)
+    });
+    let topology_attached = topology_result.is_ok();
     if topology_attached {
         ir = topology_ir;
         annotations = topology_annotations;
@@ -598,7 +604,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         plane_faces,
         analytic_record_count,
         unresolved_freeform_record_count,
-        topology_attached,
+        topology_result.err().map(StandardTopologyFailure::message),
     );
     Some(FamilyOutput {
         ir,
@@ -614,6 +620,47 @@ pub(crate) struct StandardObjectEvidence {
     pub(crate) procedural_surfaces: HashMap<u32, StandardSurfaceProcedure>,
     pub(crate) edge_owner_faces: HashMap<u32, HashSet<u32>>,
     pub(crate) edge_supports: HashMap<u32, StandardEdgeSupport>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StandardTopologyFailure {
+    NoCurveSupports,
+    EdgeFaceAssignment,
+    MissingFaceSurface,
+    ConflictingNativeEndpoints,
+    NativeEndpointPropagation,
+    EmptyEndpointDomain,
+    NoTopologySolution,
+    InvalidTopologySolution,
+    InadmissibleNeutralModel,
+}
+
+impl StandardTopologyFailure {
+    const fn message(self) -> &'static str {
+        match self {
+            Self::NoCurveSupports => "the curve support table is absent or empty",
+            Self::EdgeFaceAssignment => "serialized edge owners do not resolve to face pairs",
+            Self::MissingFaceSurface => "an edge owner has no decoded face surface",
+            Self::ConflictingNativeEndpoints => {
+                "native edge endpoint sources assign conflicting vertices"
+            }
+            Self::NativeEndpointPropagation => {
+                "native edge endpoint identities cannot be propagated consistently"
+            }
+            Self::EmptyEndpointDomain => {
+                "surface constraints eliminate every endpoint pair for an edge"
+            }
+            Self::NoTopologySolution => {
+                "trim, port, and endpoint constraints have no complete topology solution"
+            }
+            Self::InvalidTopologySolution => {
+                "the solved topology violates model cardinality or incidence invariants"
+            }
+            Self::InadmissibleNeutralModel => {
+                "the emitted neutral model does not satisfy codec admissibility invariants"
+            }
+        }
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -1147,7 +1194,7 @@ pub(crate) fn apply_standard_native_edge_faces(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn attach_standard_topology(
+fn attach_standard_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
@@ -1156,12 +1203,12 @@ pub(crate) fn attach_standard_topology(
     source: &[u8],
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
     native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
-) -> bool {
+) -> Result<(), StandardTopologyFailure> {
     let face_count = ir.model.faces.len();
     let mut supports =
         crate::families::standard::records::standard_curve_supports(brep, face_count);
     if supports.is_empty() {
-        return false;
+        return Err(StandardTopologyFailure::NoCurveSupports);
     }
     let serialized_edge_faces = supports
         .iter()
@@ -1170,7 +1217,7 @@ pub(crate) fn attach_standard_topology(
     let Some(mut edge_faces) =
         missing_edge::resolve_standard_edge_faces(brep, &serialized_edge_faces)
     else {
-        return false;
+        return Err(StandardTopologyFailure::EdgeFaceAssignment);
     };
     apply_standard_native_edge_faces(&mut edge_faces, &supports, records, native_edge_faces);
     for (support, faces) in supports.iter_mut().zip(&edge_faces) {
@@ -1200,10 +1247,10 @@ pub(crate) fn attach_standard_topology(
     let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();
     for support in &supports {
         let Some(surface0) = face_surface(ir, bindings, &surface_indices, support.faces[0]) else {
-            return false;
+            return Err(StandardTopologyFailure::MissingFaceSurface);
         };
         let Some(surface1) = face_surface(ir, bindings, &surface_indices, support.faces[1]) else {
-            return false;
+            return Err(StandardTopologyFailure::MissingFaceSurface);
         };
         let candidates = match &support.geometry {
             crate::families::standard::records::StandardCurveGeometry::Circle {
@@ -1339,7 +1386,7 @@ pub(crate) fn attach_standard_topology(
     .and_then(|evidence| {
         merge_native_endpoint_evidence(evidence.as_deref(), allocation_endpoint_pairs.as_deref())
     }) else {
-        return false;
+        return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
     };
     if let Some(pairs) = &native_endpoint_evidence {
         include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
@@ -1363,7 +1410,7 @@ pub(crate) fn attach_standard_topology(
             let Some(propagated) =
                 missing_edge::propagate_partial_edge_port_points(&native_port_options, pairs)
             else {
-                return false;
+                return Err(StandardTopologyFailure::NativeEndpointPropagation);
             };
             Some(propagated)
         }
@@ -1427,7 +1474,7 @@ pub(crate) fn attach_standard_topology(
                 }
                 support.faces = *faces;
                 let Some(surface) = face_surface(ir, bindings, &surface_indices, faces[1]) else {
-                    return false;
+                    return Err(StandardTopologyFailure::MissingFaceSurface);
                 };
                 options[edge].retain(|pair| {
                     pair.iter().all(|point| {
@@ -1441,7 +1488,7 @@ pub(crate) fn attach_standard_topology(
                     })
                 });
                 if options[edge].is_empty() {
-                    return false;
+                    return Err(StandardTopologyFailure::EmptyEndpointDomain);
                 }
             }
         }
@@ -1758,7 +1805,7 @@ pub(crate) fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else {
-        return false;
+        return Err(StandardTopologyFailure::NoTopologySolution);
     };
     let Some(edge_vertices) = validate_standard_topology(
         ir,
@@ -1769,7 +1816,7 @@ pub(crate) fn attach_standard_topology(
         &endpoint_candidates,
         face_count,
     ) else {
-        return false;
+        return Err(StandardTopologyFailure::InvalidTopologySolution);
     };
     emit_standard_topology(
         ir,
@@ -1783,7 +1830,7 @@ pub(crate) fn attach_standard_topology(
         &topology,
         native_edge_supports,
     );
-    true
+    Ok(())
 }
 
 /// Validates the solved topology against the decoded model, applies body kinds

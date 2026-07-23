@@ -397,7 +397,7 @@ pub(crate) fn build_geometry_report(
     plane_faces: usize,
     analytic_record_count: usize,
     freeform_record_count: usize,
-    topology_attached: bool,
+    topology_failure: Option<&str>,
 ) -> DecodeReport {
     let mut losses = Vec::new();
 
@@ -421,16 +421,15 @@ pub(crate) fn build_geometry_report(
         provenance: None,
     });
 
-    if !topology_attached {
+    if let Some(topology_failure) = topology_failure {
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message: format!(
                 "The B-rep boundary graph was not emitted: {} face outer-bound run(s) were \
-                 detected, but a complete trim/spine/support-table parse and unique \
-                 surface-constrained logical-vertex assignment were not all available.",
-                scan.census.fbb_runs
+                 detected, but {topology_failure}.",
+                scan.census.fbb_runs,
             ),
             provenance: None,
         });
