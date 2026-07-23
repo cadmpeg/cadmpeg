@@ -373,10 +373,14 @@ pub struct DataBlockControlClassReference {
     pub ordinal: u32,
     /// Zero-based ordinal in the store's class registry.
     pub class_ordinal: u32,
-    /// Target in the native `class_definitions` arena.
-    pub class_definition: String,
-    /// Exact registered class name.
-    pub class_name: String,
+    /// Target in the native `class_definitions` arena when that registry slot
+    /// has a retained declaration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class_definition: Option<String>,
+    /// Exact registered class name when that registry slot has a retained
+    /// declaration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<String>,
     /// Absolute file offset of the four-byte control word.
     pub source_offset: u64,
 }
@@ -1852,10 +1856,8 @@ pub fn data_block_control_class_references(
                 return Vec::new();
             };
             let registry = section.types;
-            let Some(ordinals) = crate::om::offset_store_control_class_ordinals(
-                control.bytes,
-                registry.len(),
-            ) else {
+            let Some(ordinals) = crate::om::offset_store_control_class_ordinals(control.bytes)
+            else {
                 return Vec::new();
             };
             let entry_index = container
@@ -1868,22 +1870,23 @@ pub fn data_block_control_class_references(
             ordinals
                 .into_iter()
                 .enumerate()
-                .filter_map(|(ordinal, class_ordinal)| {
-                    let definition = registry.get(usize::try_from(class_ordinal).ok()?)?;
-                    Some(DataBlockControlClassReference {
+                .map(|(ordinal, class_ordinal)| {
+                    let definition = usize::try_from(class_ordinal)
+                        .ok()
+                        .and_then(|ordinal| registry.get(ordinal));
+                    DataBlockControlClassReference {
                         id: format!(
                             "nx:om-data-block-control-class-references-{section_ordinal}:class#{ordinal}"
                         ),
                         data_block: data_block.clone(),
                         ordinal: ordinal as u32,
                         class_ordinal,
-                        class_definition: format!(
-                            "nx:om-entry-{entry_index}:class#{}",
-                            definition.offset
-                        ),
-                        class_name: definition.name.to_string(),
+                        class_definition: definition.map(|definition| {
+                            format!("nx:om-entry-{entry_index}:class#{}", definition.offset)
+                        }),
+                        class_name: definition.map(|definition| definition.name.to_string()),
                         source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
-                    })
+                    }
                 })
                 .collect()
         })
@@ -3712,8 +3715,11 @@ mod tests {
         assert_eq!(classes[0].data_block, blocks[0].id);
         assert_eq!(classes[0].ordinal, 0);
         assert_eq!(classes[0].class_ordinal, 0);
-        assert_eq!(classes[0].class_name, "UGS::ModlFeature");
-        assert_eq!(classes[0].class_definition, "nx:om-entry-0:class#8");
+        assert_eq!(classes[0].class_name.as_deref(), Some("UGS::ModlFeature"));
+        assert_eq!(
+            classes[0].class_definition.as_deref(),
+            Some("nx:om-entry-0:class#8")
+        );
         assert!(super::string_values(&container).is_empty());
         assert!(super::object_references(&container).is_empty());
         let expressions = super::expressions(&container);

@@ -3817,12 +3817,15 @@ fn om_offset_store_control_class_lane_is_a_distinct_in_range_prefix() {
             .collect::<Vec<_>>()
     };
     assert_eq!(
-        crate::om::offset_store_control_class_ordinals(&encode(&[2, 0, 4, 8]), 4),
+        crate::om::offset_store_control_class_ordinals(&encode(&[2, 0, 4, 8, 3])),
         Some(vec![2, 0])
     );
-    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[2, 2, 4]), 4).is_none());
-    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[2, 4, 1]), 4).is_none());
-    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[4, 8]), 4).is_none());
+    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[2, 2, 4])).is_none());
+    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[2, 4, 1])).is_none());
+    assert_eq!(
+        crate::om::offset_store_control_class_ordinals(&encode(&[4, 8])),
+        Some(vec![4])
+    );
 }
 
 #[test]

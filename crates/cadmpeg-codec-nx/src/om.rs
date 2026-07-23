@@ -4652,22 +4652,37 @@ pub fn offset_store_control_values(bytes: &[u8]) -> Option<Vec<u32>> {
         .collect()
 }
 
-/// Decode the distinct leading class-registry ordinals in an offset-store
-/// control block. The remaining metadata words are all outside the registry.
-pub fn offset_store_control_class_ordinals(bytes: &[u8], class_count: usize) -> Option<Vec<u32>> {
-    (class_count > 0).then_some(())?;
+/// Decode the distinct leading class-registry identities in an offset-store
+/// control block.
+///
+/// The registry may omit declarations that this decoder cannot type, so its
+/// retained declaration count is not an ordinal bound. The class lane is
+/// instead the unique nonempty prefix whose identities are distinct and all
+/// smaller than every following metadata value.
+pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
     let values = offset_store_control_values(bytes)?;
-    let boundary = values
-        .iter()
-        .position(|value| usize::try_from(*value).map_or(true, |value| value >= class_count))?;
-    (boundary > 0
-        && values[boundary..]
-            .iter()
-            .all(|value| usize::try_from(*value).map_or(true, |value| value >= class_count)))
-    .then_some(())?;
-    let ordinals = values[..boundary].to_vec();
-    let distinct = ordinals.iter().copied().collect::<BTreeSet<_>>();
-    (distinct.len() == ordinals.len()).then_some(ordinals)
+    let mut suffix_minima = vec![u32::MAX; values.len()];
+    for index in (0..values.len().saturating_sub(1)).rev() {
+        suffix_minima[index] = suffix_minima[index + 1].min(values[index + 1]);
+    }
+    let mut identities = BTreeSet::new();
+    let mut maximum_identity = 0;
+    let mut boundary = None;
+    for index in 0..values.len().saturating_sub(1) {
+        let identity = values[index];
+        if !identities.insert(identity) {
+            break;
+        }
+        maximum_identity = maximum_identity.max(identity);
+        if maximum_identity < suffix_minima[index] && boundary.replace(index + 1).is_some() {
+            return None;
+        }
+    }
+    let boundary = boundary?;
+    if boundary == values.len() {
+        return None;
+    }
+    Some(values[..boundary].to_vec())
 }
 
 /// Decode the aligned little-endian value array preceding one product record.

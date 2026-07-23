@@ -138,6 +138,16 @@ All resolved bindings from one operation to one exact numeric expression form
 one parameter-use relation. Binding identities and source offsets remain in
 ascending source-offset order. Multiple input slots may witness the same use;
 they do not create multiple operation-expression relations.
+
+An offset-only store control block can contain a zero-prefixed word array in
+which each word is `00, value:u24 LE`. Its class-selection lane is the unique
+nonempty prefix whose values are distinct and whose maximum is smaller than
+the minimum value in the remaining metadata lane. The prefix values are exact
+class-registry identities. A retained class declaration resolves an identity
+at the same zero-based registry ordinal; an identity without a retained
+declaration remains typed but unresolved. No unique split rejects the
+class-selection lane atomically.
+
 The fixed marker begins an operation record. A record extends through the byte
 before the next validated operation marker; the final record extends through
 the feature-history record-area boundary.
