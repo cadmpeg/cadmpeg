@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 88;
+pub const CATIA_NATIVE_VERSION: u32 = 89;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -534,6 +534,21 @@ pub struct CatiaCatalogEntry {
     pub value: String,
 }
 
+/// One definition selector resolved against an object graph's source schema.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaDefinitionSchemaSelection {
+    /// Byte offset of the selector marker within the definition prefix.
+    pub offset: u64,
+    /// Stored zero-based source-schema ordinal.
+    pub ordinal: u32,
+    /// Selected catalog entry when the ordinal is in range.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
+    /// UTF-8 source-schema name stored by the selected entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
 /// One `7C05` entity-table record paired with a `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaEntityRecord {
@@ -557,6 +572,9 @@ pub struct CatiaEntityRecord {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub definition_prefix: Vec<u8>,
+    /// Definition selectors resolved against the containing graph's source schema.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub definition_schema_selections: Vec<CatiaDefinitionSchemaSelection>,
     /// Stored identity used by object-record owner and payload references.
     pub entity_id: u32,
     /// Exact definition bytes after the identity.
@@ -950,6 +968,26 @@ fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
         && record.numeric_tuple == entity_table::parse_numeric_tuple(&record.value_payload)
         && record.reference_signature
             == entity_table::parse_reference_signature(&record.value_payload)
+}
+
+fn definition_schema_selections(
+    selectors: &[entity_table::DefinitionSchemaSelector],
+    catalog: Option<&CatiaCatalog>,
+) -> Vec<CatiaDefinitionSchemaSelection> {
+    selectors
+        .iter()
+        .map(|selector| {
+            let catalog_entry = usize::try_from(selector.value)
+                .ok()
+                .and_then(|ordinal| catalog?.entries.get(ordinal));
+            CatiaDefinitionSchemaSelection {
+                offset: selector.offset as u64,
+                ordinal: selector.value,
+                entry: catalog_entry.map(|entry| entry.id.clone()),
+                name: catalog_entry.map(|entry| entry.value.clone()),
+            }
+        })
+        .collect()
 }
 
 /// CATIA-native records retained outside the format-neutral model.
@@ -2048,6 +2086,15 @@ impl CatiaNative {
                         .map(|entry| entry.id.clone())
                 });
             }
+            for entity in entity_records
+                .iter_mut()
+                .filter(|entity| entity.object_graph == graph.id)
+            {
+                entity.definition_schema_selections = definition_schema_selections(
+                    &entity_table::parse_definition_schema_selectors(&entity.definition_prefix),
+                    catalog,
+                );
+            }
         }
         alias_rows.retain(|row| {
             let row_start = row.byte_offset.saturating_sub(4);
@@ -2243,6 +2290,10 @@ impl CatiaNative {
                 .filter(|entity| entity.object_graph == graph.id)
                 .collect::<Vec<_>>();
             graph_entities.sort_by_key(|entity| entity.ordinal);
+            let catalog = graph
+                .catalog
+                .as_ref()
+                .and_then(|catalog_id| catalogs.iter().find(|catalog| catalog.id == *catalog_id));
             if !graph_entities.is_empty()
                 && (graph_entities.len() != graph.records.len()
                     || graph_entities
@@ -2255,6 +2306,15 @@ impl CatiaNative {
                     || graph_entities
                         .iter()
                         .any(|entity| !valid_entity_record_shape(entity))
+                    || graph_entities.iter().any(|entity| {
+                        entity.definition_schema_selections
+                            != definition_schema_selections(
+                                &entity_table::parse_definition_schema_selectors(
+                                    &entity.definition_prefix,
+                                ),
+                                catalog,
+                            )
+                    })
                     || graph_entities.windows(2).any(|pair| {
                         pair[0].byte_offset.checked_add(pair[0].byte_len)
                             != Some(pair[1].byte_offset)
@@ -2805,6 +2865,7 @@ fn native_object_graph(
                 lead: entity.lead,
                 definition_len: entity.definition_len,
                 definition_prefix: entity.definition_prefix,
+                definition_schema_selections: Vec::new(),
                 entity_id: entity.entity_id,
                 definition_suffix: entity.definition_suffix,
                 value_len: entity.value_len,

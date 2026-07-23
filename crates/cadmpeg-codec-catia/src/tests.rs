@@ -1530,9 +1530,21 @@ fn entity_table_record(entity_id: u32) -> Vec<u8> {
 }
 
 fn entity_table_record_with_value(entity_id: u32, value: &[u8]) -> Vec<u8> {
+    entity_table_record_with_definition_and_value(entity_id, &[0x01], value)
+}
+
+fn entity_table_record_with_definition_and_value(
+    entity_id: u32,
+    definition_prefix: &[u8],
+    value: &[u8],
+) -> Vec<u8> {
     let mut bytes = vec![0x7c, 0x05, 0, 0, 0, 0, 0x00, 0x7c, 0x06];
-    bytes.extend_from_slice(&12_u32.to_le_bytes());
-    bytes.push(0x01);
+    bytes.extend_from_slice(
+        &u32::try_from(definition_prefix.len() + 11)
+            .expect("generated 7C06 length")
+            .to_le_bytes(),
+    );
+    bytes.extend_from_slice(definition_prefix);
     bytes.push(0xea);
     bytes.extend_from_slice(&entity_id.to_le_bytes());
     bytes.extend_from_slice(&[0x7c, 0x07]);
@@ -5192,6 +5204,44 @@ fn native_load_rejects_noncanonical_entity_frame_lengths() {
             Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     }
+}
+
+#[test]
+fn native_namespace_retains_and_validates_definition_schema_selections() {
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
+    let mut bytes =
+        entity_table_record_with_definition_and_value(1, &[0, 0, 0x32, 4, 0, 0, 0], &[]);
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&records));
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(
+        native.entity_records[0].definition_schema_selections,
+        [crate::native::CatiaDefinitionSchemaSelection {
+            offset: 2,
+            ordinal: 4,
+            entry: Some(native.catalogs[0].entries[4].id.clone()),
+            name: Some("Sketch".to_string()),
+        }]
+    );
+
+    let mut malformed = native;
+    malformed.entity_records[0].definition_schema_selections[0].name = Some("Pad".to_string());
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed definition-atom view");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 }
 
 #[test]

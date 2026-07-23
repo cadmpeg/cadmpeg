@@ -4,6 +4,15 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// One source-schema selector in a complete `7C06` definition prefix.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DefinitionSchemaSelector {
+    /// Stored zero-based source-schema ordinal following `0x32`.
+    pub value: u32,
+    /// Byte offset of `0x32` within the definition prefix.
+    pub offset: usize,
+}
+
 /// One fully consumed numeric-tuple production in a nested `7C07` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NumericTuple {
@@ -72,6 +81,8 @@ pub struct EntityRecord {
     pub definition_len: u32,
     /// Exact definition prefix before the `0xEA` identity delimiter.
     pub definition_prefix: Vec<u8>,
+    /// Source-schema selectors decoded from the complete definition prefix.
+    pub definition_schema_selectors: Vec<DefinitionSchemaSelector>,
     /// Stored entity identity.
     pub entity_id: u32,
     /// Exact definition bytes after the identity.
@@ -184,6 +195,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<EntityRecord> {
         lead,
         definition_len,
         definition_prefix: data[definition_start..at].to_vec(),
+        definition_schema_selectors: parse_definition_schema_selectors(&data[definition_start..at]),
         entity_id,
         definition_suffix: data[identity_end..definition_end].to_vec(),
         value_len,
@@ -192,6 +204,24 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<EntityRecord> {
         reference_signature: parse_reference_signature(&data[definition_end + 6..value_end]),
         record_suffix: data[value_end..end].to_vec(),
     })
+}
+
+pub(crate) fn parse_definition_schema_selectors(prefix: &[u8]) -> Vec<DefinitionSchemaSelector> {
+    let mut selectors = Vec::new();
+    let mut at = 0;
+    while at < prefix.len() {
+        if prefix.get(at) == Some(&0x32) && at.checked_add(5).is_some_and(|end| end <= prefix.len())
+        {
+            selectors.push(DefinitionSchemaSelector {
+                value: u32_le(prefix, at + 1).expect("checked definition atom extent"),
+                offset: at,
+            });
+            at += 5;
+        } else {
+            at += 1;
+        }
+    }
+    selectors
 }
 
 pub(crate) fn parse_numeric_tuple(payload: &[u8]) -> Option<NumericTuple> {
@@ -327,8 +357,8 @@ fn u32_le(data: &[u8], at: usize) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_numeric_tuple, parse_reference_signature, parse_runs, NumericTuple, NumericTupleItem,
-        ReferenceSignature,
+        parse_definition_schema_selectors, parse_numeric_tuple, parse_reference_signature,
+        parse_runs, DefinitionSchemaSelector, NumericTuple, NumericTupleItem, ReferenceSignature,
     };
 
     fn record(prefix: &[u8], entity_id: u32) -> Vec<u8> {
@@ -358,11 +388,23 @@ mod tests {
         };
 
         assert_eq!(run[0].definition_prefix, prefix);
+        assert_eq!(
+            run[0].definition_schema_selectors,
+            [DefinitionSchemaSelector {
+                value: 0x0000_00ea,
+                offset: 0,
+            }]
+        );
         assert_eq!(run[0].entity_id, 37);
         assert_eq!(run[0].definition_suffix, [0xaa]);
         assert_eq!(run[0].value_len, 7);
         assert_eq!(run[0].value_payload, [0xfe]);
         assert_eq!(run[0].record_suffix, [0xbb]);
+    }
+
+    #[test]
+    fn truncated_definition_selector_is_not_assigned() {
+        assert!(parse_definition_schema_selectors(&[0x32, 1, 2, 3]).is_empty());
     }
 
     #[test]
