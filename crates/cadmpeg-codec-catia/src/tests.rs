@@ -4305,6 +4305,14 @@ fn native_value_blocks_frame_values_between_catalog_valid_selectors() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let selections = &native.value_blocks[0].schema_selections;
     assert_eq!(selections.len(), 3);
+    assert_eq!(selections[0].parent, native.value_blocks[0].id);
+    assert_eq!(
+        selections[0].id,
+        format!(
+            "catia:outer:value-selection#{:010}",
+            native.value_blocks[0].byte_offset + 6 + selections[0].offset
+        )
+    );
     assert_eq!(selections[0].ordinal, 3);
     assert!(matches!(
         selections[0].encoded_value.as_slice(),
@@ -4713,6 +4721,36 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
 #[test]
 fn native_load_rejects_noncanonical_value_block_views() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
+    let mut canonical_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut canonical_namespace)
+        .expect("store canonical value selections");
+    assert!(canonical_namespace
+        .arenas
+        .get("value_blocks")
+        .is_some_and(|blocks| blocks
+            .iter()
+            .all(|block| !block.fields.contains_key("schema_selections"))));
+    assert_eq!(
+        canonical_namespace
+            .arenas
+            .get("value_schema_selections")
+            .map(Vec::len),
+        Some(native.value_blocks[0].schema_selections.len())
+    );
+    let mut orphaned_selections: Vec<crate::native::CatiaValueSchemaSelection> =
+        canonical_namespace
+            .arena_as("value_schema_selections")
+            .expect("load stored value selections");
+    orphaned_selections[0].parent = "catia:missing-value-block".to_string();
+    canonical_namespace
+        .set_arena("value_schema_selections", &orphaned_selections)
+        .expect("store orphaned value selection");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&canonical_namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
     let assert_rejected = |malformed: crate::native::CatiaNative| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed

@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 75;
+pub const CATIA_NATIVE_VERSION: u32 = 76;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -34,6 +34,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "object_graphs",
     "preview_images",
     "value_blocks",
+    "value_schema_selections",
 ];
 
 /// Consolidated pcurve framing family.
@@ -392,6 +393,10 @@ pub struct CatiaValueBlock {
 /// One `0x32` selector from a value block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaValueSchemaSelection {
+    /// Globally unique schema-selection identity.
+    pub id: String,
+    /// Containing [`CatiaValueBlock`] identity.
+    pub parent: String,
     /// Byte offset within the value payload.
     pub offset: u64,
     /// Stored zero-based ordinal or terminal absent-schema sentinel.
@@ -1443,7 +1448,8 @@ fn validate_native_links(
         if block.declared_len.checked_add(1) != Some(block.byte_len)
             || payload_len.and_then(|len| len.checked_add(6)) != Some(block.declared_len)
             || value_block::tokenize(&block.payload) != block.fields
-            || value_schema_selections(&block.fields, catalog) != block.schema_selections
+            || value_schema_selections(&block.id, block.byte_offset, &block.fields, catalog)
+                != block.schema_selections
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "value block `{}` has an invalid derived view",
@@ -1831,7 +1837,37 @@ impl CatiaNative {
                 }
             }
         }
-        let value_blocks: Vec<CatiaValueBlock> = namespace.arena_as("value_blocks")?;
+        let mut value_blocks: Vec<CatiaValueBlock> = namespace.arena_as("value_blocks")?;
+        let value_schema_selections: Vec<CatiaValueSchemaSelection> =
+            namespace.arena_as("value_schema_selections")?;
+        let value_block_ids = value_blocks
+            .iter()
+            .map(|block| block.id.clone())
+            .collect::<HashSet<_>>();
+        if value_block_ids.len() != value_blocks.len() {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "duplicate CATIA value-block identity".to_string(),
+            ));
+        }
+        let mut selections_by_block = HashMap::<String, Vec<CatiaValueSchemaSelection>>::new();
+        for selection in value_schema_selections {
+            if !value_block_ids.contains(&selection.parent) {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "value selection `{}` references missing block `{}`",
+                    selection.id, selection.parent
+                )));
+            }
+            selections_by_block
+                .entry(selection.parent.clone())
+                .or_default()
+                .push(selection);
+        }
+        for block in &mut value_blocks {
+            block.schema_selections = selections_by_block.remove(&block.id).unwrap_or_default();
+            block
+                .schema_selections
+                .sort_by_key(|selection| selection.offset);
+        }
         let design_objects = design_objects(&graphs);
         if namespace.arenas.contains_key("design_objects") {
             let stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
@@ -1964,6 +2000,20 @@ impl CatiaNative {
             .iter()
             .flat_map(|graph| graph.records.iter().cloned())
             .collect::<Vec<_>>();
+        let value_blocks = self
+            .value_blocks
+            .iter()
+            .cloned()
+            .map(|mut block| {
+                block.schema_selections.clear();
+                block
+            })
+            .collect::<Vec<_>>();
+        let value_schema_selections = self
+            .value_blocks
+            .iter()
+            .flat_map(|block| block.schema_selections.iter().cloned())
+            .collect::<Vec<_>>();
         namespace.set_arena("catalogs", &catalogs)?;
         namespace.set_arena("consolidated_edge_nodes", &self.consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
@@ -1980,7 +2030,8 @@ impl CatiaNative {
         namespace.set_arena("object_graphs", &graphs)?;
         namespace.set_arena("object_graph_records", &records)?;
         namespace.set_arena("preview_images", &self.preview_images)?;
-        namespace.set_arena("value_blocks", &self.value_blocks)?;
+        namespace.set_arena("value_blocks", &value_blocks)?;
+        namespace.set_arena("value_schema_selections", &value_schema_selections)?;
         debug_assert!(CATIA_ARENA_NAMES
             .iter()
             .all(|name| namespace.arenas.contains_key(*name)));
@@ -2008,7 +2059,7 @@ impl CatiaNative {
             finjpl_segments,
             mut object_graphs,
             preview_images,
-            value_blocks,
+            mut value_blocks,
         } = self;
         let entries = catalogs
             .iter_mut()
@@ -2017,6 +2068,10 @@ impl CatiaNative {
         let records = object_graphs
             .iter_mut()
             .flat_map(|graph| std::mem::take(&mut graph.records))
+            .collect::<Vec<_>>();
+        let value_schema_selections = value_blocks
+            .iter_mut()
+            .flat_map(|block| std::mem::take(&mut block.schema_selections))
             .collect::<Vec<_>>();
 
         namespace.version = CATIA_NATIVE_VERSION;
@@ -2037,6 +2092,7 @@ impl CatiaNative {
         namespace.set_arena("alias_rows", &alias_rows)?;
         namespace.set_arena("preview_images", &preview_images)?;
         namespace.set_arena("value_blocks", &value_blocks)?;
+        namespace.set_arena("value_schema_selections", &value_schema_selections)?;
         debug_assert!(CATIA_ARENA_NAMES
             .iter()
             .all(|name| namespace.arenas.contains_key(*name)));
@@ -2045,6 +2101,8 @@ impl CatiaNative {
 }
 
 fn value_schema_selections(
+    block_id: &str,
+    block_byte_offset: u64,
     fields: &[value_block::ValueField],
     catalog: &CatiaCatalog,
 ) -> Vec<CatiaValueSchemaSelection> {
@@ -2081,7 +2139,12 @@ fn value_schema_selections(
                 } else {
                     Vec::new()
                 };
+                let byte_offset = block_byte_offset
+                    .checked_add(6)?
+                    .checked_add(u64::try_from(*offset).ok()?)?;
                 Some(CatiaValueSchemaSelection {
+                    id: format!("catia:outer:value-selection#{byte_offset:010}"),
+                    parent: block_id.to_string(),
                     offset: *offset as u64,
                     ordinal: *ordinal,
                     encoded_value,
@@ -2100,9 +2163,11 @@ impl CatiaValueBlock {
         catalog: &CatiaCatalog,
         object_graph: Option<&CatiaObjectGraph>,
     ) -> Self {
-        let schema_selections = value_schema_selections(&block.fields, catalog);
+        let id = format!("catia:outer:value-block#{:010}", block.pos);
+        let schema_selections =
+            value_schema_selections(&id, block.pos as u64, &block.fields, catalog);
         Self {
-            id: format!("catia:outer:value-block#{:010}", block.pos),
+            id,
             byte_offset: block.pos as u64,
             byte_len: block.total_len as u64,
             declared_len: block.declared_len as u64,
