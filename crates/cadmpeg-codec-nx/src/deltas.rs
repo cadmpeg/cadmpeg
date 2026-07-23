@@ -597,9 +597,13 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
 }
 
 fn compact_tombstone(stream: &[u8], offset: usize) -> Option<u32> {
-    (stream.get(offset + 4..offset + 6)? == [0, 1])
-        .then(|| be::u16_at(stream, offset + 2).map(u32::from))
-        .flatten()
+    let first = i16::from_be_bytes([*stream.get(offset + 2)?, *stream.get(offset + 3)?]);
+    if first < 0 {
+        let quotient = u16::from_be_bytes([*stream.get(offset + 4)?, *stream.get(offset + 5)?]);
+        return (quotient == 1)
+            .then_some(u32::from(quotient) * 32_767 + u32::from(first.unsigned_abs()));
+    }
+    (stream.get(offset + 4..offset + 6)? == [0, 1]).then_some(first as u32)
 }
 
 fn plausible_next(stream: &[u8], offset: usize) -> bool {

@@ -6020,6 +6020,15 @@ fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
 }
 
 #[test]
+fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
+    let compact = [0, 29, 0, 11, 0, 1];
+    let extended = [0, 29, 0xe3, 0xbf, 0, 1];
+
+    assert_eq!(crate::deltas::walk(&compact).tombstones[0].xmt, 11);
+    assert_eq!(crate::deltas::walk(&extended).tombstones[0].xmt, 40_000);
+}
+
+#[test]
 fn decode_emits_point_added_by_deltas_stream() {
     let mut cur = Cursor::new(prt_with_partition(&deltas_point_partition_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
