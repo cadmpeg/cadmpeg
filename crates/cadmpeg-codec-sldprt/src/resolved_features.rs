@@ -6642,6 +6642,159 @@ mod marker_tests {
     }
 
     #[test]
+    fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
+        let slot_offset = 500;
+        let mut payload = vec![0; slot_offset + 140];
+        let declaration = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
+        payload[slot_offset - declaration.len()..slot_offset].copy_from_slice(declaration);
+        payload[slot_offset..slot_offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[slot_offset + 5..slot_offset + 13].fill(0xff);
+        payload[slot_offset + 13..slot_offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[slot_offset + 23..slot_offset + 29]
+            .copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[slot_offset + 31..slot_offset + 39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[slot_offset + 48..slot_offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+        for (index, (tag, id)) in [
+            (0x8156_u16, 0_u16),
+            (0x814c, 3),
+            (0x8156, 1),
+            (0x8156, 2),
+            (0x8294, 0),
+            (0x8294, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let start = slot_offset + 64 + index * 12;
+            payload[start..start + 2].copy_from_slice(&tag.to_le_bytes());
+            payload[start + 2..start + 4].copy_from_slice(&id.to_le_bytes());
+            payload[start + 4..start + 8].fill(0xff);
+        }
+
+        let input = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset,
+            object_index: None,
+            local_id: None,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let inputs = [
+            input("center-left", 100, SketchInputKind::Point, Some([0.0, 0.0])),
+            input(
+                "center-right",
+                110,
+                SketchInputKind::Point,
+                Some([2.0, 0.0]),
+            ),
+            input("left-top", 120, SketchInputKind::Point, Some([0.0, 1.0])),
+            input("right-top", 130, SketchInputKind::Point, Some([2.0, 1.0])),
+            input(
+                "left-bottom",
+                140,
+                SketchInputKind::Point,
+                Some([0.0, -1.0]),
+            ),
+            input(
+                "right-bottom",
+                150,
+                SketchInputKind::Point,
+                Some([2.0, -1.0]),
+            ),
+            input("top", 200, SketchInputKind::LineOrCircle, None),
+            input("bottom", 210, SketchInputKind::LineOrCircle, None),
+            input("right", 220, SketchInputKind::Arc, None),
+            input("left", 230, SketchInputKind::Arc, None),
+            input("slot", slot_offset as u64, SketchInputKind::Point, None),
+        ];
+        let markers = inputs.iter().collect::<Vec<_>>();
+        let sketch = SketchId("sketch".into());
+        let point = |id: &str, position| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(format!("model:{id}")),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: Some(id.into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point { position },
+        };
+        let curve =
+            |id: &str, geometry, endpoint_refs: &[&str]| cadmpeg_ir::sketches::SketchEntity {
+                id: SketchEntityId(format!("model:{id}")),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: Some(id.into()),
+                geometry_ref: None,
+                endpoint_refs: endpoint_refs.iter().map(|id| (*id).into()).collect(),
+                geometry,
+            };
+        let mut entities = vec![
+            point("center-left", Point2::new(0.0, 0.0)),
+            point("center-right", Point2::new(2.0, 0.0)),
+            point("left-top", Point2::new(0.0, 1.0)),
+            point("right-top", Point2::new(2.0, 1.0)),
+            point("left-bottom", Point2::new(0.0, -1.0)),
+            point("right-bottom", Point2::new(2.0, -1.0)),
+            curve(
+                "top",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, 1.0),
+                    end: Point2::new(2.0, 1.0),
+                },
+                &["left-top", "right-top"],
+            ),
+            curve(
+                "bottom",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, -1.0),
+                    end: Point2::new(2.0, -1.0),
+                },
+                &["left-bottom", "right-bottom"],
+            ),
+            curve(
+                "right",
+                SketchGeometry::Arc {
+                    center: Point2::new(2.0, 0.0),
+                    radius: Length(1.0),
+                    start_angle: Angle(std::f64::consts::FRAC_PI_2),
+                    end_angle: Angle(-std::f64::consts::FRAC_PI_2),
+                },
+                &["right-top", "right-bottom"],
+            ),
+            curve(
+                "left",
+                SketchGeometry::Native {
+                    native_kind: "sldprt:marker-geometry:2".into(),
+                },
+                &[],
+            ),
+        ];
+
+        super::resolve_slot_marker_arcs(&payload, &markers, &mut entities, 1.0e-9);
+
+        assert_eq!(
+            entities[9].endpoint_refs,
+            ["left-top".to_string(), "left-bottom".to_string()]
+        );
+        assert!(matches!(
+            entities[9].geometry,
+            SketchGeometry::Arc {
+                center,
+                radius: Length(radius),
+                ..
+            } if center == Point2::new(0.0, 0.0) && radius == 1.0
+        ));
+    }
+
+    #[test]
     fn every_principal_plane_has_a_sketch_frame() {
         use cadmpeg_ir::features::PrincipalPlane;
 
@@ -19149,6 +19302,12 @@ pub(crate) fn project_marker_backed_sketches(
                     });
                 }
             }
+            resolve_slot_marker_arcs(
+                &lane.native_payload,
+                &object_markers,
+                &mut projected,
+                QUANTUM,
+            );
             resolve_connected_marker_arcs(&mut projected, QUANTUM);
             sketch.profiles = closed_marker_profiles(&projected);
             if projected.is_empty() || (bound_sketch.is_some() && sketch.profiles.is_empty()) {
@@ -19244,6 +19403,245 @@ fn tangent_bounded_curve(
         start_angle: Angle(start_angle),
         end_angle: Angle(end_angle),
     })
+}
+
+fn slot_curve_and_center_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<([usize; 4], [usize; 2])> {
+    const SLOT_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
+    if payload.get(offset.checked_sub(SLOT_DECLARATION.len())?..offset) != Some(SLOT_DECLARATION)
+        || marker_native_code(payload, offset).is_none()
+        || payload.get(offset + 23..offset + 27) != Some(&[0x05, 0x00, 0x01, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+    {
+        return None;
+    }
+    let cells_offset = match payload.get(offset..offset + SKETCH_MARKER.len()) {
+        Some(prefix) if prefix == SKETCH_MARKER => 72,
+        Some(prefix) if prefix == LEGACY_EXTENDED_SKETCH_MARKER => 64,
+        _ => return None,
+    };
+    let cells = (0..6)
+        .map(|index| {
+            let start = offset.checked_add(cells_offset + index * 12)?;
+            let cell = payload.get(start..start + 12)?;
+            (cell[4..8] == [0xff; 4] && cell[8..12] == [0; 4]).then_some((
+                u16::from_le_bytes(cell[..2].try_into().ok()?),
+                usize::from(u16::from_le_bytes(cell[2..4].try_into().ok()?)),
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let component_tag = cells[0].0;
+    if component_tag == 0
+        || cells[1].0 == 0
+        || cells[1].0 == component_tag
+        || cells[2].0 != component_tag
+        || cells[3].0 != component_tag
+        || cells[4].0 == 0
+        || cells[4].0 == component_tag
+        || cells[4].0 == cells[1].0
+        || cells[5].0 != cells[4].0
+    {
+        return None;
+    }
+    Some((
+        [cells[0].1, cells[1].1, cells[2].1, cells[3].1],
+        [cells[4].1, cells[5].1],
+    ))
+}
+
+fn resolve_slot_marker_arcs(
+    payload: &[u8],
+    markers: &[&SketchInputEntity],
+    entities: &mut [SketchEntity],
+    tolerance: f64,
+) {
+    let Some((curve_indices, center_indices)) = markers.iter().find_map(|marker| {
+        let offset = usize::try_from(marker.offset).ok()?;
+        slot_curve_and_center_indices(payload, offset)
+    }) else {
+        return;
+    };
+    let mut curves = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.coordinates_m.is_none()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                )
+        })
+        .collect::<Vec<_>>();
+    curves.sort_unstable_by_key(|marker| marker.offset);
+    if curves.len() != 4 {
+        return;
+    }
+    let Some(cycle) = curve_indices
+        .map(|index| curves.get(index).copied())
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+    else {
+        return;
+    };
+    if cycle
+        .iter()
+        .map(|marker| marker.id.as_str())
+        .collect::<HashSet<_>>()
+        .len()
+        != 4
+    {
+        return;
+    }
+    let mut points = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        })
+        .collect::<Vec<_>>();
+    points.sort_unstable_by_key(|marker| marker.offset);
+    let Some(center_refs) = center_indices
+        .map(|index| points.get(index).map(|point| point.id.as_str()))
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+    else {
+        return;
+    };
+    if center_refs[0] == center_refs[1] {
+        return;
+    }
+    let by_native_ref = entities
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entity)| Some((entity.native_ref.as_deref()?, index)))
+        .collect::<HashMap<_, _>>();
+    let Some(cycle_entities) = cycle
+        .iter()
+        .map(|marker| by_native_ref.get(marker.id.as_str()).copied())
+        .collect::<Option<Vec<_>>>()
+    else {
+        return;
+    };
+    let native_arcs = cycle_entities
+        .iter()
+        .copied()
+        .filter(|index| {
+            matches!(
+                entities[*index].geometry,
+                SketchGeometry::Native { ref native_kind }
+                    if native_kind == "sldprt:marker-geometry:2"
+            )
+        })
+        .collect::<Vec<_>>();
+    let resolved_arcs = cycle_entities
+        .iter()
+        .copied()
+        .filter(|index| matches!(entities[*index].geometry, SketchGeometry::Arc { .. }))
+        .collect::<Vec<_>>();
+    let lines = cycle_entities
+        .iter()
+        .copied()
+        .filter(|index| matches!(entities[*index].geometry, SketchGeometry::Line { .. }))
+        .count();
+    let ([target], [resolved_arc]) = (native_arcs.as_slice(), resolved_arcs.as_slice()) else {
+        return;
+    };
+    if lines != 2 {
+        return;
+    }
+    let Some(target_position) = cycle_entities
+        .iter()
+        .position(|candidate| candidate == target)
+    else {
+        return;
+    };
+    let Some(resolved_position) = cycle_entities
+        .iter()
+        .position(|candidate| candidate == resolved_arc)
+    else {
+        return;
+    };
+    if (target_position + 2) % 4 != resolved_position {
+        return;
+    }
+    let endpoint_refs = |index: usize| {
+        let refs = entities[index].endpoint_refs.as_slice();
+        let [first, second] = refs else {
+            return None;
+        };
+        Some([first.as_str(), second.as_str()])
+    };
+    let endpoint_not_shared = |entity: usize, other: usize| {
+        let entity = endpoint_refs(entity)?;
+        let other = endpoint_refs(other)?;
+        let unique = entity
+            .into_iter()
+            .filter(|endpoint| !other.contains(endpoint))
+            .collect::<Vec<_>>();
+        let [endpoint] = unique.as_slice() else {
+            return None;
+        };
+        Some(*endpoint)
+    };
+    let previous = cycle_entities[(target_position + 3) % 4];
+    let previous_other = cycle_entities[(target_position + 2) % 4];
+    let next = cycle_entities[(target_position + 1) % 4];
+    let next_other = cycle_entities[(target_position + 2) % 4];
+    let Some(start_ref) = endpoint_not_shared(previous, previous_other) else {
+        return;
+    };
+    let Some(end_ref) = endpoint_not_shared(next, next_other) else {
+        return;
+    };
+    if start_ref == end_ref {
+        return;
+    }
+    let point_positions = entities
+        .iter()
+        .filter_map(|entity| match entity.geometry {
+            SketchGeometry::Point { position } => Some((entity.native_ref.as_deref()?, position)),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+    let (Some(start), Some(end)) = (
+        point_positions.get(start_ref).copied(),
+        point_positions.get(end_ref).copied(),
+    ) else {
+        return;
+    };
+    let Some(centers) = center_refs
+        .iter()
+        .map(|reference| point_positions.get(reference).copied())
+        .collect::<Option<Vec<_>>>()
+    else {
+        return;
+    };
+    let SketchGeometry::Arc { center: used, .. } = entities[*resolved_arc].geometry else {
+        return;
+    };
+    let remaining = centers
+        .into_iter()
+        .filter(|center| {
+            !same_dimension_length(center.u, used.u) || !same_dimension_length(center.v, used.v)
+        })
+        .collect::<Vec<_>>();
+    let [center] = remaining.as_slice() else {
+        return;
+    };
+    let Some(geometry) = minor_arc_geometry(start, end, *center, tolerance) else {
+        return;
+    };
+    entities[*target].endpoint_refs = vec![start_ref.to_string(), end_ref.to_string()];
+    entities[*target].geometry = geometry;
 }
 
 fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) {
