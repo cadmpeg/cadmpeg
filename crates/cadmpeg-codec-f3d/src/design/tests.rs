@@ -8624,7 +8624,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
 
     let mut zero_parameter = parameter;
     zero_parameter.evaluated_value = 0.0;
-    let mut duplicate_pair = pair;
+    let mut duplicate_pair = pair.clone();
     duplicate_pair.second_geometry_record_index = duplicate_pair.first_geometry_record_index;
     let duplicate = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
@@ -8654,8 +8654,27 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
                 ]
     ));
 
-    let mut group_owner = owner;
+    let mut group_owner = owner.clone();
     group_owner.companion_record_index = group.companion_record_index;
+    let combined = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&zero_parameter),
+            owners: &[owner, group_owner.clone()],
+            pairs: std::slice::from_ref(&pair),
+            groups: std::slice::from_ref(&group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: &[],
+            recipe_records: &[],
+            points: &points,
+            curves: &[],
+            entities: &entities,
+        },
+        &[],
+    );
+    assert_eq!(combined.len(), 2);
+
     let grouped = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -8689,6 +8708,28 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
                 (Some("return"), None, 40),
             ]
     ));
+
+    let mut indirect_group = group;
+    indirect_group.owner_reference = 999;
+    let indirect = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&zero_parameter),
+            owners: std::slice::from_ref(&group_owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&indirect_group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: &[],
+            recipe_records: &[],
+            points: &points,
+            curves: &[],
+            entities: &entities,
+        },
+        &[],
+    );
+    assert_eq!(indirect.len(), 1);
+    assert_eq!(indirect[0].sketch, sketch);
 }
 
 #[test]

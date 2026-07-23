@@ -155,6 +155,18 @@ fn project_all_dimension_constraints(
         Some((parameter, neutral_parameter_id(parameter)))
     };
     let sketch_for_geometry = |scope: &str, indices: &[u32]| {
+        let projected_sketches = indices
+            .iter()
+            .filter_map(|record_index| projected.get(&(scope, *record_index)))
+            .map(|entity| entity.sketch.clone())
+            .collect::<HashSet<_>>();
+        if projected_sketches.len() == 1
+            && indices
+                .iter()
+                .all(|record_index| projected.contains_key(&(scope, *record_index)))
+        {
+            return projected_sketches.into_iter().next();
+        }
         let mut owners = indices
             .iter()
             .filter_map(|record_index| native_geometry.get(&(scope, *record_index))?.1)
@@ -386,7 +398,7 @@ fn project_all_dimension_constraints(
                 pair.second_geometry_record_index,
             ];
             exact_definition(scope, parameter, &indices, parameter_id)
-                .map(|_| (scope.to_owned(), pair.companion_record_index))
+                .map(|_| (scope.to_owned(), pair.governing_companion_record_index))
         })
         .collect::<HashSet<_>>();
     let parameterized_offset_companions = groups
@@ -479,7 +491,15 @@ fn project_all_dimension_constraints(
                 return None;
             }
             let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
-            let sketch = sketches.get(&(scope, group.owner_reference))?.clone();
+            let locus_indices = group
+                .loci
+                .iter()
+                .map(|locus| locus.geometry_record_index)
+                .collect::<Vec<_>>();
+            let sketch = sketches
+                .get(&(scope, group.owner_reference))
+                .cloned()
+                .or_else(|| sketch_for_geometry(scope, &locus_indices))?;
             let definition = exact_group_definition(scope, group, parameter, parameter_id.clone())
                 .unwrap_or_else(|| {
                     let mut operands = group
