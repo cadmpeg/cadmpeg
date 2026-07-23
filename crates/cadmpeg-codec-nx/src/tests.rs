@@ -6001,6 +6001,10 @@ fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
         crate::deltas::unmatched_terminal_tombstones(&partition, &unknown),
         1
     );
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones_by_family(&partition, &unknown).get("POINT"),
+        Some(&1)
+    );
 
     let mut full = status_framed_deltas_point_stream();
     full[2..4].copy_from_slice(&99u16.to_be_bytes());

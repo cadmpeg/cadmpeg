@@ -956,17 +956,25 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
     });
 }
 
-fn unmatched_delta_tombstone_count(scan: &Scan) -> usize {
+fn unmatched_delta_tombstone_counts(scan: &Scan) -> BTreeMap<&'static str, usize> {
     let pairs = crate::native::paired_delta_streams(scan);
     let mut current = pairs
         .keys()
         .map(|partition| (*partition, scan.streams[*partition].inflated.clone()))
         .collect::<BTreeMap<_, _>>();
     let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
-    let mut unmatched = 0usize;
+    let mut unmatched = BTreeMap::new();
+    let mut add_counts = |counts: BTreeMap<&'static str, usize>| {
+        for (family, count) in counts {
+            *unmatched.entry(family).or_default() += count;
+        }
+    };
     for (delta, stream) in scan.streams.iter().enumerate() {
         if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
-            unmatched += crate::deltas::unmatched_terminal_tombstones(&[], &stream.inflated);
+            add_counts(crate::deltas::unmatched_terminal_tombstones_by_family(
+                &[],
+                &stream.inflated,
+            ));
         }
     }
     for (partition, deltas) in pairs {
@@ -975,7 +983,10 @@ fn unmatched_delta_tombstone_count(scan: &Scan) -> usize {
             let partition_bytes = current
                 .get_mut(&partition)
                 .expect("paired partition was initialized");
-            unmatched += crate::deltas::unmatched_terminal_tombstones(partition_bytes, delta_bytes);
+            add_counts(crate::deltas::unmatched_terminal_tombstones_by_family(
+                partition_bytes,
+                delta_bytes,
+            ));
             *partition_bytes = crate::deltas::merge_full_records(partition_bytes, delta_bytes);
         }
     }
@@ -6621,7 +6632,13 @@ fn build_geometry_report(
     }
 
     if scan.count(StreamKind::Deltas) > 0 {
-        let unmatched_tombstones = unmatched_delta_tombstone_count(scan);
+        let unmatched_tombstone_counts = unmatched_delta_tombstone_counts(scan);
+        let unmatched_tombstones = unmatched_tombstone_counts.values().sum::<usize>();
+        let unmatched_tombstone_detail = unmatched_tombstone_counts
+            .iter()
+            .map(|(family, count)| format!("{family} {count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
         losses.push(LossNote {
             code: LossCode::DecodeDiagnostic,
             category: LossCategory::Topology,
@@ -6646,7 +6663,7 @@ fn build_geometry_report(
                     "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                  Equal-schema deltas were paired with the preceding partition. Exact-key revisions were applied using the last \
                  event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
-                 current or earlier-added key and remain unresolved.",
+                 current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
                     scan.count(StreamKind::Deltas)
                 )
             },

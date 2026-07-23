@@ -424,6 +424,16 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
 /// supersedes an earlier tombstone, while a full record followed by a
 /// tombstone is a resolved deletion even when the base image lacked the key.
 pub fn unmatched_terminal_tombstones(partition: &[u8], deltas: &[u8]) -> usize {
+    unmatched_terminal_tombstones_by_family(partition, deltas)
+        .values()
+        .sum()
+}
+
+/// Count unmatched terminal tombstones by Parasolid record family.
+pub fn unmatched_terminal_tombstones_by_family(
+    partition: &[u8],
+    deltas: &[u8],
+) -> BTreeMap<&'static str, usize> {
     #[derive(Clone, Copy)]
     enum Event {
         Full { offset: usize },
@@ -459,22 +469,25 @@ pub fn unmatched_terminal_tombstones(partition: &[u8], deltas: &[u8]) -> usize {
             });
     }
 
-    events
-        .into_iter()
-        .filter_map(|((kind, xmt), mut events)| {
-            events.sort_by_key(|event| match event {
-                Event::Full { offset } | Event::Tombstone { offset } => *offset,
-            });
-            let Some(Event::Tombstone { offset }) = events.last().copied() else {
-                return None;
-            };
-            (graph.get(kind, xmt).is_none()
+    let mut unmatched = BTreeMap::new();
+    for ((kind, xmt), mut events) in events {
+        events.sort_by_key(|event| match event {
+            Event::Full { offset } | Event::Tombstone { offset } => *offset,
+        });
+        let Some(Event::Tombstone { offset }) = events.last().copied() else {
+            continue;
+        };
+        if graph.get(kind, xmt).is_none()
                 && !events.iter().any(|event| {
                     matches!(event, Event::Full { offset: full_offset } if full_offset < &offset)
-                }))
-            .then_some(())
-        })
-        .count()
+                })
+            {
+                let name = family_name(u16::from(kind))
+                    .expect("event families originate from the accepted deltas census");
+                *unmatched.entry(name).or_default() += 1;
+            }
+    }
+    unmatched
 }
 
 fn mergeable_record(record: &Record, kind: u8) -> bool {
