@@ -79,6 +79,7 @@ name = "cadmpeg-codec-f3d"
 version = "0.3.0"
 dependencies = [
  "cadmpeg-ir",
+ "memchr",
  "roxmltree",
  "schemars",
  "serde",
@@ -95,6 +96,7 @@ version = "0.3.0"
 dependencies = [
  "cadmpeg-ir",
  "flate2",
+ "memchr",
  "roxmltree",
  "serde",
  "serde_json",
