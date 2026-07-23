@@ -4,7 +4,6 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 ## Container and roster
 
-- Vertex-roster cardinality. The relationship between the `54` roster and `05 08 01` vertex-table cardinality has an unresolved exceptional case.
 - The non-surface grammar and role of outer `01 00 04 00 <tag>` rows are unresolved. A literal marker scan does not establish that each row belongs to the freeform-surface alias roster or a vertex-registration roster.
 
 ## Container and roster (decoded-but-unresolved fields)
