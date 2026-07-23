@@ -3449,6 +3449,36 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
+        let configurations = [
+            with_configuration_id(design_configuration("first", 0, Some(8), None), 1),
+            with_configuration_id(design_configuration("second", 1, Some(9), None), 2),
+        ];
+
+        assert_eq!(
+            unresolved_configuration_lanes(
+                &configurations,
+                &[
+                    feature_input_lane("first", Some("1")),
+                    feature_input_lane("second", Some("2")),
+                ],
+            ),
+            0
+        );
+        assert_eq!(
+            unresolved_configuration_lanes(
+                &configurations,
+                &[
+                    feature_input_lane("duplicate-first", Some("1")),
+                    feature_input_lane("duplicate-second", Some("1")),
+                    feature_input_lane("unmatched", Some("3")),
+                ],
+            ),
+            3
+        );
+    }
+
+    #[test]
     fn changing_shadowed_ordinal_does_not_steal_stored_id_lane() {
         let native_configurations = vec![
             native_with_configuration_id(native_configuration("explicit-native", 0, Some(7)), 1),
@@ -7995,6 +8025,32 @@ pub(crate) fn configuration_lane_assignments(
             Some((*configuration_index, *lane_index))
         })
         .collect()
+}
+
+pub(crate) fn unresolved_configuration_lanes(
+    configurations: &[DesignConfiguration],
+    lanes: &[crate::records::FeatureInputLane],
+) -> usize {
+    let assigned_lanes = configuration_lane_assignments(configurations, lanes)
+        .into_iter()
+        .map(|(_, lane_index)| lane_index)
+        .collect::<HashSet<_>>();
+    let mut occurrences = HashMap::<&str, usize>::new();
+    for lane in lanes
+        .iter()
+        .filter_map(|lane| lane.configuration.as_deref())
+    {
+        *occurrences.entry(lane).or_default() += 1;
+    }
+    lanes
+        .iter()
+        .enumerate()
+        .filter(|(lane_index, lane)| {
+            lane.configuration.as_deref().is_some_and(|slot| {
+                occurrences.get(slot).copied() != Some(1) || !assigned_lanes.contains(lane_index)
+            })
+        })
+        .count()
 }
 
 /// Stable hash of native configuration records.

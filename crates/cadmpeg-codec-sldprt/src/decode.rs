@@ -203,35 +203,10 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             )));
     }
     let unresolved_configuration_parameter_lanes = native.as_ref().map_or(0, |native| {
-        let mut counts = BTreeMap::<&str, usize>::new();
-        for key in native
-            .feature_input_lanes
-            .iter()
-            .filter_map(|lane| lane.configuration.as_deref())
-        {
-            *counts.entry(key).or_default() += 1;
-        }
-        counts
-            .into_iter()
-            .map(|(key, count)| {
-                let configuration_matches = key.parse::<u32>().ok().map_or(0, |source_index| {
-                    ir.model
-                        .configurations
-                        .iter()
-                        .filter(|configuration| {
-                            configuration.source_index == Some(source_index)
-                                || configuration.source_index.is_none()
-                                    && configuration.ordinal == source_index
-                        })
-                        .count()
-                });
-                if count == 1 && configuration_matches == 1 {
-                    0
-                } else {
-                    count
-                }
-            })
-            .sum()
+        crate::history::unresolved_configuration_lanes(
+            &ir.model.configurations,
+            &native.feature_input_lanes,
+        )
     });
     if unresolved_configuration_parameter_lanes > 0 {
         report.losses.push(SldprtLossCode::ConfigLaneIdentityUnresolved.note(format!(
