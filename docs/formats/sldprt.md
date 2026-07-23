@@ -803,12 +803,14 @@ A NURBS surface that is degree one and clamped in `u`, with equal weights at cor
 
 ### 7.3 Surface-intersection curve carriers
 
-An edge's `00 10.refs[3]` can point to a `00 26` **intersection composite**, the carrier for a curve defined by the intersection of two support surfaces. Its body shares the compact header shape:
+An edge's `00 10.refs[3]` can point to either intersection carrier for a curve defined by the intersection of two support surfaces. The compact composite has this shape:
 
 ```
 00 26  attr u16 BE  ordinal u32 BE  refs u16 BE[5]  marker u8 (0x2b|0x2d)
        payload u16 BE[6] = [support0, support1, chart, term_start, term_end, uv]
 ```
+
+The intersection-data form replaces the two-byte composite tag with `00 01 5a`; the attribute, ordinal, five header references, marker, and six payload references have the same layout and semantics.
 
 `support0` and `support1` reference the two intersected surface records. The remaining payload references resolve to three witness records:
 

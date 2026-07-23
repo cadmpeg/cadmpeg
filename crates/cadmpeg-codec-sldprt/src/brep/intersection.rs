@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Surface-intersection curve carriers.
 //!
-//! A `00 26` composite record carries a curve defined by the intersection of
-//! two support surfaces. Its payload references a `00 28` chart record (the
-//! solved point cache), two `00 29` terminator records (the exact curve
-//! endpoints), and a `00 cc` support-UV record. A composite whose referenced
-//! chart, terminators, and UV values are mutually consistent yields a derived
-//! degree-one NURBS curve through the chart points with the terminators as
-//! endpoints.
+//! A `00 26` composite record or `00 01 5a` intersection-data entity carries a
+//! curve defined by the intersection of two support surfaces. Its payload
+//! references a `00 28` chart record (the solved point cache), two `00 29`
+//! terminator records (the exact curve endpoints), and a `00 cc` support-UV
+//! record. A carrier whose referenced chart, terminators, and UV values are
+//! mutually consistent yields a derived degree-one NURBS curve through the
+//! chart points with the terminators as endpoints.
 
 use std::collections::HashMap;
 
@@ -47,6 +47,29 @@ fn record_bodies(bytes: &[u8], tt: u8) -> Vec<usize> {
         at += 1;
     }
     out
+}
+
+/// Carrier, body, and payload-marker offsets for both intersection forms.
+fn composite_records(bytes: &[u8]) -> Vec<(usize, usize, usize)> {
+    let mut records = record_bodies(bytes, 0x26)
+        .into_iter()
+        .filter_map(|body| {
+            let marker = body.checked_add(16)?;
+            matches!(bytes.get(marker), Some(0x2b | 0x2d)).then_some((body - 2, body, marker))
+        })
+        .collect::<Vec<_>>();
+
+    for offset in 0..bytes.len().saturating_sub(20) {
+        if bytes.get(offset..offset + 3) != Some(&[0x00, 0x01, 0x5a]) {
+            continue;
+        }
+        let body = offset + 3;
+        let marker = body + 16;
+        if matches!(bytes.get(marker), Some(0x2b | 0x2d)) {
+            records.push((offset, body, marker));
+        }
+    }
+    records
 }
 
 fn finite_point(bytes: &[u8], at: usize) -> Option<[f64; 3]> {
@@ -255,8 +278,8 @@ fn solved_curve(chart: &Chart, start: [f64; 3], end: [f64; 3]) -> CurveGeometry 
     })
 }
 
-/// Scan `00 26` intersection composites whose chart, terminator, and UV
-/// witnesses are mutually consistent, keyed by composite attribute.
+/// Scan intersection carriers whose chart, terminator, and UV witnesses are
+/// mutually consistent, keyed by carrier attribute.
 ///
 /// The composite body is `attr:u16 ordinal:u32 refs:u16[5] marker:u8(0x2b|0x2d)`
 /// then six payload references `[support0, support1, chart, term_start,
@@ -272,14 +295,10 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> 
         return HashMap::new();
     }
     let mut out = HashMap::new();
-    for body in record_bodies(bytes, 0x26) {
+    for (offset, body, marker_at) in composite_records(bytes) {
         let Some(attr) = u16_at(bytes, body) else {
             continue;
         };
-        let marker_at = body + 2 + 4 + 10;
-        if !matches!(bytes.get(marker_at), Some(0x2b | 0x2d)) {
-            continue;
-        }
         let payload = marker_at + 1;
         let Some(refs) = (0..6)
             .map(|index| u16_at(bytes, payload + index * 2))
@@ -314,7 +333,7 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> 
         if let Some(geometry) = geometry {
             out.entry(attr).or_insert(Carrier {
                 attr,
-                offset: body - 2,
+                offset,
                 end: payload + 12,
                 geometry: CarrierGeometry::Curve(geometry),
                 frame: None,
@@ -393,6 +412,18 @@ mod tests {
         bytes
     }
 
+    fn intersection_data(attr: u16, payload: [u16; 6]) -> Vec<u8> {
+        let mut bytes = vec![0, 1, 0x5a];
+        bytes.extend_from_slice(&attr.to_be_bytes());
+        bytes.extend_from_slice(&[0u8; 4]);
+        bytes.extend_from_slice(&[0u8; 10]);
+        bytes.push(0x2b);
+        for reference in payload {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes
+    }
+
     fn stream() -> Vec<u8> {
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
@@ -415,6 +446,24 @@ mod tests {
         assert_eq!(curve.knots.len(), 5);
         assert!((curve.knots[2] - 0.01).abs() < 1e-12);
         assert!((curve.knots[3] - 0.02).abs() < 1e-12);
+    }
+
+    #[test]
+    fn intersection_data_entity_uses_the_same_composite_payload() {
+        let mut bytes = intersection_data(9, [2, 3, 4, 5, 6, 7]);
+        bytes.extend(chart(4, &POINTS));
+        bytes.extend(term(5, POINTS[0]));
+        bytes.extend(term(6, POINTS[2]));
+        bytes.extend(uv(7, POINTS.len()));
+
+        let carrier = scan_intersection_carriers(&bytes)
+            .remove(&9)
+            .expect("intersection-data entity decoded");
+        assert_eq!(carrier.offset, 0);
+        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = carrier.geometry else {
+            panic!("expected a NURBS polyline");
+        };
+        assert_eq!(curve.control_points.len(), POINTS.len());
     }
 
     #[test]

@@ -667,7 +667,7 @@ fn decode_graph(
                                 .offset;
                             annotations
                                 .note(id_curve(curve_attr), source_stream, offset as u64)
-                                .tag("00_26");
+                                .tag("surface_intersection");
                             annotations.exactness(id_curve(curve_attr), Exactness::Derived);
                         }
                     }
