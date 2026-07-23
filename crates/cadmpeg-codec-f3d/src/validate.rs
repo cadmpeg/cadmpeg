@@ -282,6 +282,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .collect::<HashSet<_>>();
     validate_body_bindings(&ctx, &mut findings);
     validate_body_bounds(&ctx, &mut findings);
+    validate_canvas_images(&ctx, &mut findings);
     validate_parameter_scopes(&ctx, &mut findings);
     validate_extrude_selection_groups(&ctx, &mut findings);
     validate_construction_operand_groups(&ctx, &mut findings);
@@ -333,6 +334,129 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_subentity_tags(&ctx, &mut findings);
     validate_history_graphs(&ctx, &mut findings);
     findings
+}
+
+/// Validate exact Canvas frames and their Design scope and object joins.
+fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    let native = ctx.native;
+    let utf16_end = |offset: u64, value: &str| {
+        u64::try_from(value.encode_utf16().count())
+            .ok()?
+            .checked_mul(2)?
+            .checked_add(offset)
+    };
+    let mut scope_bindings = HashSet::new();
+    let mut geometry_records = HashSet::new();
+    let geometry_entities = native
+        .design_objects
+        .iter()
+        .filter(|object| object.kind == records::DesignObjectKind::Geometry)
+        .flat_map(|object| {
+            let native_stream = design_stream(&object.id);
+            object
+                .entity_ids
+                .iter()
+                .map(move |suffix| (native_stream, *suffix))
+        })
+        .collect::<HashSet<_>>();
+    let component_entities = native
+        .design_objects
+        .iter()
+        .filter(|object| {
+            matches!(
+                object.kind,
+                records::DesignObjectKind::Fusion | records::DesignObjectKind::Component
+            )
+        })
+        .flat_map(|object| {
+            let native_stream = design_stream(&object.id);
+            object
+                .entity_ids
+                .iter()
+                .map(move |suffix| (native_stream, *suffix))
+        })
+        .collect::<HashSet<_>>();
+    for image in &native.design_canvas_images {
+        let native_stream = design_stream(&image.id);
+        let scope = ctx
+            .scopes_by_index
+            .get(&(native_stream, image.scope_record_index));
+        let expected_boundary_offsets = [
+            image.geometry_byte_offset.saturating_add(26),
+            image.geometry_byte_offset.saturating_add(34),
+            image.geometry_byte_offset.saturating_add(42),
+            image.geometry_byte_offset.saturating_add(50),
+            image.geometry_byte_offset.saturating_add(181),
+            image.geometry_byte_offset.saturating_add(189),
+            image.geometry_byte_offset.saturating_add(197),
+            image.geometry_byte_offset.saturating_add(205),
+        ];
+        let valid = scope.is_some_and(|scope| scope.kind == "Canvas")
+            && scope_bindings.insert((native_stream, image.scope_record_index))
+            && geometry_records.insert((native_stream, image.geometry_record_index))
+            && image.geometry_record_index != image.asset_record_index
+            && image.geometry_frame_length
+                == image
+                    .paired_geometry_byte_offset
+                    .saturating_sub(image.geometry_byte_offset)
+            && image.geometry_frame_length >= 213
+            && image.asset_byte_offset == image.paired_geometry_byte_offset.saturating_add(30)
+            && scope.is_some_and(|scope| {
+                matches!(
+                    image
+                        .geometry_reference_offset
+                        .checked_sub(scope.byte_offset),
+                    Some(22 | 26)
+                )
+            })
+            && image.scope_reference_offset == image.geometry_byte_offset.saturating_add(147)
+            && image.plane_reference_offset == image.geometry_byte_offset.saturating_add(59)
+            && image.component_reference_offset == image.geometry_byte_offset.saturating_add(158)
+            && image.asset_reference_offset == image.geometry_byte_offset.saturating_add(170)
+            && image.second_boundary_present_offset
+                == image.geometry_byte_offset.saturating_add(180)
+            && image.paired_component_reference_offset
+                == image.paired_geometry_byte_offset.saturating_add(20)
+            && image.boundary_coordinate_offsets == expected_boundary_offsets
+            && image.label_offset == image.geometry_byte_offset.saturating_add(217)
+            && utf16_end(image.label_offset, &image.label)
+                == Some(image.paired_geometry_byte_offset)
+            && image.asset_name_offset == image.asset_byte_offset.saturating_add(25)
+            && scope.is_some_and(|scope| {
+                utf16_end(image.asset_name_offset, &image.asset_name) == Some(scope.byte_offset)
+            })
+            && image.geometry_payload.len() == 77
+            && design::decode::canvas::valid_geometry_prologue(&image.geometry_prologue)
+            && design::decode::canvas::opposite_rectangle_edges(image.boundary_segments)
+            && !image.geometry_class_tag.is_empty()
+            && image
+                .geometry_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic())
+            && !image.paired_geometry_class_tag.is_empty()
+            && image
+                .paired_geometry_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic())
+            && !image.asset_class_tag.is_empty()
+            && image
+                .asset_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic())
+            && !image.asset_name.is_empty()
+            && !image.label.is_empty()
+            && geometry_entities.contains(&(native_stream, u64::from(image.plane_entity_suffix)))
+            && component_entities
+                .contains(&(native_stream, u64::from(image.component_entity_suffix)));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Canvas image has an invalid frame or Design object join".into(),
+                entity: Some(image.id.clone()),
+            });
+        }
+    }
 }
 
 /// Validate the ordered Design body-map binding entries and their pair runs.

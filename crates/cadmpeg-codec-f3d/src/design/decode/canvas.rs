@@ -185,12 +185,12 @@ fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
     (bytes.get(at) == Some(&1)).then(|| u32_at(bytes, at + 1))?
 }
 
-fn valid_geometry_prologue(prologue: &[u8; 15]) -> bool {
+pub(crate) fn valid_geometry_prologue(prologue: &[u8; 15]) -> bool {
     (prologue[..14] == [0; 14] && prologue[14] == 1)
         || (prologue[..10] == [0; 10] && prologue[10..] == [1, 0, 0, 0, 0])
 }
 
-fn opposite_rectangle_edges(segments: [[Point2; 2]; 2]) -> bool {
+pub(crate) fn opposite_rectangle_edges(segments: [[Point2; 2]; 2]) -> bool {
     let [[a, b], [c, d]] = segments;
     let close = |left: f64, right: f64| {
         (left - right).abs() <= 64.0 * f64::EPSILON * left.abs().max(right.abs()).max(1.0)
