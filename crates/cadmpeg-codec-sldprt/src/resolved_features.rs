@@ -1244,31 +1244,31 @@ mod marker_tests {
         indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
         legacy_compact_diameter_arc_center,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
-        legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
-        legacy_feature_input_section, legacy_inline_arc_coordinates,
-        legacy_line_handle_coordinates, legacy_linked_coordinates, legacy_reference_axis_triads,
-        legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
-        legacy_terminal_indexed_profile_line, marker_coordinates, marker_is_geometry_locus,
-        marker_is_selected_construction_line, marker_local_id, marker_local_links,
-        marker_object_index, marker_spatial_coordinates, matrix_reference_plane_frame,
-        minimal_reference_plane_frame, mirror_pattern_component_path_at,
-        mirror_surface_component_path_at, named_scalars, native_scalar_matches_discrete_parameter,
-        normalize_indexed_curve_entities, object_names, offset_plane_reference_frame_matches,
-        offset_plane_reference_source, offset_reference_plane_frame_pair,
-        ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
-        plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
-        profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
-        profile_roster_principal_axis_endpoints, reconcile_reference_plane_frame,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
-        roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
-        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, tangent_bounded_curve, unique_arc_center_marker,
-        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
-        wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind, Length,
-        CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
-        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
-        SKETCH_MARKER,
+        legacy_coordinate_roster_undetailed_line, legacy_extended_diagonal_rectangle,
+        legacy_extended_profile_curve_kind, legacy_feature_input_section,
+        legacy_inline_arc_coordinates, legacy_line_handle_coordinates, legacy_linked_coordinates,
+        legacy_reference_axis_triads, legacy_single_face_reference_path_at,
+        legacy_state_five_curve_endpoint_indices, legacy_terminal_indexed_profile_line,
+        marker_coordinates, marker_is_geometry_locus, marker_is_selected_construction_line,
+        marker_local_id, marker_local_links, marker_object_index, marker_spatial_coordinates,
+        matrix_reference_plane_frame, minimal_reference_plane_frame,
+        mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
+        native_scalar_matches_discrete_parameter, normalize_indexed_curve_entities, object_names,
+        offset_plane_reference_frame_matches, offset_plane_reference_source,
+        offset_reference_plane_frame_pair, ordered_compact_line_profile, ordered_rectangle_corners,
+        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
+        principal_sketch_frame, profile_roster_construction_axis,
+        profile_roster_origin_axis_endpoints, profile_roster_principal_axis_endpoints,
+        reconcile_reference_plane_frame, resolve_operand_marker, resolve_operand_marker_excluding,
+        resolve_scalar_operand_markers, revolution_line_reference_inputs, revolution_operation,
+        revolution_temporary_axis, roster_curve_endpoint_markers,
+        sketch_block_identity_normalization_origin, sketch_block_record_origin,
+        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
+        tangent_bounded_curve, unique_arc_center_marker, unique_dimensioned_rectangle_markers,
+        unique_locus, unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle,
+        BooleanOp, CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
+        NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -2294,6 +2294,88 @@ mod marker_tests {
             Point2::new(24.0, -14.15),
         ];
         assert_eq!(ordered_rectangle_corners(&non_rectangular), None);
+    }
+
+    #[test]
+    fn legacy_extended_line_cycle_carries_rectangle_from_opposite_vertices() {
+        let mut payload = vec![0; 4 * 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        let edges = [[1u16, 2u16], [2, 3], [3, 4], [4, 1]];
+        for (index, edge) in edges.into_iter().enumerate() {
+            let offset = index * 84;
+            payload[offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+                .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+            payload[offset + 5..offset + 13].fill(0xff);
+            payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+            payload[offset + 17..offset + 21].copy_from_slice(&1u32.to_le_bytes());
+            payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+            payload[offset + 27..offset + 29].copy_from_slice(&1u16.to_le_bytes());
+            payload[offset + 29..offset + 31].copy_from_slice(&1u16.to_le_bytes());
+            payload[offset + 31..offset + 35].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+            payload[offset + 35..offset + 39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
+            payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+            payload[offset + 56..offset + 58].copy_from_slice(&(edge[0] - 1).to_le_bytes());
+            payload[offset + 58..offset + 60].copy_from_slice(&(edge[1] - 1).to_le_bytes());
+            payload[offset + 60..offset + 64].copy_from_slice(&1u32.to_le_bytes());
+            payload[offset + 64..offset + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        }
+        payload[3 * 84 + 74..3 * 84 + 76].copy_from_slice(&1u16.to_le_bytes());
+        payload[4 * 84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        let marker = |id: &str,
+                      offset: u64,
+                      object_index: Option<u32>,
+                      coordinates_m: Option<[f64; 2]>,
+                      kind| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset,
+            object_index,
+            local_id: None,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let markers = [
+            marker(
+                "first",
+                400,
+                Some(1),
+                Some([-0.025, -0.011]),
+                SketchInputKind::Point,
+            ),
+            marker(
+                "third",
+                500,
+                Some(3),
+                Some([0.025, 0.011]),
+                SketchInputKind::Point,
+            ),
+            marker("line-1", 0, None, None, SketchInputKind::LineOrCircle),
+            marker("line-2", 84, None, None, SketchInputKind::LineOrCircle),
+            marker("line-3", 168, None, None, SketchInputKind::LineOrCircle),
+            marker("line-4", 252, None, None, SketchInputKind::LineOrCircle),
+        ];
+        let marker_refs = markers.iter().collect::<Vec<_>>();
+
+        assert_eq!(
+            legacy_extended_diagonal_rectangle(&payload, &marker_refs),
+            Some([
+                Point2::new(-0.025, -0.011),
+                Point2::new(0.025, -0.011),
+                Point2::new(0.025, 0.011),
+                Point2::new(-0.025, 0.011),
+            ])
+        );
+
+        let mut adjacent = markers;
+        adjacent[1].object_index = Some(2);
+        assert_eq!(
+            legacy_extended_diagonal_rectangle(&payload, &adjacent.iter().collect::<Vec<_>>()),
+            None
+        );
     }
 
     #[test]
@@ -18467,6 +18549,8 @@ pub(crate) fn project_marker_backed_sketches(
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
                 continue;
             };
+            let diagonal_rectangle =
+                legacy_extended_diagonal_rectangle(&lane.native_payload, &object_markers);
             let mut projected = markers
                 .iter()
                 .copied()
@@ -18759,6 +18843,58 @@ pub(crate) fn project_marker_backed_sketches(
                     })
                 })
                 .collect::<Vec<_>>();
+            if let Some(rectangle) = diagonal_rectangle {
+                let rectangle_marker_refs = object_markers
+                    .iter()
+                    .filter_map(|marker| {
+                        let offset = usize::try_from(marker.offset).ok()?;
+                        legacy_extended_diagonal_rectangle_line_endpoints(
+                            &lane.native_payload,
+                            offset,
+                        )?;
+                        Some(marker.id.as_str())
+                    })
+                    .collect::<HashSet<_>>();
+                projected.retain(|entity| {
+                    entity
+                        .native_ref
+                        .as_deref()
+                        .is_none_or(|native| !rectangle_marker_refs.contains(native))
+                });
+                let Some(corners) = rectangle
+                    .map(|point| {
+                        let point = transform.apply(quantize(
+                            Point2::new(point.u * NATIVE_TO_IR, point.v * NATIVE_TO_IR),
+                            QUANTUM,
+                        ))?;
+                        Some(Point2::new(
+                            point.0 as f64 * QUANTUM,
+                            point.1 as f64 * QUANTUM,
+                        ))
+                    })
+                    .into_iter()
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    continue;
+                };
+                for (index, start) in corners.iter().enumerate() {
+                    projected.push(SketchEntity {
+                        id: SketchEntityId(format!(
+                            "sldprt:model:sketch-entity#markers:{lane_key}:{}:rectangle:{index}",
+                            native_feature.ordinal
+                        )),
+                        sketch: sketch_id.clone(),
+                        construction: false,
+                        native_ref: None,
+                        geometry_ref: None,
+                        endpoint_refs: Vec::new(),
+                        geometry: SketchGeometry::Line {
+                            start: *start,
+                            end: corners[(index + 1) % corners.len()],
+                        },
+                    });
+                }
+            }
             resolve_connected_marker_arcs(&mut projected, QUANTUM);
             sketch.profiles = closed_marker_profiles(&projected);
             if projected.is_empty() || (bound_sketch.is_some() && sketch.profiles.is_empty()) {
@@ -19440,6 +19576,122 @@ fn ordered_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> {
         .iter()
         .all(|corner| points.iter().filter(|point| *point == corner).count() == 1)
         .then_some(corners)
+}
+
+fn legacy_extended_diagonal_rectangle(
+    payload: &[u8],
+    markers: &[&SketchInputEntity],
+) -> Option<[Point2; 4]> {
+    let mut edges = markers
+        .iter()
+        .filter_map(|marker| {
+            let offset = usize::try_from(marker.offset).ok()?;
+            let endpoints = legacy_extended_diagonal_rectangle_line_endpoints(payload, offset)?;
+            (marker.kind == SketchInputKind::LineOrCircle).then_some(endpoints)
+        })
+        .collect::<Vec<_>>();
+    if edges.len() != 4 {
+        return None;
+    }
+    edges.sort_unstable();
+    edges.dedup();
+    let [_, _, _, _] = edges.as_slice() else {
+        return None;
+    };
+    if edges.iter().any(|edge| edge[0] == edge[1]) {
+        return None;
+    }
+    let mut vertices = edges.iter().flatten().copied().collect::<Vec<_>>();
+    vertices.sort_unstable();
+    vertices.dedup();
+    let [_, _, _, _] = vertices.as_slice() else {
+        return None;
+    };
+    if vertices
+        .iter()
+        .any(|vertex| edges.iter().filter(|edge| edge.contains(vertex)).count() != 2)
+    {
+        return None;
+    }
+    let mut known = vertices
+        .iter()
+        .filter_map(|vertex| {
+            let mut candidates = markers.iter().copied().filter(|marker| {
+                marker.object_index == Some(*vertex)
+                    && marker.coordinates_m.is_some()
+                    && matches!(
+                        marker.kind,
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                    )
+            });
+            let marker = candidates.next()?;
+            candidates
+                .next()
+                .is_none()
+                .then_some((*vertex, marker.coordinates_m?))
+        })
+        .collect::<Vec<_>>();
+    known.sort_unstable_by_key(|(vertex, _)| *vertex);
+    let [(first_vertex, [first_u, first_v]), (second_vertex, [second_u, second_v])] =
+        known.as_slice()
+    else {
+        return None;
+    };
+    if edges
+        .iter()
+        .any(|edge| edge.contains(first_vertex) && edge.contains(second_vertex))
+        || first_u == second_u
+        || first_v == second_v
+        || ![first_u, first_v, second_u, second_v]
+            .iter()
+            .all(|value| value.is_finite())
+    {
+        return None;
+    }
+    let (u0, u1) = if first_u < second_u {
+        (*first_u, *second_u)
+    } else {
+        (*second_u, *first_u)
+    };
+    let (v0, v1) = if first_v < second_v {
+        (*first_v, *second_v)
+    } else {
+        (*second_v, *first_v)
+    };
+    Some([
+        Point2::new(u0, v0),
+        Point2::new(u1, v0),
+        Point2::new(u1, v1),
+        Point2::new(u0, v1),
+    ])
+}
+
+fn legacy_extended_diagonal_rectangle_line_endpoints(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || payload.get(offset + 17..offset + 21) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || payload.get(offset + 27..offset + 29) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 72..offset + 74) != Some(&[0; 2])
+        || payload.get(offset.checked_add(84)?..offset.checked_add(86)?) != Some(&[0xff, 0xff])
+    {
+        return None;
+    }
+    let endpoints = one_based_u16_endpoint_pair(payload, offset, 56)?;
+    let terminal_vertex =
+        u16::from_le_bytes(payload.get(offset + 74..offset + 76)?.try_into().ok()?) as u32;
+    (terminal_vertex == 0 || terminal_vertex == endpoints[1]).then_some(endpoints)
 }
 
 fn unique_dimensioned_rectangle_markers<'a>(
