@@ -18,6 +18,11 @@ cadmpeg-ir = { workspace = true }
 thiserror = { workspace = true }
 encoding_rs = { workspace = true }
 
+[dev-dependencies]
+# Tests and the doctest build `cadmpeg_ir::examples`; the feature keeps those
+# fixtures out of the normal library build.
+cadmpeg-ir = { workspace = true, features = ["test-support"] }
+
 [lints]
 workspace = true
 

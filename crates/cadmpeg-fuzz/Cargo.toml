@@ -23,7 +23,7 @@ cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo" }
 cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx" }
 cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino", features = ["fuzzing"] }
 cadmpeg-codec-iges = { path = "../cadmpeg-codec-iges" }
-cadmpeg-ir = { path = "../cadmpeg-ir" }
+cadmpeg-ir = { path = "../cadmpeg-ir", features = ["test-support"] }
 cadmpeg-step = { path = "../cadmpeg-step" }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 flate2 = "1"

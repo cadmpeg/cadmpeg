@@ -22,6 +22,9 @@ sha2.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+# Tests build `cadmpeg_ir::examples`; the feature keeps those fixtures out of
+# the normal library build.
+cadmpeg-ir = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true

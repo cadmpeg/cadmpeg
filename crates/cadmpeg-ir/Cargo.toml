@@ -22,5 +22,17 @@ sha2.workspace = true
 base64.workspace = true
 flate2.workspace = true
 
+[features]
+# Exposes the hand-built `examples` fixtures to downstream test and tooling
+# builds. Off by default so a normal library build omits them; enabled through
+# a dev-dependency in crates whose tests use `cadmpeg_ir::examples`, and as a
+# normal dependency feature in the fuzz seed generators.
+test-support = []
+
+# The example prints a fixture from `examples`, so it needs the gate enabled.
+[[example]]
+name = "emit_cube"
+required-features = ["test-support"]
+
 [lints]
 workspace = true

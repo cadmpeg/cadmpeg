@@ -24,6 +24,11 @@ serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
 
+[dev-dependencies]
+# Tests build `cadmpeg_ir::examples`; the feature keeps those fixtures out of
+# the normal library build.
+cadmpeg-ir = { workspace = true, features = ["test-support"] }
+
 [features]
 # Exposes `pub mod fuzzing`, thin wrappers that drive the crate-private `brep`
 # leaf scanners so the fuzz crate can reach them without widening the stable API.

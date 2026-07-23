@@ -39,6 +39,9 @@ assert_cmd.workspace = true
 crc32fast.workspace = true
 predicates.workspace = true
 zip.workspace = true
+# The CLI integration tests build `cadmpeg_ir::examples`; the feature keeps
+# those fixtures out of the normal library build.
+cadmpeg-ir = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true

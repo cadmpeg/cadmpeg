@@ -24,5 +24,10 @@ serde-value.workspace = true
 schemars.workspace = true
 roxmltree.workspace = true
 
+[dev-dependencies]
+# Tests build `cadmpeg_ir::examples`; the feature keeps those fixtures out of
+# the normal library build.
+cadmpeg-ir = { workspace = true, features = ["test-support"] }
+
 [lints]
 workspace = true
