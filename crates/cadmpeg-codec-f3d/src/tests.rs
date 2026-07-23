@@ -16,6 +16,34 @@ use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
 use crate::F3dCodec;
 
+/// Test adapter expressing the replay/patch pinning tests against a *required*
+/// sidecar returning `Result<()>`, the shape those tests were written to before
+/// the codec adopted the shared `plan_write` gate. It delegates to the
+/// production [`Encoder::encode_with_source_fidelity`], so it exercises the real
+/// gate; the source-fidelity gate's own error-to-`Generate` behavior (missing
+/// record, tampered integrity, record-without-data, absent baseline) is pinned
+/// directly by `source_fidelity_gate_truth_table`.
+trait EncodePreserving {
+    fn encode_preserving(
+        &self,
+        ir: &cadmpeg_ir::document::CadIr,
+        source_fidelity: &cadmpeg_ir::SourceFidelity,
+        writer: &mut dyn Write,
+    ) -> Result<(), cadmpeg_ir::codec::CodecError>;
+}
+
+impl EncodePreserving for F3dCodec {
+    fn encode_preserving(
+        &self,
+        ir: &cadmpeg_ir::document::CadIr,
+        source_fidelity: &cadmpeg_ir::SourceFidelity,
+        writer: &mut dyn Write,
+    ) -> Result<(), cadmpeg_ir::codec::CodecError> {
+        self.encode_with_source_fidelity(ir, Some(source_fidelity), writer)
+            .map(|_| ())
+    }
+}
+
 fn with_scan<T>(bytes: &[u8], f: impl FnOnce(&container::ContainerScan<'_>) -> T) -> T {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
@@ -480,7 +508,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
     });
     let mut edited = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut edited)
+        .encode_preserving(&decoded.ir, &decoded.source_fidelity, &mut edited)
         .expect("tolerant coedge sense edit");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(edited), &DecodeOptions::default())
@@ -641,7 +669,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     let expected = nurbs.clone();
     let mut preserved = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut preserved)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut preserved)
         .expect("embedded use-curve edit");
     let preserved = F3dCodec
         .decode(&mut Cursor::new(preserved), &DecodeOptions::default())
@@ -4901,11 +4929,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let expected_retained = f3d_native(&retained).design_configurations;
     let mut retained_bytes = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(
-            &retained,
-            &decoded.source_fidelity,
-            &mut retained_bytes,
-        )
+        .encode_preserving(&retained, &decoded.source_fidelity, &mut retained_bytes)
         .expect("retained configuration edit");
     let retained_round_trip = F3dCodec
         .decode(&mut Cursor::new(retained_bytes), &DecodeOptions::default())
@@ -5033,7 +5057,7 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
 
     let mut replayed = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut replayed)
+        .encode_preserving(&decoded.ir, &decoded.source_fidelity, &mut replayed)
         .unwrap();
     assert_eq!(replayed, source);
 
@@ -5052,11 +5076,7 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     *u_axis = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(
-            &point_edited,
-            &decoded.source_fidelity,
-            &mut regenerated,
-        )
+        .encode_preserving(&point_edited, &decoded.source_fidelity, &mut regenerated)
         .unwrap();
     assert_ne!(regenerated, source);
     let round_trip = F3dCodec
@@ -5074,12 +5094,151 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     let mut modified = decoded.ir;
     modified.model.bodies[0].name = Some("edited".into());
     let error = F3dCodec
-        .write_preserved_with_source_fidelity(&modified, &decoded.source_fidelity, &mut Vec::new())
+        .encode_preserving(&modified, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(matches!(
         error,
         cadmpeg_ir::codec::CodecError::NotImplemented(_)
     ));
+}
+
+/// The source-fidelity gate as a truth table over record presence, retained-byte
+/// integrity, and baseline match. After gate adoption every combination that a
+/// sidecar cannot support resolves to a successful `Generate` rather than the
+/// former `Malformed`/`NotImplemented` write refusal; the degraded combinations
+/// (a retained record was present but unusable) carry an `ExportReport` note.
+#[test]
+fn source_fidelity_gate_truth_table() {
+    fn run(
+        ir: &cadmpeg_ir::document::CadIr,
+        sidecar: Option<&cadmpeg_ir::SourceFidelity>,
+    ) -> (Vec<u8>, cadmpeg_ir::report::ExportReport) {
+        let mut out = Vec::new();
+        let report = F3dCodec
+            .encode_with_source_fidelity(ir, sidecar, &mut out)
+            .expect("the gate never errors: every refusal is Generate");
+        (out, report)
+    }
+
+    fn degraded(report: &cadmpeg_ir::report::ExportReport) -> bool {
+        report
+            .notes
+            .iter()
+            .any(|note| note.contains("unusable for replay or patch"))
+    }
+
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("truth-table fixture decodes");
+    assert!(
+        decoded
+            .source_fidelity
+            .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+            .is_some(),
+        "fixture must retain the F3D source image"
+    );
+
+    // The bytes a clean Generate produces for this IR (source-less writer). Every
+    // Generate cell below must reproduce exactly these bytes.
+    let regenerated = {
+        let mut out = Vec::new();
+        F3dCodec
+            .encode(&decoded.ir, &mut out)
+            .expect("decoded IR writes source-less");
+        out
+    };
+    assert_ne!(
+        regenerated, source,
+        "generate must not reproduce the retained image"
+    );
+
+    // record ✓  integrity ✓  baseline = current  ->  Replay verbatim.
+    let (out, report) = run(&decoded.ir, Some(&decoded.source_fidelity));
+    assert_eq!(out, source, "matching baseline replays the retained image");
+    assert!(!degraded(&report));
+    assert!(report.notes.iter().any(|n| n.contains("replayed verbatim")));
+
+    // record ✓  integrity ✓  baseline ≠ current  ->  Patch.
+    let mut edited = decoded.ir.clone();
+    edited.model.points[0].position.x += 1.0;
+    let (out, report) = run(&edited, Some(&decoded.source_fidelity));
+    assert_ne!(out, source, "an edit does not replay verbatim");
+    assert_ne!(
+        out, regenerated,
+        "a patchable edit patches, not regenerates"
+    );
+    assert!(!degraded(&report));
+    assert!(report
+        .notes
+        .iter()
+        .any(|n| n.contains("patched with supported edits")));
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(out), &DecodeOptions::default())
+        .expect("patched container decodes");
+    assert_eq!(
+        round_trip.ir.model.points[0].position.x,
+        edited.model.points[0].position.x
+    );
+
+    // record ✓  integrity ✓  baseline absent  ->  Generate (degraded).
+    let mut no_baseline = decoded.ir.clone();
+    no_baseline
+        .source
+        .as_mut()
+        .expect("decoded IR has a source")
+        .attributes
+        .remove("semantic_sha256");
+    let (out, report) = run(&no_baseline, Some(&decoded.source_fidelity));
+    assert_eq!(out, regenerated, "absent baseline regenerates from the IR");
+    assert!(degraded(&report));
+
+    // record ✓  integrity ✗ (tampered bytes)  baseline = current  ->  Generate (degraded).
+    let mut tampered = decoded.source_fidelity.clone();
+    {
+        let record = tampered
+            .retained_records
+            .iter_mut()
+            .find(|r| r.id == crate::ids::FILE_SOURCE_IMAGE_ID)
+            .expect("source image present");
+        // Keep the declared byte_len and sha256; swap the stored bytes.
+        record.data = Some(vec![0u8; record.byte_len as usize]);
+    }
+    let (out, report) = run(&decoded.ir, Some(&tampered));
+    assert_eq!(out, regenerated, "failed integrity regenerates from the IR");
+    assert!(degraded(&report));
+
+    // record ✓  no retained bytes  ->  Generate (degraded).
+    let mut no_data = decoded.source_fidelity.clone();
+    no_data
+        .retained_records
+        .iter_mut()
+        .find(|r| r.id == crate::ids::FILE_SOURCE_IMAGE_ID)
+        .expect("source image present")
+        .data = None;
+    let (out, report) = run(&decoded.ir, Some(&no_data));
+    assert_eq!(
+        out, regenerated,
+        "record without bytes regenerates from the IR"
+    );
+    assert!(degraded(&report));
+
+    // record ✗ (sidecar present, image removed)  ->  Generate (clean).
+    let mut no_record = decoded.source_fidelity.clone();
+    no_record
+        .retained_records
+        .retain(|r| r.id != crate::ids::FILE_SOURCE_IMAGE_ID);
+    let (out, report) = run(&decoded.ir, Some(&no_record));
+    assert_eq!(out, regenerated, "absent record regenerates from the IR");
+    assert!(
+        !degraded(&report),
+        "no retained record is a clean generate, not a degraded one"
+    );
+
+    // no sidecar  ->  Generate (clean).
+    let (out, report) = run(&decoded.ir, None);
+    assert_eq!(out, regenerated, "no sidecar regenerates from the IR");
+    assert!(!degraded(&report));
 }
 
 #[test]
@@ -5291,7 +5450,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     }
     let mut retained = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &round_trip.source_fidelity, &mut retained)
+        .encode_preserving(&edited, &round_trip.source_fidelity, &mut retained)
         .expect("retained double-sided containment edit");
     let retained = F3dCodec
         .decode(&mut Cursor::new(retained), &DecodeOptions::default())
@@ -5879,11 +6038,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
     };
     let error = F3dCodec
-        .write_preserved_with_source_fidelity(
-            &round_trip.ir,
-            &round_trip.source_fidelity,
-            &mut Vec::new(),
-        )
+        .encode_preserving(&round_trip.ir, &round_trip.source_fidelity, &mut Vec::new())
         .expect_err("native ellipse record cannot silently retain a line edit");
     assert!(error
         .to_string()
@@ -6243,7 +6398,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(
+        .encode_preserving(
             &retained,
             &retained_decode.source_fidelity,
             &mut regenerated,
@@ -6282,7 +6437,7 @@ fn generated_f3d_rewrites_plane_frame() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("plane frame regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -6309,7 +6464,7 @@ fn generated_f3d_rejects_analytic_surface_family_changes() {
     };
 
     let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("native plane record cannot silently retain a sphere edit");
     assert!(error
         .to_string()
@@ -8952,7 +9107,7 @@ fn generated_f3d_rewrites_native_sketch_point_coordinates() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("native sketch-point regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -8991,7 +9146,7 @@ fn generated_f3d_rewrites_native_sketch_arc_geometry() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("native sketch-arc regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9029,7 +9184,7 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("native sketch-constraint regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9422,7 +9577,7 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("native sketch-NURBS regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9456,7 +9611,7 @@ fn generated_f3d_rewrites_body_transform() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("body-transform regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9584,7 +9739,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("persistent-reference regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9710,7 +9865,7 @@ fn generated_f3d_rejects_act_binding_divergence() {
     });
 
     let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("divergent ACT and appearance binding must fail");
     assert!(matches!(
         error,
@@ -9730,7 +9885,7 @@ fn generated_f3d_rejects_material_assignment_divergence() {
     });
 
     let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("divergent assignment and appearance must fail");
     assert!(matches!(
         error,
@@ -9750,7 +9905,7 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
         .properties
         .insert("refraction_index".into(), 0.5);
     let error = F3dCodec
-        .write_preserved_with_source_fidelity(&invalid, &decoded.source_fidelity, &mut Vec::new())
+        .encode_preserving(&invalid, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("out-of-range refraction must be refused");
     assert!(
         matches!(error, cadmpeg_ir::codec::CodecError::Malformed(message) if message.contains("refraction_index"))
@@ -9761,11 +9916,7 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
         .properties
         .insert("unserialized_property".into(), 0.5);
     let error = F3dCodec
-        .write_preserved_with_source_fidelity(
-            &structural,
-            &decoded.source_fidelity,
-            &mut Vec::new(),
-        )
+        .encode_preserving(&structural, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("new Protein property must be refused");
     assert!(
         matches!(error, cadmpeg_ir::codec::CodecError::NotImplemented(message) if message.contains("unchanged property set"))
@@ -9801,7 +9952,7 @@ fn generated_f3d_routes_appearance_edits_across_multiple_protein_assets() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("multi-Protein appearance regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9847,7 +9998,7 @@ fn generated_f3d_rewrites_prism_scalar_properties() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("Prism scalar regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9879,7 +10030,7 @@ fn generated_f3d_rewrites_body_rgb_color() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("body-color regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9905,7 +10056,7 @@ fn generated_f3d_rewrites_face_rgb_color_and_sense() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("face-color regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9928,7 +10079,7 @@ fn generated_f3d_rewrites_edge_parameter_range() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("edge-range regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9953,7 +10104,7 @@ fn generated_f3d_rewrites_edge_native_metadata() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("edge-continuity regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9988,7 +10139,7 @@ fn generated_f3d_rewrites_vertex_ownership() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("vertex-ownership regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -10010,7 +10161,7 @@ fn generated_f3d_rewrites_face_and_coedge_sense() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("orientation regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -10943,7 +11094,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("generated BinaryFile4 regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -10991,7 +11142,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("generated BinaryFile4 NURBS regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -11112,7 +11263,7 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("delta-state owner regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -11441,7 +11592,7 @@ fn decode_transfers_generated_wire_body_topology() {
     });
     let mut edited = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&result.ir, &result.source_fidelity, &mut edited)
+        .encode_preserving(&result.ir, &result.source_fidelity, &mut edited)
         .expect("wire-side retained edit");
     let edited = F3dCodec
         .decode(&mut Cursor::new(edited), &DecodeOptions::default())
@@ -11559,7 +11710,7 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
     };
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("degenerate curve regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -16777,7 +16928,7 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("extrusion-direction regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -16810,7 +16961,7 @@ fn generated_f3d_rewrites_procedural_surface_fit_tolerance() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("procedural-surface fit regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -16854,7 +17005,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("NURBS surface regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -16900,7 +17051,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("rational-weight regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -16951,7 +17102,7 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("extrusion-directrix regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17190,7 +17341,7 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("rolling-ball radius regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17242,7 +17393,7 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("blend-spine regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17291,7 +17442,7 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("blend-support regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17608,7 +17759,7 @@ fn decode_retains_generated_helix_construction() {
     let edited_cache = solved_curve.geometry.clone();
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
         .expect("helix definition regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17827,7 +17978,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     let edited_definition = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
         .expect("vector-offset regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17951,7 +18102,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let expected_edit = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
         .expect("subset regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -18321,7 +18472,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     let expected_edit = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
         .expect("compound intcurve regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -18429,7 +18580,7 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
     let expected_edit = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
         .expect("two-sided offset regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -18509,11 +18660,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     let expected_retained = retained.model.procedural_curves[0].definition.clone();
     let mut retained_bytes = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(
-            &retained,
-            &result.source_fidelity,
-            &mut retained_bytes,
-        )
+        .encode_preserving(&retained, &result.source_fidelity, &mut retained_bytes)
         .expect("retained embedded offset-support edit");
     let retained_round_trip = F3dCodec
         .decode(&mut Cursor::new(retained_bytes), &DecodeOptions::default())
@@ -18778,7 +18925,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     *discontinuity_flag = false;
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
         .expect("intersection context regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -18882,7 +19029,7 @@ fn generated_projection_decodes_and_writes_source_less() {
     *role = "surf1".into();
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
         .expect("projection context regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -18962,7 +19109,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
     *flag = false;
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
         .expect("early-close projection regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19040,7 +19187,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
     *selector = -4;
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
         .expect("three-surface intersection regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19120,11 +19267,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         context.parameter_range = [-1.0, 2.0];
         let mut regenerated = Vec::new();
         F3dCodec
-            .write_preserved_with_source_fidelity(
-                &edited,
-                &result.source_fidelity,
-                &mut regenerated,
-            )
+            .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
             .unwrap_or_else(|error| panic!("{name} context regeneration failed: {error}"));
         let regenerated = F3dCodec
             .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19218,11 +19361,7 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
         }
         let mut regenerated = Vec::new();
         F3dCodec
-            .write_preserved_with_source_fidelity(
-                &edited,
-                &result.source_fidelity,
-                &mut regenerated,
-            )
+            .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
             .unwrap_or_else(|error| panic!("{name} regeneration failed: {error}"));
         let regenerated = F3dCodec
             .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19313,7 +19452,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
         .expect("surface-offset scalar regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19401,7 +19540,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
     *direction = 4;
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
         .expect("spring tail regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19615,7 +19754,7 @@ fn generated_f3d_rewrites_procedural_curve_fit_tolerance() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("procedural-curve fit regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19711,7 +19850,7 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("topology-bound NURBS regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -20033,7 +20172,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("pcurve regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -20060,7 +20199,7 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("scoped pcurve regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -20089,7 +20228,7 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("rational pcurve regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -20124,7 +20263,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("ref-form pcurve regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -20603,7 +20742,7 @@ fn generated_f3d_rewrites_creation_timestamp() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("timestamp regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -21519,9 +21658,9 @@ mod golden {
 
     /// The `replay` branch of [`crate::F3dCodec::encode_with_source_fidelity`]:
     /// decode, then re-encode with the intact source-fidelity sidecar. The sidecar
-    /// retains the F3D source image and the IR is unchanged, so
-    /// `write_preserved_bytes` replays the retained bytes verbatim. `None` when the
-    /// fixture does not decode.
+    /// retains the F3D source image and the IR is unchanged, so the `plan_write`
+    /// gate returns `Replay` and the retained bytes are written verbatim. `None`
+    /// when the fixture does not decode.
     fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
         let result = decode_result(bytes).ok()?;
         let mut out = Vec::new();
@@ -21551,10 +21690,11 @@ mod golden {
         })
     }
 
-    /// The `patch` branch of [`crate::F3dCodec::write_preserved_with_source_fidelity`]:
-    /// nudge the first model point, which changes `decode::semantic_hash` and so
-    /// routes through `writer::patch::write_semantic`. `None` when the fixture does
-    /// not decode or has no point to edit (patch is not drivable from it).
+    /// The `patch` branch of [`crate::F3dCodec::encode_with_source_fidelity`]:
+    /// nudge the first model point, which changes `decode::semantic_hash` so the
+    /// `plan_write` gate returns `Patch` and routes through
+    /// `writer::patch::write_semantic`. `None` when the fixture does not decode or
+    /// has no point to edit (patch is not drivable from it).
     fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
         let result = decode_result(bytes).ok()?;
         if result.ir.model.points.is_empty() {
@@ -21564,12 +21704,12 @@ mod golden {
         edited.model.points[0].position.x += 1.0;
         let mut out = Vec::new();
         Some(
-            match F3dCodec.write_preserved_with_source_fidelity(
+            match F3dCodec.encode_with_source_fidelity(
                 &edited,
-                &result.source_fidelity,
+                Some(&result.source_fidelity),
                 &mut out,
             ) {
-                Ok(()) => Ok(out),
+                Ok(_) => Ok(out),
                 Err(err) => Err(err.to_string()),
             },
         )
