@@ -904,10 +904,23 @@ pub(crate) fn targeted_surfaces(
             })
             .or_insert(Some(record));
     }
+    let rolling = crate::families::a5a8::records::a8_freeform_curves(bytes)
+        .into_iter()
+        .filter_map(|jet| {
+            let definition = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)?;
+            Some((
+                jet.object_id,
+                B5Surface::RollingBall {
+                    carrier_object_id: jet.object_id,
+                    definition,
+                },
+            ))
+        })
+        .collect::<HashMap<_, _>>();
     object_ids
         .iter()
         .filter_map(|&object_id| {
-            resolve_targeted_surface(object_id, &records, &headers, 0)
+            resolve_targeted_surface(object_id, &records, &headers, &rolling, 0)
                 .map(|surface| (object_id, surface))
         })
         .collect()
@@ -917,15 +930,25 @@ fn resolve_targeted_surface(
     object_id: u32,
     records: &HashMap<u32, Option<B5Record>>,
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
+    rolling: &HashMap<u32, B5Surface>,
     depth: usize,
 ) -> Option<B5Surface> {
     (depth < 16).then_some(())?;
+    if let Some(surface) = rolling.get(&object_id) {
+        return Some(surface.clone());
+    }
     let record = records.get(&object_id)?.as_ref()?;
     if let Some(target) = surface_alias_target(record) {
-        return resolve_targeted_surface(target, records, headers, depth + 1);
+        return resolve_targeted_surface(target, records, headers, rolling, depth + 1);
     }
     if let Some(construction) = parse_supported_surface(record) {
-        return resolve_targeted_surface(construction.carrier_surface, records, headers, depth + 1);
+        return resolve_targeted_surface(
+            construction.carrier_surface,
+            records,
+            headers,
+            rolling,
+            depth + 1,
+        );
     }
     surface_node(record, headers.get(&object_id))
 }
@@ -3009,6 +3032,39 @@ fn uncounted_references(bytes: &[u8]) -> Option<Vec<u32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_carrier() {
+        let mut payload = vec![0x85];
+        for reference in 1u16..=5 {
+            payload.push(0x18);
+            payload.extend_from_slice(&reference.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0x01, 0x02]);
+        payload.extend_from_slice(&2.0f64.to_le_bytes());
+        payload.extend_from_slice(&[0x03, 0x04]);
+        payload.extend_from_slice(&0.0f64.to_le_bytes());
+        payload.extend_from_slice(&[0x05, 0x06]);
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x37,
+            object_id: 10,
+            payload,
+        };
+        let records = HashMap::from([(10, Some(record))]);
+        let rolling = HashMap::from([(
+            1,
+            B5Surface::RollingBall {
+                carrier_object_id: 1,
+                definition: ProceduralSurfaceDefinition::Unknown { record: None },
+            },
+        )]);
+        assert_eq!(
+            resolve_targeted_surface(10, &records, &HashMap::new(), &rolling, 0),
+            rolling.get(&1).cloned()
+        );
+    }
 
     #[test]
     fn requested_edge_support_scan_closes_through_its_unique_wrapper() {

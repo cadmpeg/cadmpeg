@@ -548,12 +548,26 @@ pub(crate) fn resolved_surface_geometry(
 pub(crate) struct ResolvedObjectStreamPcurve {
     /// Persistent identity of the pcurve's support surface.
     pub(crate) surface_object_id: u32,
-    /// Exact neutral support geometry.
-    pub(crate) carrier: SurfaceGeometry,
+    /// Exact neutral support construction.
+    pub(crate) carrier: ResolvedPcurveSurface,
     /// Exact neutral parameter-space curve.
     pub(crate) geometry: PcurveGeometry,
     /// Native pcurve parameter interval.
     pub(crate) parameter_range: [f64; 2],
+}
+
+/// Exact neutral carrier for an identity-bound object-stream pcurve.
+#[derive(Clone, PartialEq)]
+pub(crate) enum ResolvedPcurveSurface {
+    /// Direct neutral surface geometry.
+    Geometry(SurfaceGeometry),
+    /// Procedural rolling-ball carrier.
+    RollingBall {
+        /// Persistent result-carrier identity.
+        carrier_object_id: u32,
+        /// Exact rolling-ball definition.
+        definition: Box<ProceduralSurfaceDefinition>,
+    },
 }
 
 /// Lower one decoded degree-5 UV jet through its resolved native chart.
@@ -562,7 +576,18 @@ pub(crate) fn resolved_object_stream_pcurve(
     pcurve: &crate::families::a5a8::records::A8Pcurve,
     surface: &B5Surface,
 ) -> Option<ResolvedObjectStreamPcurve> {
-    let carrier = surfaces::neutral_analytic_surface(surface)?;
+    let carrier = surfaces::neutral_analytic_surface(surface)
+        .map(ResolvedPcurveSurface::Geometry)
+        .or_else(|| match surface {
+            B5Surface::RollingBall {
+                carrier_object_id,
+                definition,
+            } => Some(ResolvedPcurveSurface::RollingBall {
+                carrier_object_id: *carrier_object_id,
+                definition: Box::new(definition.clone()),
+            }),
+            _ => None,
+        })?;
     let (knots, control_points) = crate::nurbs::quintic_jet_bspline(
         pcurve.degree,
         &pcurve.knots,

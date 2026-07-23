@@ -622,7 +622,7 @@ pub(crate) struct StandardEdgeSupport {
     /// Persistent support-surface identities in wrapper order.
     pub(crate) surface_object_ids: [u32; 2],
     /// Exact neutral support carriers.
-    pub(crate) carriers: [SurfaceGeometry; 2],
+    pub(crate) carriers: [crate::families::b5::transfer::ResolvedPcurveSurface; 2],
     /// Exact support pcurves in wrapper order.
     pub(crate) pcurves: [PcurveGeometry; 2],
     /// Shared native parameter interval.
@@ -3307,52 +3307,12 @@ pub(crate) fn build_standard_edge_curve(
         let sides = if let Some(native) = native_support {
             let mut surfaces = Vec::with_capacity(2);
             for side in 0..2 {
-                let source = cgm_source("surface", native.surface_object_ids[side]);
-                let source_matches = ir
-                    .model
-                    .surfaces
-                    .iter()
-                    .filter(|surface| surface.source_object.as_ref() == Some(&source))
-                    .map(|surface| surface.id.clone())
-                    .collect::<HashSet<_>>();
-                let geometry_matches = ir
-                    .model
-                    .surfaces
-                    .iter()
-                    .filter(|surface| surface.geometry == native.carriers[side])
-                    .map(|surface| surface.id.clone())
-                    .collect::<HashSet<_>>();
-                let surface = if source_matches.len() == 1 {
-                    source_matches
-                        .into_iter()
-                        .next()
-                        .expect("one identity-matched support surface")
-                } else if source_matches.is_empty() && geometry_matches.len() == 1 {
-                    geometry_matches
-                        .into_iter()
-                        .next()
-                        .expect("one geometry-matched support surface")
-                } else {
-                    let id = SurfaceId(format!(
-                        "catia:standard:edge-support-surface#{}",
-                        native.surface_object_ids[side]
-                    ));
-                    annotate(
-                        annotations,
-                        &id,
-                        "CATPart",
-                        0,
-                        "native_edge_support_surface",
-                        Exactness::ByteExact,
-                    );
-                    ir.model.surfaces.push(Surface {
-                        id: id.clone(),
-                        geometry: native.carriers[side].clone(),
-                        source_object: Some(source),
-                    });
-                    id
-                };
-                surfaces.push(surface);
+                surfaces.push(ensure_native_edge_support_surface(
+                    ir,
+                    annotations,
+                    native.surface_object_ids[side],
+                    &native.carriers[side],
+                ));
             }
             std::array::from_fn(|side| IntcurveSupportSide {
                 surface: Some(surfaces[side].clone()),
@@ -3408,6 +3368,94 @@ pub(crate) fn build_standard_edge_curve(
         }
     }
     (Some(id), param_range)
+}
+
+fn ensure_native_edge_support_surface(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    surface_object_id: u32,
+    carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
+) -> SurfaceId {
+    let source = cgm_source("surface", surface_object_id);
+    let source_matches = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surface.source_object.as_ref() == Some(&source))
+        .map(|surface| surface.id.clone())
+        .collect::<HashSet<_>>();
+    if source_matches.len() == 1 {
+        return source_matches
+            .into_iter()
+            .next()
+            .expect("one identity-matched support surface");
+    }
+    if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
+        let geometry_matches = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.geometry == *geometry)
+            .map(|surface| surface.id.clone())
+            .collect::<HashSet<_>>();
+        if source_matches.is_empty() && geometry_matches.len() == 1 {
+            return geometry_matches
+                .into_iter()
+                .next()
+                .expect("one geometry-matched support surface");
+        }
+    }
+    let id = SurfaceId(format!(
+        "catia:standard:edge-support-surface#{surface_object_id}"
+    ));
+    annotate(
+        annotations,
+        &id,
+        "CATPart",
+        0,
+        "native_edge_support_surface",
+        Exactness::ByteExact,
+    );
+    let geometry = match carrier {
+        crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) => {
+            geometry.clone()
+        }
+        crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => {
+            SurfaceGeometry::Unknown { record: None }
+        }
+    };
+    ir.model.surfaces.push(Surface {
+        id: id.clone(),
+        geometry,
+        source_object: Some(source),
+    });
+    if let crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
+        carrier_object_id,
+        definition,
+    } = carrier
+    {
+        let procedural_id = ProceduralSurfaceId(format!(
+            "catia:standard:edge-support-definition#{surface_object_id}"
+        ));
+        annotate(
+            annotations,
+            &procedural_id,
+            "object_stream_a8_03_32",
+            0,
+            format!(
+                "support_surface:{surface_object_id:08x}:result_carrier:{carrier_object_id:08x}"
+            ),
+            Exactness::ByteExact,
+        );
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: procedural_id,
+            surface: id.clone(),
+            definition: definition.as_ref().clone(),
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+    }
+    id
 }
 
 pub(crate) fn standard_circle_pair_solution_is_simple(
@@ -3816,8 +3864,9 @@ mod route_tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
     use cadmpeg_ir::geometry::{
-        CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface,
-        SurfaceGeometry,
+        CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+        ProceduralSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
+        RollingBallJetSite, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -4013,16 +4062,20 @@ mod route_tests {
         let native = StandardEdgeSupport {
             surface_object_ids: [20, 21],
             carriers: [
-                SurfaceGeometry::Plane {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    normal: Vector3::new(0.0, 0.0, 1.0),
-                    u_axis: Vector3::new(1.0, 0.0, 0.0),
-                },
-                SurfaceGeometry::Plane {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    normal: Vector3::new(0.0, 1.0, 0.0),
-                    u_axis: Vector3::new(1.0, 0.0, 0.0),
-                },
+                crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+                    SurfaceGeometry::Plane {
+                        origin: Point3::new(0.0, 0.0, 0.0),
+                        normal: Vector3::new(0.0, 0.0, 1.0),
+                        u_axis: Vector3::new(1.0, 0.0, 0.0),
+                    },
+                ),
+                crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+                    SurfaceGeometry::Plane {
+                        origin: Point3::new(0.0, 0.0, 0.0),
+                        normal: Vector3::new(0.0, 1.0, 0.0),
+                        u_axis: Vector3::new(1.0, 0.0, 0.0),
+                    },
+                ),
             ],
             pcurves: [pcurve.clone(), pcurve],
             parameter_range: [2.0, 5.0],
@@ -4049,6 +4102,98 @@ mod route_tests {
             }] if bound_curve == &curve
                 && context.parameter_range == [2.0, 5.0]
                 && context.sides.iter().all(|side| side.pcurve.is_some())
+        ));
+    }
+
+    #[test]
+    fn standard_spline_retains_a_procedural_rolling_ball_support() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.points.extend(
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
+                .into_iter()
+                .enumerate()
+                .map(|(index, position)| Point {
+                    id: PointId(format!("point-{index}")),
+                    position,
+                    source_object: None,
+                }),
+        );
+        let support = StandardCurveSupport {
+            pos: 12,
+            tag: 40,
+            faces: [0, 0],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        let plane = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+            SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+        );
+        let rolling_ball_definition = ProceduralSurfaceDefinition::RollingBallJet {
+            degree: 5,
+            knots: vec![0.0],
+            multiplicities: vec![6],
+            sites: vec![RollingBallJetSite {
+                first_limit: Point3::new(0.0, 0.0, 0.0),
+                second_limit: Point3::new(0.0, 1.0, 0.0),
+                center: Point3::new(0.0, 0.5, 0.0),
+                angle: std::f64::consts::PI,
+                first_derivative: RollingBallJetDerivative {
+                    first_limit: Vector3::new(0.0, 0.0, 0.0),
+                    second_limit: Vector3::new(0.0, 0.0, 0.0),
+                    center: Vector3::new(0.0, 0.0, 0.0),
+                    angle: 0.0,
+                },
+                second_derivative: RollingBallJetDerivative {
+                    first_limit: Vector3::new(0.0, 0.0, 0.0),
+                    second_limit: Vector3::new(0.0, 0.0, 0.0),
+                    center: Vector3::new(0.0, 0.0, 0.0),
+                    angle: 0.0,
+                },
+            }],
+        };
+        let native = StandardEdgeSupport {
+            surface_object_ids: [20, 21],
+            carriers: [
+                plane,
+                crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
+                    carrier_object_id: 22,
+                    definition: Box::new(rolling_ball_definition.clone()),
+                },
+            ],
+            pcurves: [pcurve.clone(), pcurve],
+            parameter_range: [2.0, 5.0],
+        };
+        let (curve, _) = build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &support,
+            [0, 1],
+            Some(&native),
+        );
+        let curve = curve.expect("procedural support identifies the curve");
+        assert_eq!(ir.model.surfaces.len(), 2);
+        assert!(matches!(
+            ir.model.procedural_surfaces.as_slice(),
+            [ProceduralSurface {
+                surface,
+                definition,
+                ..
+            }] if surface.0 == "catia:standard:edge-support-surface#21"
+                && definition == &rolling_ball_definition
+        ));
+        assert!(matches!(
+            ir.model.procedural_curves.as_slice(),
+            [ProceduralCurve { curve: bound, .. }] if bound == &curve
         ));
     }
 
