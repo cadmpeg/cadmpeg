@@ -543,14 +543,23 @@ alias_row := <lead:u32le> 01 00 04 00 <tag:u32le> <flag:u8> <f1:3B> <f2:u32le> <
 
 The low 24 bits of `tag` are the persistent roster tag; the high byte remains part of the stored word. An alias core overlapping a complete `7C02`, `7C08`, or `7C0B` extent is framed field or payload data rather than an outer roster row. Exact lead values `0x8e` and `0x8f` are ordinal-linked storage forms. `f1[2]` is a one-based `7C09` ordinal in the unique object graph with the greatest record population. An in-range ordinal links the row to that exact record. When the selected record carries an `owner_ref`, the row also links to the corresponding design object. Ordinal zero and values beyond that graph's record population carry no object-record or design-object link. The complete lead, flag, F1, F2, and F3 fields remain attached to the alias row.
 
-Grouped alias rows carry this header immediately before `lead`:
+Grouped alias rows carry this header before a bounded storage prefix:
 
 ```text
 alias_group_header := 02 00 <prototype:u32le> <group_id:u32le>
                       00 05 00 01 00 00 00 30 00 00
+
+alias_group_storage := <bit:u8> 00 00
+                     | <bit:u8> <bit:u8> 00 00
+                     | <bit:u8> 01 00 <word:u32le>
+                     | <bit:u8> <bit:u8> 01 00 <word:u32le>
+
+grouped_alias_row := alias_group_header alias_group_storage
+                     01 00 04 00 <tag:u32le> <flag:u8>
+                     <f1:3B> <f2:u32le> <f3:u32le>
 ```
 
-`prototype` identifies the node kind and `group_id` identifies the node group. The group's four-byte target allocation slot begins at `f1[2]` and continues through the first three bytes of `f2`; its low byte is therefore also the object-record ordinal.
+Each `bit` is exactly zero or one. `prototype` identifies the node kind and `group_id` identifies the node group. The group's four-byte target allocation slot begins at `f1[2]` and continues through the first three bytes of `f2`; its low byte is therefore also the object-record ordinal. The complete storage prefix remains attached to the alias membership.
 
 ---
 

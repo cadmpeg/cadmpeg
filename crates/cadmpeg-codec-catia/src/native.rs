@@ -1601,13 +1601,15 @@ fn validate_native_links(
                 alias.id
             )));
         }
-        if alias.group.is_some_and(|group| {
-            group.target_slot != (u32::from(alias.f1[2]) | ((alias.f2 & 0x00ff_ffff) << 8))
-        }) {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "alias row `{}` has an invalid group target slot",
-                alias.id
-            )));
+        if let Some(group) = &alias.group {
+            if group.target_slot != (u32::from(alias.f1[2]) | ((alias.f2 & 0x00ff_ffff) << 8))
+                || !object_graph::is_alias_group_storage_prefix(&group.storage_prefix)
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "alias row `{}` has invalid group storage",
+                    alias.id
+                )));
+            }
         }
     }
     Ok(())

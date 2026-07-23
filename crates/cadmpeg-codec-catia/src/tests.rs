@@ -5256,6 +5256,7 @@ fn outer_alias_parser_closes_group_header_and_overlapping_target_slot() {
     assert_eq!(group.prototype, 0xaf);
     assert_eq!(group.group_id, 0x148);
     assert_eq!(group.target_slot, 0x17b);
+    assert_eq!(group.storage_prefix, [0x01, 0x00, 0x00, 0x00]);
     assert_eq!(row.entity_record_ordinal, 0x7b);
 
     bytes[10] = 1;
@@ -5263,6 +5264,33 @@ fn outer_alias_parser_closes_group_header_and_overlapping_target_slot() {
         .try_into()
         .expect("one ungrouped alias row");
     assert!(row.group.is_none());
+}
+
+#[test]
+fn outer_alias_group_parser_accepts_each_bounded_storage_prefix() {
+    for storage in [
+        &[0x00, 0x00, 0x00][..],
+        &[0x01, 0x00, 0x00, 0x00],
+        &[0x01, 0x01, 0x00, 0x7c, 0x02, 0x00, 0x00],
+        &[0x01, 0x00, 0x01, 0x00, 0x7c, 0x02, 0x00, 0x00],
+    ] {
+        let mut bytes = vec![0x02, 0x00];
+        bytes.extend_from_slice(&0xafu32.to_le_bytes());
+        bytes.extend_from_slice(&0x147u32.to_le_bytes());
+        bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
+        bytes.extend_from_slice(storage);
+        let mut alias = surface_alias_stream();
+        alias.drain(..4);
+        alias[11..15].copy_from_slice(&0x0000_017du32.to_le_bytes());
+        bytes.extend(alias);
+
+        let [row] = crate::object_graph::surface_aliases(&bytes)
+            .try_into()
+            .expect("one grouped alias row");
+        let group = row.group.expect("bounded group storage");
+        assert_eq!(group.storage_prefix, storage);
+        assert_eq!(group.target_slot, 0x17d);
+    }
 }
 
 #[test]
@@ -5279,6 +5307,7 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
     assert_eq!(
         native.alias_rows[0]
             .group
+            .as_ref()
             .expect("group membership")
             .target_slot,
         0x17b
@@ -5300,6 +5329,21 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
     invalid
         .store(&mut namespace)
         .expect("store invalid grouped alias row");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut invalid = loaded;
+    invalid.alias_rows[0]
+        .group
+        .as_mut()
+        .expect("group membership")
+        .storage_prefix = vec![2, 0, 0];
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store invalid group storage");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
