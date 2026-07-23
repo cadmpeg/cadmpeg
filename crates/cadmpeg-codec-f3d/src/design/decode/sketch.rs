@@ -1603,23 +1603,49 @@ pub fn decode_sketch_curve_identities(
                 let geometry_payload = payload
                     .get(geometry_shift..)
                     .expect("invariant: geometry_shift (0 or 52) is <= payload.len() (checked >= 133 by the at + 133 <= bytes.len() loop guard)");
-                let (geometry, owner_scan_from) =
+                let (geometry, geometry_offset, owner_scan_from) =
                     if let Some((geometry, end)) = decode_legacy_sketch_nurbs(geometry_payload) {
-                        (Some(geometry), geometry_shift + end)
+                        (Some(geometry), geometry_shift + 133, geometry_shift + end)
                     } else if let Some((geometry, end)) = decode_sketch_nurbs(geometry_payload) {
-                        (Some(geometry), geometry_shift + end)
+                        (Some(geometry), geometry_shift + 133, geometry_shift + end)
                     } else if let Some(geometry) = decode_circular_arc(geometry_payload) {
-                        (Some(geometry), geometry_shift + 133 + 12 * 8)
+                        (
+                            Some(geometry),
+                            geometry_shift + 133,
+                            geometry_shift + 133 + 12 * 8,
+                        )
                     } else if let Some(geometry) = decode_line(geometry_payload) {
-                        (Some(geometry), geometry_shift + 133 + 12 * 8)
+                        (
+                            Some(geometry),
+                            geometry_shift + 133,
+                            geometry_shift + 133 + 12 * 8,
+                        )
+                    } else if let Some(geometry) = decode_compact_planar_line(geometry_payload) {
+                        (
+                            Some(geometry),
+                            geometry_shift + 133,
+                            geometry_shift + 133 + 9 * 8,
+                        )
                     } else if let Some(geometry) = decode_referenced_analytic(geometry_payload) {
-                        (Some(geometry), geometry_shift + 11 + 133 + 12 * 8)
+                        let shifted = geometry_payload
+                            .get(11..)
+                            .expect("referenced analytic decoder validated its 11-byte prefix");
+                        let scalar_count = if decode_compact_planar_line(shifted).is_some() {
+                            9
+                        } else {
+                            12
+                        };
+                        (
+                            Some(geometry),
+                            geometry_shift + 11 + 133,
+                            geometry_shift + 11 + 133 + scalar_count * 8,
+                        )
                     } else if let Some((geometry, end)) =
                         decode_text_frame_line(payload, geometry_shift, record_index)
                     {
-                        (Some(geometry), end)
+                        (Some(geometry), end - 12 * 8, end)
                     } else {
-                        (None, geometry_shift + 133)
+                        (None, geometry_shift + 133, geometry_shift + 133)
                     };
                 out.push(SketchCurveIdentity {
                     id: ids::native_sketch_curve_identity_id(&entry.name, at),
@@ -1627,7 +1653,7 @@ pub fn decode_sketch_curve_identities(
                     owner_reference: trailing_sketch_owner_reference(bytes, at + owner_scan_from),
                     class_tag,
                     byte_offset: at as u64,
-                    geometry_offset: (133 + geometry_shift) as u32,
+                    geometry_offset: geometry_offset as u32,
                     entity_genesis,
                     primary_id,
                     secondary_id,
@@ -2027,12 +2053,14 @@ fn decode_circular_arc(payload: &[u8]) -> Option<SketchCurveGeometry> {
     })
 }
 
-fn decode_referenced_analytic(payload: &[u8]) -> Option<SketchCurveGeometry> {
+pub(crate) fn decode_referenced_analytic(payload: &[u8]) -> Option<SketchCurveGeometry> {
     if payload.get(133) != Some(&1) || payload.get(138..144) != Some(&[0; 6]) {
         return None;
     }
     let shifted = payload.get(11..)?;
-    decode_circular_arc(shifted).or_else(|| decode_line(shifted))
+    decode_circular_arc(shifted)
+        .or_else(|| decode_line(shifted))
+        .or_else(|| decode_compact_planar_line(shifted))
 }
 
 /// Decode a text-frame boundary line after its two point references and
@@ -2251,6 +2279,25 @@ pub(crate) fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     decode_line_values(payload, 133)
 }
 
+pub(crate) fn decode_compact_planar_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
+    let values_at = 133;
+    let values = (0..9)
+        .map(|ordinal| f64_at(payload, values_at + ordinal * 8))
+        .collect::<Option<Vec<_>>>()?;
+    if values.iter().any(|value| !value.is_finite())
+        || values[2] != 0.0
+        || values[5] != 0.0
+        || values[8] != 0.0
+    {
+        return None;
+    }
+    let (_, reference_end) = marked_u32(payload, values_at + 9 * 8)?;
+    if payload.get(reference_end..reference_end + 6) != Some(&[0; 6]) {
+        return None;
+    }
+    decode_line_components(&values, Vector3::new(0.0, 0.0, 1.0))
+}
+
 fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeometry> {
     let values = (0..12)
         .map(|ordinal| f64_at(payload, values_at + ordinal * 8))
@@ -2258,9 +2305,13 @@ fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeo
     if values.iter().any(|value| !value.is_finite()) {
         return None;
     }
+    let stored_normal = Vector3::new(values[9], values[10], values[11]);
+    decode_line_components(&values, stored_normal)
+}
+
+fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<SketchCurveGeometry> {
     let displacement = Vector3::new(values[3], values[4], values[5]);
     let direction = Vector3::new(values[6], values[7], values[8]);
-    let stored_normal = Vector3::new(values[9], values[10], values[11]);
     let length = displacement.norm();
     if length <= 0.0 {
         return None;

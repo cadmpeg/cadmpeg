@@ -697,9 +697,6 @@ pub(crate) fn patch_sketch_curves(
             patch_sketch_nurbs(bytes, start, *fit_tolerance, knots, weights, control_points)?;
             continue;
         }
-        let payload = bytes.get_mut(start..start + 96).ok_or_else(|| {
-            CodecError::Malformed("sketch-curve analytic payload is outside BulkStream".into())
-        })?;
         let values = match geometry {
             SketchCurveGeometry::Line {
                 start,
@@ -743,11 +740,57 @@ pub(crate) fn patch_sketch_curves(
             ],
             SketchCurveGeometry::Nurbs { .. } => unreachable!("NURBS handled before fixed payload"),
         };
-        for (ordinal, value) in values.into_iter().enumerate() {
+        let scalar_count = match geometry {
+            SketchCurveGeometry::Line { normal, .. } => {
+                let scalar_count = line_scalar_count(bytes, start)?;
+                if scalar_count == 9 && (normal.x != 0.0 || normal.y != 0.0 || normal.z != 1.0) {
+                    return Err(CodecError::NotImplemented(
+                        "F3D compact planar-line edits require the implicit +Z normal".into(),
+                    ));
+                }
+                scalar_count
+            }
+            SketchCurveGeometry::Arc { .. } => 12,
+            SketchCurveGeometry::Nurbs { .. } => unreachable!("NURBS handled before fixed payload"),
+        };
+        let payload = bytes
+            .get_mut(start..start + scalar_count * 8)
+            .ok_or_else(|| {
+                CodecError::Malformed("sketch-curve analytic payload is outside BulkStream".into())
+            })?;
+        for (ordinal, value) in values.into_iter().take(scalar_count).enumerate() {
             payload[ordinal * 8..ordinal * 8 + 8].copy_from_slice(&value.to_le_bytes());
         }
     }
     Ok(())
+}
+
+fn line_scalar_count(bytes: &[u8], values_at: usize) -> Result<usize, CodecError> {
+    let Some(marker_at) = values_at.checked_add(9 * 8) else {
+        return Err(CodecError::Malformed(
+            "sketch-line scalar offset exceeds address space".into(),
+        ));
+    };
+    let full_normal = bytes.get(marker_at..marker_at + 24).and_then(|bytes| {
+        Some([
+            f64::from_le_bytes(bytes[0..8].try_into().ok()?),
+            f64::from_le_bytes(bytes[8..16].try_into().ok()?),
+            f64::from_le_bytes(bytes[16..24].try_into().ok()?),
+        ])
+    });
+    if let Some(normal) = full_normal {
+        let length = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
+        if normal.iter().all(|value| value.is_finite()) && (length - 1.0).abs() <= 1.0e-9 {
+            return Ok(12);
+        }
+    }
+    if bytes.get(marker_at) == Some(&1) && bytes.get(marker_at + 5..marker_at + 11) == Some(&[0; 6])
+    {
+        return Ok(9);
+    }
+    Err(CodecError::Malformed(
+        "sketch-line payload matches neither full nor compact planar layout".into(),
+    ))
 }
 
 fn patch_sketch_nurbs(

@@ -6595,6 +6595,76 @@ fn legacy_line_orthogonalizes_its_auxiliary_normal() {
 }
 
 #[test]
+fn compact_planar_line_uses_its_implicit_normal() {
+    let values: [f64; 9] = [0.5, 0.875, 0.0, 0.0, -1.75, 0.0, 0.0, -1.0, 0.0];
+    let mut bytes = vec![0u8; 133];
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(1);
+    bytes.extend_from_slice(&37u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+
+    let SketchCurveGeometry::Line {
+        start,
+        end,
+        direction,
+        normal,
+    } = crate::design::decode::sketch::decode_compact_planar_line(&bytes)
+        .expect("compact planar line")
+    else {
+        panic!("expected line");
+    };
+    assert_eq!(start, Point3::new(5.0, 8.75, 0.0));
+    assert_eq!(end, Point3::new(5.0, -8.75, 0.0));
+    assert_eq!(direction, Vector3::new(0.0, -1.0, 0.0));
+    assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+
+    let mut referenced = vec![0u8; 133];
+    referenced.push(1);
+    referenced.extend_from_slice(&42u32.to_le_bytes());
+    referenced.extend_from_slice(&[0; 6]);
+    referenced.extend_from_slice(&bytes[133..]);
+    assert_eq!(
+        crate::design::decode::sketch::decode_referenced_analytic(&referenced),
+        Some(SketchCurveGeometry::Line {
+            start,
+            end,
+            direction,
+            normal,
+        })
+    );
+}
+
+#[test]
+fn retained_compact_planar_line_edit_preserves_its_reference_tail() {
+    let values: [f64; 9] = [0.5, 0.875, 0.0, 0.0, -1.75, 0.0, 0.0, -1.0, 0.0];
+    let mut bytes = Vec::new();
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(1);
+    bytes.extend_from_slice(&37u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    let tail = bytes[72..].to_vec();
+    let geometry = SketchCurveGeometry::Line {
+        start: Point3::new(10.0, 20.0, 0.0),
+        end: Point3::new(30.0, 40.0, 0.0),
+        direction: Vector3::new(
+            std::f64::consts::FRAC_1_SQRT_2,
+            std::f64::consts::FRAC_1_SQRT_2,
+            0.0,
+        ),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+    };
+    crate::writer::patch::records::patch_sketch_curves(&mut bytes, &[(0, 0, geometry)])
+        .expect("compact planar line edit");
+    assert_eq!(&bytes[72..], tail);
+    assert_eq!(f64::from_le_bytes(bytes[0..8].try_into().unwrap()), 1.0);
+    assert_eq!(f64::from_le_bytes(bytes[24..32].try_into().unwrap()), 2.0);
+}
+
+#[test]
 fn text_frame_line_decodes_after_point_references() {
     let mut bytes = vec![0u8; 52 + 133];
     for reference in [2397u32, 2395] {
