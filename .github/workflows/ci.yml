@@ -57,6 +57,13 @@ jobs:
       - name: Documentation tests
         run: cargo test --workspace --doc
 
+      - name: Fuzz targets compile
+        # The fuzz crate declares its own `[workspace]`, so every step above
+        # skips it; a refactor that moves a codec's internals silently rots the
+        # harnesses' imports. A stable `check` catches that drift without the
+        # nightly toolchain `cargo fuzz build` needs.
+        run: cargo check --manifest-path crates/cadmpeg-fuzz/Cargo.toml
+
   # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
   # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.
   msrv:
