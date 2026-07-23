@@ -72,9 +72,20 @@ pub struct B2ReferenceList {
     pub references: Vec<u32>,
 }
 
+/// Typed 62-byte tail of a fixed-nine class-`0x62` owner packet.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct B2OwnerNumericTail {
+    /// Five-byte class-specific header.
+    pub header: [u8; 5],
+    /// Four finite little-endian binary64 values.
+    pub scalar64: [f64; 4],
+    /// Six finite little-endian binary32 values.
+    pub scalar32: [f32; 6],
+}
+
 /// Nine-reference owner packet stored in a `b2/b3/b4 03 62` record with a
-/// 62-byte numeric tail.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// structurally decoded numeric tail.
+#[derive(Debug, Clone, PartialEq)]
 pub struct B2OwnerPacket {
     /// Record byte offset.
     pub pos: usize,
@@ -84,8 +95,8 @@ pub struct B2OwnerPacket {
     pub reference_encoding: B2OwnerReferenceEncoding,
     /// Nine compact persistent identities following the `0x89` count.
     pub references: [u32; 9],
-    /// Fixed-width numeric tail retained byte-exactly.
-    pub numeric_tail: [u8; 62],
+    /// Fixed-width class-specific numeric tail.
+    pub numeric_tail: B2OwnerNumericTail,
 }
 
 /// Count-framed class-`0x62` owner record with a class-specific tail.
@@ -156,7 +167,7 @@ pub struct B2Link5f {
 
 /// Adjacent class-`0x5f` link and class-`0x62` owner packet joined by their
 /// allocation-successor identity.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct B2LinkedOwner {
     /// Fixed link immediately preceding the owner packet.
     pub link: B2Link5f,
@@ -452,7 +463,7 @@ pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
                     _ => unreachable!(),
                 };
             }
-            let numeric_tail = data.get(at..frame.end)?.try_into().ok()?;
+            let numeric_tail = b2_owner_numeric_tail(data.get(at..frame.end)?)?;
             Some(B2OwnerPacket {
                 pos: frame.pos,
                 header_token: frame.header_token,
@@ -462,6 +473,34 @@ pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
             })
         })
         .collect()
+}
+
+fn b2_owner_numeric_tail(data: &[u8]) -> Option<B2OwnerNumericTail> {
+    if data.len() != 62 {
+        return None;
+    }
+    let header: [u8; 5] = data.get(..5)?.try_into().ok()?;
+    if header[0] != 0x84 || !matches!(header[1], 0x41 | 0xc1) || header[4] != 0x0d {
+        return None;
+    }
+
+    let scalar64 = read_f64_array(data, 5)?;
+    if data.get(37) != Some(&0x01) {
+        return None;
+    }
+    let mut scalar32 = [0.0; 6];
+    for (index, value) in scalar32.iter_mut().enumerate() {
+        let start = 38 + index * 4;
+        *value = f32::from_le_bytes(data.get(start..start + 4)?.try_into().ok()?);
+        if !value.is_finite() {
+            return None;
+        }
+    }
+    Some(B2OwnerNumericTail {
+        header,
+        scalar64,
+        scalar32,
+    })
 }
 
 /// Decode the count-prefixed class-`0x61` payload family. Long class-`0x61`

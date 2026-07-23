@@ -1004,7 +1004,7 @@ pub(crate) fn b2_owner_packet_stream() -> Vec<u8> {
             record.push(4 * u8::try_from(value).unwrap() + 1);
         }
     }
-    record.extend(0u8..62);
+    record.extend_from_slice(&owner_numeric_tail());
     record
 }
 
@@ -1025,8 +1025,20 @@ pub(crate) fn b2_width_coded_owner_packet_stream() -> Vec<u8> {
             record.push(u8::try_from(value).unwrap());
         }
     }
-    record.extend(0u8..62);
+    record.extend_from_slice(&owner_numeric_tail());
     record
+}
+
+fn owner_numeric_tail() -> Vec<u8> {
+    let mut tail = vec![0x84, 0x41, 0xbb, 0x05, 0x0d];
+    for value in [-0.0f64, 4.5, 12.25, 7.0] {
+        tail.extend_from_slice(&value.to_le_bytes());
+    }
+    tail.push(0x01);
+    for value in [1.0f32, -2.0, 3.5, 4.0, 5.25, 6.0] {
+        tail.extend_from_slice(&value.to_le_bytes());
+    }
+    tail
 }
 
 pub(crate) fn b2_counted_61_stream() -> Vec<u8> {
@@ -2874,7 +2886,9 @@ fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
         panic!("fixed-nine owner payload")
     };
     assert_eq!(*references, [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]);
-    assert_eq!(*numeric_tail, (0u8..62).collect::<Vec<_>>());
+    assert_eq!(numeric_tail.header, [0x84, 0x41, 0xbb, 0x05, 0x0d]);
+    assert_eq!(numeric_tail.scalar64, [-0.0, 4.5, 12.25, 7.0]);
+    assert_eq!(numeric_tail.scalar32, [1.0, -2.0, 3.5, 4.0, 5.25, 6.0]);
     let link = packet.allocation_link.expect("allocation-successor link");
     assert_eq!(link.byte_len, 11);
     assert_eq!(link.target, 1003);

@@ -16,7 +16,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 77;
+pub const CATIA_NATIVE_VERSION: u32 = 78;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -71,7 +71,18 @@ pub struct CatiaOwnerAllocationLink {
 }
 
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaOwnerNumericTail {
+    /// Five-byte class-specific header.
+    pub header: [u8; 5],
+    /// Four finite binary64 values in serialization order.
+    pub scalar64: [f64; 4],
+    /// Six finite binary32 values in serialization order.
+    pub scalar32: [f32; 6],
+}
+
+/// Structurally decoded payload of a class-`0x62` consolidated owner packet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatiaOwnerPacketPayload {
     /// Nine alternating strong/weak identities followed by a fixed numeric tail.
@@ -80,10 +91,8 @@ pub enum CatiaOwnerPacketPayload {
         reference_encoding: CatiaOwnerReferenceEncoding,
         /// Nine persistent identities in serialization order.
         references: [u32; 9],
-        /// Fixed 62-byte class-specific numeric tail.
-        #[serde(with = "cadmpeg_ir::bytes")]
-        #[schemars(with = "String")]
-        numeric_tail: Vec<u8>,
+        /// Structurally decoded 62-byte class-specific numeric tail.
+        numeric_tail: CatiaOwnerNumericTail,
     },
     /// Count-selected persistent identities followed by a nonempty tail.
     Counted {
@@ -107,7 +116,7 @@ impl CatiaOwnerPacketPayload {
 }
 
 /// Exact class-`0x62` consolidated owner packet.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaConsolidatedOwnerPacket {
     /// Stable source identity.
     pub id: String,
@@ -913,7 +922,11 @@ fn consolidated_owner_packets(bytes: &[u8]) -> Vec<CatiaConsolidatedOwnerPacket>
                         }
                     },
                     references: packet.references,
-                    numeric_tail: packet.numeric_tail.to_vec(),
+                    numeric_tail: CatiaOwnerNumericTail {
+                        header: packet.numeric_tail.header,
+                        scalar64: packet.numeric_tail.scalar64,
+                        scalar32: packet.numeric_tail.scalar32,
+                    },
                 },
             )
         })
@@ -1255,7 +1268,13 @@ fn validate_consolidated_owner_packets(
                 && link.target.checked_add(1) == packet.payload.final_reference()
         });
         let valid_payload = match &packet.payload {
-            CatiaOwnerPacketPayload::FixedNine { numeric_tail, .. } => numeric_tail.len() == 62,
+            CatiaOwnerPacketPayload::FixedNine { numeric_tail, .. } => {
+                numeric_tail.header[0] == 0x84
+                    && matches!(numeric_tail.header[1], 0x41 | 0xc1)
+                    && numeric_tail.header[4] == 0x0d
+                    && numeric_tail.scalar64.iter().all(|value| value.is_finite())
+                    && numeric_tail.scalar32.iter().all(|value| value.is_finite())
+            }
             CatiaOwnerPacketPayload::Counted { references, tail } => {
                 !references.is_empty() && !tail.is_empty()
             }

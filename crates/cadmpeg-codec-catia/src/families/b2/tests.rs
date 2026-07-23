@@ -67,7 +67,15 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
         packets[0].references,
         [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]
     );
-    assert_eq!(packets[0].numeric_tail, std::array::from_fn(|i| i as u8));
+    assert_eq!(
+        packets[0].numeric_tail.header,
+        [0x84, 0x41, 0xbb, 0x05, 0x0d]
+    );
+    assert_eq!(packets[0].numeric_tail.scalar64, [-0.0, 4.5, 12.25, 7.0]);
+    assert_eq!(
+        packets[0].numeric_tail.scalar32,
+        [1.0, -2.0, 3.5, 4.0, 5.25, 6.0]
+    );
 
     let packets =
         crate::families::b2::records::b2_owner_packets(&b2_width_coded_owner_packet_stream());
@@ -80,6 +88,24 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
         packets[0].references,
         [216, 3, 540, 7, 223, 19, 545, 31, 606]
     );
+}
+
+#[test]
+fn b2_owner_packet_parser_rejects_invalid_numeric_tail_framing() {
+    let valid = b2_owner_packet_stream();
+    let tail = valid.len() - 62;
+    for (offset, replacement) in [
+        (0, vec![0x85]),
+        (1, vec![0x40]),
+        (4, vec![0x0c]),
+        (37, vec![0x00]),
+        (5, f64::NAN.to_le_bytes().to_vec()),
+        (38, f32::INFINITY.to_le_bytes().to_vec()),
+    ] {
+        let mut invalid = valid.clone();
+        invalid[tail + offset..tail + offset + replacement.len()].copy_from_slice(&replacement);
+        assert!(crate::families::b2::records::b2_owner_packets(&invalid).is_empty());
+    }
 }
 
 #[test]
