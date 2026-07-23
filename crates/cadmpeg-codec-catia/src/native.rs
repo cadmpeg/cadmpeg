@@ -16,7 +16,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 82;
+pub const CATIA_NATIVE_VERSION: u32 = 83;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -622,12 +622,18 @@ pub struct CatiaDesignClass {
 pub struct CatiaDesignObjectRelation {
     /// Field record containing the reference.
     pub source_field: String,
+    /// Exact schema class of the source field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_class: Option<CatiaDesignClass>,
     /// Byte offset of the reference occurrence within the source payload.
     pub source_payload_offset: u64,
     /// Stored one-based target-record ordinal.
     pub target_ordinal: u32,
     /// Exact field record selected by the stored ordinal.
     pub target_field: String,
+    /// Exact schema class of the selected target field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_class: Option<CatiaDesignClass>,
     /// Design object containing the selected field record.
     pub target_design_object: String,
 }
@@ -706,24 +712,14 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                             .map(|owner| design_object_id(graph.byte_offset, owner)),
                         owner_class: owner_record
                             .filter(|record| record_has_separator_roles(record))
-                            .and_then(|record| {
-                                Some(CatiaDesignClass {
-                                    entry: record.class_entry.clone()?,
-                                    name: record.class_name.clone()?,
-                                })
-                            }),
+                            .and_then(design_class),
                         owner_storage_ref: owner_record
                             .filter(|record| record_has_separator_roles(record))
                             .and_then(|record| record.storage_ref),
                         fields: records.iter().map(|record| record.id.clone()).collect(),
                         field_classes: records
                             .iter()
-                            .filter_map(|record| {
-                                Some(CatiaDesignClass {
-                                    entry: record.class_entry.clone()?,
-                                    name: record.class_name.clone()?,
-                                })
-                            })
+                            .filter_map(|record| design_class(record))
                             .fold(Vec::new(), |mut classes, class| {
                                 if !classes.contains(&class) {
                                     classes.push(class);
@@ -737,12 +733,17 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                                     let target_design_object =
                                         reference.design_object.as_ref()?.clone();
                                     let target_field = reference.target.as_ref()?.clone();
+                                    let target_record =
+                                        object_record_index(reference.ordinal, graph.records.len())
+                                            .and_then(|index| graph.records.get(index))?;
                                     (target_design_object != id).then_some(
                                         CatiaDesignObjectRelation {
                                             source_field: record.id.clone(),
+                                            source_class: design_class(record),
                                             source_payload_offset: reference.payload_offset,
                                             target_ordinal: reference.ordinal,
                                             target_field,
+                                            target_class: design_class(target_record),
                                             target_design_object,
                                         },
                                     )
@@ -753,6 +754,13 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                 })
         })
         .collect()
+}
+
+fn design_class(record: &CatiaObjectRecord) -> Option<CatiaDesignClass> {
+    Some(CatiaDesignClass {
+        entry: record.class_entry.clone()?,
+        name: record.class_name.clone()?,
+    })
 }
 
 fn record_has_separator_roles(record: &CatiaObjectRecord) -> bool {

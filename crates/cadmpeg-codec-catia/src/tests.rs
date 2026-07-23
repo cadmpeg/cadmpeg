@@ -4033,16 +4033,20 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
         [
             crate::native::CatiaDesignObjectRelation {
                 source_field: graph.records[0].id.clone(),
+                source_class: None,
                 source_payload_offset: 2,
                 target_ordinal: 3,
                 target_field: graph.records[2].id.clone(),
+                target_class: None,
                 target_design_object: native.design_objects[1].id.clone(),
             },
             crate::native::CatiaDesignObjectRelation {
                 source_field: graph.records[0].id.clone(),
+                source_class: None,
                 source_payload_offset: 4,
                 target_ordinal: 3,
                 target_field: graph.records[2].id.clone(),
+                target_class: None,
                 target_design_object: native.design_objects[1].id.clone(),
             },
         ]
@@ -4066,11 +4070,61 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
         native.design_objects[1].relations,
         [crate::native::CatiaDesignObjectRelation {
             source_field: graph.records[2].id.clone(),
+            source_class: None,
             source_payload_offset: 0,
             target_ordinal: 1,
             target_field: graph.records[0].id.clone(),
+            target_class: None,
             target_design_object: native.design_objects[0].id.clone(),
         }]
+    );
+}
+
+#[test]
+fn native_design_relations_preserve_both_endpoint_schema_classes() {
+    let mut bytes = object_graph_from_records(&[
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0x81, 0x83, 0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x85], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x86], &[0xfe]),
+    ]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Profile",
+        "Limit",
+        "Pad",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let relation = &native.design_objects[0].relations[0];
+    assert_eq!(
+        relation
+            .source_class
+            .as_ref()
+            .map(|class| class.name.as_str()),
+        Some("Profile")
+    );
+    assert_eq!(
+        relation
+            .target_class
+            .as_ref()
+            .map(|class| class.name.as_str()),
+        Some("Pad")
+    );
+    assert_eq!(
+        relation
+            .source_class
+            .as_ref()
+            .map(|class| class.entry.as_str()),
+        native.object_graphs[0].records[0].class_entry.as_deref()
+    );
+    assert_eq!(
+        relation
+            .target_class
+            .as_ref()
+            .map(|class| class.entry.as_str()),
+        native.object_graphs[0].records[2].class_entry.as_deref()
     );
 }
 
