@@ -247,13 +247,11 @@ pub struct B5ExtrusionDirectrix {
     pub cache_fit_tolerance: f64,
 }
 
-/// A support-bound surface construction with an explicit result carrier.
+/// A class-`37` support-bound surface construction with an explicit result carrier.
 #[derive(Debug, Clone, PartialEq)]
 pub struct B5SupportedSurface {
     /// This construction's result surface id.
     pub object_id: u32,
-    /// Native construction class (`0x37` or `0x3b`).
-    pub class: u8,
     /// Explicit carrier for the result geometry and chart.
     pub carrier_surface: u32,
     /// Ordered construction support surfaces.
@@ -262,8 +260,8 @@ pub struct B5SupportedSurface {
     pub support_pcurves: [u32; 2],
     /// Six native control bytes surrounding the scalar fields.
     pub controls: [u8; 6],
-    /// Two finite native construction scalars.
-    pub scalars: [f64; 2],
+    /// Positive radius of the result carrier.
+    pub radius: f64,
 }
 
 /// One class-`06` incidence lane connecting curves to parameters at a vertex.
@@ -491,8 +489,25 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         let Some(carrier) = surfaces.get(&construction.carrier_surface).cloned() else {
             continue;
         };
+        let radius_matches_carrier = match &carrier {
+            B5Surface::Cylinder { radius, .. } => {
+                (construction.radius - radius).abs()
+                    <= 1e-12 * construction.radius.abs().max(radius.abs()).max(1.0)
+            }
+            B5Surface::Torus { minor_radius, .. } => {
+                (construction.radius - minor_radius).abs()
+                    <= 1e-12 * construction.radius.abs().max(minor_radius.abs()).max(1.0)
+            }
+            B5Surface::RollingBall { .. }
+            | B5Surface::Unknown {
+                family: 0xb5,
+                class: 0x2a,
+                ..
+            } => true,
+            _ => false,
+        };
         surfaces.insert(record.object_id, carrier);
-        if supported_surface_pcurves_match(&construction, &by_id) {
+        if radius_matches_carrier && supported_surface_pcurves_match(&construction, &by_id) {
             supported_surfaces.insert(record.object_id, construction);
         }
     }
@@ -1695,10 +1710,8 @@ fn analytic_pcurve_range(record: &B5Record) -> Option<[f64; 2]> {
 }
 
 fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
-    (record.family == 0xb5
-        && matches!(record.class, 0x37 | 0x3b)
-        && record.payload.first() == Some(&0x85))
-    .then_some(())?;
+    (record.family == 0xb5 && record.class == 0x37 && record.payload.first() == Some(&0x85))
+        .then_some(())?;
     let mut position = 1;
     let references: [u32; 5] = (0..5)
         .map(|_| wire::object_ref(&record.payload, &mut position, true))
@@ -1714,18 +1727,16 @@ fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
         record.payload[position + 20],
         record.payload[position + 21],
     ];
-    let scalars = [
-        scalar(&record.payload, position + 2)?,
-        scalar(&record.payload, position + 12)?,
-    ];
+    let radius = scalar(&record.payload, position + 2)?;
+    let zero = scalar(&record.payload, position + 12)?;
+    (radius > 0.0 && zero == 0.0).then_some(())?;
     Some(B5SupportedSurface {
         object_id: record.object_id,
-        class: record.class,
         carrier_surface: references[0],
         support_surfaces: [references[1], references[2]],
         support_pcurves: [references[3], references[4]],
         controls,
-        scalars,
+        radius,
     })
 }
 
@@ -3237,14 +3248,18 @@ mod tests {
             parse_supported_surface(&record),
             Some(B5SupportedSurface {
                 object_id: 7,
-                class: 0x37,
                 carrier_surface: 2,
                 support_surfaces: [3, 4],
                 support_pcurves: [5, 6],
                 controls: [0x09, 0x05, 0x03, 0x05, 0x01, 0x05],
-                scalars: [2.5, 0.0],
+                radius: 2.5,
             })
         );
+        let unsupported_class_3b = B5Record {
+            class: 0x3b,
+            ..record.clone()
+        };
+        assert_eq!(parse_supported_surface(&unsupported_class_3b), None);
         let construction = parse_supported_surface(&record).expect("supported surface");
         let pcurve0 = B5Record {
             object_id: 5,
