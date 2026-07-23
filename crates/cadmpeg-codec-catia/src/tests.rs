@@ -5256,6 +5256,7 @@ fn native_namespace_retains_and_validates_repeated_reference_suffixes() {
         .repeated_reference_suffix
         .as_ref()
         .expect("repeated reference suffix");
+    assert_eq!(suffix.schema_preamble, None);
     assert_eq!(suffix.repeated_references, [60, 62]);
     assert_eq!(suffix.terminal_reference, 49);
 

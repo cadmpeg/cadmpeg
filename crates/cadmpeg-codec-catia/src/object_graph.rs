@@ -76,6 +76,8 @@ pub struct ObjectPayload {
 /// One counted reference suffix whose reference prefix is serialized twice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct RepeatedReferenceSuffix {
+    /// Schema-selection production in the payload prefix before this suffix.
+    pub schema_preamble: Option<ReferenceSchemaPreamble>,
     /// Ordered entity identities serialized in both vectors.
     pub repeated_references: Vec<u32>,
     /// Final reference in the first counted vector.
@@ -84,6 +86,25 @@ pub struct RepeatedReferenceSuffix {
     pub first_count_offset: usize,
     /// Byte offset of the repeated count atom within the payload.
     pub repeated_count_offset: usize,
+}
+
+/// Schema reference carried by a repeated-reference payload preamble.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ReferenceSchemaPreamble {
+    /// `<59-byte blob> <5:atom> <46:atom> <schema-ref:atom>`.
+    BlobThenSchema {
+        /// Per-file schema-catalog ordinal.
+        schema_ref: u32,
+        /// Byte offset of `schema_ref` within the payload.
+        offset: usize,
+    },
+    /// `<schema-ref:atom> <34:atom> <59-byte blob> <5:atom>`.
+    SchemaThenBlob {
+        /// Per-file schema-catalog ordinal.
+        schema_ref: u32,
+        /// Byte offset of `schema_ref` within the payload.
+        offset: usize,
+    },
 }
 
 /// Item within a count-prefixed `0x3b` list.
@@ -581,6 +602,7 @@ pub(crate) fn repeated_reference_suffix(
                 return None;
             }
             Some(RepeatedReferenceSuffix {
+                schema_preamble: reference_schema_preamble(&fields[..count_index - 1]),
                 repeated_references: repeated,
                 terminal_reference: first[count - 1],
                 first_count_offset: *first_count_offset,
@@ -589,6 +611,42 @@ pub(crate) fn repeated_reference_suffix(
         });
     let suffix = matches.next()?;
     matches.next().is_none().then_some(suffix)
+}
+
+fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaPreamble> {
+    let mut matches = fields.windows(4).filter_map(|fields| match fields {
+        [
+            PayloadField::Blob {
+                declared_len: 59, ..
+            },
+            PayloadField::Atom { value: 5, .. },
+            PayloadField::Atom { value: 46, .. },
+            PayloadField::Atom {
+                value: schema_ref,
+                offset,
+            },
+        ] => Some(ReferenceSchemaPreamble::BlobThenSchema {
+            schema_ref: *schema_ref,
+            offset: *offset,
+        }),
+        [
+            PayloadField::Atom {
+                value: schema_ref,
+                offset,
+            },
+            PayloadField::Atom { value: 34, .. },
+            PayloadField::Blob {
+                declared_len: 59, ..
+            },
+            PayloadField::Atom { value: 5, .. },
+        ] => Some(ReferenceSchemaPreamble::SchemaThenBlob {
+            schema_ref: *schema_ref,
+            offset: *offset,
+        }),
+        _ => None,
+    });
+    let preamble = matches.next()?;
+    matches.next().is_none().then_some(preamble)
 }
 
 fn decode_head(bytes: &[u8]) -> Vec<HeadToken> {
@@ -847,7 +905,10 @@ fn classify(fields: &[PayloadField]) -> PayloadSubtype {
 
 #[cfg(test)]
 mod repeated_reference_suffix_tests {
-    use super::{repeated_reference_suffix, ObjectPayload, PayloadField, RepeatedReferenceSuffix};
+    use super::{
+        repeated_reference_suffix, ObjectPayload, PayloadField, ReferenceSchemaPreamble,
+        RepeatedReferenceSuffix,
+    };
 
     fn atom(value: u32, offset: usize) -> PayloadField {
         PayloadField::Atom { value, offset }
@@ -860,18 +921,26 @@ mod repeated_reference_suffix_tests {
     #[test]
     fn repeated_reference_suffix_requires_an_exact_counted_reference_copy() {
         let payload = ObjectPayload {
-            size: 20,
+            size: 83,
             fields: vec![
                 atom(44, 0),
-                atom(48, 1),
-                atom(3, 2),
-                reference(60, 3),
-                reference(62, 4),
-                reference(49, 5),
-                atom(3, 6),
-                reference(60, 7),
-                reference(62, 8),
-                atom(129, 9),
+                PayloadField::Blob {
+                    declared_len: 59,
+                    bytes: vec![0; 59],
+                    offset: 1,
+                },
+                atom(5, 65),
+                atom(46, 66),
+                atom(19, 67),
+                atom(48, 68),
+                atom(3, 69),
+                reference(60, 70),
+                reference(62, 72),
+                reference(49, 74),
+                atom(3, 76),
+                reference(60, 77),
+                reference(62, 79),
+                atom(129, 81),
                 PayloadField::Terminator,
             ],
         };
@@ -879,10 +948,50 @@ mod repeated_reference_suffix_tests {
         assert_eq!(
             repeated_reference_suffix(&payload),
             Some(RepeatedReferenceSuffix {
+                schema_preamble: Some(ReferenceSchemaPreamble::BlobThenSchema {
+                    schema_ref: 19,
+                    offset: 67,
+                }),
                 repeated_references: vec![60, 62],
                 terminal_reference: 49,
-                first_count_offset: 2,
-                repeated_count_offset: 6,
+                first_count_offset: 69,
+                repeated_count_offset: 76,
+            })
+        );
+    }
+
+    #[test]
+    fn repeated_reference_suffix_decodes_schema_then_blob_preamble() {
+        let payload = ObjectPayload {
+            size: 79,
+            fields: vec![
+                atom(33, 0),
+                atom(19, 1),
+                atom(34, 2),
+                PayloadField::Blob {
+                    declared_len: 59,
+                    bytes: vec![0; 59],
+                    offset: 3,
+                },
+                atom(5, 67),
+                atom(48, 68),
+                atom(2, 69),
+                reference(60, 70),
+                reference(49, 72),
+                atom(2, 74),
+                reference(60, 75),
+                atom(129, 77),
+                PayloadField::Terminator,
+            ],
+        };
+
+        assert_eq!(
+            repeated_reference_suffix(&payload)
+                .expect("repeated reference suffix")
+                .schema_preamble,
+            Some(ReferenceSchemaPreamble::SchemaThenBlob {
+                schema_ref: 19,
+                offset: 1,
             })
         );
     }
