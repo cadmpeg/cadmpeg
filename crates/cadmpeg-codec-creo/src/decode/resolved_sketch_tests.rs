@@ -157,8 +157,26 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         feature_entity_dependencies(&[producer.clone(), consumer.clone()], 416),
         [175]
     );
+    assert_eq!(
+        native_feature_dependency_ids(
+            &[],
+            &[],
+            &[producer.clone(), consumer.clone()],
+            416,
+            &[40, 40],
+        ),
+        [40, 175]
+    );
     let conflicting = table(312, 67, vec![entry(192, 200, Some(312))]);
-    assert!(feature_entity_dependencies(&[producer, conflicting, consumer], 416).is_empty());
+    assert!(feature_entity_dependencies(
+        &[producer.clone(), conflicting.clone(), consumer.clone()],
+        416
+    )
+    .is_empty());
+    assert!(
+        native_feature_dependency_ids(&[], &[], &[producer, conflicting, consumer], 416, &[],)
+            .is_empty()
+    );
 }
 
 #[test]

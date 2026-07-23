@@ -12714,31 +12714,39 @@ fn feature_dependencies(
     feature_id: u32,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
 ) -> Vec<IrFeatureId> {
-    agreed_feature_parent_ids(&scan.features.affected_ids, feature_id)
+    native_feature_dependency_ids(
+        &scan.features.affected_ids,
+        &scan.features.operations,
+        &scan.features.entity_tables,
+        feature_id,
+        prototype_dependencies
+            .get(&feature_id)
+            .map_or(&[], Vec::as_slice),
+    )
+    .into_iter()
+    .filter_map(|dependency| {
+        let id = IrFeatureId(format!("creo:model:feature#{dependency}"));
+        ir.model
+            .features
+            .iter()
+            .any(|feature| feature.id == id)
+            .then_some(id)
+    })
+    .collect()
+}
+
+fn native_feature_dependency_ids(
+    affected_ids: &[crate::feature::FeatureAffectedIds],
+    operations: &[crate::feature::FeatureOperation],
+    entity_tables: &[crate::feature::FeatureEntityTable],
+    feature_id: u32,
+    prototype_dependencies: &[u32],
+) -> Vec<u32> {
+    agreed_feature_parent_ids(affected_ids, feature_id)
         .into_iter()
-        .chain(current_feature_recipe_parent(
-            &scan.features.operations,
-            feature_id,
-        ))
-        .chain(
-            prototype_dependencies
-                .get(&feature_id)
-                .into_iter()
-                .flatten()
-                .copied(),
-        )
-        .chain(feature_entity_dependencies(
-            &scan.features.entity_tables,
-            feature_id,
-        ))
-        .filter_map(|dependency| {
-            let id = IrFeatureId(format!("creo:model:feature#{dependency}"));
-            ir.model
-                .features
-                .iter()
-                .any(|feature| feature.id == id)
-                .then_some(id)
-        })
+        .chain(current_feature_recipe_parent(operations, feature_id))
+        .chain(prototype_dependencies.iter().copied())
+        .chain(feature_entity_dependencies(entity_tables, feature_id))
         .fold(Vec::new(), |mut dependencies, dependency| {
             if !dependencies.contains(&dependency) {
                 dependencies.push(dependency);
@@ -12921,29 +12929,19 @@ fn reconcile_feature_links(
         else {
             continue;
         };
-        let native_dependencies =
-            agreed_feature_parent_ids(&scan.features.affected_ids, feature_id)
-                .into_iter()
-                .chain(current_feature_recipe_parent(
-                    &scan.features.operations,
-                    feature_id,
-                ))
-                .chain(
-                    prototype_dependencies
-                        .get(&feature_id)
-                        .into_iter()
-                        .flatten()
-                        .copied(),
-                )
-                .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
-                .filter(|dependency| emitted.contains(dependency))
-                .filter(|dependency| *dependency != feature.id)
-                .fold(Vec::new(), |mut dependencies, dependency| {
-                    if !dependencies.contains(&dependency) {
-                        dependencies.push(dependency);
-                    }
-                    dependencies
-                });
+        let native_dependencies = native_feature_dependency_ids(
+            &scan.features.affected_ids,
+            &scan.features.operations,
+            &scan.features.entity_tables,
+            feature_id,
+            prototype_dependencies
+                .get(&feature_id)
+                .map_or(&[], Vec::as_slice),
+        )
+        .into_iter()
+        .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
+        .filter(|dependency| emitted.contains(dependency))
+        .filter(|dependency| *dependency != feature.id);
         feature.dependencies = reconciled_dependencies(
             &feature.id,
             &feature.dependencies,

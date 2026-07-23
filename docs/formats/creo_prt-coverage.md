@@ -66,7 +66,9 @@ fixtures, claims above L1 remain unproven.
   cylindrical-coordinate programs transfer as helices.
 - Feature rows, parent/input tables, affected geometry and edge identifiers,
   recipe effects, saved sections, and operation states retain stable native
-  identities when neutral semantics remain incomplete.
+  identities when neutral semantics remain incomplete. A class-100 generated
+  entity reference adds a history dependency when that entity has exactly one
+  distinct producing feature, independent of feature-row order.
 - Every decoded section-dimension row transfers as a definition-scoped design
   parameter; table completeness gates ordinal relation joins, not row
   preservation.
