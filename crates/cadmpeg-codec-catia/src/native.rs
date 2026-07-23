@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 74;
+pub const CATIA_NATIVE_VERSION: u32 = 75;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -402,9 +402,6 @@ pub struct CatiaValueSchemaSelection {
     /// UTF-8 source-schema name stored by the selected entry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Encoded value token immediately following an in-range selector.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<value_block::ValueField>,
     /// Complete encoded value after this selector and before the next selector.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub encoded_value: Vec<value_block::ValueField>,
@@ -2087,7 +2084,6 @@ fn value_schema_selections(
                 Some(CatiaValueSchemaSelection {
                     offset: *offset as u64,
                     ordinal: *ordinal,
-                    value: encoded_value.first().cloned(),
                     encoded_value,
                     entry,
                     name: catalog_entry.map(|entry| entry.value.clone()),

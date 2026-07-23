@@ -4283,7 +4283,6 @@ fn native_value_blocks_distinguish_the_terminal_schema_sentinel() {
     assert_eq!(block.schema_selections[0].ordinal, 4);
     assert_eq!(block.schema_selections[0].entry, None);
     assert_eq!(block.schema_selections[0].name, None);
-    assert_eq!(block.schema_selections[0].value, None);
     assert!(block.schema_selections[0].encoded_value.is_empty());
     assert!(block.fields.iter().any(|field| matches!(
         field,
@@ -4307,14 +4306,6 @@ fn native_value_blocks_frame_values_between_catalog_valid_selectors() {
     let selections = &native.value_blocks[0].schema_selections;
     assert_eq!(selections.len(), 3);
     assert_eq!(selections[0].ordinal, 3);
-    assert_eq!(
-        selections[0].value,
-        Some(crate::value_block::ValueField::Atom {
-            value: 3,
-            width: 1,
-            offset: 5,
-        })
-    );
     assert!(matches!(
         selections[0].encoded_value.as_slice(),
         [
@@ -4324,12 +4315,11 @@ fn native_value_blocks_frame_values_between_catalog_valid_selectors() {
         ]
     ));
     assert_eq!(selections[1].ordinal, 2);
-    assert_eq!(selections[1].value, None);
     assert!(selections[1].encoded_value.is_empty());
     assert_eq!(selections[2].ordinal, 1);
     assert!(matches!(
-        selections[2].value,
-        Some(crate::value_block::ValueField::Atom { value: 2, .. })
+        selections[2].encoded_value.as_slice(),
+        [crate::value_block::ValueField::Atom { value: 2, .. }]
     ));
 }
 
@@ -5036,14 +5026,6 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
     assert_eq!(
         native.value_blocks[0].schema_selections[0].name.as_deref(),
         Some("Sketch")
-    );
-    assert_eq!(
-        native.value_blocks[0].schema_selections[0].value,
-        Some(crate::value_block::ValueField::Atom {
-            value: 3,
-            width: 1,
-            offset: 7,
-        })
     );
     assert_eq!(
         native.value_blocks[0].schema_selections[0].encoded_value,
