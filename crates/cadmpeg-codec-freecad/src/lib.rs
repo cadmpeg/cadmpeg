@@ -22,6 +22,7 @@ mod drawing;
 mod element_map;
 mod gui;
 mod joint;
+pub mod loss;
 mod mutation;
 mod native;
 mod persistence;
@@ -43,12 +44,14 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote};
 use cadmpeg_ir::source_fidelity::write_plan::verify_retained_bytes;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::wire::hash::sha256_hex;
 use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity, SourceObjectAssociation};
+
+use crate::loss::FcstdLossCode;
 
 /// `FCStd` document codec.
 #[derive(Debug, Default, Clone, Copy)]
@@ -1456,20 +1459,12 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             else {
                 return None;
             };
-            Some(LossNote {
-                code: cadmpeg_ir::LossCode::FeatureHistoryRetained,
-                category: LossCategory::Other,
-                severity: Severity::Blocking,
-                message: format!(
+            Some(FcstdLossCode::DesignOperationNativeRetained.note(
+                format!(
                     "FCStd design operation {kind} is retained natively but has no neutral semantics"
                 ),
-                provenance: Some(cadmpeg_ir::LossProvenance {
-                    format: "fcstd".into(),
-                    stream: "Document.xml".into(),
-                    offset: 0,
-                    tag: feature.native_ref.clone(),
-                }),
-            })
+                feature.native_ref.clone(),
+            ))
         })
         .collect::<Vec<_>>();
     losses.extend(ir.model.features.iter().filter_map(|feature| {
@@ -1489,37 +1484,21 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
         else {
             return None;
         };
-        Some(LossNote {
-            code: cadmpeg_ir::LossCode::ParametricRecordOmitted,
-            category: LossCategory::Other,
-            severity: Severity::Blocking,
-            message: "FCStd linear-pattern direction is retained as a native reference but is not geometrically resolved".into(),
-            provenance: Some(cadmpeg_ir::LossProvenance {
-                format: "fcstd".into(),
-                stream: "Document.xml".into(),
-                offset: 0,
-                tag: feature.native_ref.clone(),
-            }),
-        })
+        Some(FcstdLossCode::LinearPatternDirectionUnresolved.note(
+            "FCStd linear-pattern direction is retained as a native reference but is not geometrically resolved",
+            feature.native_ref.clone(),
+        ))
     }));
     losses.extend(ir.model.sketch_entities.iter().filter_map(|entity| {
         let cadmpeg_ir::sketches::SketchGeometry::Native { native_kind } = &entity.geometry else {
             return None;
         };
-        Some(LossNote {
-            code: cadmpeg_ir::LossCode::RecordNotTyped,
-            category: LossCategory::Geometry,
-            severity: Severity::Blocking,
-            message: format!(
+        Some(FcstdLossCode::SketchGeometryNativeRetained.note(
+            format!(
                 "FCStd sketch geometry {native_kind} is retained natively but is not neutralized"
             ),
-            provenance: Some(cadmpeg_ir::LossProvenance {
-                format: "fcstd".into(),
-                stream: "Document.xml".into(),
-                offset: 0,
-                tag: entity.native_ref.clone(),
-            }),
-        })
+            entity.native_ref.clone(),
+        ))
     }));
     losses.extend(ir.model.sketch_constraints.iter().filter_map(|constraint| {
         let cadmpeg_ir::sketches::SketchConstraintDefinition::Native { native_kind, .. } =
@@ -1527,20 +1506,12 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
         else {
             return None;
         };
-        Some(LossNote {
-            code: cadmpeg_ir::LossCode::RecordNotTyped,
-            category: LossCategory::Other,
-            severity: Severity::Blocking,
-            message: format!(
+        Some(FcstdLossCode::SketchConstraintNativeRetained.note(
+            format!(
                 "FCStd sketch constraint {native_kind} is retained natively but is not neutralized"
             ),
-            provenance: Some(cadmpeg_ir::LossProvenance {
-                format: "fcstd".into(),
-                stream: "Document.xml".into(),
-                offset: 0,
-                tag: constraint.native_ref.clone(),
-            }),
-        })
+            constraint.native_ref.clone(),
+        ))
     }));
     losses
 }
