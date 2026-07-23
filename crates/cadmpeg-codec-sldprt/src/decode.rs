@@ -1652,6 +1652,7 @@ fn build_geometry_ir(
         &annotations,
     );
     mark_active_configuration(&mut ir);
+    snapshot_active_configuration(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -2290,7 +2291,6 @@ fn build_metadata_ir(
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes, &annotations);
     stamp_feature_baseline(&mut ir);
-    stamp_configuration_baseline(&mut ir);
     let native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
@@ -2300,6 +2300,8 @@ fn build_metadata_ir(
     native.store(ir.native.namespace_mut("sldprt"))?;
     stamp_sketch_baseline(&mut ir, &native);
     mark_active_configuration(&mut ir);
+    snapshot_active_configuration(&mut ir);
+    stamp_configuration_baseline(&mut ir);
     preserve_source_image(scan, &mut annotations, &mut unknowns);
     set_semantic_hash(&mut ir);
     Ok((ir, annotations, unknowns))
@@ -2442,6 +2444,62 @@ fn mark_active_configuration(ir: &mut CadIr) {
     for (position, configuration) in ir.model.configurations.iter_mut().enumerate() {
         configuration.active = selected == Some(position);
     }
+}
+
+fn snapshot_active_configuration(ir: &mut CadIr) {
+    let mut active = ir
+        .model
+        .configurations
+        .iter()
+        .enumerate()
+        .filter(|(_, configuration)| configuration.active)
+        .map(|(index, _)| index);
+    let Some(configuration_index) = active.next() else {
+        return;
+    };
+    if active.next().is_some() {
+        return;
+    }
+    if !ir.model.configurations[configuration_index]
+        .parameter_values
+        .is_empty()
+        || !ir.model.configurations[configuration_index]
+            .feature_states
+            .is_empty()
+    {
+        return;
+    }
+
+    let parameter_values = ir
+        .model
+        .parameters
+        .iter()
+        .filter_map(|parameter| {
+            parameter
+                .value
+                .clone()
+                .map(|value| (parameter.id.clone(), value))
+        })
+        .collect();
+    let feature_states = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| {
+            (
+                feature.id.clone(),
+                cadmpeg_ir::features::ConfigurationFeatureState {
+                    suppressed: feature.suppressed.unwrap_or(false),
+                    dependencies: feature.dependencies.clone(),
+                    outputs: feature.outputs.clone(),
+                    definition: feature.definition.clone(),
+                },
+            )
+        })
+        .collect();
+    let configuration = &mut ir.model.configurations[configuration_index];
+    configuration.parameter_values = parameter_values;
+    configuration.feature_states = feature_states;
 }
 
 fn stamp_feature_baseline(ir: &mut CadIr) {
@@ -2766,8 +2824,8 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 mod design_loss_tests {
     use super::{
         append_design_losses, assign_configuration_bodies,
-        multiply_projected_sketch_relation_records, unbound_feature_input_operation_objects,
-        unprojected_sketch_relation_records,
+        multiply_projected_sketch_relation_records, snapshot_active_configuration,
+        unbound_feature_input_operation_objects, unprojected_sketch_relation_records,
     };
     use crate::native::SldprtNative;
     use crate::records::{
@@ -3000,6 +3058,99 @@ mod design_loss_tests {
             loss.message
                 == "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot."
         }));
+    }
+
+    #[test]
+    fn active_configuration_snapshots_final_neutral_design_state() {
+        let mut ir = CadIr::empty(Units::default());
+        let feature_id = FeatureId("feature".into());
+        ir.model.features.push(Feature {
+            id: feature_id.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(true),
+            parent: None,
+            dependencies: vec![FeatureId("dependency".into())],
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![BodyId("body".into())],
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
+            },
+            native_ref: None,
+        });
+        let parameter_id = ParameterId("parameter".into());
+        ir.model.parameters.push(DesignParameter {
+            id: parameter_id.clone(),
+            owner: Some(feature_id.clone()),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "12mm".into(),
+            value: Some(ParameterValue::Length(Length(12.0))),
+            dependencies: Vec::new(),
+            display: None,
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        for (ordinal, active) in [(0, true), (1, false)] {
+            ir.model.configurations.push(DesignConfiguration {
+                id: ConfigurationId(format!("configuration-{ordinal}")),
+                ordinal,
+                active,
+                source_index: Some(ordinal),
+                name: format!("Configuration {ordinal}"),
+                material: None,
+                properties: BTreeMap::new(),
+                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+                parameter_values: BTreeMap::new(),
+                suppressed_features: Vec::new(),
+                parameter_overrides: BTreeMap::new(),
+                feature_states: BTreeMap::new(),
+                native_ref: None,
+            });
+        }
+
+        snapshot_active_configuration(&mut ir);
+
+        assert_eq!(
+            ir.model.configurations[0].parameter_values[&parameter_id],
+            ParameterValue::Length(Length(12.0))
+        );
+        assert_eq!(
+            ir.model.configurations[0].feature_states[&feature_id],
+            ConfigurationFeatureState {
+                suppressed: true,
+                dependencies: vec![FeatureId("dependency".into())],
+                outputs: vec![BodyId("body".into())],
+                definition: FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::History,
+                    children: Vec::new(),
+                    active_child: None,
+                },
+            }
+        );
+        assert!(ir.model.configurations[1].parameter_values.is_empty());
+        assert!(ir.model.configurations[1].feature_states.is_empty());
+
+        ir.model.configurations[0]
+            .parameter_values
+            .insert(parameter_id.clone(), ParameterValue::Length(Length(25.0)));
+        ir.model.configurations[0]
+            .feature_states
+            .get_mut(&feature_id)
+            .expect("active feature state")
+            .suppressed = false;
+        snapshot_active_configuration(&mut ir);
+        assert_eq!(
+            ir.model.configurations[0].parameter_values[&parameter_id],
+            ParameterValue::Length(Length(25.0))
+        );
+        assert!(!ir.model.configurations[0].feature_states[&feature_id].suppressed);
     }
 
     #[test]
