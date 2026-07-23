@@ -74,6 +74,24 @@ pub struct ReferenceSignature {
 /// One exact packet in a tokenized `7C07` value program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum EntityValuePacket {
+    /// `<atom> <atom> E8 <selector:u16le> 37 <atom> <atom>
+    /// (<E6:f64>|<E7..E9>)+ FE+`.
+    Numeric {
+        /// Byte offset of the first prefix atom within the value payload.
+        offset: usize,
+        /// Two one-byte atoms preceding the packet opcode.
+        prefix_atoms: [u32; 2],
+        /// Stored little-endian numeric-packet selector.
+        type_selector: u16,
+        /// First one-byte atom after the `0x37` delimiter.
+        layout_atom: u32,
+        /// Second one-byte atom after the `0x37` delimiter.
+        value_atom: u32,
+        /// Tagged binary64 values and control markers in serialized order.
+        items: Vec<NumericTupleItem>,
+        /// Number of consecutive `0xFE` bytes closing the packet.
+        terminator_count: usize,
+    },
     /// `E8 <value-selector:u16le> 37 FE FE`.
     Compact {
         /// Byte offset of the `E8` opcode within the value payload.
@@ -104,27 +122,153 @@ pub fn value_packets(payload: &[u8], fields: &[value_block::ValueField]) -> Vec<
             _ => None,
         })
         .collect::<HashSet<_>>();
-    (0..payload.len())
-        .filter(|index| opcode_offsets.contains(index))
-        .filter_map(|index| {
-            if let Some([0xe9, low, high, layout, 0x37, 0xfe, 0xfe]) = payload.get(index..index + 7)
-            {
-                return Some(EntityValuePacket::Layout {
-                    offset: index,
-                    type_selector: u16::from_le_bytes([*low, *high]),
-                    layout: *layout,
-                    layout_offset: index + 3,
-                });
-            }
-            match payload.get(index..index + 6) {
-                Some([0xe8, low, high, 0x37, 0xfe, 0xfe]) => Some(EntityValuePacket::Compact {
-                    offset: index,
-                    value_selector: u16::from_le_bytes([*low, *high]),
-                }),
-                _ => None,
-            }
+    let e8_opcode_offsets = fields
+        .iter()
+        .filter_map(|field| match field {
+            value_block::ValueField::Opcode { code: 0xe8, offset } => Some(*offset),
+            _ => None,
         })
+        .collect::<HashSet<_>>();
+    let marker_offsets = fields
+        .iter()
+        .filter_map(|field| match field {
+            value_block::ValueField::Marker { code: 0xe8, offset } => Some(*offset),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let one_byte_atom_offsets = fields
+        .iter()
+        .filter_map(|field| match field {
+            value_block::ValueField::Atom {
+                offset, width: 1, ..
+            } => Some(*offset),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let mut packets = numeric_value_packets(
+        payload,
+        &e8_opcode_offsets,
+        &marker_offsets,
+        &one_byte_atom_offsets,
+    );
+    packets.extend(
+        (0..payload.len())
+            .filter(|index| opcode_offsets.contains(index))
+            .filter_map(|index| {
+                if let Some([0xe9, low, high, layout, 0x37, 0xfe, 0xfe]) =
+                    payload.get(index..index + 7)
+                {
+                    return Some(EntityValuePacket::Layout {
+                        offset: index,
+                        type_selector: u16::from_le_bytes([*low, *high]),
+                        layout: *layout,
+                        layout_offset: index + 3,
+                    });
+                }
+                match payload.get(index..index + 6) {
+                    Some([0xe8, low, high, 0x37, 0xfe, 0xfe]) => Some(EntityValuePacket::Compact {
+                        offset: index,
+                        value_selector: u16::from_le_bytes([*low, *high]),
+                    }),
+                    _ => None,
+                }
+            }),
+    );
+    packets.sort_by_key(|packet| match packet {
+        EntityValuePacket::Numeric { offset, .. }
+        | EntityValuePacket::Compact { offset, .. }
+        | EntityValuePacket::Layout { offset, .. } => *offset,
+    });
+    packets
+}
+
+fn numeric_value_packets(
+    payload: &[u8],
+    opcode_offsets: &HashSet<usize>,
+    marker_offsets: &HashSet<usize>,
+    one_byte_atom_offsets: &HashSet<usize>,
+) -> Vec<EntityValuePacket> {
+    let candidates = (0..payload.len())
+        .filter(|offset| {
+            one_byte_atom_offsets.contains(offset)
+                && offset.checked_add(1).is_some_and(|prefix1_offset| {
+                    marker_offsets.contains(&prefix1_offset)
+                        || (one_byte_atom_offsets.contains(&prefix1_offset)
+                            && offset.checked_add(2).is_some_and(|opcode_offset| {
+                                opcode_offsets.contains(&opcode_offset)
+                            }))
+                })
+        })
+        .filter_map(|offset| parse_numeric_value_packet(payload, offset))
+        .collect::<Vec<_>>();
+    candidates
+        .iter()
+        .enumerate()
+        .filter(|(index, (_, range))| {
+            !candidates
+                .iter()
+                .enumerate()
+                .any(|(other_index, (_, other))| {
+                    *index != other_index && range.start < other.end && other.start < range.end
+                })
+        })
+        .map(|(_, (packet, _))| packet.clone())
         .collect()
+}
+
+fn parse_numeric_value_packet(
+    payload: &[u8],
+    offset: usize,
+) -> Option<(EntityValuePacket, std::ops::Range<usize>)> {
+    let (prefix0, mut at) = one_byte_atom(payload, offset)?;
+    let (prefix1, next) = one_byte_atom(payload, at)?;
+    at = next;
+    (payload.get(at) == Some(&0xe8)).then_some(())?;
+    let selector = u16::from_le_bytes(payload.get(at + 1..at + 3)?.try_into().ok()?);
+    (payload.get(at + 3) == Some(&0x37)).then_some(())?;
+    let (layout_atom, next) = one_byte_atom(payload, at + 4)?;
+    let (value_atom, next) = one_byte_atom(payload, next)?;
+    at = next;
+    let mut items = Vec::new();
+    let mut binary64_count = 0usize;
+    loop {
+        match *payload.get(at)? {
+            0xe6 => {
+                let end = at.checked_add(9)?;
+                let bits = u64::from_le_bytes(payload.get(at + 1..end)?.try_into().ok()?);
+                items.push(NumericTupleItem::Binary64 { bits, offset: at });
+                binary64_count += 1;
+                at = end;
+            }
+            code @ 0xe7..=0xe9 => {
+                items.push(NumericTupleItem::Control { code, offset: at });
+                at += 1;
+            }
+            0xfe => break,
+            _ => return None,
+        }
+    }
+    (binary64_count != 0).then_some(())?;
+    let terminator_start = at;
+    while payload.get(at) == Some(&0xfe) {
+        at += 1;
+    }
+    let terminator_count = at - terminator_start;
+    if offset == 0 && at == payload.len() && terminator_count >= 2 {
+        return None;
+    }
+    Some((
+        EntityValuePacket::Numeric {
+            offset,
+            prefix_atoms: [prefix0, prefix1],
+            type_selector: selector,
+            layout_atom,
+            value_atom,
+            items,
+            terminator_count,
+        },
+        offset..at,
+    ))
 }
 
 /// One length-closed `7C05` entity-table record.
@@ -608,6 +752,86 @@ mod tests {
     fn packet_shaped_bytes_inside_a_typed_value_do_not_create_packets() {
         let payload = [0x87, 0xe6, 0xe8, 1, 2, 0x37, 0xfe, 0xfe, 0, 0];
         let fields = value_block::tokenize(&payload);
+        assert!(value_packets(&payload, &fields).is_empty());
+    }
+
+    #[test]
+    fn numeric_packet_opcode_inside_binary64_does_not_create_a_packet() {
+        let mut payload = vec![
+            0x87, 0xe6, 0x81, 0x82, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6,
+        ];
+        payload.extend_from_slice(&42.0_f64.to_bits().to_le_bytes());
+        payload.push(0xfe);
+        let fields = value_block::tokenize(&payload);
+
+        assert!(value_packets(&payload, &fields).is_empty());
+    }
+
+    #[test]
+    fn embedded_numeric_value_packet_preserves_exact_values_and_controls() {
+        let mut payload = vec![0xaa, 0x81, 0x87, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84];
+        payload.push(0xe7);
+        payload.push(0xe6);
+        payload.extend_from_slice(&(-32.0_f64).to_bits().to_le_bytes());
+        payload.push(0xe9);
+        payload.push(0xe6);
+        payload.extend_from_slice(&180.902_997_326_510_7_f64.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[0xfe, 0xbb]);
+        let fields = value_block::tokenize(&payload);
+
+        assert_eq!(
+            value_packets(&payload, &fields),
+            [EntityValuePacket::Numeric {
+                offset: 1,
+                prefix_atoms: [1, 7],
+                type_selector: 0x1af4,
+                layout_atom: 3,
+                value_atom: 4,
+                items: vec![
+                    NumericTupleItem::Control {
+                        code: 0xe7,
+                        offset: 9,
+                    },
+                    NumericTupleItem::Binary64 {
+                        bits: (-32.0_f64).to_bits(),
+                        offset: 10,
+                    },
+                    NumericTupleItem::Control {
+                        code: 0xe9,
+                        offset: 19,
+                    },
+                    NumericTupleItem::Binary64 {
+                        bits: 180.902_997_326_510_7_f64.to_bits(),
+                        offset: 20,
+                    },
+                ],
+                terminator_count: 1,
+            }]
+        );
+    }
+
+    #[test]
+    fn malformed_numeric_value_packets_are_not_assigned() {
+        for payload in [
+            vec![0x81, 0x82, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6, 0, 0],
+            vec![0x81, 0x82, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe7, 0xfe],
+            vec![
+                0x81, 0x82, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6, 0, 0, 0, 0, 0, 0, 0, 0, 0xaa,
+            ],
+        ] {
+            let fields = value_block::tokenize(&payload);
+            assert!(value_packets(&payload, &fields).is_empty());
+        }
+    }
+
+    #[test]
+    fn complete_numeric_tuple_is_not_duplicated_as_an_embedded_packet() {
+        let mut payload = vec![0x81, 0x82, 0xe8, 0xd1, 0x03, 0x37, 0x83, 0x84, 0xe6];
+        payload.extend_from_slice(&42.0_f64.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[0xfe, 0xfe]);
+        let fields = value_block::tokenize(&payload);
+
+        assert!(parse_numeric_tuple(&payload).is_some());
         assert!(value_packets(&payload, &fields).is_empty());
     }
 }

@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 102;
+pub const CATIA_NATIVE_VERSION: u32 = 103;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1126,7 +1126,8 @@ fn value_field_offset(field: &value_block::ValueField) -> usize {
 
 fn entity_value_packet_offset(packet: &entity_table::EntityValuePacket) -> usize {
     match packet {
-        entity_table::EntityValuePacket::Compact { offset, .. }
+        entity_table::EntityValuePacket::Numeric { offset, .. }
+        | entity_table::EntityValuePacket::Compact { offset, .. }
         | entity_table::EntityValuePacket::Layout { offset, .. } => *offset,
     }
 }
