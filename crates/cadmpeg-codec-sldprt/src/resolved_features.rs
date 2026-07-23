@@ -5239,6 +5239,12 @@ mod marker_tests {
             Some([8, 9])
         );
         assert!(marker_is_selected_construction_line(&payload, 0));
+        payload[80..84].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
+        assert_eq!(
+            super::legacy_profile_roster_selected_axis_endpoint_indices(&payload, 0),
+            Some([8, 9])
+        );
+        assert!(marker_is_selected_construction_line(&payload, 0));
         payload[80..84].fill(0);
         assert_eq!(
             super::legacy_profile_roster_selected_axis_endpoint_indices(&payload, 0),
@@ -26481,7 +26487,10 @@ fn legacy_profile_roster_selected_axis_endpoint_indices(
         || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
         || payload.get(offset + 68..offset + 72) != Some(&[0; 4])
         || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
-        || payload.get(offset + 80..offset + 84) != Some(&[0x00, 0x00, 0x01, 0x00])
+        || !matches!(
+            payload.get(offset + 80..offset + 84),
+            Some([0x00, 0x00, 0x01 | 0x02, 0x00])
+        )
         || payload.get(offset + 84..offset + 88) != Some(&[0; 4])
         || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
     {
