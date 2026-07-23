@@ -423,6 +423,21 @@ pub fn decode_named_local_system_coordinate(
     decode_tabulated_cylinder_second_coordinate(data, offset, cache)
 }
 
+/// Decode one scalar in a named analytic surface-radius field.
+///
+/// Prefix `0x28` supplies IEEE bytes one through seven after an implicit
+/// positive subunit high byte.
+pub fn decode_named_surface_radius(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x28) {
+        return ieee8(data, offset, 0x3f);
+    }
+    decode_in_lane(data, offset, cache)
+}
+
 /// Whether a byte opens a dedicated coordinate form in the named-local-system
 /// lane rather than a generic compact scalar or cache reference.
 pub(crate) fn is_named_local_system_coordinate_opener(byte: u8) -> bool {

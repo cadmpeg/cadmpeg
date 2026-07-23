@@ -2099,6 +2099,8 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
             Some((if body[cursor] == 0x0d { 0.25 } else { 0.5 }, cursor + 1))
         } else if name == "half_angle" {
             scalar::decode_positive_dict(body, cursor).filter(|(value, _)| valid_half_angle(*value))
+        } else if scalar_field {
+            scalar::decode_named_surface_radius(body, cursor, cache)
         } else {
             scalar::decode_in_lane(body, cursor, cache)
         };
@@ -8333,6 +8335,23 @@ mod tests {
         assert_eq!(
             records[0].field("radius2").map(|field| &field.value),
             Some(&SurfaceNamedValue::ScalarSequence(vec![0.25]))
+        );
+    }
+
+    #[test]
+    fn named_prototype_radius_decodes_positive_eight_byte_form() {
+        let value = 0.125_f64;
+        let raw = value.to_be_bytes();
+        assert_eq!(raw[0], 0x3f);
+        let mut payload = b"srf_prim_ptr(cylinder)\0\xe0\x01radius\0".to_vec();
+        payload.push(0x28);
+        payload.extend_from_slice(&raw[1..]);
+
+        let records = named_prototype_records(&payload);
+
+        assert_eq!(
+            records[0].field("radius").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarSequence(vec![value]))
         );
     }
 
