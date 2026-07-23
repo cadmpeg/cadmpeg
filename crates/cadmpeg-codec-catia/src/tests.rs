@@ -5222,6 +5222,24 @@ fn outer_surface_alias_parser_reads_fixed_core() {
 }
 
 #[test]
+fn outer_alias_parser_classifies_both_ordinal_linked_storage_leads() {
+    use crate::object_graph::AliasLead;
+
+    for (lead, expected) in [
+        (0x8eu32, AliasLead::E5LinkedSurfaceStorage),
+        (0x8fu32, AliasLead::OrdinalLinkedStorage8f),
+    ] {
+        let mut bytes = surface_alias_stream();
+        bytes[..4].copy_from_slice(&lead.to_le_bytes());
+        let [row] = crate::object_graph::surface_aliases(&bytes)
+            .try_into()
+            .expect("one ordinal-linked alias row");
+        assert_eq!(row.lead, expected);
+        assert_eq!(row.entity_record_ordinal, 7);
+    }
+}
+
+#[test]
 fn outer_surface_alias_parser_retains_zero_low_tag_bits() {
     let mut bytes = surface_alias_stream();
     bytes[8..12].copy_from_slice(&0xab00_0000u32.to_le_bytes());

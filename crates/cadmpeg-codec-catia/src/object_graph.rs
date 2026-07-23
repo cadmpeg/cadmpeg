@@ -188,6 +188,8 @@ pub enum AliasLead {
     SurfaceSupportStorage,
     /// Exact value `0x8e`: E5-linked surface storage.
     E5LinkedSurfaceStorage,
+    /// Exact value `0x8f`: ordinal-linked alias storage.
+    OrdinalLinkedStorage8f,
     /// Zero lead: alias-like row outside surface storage.
     NonSurfaceAlias,
     /// Other lead value whose role is not assigned.
@@ -269,6 +271,8 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
                 AliasLead::SurfaceSupportStorage
             } else if lead_raw == 0x8e {
                 AliasLead::E5LinkedSurfaceStorage
+            } else if lead_raw == 0x8f {
+                AliasLead::OrdinalLinkedStorage8f
             } else if lead_raw == 0 {
                 AliasLead::NonSurfaceAlias
             } else {
