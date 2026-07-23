@@ -93,9 +93,19 @@ pub struct ObjectPayload {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum ListItem {
     /// Referenced object ordinal.
-    Reference(u32),
+    Reference {
+        /// Referenced ordinal.
+        value: u32,
+        /// Byte offset of the item within the payload.
+        offset: usize,
+    },
     /// Untagged atom value.
-    Atom(u32),
+    Atom {
+        /// Decoded atom value.
+        value: u32,
+        /// Byte offset of the item within the payload.
+        offset: usize,
+    },
 }
 
 /// One schema-free field in a `7C0A` payload.
@@ -621,6 +631,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     if at >= bytes.len() || bytes[at] == 0xfe {
                         break;
                     }
+                    let item_offset = at;
                     let tagged_reference = bytes[at] == 0x81;
                     let tagged_atom = bytes[at] == 0x80;
                     let value_at = at + usize::from(tagged_reference || tagged_atom);
@@ -634,9 +645,15 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                         break;
                     };
                     items.push(if tagged_reference {
-                        ListItem::Reference(value)
+                        ListItem::Reference {
+                            value,
+                            offset: item_offset,
+                        }
                     } else {
-                        ListItem::Atom(value)
+                        ListItem::Atom {
+                            value,
+                            offset: item_offset,
+                        }
                     });
                     at = value_at + consumed;
                 }

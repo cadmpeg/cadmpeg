@@ -3944,11 +3944,13 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
         [
             crate::native::CatiaObjectRecordReference {
                 ordinal: 2,
+                payload_offset: 5,
                 target: Some(native.object_graphs[0].records[1].id.clone()),
                 design_object: native.object_graphs[0].records[1].design_object.clone(),
             },
             crate::native::CatiaObjectRecordReference {
                 ordinal: 0x89ab_cdef,
+                payload_offset: 10,
                 target: None,
                 design_object: None,
             },
@@ -3987,7 +3989,10 @@ fn incomplete_object_payload_tags_do_not_consume_the_terminator() {
 #[test]
 fn native_design_objects_preserve_payload_references_to_target_owners() {
     let bytes = object_graph_from_records(&[
-        object_graph_record(&[0x04, 0x01, 0x81, 0x83], &[0x81, 0x83, 0x81, 0x83, 0xfe]),
+        object_graph_record(
+            &[0x04, 0x01, 0x81, 0x83],
+            &[0x3b, 0x82, 0x81, 0x83, 0x81, 0x83, 0xfe],
+        ),
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0x81, 0x81, 0xfe]),
         object_graph_record(&[0x04, 0x01, 0x83, 0x85], &[0x81, 0x81, 0xfe]),
     ]);
@@ -4011,11 +4016,13 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
         [
             crate::native::CatiaObjectRecordReference {
                 ordinal: 3,
+                payload_offset: 2,
                 target: Some(graph.records[2].id.clone()),
                 design_object: graph.records[2].design_object.clone(),
             },
             crate::native::CatiaObjectRecordReference {
                 ordinal: 3,
+                payload_offset: 4,
                 target: Some(graph.records[2].id.clone()),
                 design_object: graph.records[2].design_object.clone(),
             },
@@ -4026,12 +4033,14 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
         [
             crate::native::CatiaDesignObjectRelation {
                 source_field: graph.records[0].id.clone(),
+                source_payload_offset: 2,
                 target_ordinal: 3,
                 target_field: graph.records[2].id.clone(),
                 target_design_object: native.design_objects[1].id.clone(),
             },
             crate::native::CatiaDesignObjectRelation {
                 source_field: graph.records[0].id.clone(),
+                source_payload_offset: 4,
                 target_ordinal: 3,
                 target_field: graph.records[2].id.clone(),
                 target_design_object: native.design_objects[1].id.clone(),
@@ -4042,6 +4051,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
         graph.records[1].references,
         [crate::native::CatiaObjectRecordReference {
             ordinal: 1,
+            payload_offset: 0,
             target: Some(graph.records[0].id.clone()),
             design_object: graph.records[0].design_object.clone(),
         }]
@@ -4056,6 +4066,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
         native.design_objects[1].relations,
         [crate::native::CatiaDesignObjectRelation {
             source_field: graph.records[2].id.clone(),
+            source_payload_offset: 0,
             target_ordinal: 1,
             target_field: graph.records[0].id.clone(),
             target_design_object: native.design_objects[0].id.clone(),
@@ -4212,7 +4223,10 @@ fn incomplete_object_lists_do_not_assert_reference_links() {
             declared_count: 3,
             items,
             ..
-        } if items == &[crate::object_graph::ListItem::Reference(2)]
+        } if items == &[crate::object_graph::ListItem::Reference {
+            value: 2,
+            offset: 2,
+        }]
     ));
 }
 
@@ -4239,7 +4253,10 @@ fn incomplete_object_list_tags_do_not_consume_the_payload_terminator() {
                 ..
             },
             crate::object_graph::PayloadField::Terminator,
-        ] if items == &[crate::object_graph::ListItem::Reference(2)]
+        ] if items == &[crate::object_graph::ListItem::Reference {
+            value: 2,
+            offset: 2,
+        }]
     ));
 }
 
@@ -4601,7 +4618,20 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
     assert!(matches!(
         &graph.records[0].payload.fields[0],
         PayloadField::List { items, .. }
-            if items == &vec![ListItem::Reference(5), ListItem::Atom(6), ListItem::Atom(10)]
+            if items == &vec![
+                ListItem::Reference {
+                    value: 5,
+                    offset: 2,
+                },
+                ListItem::Atom {
+                    value: 6,
+                    offset: 4,
+                },
+                ListItem::Atom {
+                    value: 10,
+                    offset: 6,
+                },
+            ]
     ));
     assert!(matches!(
         graph.records[0].payload.fields[1],
