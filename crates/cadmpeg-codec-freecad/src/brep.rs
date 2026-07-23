@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::wire::cursor::bounded_len;
+use cadmpeg_ir::wire::cursor::{bounded_len, Cursor, FaultKind};
 use serde::{Deserialize, Serialize};
 
 use crate::native::{EntryRecord, PropertyRecord};
@@ -1923,17 +1923,39 @@ fn parse_binary_curve2d(
 }
 
 struct BinaryCursor<'a> {
+    /// The full payload, retained so `line` can scan ahead of the read position
+    /// for a newline; `inner` owns the read position and bounds every byte read.
     bytes: &'a [u8],
-    offset: usize,
+    /// The shared poisoned cursor that performs and bounds each read.
+    inner: Cursor<'a>,
 }
 
 impl<'a> BinaryCursor<'a> {
     fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
+        Self {
+            bytes,
+            inner: Cursor::new(bytes),
+        }
     }
 
     fn remaining(&self) -> usize {
-        self.bytes.len() - self.offset
+        self.inner.remaining()
+    }
+
+    /// Translates the inner cursor's first recorded fault into this read's
+    /// labeled error, reproducing `BinaryCursor`'s original messages. A
+    /// finite-check failure keeps `non-finite {label}`; every other fault on
+    /// these read paths is a truncation and keeps `truncated {label}`. Each read
+    /// method calls this immediately, so the recorded fault always belongs to
+    /// the read just performed.
+    fn checked(&self, label: &str) -> Result<(), CodecError> {
+        match self.inner.fault() {
+            None => Ok(()),
+            Some(fault) => Err(CodecError::Malformed(match fault.kind {
+                FaultKind::NonFinite => format!("non-finite {label}"),
+                _ => format!("truncated {label}"),
+            })),
+        }
     }
 
     /// Clamps a declared element count to what the unread bytes can hold.
@@ -1946,22 +1968,21 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn take(&mut self, count: usize, label: &str) -> Result<&'a [u8], CodecError> {
-        let end = self
-            .offset
+        // The poisoned cursor folds an offset overflow into a truncation fault,
+        // so guard the overflow here to keep the distinct labeled message.
+        self.inner
+            .position()
             .checked_add(count)
             .ok_or_else(|| CodecError::Malformed(format!("{label} offset overflow")))?;
-        let bytes = self
-            .bytes
-            .get(self.offset..end)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated {label}")))?;
-        self.offset = end;
+        let bytes = self.inner.take(count);
+        self.checked(label)?;
         Ok(bytes)
     }
 
     fn line(&mut self, label: &str) -> Result<&'a str, CodecError> {
         let tail = self
             .bytes
-            .get(self.offset..)
+            .get(self.inner.position()..)
             .ok_or_else(|| CodecError::Malformed(format!("truncated {label}")))?;
         let length = tail
             .iter()
@@ -1993,7 +2014,9 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn u8(&mut self, label: &str) -> Result<u8, CodecError> {
-        Ok(self.take(1, label)?[0])
+        let value = self.inner.u8();
+        self.checked(label)?;
+        Ok(value)
     }
 
     fn bool(&mut self, label: &str) -> Result<bool, CodecError> {
@@ -2007,15 +2030,15 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn u16(&mut self, label: &str) -> Result<u16, CodecError> {
-        Ok(u16::from_le_bytes(
-            self.take(2, label)?.try_into().expect("two-byte slice"),
-        ))
+        let value = self.inner.u16_le();
+        self.checked(label)?;
+        Ok(value)
     }
 
     fn i32(&mut self, label: &str) -> Result<i32, CodecError> {
-        Ok(i32::from_le_bytes(
-            self.take(4, label)?.try_into().expect("four-byte slice"),
-        ))
+        let value = self.inner.i32_le();
+        self.checked(label)?;
+        Ok(value)
     }
 
     fn count(&mut self, label: &str) -> Result<usize, CodecError> {
@@ -2027,15 +2050,18 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn f64(&mut self, label: &str) -> Result<f64, CodecError> {
-        let value = f64::from_le_bytes(self.take(8, label)?.try_into().expect("eight-byte slice"));
-        value
-            .is_finite()
-            .then_some(value)
-            .ok_or_else(|| CodecError::Malformed(format!("non-finite {label}")))
+        // `f64_le` performs the same finiteness rejection as the original read,
+        // recording `NonFinite` where this codec raised `non-finite {label}`.
+        let value = self.inner.f64_le();
+        self.checked(label)?;
+        Ok(value)
     }
 
     fn f32(&mut self, label: &str) -> Result<f32, CodecError> {
-        let value = f32::from_le_bytes(self.take(4, label)?.try_into().expect("four-byte slice"));
+        // The shared cursor has no finite-checked `f32` reader, so `f32_le`
+        // covers truncation and the finiteness check stays local.
+        let value = self.inner.f32_le();
+        self.checked(label)?;
         value
             .is_finite()
             .then_some(value)
