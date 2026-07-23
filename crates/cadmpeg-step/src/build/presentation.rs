@@ -99,6 +99,7 @@ impl Builder<'_> {
         let mut style_refs: HashMap<String, Ref> = HashMap::new();
         let mut styled = Vec::new();
         let mut faces: Vec<(String, Ref)> = self
+            .links
             .face_step_refs
             .iter()
             .map(|(id, r)| (id.clone(), *r))
@@ -120,7 +121,8 @@ impl Builder<'_> {
                 }
             }
             if let Some(binding_id) = spec.binding_id {
-                self.written_appearance_bindings
+                self.styling
+                    .written_appearance_bindings
                     .insert(binding_id.to_string());
             }
             let name = spec
@@ -135,7 +137,11 @@ impl Builder<'_> {
         }
         let mut direct_unstyled = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
-            if self.written_appearance_bindings.contains(&binding.id) {
+            if self
+                .styling
+                .written_appearance_bindings
+                .contains(&binding.id)
+            {
                 continue;
             }
             let Some(appearance) = appearances.get(binding.appearance.as_str()).copied() else {
@@ -145,18 +151,26 @@ impl Builder<'_> {
                 continue;
             };
             let (target, style_kind) = match &binding.target {
-                AppearanceTarget::Face(id) => {
-                    (self.face_step_refs.get(id.as_str()).copied(), "surface")
-                }
+                AppearanceTarget::Face(id) => (
+                    self.links.face_step_refs.get(id.as_str()).copied(),
+                    "surface",
+                ),
                 AppearanceTarget::Surface(id) => {
-                    (self.surface_refs.get(id.as_str()).copied(), "surface")
+                    (self.geom.surface_refs.get(id.as_str()).copied(), "surface")
                 }
-                AppearanceTarget::Curve(id) => (self.curve_refs.get(id.as_str()).copied(), "curve"),
-                AppearanceTarget::Edge(id) => (self.edge_refs.get(id.as_str()).copied(), "curve"),
-                AppearanceTarget::Point(id) => (self.point_refs.get(id.as_str()).copied(), "point"),
-                AppearanceTarget::Tessellation(id) => {
-                    (self.tessellation_step_refs.get(id).copied(), "surface")
+                AppearanceTarget::Curve(id) => {
+                    (self.geom.curve_refs.get(id.as_str()).copied(), "curve")
                 }
+                AppearanceTarget::Edge(id) => {
+                    (self.geom.edge_refs.get(id.as_str()).copied(), "curve")
+                }
+                AppearanceTarget::Point(id) => {
+                    (self.geom.point_refs.get(id.as_str()).copied(), "point")
+                }
+                AppearanceTarget::Tessellation(id) => (
+                    self.links.tessellation_step_refs.get(id).copied(),
+                    "surface",
+                ),
                 AppearanceTarget::Body(_)
                 | AppearanceTarget::Vertex(_)
                 | AppearanceTarget::Source { .. } => continue,
@@ -183,7 +197,9 @@ impl Builder<'_> {
                 "point" => self.point_style(color, name, &mut style_refs),
                 _ => unreachable!(),
             };
-            self.written_appearance_bindings.insert(binding.id.clone());
+            self.styling
+                .written_appearance_bindings
+                .insert(binding.id.clone());
             styled.push(
                 self.emitter
                     .emit("STYLED_ITEM", &format!("'color',({style}),{target}")),
@@ -192,7 +208,12 @@ impl Builder<'_> {
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
         // a face override whose face was skipped, or a body whose faces were all
         // skipped (hidden bodies or faces without an explicit STEP surface).
-        let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
+        let emitted: BTreeSet<&str> = self
+            .links
+            .face_step_refs
+            .keys()
+            .map(String::as_str)
+            .collect();
         let mut unstyled_targets = face_colors
             .keys()
             .filter(|id| !emitted.contains(**id as &str))
@@ -205,7 +226,7 @@ impl Builder<'_> {
                 .map(|id| (*id).to_string()),
         );
         unstyled_targets.extend(direct_unstyled);
-        self.unstyled_colors = unstyled_targets.len();
+        self.styling.unstyled_colors = unstyled_targets.len();
         if styled.is_empty() {
             return;
         }
@@ -328,20 +349,22 @@ impl Builder<'_> {
             for item in layer.items {
                 let reference = match item {
                     PresentationItem::Body { body } => {
-                        self.body_shape_refs.get(body.as_str()).copied()
+                        self.links.body_shape_refs.get(body.as_str()).copied()
                     }
                     PresentationItem::Face { face } => {
-                        self.face_step_refs.get(face.as_str()).copied()
+                        self.links.face_step_refs.get(face.as_str()).copied()
                     }
-                    PresentationItem::Edge { edge } => self.edge_refs.get(edge.as_str()).copied(),
+                    PresentationItem::Edge { edge } => {
+                        self.geom.edge_refs.get(edge.as_str()).copied()
+                    }
                     PresentationItem::Vertex { vertex } => {
-                        self.vertex_refs.get(vertex.as_str()).copied()
+                        self.geom.vertex_refs.get(vertex.as_str()).copied()
                     }
                     PresentationItem::Curve { curve } => {
-                        self.curve_refs.get(curve.as_str()).copied()
+                        self.geom.curve_refs.get(curve.as_str()).copied()
                     }
                     PresentationItem::Surface { surface } => {
-                        self.surface_refs.get(surface.as_str()).copied()
+                        self.geom.surface_refs.get(surface.as_str()).copied()
                     }
                     PresentationItem::Point { .. }
                     | PresentationItem::Product { .. }

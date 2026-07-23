@@ -34,37 +34,37 @@ impl Builder<'_> {
     }
 
     pub(super) fn emit_length_unit(&mut self) -> Ref {
-        if let Some(unit) = self.length_unit {
+        if let Some(unit) = self.units.length {
             return unit;
         }
         let unit = self.emitter.emit_raw(
             "LENGTH_UNIT",
             "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) )",
         );
-        self.length_unit = Some(unit);
+        self.units.length = Some(unit);
         unit
     }
 
     pub(super) fn emit_angle_unit(&mut self) -> Ref {
-        if let Some(unit) = self.angle_unit {
+        if let Some(unit) = self.units.angle {
             return unit;
         }
         let unit = self.emitter.emit_raw(
             "PLANE_ANGLE_UNIT",
             "( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) )",
         );
-        self.angle_unit = Some(unit);
+        self.units.angle = Some(unit);
         unit
     }
 
     pub(super) fn emit_ratio_unit(&mut self) -> Ref {
-        if let Some(unit) = self.ratio_unit {
+        if let Some(unit) = self.units.ratio {
             return unit;
         }
         let unit = self
             .emitter
             .emit_raw("RATIO_UNIT", "( NAMED_UNIT(*) RATIO_UNIT() )");
-        self.ratio_unit = Some(unit);
+        self.units.ratio = Some(unit);
         unit
     }
 }

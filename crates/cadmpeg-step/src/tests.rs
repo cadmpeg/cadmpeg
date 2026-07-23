@@ -2055,9 +2055,9 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     assert!(!output.contains("COMPOSITE_CURVE("));
     let mut builder = crate::build::Builder::new(&ir, StepSchema::Ap242Edition3);
     assert!(builder.emit_curve("composite").is_none());
-    assert!(builder.active_curves.is_empty());
+    assert!(builder.geom.active_curves.is_empty());
     assert!(builder.emit_curve("composite").is_none());
-    assert!(builder.active_curves.is_empty());
+    assert!(builder.geom.active_curves.is_empty());
 }
 
 #[test]
@@ -2179,7 +2179,7 @@ fn every_region_of_a_body_is_retained_as_a_shape_item() {
     ir.model.regions.push(region);
     let mut builder = crate::build::Builder::new(&ir, StepSchema::Ap242Edition3);
     builder.build();
-    assert_eq!(builder.body_item_refs[body.as_str()].len(), 2);
+    assert_eq!(builder.links.body_item_refs[body.as_str()].len(), 2);
 }
 
 #[test]

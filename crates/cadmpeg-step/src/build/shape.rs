@@ -26,14 +26,17 @@ impl Builder<'_> {
                 if let Some(item) = self.emit_wire_region(region) {
                     let shape_item = self.place_body_item(&region.body, item, context);
                     items.push(shape_item);
-                    self.body_shape_refs
+                    self.links
+                        .body_shape_refs
                         .entry(region.body.0.clone())
                         .or_insert(shape_item);
-                    self.body_item_refs
+                    self.links
+                        .body_item_refs
                         .entry(region.body.0.clone())
                         .or_default()
                         .push(shape_item);
-                    self.body_step_refs
+                    self.links
+                        .body_step_refs
                         .entry(region.body.0.clone())
                         .or_insert(item);
                 }
@@ -82,14 +85,17 @@ impl Builder<'_> {
             };
             let shape_item = self.place_body_item(&region.body, item, context);
             items.push(shape_item);
-            self.body_shape_refs
+            self.links
+                .body_shape_refs
                 .entry(region.body.0.clone())
                 .or_insert(shape_item);
-            self.body_item_refs
+            self.links
+                .body_item_refs
                 .entry(region.body.0.clone())
                 .or_default()
                 .push(shape_item);
-            self.body_step_refs
+            self.links
+                .body_step_refs
                 .entry(region.body.0.clone())
                 .or_insert(if closed { item } else { outer });
         }
@@ -173,7 +179,7 @@ impl Builder<'_> {
             .bodies
             .iter()
             .filter(|body| body.visible == Some(false))
-            .filter_map(|body| self.body_step_refs.get(body.id.as_str()).copied())
+            .filter_map(|body| self.links.body_step_refs.get(body.id.as_str()).copied())
             .collect::<Vec<_>>();
         if !hidden.is_empty() {
             self.emitter.emit("INVISIBILITY", &refs(&hidden));
@@ -227,7 +233,7 @@ impl Builder<'_> {
             .model
             .surfaces
             .iter()
-            .filter(|surface| !self.surface_refs.contains_key(surface.id.as_str()))
+            .filter(|surface| !self.geom.surface_refs.contains_key(surface.id.as_str()))
             .map(|surface| surface.id.0.clone())
             .collect::<Vec<_>>();
         let mut members = Vec::new();
@@ -237,7 +243,7 @@ impl Builder<'_> {
                 members.push(reference);
                 has_surfaces = true;
             } else {
-                self.unsupported_standalone_geometry += 1;
+                self.skips.unsupported_standalone_geometry += 1;
             }
         }
         let curve_ids = self
@@ -245,7 +251,7 @@ impl Builder<'_> {
             .model
             .curves
             .iter()
-            .filter(|curve| !self.curve_refs.contains_key(curve.id.as_str()))
+            .filter(|curve| !self.geom.curve_refs.contains_key(curve.id.as_str()))
             .map(|curve| curve.id.0.clone())
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
@@ -255,7 +261,7 @@ impl Builder<'_> {
                 .get(curve_id.as_str())
                 .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
             {
-                self.unsupported_standalone_geometry += 1;
+                self.skips.unsupported_standalone_geometry += 1;
             } else if let Some(reference) = self.emit_curve(&curve_id) {
                 members.push(reference);
             }
@@ -265,7 +271,7 @@ impl Builder<'_> {
             .model
             .points
             .iter()
-            .filter(|point| !self.point_refs.contains_key(point.id.as_str()))
+            .filter(|point| !self.geom.point_refs.contains_key(point.id.as_str()))
             .map(|point| point.id.0.clone())
             .collect::<Vec<_>>();
         for point_id in point_ids {
@@ -273,7 +279,7 @@ impl Builder<'_> {
                 continue;
             };
             let reference = geometry::point(&mut self.emitter, point.position);
-            self.point_refs.insert(point_id, reference);
+            self.geom.point_refs.insert(point_id, reference);
             members.push(reference);
         }
         if members.is_empty() {

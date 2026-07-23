@@ -160,12 +160,15 @@ impl Builder<'_> {
             let shape = self
                 .emitter
                 .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{definition}"));
-            self.default_product_definition_shape.get_or_insert(shape);
+            self.links
+                .default_product_definition_shape
+                .get_or_insert(shape);
             let mut body_items = product
                 .bodies
                 .iter()
                 .flat_map(|body| {
-                    self.body_item_refs
+                    self.links
+                        .body_item_refs
                         .get(body.as_str())
                         .into_iter()
                         .flatten()

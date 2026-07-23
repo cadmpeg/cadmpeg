@@ -25,7 +25,10 @@ impl Builder<'_> {
                         || (minor_radius.abs() > major_radius.abs()
                             && !self.ir.model.procedural_surfaces.iter().any(|procedural| {
                                 procedural.surface == surface.id
-                                    && self.written_procedural_surfaces.contains(&procedural.id.0)
+                                    && self
+                                        .geom
+                                        .written_procedural_surfaces
+                                        .contains(&procedural.id.0)
                                     && matches!(
                                         procedural.definition,
                                         ProceduralSurfaceDefinition::DegenerateTorus { .. }
@@ -68,7 +71,7 @@ impl Builder<'_> {
                 ),
             );
         }
-        if !self.curveless_edges.is_empty() {
+        if !self.skips.curveless_edges.is_empty() {
             self.loss(
                 LossCode::CurvelessEdgeOmitted,
                 LossCategory::Geometry,
@@ -76,11 +79,11 @@ impl Builder<'_> {
                 format!(
                     "{} edge(s) have no typed 3D curve or carry a STEP-unsupported transform and were omitted from \
                      their edge loops (STEP EDGE_CURVE requires a 3D curve)",
-                    self.curveless_edges.len()
+                    self.skips.curveless_edges.len()
                 ),
             );
         }
-        if !self.unknown_surface_faces.is_empty() {
+        if !self.skips.unknown_surface_faces.is_empty() {
             self.loss(
                 LossCode::UnknownSurfaceFaceOmitted,
                 LossCategory::Geometry,
@@ -89,18 +92,18 @@ impl Builder<'_> {
                     "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
                      from the STEP shell (an ADVANCED_FACE requires a surface); their \
                      topology remains in the IR",
-                    self.unknown_surface_faces.len()
+                    self.skips.unknown_surface_faces.len()
                 ),
             );
         }
-        if self.unsupported_standalone_geometry > 0 {
+        if self.skips.unsupported_standalone_geometry > 0 {
             self.loss(
                 LossCode::GeometryNotTransferred,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
                     "{} standalone unknown geometry carrier(s) were not written",
-                    self.unsupported_standalone_geometry
+                    self.skips.unsupported_standalone_geometry
                 ),
             );
         }
@@ -158,7 +161,12 @@ impl Builder<'_> {
                 ),
             );
         }
-        let unwritten_pmi = self.ir.model.pmi.len().saturating_sub(self.written_pmi);
+        let unwritten_pmi = self
+            .ir
+            .model
+            .pmi
+            .len()
+            .saturating_sub(self.skips.written_pmi);
         if unwritten_pmi > 0 {
             self.loss(
                 LossCode::PmiOmitted,
@@ -221,7 +229,7 @@ impl Builder<'_> {
                 format!("{unknown_count} uninterpreted passthrough record(s) were not represented in STEP"),
             );
         }
-        if self.unstyled_colors > 0 {
+        if self.styling.unstyled_colors > 0 {
             self.loss(
                 LossCode::AttributesNotTransferred,
                 LossCategory::Attribute,
@@ -229,7 +237,7 @@ impl Builder<'_> {
                 format!(
                     "{} display color(s) had no emitted STEP item and were not written \
                      to STEP presentation",
-                    self.unstyled_colors
+                    self.styling.unstyled_colors
                 ),
             );
         }
@@ -257,9 +265,12 @@ impl Builder<'_> {
                     || !appearance.properties.is_empty()
                     || appearance.base_color.is_none_or(|color| color.a != 1.0)
                     || bindings.is_empty()
-                    || bindings
-                        .iter()
-                        .any(|binding| !self.written_appearance_bindings.contains(&binding.id))
+                    || bindings.iter().any(|binding| {
+                        !self
+                            .styling
+                            .written_appearance_bindings
+                            .contains(&binding.id)
+                    })
             })
             .count();
         if lossy_appearances > 0 {
@@ -306,14 +317,24 @@ impl Builder<'_> {
             .model
             .procedural_surfaces
             .iter()
-            .filter(|procedural| !self.written_procedural_surfaces.contains(&procedural.id.0))
+            .filter(|procedural| {
+                !self
+                    .geom
+                    .written_procedural_surfaces
+                    .contains(&procedural.id.0)
+            })
             .count();
         let procedural_curve_count = self
             .ir
             .model
             .procedural_curves
             .iter()
-            .filter(|procedural| !self.written_procedural_curves.contains(&procedural.id.0))
+            .filter(|procedural| {
+                !self
+                    .geom
+                    .written_procedural_curves
+                    .contains(&procedural.id.0)
+            })
             .count();
         if procedural_surface_count > 0 || procedural_curve_count > 0 {
             self.loss(

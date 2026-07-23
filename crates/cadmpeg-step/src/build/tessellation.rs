@@ -85,7 +85,7 @@ impl Builder<'_> {
                 .collect::<Vec<_>>()
                 .join(",");
             let linked_body = mesh.body.as_ref().and_then(|body| {
-                let link = self.body_step_refs.get(body.as_str()).copied()?;
+                let link = self.links.body_step_refs.get(body.as_str()).copied()?;
                 let kind = self.index.bodies.get(body.as_str())?.kind;
                 matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
             });
@@ -142,7 +142,9 @@ impl Builder<'_> {
                     ),
                 )
             };
-            self.tessellation_step_refs.insert(mesh.id.clone(), item);
+            self.links
+                .tessellation_step_refs
+                .insert(mesh.id.clone(), item);
             representation_items.push(item);
         }
         if !representation_items.is_empty() {

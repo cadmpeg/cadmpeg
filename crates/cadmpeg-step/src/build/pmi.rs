@@ -16,7 +16,7 @@ impl Builder<'_> {
             return;
         }
         let annotations = self.ir.model.pmi.clone();
-        let Some(pds) = self.default_product_definition_shape else {
+        let Some(pds) = self.links.default_product_definition_shape else {
             return;
         };
         let mut annotation_refs = HashMap::new();
@@ -64,7 +64,7 @@ impl Builder<'_> {
                     ),
                 );
                 annotation_refs.insert(annotation.id.clone(), datum);
-                self.written_pmi += usize::from(targets_exact(annotation));
+                self.skips.written_pmi += usize::from(targets_exact(annotation));
             }
         }
         for annotation in &annotations {
@@ -128,7 +128,7 @@ impl Builder<'_> {
                     ),
                 );
                 annotation_refs.insert(annotation.id.clone(), system);
-                self.written_pmi += usize::from(targets_exact(annotation) && complete);
+                self.skips.written_pmi += usize::from(targets_exact(annotation) && complete);
             }
         }
         for annotation in &annotations {
@@ -208,7 +208,7 @@ impl Builder<'_> {
                     }
                     annotation_refs.insert(annotation.id.clone(), characteristic);
                     let deviations_exact = lower_deviation.is_some() == upper_deviation.is_some();
-                    self.written_pmi +=
+                    self.skips.written_pmi +=
                         usize::from(targets_exact(annotation) && deviations_exact && kind_exact);
                 }
                 PmiDefinition::GeometricTolerance {
@@ -252,7 +252,7 @@ impl Builder<'_> {
                         ),
                     );
                     annotation_refs.insert(annotation.id.clone(), tolerance_ref);
-                    self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
+                    self.skips.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
                 }
                 PmiDefinition::Datum { .. }
                 | PmiDefinition::DatumSystem { .. }
@@ -313,7 +313,7 @@ impl Builder<'_> {
             presentation_items.push(occurrence);
             presentation_semantics.push((occurrence, semantic_refs));
             annotation_refs.insert(annotation.id.clone(), occurrence);
-            self.written_pmi += 1;
+            self.skips.written_pmi += 1;
         }
         if !presentation_items.is_empty() {
             let model = self.emitter.emit(

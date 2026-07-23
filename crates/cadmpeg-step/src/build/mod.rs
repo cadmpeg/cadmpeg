@@ -149,16 +149,11 @@ impl<'a> IrIndex<'a> {
     }
 }
 
-pub(crate) struct Builder<'a> {
-    ir: &'a CadIr,
-    schema: StepSchema,
-    pub(crate) emitter: Emitter,
-    losses: Vec<LossNote>,
-    notes: Vec<String>,
-
-    /// Immutable arena indices over the source `CadIr`, built once by `new`.
-    index: IrIndex<'a>,
-
+/// Mutable caches filled during the geometry and topology passes: the emitted
+/// STEP `Ref` for each source entity id, active-emission guards that break
+/// reference cycles, and the current geometry recursion depth.
+#[derive(Default)]
+pub(crate) struct GeomCache {
     surface_refs: HashMap<String, Ref>,
     curve_refs: HashMap<String, Ref>,
     edge_refs: HashMap<String, Ref>,
@@ -169,17 +164,14 @@ pub(crate) struct Builder<'a> {
     pub(crate) active_curves: BTreeSet<String>,
     written_procedural_surfaces: BTreeSet<String>,
     written_procedural_curves: BTreeSet<String>,
+    geometry_emission_depth: usize,
+}
 
-    /// Edges skipped because they carry no attributed 3D curve, deduplicated
-    /// (a shared edge is reached once per coedge) and aggregated into a single
-    /// counted loss note.
-    curveless_edges: BTreeSet<String>,
-
-    /// Faces skipped because their surface geometry is unknown (opaque), so no
-    /// STEP surface exists to build an `ADVANCED_FACE` on. Deduplicated (a face
-    /// is reached once per shell) and aggregated into a single counted loss.
-    unknown_surface_faces: BTreeSet<String>,
-
+/// `Ref`s emitted in one pass that later passes resolve against: per-face and
+/// per-body shape links, the shared default product-definition shape, and the
+/// AP242 tessellation targets.
+#[derive(Default)]
+pub(crate) struct ShapeLinks {
     face_step_refs: HashMap<String, Ref>,
     /// First emitted exact solid or shell for each body, used by AP242 tessellation links.
     body_step_refs: HashMap<String, Ref>,
@@ -187,14 +179,58 @@ pub(crate) struct Builder<'a> {
     body_shape_refs: HashMap<String, Ref>,
     pub(crate) body_item_refs: HashMap<String, Vec<Ref>>,
     tessellation_step_refs: HashMap<String, Ref>,
+}
+
+/// Representation-context unit `Ref`s, each memoized on first request.
+#[derive(Default)]
+struct UnitCache {
+    length: Option<Ref>,
+    angle: Option<Ref>,
+    ratio: Option<Ref>,
+}
+
+/// Presentation styling state accumulated across the presentation pass.
+#[derive(Default)]
+struct StylingState {
     written_appearance_bindings: BTreeSet<String>,
     unstyled_colors: usize,
+}
+
+/// Counts and id sets for source content the writer could not represent,
+/// aggregated into loss notes by `note_unrepresented`.
+#[derive(Default)]
+struct SkipCounters {
+    /// Edges skipped because they carry no attributed 3D curve, deduplicated
+    /// (a shared edge is reached once per coedge) and aggregated into a single
+    /// counted loss note.
+    curveless_edges: BTreeSet<String>,
+    /// Faces skipped because their surface geometry is unknown (opaque), so no
+    /// STEP surface exists to build an `ADVANCED_FACE` on. Deduplicated (a face
+    /// is reached once per shell) and aggregated into a single counted loss.
+    unknown_surface_faces: BTreeSet<String>,
     unsupported_standalone_geometry: usize,
     written_pmi: usize,
-    length_unit: Option<Ref>,
-    angle_unit: Option<Ref>,
-    ratio_unit: Option<Ref>,
-    geometry_emission_depth: usize,
+}
+
+pub(crate) struct Builder<'a> {
+    ir: &'a CadIr,
+    schema: StepSchema,
+    pub(crate) emitter: Emitter,
+    losses: Vec<LossNote>,
+    notes: Vec<String>,
+
+    /// Immutable arena indices over the source `CadIr`, built once by `new`.
+    index: IrIndex<'a>,
+    /// Mutable geometry/topology emission caches and recursion guard.
+    pub(crate) geom: GeomCache,
+    /// Cross-pass shape, product, and tessellation linkage `Ref`s.
+    pub(crate) links: ShapeLinks,
+    /// Memoized representation-context unit `Ref`s.
+    units: UnitCache,
+    /// Presentation styling state.
+    styling: StylingState,
+    /// Counters and id sets for content the writer could not represent.
+    skips: SkipCounters,
 }
 
 impl<'a> Builder<'a> {
@@ -206,32 +242,11 @@ impl<'a> Builder<'a> {
             losses: Vec::new(),
             notes: Vec::new(),
             index: IrIndex::new(ir),
-            surface_refs: HashMap::new(),
-            curve_refs: HashMap::new(),
-            edge_refs: HashMap::new(),
-            vertex_refs: HashMap::new(),
-            point_refs: HashMap::new(),
-            pcurve_context: None,
-            active_surfaces: BTreeSet::new(),
-            active_curves: BTreeSet::new(),
-            written_procedural_surfaces: BTreeSet::new(),
-            written_procedural_curves: BTreeSet::new(),
-            curveless_edges: BTreeSet::new(),
-            unknown_surface_faces: BTreeSet::new(),
-            face_step_refs: HashMap::new(),
-            body_step_refs: HashMap::new(),
-            default_product_definition_shape: None,
-            body_shape_refs: HashMap::new(),
-            body_item_refs: HashMap::new(),
-            tessellation_step_refs: HashMap::new(),
-            written_appearance_bindings: BTreeSet::new(),
-            unstyled_colors: 0,
-            unsupported_standalone_geometry: 0,
-            written_pmi: 0,
-            length_unit: None,
-            angle_unit: None,
-            ratio_unit: None,
-            geometry_emission_depth: 0,
+            geom: GeomCache::default(),
+            links: ShapeLinks::default(),
+            units: UnitCache::default(),
+            styling: StylingState::default(),
+            skips: SkipCounters::default(),
         }
     }
 
@@ -282,7 +297,7 @@ impl<'a> Builder<'a> {
 
         if self.ir.model.products.is_empty() {
             let product_def_shape = self.emit_product_structure();
-            self.default_product_definition_shape = Some(product_def_shape);
+            self.links.default_product_definition_shape = Some(product_def_shape);
             let representation_kind = if !has_standalone_geometry
                 && !self.ir.model.bodies.is_empty()
                 && self.ir.model.bodies.iter().all(|body| {

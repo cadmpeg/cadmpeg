@@ -38,7 +38,7 @@ impl Builder<'_> {
         // loss rather than fabricate placeholder geometry.
         if let Some(surf) = self.index.surfaces.get(surface_id.as_str()) {
             if !geometry::surface_is_supported(&surf.geometry) {
-                self.unknown_surface_faces.insert(face_id.to_string());
+                self.skips.unknown_surface_faces.insert(face_id.to_string());
                 return None;
             }
         }
@@ -46,7 +46,7 @@ impl Builder<'_> {
         let same_sense = matches!(face.sense, Sense::Forward);
 
         let Some(surf_ref) = self.emit_surface(&surface_id) else {
-            self.unknown_surface_faces.insert(face_id.to_string());
+            self.skips.unknown_surface_faces.insert(face_id.to_string());
             return None;
         };
 
@@ -82,7 +82,8 @@ impl Builder<'_> {
             "ADVANCED_FACE",
             &format!("'',{},{surf_ref},{flag}", refs(&bound_refs)),
         );
-        self.face_step_refs
+        self.links
+            .face_step_refs
             .insert(face_id.to_string(), advanced_face);
         Some(advanced_face)
     }
@@ -119,14 +120,14 @@ impl Builder<'_> {
     }
 
     pub(super) fn emit_edge(&mut self, edge_id: &str) -> Option<Ref> {
-        if let Some(r) = self.edge_refs.get(edge_id) {
+        if let Some(r) = self.geom.edge_refs.get(edge_id) {
             return Some(*r);
         }
         let edge = self.index.edges.get(edge_id).copied()?;
         let v1 = self.emit_vertex(edge.start.as_str())?;
         let v2 = self.emit_vertex(edge.end.as_str())?;
         let Some(curve_id) = &edge.curve else {
-            self.curveless_edges.insert(edge_id.to_string());
+            self.skips.curveless_edges.insert(edge_id.to_string());
             return None;
         };
         if self
@@ -135,7 +136,7 @@ impl Builder<'_> {
             .get(curve_id.as_str())
             .is_some_and(|curve| !geometry::curve_is_supported(&curve.geometry))
         {
-            self.curveless_edges.insert(edge_id.to_string());
+            self.skips.curveless_edges.insert(edge_id.to_string());
             return None;
         }
         let basis_curve = self.emit_curve(curve_id.as_str())?;
@@ -164,7 +165,7 @@ impl Builder<'_> {
         let r = self
             .emitter
             .emit("EDGE_CURVE", &format!("'',{v1},{v2},{curve_ref},.T."));
-        self.edge_refs.insert(edge_id.to_string(), r);
+        self.geom.edge_refs.insert(edge_id.to_string(), r);
         Some(r)
     }
 
@@ -172,14 +173,14 @@ impl Builder<'_> {
         let pcurve = self.index.pcurves.get(pcurve_id).copied()?;
         let surface = self.emit_surface(surface_id)?;
         let curve = geometry::pcurve(&mut self.emitter, &pcurve.geometry)?;
-        let context = if let Some(context) = self.pcurve_context {
+        let context = if let Some(context) = self.geom.pcurve_context {
             context
         } else {
             let context = self.emitter.emit_raw(
                 "GEOMETRIC_REPRESENTATION_CONTEXT",
                 "( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('uv','2D') )",
             );
-            self.pcurve_context = Some(context);
+            self.geom.pcurve_context = Some(context);
             context
         };
         let representation = self.emitter.emit(
@@ -193,28 +194,28 @@ impl Builder<'_> {
     }
 
     fn emit_vertex(&mut self, vertex_id: &str) -> Option<Ref> {
-        if let Some(r) = self.vertex_refs.get(vertex_id) {
+        if let Some(r) = self.geom.vertex_refs.get(vertex_id) {
             return Some(*r);
         }
         let vertex = self.index.vertices.get(vertex_id).copied()?;
         let pt = self.index.points.get(vertex.point.as_str()).copied()?;
         let cp = geometry::point(&mut self.emitter, pt.position);
-        self.point_refs.insert(vertex.point.0.clone(), cp);
+        self.geom.point_refs.insert(vertex.point.0.clone(), cp);
         let r = self.emitter.emit("VERTEX_POINT", &format!("'',{cp}"));
-        self.vertex_refs.insert(vertex_id.to_string(), r);
+        self.geom.vertex_refs.insert(vertex_id.to_string(), r);
         Some(r)
     }
 
     pub(super) fn emit_surface(&mut self, surface_id: &str) -> Option<Ref> {
-        if let Some(r) = self.surface_refs.get(surface_id) {
+        if let Some(r) = self.geom.surface_refs.get(surface_id) {
             return Some(*r);
         }
-        if self.geometry_emission_depth >= 256
-            || !self.active_surfaces.insert(surface_id.to_string())
+        if self.geom.geometry_emission_depth >= 256
+            || !self.geom.active_surfaces.insert(surface_id.to_string())
         {
             return None;
         }
-        self.geometry_emission_depth += 1;
+        self.geom.geometry_emission_depth += 1;
         let result = (|| {
             let surf = self.index.surfaces.get(surface_id).copied()?;
             let procedural = self
@@ -227,7 +228,7 @@ impl Builder<'_> {
                     .map(|reference| (id, reference))
             });
             let r = if let Some((id, reference)) = emitted {
-                self.written_procedural_surfaces.insert(id);
+                self.geom.written_procedural_surfaces.insert(id);
                 reference
             } else if !geometry::surface_is_supported(&surf.geometry) {
                 return None;
@@ -236,10 +237,10 @@ impl Builder<'_> {
             };
             Some(r)
         })();
-        self.active_surfaces.remove(surface_id);
-        self.geometry_emission_depth -= 1;
+        self.geom.active_surfaces.remove(surface_id);
+        self.geom.geometry_emission_depth -= 1;
         if let Some(r) = result {
-            self.surface_refs.insert(surface_id.to_string(), r);
+            self.geom.surface_refs.insert(surface_id.to_string(), r);
         }
         result
     }
@@ -329,13 +330,15 @@ impl Builder<'_> {
     }
 
     pub(crate) fn emit_curve(&mut self, curve_id: &str) -> Option<Ref> {
-        if let Some(r) = self.curve_refs.get(curve_id) {
+        if let Some(r) = self.geom.curve_refs.get(curve_id) {
             return Some(*r);
         }
-        if self.geometry_emission_depth >= 256 || !self.active_curves.insert(curve_id.to_string()) {
+        if self.geom.geometry_emission_depth >= 256
+            || !self.geom.active_curves.insert(curve_id.to_string())
+        {
             return None;
         }
-        self.geometry_emission_depth += 1;
+        self.geom.geometry_emission_depth += 1;
         let result = (|| {
             let geometry = self.index.curves.get(curve_id)?.geometry.clone();
             let procedural = self
@@ -348,7 +351,7 @@ impl Builder<'_> {
                     .map(|reference| (id, reference))
             });
             let r = if let Some((id, reference)) = emitted {
-                self.written_procedural_curves.insert(id);
+                self.geom.written_procedural_curves.insert(id);
                 reference
             } else if let CurveGeometry::Composite {
                 segments,
@@ -397,10 +400,10 @@ impl Builder<'_> {
             };
             Some(r)
         })();
-        self.active_curves.remove(curve_id);
-        self.geometry_emission_depth -= 1;
+        self.geom.active_curves.remove(curve_id);
+        self.geom.geometry_emission_depth -= 1;
         if let Some(r) = result {
-            self.curve_refs.insert(curve_id.to_string(), r);
+            self.geom.curve_refs.insert(curve_id.to_string(), r);
         }
         result
     }
