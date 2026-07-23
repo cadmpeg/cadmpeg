@@ -74,6 +74,7 @@ pub mod geometry;
 pub mod intersection;
 mod jt;
 mod jt_topology;
+pub(crate) mod loss;
 pub(crate) mod native;
 pub mod nurbs;
 pub mod om;
