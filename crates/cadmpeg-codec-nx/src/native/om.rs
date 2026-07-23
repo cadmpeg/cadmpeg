@@ -1855,7 +1855,23 @@ pub fn data_block_control_class_references(
             let Some(control) = section.control else {
                 return Vec::new();
             };
-            let registry = section.types;
+            let mut registry = BTreeMap::new();
+            for definition in container
+                .om_sections()
+                .into_iter()
+                .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
+                .flat_map(|(_, section)| section.types)
+                .chain(
+                    container
+                        .indexed_om_sections()
+                        .into_iter()
+                        .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
+                        .flat_map(|(_, section)| section.types),
+                )
+            {
+                registry.entry(definition.offset).or_insert(definition);
+            }
+            let registry = registry.into_values().collect::<Vec<_>>();
             let Some(ordinals) = crate::om::offset_store_control_class_ordinals(control.bytes)
             else {
                 return Vec::new();
@@ -3726,6 +3742,24 @@ mod tests {
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, None);
         assert_eq!(expressions[0].record, None);
+    }
+
+    #[test]
+    fn offset_store_class_identities_span_ordered_registries() {
+        let mut store =
+            offset_only_indexed_om_section_with_control(&[0, 1, 0, 0, 0, 10, 0, 0, 0, 5, 0, 0]);
+        store.extend_from_slice(&size_framed_om_section());
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
+        let container = container::scan_bytes(file).expect("required invariant");
+
+        let classes = super::data_block_control_class_references(&container);
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].class_ordinal, 1);
+        assert_eq!(
+            classes[0].class_name.as_deref(),
+            Some("UGS::FEATURE_RECORD")
+        );
+        assert!(classes[0].class_definition.is_some());
     }
 
     #[test]
