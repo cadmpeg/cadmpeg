@@ -557,7 +557,7 @@ mod tests {
         assert_eq!(bindings[0].body_object_index, 94);
         assert_eq!(bindings[0].body_alias_object_index, 150);
         assert_eq!(bindings[0].stream_role, 19);
-        assert_eq!(bindings[0].source_offset, 104);
+        assert_eq!(bindings[0].source_offset, 108);
     }
 
     #[test]

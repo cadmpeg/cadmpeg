@@ -33,9 +33,19 @@
 0x1f..       variable-length directory entries
 ```
 
-Directory entry grammar (HEADER and FOOTER identical): `name_len:u32 LE` + ASCII path (`/Root/...`) + payload. File entries carry `file_offset:u64 LE, size:u64 LE`; directory/non-file entries carry 16 opaque bytes.
+The HEADER directory is `HEADER, entry_count:u32 LE`, followed by exactly
+`entry_count` directory entries. The FOOTER offset addresses
+`FOOTER, entry_count:u32 LE`, followed by exactly `entry_count` directory
+entries and one terminal four-byte fingerprint ending at the file boundary.
+An entry is `name_len:u32 LE, ASCII path[name_len], payload[16]`; the path
+begins `/Root` and has length 6 through 128. A file payload is
+`file_offset:u64 LE, size:u64 LE`, with nonzero size and a range ending no
+later than the FOOTER offset. Other payloads remain exact opaque bytes. Entry
+framing is contiguous; invalid framing rejects the complete containing
+directory without bytewise recovery.
 
-FOOTER region at the 48-bit offset: ASCII `FOOTER`, then `entry_count:u32 LE`, then directory entries, then a 4-byte per-save fingerprint (unique per file version). The `/Root/` sentinel node carries UUID `611ec9b3-fa60-d111-8ad9-0800362fb302` across files.
+The four-byte FOOTER fingerprint is retained exactly. The `/Root/` sentinel
+node carries UUID `611ec9b3-fa60-d111-8ad9-0800362fb302` across files.
 
 NX XML streams contain one UTF-8 XML document and may carry one terminal `00`
 byte after the document. An embedded `00` or multiple terminal `00` bytes

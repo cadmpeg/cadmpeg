@@ -5239,10 +5239,68 @@ fn container_parses_header_and_directory() {
     let c = container::scan_bytes(single_part_prt()).unwrap();
     assert_eq!(c.version, 0x06);
     assert_eq!(c.file_tag, 0x33_22_11);
+    assert_eq!(c.header_entry_count, 1);
+    assert_eq!(c.footer_entry_count, 0);
+    assert_eq!(c.footer_fingerprint, [0; 4]);
     assert!(c
         .entries
         .iter()
         .any(|e| e.name == "/Root/UG_PART/UG_PART" && e.file_span.is_some()));
+}
+
+#[test]
+fn container_rejects_incomplete_counted_directories() {
+    let mut header = single_part_prt();
+    header[0x1f..0x23].copy_from_slice(&2_u32.to_le_bytes());
+    assert!(container::scan_bytes(header).is_err());
+
+    let mut footer = single_part_prt();
+    let footer_offset = usize::try_from(u64::from_le_bytes([
+        footer[0x11],
+        footer[0x12],
+        footer[0x13],
+        footer[0x14],
+        footer[0x15],
+        footer[0x16],
+        0,
+        0,
+    ]))
+    .expect("synthetic footer offset");
+    footer[footer_offset + 6..footer_offset + 10].copy_from_slice(&1_u32.to_le_bytes());
+    assert!(container::scan_bytes(footer).is_err());
+}
+
+#[test]
+fn container_rejects_trailing_or_overlapping_footer_data() {
+    let mut trailing = single_part_prt();
+    trailing.push(0);
+    assert!(container::scan_bytes(trailing).is_err());
+
+    let mut overlap = single_part_prt();
+    let name_len = usize::try_from(u32::from_le_bytes(
+        overlap[0x23..0x27]
+            .try_into()
+            .expect("synthetic name length"),
+    ))
+    .expect("synthetic name length fits usize");
+    let span = 0x27 + name_len;
+    let offset = u64::from_le_bytes(
+        overlap[span..span + 8]
+            .try_into()
+            .expect("synthetic file offset"),
+    );
+    let footer_offset = u64::from_le_bytes([
+        overlap[0x11],
+        overlap[0x12],
+        overlap[0x13],
+        overlap[0x14],
+        overlap[0x15],
+        overlap[0x16],
+        0,
+        0,
+    ]);
+    overlap[span + 8..span + 16].copy_from_slice(&(footer_offset - offset + 1).to_le_bytes());
+    assert!(container::scan_bytes(overlap).is_err());
 }
 
 #[test]
@@ -9305,26 +9363,10 @@ fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     decoy_stream[pos..pos + schema.len()].copy_from_slice(decoy);
     let decoy = zlib_compress(&decoy_stream);
 
-    let mut file = Vec::new();
-    file.extend_from_slice(MAGIC);
-    file.push(0x06);
-    file.extend_from_slice(&[0; 3 + 4 + 1 + 6 + 2]);
-    file.extend_from_slice(b"HEADER");
-    let entries = [
-        (b"/Root/UG_PART/UG_PART".as_slice(), part.len()),
-        (b"/Root/FastLoad/JT".as_slice(), decoy.len()),
-    ];
-    let directory_len: usize = entries.iter().map(|(name, _)| 4 + name.len() + 16).sum();
-    let mut next_offset = file.len() + directory_len;
-    for (name, size) in &entries {
-        file.extend_from_slice(&(name.len() as u32).to_le_bytes());
-        file.extend_from_slice(name);
-        file.extend_from_slice(&(next_offset as u64).to_le_bytes());
-        file.extend_from_slice(&(*size as u64).to_le_bytes());
-        next_offset += size;
-    }
-    file.extend_from_slice(&part);
-    file.extend_from_slice(&decoy);
+    let file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", part),
+        ("/Root/FastLoad/JT", decoy),
+    ]);
 
     let streams = extract_streams(&file);
     assert_eq!(streams.len(), 1);

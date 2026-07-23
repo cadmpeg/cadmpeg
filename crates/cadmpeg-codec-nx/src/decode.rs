@@ -6464,6 +6464,21 @@ fn source_meta(scan: &Scan) -> SourceMeta {
         scan.container.entries.len().to_string(),
     );
     attributes.insert(
+        "header_entry_count".to_string(),
+        scan.container.header_entry_count.to_string(),
+    );
+    attributes.insert(
+        "footer_entry_count".to_string(),
+        scan.container.footer_entry_count.to_string(),
+    );
+    attributes.insert(
+        "footer_fingerprint".to_string(),
+        format!(
+            "{:08x}",
+            u32::from_be_bytes(scan.container.footer_fingerprint)
+        ),
+    );
+    attributes.insert(
         "partition_streams".to_string(),
         scan.count(StreamKind::Partition).to_string(),
     );
@@ -7610,11 +7625,13 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
 pub fn summary_notes(scan: &Scan) -> Vec<String> {
     let c = &scan.container;
     let mut notes = vec![format!(
-        "SPLMSSTR container: version {:#04x}, file tag {}, footer offset {}, {} directory entry/ies",
+        "SPLMSSTR container: version {:#04x}, file tag {}, footer offset {}, {} HEADER and {} FOOTER directory entry/ies, fingerprint {:08x}",
         c.version,
         c.file_tag,
         c.footer_offset,
-        c.entries.len()
+        c.header_entry_count,
+        c.footer_entry_count,
+        u32::from_be_bytes(c.footer_fingerprint),
     )];
     notes.push(format!(
         "embedded streams: {} partition, {} deltas, {} plain (cached body), {} preview/non-Parasolid",
