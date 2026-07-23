@@ -1151,6 +1151,9 @@ pub(crate) fn project_fixed_fillet(
     let groups = construction_groups
         .iter()
         .filter(|group| {
+            // Support-face operands share the compact persistent-identity
+            // prefix. Only a complete edge-recipe frame establishes that the
+            // group is the Fillet's selected-edge operand.
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
                 && !group.members.is_empty()
@@ -1158,11 +1161,6 @@ pub(crate) fn project_fixed_fillet(
                     edge_operands.iter().any(|operand| {
                         native_stream(&operand.id) == Some(stream)
                             && operand.scope_record_index == scope.record_index
-                            && operand.record_index == *member
-                    }) || edge_identity_operands.iter().any(|operand| {
-                        native_stream(&operand.id) == Some(stream)
-                            && operand.scope_record_index == scope.record_index
-                            && operand.group_record_index == group.record_index
                             && operand.record_index == *member
                     })
                 })
