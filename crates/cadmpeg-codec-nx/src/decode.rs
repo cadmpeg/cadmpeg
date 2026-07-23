@@ -804,6 +804,7 @@ fn try_decode_geometry(
             source_stream,
             &mut annotations,
         );
+        invalidate_inconsistent_support_uv(&mut ir, &pending_ext11_support_uv);
         complete_ext11_support_uv(&mut ir, &pending_ext11_support_uv);
         complete_parameterization_equivalent_support_uv(&mut ir);
         complete_support_uv(&mut ir, &pending_ext11_support_uv);
@@ -832,9 +833,6 @@ fn try_decode_geometry(
             .note(&unknown.id, container_stream, stream.file_offset as u64)
             .tag(stream.kind.label());
         annotations.exactness(&unknown.id, Exactness::Derived);
-        if !unknown.links.is_empty() {
-            annotations.derived(&unknown.id, "links");
-        }
         unknowns.push(unknown);
     }
 
@@ -1047,14 +1045,12 @@ fn retain_live_unknown_links(
             .iter()
             .map(|entity| entity.id.to_string()),
     );
-    let mut empty_links = Vec::new();
     for unknown in unknowns.iter_mut() {
         unknown.links.retain(|link| ids.contains(link));
-        if unknown.links.is_empty() {
-            empty_links.push(unknown.id.to_string());
+        if !unknown.links.is_empty() {
+            annotations.derived(&unknown.id, "links");
         }
     }
-    let _ = (empty_links, annotations);
 }
 
 fn topology_body_node_ids(stream_index: usize, graph: &Graph) -> BTreeMap<BodyId, BTreeSet<u32>> {
@@ -1775,6 +1771,54 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
         if after >= before {
             break;
         }
+    }
+}
+
+pub(crate) fn invalidate_inconsistent_support_uv(
+    ir: &mut CadIr,
+    pending: &[PendingExt11SupportUv],
+) {
+    let mut invalid = Vec::new();
+    for (procedural_id, points, parameters, fit_tolerance, _) in pending {
+        let Some(procedural_index) = ir
+            .model
+            .procedural_curves
+            .iter()
+            .position(|procedural| &procedural.id == procedural_id)
+        else {
+            continue;
+        };
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            &ir.model.procedural_curves[procedural_index].definition
+        else {
+            continue;
+        };
+        for (side, support) in context.sides.iter().enumerate() {
+            let (Some(surface), Some(pcurve)) = (&support.surface, &support.pcurve) else {
+                continue;
+            };
+            let tolerance = blend_spine_cache_fit_tolerance(ir, surface, *fit_tolerance);
+            let inconsistent = parameters
+                .iter()
+                .zip(points)
+                .filter_map(|(parameter, point)| {
+                    let uv = pcurve_uv(pcurve, *parameter)?;
+                    decoded_surface_point(ir, surface, uv.u, uv.v)
+                        .map(|actual| point_distance(actual, *point) > tolerance)
+                })
+                .any(|inconsistent| inconsistent);
+            if inconsistent {
+                invalid.push((procedural_index, side));
+            }
+        }
+    }
+    for (procedural_index, side) in invalid {
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            &mut ir.model.procedural_curves[procedural_index].definition
+        else {
+            unreachable!("definition selected above");
+        };
+        context.sides[side].pcurve = None;
     }
 }
 
@@ -4546,6 +4590,13 @@ fn intersection_side(
             .find(|candidate| &candidate.id == surface_id)
             .map(|surface| &surface.geometry)?;
         let (uv, parameters) = uv?;
+        if uv
+            .iter()
+            .flatten()
+            .any(|value| missing_support_parameter(*value))
+        {
+            return None;
+        }
         let control_points = uv
             .iter()
             .map(|pair| surface_parameters(geometry, *pair))

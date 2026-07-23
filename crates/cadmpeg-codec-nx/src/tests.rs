@@ -7205,6 +7205,41 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
 }
 
 #[test]
+fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
+    let stream = two_support_ext11_charted_intersection_curve_stream(false);
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let procedural_id = result.ir.model.procedural_curves[0].id.clone();
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &mut result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[0].pcurve.as_mut()
+    else {
+        panic!("NURBS support lane");
+    };
+    for point in control_points {
+        point.u += 100.0;
+    }
+    let pending = vec![(
+        procedural_id,
+        vec![
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
+        ],
+        vec![0.0, 0.01],
+        0.01,
+        [None, None],
+    )];
+
+    crate::decode::invalidate_inconsistent_support_uv(&mut result.ir, &pending);
+    crate::decode::complete_support_uv(&mut result.ir, &pending);
+
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     use cadmpeg_ir::geometry::{ProceduralCurve, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};

@@ -181,7 +181,9 @@ pub(crate) fn attach(
                 .note(&id.0, annotation_stream, configuration.source_offset)
                 .tag("Arrangement");
             annotations.derived(&id.0, "ordinal");
-            annotations.derived(&id.0, "active");
+            if active_attribute_use.is_some() {
+                annotations.derived(&id.0, "active");
+            }
             annotations.derived(&id.0, "source_index");
             annotations.derived(&id.0, "name");
             annotations.derived(&id.0, "native_ref");

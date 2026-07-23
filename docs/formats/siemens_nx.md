@@ -637,7 +637,12 @@ Within one physical stream a duplicate term-use XMT invalidates that endpoint id
 
 The typed source record retains the scalar count, marker, ordered scalar lane, direct/escaped/descriptor-inline framing, and inflated-stream offset. Tuple grouping derives only from the marker and never reorders the serialized lane.
 
-The value `-31415800000000.0` is a missing-parameter sentinel. Preserve the tuple position. Support-0 `(u,v)` values evaluate on the analytic surface to the curve's 3D points.
+The value `-31415800000000.0` is a missing-parameter sentinel. Preserve the
+tuple position and test for the sentinel before converting surface parameter
+units. A serialized support lane transfers only when every evaluable lane point
+reproduces its corresponding 3D chart point within the effective chart
+tolerance. A finite lane that demonstrably misses the chart supplies no support
+pcurve and remains eligible for independent inversion or coupled continuation.
 
 CHART_s and its serialized or uniquely topology-backed endpoint witnesses define the bounded 3D carrier independently of the values-array. A null, sentinel-bearing, or count-mismatched values-array omits the corresponding pcurve; it does not invalidate the 3D chart carrier. A missing endpoint without a unique topology-backed match rejects the carrier atomically.
 

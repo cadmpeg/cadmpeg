@@ -33,8 +33,8 @@ the assembly gates, not the single-part body, feature, or sketch gates.
 | --- | --- | --- |
 | L0 | Claimed in the current envelope | Representative release and layout fixtures with closed physical ledgers. |
 | L1 | Incomplete | Close remaining object-model control forms, deltas record families, checksums, and stream classifications. |
-| L2 | Incomplete | Close procedural intersection continuation, finite branch and range selection, NURBS-offset blend spines, and remaining carrier records. |
-| L3 | Incomplete | Resolve unmatched tombstones, cached-body ownership, and terminal lineage for every multi-partition history. |
+| L2 | Incomplete | Close finite branch and range selection, NURBS-offset blend spines, and remaining carrier records. |
+| L3 | Incomplete | Resolve cached-body ownership and terminal lineage for every multi-partition history. |
 | L4 | Incomplete | Resolve suppression, sketch placement and entities, complete operands and outputs, configuration body state, and every admitted operation construction. |
 | L5 | Incomplete | Close all L2/L3 families and transfer body/face appearance with source precedence. |
 | L6 | Incomplete | Close sketch constraints and dimensions, all expression forms, every feature construction, inactive configurations, and re-derivation coherence. |
