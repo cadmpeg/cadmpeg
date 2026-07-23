@@ -10233,7 +10233,13 @@ mod golden {
         fn located_set(payload: &[u8], inflate: Inflate) -> Set {
             locate_streams(payload, inflate)
                 .into_iter()
-                .map(|ParasolidStream { offset, bytes, schema }| (offset, bytes, schema))
+                .map(
+                    |ParasolidStream {
+                         offset,
+                         bytes,
+                         schema,
+                     }| (offset, bytes, schema),
+                )
                 .collect()
         }
 
