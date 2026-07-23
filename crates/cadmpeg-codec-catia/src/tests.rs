@@ -5237,7 +5237,38 @@ fn native_namespace_retains_and_validates_definition_schema_selections() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
-        .expect("store malformed definition-atom view");
+        .expect("store malformed definition-schema view");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
+fn native_namespace_retains_and_validates_repeated_reference_suffixes() {
+    let payload = [
+        0xb0, 0x83, 0x81, 0xbc, 0x81, 0xbe, 0x81, 0xb1, 0x83, 0x81, 0xbc, 0x81, 0xbe, 0xd1, 0x80,
+        0xfe,
+    ];
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &payload)];
+    let native = crate::native::CatiaNative::decode(&entity_backed_object_graph(&records, &[1]));
+    let suffix = native.object_graphs[0].records[0]
+        .repeated_reference_suffix
+        .as_ref()
+        .expect("repeated reference suffix");
+    assert_eq!(suffix.repeated_references, [60, 62]);
+    assert_eq!(suffix.terminal_reference, 49);
+
+    let mut malformed = native;
+    malformed.object_graphs[0].records[0]
+        .repeated_reference_suffix
+        .as_mut()
+        .expect("repeated reference suffix")
+        .terminal_reference += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed repeated-reference-suffix view");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))

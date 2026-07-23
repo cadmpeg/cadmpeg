@@ -43,6 +43,8 @@ pub struct ObjectRecord {
     pub storage_ref: Option<u32>,
     /// Decoded nested payload.
     pub payload: ObjectPayload,
+    /// Counted reference suffix when the payload repeats its reference prefix exactly.
+    pub repeated_reference_suffix: Option<RepeatedReferenceSuffix>,
     /// Structural payload classification.
     pub subtype: PayloadSubtype,
 }
@@ -69,6 +71,19 @@ pub struct ObjectPayload {
     pub size: usize,
     /// Decoded fields in serialization order.
     pub fields: Vec<PayloadField>,
+}
+
+/// One counted reference suffix whose reference prefix is serialized twice.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RepeatedReferenceSuffix {
+    /// Ordered entity identities serialized in both vectors.
+    pub repeated_references: Vec<u32>,
+    /// Final reference in the first counted vector.
+    pub terminal_reference: u32,
+    /// Byte offset of the first count atom within the payload.
+    pub first_count_offset: usize,
+    /// Byte offset of the repeated count atom within the payload.
+    pub repeated_count_offset: usize,
 }
 
 /// Item within a count-prefixed `0x3b` list.
@@ -472,6 +487,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             _ => None,
         });
         let payload = decode_payload(&data[child + 6..record_end])?;
+        let repeated_reference_suffix = repeated_reference_suffix(&payload);
         let subtype = classify(&payload.fields);
         records.push(ObjectRecord {
             index: records.len(),
@@ -484,6 +500,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             class_name: None,
             storage_ref,
             payload,
+            repeated_reference_suffix,
             subtype,
         });
         at = record_end;
@@ -494,6 +511,84 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
         catalog_pos: None,
         records,
     })
+}
+
+pub(crate) fn repeated_reference_suffix(
+    payload: &ObjectPayload,
+) -> Option<RepeatedReferenceSuffix> {
+    let fields = &payload.fields;
+    let mut matches = fields
+        .iter()
+        .enumerate()
+        .filter_map(|(count_index, field)| {
+            let PayloadField::Atom {
+                value: declared_count,
+                offset: first_count_offset,
+            } = field
+            else {
+                return None;
+            };
+            if *declared_count < 2
+                || !matches!(
+                    fields.get(count_index.checked_sub(1)?),
+                    Some(PayloadField::Atom { value: 48, .. })
+                )
+            {
+                return None;
+            }
+            let count = usize::try_from(*declared_count).ok()?;
+            let references_start = count_index.checked_add(1)?;
+            let references_end = references_start.checked_add(count)?;
+            let first = fields
+                .get(references_start..references_end)?
+                .iter()
+                .map(|field| match field {
+                    PayloadField::Reference { value, .. } => Some(*value),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let PayloadField::Atom {
+                value: repeated_count,
+                offset: repeated_count_offset,
+            } = fields.get(references_end)?
+            else {
+                return None;
+            };
+            if repeated_count != declared_count {
+                return None;
+            }
+            let repeated_start = references_end.checked_add(1)?;
+            let repeated_end = repeated_start.checked_add(count.checked_sub(1)?)?;
+            let terminator_start = repeated_end.checked_add(1)?;
+            let repeated = fields
+                .get(repeated_start..repeated_end)?
+                .iter()
+                .map(|field| match field {
+                    PayloadField::Reference { value, .. } => Some(*value),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            if repeated != first[..count - 1]
+                || !matches!(
+                    fields.get(repeated_end),
+                    Some(PayloadField::Atom { value: 129, .. })
+                )
+                || !matches!(
+                    fields.get(terminator_start..),
+                    Some([PayloadField::Terminator])
+                )
+            {
+                return None;
+            }
+            Some(RepeatedReferenceSuffix {
+                repeated_references: repeated,
+                terminal_reference: first[count - 1],
+                first_count_offset: *first_count_offset,
+                repeated_count_offset: *repeated_count_offset,
+            })
+        });
+    let suffix = matches.next()?;
+    matches.next().is_none().then_some(suffix)
 }
 
 fn decode_head(bytes: &[u8]) -> Vec<HeadToken> {
@@ -747,5 +842,69 @@ fn classify(fields: &[PayloadField]) -> PayloadSubtype {
         PayloadSubtype::Empty
     } else {
         PayloadSubtype::Mixed
+    }
+}
+
+#[cfg(test)]
+mod repeated_reference_suffix_tests {
+    use super::{repeated_reference_suffix, ObjectPayload, PayloadField, RepeatedReferenceSuffix};
+
+    fn atom(value: u32, offset: usize) -> PayloadField {
+        PayloadField::Atom { value, offset }
+    }
+
+    fn reference(value: u32, offset: usize) -> PayloadField {
+        PayloadField::Reference { value, offset }
+    }
+
+    #[test]
+    fn repeated_reference_suffix_requires_an_exact_counted_reference_copy() {
+        let payload = ObjectPayload {
+            size: 20,
+            fields: vec![
+                atom(44, 0),
+                atom(48, 1),
+                atom(3, 2),
+                reference(60, 3),
+                reference(62, 4),
+                reference(49, 5),
+                atom(3, 6),
+                reference(60, 7),
+                reference(62, 8),
+                atom(129, 9),
+                PayloadField::Terminator,
+            ],
+        };
+
+        assert_eq!(
+            repeated_reference_suffix(&payload),
+            Some(RepeatedReferenceSuffix {
+                repeated_references: vec![60, 62],
+                terminal_reference: 49,
+                first_count_offset: 2,
+                repeated_count_offset: 6,
+            })
+        );
+    }
+
+    #[test]
+    fn repeated_reference_suffix_rejects_a_changed_reference() {
+        let payload = ObjectPayload {
+            size: 16,
+            fields: vec![
+                atom(48, 0),
+                atom(3, 1),
+                reference(60, 2),
+                reference(62, 3),
+                reference(49, 4),
+                atom(3, 5),
+                reference(60, 6),
+                reference(63, 7),
+                atom(129, 8),
+                PayloadField::Terminator,
+            ],
+        };
+
+        assert_eq!(repeated_reference_suffix(&payload), None);
     }
 }

@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 89;
+pub const CATIA_NATIVE_VERSION: u32 = 90;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -659,6 +659,9 @@ pub struct CatiaObjectRecord {
     pub storage_ref: Option<u32>,
     /// Typed nested payload.
     pub payload: ObjectPayload,
+    /// Counted reference suffix when the payload repeats its reference prefix exactly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeated_reference_suffix: Option<object_graph::RepeatedReferenceSuffix>,
     /// Structural payload classification.
     pub subtype: PayloadSubtype,
     /// Ordered same-graph payload-reference links.
@@ -2369,6 +2372,8 @@ impl CatiaNative {
                     || record.entity_record != paired_entity.map(|entity| entity.id.clone())
                     || record.entity_id != paired_entity.map(|entity| entity.entity_id)
                     || paired_entity.is_some_and(|entity| entity.object_record != record.id)
+                    || record.repeated_reference_suffix
+                        != object_graph::repeated_reference_suffix(&record.payload)
                     || record.references
                         != resolved_payload_references(
                             &record.payload,
@@ -2817,6 +2822,7 @@ fn native_object_graph(
                 class_entry: None,
                 storage_ref: record.storage_ref,
                 payload: record.payload,
+                repeated_reference_suffix: record.repeated_reference_suffix,
                 subtype: record.subtype,
                 references: Vec::new(),
             }
