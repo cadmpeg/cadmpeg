@@ -301,6 +301,10 @@ triple, and three origin coordinates. It has the same `a² + b² = 1`,
 A reflected-component form stores `(a, 0, b)`, a zero-rank triple,
 `(b, 0, a)`, and three origin coordinates. The final stored `a` is reflected
 across zero, so the second support direction is `(b, 0, -a)`.
+A trailing-rank reflected form stores `(0, a, b)`, `(0, b, a)`, the rank
+triple `(0, 0, 1)`, and three origin coordinates. The first two stored triples
+satisfy `a² + b² = 1`; reflecting the final stored `a` gives support directions
+`(0, a, b)` and `(0, b, -a)`.
 
 Two five-coordinate type-26 rows for one zero-`radius1` prototype encode the
 two hemispheres of one Z-axis sphere. Each row stores

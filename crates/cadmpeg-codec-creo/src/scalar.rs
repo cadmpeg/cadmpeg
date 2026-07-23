@@ -536,6 +536,9 @@ fn decode_local_system_slot_prefix(
         if let Some(frame) = decode_reflected_component_plane_support(body, cache) {
             return Some(frame);
         }
+        if let Some(frame) = decode_trailing_rank_reflected_plane_support(body, cache) {
+            return Some(frame);
+        }
     }
     if body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6] {
         return Some((
@@ -774,6 +777,52 @@ fn decode_reflected_component_plane_support(
     ))
 }
 
+fn decode_trailing_rank_reflected_plane_support(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<([f64; 12], usize)> {
+    let mut cursor = 0;
+    let (first_x, next) = decode_zero_or_plane_support_coordinate(body, cursor, 0, cache)?;
+    (first_x == 0.0).then_some(())?;
+    cursor = next;
+    let (first_y, next) = decode_zero_or_plane_support_coordinate(body, cursor, 1, cache)?;
+    cursor = next;
+    let (first_z, next) = decode_zero_or_plane_support_coordinate(body, cursor, 2, cache)?;
+    cursor = next;
+    let (stored_second_x, next) = decode_zero_or_plane_support_coordinate(body, cursor, 3, cache)?;
+    (stored_second_x == 0.0).then_some(())?;
+    cursor = next;
+    let (stored_second_y, next) = decode_zero_or_plane_support_coordinate(body, cursor, 4, cache)?;
+    cursor = next;
+    let (stored_first_y, next) = decode_zero_or_plane_support_coordinate(body, cursor, 5, cache)?;
+    cursor = next;
+    for slot in 6..8 {
+        let (value, next) = decode_zero_or_plane_support_coordinate(body, cursor, slot, cache)?;
+        (value == 0.0).then_some(())?;
+        cursor = next;
+    }
+    (body.get(cursor) == Some(&0xe4)).then_some(())?;
+    cursor += 1;
+
+    [first_y, first_z, stored_second_y, stored_first_y]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(())?;
+    let scale = first_y.abs().max(first_z.abs()).max(1.0);
+    ((first_y.mul_add(first_y, first_z * first_z) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
+    (stored_second_y == first_z).then_some(())?;
+    (stored_first_y == first_y).then_some(())?;
+
+    let (origin, cursor) = decode_plane_support_origin(body, cursor, cache)?;
+    Some((
+        [
+            0.0, first_y, first_z, 0.0, 0.0, 0.0, 0.0, first_z, -first_y, origin[0], origin[1],
+            origin[2],
+        ],
+        cursor,
+    ))
+}
+
 fn decode_zero_or_plane_support_coordinate(
     body: &[u8],
     offset: usize,
@@ -940,6 +989,14 @@ fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn positive_subunit_coordinate(value: f64) -> [u8; 8] {
+        let bytes = value.to_be_bytes();
+        assert_eq!(bytes[0], 0x3f);
+        [
+            0x41, bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ]
+    }
 
     #[test]
     fn positional_plane_origin_x_prefers_row_then_signed_first_coordinate_lanes() {
@@ -1130,27 +1187,35 @@ mod tests {
 
     #[test]
     fn reflected_plane_support_component_constructs_orthogonal_directions() {
-        fn positive_subunit(value: f64) -> [u8; 8] {
-            let bytes = value.to_be_bytes();
-            assert_eq!(bytes[0], 0x3f);
-            [
-                0x41, bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-            ]
-        }
-
         let mut body = Vec::new();
-        body.extend_from_slice(&positive_subunit(0.6));
+        body.extend_from_slice(&positive_subunit_coordinate(0.6));
         body.push(0x18);
-        body.extend_from_slice(&positive_subunit(0.8));
+        body.extend_from_slice(&positive_subunit_coordinate(0.8));
         body.extend_from_slice(&[0x18, 0x0f, 0x18]);
-        body.extend_from_slice(&positive_subunit(0.8));
+        body.extend_from_slice(&positive_subunit_coordinate(0.8));
         body.push(0x18);
-        body.extend_from_slice(&positive_subunit(0.6));
+        body.extend_from_slice(&positive_subunit_coordinate(0.6));
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
 
         assert_eq!(
             decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
             Some([0.6, 0.0, 0.8, 0.0, 0.0, 0.0, 0.8, 0.0, -0.6, 0.0, 0.0, 0.0])
+        );
+    }
+
+    #[test]
+    fn trailing_rank_reflected_plane_support_constructs_orthogonal_directions() {
+        let mut body = vec![0x18];
+        body.extend_from_slice(&positive_subunit_coordinate(0.6));
+        body.extend_from_slice(&positive_subunit_coordinate(0.8));
+        body.push(0x18);
+        body.extend_from_slice(&positive_subunit_coordinate(0.8));
+        body.extend_from_slice(&positive_subunit_coordinate(0.6));
+        body.extend_from_slice(&[0x18, 0x18, 0xe4, 0x18, 0x18, 0x18]);
+
+        assert_eq!(
+            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
+            Some([0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 0.0, 0.8, -0.6, 0.0, 0.0, 0.0])
         );
     }
 
