@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 85;
+pub const CATIA_NATIVE_VERSION: u32 = 86;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -559,10 +559,20 @@ pub struct CatiaEntityRecord {
     pub definition_prefix: Vec<u8>,
     /// Stored identity used by object-record owner and payload references.
     pub entity_id: u32,
-    /// Exact bytes after the identity through the `7C05` frame end.
+    /// Exact definition bytes after the identity.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
-    pub tail: Vec<u8>,
+    pub definition_suffix: Vec<u8>,
+    /// Stored nested `7C07` total length.
+    pub value_len: u32,
+    /// Exact nested `7C07` payload.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub value_payload: Vec<u8>,
+    /// Exact bytes after the nested `7C07` frame.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub record_suffix: Vec<u8>,
 }
 
 /// One outer `7C08` ownership graph in source order.
@@ -896,6 +906,41 @@ fn resolved_payload_references(
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
+    let Some(definition_body_len) = u64::try_from(record.definition_prefix.len())
+        .ok()
+        .and_then(|prefix_len| prefix_len.checked_add(5))
+        .and_then(|len| {
+            u64::try_from(record.definition_suffix.len())
+                .ok()
+                .and_then(|suffix_len| len.checked_add(suffix_len))
+        })
+    else {
+        return false;
+    };
+    let Some(value_len) = u64::try_from(record.value_payload.len())
+        .ok()
+        .and_then(|len| len.checked_add(6))
+    else {
+        return false;
+    };
+    let Some(total_len) = 7_u64
+        .checked_add(u64::from(record.definition_len))
+        .and_then(|len| len.checked_add(u64::from(record.value_len)))
+        .and_then(|len| {
+            u64::try_from(record.record_suffix.len())
+                .ok()
+                .and_then(|suffix_len| len.checked_add(suffix_len))
+        })
+    else {
+        return false;
+    };
+    u64::from(record.definition_len) == definition_body_len + 6
+        && u64::from(record.value_len) == value_len
+        && record.byte_len == total_len
 }
 
 /// CATIA-native records retained outside the format-neutral model.
@@ -2198,6 +2243,9 @@ impl CatiaNative {
                     || graph_entities
                         .windows(2)
                         .any(|pair| pair[0].entity_id >= pair[1].entity_id)
+                    || graph_entities
+                        .iter()
+                        .any(|entity| !valid_entity_record_shape(entity))
                     || graph_entities.windows(2).any(|pair| {
                         pair[0].byte_offset.checked_add(pair[0].byte_len)
                             != Some(pair[1].byte_offset)
@@ -2749,7 +2797,10 @@ fn native_object_graph(
                 definition_len: entity.definition_len,
                 definition_prefix: entity.definition_prefix,
                 entity_id: entity.entity_id,
-                tail: entity.tail,
+                definition_suffix: entity.definition_suffix,
+                value_len: entity.value_len,
+                value_payload: entity.value_payload,
+                record_suffix: entity.record_suffix,
             })
         })
         .collect();

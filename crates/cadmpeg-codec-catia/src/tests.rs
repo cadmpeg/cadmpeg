@@ -1527,7 +1527,7 @@ fn object_graph_from_records(records: &[Vec<u8>]) -> Vec<u8> {
 
 fn entity_table_record(entity_id: u32) -> Vec<u8> {
     let mut bytes = vec![0x7c, 0x05, 0, 0, 0, 0, 0x00, 0x7c, 0x06];
-    bytes.extend_from_slice(&6_u32.to_le_bytes());
+    bytes.extend_from_slice(&12_u32.to_le_bytes());
     bytes.push(0x01);
     bytes.push(0xea);
     bytes.extend_from_slice(&entity_id.to_le_bytes());
@@ -5157,6 +5157,31 @@ fn native_load_rejects_noncanonical_value_block_views() {
         .is_empty());
     invalid_selections.value_blocks[0].schema_selections.clear();
     assert_rejected(invalid_selections);
+}
+
+#[test]
+fn native_load_rejects_noncanonical_entity_frame_lengths() {
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
+    let native =
+        crate::native::CatiaNative::decode(&sequential_entity_backed_object_graph(&records));
+
+    for mutate in [
+        |record: &mut crate::native::CatiaEntityRecord| record.definition_len += 1,
+        |record: &mut crate::native::CatiaEntityRecord| record.value_len += 1,
+        |record: &mut crate::native::CatiaEntityRecord| record.byte_len += 1,
+    ] as [fn(&mut crate::native::CatiaEntityRecord); 3]
+    {
+        let mut malformed = native.clone();
+        mutate(&mut malformed.entity_records[0]);
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        malformed
+            .store(&mut namespace)
+            .expect("store malformed entity frame");
+        assert!(matches!(
+            crate::native::CatiaNative::load(&namespace),
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        ));
+    }
 }
 
 #[test]

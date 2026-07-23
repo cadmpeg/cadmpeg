@@ -16,8 +16,14 @@ pub struct EntityRecord {
     pub definition_prefix: Vec<u8>,
     /// Stored entity identity.
     pub entity_id: u32,
-    /// Exact bytes after the identity through the `7C05` frame end.
-    pub tail: Vec<u8>,
+    /// Exact definition bytes after the identity.
+    pub definition_suffix: Vec<u8>,
+    /// Stored nested `7C07` total length.
+    pub value_len: u32,
+    /// Exact nested `7C07` payload.
+    pub value_payload: Vec<u8>,
+    /// Exact bytes after the nested `7C07` frame.
+    pub record_suffix: Vec<u8>,
 }
 
 /// Parse every maximal contiguous run of length-closed `7C05` records.
@@ -82,9 +88,14 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<EntityRecord> {
 
     let lead = *data.get(pos + 6)?;
     let definition_len = u32_le(data, pos + 9)?;
+    let definition_len_usize = usize::try_from(definition_len).ok()?;
+    let definition_end = pos.checked_add(7)?.checked_add(definition_len_usize)?;
+    if definition_len_usize < 11 || definition_end > end {
+        return None;
+    }
     let definition_start = pos + 13;
     let mut at = definition_start;
-    while at < end {
+    while at < definition_end {
         match data[at] {
             0xea => break,
             0x32 => at = at.checked_add(5)?,
@@ -92,12 +103,16 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<EntityRecord> {
         }
     }
     let identity_end = at.checked_add(5)?;
-    if identity_end > end {
+    if identity_end > definition_end
+        || data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07]
+    {
         return None;
     }
     let entity_id = u32_le(data, at + 1)?;
-    let tail = data.get(identity_end..end)?.to_vec();
-    if entity_id == 0 || !tail.windows(2).any(|marker| marker == [0x7c, 0x07]) {
+    let value_len = u32_le(data, definition_end + 2)?;
+    let value_len_usize = usize::try_from(value_len).ok()?;
+    let value_end = definition_end.checked_add(value_len_usize)?;
+    if entity_id == 0 || value_len_usize < 6 || value_end > end {
         return None;
     }
 
@@ -108,7 +123,10 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<EntityRecord> {
         definition_len,
         definition_prefix: data[definition_start..at].to_vec(),
         entity_id,
-        tail,
+        definition_suffix: data[identity_end..definition_end].to_vec(),
+        value_len,
+        value_payload: data[definition_end + 6..value_end].to_vec(),
+        record_suffix: data[value_end..end].to_vec(),
     })
 }
 
@@ -125,14 +143,15 @@ mod tests {
     fn record(prefix: &[u8], entity_id: u32) -> Vec<u8> {
         let mut bytes = vec![0x7c, 0x05, 0, 0, 0, 0, 0, 0x7c, 0x06];
         bytes.extend_from_slice(
-            &u32::try_from(prefix.len() + 5)
+            &u32::try_from(prefix.len() + 12)
                 .expect("bounded test definition")
                 .to_le_bytes(),
         );
         bytes.extend_from_slice(prefix);
         bytes.push(0xea);
         bytes.extend_from_slice(&entity_id.to_le_bytes());
-        bytes.extend_from_slice(&[0x7c, 0x07, 6, 0, 0, 0]);
+        bytes.push(0xaa);
+        bytes.extend_from_slice(&[0x7c, 0x07, 7, 0, 0, 0, 0xfe, 0xbb]);
         let len = u32::try_from(bytes.len()).expect("bounded test record");
         bytes[2..6].copy_from_slice(&len.to_le_bytes());
         bytes
@@ -149,6 +168,10 @@ mod tests {
 
         assert_eq!(run[0].definition_prefix, prefix);
         assert_eq!(run[0].entity_id, 37);
+        assert_eq!(run[0].definition_suffix, [0xaa]);
+        assert_eq!(run[0].value_len, 7);
+        assert_eq!(run[0].value_payload, [0xfe]);
+        assert_eq!(run[0].record_suffix, [0xbb]);
     }
 
     #[test]
