@@ -232,4 +232,75 @@ mod tests {
 
         assert!(report.findings.is_empty(), "{:?}", report.findings);
     }
+
+    /// Determinism net for the `ModelIndex` conversions (P4). Each fixture pins
+    /// the complete findings `Vec` — order, check, severity, entity, and message —
+    /// so that swapping per-check id rebuilds for the shared index cannot silently
+    /// reorder or alter what validation reports. Every line is
+    /// `check|severity|entity|message`; an empty expected slice pins zero findings.
+    #[test]
+    fn model_index_conversions_preserve_finding_order_and_content() {
+        use super::Finding;
+        use crate::examples::unit_cube;
+        use crate::ids::{RegionId, SurfaceId};
+
+        fn render(findings: &[Finding]) -> Vec<String> {
+            findings
+                .iter()
+                .map(|f| {
+                    format!(
+                        "{:?}|{:?}|{}|{}",
+                        f.check,
+                        f.severity,
+                        f.entity.as_deref().unwrap_or(""),
+                        f.message
+                    )
+                })
+                .collect()
+        }
+
+        // A valid cube: no findings.
+        let baseline = unit_cube();
+
+        // A body references a region id that is not in the region arena.
+        let mut dangling_region = unit_cube();
+        dangling_region.model.bodies[0].regions =
+            vec![RegionId("synthetic:cube:region#missing".into())];
+
+        // Dropping one coedge from a loop leaves its `next` ring unable to close.
+        let mut unclosed_ring = unit_cube();
+        unclosed_ring.model.loops[0].coedges.pop();
+
+        // A face references a surface id that is not in the surface arena; the
+        // surface it abandoned then reads as an orphan carrier.
+        let mut missing_surface = unit_cube();
+        missing_surface.model.faces[0].surface = SurfaceId("synthetic:cube:surface#missing".into());
+
+        let cases: [(&str, CadIr, &[&str]); 4] = [
+            ("baseline", baseline, &[]),
+            (
+                "dangling_region",
+                dangling_region,
+                &["ReferentialIntegrity|Error|synthetic:cube:body#0|references missing region `synthetic:cube:region#missing`"],
+            ),
+            (
+                "unclosed_ring",
+                unclosed_ring,
+                &["LoopClosure|Error|synthetic:cube:loop#back|coedge `next` ring does not close over the loop's 3 coedges"],
+            ),
+            (
+                "missing_surface",
+                missing_surface,
+                &[
+                    "ReferentialIntegrity|Error|synthetic:cube:face#back|references missing surface `synthetic:cube:surface#missing`",
+                    "CarrierReachability|Error|synthetic:cube:surface#back|orphan surface carrier",
+                ],
+            ),
+        ];
+
+        for (name, ir, expected) in cases {
+            let report = validate(&ir, Vec::new());
+            assert_eq!(render(&report.findings), expected, "fixture `{name}`");
+        }
+    }
 }
