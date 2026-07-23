@@ -3899,8 +3899,10 @@ pub(crate) fn mesh_face_endpoint_configurations(
     assignments: &[MeshFaceBoundaryAssignment],
     edge_candidates: &[Vec<[usize; 2]>],
     selected: &[Option<[usize; 2]>],
-    limit: usize,
+    budget: &MeshConstraintBudget,
 ) -> Option<MeshFaceEndpointConfigurations> {
+    const MAX_WORK: usize = 4_096;
+
     fn insert_pair(
         configuration: &mut MeshFaceEndpointConfiguration,
         edge: usize,
@@ -3921,8 +3923,12 @@ pub(crate) fn mesh_face_endpoint_configurations(
         edge_candidates: &[Vec<[usize; 2]>],
         selected: &[Option<[usize; 2]>],
         work: &mut usize,
-        limit: usize,
+        budget: &MeshConstraintBudget,
     ) -> Option<MeshFaceEndpointConfigurations> {
+        let charge = |work: &mut usize| {
+            *work = work.checked_add(1)?;
+            (*work <= MAX_WORK && budget.charge()).then_some(())
+        };
         if boundary.is_empty()
             || boundary
                 .iter()
@@ -3945,6 +3951,7 @@ pub(crate) fn mesh_face_endpoint_configurations(
             for (start, current) in [(left, right), (right, left)] {
                 let mut configuration = Vec::new();
                 if insert_pair(&mut configuration, boundary[0].edge, pair) {
+                    charge(work)?;
                     states.push((start, current, configuration));
                 }
             }
@@ -3963,10 +3970,7 @@ pub(crate) fn mesh_face_endpoint_configurations(
                     .into_iter()
                     .flatten()
                     {
-                        *work = work.checked_add(1)?;
-                        if *work > limit {
-                            return None;
-                        }
+                        charge(work)?;
                         let mut configuration = configuration.clone();
                         if insert_pair(&mut configuration, use_.edge, pair) {
                             next.push((start, endpoint, configuration));
@@ -3992,7 +3996,7 @@ pub(crate) fn mesh_face_endpoint_configurations(
         )
     }
 
-    if limit == 0 || selected.len() != edge_candidates.len() {
+    if selected.len() != edge_candidates.len() {
         return None;
     }
     let mut work = 0usize;
@@ -4001,12 +4005,12 @@ pub(crate) fn mesh_face_endpoint_configurations(
         let mut combined = vec![Vec::new()];
         for boundary in &assignment.boundaries {
             let boundary =
-                boundary_configurations(boundary, edge_candidates, selected, &mut work, limit)?;
+                boundary_configurations(boundary, edge_candidates, selected, &mut work, budget)?;
             let mut next = Vec::new();
             for stored in combined {
                 for candidate in &boundary {
                     work = work.checked_add(1)?;
-                    if work > limit {
+                    if work > MAX_WORK || !budget.charge() {
                         return None;
                     }
                     let mut merged = stored.clone();
@@ -4022,9 +4026,6 @@ pub(crate) fn mesh_face_endpoint_configurations(
             combined = next;
         }
         configurations.extend(combined);
-        if configurations.len() > limit {
-            return None;
-        }
     }
     let mut configurations = configurations.into_iter().collect::<Vec<_>>();
     configurations.sort_unstable();

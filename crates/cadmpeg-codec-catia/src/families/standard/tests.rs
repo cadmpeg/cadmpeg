@@ -3647,14 +3647,22 @@ fn mesh_face_endpoint_configurations_preserve_pair_correlation() {
         vec![[2, 3], [1, 2]],
         vec![[3, 0]],
     ];
+    let budget = MeshConstraintBudget::new(4_096);
     let configurations =
-        mesh_face_endpoint_configurations(&[assignment], &candidates, &[None; 4], 4_096)
+        mesh_face_endpoint_configurations(&[assignment.clone()], &candidates, &[None; 4], &budget)
             .expect("bounded face configurations");
 
     assert_eq!(
         configurations,
         vec![vec![(0, [0, 1]), (1, [1, 2]), (2, [2, 3]), (3, [0, 3])]],
     );
+
+    let exhausted = MeshConstraintBudget::new(1);
+    assert!(
+        mesh_face_endpoint_configurations(&[assignment], &candidates, &[None; 4], &exhausted)
+            .is_none()
+    );
+    assert!(exhausted.exhausted.get());
 }
 
 #[test]

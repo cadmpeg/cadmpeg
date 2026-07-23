@@ -684,8 +684,6 @@ impl IncidenceComponentSearch<'_> {
     }
 
     fn face_configuration_options(&self) -> Option<MeshFaceEndpointConfigurations> {
-        const MAX_FACE_CONFIGURATIONS: usize = 4_096;
-
         let mesh_assignments = self.mesh_assignments?;
         let mut best = None::<Vec<Vec<(usize, [usize; 2])>>>;
         for (face, domain) in mesh_assignments.iter().enumerate() {
@@ -705,7 +703,7 @@ impl IncidenceComponentSearch<'_> {
                 assignments,
                 self.choices,
                 &self.assignment,
-                MAX_FACE_CONFIGURATIONS,
+                self.budget,
             ) else {
                 continue;
             };
