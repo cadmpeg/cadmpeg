@@ -310,6 +310,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .model
         .parameters
         .iter()
+        .filter(|parameter| parameter.value.is_some())
         .map(|parameter| &parameter.id)
         .collect::<std::collections::HashSet<_>>();
     let incomplete_configuration_feature_snapshots = ir
@@ -2992,6 +2993,19 @@ mod design_loss_tests {
             expression: "1".into(),
             display: None,
             value: Some(ParameterValue::Integer(1)),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        ir.model.parameters.push(DesignParameter {
+            id: ParameterId("unevaluated-parameter".into()),
+            owner: None,
+            ordinal: 1,
+            name: "Text".into(),
+            expression: "native text".into(),
+            display: None,
+            value: None,
             dependencies: Vec::new(),
             properties: BTreeMap::new(),
             pmi: None,
