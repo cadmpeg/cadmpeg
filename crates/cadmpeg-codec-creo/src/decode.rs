@@ -13632,30 +13632,33 @@ fn schema_feature_definition(
     if schema_class == 917
         && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
     {
-        let sweep = circular_sweep_geometry(scan, feature_id);
-        if let (Some(definition), Some(sweep)) = (
-            unique_owned_feature_definition(&scan.features.definitions, feature_id),
-            sweep,
-        ) {
-            if sweep
-                .section_definition_id
-                .is_none_or(|definition_id| definition_id == definition.id)
-            {
-                let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
-                let profile =
-                    section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition));
-                return circular_sweep_feature_definition(
-                    profile,
-                    &sweep,
-                    section_sweep_boolean_operation(
-                        feature_recipe_effect(scan, feature_id),
-                        kind,
-                        output_kind.is_some(),
-                        preceding_features_establish_body(ir),
-                    ),
-                    (output_kind == Some(BodyKind::Solid)).then_some(true),
+        if let Some(sweep) = circular_sweep_geometry(scan, feature_id) {
+            let definition =
+                unique_owned_feature_definition(&scan.features.definitions, feature_id).filter(
+                    |definition| {
+                        sweep
+                            .section_definition_id
+                            .is_none_or(|definition_id| definition_id == definition.id)
+                    },
                 );
-            }
+            let profile = definition.map_or_else(
+                || ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")),
+                |definition| {
+                    section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
+                },
+            );
+            let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
+            return circular_sweep_feature_definition(
+                profile,
+                &sweep,
+                section_sweep_boolean_operation(
+                    feature_recipe_effect(scan, feature_id),
+                    kind,
+                    output_kind.is_some(),
+                    preceding_features_establish_body(ir),
+                ),
+                (output_kind == Some(BodyKind::Solid)).then_some(true),
+            );
         }
     }
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
