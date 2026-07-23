@@ -1292,11 +1292,12 @@ circle center. Sense zero on a type-1 construction-point `segtab` row selects
 that point as a whole-point locus. The two selected point loci coincide and map
 to a neutral coincident-loci constraint. When both loci are arc or circle
 centers, the same incidence maps to the neutral concentric constraint for those
-two circular entities. Senses `2` and `3` retain their endpoint-locus meaning
-when the referenced entity has the native line, arc, or spline family. Sense
-`4` retains its center meaning when the referenced entity has the native arc or
-circle family. A generic native entity does not establish an endpoint or center
-locus.
+two circular entities. Senses `2` and `3` establish an endpoint-bearing native
+curve family when the underlying line, arc, or spline family is not otherwise
+known. Sense `4` establishes a native circular family and retains its center
+meaning without requiring solved center coordinates. Combined endpoint and
+circular evidence establishes the native arc family. A generic native entity
+without these incidence roles does not establish an endpoint or center locus.
 When exactly one `segtab` row owns each referenced external identifier, this
 incidence equates the corresponding stored `pointid` coordinates. A solved
 coordinate on either endpoint therefore supplies the missing coordinate on the
@@ -1408,7 +1409,9 @@ saved-section definition is a solver-only section entity. It retains one
 construction-entity identity shared by every incidence in the sketch; its
 geometry remains native. A unique non-conflicting line role from a two-line
 type five, seven, or eight incidence retains the native line family. Sense `4`
-or a two-circle type-six incidence retains the native circular family.
+or a two-circle type-six incidence retains the native circular family. Sense
+`2` or `3` retains the native endpoint-bearing curve family; independent line
+evidence narrows that family to line, while circular evidence narrows it to arc.
 In a type-zero coincidence, a sense-zero solver-only entity paired with an
 endpoint or center locus of a uniquely established carrier family retains the
 native point family.

@@ -8776,15 +8776,7 @@ fn section_skamp_locus(
 ) -> Option<SketchLocus> {
     let entity = sketch_entity_id(sketch, item.entity_id);
     if let Some(family) = solver_only_section_entity_family(definition, item.entity_id) {
-        return match (family, item.sense) {
-            (SolverOnlySectionEntityFamily::Point, 0) => Some(SketchLocus::Entity(entity)),
-            (SolverOnlySectionEntityFamily::Line, 0) => Some(SketchLocus::Entity(entity)),
-            (SolverOnlySectionEntityFamily::Line, 2) => Some(SketchLocus::Start(entity)),
-            (SolverOnlySectionEntityFamily::Line, 3) => Some(SketchLocus::End(entity)),
-            (SolverOnlySectionEntityFamily::Circular, 0) => Some(SketchLocus::Entity(entity)),
-            (SolverOnlySectionEntityFamily::Circular, 4) => Some(SketchLocus::Center(entity)),
-            _ => None,
-        };
+        return section_entity_family_locus(family, entity, item.sense);
     }
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
         return match (segment.kind, item.sense) {
@@ -8808,18 +8800,10 @@ fn section_skamp_locus(
             _ => None,
         };
     }
-    if let Some(circle) = unique_opaque_section_segment(definition, item.entity_id, 10) {
+    if unique_opaque_section_segment(definition, item.entity_id, 10).is_some() {
         return match item.sense {
             0 => Some(SketchLocus::Entity(entity)),
-            4 if section_opaque_circle_geometry(
-                &resolved_section_points(definition),
-                &resolved_section_radii(definition),
-                circle,
-            )
-            .is_some() =>
-            {
-                Some(SketchLocus::Center(entity))
-            }
+            4 => Some(SketchLocus::Center(entity)),
             _ => None,
         };
     }
@@ -8840,7 +8824,7 @@ fn section_skamp_locus(
         })
         .any(|external_id| external_id == item.entity_id)
     {
-        return None;
+        return section_incidence_curve_locus(definition, entity, item);
     }
     let saved = section_saved_entity(definition, item.entity_id)?;
     match (saved, item.sense) {
@@ -8854,6 +8838,51 @@ fn section_skamp_locus(
             | crate::feature::FeatureSavedEntity::Circle(_),
             4,
         ) => Some(SketchLocus::Center(entity)),
+        _ => None,
+    }
+}
+
+fn section_incidence_curve_locus(
+    definition: &crate::feature::FeatureDefinition,
+    entity: SketchEntityId,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<SketchLocus> {
+    section_entity_family_locus(
+        unique_section_incidence_curve_family(definition, item.entity_id)?,
+        entity,
+        item.sense,
+    )
+}
+
+fn section_entity_family_locus(
+    family: SectionEntityIncidenceFamily,
+    entity: SketchEntityId,
+    sense: u32,
+) -> Option<SketchLocus> {
+    match (family, sense) {
+        (SectionEntityIncidenceFamily::Point, 0) => Some(SketchLocus::Entity(entity)),
+        (
+            SectionEntityIncidenceFamily::BoundedCurve
+            | SectionEntityIncidenceFamily::Line
+            | SectionEntityIncidenceFamily::Arc,
+            0,
+        ) => Some(SketchLocus::Entity(entity)),
+        (
+            SectionEntityIncidenceFamily::BoundedCurve
+            | SectionEntityIncidenceFamily::Line
+            | SectionEntityIncidenceFamily::Arc,
+            2,
+        ) => Some(SketchLocus::Start(entity)),
+        (
+            SectionEntityIncidenceFamily::BoundedCurve
+            | SectionEntityIncidenceFamily::Line
+            | SectionEntityIncidenceFamily::Arc,
+            3,
+        ) => Some(SketchLocus::End(entity)),
+        (SectionEntityIncidenceFamily::Arc | SectionEntityIncidenceFamily::Circular, 4) => {
+            Some(SketchLocus::Center(entity))
+        }
+        (SectionEntityIncidenceFamily::Circular, 0) => Some(SketchLocus::Entity(entity)),
         _ => None,
     }
 }
@@ -9019,7 +9048,7 @@ fn section_skamp_is_line(
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
     if solver_only_section_entity_family(definition, item.entity_id)
-        == Some(SolverOnlySectionEntityFamily::Line)
+        == Some(SectionEntityIncidenceFamily::Line)
     {
         return true;
     }
@@ -9044,7 +9073,7 @@ fn section_skamp_is_point(
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
     solver_only_section_entity_family(definition, item.entity_id)
-        == Some(SolverOnlySectionEntityFamily::Point)
+        == Some(SectionEntityIncidenceFamily::Point)
         || unique_opaque_section_segment(definition, item.entity_id, 1).is_some()
         || unique_decoded_section_segment(definition, item.entity_id)
             .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point)
@@ -9150,9 +9179,20 @@ fn section_skamp_is_circular(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
-    if solver_only_section_entity_family(definition, item.entity_id)
-        == Some(SolverOnlySectionEntityFamily::Circular)
-    {
+    if solver_only_section_entities(definition).contains_key(&item.entity_id) {
+        return solver_only_section_entity_family(definition, item.entity_id).is_some_and(
+            |family| {
+                matches!(
+                    family,
+                    SectionEntityIncidenceFamily::Arc | SectionEntityIncidenceFamily::Circular
+                )
+            },
+        );
+    }
+    if matches!(
+        unique_section_incidence_curve_family(definition, item.entity_id),
+        Some(SectionEntityIncidenceFamily::Arc | SectionEntityIncidenceFamily::Circular)
+    ) {
         return true;
     }
     if unique_opaque_section_segment(definition, item.entity_id, 10).is_some() {
@@ -9573,9 +9613,12 @@ fn sketch_constraint_loci_compatible(
                     geometry,
                     SketchGeometry::Point { .. } | SketchGeometry::Circle { .. }
                 ) && !matches!(
-                    geometry,
-                    SketchGeometry::Native { native_kind }
-                        if !matches!(native_kind.as_str(), "line" | "arc" | "spline")
+                        geometry,
+                        SketchGeometry::Native { native_kind }
+                            if !matches!(
+                                native_kind.as_str(),
+                                "bounded_curve" | "line" | "arc" | "spline"
+                            )
                 )
             }
             SketchLocus::Center(_) => {
@@ -10167,9 +10210,11 @@ fn solver_only_section_entities(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum SolverOnlySectionEntityFamily {
+enum SectionEntityIncidenceFamily {
     Point,
+    BoundedCurve,
     Line,
+    Arc,
     Circular,
 }
 
@@ -10182,11 +10227,14 @@ fn section_skamp_has_proven_point_locus(
             || unique_decoded_section_segment(definition, item.entity_id)
                 .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point);
     }
-    let solver_family = solver_only_section_curve_family_evidence(definition, item.entity_id);
+    let solver_family = section_incidence_curve_family_evidence(definition, item.entity_id);
     if solver_family.len() == 1
-        && (solver_family.contains(&SolverOnlySectionEntityFamily::Line)
+        && ((solver_family.contains(&SectionEntityIncidenceFamily::BoundedCurve)
+            || solver_family.contains(&SectionEntityIncidenceFamily::Line)
+            || solver_family.contains(&SectionEntityIncidenceFamily::Arc))
             && matches!(item.sense, 2 | 3)
-            || solver_family.contains(&SolverOnlySectionEntityFamily::Circular)
+            || (solver_family.contains(&SectionEntityIncidenceFamily::Arc)
+                || solver_family.contains(&SectionEntityIncidenceFamily::Circular))
                 && matches!(item.sense, 2..=4))
     {
         return true;
@@ -10212,10 +10260,10 @@ fn section_skamp_has_proven_point_locus(
     )
 }
 
-fn solver_only_section_curve_family_evidence(
+fn section_incidence_curve_family_evidence(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
-) -> BTreeSet<SolverOnlySectionEntityFamily> {
+) -> BTreeSet<SectionEntityIncidenceFamily> {
     let mut evidence = BTreeSet::new();
     for skamp in definition
         .relations
@@ -10224,8 +10272,11 @@ fn solver_only_section_curve_family_evidence(
         .flat_map(|relations| &relations.skamps)
     {
         for item in &skamp.items {
+            if item.entity_id == entity_id && matches!(item.sense, 2 | 3) {
+                evidence.insert(SectionEntityIncidenceFamily::BoundedCurve);
+            }
             if item.entity_id == entity_id && item.sense == 4 {
-                evidence.insert(SolverOnlySectionEntityFamily::Circular);
+                evidence.insert(SectionEntityIncidenceFamily::Circular);
             }
         }
         match (skamp.kind, skamp.items.as_slice()) {
@@ -10234,29 +10285,52 @@ fn solver_only_section_curve_family_evidence(
                     && second.sense == 0
                     && (first.entity_id == entity_id || second.entity_id == entity_id) =>
             {
-                evidence.insert(SolverOnlySectionEntityFamily::Line);
+                evidence.insert(SectionEntityIncidenceFamily::Line);
             }
             (6, [first, second])
                 if first.sense == 0
                     && second.sense == 0
                     && (first.entity_id == entity_id || second.entity_id == entity_id) =>
             {
-                evidence.insert(SolverOnlySectionEntityFamily::Circular);
+                evidence.insert(SectionEntityIncidenceFamily::Circular);
             }
             _ => {}
         }
     }
+    normalize_section_incidence_curve_family_evidence(&mut evidence);
     evidence
+}
+
+fn unique_section_incidence_curve_family(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+) -> Option<SectionEntityIncidenceFamily> {
+    let mut evidence = section_incidence_curve_family_evidence(definition, entity_id).into_iter();
+    let family = evidence.next()?;
+    evidence.next().is_none().then_some(family)
+}
+
+fn normalize_section_incidence_curve_family_evidence(
+    evidence: &mut BTreeSet<SectionEntityIncidenceFamily>,
+) {
+    if evidence.contains(&SectionEntityIncidenceFamily::Line) {
+        evidence.remove(&SectionEntityIncidenceFamily::BoundedCurve);
+    } else if evidence.contains(&SectionEntityIncidenceFamily::Circular)
+        && evidence.remove(&SectionEntityIncidenceFamily::BoundedCurve)
+    {
+        evidence.remove(&SectionEntityIncidenceFamily::Circular);
+        evidence.insert(SectionEntityIncidenceFamily::Arc);
+    }
 }
 
 fn solver_only_section_entity_family(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
-) -> Option<SolverOnlySectionEntityFamily> {
+) -> Option<SectionEntityIncidenceFamily> {
     solver_only_section_entities(definition)
         .contains_key(&entity_id)
         .then_some(())?;
-    let mut evidence = solver_only_section_curve_family_evidence(definition, entity_id);
+    let mut evidence = section_incidence_curve_family_evidence(definition, entity_id);
     for skamp in definition
         .relations
         .iter()
@@ -10268,13 +10342,13 @@ fn solver_only_section_entity_family(
                 && first.sense == 0
                 && section_skamp_has_proven_point_locus(definition, second)
             {
-                evidence.insert(SolverOnlySectionEntityFamily::Point);
+                evidence.insert(SectionEntityIncidenceFamily::Point);
             }
             if second.entity_id == entity_id
                 && second.sense == 0
                 && section_skamp_has_proven_point_locus(definition, first)
             {
-                evidence.insert(SolverOnlySectionEntityFamily::Point);
+                evidence.insert(SectionEntityIncidenceFamily::Point);
             }
         }
     }
@@ -10552,6 +10626,18 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                         }
                         .to_string(),
                     })
+            } else if unique_external_id {
+                let native_kind =
+                    match unique_section_incidence_curve_family(definition, segment.external_id) {
+                        Some(SectionEntityIncidenceFamily::BoundedCurve) => {
+                            "bounded_curve".to_string()
+                        }
+                        Some(SectionEntityIncidenceFamily::Line) => "line".to_string(),
+                        Some(SectionEntityIncidenceFamily::Arc) => "arc".to_string(),
+                        Some(SectionEntityIncidenceFamily::Circular) => "circle".to_string(),
+                        _ => format!("segment_type:{}", segment.kind),
+                    };
+                SketchGeometry::Native { native_kind }
             } else {
                 SketchGeometry::Native {
                     native_kind: format!("segment_type:{}", segment.kind),
@@ -10951,9 +11037,11 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 endpoint_refs: Vec::new(),
                 geometry: SketchGeometry::Native {
                     native_kind: match solver_only_section_entity_family(definition, external_id) {
-                        Some(SolverOnlySectionEntityFamily::Point) => "point",
-                        Some(SolverOnlySectionEntityFamily::Line) => "line",
-                        Some(SolverOnlySectionEntityFamily::Circular) => "circle",
+                        Some(SectionEntityIncidenceFamily::Point) => "point",
+                        Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
+                        Some(SectionEntityIncidenceFamily::Line) => "line",
+                        Some(SectionEntityIncidenceFamily::Arc) => "arc",
+                        Some(SectionEntityIncidenceFamily::Circular) => "circle",
                         None => "solver_only_section_entity",
                     }
                     .to_string(),

@@ -60,8 +60,9 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   external dimension identifier occupy distinct namespaces.
 - The semantics of the multi-valued `relat_ptr` `used` field are unspecified.
   It is solver state, not a Boolean constraint-activation flag.
-- The geometry families and external-reference bindings of solver-only
-  `skamp_ptr` entity identifiers are unspecified.
+- Geometry families beyond the incidence-proven point, endpoint-bearing curve,
+  line, arc, and circular roles, and the external-reference bindings of
+  solver-only `skamp_ptr` entity identifiers, are unspecified.
 - The owner and namespace joins that expose model, feature, component, and
   scoped dimension items beyond decoded local `d<external_id>` identities to
   curve-expression `exists()` queries are unspecified.

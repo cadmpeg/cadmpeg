@@ -1122,6 +1122,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
 #[test]
 fn native_curve_families_accept_only_their_defined_loci() {
     let point = SketchEntityId("point".to_string());
+    let bounded = SketchEntityId("bounded".to_string());
     let line = SketchEntityId("line".to_string());
     let circle = SketchEntityId("circle".to_string());
     let geometry = BTreeMap::from([
@@ -1129,6 +1130,12 @@ fn native_curve_families_accept_only_their_defined_loci() {
             point.clone(),
             SketchGeometry::Native {
                 native_kind: "point".to_string(),
+            },
+        ),
+        (
+            bounded.clone(),
+            SketchGeometry::Native {
+                native_kind: "bounded_curve".to_string(),
             },
         ),
         (
@@ -1147,6 +1154,7 @@ fn native_curve_families_accept_only_their_defined_loci() {
     let compatible = SketchConstraintDefinition::CoincidentLoci {
         loci: vec![
             SketchLocus::Entity(point),
+            SketchLocus::Start(bounded),
             SketchLocus::Center(circle.clone()),
         ],
     };
@@ -1155,6 +1163,30 @@ fn native_curve_families_accept_only_their_defined_loci() {
         loci: vec![SketchLocus::Start(line), SketchLocus::Start(circle)],
     };
     assert!(!sketch_constraint_loci_compatible(&incompatible, &geometry));
+}
+
+#[test]
+fn incidence_family_lattice_narrows_endpoint_evidence() {
+    let mut line = BTreeSet::from([
+        SectionEntityIncidenceFamily::BoundedCurve,
+        SectionEntityIncidenceFamily::Line,
+    ]);
+    normalize_section_incidence_curve_family_evidence(&mut line);
+    assert_eq!(line, BTreeSet::from([SectionEntityIncidenceFamily::Line]));
+
+    let mut arc = BTreeSet::from([
+        SectionEntityIncidenceFamily::BoundedCurve,
+        SectionEntityIncidenceFamily::Circular,
+    ]);
+    normalize_section_incidence_curve_family_evidence(&mut arc);
+    assert_eq!(arc, BTreeSet::from([SectionEntityIncidenceFamily::Arc]));
+
+    let mut conflicting = BTreeSet::from([
+        SectionEntityIncidenceFamily::Line,
+        SectionEntityIncidenceFamily::Circular,
+    ]);
+    normalize_section_incidence_curve_family_evidence(&mut conflicting);
+    assert_eq!(conflicting.len(), 2);
 }
 
 #[test]
@@ -3183,6 +3215,28 @@ fn saved_line_joins_through_order_table() {
         items: vec![
             crate::feature::FeatureSkampItem {
                 entity_id: 99,
+                sense: 2,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 100,
+                sense: 3,
+            },
+        ],
+        offset: 32,
+    }];
+    assert_eq!(
+        solver_only_section_entity_family(&solver_families, 99),
+        Some(SectionEntityIncidenceFamily::BoundedCurve)
+    );
+    let family_relations = solver_families.relations.as_mut().expect("relations");
+    family_relations.skamps = vec![crate::feature::FeatureSkamp {
+        id: 6,
+        kind: 0,
+        flags: 0,
+        status: 1,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 99,
                 sense: 0,
             },
             crate::feature::FeatureSkampItem {
@@ -3194,7 +3248,7 @@ fn saved_line_joins_through_order_table() {
     }];
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
-        Some(SolverOnlySectionEntityFamily::Point)
+        Some(SectionEntityIncidenceFamily::Point)
     );
     let solver_geometry = BTreeMap::from([
         (
@@ -3273,7 +3327,7 @@ fn saved_line_joins_through_order_table() {
         .declared_count = 1;
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
-        Some(SolverOnlySectionEntityFamily::Circular)
+        Some(SectionEntityIncidenceFamily::Circular)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
     family_relations.skamps.push(crate::feature::FeatureSkamp {
