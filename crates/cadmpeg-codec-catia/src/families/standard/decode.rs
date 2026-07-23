@@ -2987,7 +2987,7 @@ pub(crate) fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool
     residual <= TOLERANCE
 }
 
-pub(crate) fn standard_spline_plane_line(
+pub(crate) fn standard_spline_line(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
@@ -3002,24 +3002,6 @@ pub(crate) fn standard_spline_plane_line(
     let [Some(left), Some(right)] = surfaces else {
         return None;
     };
-    let (
-        SurfaceGeometry::Plane {
-            normal: left_normal,
-            ..
-        },
-        SurfaceGeometry::Plane {
-            normal: right_normal,
-            ..
-        },
-    ) = (&left.geometry, &right.geometry)
-    else {
-        return None;
-    };
-    let intersection = (*left_normal).cross(*right_normal);
-    let intersection_norm = intersection.norm();
-    if !intersection_norm.is_finite() || intersection_norm <= f64::EPSILON {
-        return None;
-    }
     let start = ir.model.points.get(points[0])?.position;
     let end = ir.model.points.get(points[1])?.position;
     if !point_on_surface(start, &left.geometry)
@@ -3034,8 +3016,52 @@ pub(crate) fn standard_spline_plane_line(
     if !length.is_finite() || length <= f64::EPSILON {
         return None;
     }
-    let intersection = intersection.scale(1.0 / intersection_norm);
-    if direction.cross(intersection).norm() > TOLERANCE {
+    let follows_carrier_line = match (&left.geometry, &right.geometry) {
+        (
+            SurfaceGeometry::Plane {
+                normal: left_normal,
+                ..
+            },
+            SurfaceGeometry::Plane {
+                normal: right_normal,
+                ..
+            },
+        ) => {
+            let intersection = (*left_normal).cross(*right_normal);
+            let norm = intersection.norm();
+            norm.is_finite()
+                && norm > f64::EPSILON
+                && direction.cross(intersection.scale(1.0 / norm)).norm() <= TOLERANCE
+        }
+        (SurfaceGeometry::Cylinder { axis, .. }, SurfaceGeometry::Cylinder { .. })
+            if support.faces[0] == support.faces[1] =>
+        {
+            direction.cross(*axis).norm() <= TOLERANCE
+        }
+        (
+            SurfaceGeometry::Cone {
+                origin,
+                axis,
+                radius,
+                half_angle,
+                ..
+            },
+            SurfaceGeometry::Cone { .. },
+        ) if support.faces[0] == support.faces[1] => {
+            let tangent = half_angle.tan();
+            if !tangent.is_finite() || tangent.abs() <= f64::EPSILON {
+                false
+            } else {
+                let apex = (*origin).translated(*axis, -radius / tangent);
+                apex.vector_from(start)
+                    .cross(direction.scale(1.0 / length))
+                    .norm()
+                    <= TOLERANCE
+            }
+        }
+        _ => false,
+    };
+    if !follows_carrier_line {
         return None;
     }
     Some((
@@ -3135,7 +3161,7 @@ pub(crate) fn build_standard_edge_curve(
             )
         }
         crate::families::standard::records::StandardCurveGeometry::Bspline => {
-            match standard_spline_plane_line(ir, bindings, surface_indices, support, points) {
+            match standard_spline_line(ir, bindings, surface_indices, support, points) {
                 Some((geometry, range)) => (geometry, Some(range)),
                 None => (
                     CurveGeometry::Unknown {
@@ -3619,8 +3645,8 @@ mod route_tests {
         point_on_known_surface, point_on_standard_face, resolve_standard_endpoint_pairs,
         standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
         standard_plane_normal_from_adjacent_circle_carriers,
-        standard_plane_normal_from_circle_centers, standard_successor_endpoint_pairs,
-        unique_native_identity_points,
+        standard_plane_normal_from_circle_centers, standard_spline_line,
+        standard_successor_endpoint_pairs, unique_native_identity_points,
     };
 
     use crate::families::standard::records::{
@@ -3798,6 +3824,76 @@ mod route_tests {
                 && context.sides[1].surface.as_ref().is_some_and(|id| id.0 == "surface-1")
                 && context.parameter_range == [0.0, 3.0]
         ));
+    }
+
+    #[test]
+    fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
+        let support = StandardCurveSupport {
+            pos: 12,
+            tag: 7,
+            faces: [0, 0],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let solve = |geometry, points: [Point3; 2]| {
+            let mut ir = CadIr::empty(Units::default());
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId("surface".to_string()),
+                geometry,
+                source_object: None,
+            });
+            ir.model.points.extend(
+                points
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, position)| Point {
+                        id: PointId(format!("point-{index}")),
+                        position,
+                        source_object: None,
+                    }),
+            );
+            standard_spline_line(
+                &ir,
+                &[(SurfaceId("surface".to_string()), false, 0)],
+                &HashMap::from([(SurfaceId("surface".to_string()), 0)]),
+                &support,
+                [0, 1],
+            )
+        };
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        assert!(solve(
+            cylinder.clone(),
+            [Point3::new(2.0, 0.0, -3.0), Point3::new(2.0, 0.0, 4.0)]
+        )
+        .is_some());
+        assert!(solve(
+            cylinder,
+            [Point3::new(2.0, 0.0, 0.0), Point3::new(0.0, 2.0, 0.0)]
+        )
+        .is_none());
+
+        let cone = SurfaceGeometry::Cone {
+            origin: Point3::new(2.0, 0.0, 2.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+            ratio: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        assert!(solve(
+            cone.clone(),
+            [Point3::new(3.0, 0.0, 1.0), Point3::new(5.0, 0.0, 3.0)]
+        )
+        .is_some());
+        assert!(solve(
+            cone,
+            [Point3::new(3.0, 0.0, 1.0), Point3::new(2.0, 2.0, 2.0)]
+        )
+        .is_none());
     }
 
     #[test]

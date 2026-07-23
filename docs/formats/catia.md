@@ -319,7 +319,7 @@ A generated standard line carrier begins at its stored start vertex, has unit di
 
 A derived face pcurve exists only when both physical edge endpoints lie on that face's carrier. Analytic inverse parameterization does not project an off-carrier endpoint into UV space. At a cone apex the angular parameter is singular; a generator ending at the apex uses the other endpoint's angular coordinate and the apex's axial coordinate. A trim-mesh endpoint allocation that is topologically valid but fails this carrier-incidence invariant retains its coedge without a pcurve.
 
-A standard spline edge is the exact intersection construction of its two adjacent face carriers. The neutral construction uses the ordered adjacent-face pair and an endpoint-normalized `[0,1]` interval. The serialized spline cache remains attached as an opaque carrier until its pole and knot program resolves; it does not replace the two-surface construction.
+A standard spline edge with two distinct adjacent face carriers is their exact intersection construction. The neutral construction uses the ordered adjacent-face pair and an endpoint-normalized `[0,1]` interval. A same-face spline row is an exact line when its two endpoints lie on the carrier and their segment is a cylinder generator parallel to the axis or a cone generator passing through the apex; the line uses distance parameterization over the endpoint interval. The serialized spline cache remains attached as an opaque carrier until its pole and knot program resolves; it does not replace an exact construction.
 
 | Surface  | kind   | prebyte | length | sign byte |
 | -------- | ------ | ------- | -----: | --------- |
