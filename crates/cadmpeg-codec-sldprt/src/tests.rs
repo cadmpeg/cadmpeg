@@ -21060,6 +21060,108 @@ fn source_less_cube_reaches_encode_decode_fixpoint() {
     );
 }
 
+/// Truth table for the write-plan gate adopted in `write_container`: the
+/// `record × integrity × hash` cross product over the retained source image.
+///
+/// `plan_write` resolves `Replay` only when the source-image record is present,
+/// its bytes pass `verify_retained_bytes`, and the recorded baseline equals the
+/// current semantic hash. A differing baseline over an intact record is `Patch`
+/// (a records-fed semantic write); every other cell — a missing record, a corrupt
+/// record, or an absent baseline — is `Generate`, a source-less regeneration. The
+/// three cells `(corrupt, match)`, `(corrupt, differ)`, and `(absent, match)`
+/// replace the pre-gate `Malformed`/`NotImplemented` write refusals; delta (a) of
+/// the `write_plan` module docs is `(corrupt, differ)`, where the pre-gate writer
+/// fed the corrupt image into the semantic writer instead of regenerating.
+#[test]
+fn write_plan_gate_truth_table() {
+    enum Integrity {
+        Intact,
+        Corrupt,
+        Absent,
+    }
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let real_baseline = decoded
+        .ir
+        .source
+        .as_ref()
+        .unwrap()
+        .attributes
+        .get("semantic_sha256")
+        .cloned()
+        .expect("decode records a semantic baseline");
+    let bogus_baseline = "0".repeat(64);
+    assert_ne!(real_baseline, bogus_baseline);
+
+    // Replay reference: the retained source image, written back verbatim.
+    let source_image = decoded
+        .source_fidelity
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .and_then(|record| record.data.clone())
+        .expect("intact sidecar retains the source image");
+
+    // Set the recorded baseline, optionally corrupt or drop the retained source
+    // image, then write and return the produced bytes.
+    let write = |baseline: &str, integrity: Integrity| -> Vec<u8> {
+        let mut ir = decoded.ir.clone();
+        ir.source
+            .as_mut()
+            .unwrap()
+            .attributes
+            .insert("semantic_sha256".into(), baseline.to_string());
+        let mut sidecar = decoded.source_fidelity.clone();
+        match integrity {
+            Integrity::Intact => {}
+            Integrity::Corrupt => {
+                // Flip a byte without updating `sha256`: fails verify_retained_bytes.
+                sidecar
+                    .retained_records
+                    .iter_mut()
+                    .find(|record| record.id == crate::SOURCE_IMAGE_ID)
+                    .and_then(|record| record.data.as_mut())
+                    .expect("intact sidecar retains the source image")[0] ^= 0xff;
+            }
+            Integrity::Absent => sidecar
+                .retained_records
+                .retain(|record| record.id != crate::SOURCE_IMAGE_ID),
+        }
+        let mut out = Vec::new();
+        SldprtCodec
+            .write_preserved_with_source_fidelity(&ir, &sidecar, &mut out)
+            .expect("write-plan gate never refuses");
+        out
+    };
+
+    // present, intact, match → Replay: the source image, verbatim.
+    assert_eq!(write(&real_baseline, Integrity::Intact), source_image);
+
+    // present, intact, differ → Patch: a records-fed semantic write, neither the
+    // verbatim image nor the source-less regeneration.
+    let patch = write(&bogus_baseline, Integrity::Intact);
+    assert_ne!(patch, source_image, "patch is not a verbatim replay");
+
+    // Generate reference: no sidecar image reaches the writer.
+    let generate = write(&bogus_baseline, Integrity::Absent);
+    assert_ne!(
+        patch, generate,
+        "patch retains source structure a regenerate drops"
+    );
+
+    // Every remaining cell is Generate, byte-identical to the source-less
+    // regeneration. Three replace pre-gate write refusals.
+    // present, corrupt, match  (was Malformed: failed integrity validation)
+    assert_eq!(write(&real_baseline, Integrity::Corrupt), generate);
+    // present, corrupt, differ (was a corrupt-image semantic write — delta (a))
+    assert_eq!(write(&bogus_baseline, Integrity::Corrupt), generate);
+    // absent, match            (was NotImplemented: no retained source image)
+    assert_eq!(write(&real_baseline, Integrity::Absent), generate);
+}
+
 /// Golden-snapshot harness pinning the SLDPRT codec before the deep-module
 /// refactor. Each fixture is a full `.sldprt` image committed under
 /// `tests/golden/fixtures/`. From the committed bytes the harness freezes the
@@ -21295,15 +21397,21 @@ mod golden {
             .map_err(|err| err.to_string())
     }
 
-    /// Semantic branch: an intact sidecar drives a record-based semantic write.
-    /// Removing the `semantic_sha256` attribute forces the writer past the verbatim
-    /// replay gate into `write_semantic_with_records` while keeping the retained
-    /// source-image record and `brep_semantic_sha256`, so the native partition is
-    /// re-emitted inside a regenerated container.
+    /// Patch branch: an intact sidecar with a baseline that differs from the
+    /// current semantic hash drives a record-based semantic write. Overwriting the
+    /// `semantic_sha256` attribute with a non-matching digest is the write-plan
+    /// gate's `Patch` trigger — a document edited in supported ways — so the
+    /// writer takes `write_semantic_with_records` while keeping the retained
+    /// source-image record and `brep_semantic_sha256`, re-emitting the native
+    /// partition inside a regenerated container. The geometry is untouched and the
+    /// writer ignores `semantic_sha256`, so these bytes match the pre-gate
+    /// semantic golden exactly.
     fn semantic_outcome(decoded: &DecodeResult) -> Result<Vec<u8>, String> {
         let mut ir = decoded.ir.clone();
         if let Some(source) = ir.source.as_mut() {
-            source.attributes.remove("semantic_sha256");
+            source
+                .attributes
+                .insert("semantic_sha256".into(), "0".repeat(64));
         }
         let mut out = Vec::new();
         SldprtCodec

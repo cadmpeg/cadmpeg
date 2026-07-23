@@ -292,7 +292,7 @@ fn sort_arenas(ir: &mut CadIr) {
 fn source_image(records: &[UnknownRecord]) -> Option<Vec<u8>> {
     records
         .iter()
-        .find(|record| record.id.0 == "sldprt:file:source-image#0")?
+        .find(|record| record.id.0 == crate::SOURCE_IMAGE_ID)?
         .data
         .clone()
 }

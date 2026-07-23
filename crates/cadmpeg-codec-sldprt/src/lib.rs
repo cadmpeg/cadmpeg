@@ -95,10 +95,15 @@ use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeR
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::source_fidelity::write_plan::{plan_write, WritePlan};
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::wire::hash::sha256_hex;
 use cadmpeg_ir::{Annotations, Finding, SourceFidelity};
 use std::io::Write;
+
+/// Identifier of the retained whole-file `.sldprt` source image in a
+/// [`SourceFidelity`] sidecar. This is the record the write-plan gate keys on to
+/// replay or patch, and the record `decode` produces for the outer container.
+pub(crate) const SOURCE_IMAGE_ID: &str = "sldprt:file:source-image#0";
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
 #[derive(Debug, Default, Clone, Copy)]
@@ -109,6 +114,22 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     resolved_features::validate_native(ir)
 }
 
+/// How the writer produced the output container, recorded for the export note.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WriteOutcome {
+    /// The retained source image was written back byte for byte.
+    Replay,
+    /// Retained records were patched into a regenerated container.
+    Patch,
+    /// The container was regenerated from the neutral model. `degraded` marks a
+    /// regeneration that fell back from an intended replay or patch because the
+    /// retained source image was unusable.
+    Generate {
+        /// Whether a retained source image was present but could not be used.
+        degraded: bool,
+    },
+}
+
 impl SldprtCodec {
     /// Write a decoded document with its retained source-fidelity sidecar.
     pub fn write_preserved_with_source_fidelity(
@@ -117,41 +138,88 @@ impl SldprtCodec {
         source_fidelity: &SourceFidelity,
         writer: &mut dyn Write,
     ) -> Result<(), CodecError> {
-        let records = source_records(ir, source_fidelity)?;
-        Self::write_preserved_with_annotations(ir, &source_fidelity.annotations, &records, writer)
-    }
-
-    fn write_preserved_with_annotations(
-        ir: &CadIr,
-        annotations: &Annotations,
-        records: &[UnknownRecord],
-        writer: &mut dyn Write,
-    ) -> Result<(), CodecError> {
-        let expected = ir
-            .source
-            .as_ref()
-            .and_then(|source| source.attributes.get("semantic_sha256"));
-        if expected.is_none_or(|expected| decode::semantic_hash(ir) != *expected) {
-            return writer::write_semantic_with_records(ir, annotations, records, writer);
-        }
-        let record = records
-            .iter()
-            .find(|record| record.id.0 == "sldprt:file:source-image#0")
-            .ok_or_else(|| {
-                CodecError::NotImplemented("IR has no retained SLDPRT source image".into())
-            })?;
-        let data = record.data.as_ref().ok_or_else(|| {
-            CodecError::Malformed("retained SLDPRT source image has no bytes".into())
-        })?;
-        let hash = sha256_hex(data);
-        if data.len() as u64 != record.byte_len || hash != record.sha256 {
-            return Err(CodecError::Malformed(
-                "retained SLDPRT source image failed integrity validation".into(),
-            ));
-        }
-        writer.write_all(data)?;
+        write_container(ir, Some(source_fidelity), writer)?;
         Ok(())
     }
+}
+
+/// Choose replay, patch, or generate for `ir` through the shared write-plan
+/// gate, then emit the corresponding container.
+///
+/// The gate is [`cadmpeg_ir::source_fidelity::write_plan::plan_write`]:
+/// [`WritePlan::Replay`] writes the verified source image verbatim,
+/// [`WritePlan::Patch`] feeds the retained records to the semantic writer, and
+/// [`WritePlan::Generate`] regenerates the container from the model alone. A
+/// missing sidecar, missing or corrupt source-image record, or absent baseline
+/// all resolve to [`WritePlan::Generate`]; when a source-image record was
+/// nonetheless present the outcome is marked degraded for the export note.
+fn write_container(
+    ir: &CadIr,
+    sidecar: Option<&SourceFidelity>,
+    writer: &mut dyn Write,
+) -> Result<WriteOutcome, CodecError> {
+    let default_annotations = Annotations::default();
+    let annotations = sidecar.map_or(&default_annotations, |fidelity| &fidelity.annotations);
+    // Built eagerly for the patch branch; the build also preserves the
+    // pre-write error surface of `native_unknown_records` on every branch.
+    let records = match sidecar {
+        Some(fidelity) => source_records(ir, fidelity)?,
+        None => Vec::new(),
+    };
+    let baseline = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("semantic_sha256"))
+        .map(String::as_str);
+    let current = decode::semantic_hash(ir);
+    match plan_write(sidecar, SOURCE_IMAGE_ID, baseline, &current) {
+        WritePlan::Replay(image) => {
+            writer.write_all(image)?;
+            Ok(WriteOutcome::Replay)
+        }
+        WritePlan::Patch(_) => {
+            writer::write_semantic_with_records(ir, annotations, &records, writer)?;
+            Ok(WriteOutcome::Patch)
+        }
+        WritePlan::Generate => {
+            let degraded =
+                sidecar.is_some_and(|fidelity| fidelity.retained_record(SOURCE_IMAGE_ID).is_some());
+            writer::write_semantic_with_records(ir, annotations, &[], writer)?;
+            Ok(WriteOutcome::Generate { degraded })
+        }
+    }
+}
+
+/// Emit the container and build the export report describing the branch taken.
+fn encode_container(
+    ir: &CadIr,
+    sidecar: Option<&SourceFidelity>,
+    writer: &mut dyn Write,
+) -> Result<ExportReport, CodecError> {
+    let outcome = write_container(ir, sidecar, writer)?;
+    let validation = cadmpeg_ir::validate(ir, Vec::new());
+    let total_entities = validation.entity_counts.values().sum();
+    let mut notes = vec![
+        match outcome {
+            WriteOutcome::Replay => "preserved source container replayed verbatim",
+            WriteOutcome::Patch => "retained source records patched into the container",
+            WriteOutcome::Generate { .. } => "source container regenerated from IR",
+        }
+        .into(),
+        "entity counts are derived from the IR".into(),
+    ];
+    if matches!(outcome, WriteOutcome::Generate { degraded: true }) {
+        notes.push(
+            "retained source image was unusable for replay or patch; regenerated from IR".into(),
+        );
+    }
+    Ok(ExportReport {
+        format: "sldprt".into(),
+        entity_counts: validation.entity_counts,
+        total_entities,
+        losses: Vec::new(),
+        notes,
+    })
 }
 
 impl Codec for SldprtCodec {
@@ -195,7 +263,7 @@ impl Encoder for SldprtCodec {
     }
 
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        Self::encode_with_annotations(ir, &Annotations::default(), &[], writer)
+        encode_container(ir, None, writer)
     }
 
     fn encode_with_source_fidelity(
@@ -204,50 +272,7 @@ impl Encoder for SldprtCodec {
         source_fidelity: Option<&SourceFidelity>,
         writer: &mut dyn Write,
     ) -> Result<ExportReport, CodecError> {
-        match source_fidelity {
-            Some(value) => Self::encode_with_fidelity(ir, value, writer),
-            None => Self::encode_with_annotations(ir, &Annotations::default(), &[], writer),
-        }
-    }
-}
-
-impl SldprtCodec {
-    fn encode_with_fidelity(
-        ir: &CadIr,
-        source_fidelity: &SourceFidelity,
-        writer: &mut dyn Write,
-    ) -> Result<ExportReport, CodecError> {
-        let records = source_records(ir, source_fidelity)?;
-        Self::encode_with_annotations(ir, &source_fidelity.annotations, &records, writer)
-    }
-
-    fn encode_with_annotations(
-        ir: &CadIr,
-        annotations: &Annotations,
-        records: &[UnknownRecord],
-        writer: &mut dyn Write,
-    ) -> Result<ExportReport, CodecError> {
-        let replay = records
-            .iter()
-            .any(|record| record.id.0 == "sldprt:file:source-image#0");
-        Self::write_preserved_with_annotations(ir, annotations, records, writer)?;
-        let validation = cadmpeg_ir::validate(ir, Vec::new());
-        let total_entities = validation.entity_counts.values().sum();
-        Ok(ExportReport {
-            format: "sldprt".into(),
-            entity_counts: validation.entity_counts,
-            total_entities,
-            losses: Vec::new(),
-            notes: vec![
-                if replay {
-                    "preserved source container replayed verbatim"
-                } else {
-                    "source container regenerated from IR"
-                }
-                .into(),
-                "entity counts are derived from the IR".into(),
-            ],
-        })
+        encode_container(ir, source_fidelity, writer)
     }
 }
 
@@ -256,7 +281,7 @@ fn source_records(
     source_fidelity: &SourceFidelity,
 ) -> Result<Vec<UnknownRecord>, CodecError> {
     let mut records = source_fidelity.native_unknown_records(ir, "sldprt")?;
-    if let Some(source) = source_fidelity.retained_record("sldprt:file:source-image#0") {
+    if let Some(source) = source_fidelity.retained_record(SOURCE_IMAGE_ID) {
         records.push(UnknownRecord {
             id: source.id.clone().into(),
             offset: source.offset,

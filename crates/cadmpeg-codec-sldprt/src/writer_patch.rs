@@ -39,7 +39,7 @@ fn patch_partition_inner(
     }
     let source = retained_records
         .iter()
-        .find(|record| record.id.0 == "sldprt:file:source-image#0")?
+        .find(|record| record.id.0 == crate::SOURCE_IMAGE_ID)?
         .data
         .clone()?;
     let scan = crate::container::scan_bytes(&source);

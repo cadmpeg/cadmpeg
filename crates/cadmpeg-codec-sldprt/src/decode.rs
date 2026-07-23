@@ -132,7 +132,7 @@ fn decode_result(
     };
     let source_image = unknowns
         .iter()
-        .position(|record| record.id.0 == "sldprt:file:source-image#0")
+        .position(|record| record.id.0 == crate::SOURCE_IMAGE_ID)
         .map(|index| unknowns.remove(index));
     source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", &unknowns)?;
     if let Some(source_image) = source_image {
@@ -2676,7 +2676,7 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
         .native_unknowns("sldprt")
         .unwrap_or_default()
         .into_iter()
-        .filter(|record| record.id.0 != "sldprt:file:source-image#0")
+        .filter(|record| record.id.0 != crate::SOURCE_IMAGE_ID)
         .collect::<Vec<_>>();
     normalized
         .set_native_unknowns("sldprt", &unknowns)
@@ -2696,14 +2696,14 @@ fn preserve_source_image(
 ) {
     crate::annotations::note(
         annotations,
-        "sldprt:file:source-image#0",
+        crate::SOURCE_IMAGE_ID,
         "source",
         0,
         "source_image",
         Exactness::ByteExact,
     );
     unknowns.push(UnknownRecord {
-        id: UnknownId("sldprt:file:source-image#0".into()),
+        id: UnknownId(crate::SOURCE_IMAGE_ID.into()),
         offset: 0,
         byte_len: scan.source_image.len() as u64,
         sha256: sha256_hex(&scan.source_image),
