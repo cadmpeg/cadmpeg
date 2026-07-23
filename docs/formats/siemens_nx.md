@@ -139,17 +139,6 @@ one parameter-use relation. Binding identities and source offsets remain in
 ascending source-offset order. Multiple input slots may witness the same use;
 they do not create multiple operation-expression relations.
 
-An offset-only store control block can contain a zero-prefixed word array in
-which each word is `00, value:u24 LE`. Its class-selection lane is the unique
-nonempty prefix whose values are distinct and whose maximum is smaller than
-the minimum value in the remaining metadata lane. The prefix values are exact
-class-registry identities. Registries in the same stream form one identity
-space by concatenating their declarations in physical section order and
-declaration order. A retained class declaration resolves an identity at the
-same zero-based position in that concatenation; an out-of-range identity
-remains typed but unresolved. No unique split rejects the class-selection lane
-atomically.
-
 The fixed marker begins an operation record. A record extends through the byte
 before the next validated operation marker; the final record extends through
 the feature-history record-area boundary.
@@ -811,7 +800,7 @@ A feature input has a column target when exactly one linked or target-index row 
 
 An offset-store object frame is `object_id:compact_index, 00 72 01 c0 20 02 01 c0 45 04 00 80 86 02 01 02 80 a4`. The compact index is non-null and uses the same direct and extended forms. Its value is a persistent object ID. The frame and discriminator lie within one bounded data block; non-overlapping frame order, exact compact-index token, and compact-index byte offset are retained.
 
-A zero-prefixed offset-store control block begins with an ordered class-selection lane. Each word is `00, class_ordinal:u24 LE`; every ordinal indexes the store-local class registry and occurs once. The lane ends at the first out-of-range word, and every remaining control word is out of range. An empty lane, duplicate ordinal, or later in-range word rejects the class-selection lane atomically. Each retained ordinal resolves to its exact registered class definition and name.
+A zero-prefixed offset-store control block begins with an ordered class-selection lane. Each word is `00, class_identity:u24 LE`. The lane is the unique nonempty prefix whose identities are distinct and whose maximum is smaller than the minimum value in the remaining metadata lane. Registries in the same stream form one identity space by concatenating their declarations in physical section order and declaration order. Each identity resolves to the declaration at the same zero-based position in that concatenation; an out-of-range identity remains typed but unresolved. No unique split rejects the class-selection lane atomically.
 
 A printable OM string value is framed as `66 32 03, declared_len:u8, text[declared_len-2], 00`. The text is non-empty printable ASCII. The marker, declared length, text, and null terminator lie within one externally bounded record.
 
