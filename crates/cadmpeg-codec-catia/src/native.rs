@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 101;
+pub const CATIA_NATIVE_VERSION: u32 = 102;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -1026,7 +1026,8 @@ fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
         && u64::from(record.value_len) == value_len
         && record.byte_len == total_len
         && record.value_fields == value_block::tokenize(&record.value_payload)
-        && record.value_packets == entity_table::value_packets(&record.value_fields)
+        && record.value_packets
+            == entity_table::value_packets(&record.value_payload, &record.value_fields)
         && record.numeric_tuple == entity_table::parse_numeric_tuple(&record.value_payload)
         && record.reference_signature
             == entity_table::parse_reference_signature(&record.value_payload)
@@ -1055,6 +1056,7 @@ fn definition_schema_selections(
 fn entity_value_schema_selections(
     fields: &[value_block::ValueField],
     catalog: Option<&CatiaCatalog>,
+    packets: &[entity_table::EntityValuePacket],
 ) -> Vec<CatiaEntityValueSchemaSelection> {
     let Some(catalog) = catalog else {
         return Vec::new();
@@ -1087,16 +1089,46 @@ fn entity_value_schema_selections(
                 .get(rank + 1)
                 .copied()
                 .unwrap_or(fields.len());
+            let value_start_offset = fields.get(index + 1).map_or(usize::MAX, value_field_offset);
+            let value_end_offset = fields.get(value_end).map_or(usize::MAX, value_field_offset);
             Some(CatiaEntityValueSchemaSelection {
                 offset: *offset as u64,
                 ordinal: *ordinal,
                 entry: catalog_entry.id.clone(),
                 name: catalog_entry.value.clone(),
                 encoded_value: fields[index + 1..value_end].to_vec(),
-                packets: entity_table::value_packets(&fields[index + 1..value_end]),
+                packets: packets
+                    .iter()
+                    .filter(|packet| {
+                        let offset = entity_value_packet_offset(packet);
+                        offset >= value_start_offset && offset < value_end_offset
+                    })
+                    .cloned()
+                    .collect(),
             })
         })
         .collect()
+}
+
+fn value_field_offset(field: &value_block::ValueField) -> usize {
+    match field {
+        value_block::ValueField::SchemaSelector { offset, .. }
+        | value_block::ValueField::Binary64 { offset, .. }
+        | value_block::ValueField::Marker { offset, .. }
+        | value_block::ValueField::Opcode { offset, .. }
+        | value_block::ValueField::Separator { offset }
+        | value_block::ValueField::Inline { offset, .. }
+        | value_block::ValueField::Atom { offset, .. }
+        | value_block::ValueField::Terminator { offset }
+        | value_block::ValueField::Literal { offset, .. } => *offset,
+    }
+}
+
+fn entity_value_packet_offset(packet: &entity_table::EntityValuePacket) -> usize {
+    match packet {
+        entity_table::EntityValuePacket::Compact { offset, .. }
+        | entity_table::EntityValuePacket::Layout { offset, .. } => *offset,
+    }
 }
 
 fn repeated_reference_schema_selection(
@@ -2240,8 +2272,11 @@ impl CatiaNative {
                     &entity_table::parse_definition_schema_selectors(&entity.definition_prefix),
                     catalog,
                 );
-                entity.value_schema_selections =
-                    entity_value_schema_selections(&entity.value_fields, catalog);
+                entity.value_schema_selections = entity_value_schema_selections(
+                    &entity.value_fields,
+                    catalog,
+                    &entity.value_packets,
+                );
             }
         }
         alias_rows.retain(|row| {
@@ -2465,7 +2500,11 @@ impl CatiaNative {
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.value_schema_selections
-                            != entity_value_schema_selections(&entity.value_fields, catalog)
+                            != entity_value_schema_selections(
+                                &entity.value_fields,
+                                catalog,
+                                &entity.value_packets,
+                            )
                     })
                     || graph_entities.windows(2).any(|pair| {
                         pair[0].byte_offset.checked_add(pair[0].byte_len)
@@ -3010,7 +3049,7 @@ fn native_object_graph(
         .filter_map(|(ordinal, entity)| {
             let object_record = records.get(ordinal)?;
             let value_fields = value_block::tokenize(&entity.value_payload);
-            let value_packets = entity_table::value_packets(&value_fields);
+            let value_packets = entity_table::value_packets(&entity.value_payload, &value_fields);
             Some(CatiaEntityRecord {
                 id: format!("catia:outer:entity-record#{:010}", entity.pos),
                 object_graph: id.clone(),
