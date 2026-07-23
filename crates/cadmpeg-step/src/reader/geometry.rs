@@ -17,6 +17,20 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Point;
 
 use crate::parse::{Exchange, RawRecord, Value};
+use crate::vocab::{
+    AXIS1_PLACEMENT, AXIS2_PLACEMENT_3D, B_SPLINE_CURVE, B_SPLINE_CURVE_WITH_KNOTS,
+    B_SPLINE_SURFACE, B_SPLINE_SURFACE_WITH_KNOTS, CARTESIAN_POINT, CIRCLE, COMPOSITE_CURVE,
+    COMPOSITE_CURVE_SEGMENT, CONICAL_SURFACE, CONVERSION_BASED_UNIT, CURVE_BOUNDED_SURFACE,
+    CYLINDRICAL_SURFACE, DEGENERATE_TOROIDAL_SURFACE, DIRECTION, ELLIPSE, GEOMETRIC_CURVE_SET,
+    GEOMETRIC_REPRESENTATION_CONTEXT, GEOMETRIC_SET, GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT,
+    GLOBAL_UNIT_ASSIGNED_CONTEXT, LENGTH_MEASURE_WITH_UNIT, LENGTH_UNIT, LINE, MEASURE_WITH_UNIT,
+    NAMED_UNIT, OFFSET_CURVE_3D, OFFSET_SURFACE, OVER_RIDING_STYLED_ITEM, PCURVE, PLANE,
+    PLANE_ANGLE_MEASURE_WITH_UNIT, PLANE_ANGLE_UNIT, POLYLINE, RATIONAL_B_SPLINE_CURVE,
+    RATIONAL_B_SPLINE_SURFACE, REPRESENTATION, REPRESENTATION_CONTEXT, SEAM_CURVE,
+    SHAPE_REPRESENTATION, SI_UNIT, SPHERICAL_SURFACE, STYLED_ITEM, SURFACE_CURVE,
+    SURFACE_OF_LINEAR_EXTRUSION, SURFACE_OF_REVOLUTION, TOROIDAL_SURFACE, TRIMMED_CURVE,
+    UNCERTAINTY_MEASURE_WITH_UNIT, VECTOR, VERTEX_POINT,
+};
 
 pub(super) struct GeometryResult {
     pub typed_records: BTreeSet<u64>,
@@ -42,9 +56,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         ir.tolerances.linear = uncertainty;
     }
 
-    for (id, record) in exchange.entities_any(&["CARTESIAN_POINT", "DIRECTION"]) {
+    for (id, record) in exchange.entities_any(&[CARTESIAN_POINT, DIRECTION]) {
         match record.simple_name() {
-            Some("CARTESIAN_POINT") => {
+            Some(CARTESIAN_POINT) => {
                 if let Some(position) = coordinates(record, 1, scale) {
                     points.insert(id, position);
                     typed.insert(id);
@@ -55,7 +69,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     warnings.push(format!("CARTESIAN_POINT #{id} has invalid coordinates"));
                 }
             }
-            Some("DIRECTION") => {
+            Some(DIRECTION) => {
                 if let Some(direction) = vector3(record.parameter(1), 1.0).and_then(normalize) {
                     directions.insert(id, direction);
                     typed.insert(id);
@@ -72,14 +86,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
 
     let mut point_carriers = BTreeSet::new();
     for record in exchange.records.values() {
-        if record.simple_name() == Some("VERTEX_POINT") {
+        if record.simple_name() == Some(VERTEX_POINT) {
             if let Some(id) = record.parameter(1).and_then(Value::reference) {
                 point_carriers.insert(id);
             }
         }
         if record
             .simple_name()
-            .is_some_and(|name| name.ends_with("REPRESENTATION"))
+            .is_some_and(|name| name.ends_with(REPRESENTATION))
         {
             if let Some(items) = record.parameter(1).and_then(Value::list) {
                 point_carriers.extend(
@@ -92,7 +106,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
         if matches!(
             record.simple_name(),
-            Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
+            Some(GEOMETRIC_SET | GEOMETRIC_CURVE_SET)
         ) {
             if let Some(items) = record.parameter(1).and_then(Value::list) {
                 point_carriers.extend(
@@ -105,7 +119,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
         if matches!(
             record.simple_name(),
-            Some("STYLED_ITEM" | "OVER_RIDING_STYLED_ITEM")
+            Some(STYLED_ITEM | OVER_RIDING_STYLED_ITEM)
         ) {
             if let Some(id) = record.parameter(2).and_then(Value::reference) {
                 if points.contains_key(&id) {
@@ -123,8 +137,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 position,
             })
         }));
-    for (id, record) in exchange.entities("VECTOR") {
-        if record.simple_name() == Some("VECTOR") {
+    for (id, record) in exchange.entities(VECTOR) {
+        if record.simple_name() == Some(VECTOR) {
             let value = record
                 .parameter(1)
                 .and_then(Value::reference)
@@ -152,10 +166,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             }
         }
     }
-    for (id, record) in exchange.entities_any(&["AXIS2_PLACEMENT_3D", "AXIS1_PLACEMENT"]) {
+    for (id, record) in exchange.entities_any(&[AXIS2_PLACEMENT_3D, AXIS1_PLACEMENT]) {
         if matches!(
             record.simple_name(),
-            Some("AXIS2_PLACEMENT_3D" | "AXIS1_PLACEMENT")
+            Some(AXIS2_PLACEMENT_3D | AXIS1_PLACEMENT)
         ) {
             let placement = record
                 .parameter(1)
@@ -178,9 +192,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
     let mut pcurve_geometries = exchange
-        .entities("LINE")
+        .entities(LINE)
         .filter_map(|(id, record)| {
-            if record.simple_name() != Some("LINE") {
+            if record.simple_name() != Some(LINE) {
                 return None;
             }
             let origin = record
@@ -194,24 +208,20 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             Some((id, PcurveGeometry::Line { origin, direction }))
         })
         .collect::<BTreeMap<_, _>>();
-    for (id, record) in exchange.entities("B_SPLINE_CURVE_WITH_KNOTS") {
-        if record.partial("B_SPLINE_CURVE_WITH_KNOTS").is_some() {
+    for (id, record) in exchange.entities(B_SPLINE_CURVE_WITH_KNOTS) {
+        if record.partial(B_SPLINE_CURVE_WITH_KNOTS).is_some() {
             if let Some(geometry) = nurbs_pcurve(record, &points2) {
                 pcurve_geometries.insert(id, geometry);
             }
         }
     }
-    for (id, record) in exchange.entities_any(&[
-        "LINE",
-        "CIRCLE",
-        "ELLIPSE",
-        "POLYLINE",
-        "B_SPLINE_CURVE_WITH_KNOTS",
-    ]) {
+    for (id, record) in
+        exchange.entities_any(&[LINE, CIRCLE, ELLIPSE, POLYLINE, B_SPLINE_CURVE_WITH_KNOTS])
+    {
         let geometry = match record.simple_name() {
-            Some("LINE") if pcurve_geometries.contains_key(&id) => continue,
-            Some("B_SPLINE_CURVE_WITH_KNOTS") if pcurve_geometries.contains_key(&id) => continue,
-            Some("LINE") => record
+            Some(LINE) if pcurve_geometries.contains_key(&id) => continue,
+            Some(B_SPLINE_CURVE_WITH_KNOTS) if pcurve_geometries.contains_key(&id) => continue,
+            Some(LINE) => record
                 .parameter(1)
                 .and_then(Value::reference)
                 .and_then(|point| points.get(&point).copied())
@@ -223,7 +233,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         .and_then(normalize),
                 )
                 .map(|(origin, direction)| CurveGeometry::Line { origin, direction }),
-            Some("CIRCLE") => record
+            Some(CIRCLE) => record
                 .parameter(1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
@@ -237,7 +247,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         radius: radius * scale,
                     },
                 ),
-            Some("ELLIPSE") => record
+            Some(ELLIPSE) => record
                 .parameter(1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
@@ -257,8 +267,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         }
                     },
                 ),
-            Some("POLYLINE") => polyline(record, &points).map(CurveGeometry::Nurbs),
-            Some("B_SPLINE_CURVE_WITH_KNOTS") => {
+            Some(POLYLINE) => polyline(record, &points).map(CurveGeometry::Nurbs),
+            Some(B_SPLINE_CURVE_WITH_KNOTS) => {
                 nurbs_curve(record, &points).map(CurveGeometry::Nurbs)
             }
             _ => continue,
@@ -277,9 +287,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             ));
         }
     }
-    for (id, record) in exchange.entities("B_SPLINE_CURVE_WITH_KNOTS") {
-        if record.partial("B_SPLINE_CURVE_WITH_KNOTS").is_none()
-            || record.simple_name() == Some("B_SPLINE_CURVE_WITH_KNOTS")
+    for (id, record) in exchange.entities(B_SPLINE_CURVE_WITH_KNOTS) {
+        if record.partial(B_SPLINE_CURVE_WITH_KNOTS).is_none()
+            || record.simple_name() == Some(B_SPLINE_CURVE_WITH_KNOTS)
             || pcurve_geometries.contains_key(&id)
         {
             continue;
@@ -298,8 +308,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
 
-    for (id, record) in exchange.entities_any(&["SURFACE_CURVE", "SEAM_CURVE"]) {
-        if !matches!(record.simple_name(), Some("SURFACE_CURVE" | "SEAM_CURVE")) {
+    for (id, record) in exchange.entities_any(&[SURFACE_CURVE, SEAM_CURVE]) {
+        if !matches!(record.simple_name(), Some(SURFACE_CURVE | SEAM_CURVE)) {
             continue;
         }
         let basis = record
@@ -316,7 +326,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         typed.insert(id);
     }
     let mut pending_composites = exchange
-        .entities("COMPOSITE_CURVE")
+        .entities(COMPOSITE_CURVE)
         .map(|(id, _)| id)
         .collect::<BTreeSet<_>>();
     let curve_geometries = ir
@@ -325,8 +335,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|curve| (curve.id.clone(), curve.geometry.clone()))
         .collect::<BTreeMap<_, _>>();
-    for (id, record) in exchange.entities("TRIMMED_CURVE") {
-        if record.simple_name() != Some("TRIMMED_CURVE") {
+    for (id, record) in exchange.entities(TRIMMED_CURVE) {
+        if record.simple_name() != Some(TRIMMED_CURVE) {
             continue;
         }
         let basis_step = record.parameter(1).and_then(Value::reference);
@@ -460,8 +470,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|curve| (curve.id.clone(), curve.geometry.clone()))
         .collect::<BTreeMap<_, _>>();
-    for (id, record) in exchange.entities("OFFSET_CURVE_3D") {
-        if record.simple_name() != Some("OFFSET_CURVE_3D") {
+    for (id, record) in exchange.entities(OFFSET_CURVE_3D) {
+        if record.simple_name() != Some(OFFSET_CURVE_3D) {
             continue;
         }
         let source = record
@@ -518,11 +528,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|curve| curve.id.clone())
         .collect::<BTreeSet<_>>();
-    for (id, record) in
-        exchange.entities_any(&["SURFACE_OF_LINEAR_EXTRUSION", "SURFACE_OF_REVOLUTION"])
+    for (id, record) in exchange.entities_any(&[SURFACE_OF_LINEAR_EXTRUSION, SURFACE_OF_REVOLUTION])
     {
         let definition = match record.simple_name() {
-            Some("SURFACE_OF_LINEAR_EXTRUSION") => record
+            Some(SURFACE_OF_LINEAR_EXTRUSION) => record
                 .parameter(1)
                 .and_then(Value::reference)
                 .map(|curve| CurveId(format!("step:data:curve#{curve}")))
@@ -539,7 +548,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         direction,
                     },
                 ),
-            Some("SURFACE_OF_REVOLUTION") => record
+            Some(SURFACE_OF_REVOLUTION) => record
                 .parameter(1)
                 .and_then(Value::reference)
                 .map(|curve| CurveId(format!("step:data:curve#{curve}")))
@@ -583,25 +592,25 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     }
 
     for (id, record) in exchange.entities_any(&[
-        "PLANE",
-        "CYLINDRICAL_SURFACE",
-        "CONICAL_SURFACE",
-        "SPHERICAL_SURFACE",
-        "TOROIDAL_SURFACE",
-        "DEGENERATE_TOROIDAL_SURFACE",
-        "B_SPLINE_SURFACE_WITH_KNOTS",
+        PLANE,
+        CYLINDRICAL_SURFACE,
+        CONICAL_SURFACE,
+        SPHERICAL_SURFACE,
+        TOROIDAL_SURFACE,
+        DEGENERATE_TOROIDAL_SURFACE,
+        B_SPLINE_SURFACE_WITH_KNOTS,
     ]) {
         let placement = record
             .parameter(1)
             .and_then(Value::reference)
             .and_then(|placement| placements.get(&placement).copied());
         let geometry = match record.simple_name() {
-            Some("PLANE") => placement.map(|(origin, normal, u_axis)| SurfaceGeometry::Plane {
+            Some(PLANE) => placement.map(|(origin, normal, u_axis)| SurfaceGeometry::Plane {
                 origin,
                 normal,
                 u_axis,
             }),
-            Some("CYLINDRICAL_SURFACE") => placement.zip(positive(record.parameter(2))).map(
+            Some(CYLINDRICAL_SURFACE) => placement.zip(positive(record.parameter(2))).map(
                 |((origin, axis, ref_direction), radius)| SurfaceGeometry::Cylinder {
                     origin,
                     axis,
@@ -609,7 +618,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     radius: radius * scale,
                 },
             ),
-            Some("CONICAL_SURFACE") => placement
+            Some(CONICAL_SURFACE) => placement
                 .zip(nonnegative(record.parameter(2)))
                 .zip(record.parameter(3).and_then(Value::number))
                 .filter(|(_, angle)| angle.is_finite() && *angle > 0.0)
@@ -623,7 +632,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         half_angle: half_angle * angle_scale,
                     }
                 }),
-            Some("SPHERICAL_SURFACE") => placement.zip(positive(record.parameter(2))).map(
+            Some(SPHERICAL_SURFACE) => placement.zip(positive(record.parameter(2))).map(
                 |((center, axis, ref_direction), radius)| SurfaceGeometry::Sphere {
                     center,
                     axis,
@@ -631,7 +640,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     radius: radius * scale,
                 },
             ),
-            Some("TOROIDAL_SURFACE" | "DEGENERATE_TOROIDAL_SURFACE") => placement
+            Some(TOROIDAL_SURFACE | DEGENERATE_TOROIDAL_SURFACE) => placement
                 .zip(positive(record.parameter(2)))
                 .zip(positive(record.parameter(3)))
                 .map(
@@ -645,7 +654,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         }
                     },
                 ),
-            Some("B_SPLINE_SURFACE_WITH_KNOTS") => {
+            Some(B_SPLINE_SURFACE_WITH_KNOTS) => {
                 nurbs_surface(record, &points).map(SurfaceGeometry::Nurbs)
             }
             _ => continue,
@@ -664,9 +673,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             ));
         }
     }
-    for (id, record) in exchange.entities("B_SPLINE_SURFACE_WITH_KNOTS") {
-        if record.partial("B_SPLINE_SURFACE_WITH_KNOTS").is_none()
-            || record.simple_name() == Some("B_SPLINE_SURFACE_WITH_KNOTS")
+    for (id, record) in exchange.entities(B_SPLINE_SURFACE_WITH_KNOTS) {
+        if record.partial(B_SPLINE_SURFACE_WITH_KNOTS).is_none()
+            || record.simple_name() == Some(B_SPLINE_SURFACE_WITH_KNOTS)
         {
             continue;
         }
@@ -696,8 +705,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|curve| curve.id.clone())
         .collect::<BTreeSet<_>>();
-    for (id, record) in exchange.entities("CURVE_BOUNDED_SURFACE") {
-        if record.simple_name() != Some("CURVE_BOUNDED_SURFACE") {
+    for (id, record) in exchange.entities(CURVE_BOUNDED_SURFACE) {
+        if record.simple_name() != Some(CURVE_BOUNDED_SURFACE) {
             continue;
         }
         let support = record
@@ -758,8 +767,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|surface| surface.id.clone())
         .collect::<BTreeSet<_>>();
-    for (id, record) in exchange.entities("OFFSET_SURFACE") {
-        if record.simple_name() != Some("OFFSET_SURFACE") {
+    for (id, record) in exchange.entities(OFFSET_SURFACE) {
+        if record.simple_name() != Some(OFFSET_SURFACE) {
             continue;
         }
         let support = record
@@ -806,8 +815,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|surface| surface.id.clone())
         .collect::<BTreeSet<_>>();
-    for (id, record) in exchange.entities("PCURVE") {
-        if record.simple_name() != Some("PCURVE") {
+    for (id, record) in exchange.entities(PCURVE) {
+        if record.simple_name() != Some(PCURVE) {
             continue;
         }
         let surface_step = record.parameter(1).and_then(Value::reference);
@@ -845,8 +854,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
 
-    for (id, record) in exchange.entities("DEGENERATE_TOROIDAL_SURFACE") {
-        if record.simple_name() != Some("DEGENERATE_TOROIDAL_SURFACE") {
+    for (id, record) in exchange.entities(DEGENERATE_TOROIDAL_SURFACE) {
+        if record.simple_name() != Some(DEGENERATE_TOROIDAL_SURFACE) {
             continue;
         }
         let select_outer = record
@@ -881,20 +890,20 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         if record.partials.iter().any(|partial| {
             matches!(
                 partial.name.as_str(),
-                "LENGTH_UNIT"
-                    | "NAMED_UNIT"
-                    | "SI_UNIT"
-                    | "CONVERSION_BASED_UNIT"
-                    | "MEASURE_WITH_UNIT"
-                    | "LENGTH_MEASURE_WITH_UNIT"
-                    | "PLANE_ANGLE_MEASURE_WITH_UNIT"
-                    | "UNCERTAINTY_MEASURE_WITH_UNIT"
-                    | "GEOMETRIC_REPRESENTATION_CONTEXT"
-                    | "GLOBAL_UNIT_ASSIGNED_CONTEXT"
-                    | "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT"
-                    | "REPRESENTATION_CONTEXT"
+                LENGTH_UNIT
+                    | NAMED_UNIT
+                    | SI_UNIT
+                    | CONVERSION_BASED_UNIT
+                    | MEASURE_WITH_UNIT
+                    | LENGTH_MEASURE_WITH_UNIT
+                    | PLANE_ANGLE_MEASURE_WITH_UNIT
+                    | UNCERTAINTY_MEASURE_WITH_UNIT
+                    | GEOMETRIC_REPRESENTATION_CONTEXT
+                    | GLOBAL_UNIT_ASSIGNED_CONTEXT
+                    | GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT
+                    | REPRESENTATION_CONTEXT
             )
-        }) || record.simple_name() == Some("SHAPE_REPRESENTATION")
+        }) || record.simple_name() == Some(SHAPE_REPRESENTATION)
         {
             typed.insert(id);
         }
@@ -911,7 +920,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
 fn length_scale(exchange: &Exchange) -> Option<f64> {
     let context_units = exchange.records.values().find_map(|record| {
         record
-            .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")?
+            .partial(GLOBAL_UNIT_ASSIGNED_CONTEXT)?
             .parameters
             .first()?
             .list()
@@ -924,13 +933,13 @@ fn length_scale(exchange: &Exchange) -> Option<f64> {
             exchange
                 .records
                 .get(id)
-                .is_some_and(|record| record.partial("LENGTH_UNIT").is_some())
+                .is_some_and(|record| record.partial(LENGTH_UNIT).is_some())
         })
         .or_else(|| {
             exchange
                 .records
                 .iter()
-                .find(|(_, record)| record.partial("LENGTH_UNIT").is_some())
+                .find(|(_, record)| record.partial(LENGTH_UNIT).is_some())
                 .map(|(&id, _)| id)
         })?;
     unit_scale_mm(unit_id, exchange, &mut BTreeSet::new())
@@ -939,7 +948,7 @@ fn length_scale(exchange: &Exchange) -> Option<f64> {
 fn plane_angle_scale(exchange: &Exchange) -> Option<f64> {
     let context_units = exchange.records.values().find_map(|record| {
         record
-            .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")?
+            .partial(GLOBAL_UNIT_ASSIGNED_CONTEXT)?
             .parameters
             .first()?
             .list()
@@ -952,13 +961,13 @@ fn plane_angle_scale(exchange: &Exchange) -> Option<f64> {
             exchange
                 .records
                 .get(id)
-                .is_some_and(|record| record.partial("PLANE_ANGLE_UNIT").is_some())
+                .is_some_and(|record| record.partial(PLANE_ANGLE_UNIT).is_some())
         })
         .or_else(|| {
             exchange
                 .records
                 .iter()
-                .find(|(_, record)| record.partial("PLANE_ANGLE_UNIT").is_some())
+                .find(|(_, record)| record.partial(PLANE_ANGLE_UNIT).is_some())
                 .map(|(&id, _)| id)
         })?;
     unit_scale_radians(unit_id, exchange, &mut BTreeSet::new())
@@ -985,9 +994,9 @@ fn unit_scale_radians_inner(
         return None;
     }
     let record = exchange.records.get(&id)?;
-    let result = if let Some(unit) = record.partial("SI_UNIT") {
+    let result = if let Some(unit) = record.partial(SI_UNIT) {
         (unit.parameters.get(1)?.enumeration()? == "RADIAN").then_some(1.0)
-    } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
+    } else if let Some(unit) = record.partial(CONVERSION_BASED_UNIT) {
         let factor_id = unit.parameters.get(1)?.reference()?;
         let factor = exchange.records.get(&factor_id)?;
         let value = record_values(factor).find_map(measure_number)?;
@@ -1023,7 +1032,7 @@ fn unit_scale_mm_inner(
         return None;
     }
     let record = exchange.records.get(&id)?;
-    let result = if let Some(unit) = record.partial("SI_UNIT") {
+    let result = if let Some(unit) = record.partial(SI_UNIT) {
         if unit.parameters.get(1)?.enumeration()? == "METRE" {
             let prefix = match unit.parameters.first()? {
                 Value::Omitted => 1.0,
@@ -1034,7 +1043,7 @@ fn unit_scale_mm_inner(
         } else {
             None
         }
-    } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
+    } else if let Some(unit) = record.partial(CONVERSION_BASED_UNIT) {
         let factor_id = unit.parameters.get(1)?.reference()?;
         let factor = exchange.records.get(&factor_id)?;
         let value = record_values(factor).find_map(measure_number)?;
@@ -1077,7 +1086,7 @@ fn si_prefix(prefix: &str) -> Option<f64> {
 fn linear_uncertainty(exchange: &Exchange) -> Option<f64> {
     let uncertainty = exchange.records.values().find_map(|record| {
         record
-            .partial("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")?
+            .partial(GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT)?
             .parameters
             .first()?
             .list()?
@@ -1145,11 +1154,11 @@ fn line_parameter_scale(exchange: &Exchange, curve: u64, length_scale: f64) -> f
     exchange
         .records
         .get(&curve)
-        .filter(|record| record.simple_name() == Some("LINE"))
+        .filter(|record| record.simple_name() == Some(LINE))
         .and_then(|record| record.parameter(2))
         .and_then(ValueExt::reference)
         .and_then(|vector| exchange.records.get(&vector))
-        .filter(|record| record.simple_name() == Some("VECTOR"))
+        .filter(|record| record.simple_name() == Some(VECTOR))
         .and_then(|record| record.parameter(2))
         .and_then(ValueExt::number)
         .map(|magnitude| magnitude * length_scale)
@@ -1219,7 +1228,7 @@ fn composite_curve(
     decoded: &BTreeSet<CurveId>,
 ) -> Option<CompositeCurveData> {
     let complex = record.partials.len() > 1;
-    let composite = record.partial("COMPOSITE_CURVE")?;
+    let composite = record.partial(COMPOSITE_CURVE)?;
     let offset = usize::from(!complex);
     let segments = composite
         .parameters
@@ -1229,7 +1238,7 @@ fn composite_curve(
         .map(|value| {
             let id = value.reference()?;
             let record = exchange.records.get(&id)?;
-            if record.simple_name() != Some("COMPOSITE_CURVE_SEGMENT") {
+            if record.simple_name() != Some(COMPOSITE_CURVE_SEGMENT) {
                 return None;
             }
             let transition = match record.parameter(0)?.enumeration()? {
@@ -1267,7 +1276,7 @@ fn composite_curve(
 
 fn composite_dependencies(record: &RawRecord, exchange: &Exchange) -> Option<Vec<u64>> {
     let complex = record.partials.len() > 1;
-    let composite = record.partial("COMPOSITE_CURVE")?;
+    let composite = record.partial(COMPOSITE_CURVE)?;
     let offset = usize::from(!complex);
     composite
         .parameters
@@ -1276,7 +1285,7 @@ fn composite_dependencies(record: &RawRecord, exchange: &Exchange) -> Option<Vec
         .iter()
         .map(|value| {
             let segment = exchange.records.get(&value.reference()?)?;
-            (segment.simple_name() == Some("COMPOSITE_CURVE_SEGMENT"))
+            (segment.simple_name() == Some(COMPOSITE_CURVE_SEGMENT))
                 .then(|| segment.parameter(2)?.reference())?
         })
         .collect()
@@ -1373,9 +1382,9 @@ fn nonnegative(value: Option<&Value>) -> Option<f64> {
 fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsCurve> {
     let complex = record.partials.len() > 1;
     let base = if complex {
-        record.partial("B_SPLINE_CURVE")?
+        record.partial(B_SPLINE_CURVE)?
     } else {
-        record.partial("B_SPLINE_CURVE_WITH_KNOTS")?
+        record.partial(B_SPLINE_CURVE_WITH_KNOTS)?
     };
     let offset = usize::from(!complex);
     let degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
@@ -1389,7 +1398,7 @@ fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<Nur
     let periodic = logical_value(base.parameters.get(offset + 3)?)?
         .into_option()
         .unwrap_or(false);
-    let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
+    let knot_leaf = record.partial(B_SPLINE_CURVE_WITH_KNOTS)?;
     let tail = knot_leaf.parameters.len().checked_sub(3)?;
     let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
     let knots = expand_knots(
@@ -1400,7 +1409,7 @@ fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<Nur
     if knots.len() != expected_knots {
         return None;
     }
-    let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_CURVE") {
+    let weights = if let Some(leaf) = record.partial(RATIONAL_B_SPLINE_CURVE) {
         let values = numbers(leaf.parameters.first()?)?;
         (values.len() == control_points.len())
             .then_some(values)
@@ -1420,9 +1429,9 @@ fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<Nur
 fn nurbs_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<PcurveGeometry> {
     let complex = record.partials.len() > 1;
     let base = if complex {
-        record.partial("B_SPLINE_CURVE")?
+        record.partial(B_SPLINE_CURVE)?
     } else {
-        record.partial("B_SPLINE_CURVE_WITH_KNOTS")?
+        record.partial(B_SPLINE_CURVE_WITH_KNOTS)?
     };
     let offset = usize::from(!complex);
     let degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
@@ -1436,7 +1445,7 @@ fn nurbs_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<Pc
     let periodic = logical_value(base.parameters.get(offset + 3)?)?
         .into_option()
         .unwrap_or(false);
-    let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
+    let knot_leaf = record.partial(B_SPLINE_CURVE_WITH_KNOTS)?;
     let tail = knot_leaf.parameters.len().checked_sub(3)?;
     let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
     let knots = expand_knots(
@@ -1447,7 +1456,7 @@ fn nurbs_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<Pc
     if knots.len() != expected_knots {
         return None;
     }
-    let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_CURVE") {
+    let weights = if let Some(leaf) = record.partial(RATIONAL_B_SPLINE_CURVE) {
         let values = numbers(leaf.parameters.first()?)?;
         (values.len() == control_points.len())
             .then_some(values)
@@ -1491,9 +1500,9 @@ fn polyline(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsC
 fn nurbs_surface(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsSurface> {
     let complex = record.partials.len() > 1;
     let base = if complex {
-        record.partial("B_SPLINE_SURFACE")?
+        record.partial(B_SPLINE_SURFACE)?
     } else {
-        record.partial("B_SPLINE_SURFACE_WITH_KNOTS")?
+        record.partial(B_SPLINE_SURFACE_WITH_KNOTS)?
     };
     let offset = usize::from(!complex);
     let u_degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
@@ -1523,7 +1532,7 @@ fn nurbs_surface(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<N
     let v_periodic = logical_value(base.parameters.get(offset + 5)?)?
         .into_option()
         .unwrap_or(false);
-    let knot_leaf = record.partial("B_SPLINE_SURFACE_WITH_KNOTS")?;
+    let knot_leaf = record.partial(B_SPLINE_SURFACE_WITH_KNOTS)?;
     let tail = knot_leaf.parameters.len().checked_sub(5)?;
     let expected_u = usize::try_from(u_count)
         .ok()?
@@ -1546,7 +1555,7 @@ fn nurbs_surface(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<N
     if u_knots.len() != expected_u || v_knots.len() != expected_v {
         return None;
     }
-    let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_SURFACE") {
+    let weights = if let Some(leaf) = record.partial(RATIONAL_B_SPLINE_SURFACE) {
         let rows = leaf.parameters.first()?.list()?;
         let mut values = Vec::new();
         for row in rows {

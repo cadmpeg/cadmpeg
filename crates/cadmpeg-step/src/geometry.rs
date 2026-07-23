@@ -12,6 +12,12 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
 
+use crate::vocab::{
+    AXIS2_PLACEMENT_2D, AXIS2_PLACEMENT_3D, B_SPLINE_CURVE_WITH_KNOTS, B_SPLINE_SURFACE_WITH_KNOTS,
+    CARTESIAN_POINT, CARTESIAN_TRANSFORMATION_OPERATOR_3D, CIRCLE, CONICAL_SURFACE, CURVE_REPLICA,
+    CYLINDRICAL_SURFACE, DIRECTION, ELLIPSE, HYPERBOLA, LINE, OFFSET_CURVE_2D, PARABOLA, PLANE,
+    POLYLINE, SPHERICAL_SURFACE, SURFACE_REPLICA, TOROIDAL_SURFACE, TRIMMED_CURVE, VECTOR,
+};
 use crate::writer::{real, refs, Emitter, Ref};
 
 pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
@@ -80,12 +86,12 @@ fn similarity_transform(transform: &Transform) -> bool {
 /// Emit or reuse a `CARTESIAN_POINT`.
 pub fn point(e: &mut Emitter, p: Point3) -> Ref {
     let params = format!("'',({},{},{})", real(p.x), real(p.y), real(p.z));
-    e.emit_interned("CARTESIAN_POINT", &params)
+    e.emit_interned(CARTESIAN_POINT, &params)
 }
 
 fn point2(e: &mut Emitter, p: Point2) -> Ref {
     let params = format!("'',({},{})", real(p.u), real(p.v));
-    e.emit_interned("CARTESIAN_POINT", &params)
+    e.emit_interned(CARTESIAN_POINT, &params)
 }
 
 fn direction2(e: &mut Emitter, v: Point2) -> Ref {
@@ -95,13 +101,13 @@ fn direction2(e: &mut Emitter, v: Point2) -> Ref {
     } else {
         (1.0, 0.0)
     };
-    e.emit_interned("DIRECTION", &format!("'',({},{})", real(x), real(y)))
+    e.emit_interned(DIRECTION, &format!("'',({},{})", real(x), real(y)))
 }
 
 fn axis2_placement_2d(e: &mut Emitter, location: Point2, x_axis: Point2) -> Ref {
     let location = point2(e, location);
     let direction = direction2(e, x_axis);
-    e.emit("AXIS2_PLACEMENT_2D", &format!("'',{location},{direction}"))
+    e.emit(AXIS2_PLACEMENT_2D, &format!("'',{location},{direction}"))
 }
 
 /// Emit a two-dimensional curve for use inside a `PCURVE` representation.
@@ -111,8 +117,8 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
             let point = point2(e, *origin);
             let magnitude = (direction.u * direction.u + direction.v * direction.v).sqrt();
             let direction = direction2(e, *direction);
-            let vector = e.emit("VECTOR", &format!("'',{direction},{}", real(magnitude)));
-            e.emit("LINE", &format!("'',{point},{vector}"))
+            let vector = e.emit(VECTOR, &format!("'',{direction},{}", real(magnitude)));
+            e.emit(LINE, &format!("'',{point},{vector}"))
         }
         PcurveGeometry::Circle {
             center,
@@ -121,7 +127,7 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
             ..
         } => {
             let placement = axis2_placement_2d(e, *center, *x_axis);
-            e.emit("CIRCLE", &format!("'',{placement},{}", real(*radius)))
+            e.emit(CIRCLE, &format!("'',{placement},{}", real(*radius)))
         }
         PcurveGeometry::Ellipse {
             center,
@@ -132,7 +138,7 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
         } => {
             let placement = axis2_placement_2d(e, *center, *x_axis);
             e.emit(
-                "ELLIPSE",
+                ELLIPSE,
                 &format!(
                     "'',{placement},{},{}",
                     real(*major_radius),
@@ -148,7 +154,7 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
         } => {
             let placement = axis2_placement_2d(e, *vertex, *x_axis);
             e.emit(
-                "PARABOLA",
+                PARABOLA,
                 &format!("'',{placement},{}", real(*focal_distance)),
             )
         }
@@ -161,7 +167,7 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
         } => {
             let placement = axis2_placement_2d(e, *center, *x_axis);
             e.emit(
-                "HYPERBOLA",
+                HYPERBOLA,
                 &format!(
                     "'',{placement},{},{}",
                     real(*major_radius),
@@ -193,7 +199,7 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
             );
             if let Some(weights) = weights {
                 e.emit_raw(
-                    "B_SPLINE_CURVE_WITH_KNOTS",
+                    B_SPLINE_CURVE_WITH_KNOTS,
                     &format!(
                         "( BOUNDED_CURVE() B_SPLINE_CURVE({base}) B_SPLINE_CURVE_WITH_KNOTS({with_knots}) CURVE() GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_CURVE({}) REPRESENTATION_ITEM('') )",
                         real_list(weights)
@@ -201,7 +207,7 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
                 )
             } else {
                 e.emit(
-                    "B_SPLINE_CURVE_WITH_KNOTS",
+                    B_SPLINE_CURVE_WITH_KNOTS,
                     &format!("'',{base},{with_knots}"),
                 )
             }
@@ -212,7 +218,7 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
         } => {
             let basis = pcurve(e, basis)?;
             e.emit(
-                "TRIMMED_CURVE",
+                TRIMMED_CURVE,
                 &format!(
                     "'',{basis},({}),({}),.T.,.PARAMETER.",
                     real(parameter_range[0]),
@@ -223,7 +229,7 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
         PcurveGeometry::Offset { distance, basis } => {
             let basis = pcurve(e, basis)?;
             e.emit(
-                "OFFSET_CURVE_2D",
+                OFFSET_CURVE_2D,
                 &format!("'',{basis},{},.F.", real(*distance)),
             )
         }
@@ -242,7 +248,7 @@ pub fn direction(e: &mut Emitter, v: Vector3) -> Ref {
         Vector3::new(0.0, 0.0, 1.0)
     };
     let params = format!("'',({},{},{})", real(u.x), real(u.y), real(u.z));
-    e.emit_interned("DIRECTION", &params)
+    e.emit_interned(DIRECTION, &params)
 }
 
 /// Emit an `AXIS2_PLACEMENT_3D` with the given origin, local +Z axis, and local
@@ -253,7 +259,7 @@ pub fn placement(e: &mut Emitter, origin: Point3, axis: Vector3, ref_dir: Vector
     let o = point(e, origin);
     let a = direction(e, axis);
     let r = direction(e, ref_dir);
-    e.emit("AXIS2_PLACEMENT_3D", &format!("'',{o},{a},{r}"))
+    e.emit(AXIS2_PLACEMENT_3D, &format!("'',{o},{a},{r}"))
 }
 
 fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
@@ -285,7 +291,7 @@ fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
     let y = direction(e, y);
     let z = direction(e, z);
     e.emit(
-        "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
+        CARTESIAN_TRANSFORMATION_OPERATOR_3D,
         &format!("'',{x},{y},{origin},{},{z}", real(scale)),
     )
 }
@@ -299,7 +305,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
             u_axis,
         } => {
             let pl = placement(e, *origin, *normal, *u_axis);
-            e.emit("PLANE", &format!("'',{pl}"))
+            e.emit(PLANE, &format!("'',{pl}"))
         }
         SurfaceGeometry::Cylinder {
             origin,
@@ -308,7 +314,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
             radius,
         } => {
             let pl = placement(e, *origin, *axis, *ref_direction);
-            e.emit("CYLINDRICAL_SURFACE", &format!("'',{pl},{}", real(*radius)))
+            e.emit(CYLINDRICAL_SURFACE, &format!("'',{pl},{}", real(*radius)))
         }
         SurfaceGeometry::Cone {
             origin,
@@ -320,7 +326,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
         } => {
             let pl = placement(e, *origin, *axis, *ref_direction);
             e.emit(
-                "CONICAL_SURFACE",
+                CONICAL_SURFACE,
                 &format!("'',{pl},{},{}", real(*radius), real(*half_angle)),
             )
         }
@@ -332,7 +338,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
         } => {
             let pl = placement(e, *center, *axis, *ref_direction);
             e.emit(
-                "SPHERICAL_SURFACE",
+                SPHERICAL_SURFACE,
                 &format!("'',{pl},{}", real(radius.abs())),
             )
         }
@@ -345,7 +351,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
         } => {
             let pl = placement(e, *center, *axis, *ref_direction);
             e.emit(
-                "TOROIDAL_SURFACE",
+                TOROIDAL_SURFACE,
                 &format!(
                     "'',{pl},{},{}",
                     real(major_radius.abs()),
@@ -357,7 +363,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
         SurfaceGeometry::Transformed { basis, transform } => {
             let parent = surface(e, basis);
             let operator = transformation_operator(e, *transform);
-            e.emit("SURFACE_REPLICA", &format!("'',{parent},{operator}"))
+            e.emit(SURFACE_REPLICA, &format!("'',{parent},{operator}"))
         }
         // Unknown surfaces have no STEP representation; the writer filters faces
         // resting on them in `emit_face` before ever reaching here.
@@ -379,8 +385,8 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
             let p = point(e, *origin);
             // A LINE's VECTOR carries the direction; unit magnitude is conventional.
             let dir = direction(e, *d);
-            let vec = e.emit("VECTOR", &format!("'',{dir},{}", real(1.0)));
-            e.emit("LINE", &format!("'',{p},{vec}"))
+            let vec = e.emit(VECTOR, &format!("'',{dir},{}", real(1.0)));
+            e.emit(LINE, &format!("'',{p},{vec}"))
         }
         CurveGeometry::Circle {
             center,
@@ -389,7 +395,7 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
             radius,
         } => {
             let pl = placement(e, *center, *axis, *ref_direction);
-            e.emit("CIRCLE", &format!("'',{pl},{}", real(*radius)))
+            e.emit(CIRCLE, &format!("'',{pl},{}", real(*radius)))
         }
         CurveGeometry::Ellipse {
             center,
@@ -400,7 +406,7 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
         } => {
             let pl = placement(e, *center, *axis, *major_direction);
             e.emit(
-                "ELLIPSE",
+                ELLIPSE,
                 &format!("'',{pl},{},{}", real(*major_radius), real(*minor_radius)),
             )
         }
@@ -411,7 +417,7 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
             focal_distance,
         } => {
             let pl = placement(e, *vertex, *axis, *major_direction);
-            e.emit("PARABOLA", &format!("'',{pl},{}", real(*focal_distance)))
+            e.emit(PARABOLA, &format!("'',{pl},{}", real(*focal_distance)))
         }
         CurveGeometry::Hyperbola {
             center,
@@ -422,13 +428,13 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
         } => {
             let pl = placement(e, *center, *axis, *major_direction);
             e.emit(
-                "HYPERBOLA",
+                HYPERBOLA,
                 &format!("'',{pl},{},{}", real(*major_radius), real(*minor_radius)),
             )
         }
         CurveGeometry::Degenerate { point: collapsed } => {
             let point = point(e, *collapsed);
-            e.emit("POLYLINE", &format!("'',({point},{point})"))
+            e.emit(POLYLINE, &format!("'',({point},{point})"))
         }
         CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
         CurveGeometry::Polyline { points, .. } => {
@@ -437,12 +443,12 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
                 .map(|position| point(e, *position).to_string())
                 .collect::<Vec<_>>()
                 .join(",");
-            e.emit("POLYLINE", &format!("'',({points})"))
+            e.emit(POLYLINE, &format!("'',({points})"))
         }
         CurveGeometry::Transformed { basis, transform } => {
             let parent = curve(e, basis);
             let operator = transformation_operator(e, *transform);
-            e.emit("CURVE_REPLICA", &format!("'',{parent},{operator}"))
+            e.emit(CURVE_REPLICA, &format!("'',{parent},{operator}"))
         }
         CurveGeometry::Composite { .. } => {
             unreachable!("composite curves are emitted from their child graph")
@@ -516,7 +522,7 @@ fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
     let with_knots = format!("{},{},.UNSPECIFIED.", int_list(&mults), real_list(&knots));
     match &n.weights {
         None => e.emit(
-            "B_SPLINE_CURVE_WITH_KNOTS",
+            B_SPLINE_CURVE_WITH_KNOTS,
             &format!("'',{base},{with_knots}"),
         ),
         Some(w) => {
@@ -528,7 +534,7 @@ fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
                  RATIONAL_B_SPLINE_CURVE({}) REPRESENTATION_ITEM('') )",
                 real_list(w)
             );
-            e.emit_raw("B_SPLINE_CURVE_WITH_KNOTS", &body)
+            e.emit_raw(B_SPLINE_CURVE_WITH_KNOTS, &body)
         }
     }
 }
@@ -572,7 +578,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Ref {
     );
     match &n.weights {
         None => e.emit(
-            "B_SPLINE_SURFACE_WITH_KNOTS",
+            B_SPLINE_SURFACE_WITH_KNOTS,
             &format!("'',{base},{with_knots}"),
         ),
         Some(w) => {
@@ -591,7 +597,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Ref {
                  GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_SURFACE({wgrid}) \
                  REPRESENTATION_ITEM('') SURFACE() )"
             );
-            e.emit_raw("B_SPLINE_SURFACE_WITH_KNOTS", &body)
+            e.emit_raw(B_SPLINE_SURFACE_WITH_KNOTS, &body)
         }
     }
 }

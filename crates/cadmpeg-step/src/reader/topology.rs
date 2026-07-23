@@ -14,6 +14,15 @@ use cadmpeg_ir::topology::{
 };
 
 use crate::parse::{Exchange, RawRecord, Value};
+use crate::vocab::{
+    ADVANCED_BREP_SHAPE_REPRESENTATION, ADVANCED_FACE, BREP_WITH_VOIDS, CLOSED_SHELL,
+    CONNECTED_EDGE_SET, EDGE_BASED_WIREFRAME_MODEL, EDGE_CURVE, EDGE_LOOP, FACE_BOUND,
+    FACE_OUTER_BOUND, GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION,
+    GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION, GEOMETRIC_CURVE_SET, GEOMETRIC_SET,
+    MANIFOLD_SOLID_BREP, MANIFOLD_SURFACE_SHAPE_REPRESENTATION, OPEN_SHELL, ORIENTED_CLOSED_SHELL,
+    ORIENTED_EDGE, ORIENTED_OPEN_SHELL, PCURVE, SEAM_CURVE, SHAPE_REPRESENTATION,
+    SHELL_BASED_SURFACE_MODEL, SURFACE_CURVE, VERTEX_LOOP, VERTEX_POINT,
+};
 
 pub(super) struct TopologyResult {
     pub typed_records: BTreeSet<u64>,
@@ -37,7 +46,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
                     .into_iter()
                     .filter(|model| {
                         exchange.records.get(model).is_some_and(|record| {
-                            record.simple_name() == Some("EDGE_BASED_WIREFRAME_MODEL")
+                            record.simple_name() == Some(EDGE_BASED_WIREFRAME_MODEL)
                         })
                     })
                     .map(move |model| (id, model))
@@ -89,7 +98,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
     for (&id, record) in &exchange.records {
         if !matches!(
             record.simple_name(),
-            Some("SHELL_BASED_SURFACE_MODEL" | "MANIFOLD_SOLID_BREP" | "BREP_WITH_VOIDS")
+            Some(SHELL_BASED_SURFACE_MODEL | MANIFOLD_SOLID_BREP | BREP_WITH_VOIDS)
         ) {
             continue;
         }
@@ -111,7 +120,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         }
     }
     for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
+        if record.simple_name() != Some(GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION) {
             continue;
         }
         let Some(mut built) = build_geometric_set(id, record, exchange, &geometry_ids) else {
@@ -139,9 +148,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         if !matches!(
             record.simple_name(),
             Some(
-                "SHAPE_REPRESENTATION"
-                    | "ADVANCED_BREP_SHAPE_REPRESENTATION"
-                    | "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION"
+                SHAPE_REPRESENTATION
+                    | ADVANCED_BREP_SHAPE_REPRESENTATION
+                    | GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION
             )
         ) {
             continue;
@@ -170,9 +179,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         if matches!(
             record.simple_name(),
             Some(
-                "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
-                    | "ADVANCED_BREP_SHAPE_REPRESENTATION"
-                    | "SHAPE_REPRESENTATION"
+                MANIFOLD_SURFACE_SHAPE_REPRESENTATION
+                    | ADVANCED_BREP_SHAPE_REPRESENTATION
+                    | SHAPE_REPRESENTATION
             )
         ) && record
             .parameter(1)
@@ -197,7 +206,7 @@ fn build_wire(
     let mut used_edges = BTreeSet::new();
     for set_id in sets {
         let set = exchange.records.get(&set_id)?;
-        if set.simple_name() != Some("CONNECTED_EDGE_SET") {
+        if set.simple_name() != Some(CONNECTED_EDGE_SET) {
             return None;
         }
         used_edges.extend(refs(set.parameter(1)?)?);
@@ -291,10 +300,7 @@ fn mark_standalone_geometric_set(
         let Some(set) = exchange.records.get(&set_id) else {
             continue;
         };
-        if !matches!(
-            set.simple_name(),
-            Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
-        ) {
+        if !matches!(set.simple_name(), Some(GEOMETRIC_SET | GEOMETRIC_CURVE_SET)) {
             continue;
         }
         let Some(items) = set.parameter(1).and_then(refs) else {
@@ -327,7 +333,7 @@ fn build_geometric_set(
     let mut surfaces = Vec::new();
     for set_id in set_ids {
         let set = exchange.records.get(&set_id)?;
-        if set.simple_name() != Some("GEOMETRIC_SET") {
+        if set.simple_name() != Some(GEOMETRIC_SET) {
             continue;
         }
         typed.insert(set_id);
@@ -417,7 +423,7 @@ fn vertex_defs(exchange: &Exchange) -> BTreeMap<u64, VertexDef> {
         .records
         .iter()
         .filter_map(|(&id, r)| {
-            if r.simple_name() != Some("VERTEX_POINT") {
+            if r.simple_name() != Some(VERTEX_POINT) {
                 return None;
             }
             Some((
@@ -434,7 +440,7 @@ fn edge_defs(exchange: &Exchange) -> BTreeMap<u64, EdgeDef> {
         .records
         .iter()
         .filter_map(|(&id, r)| {
-            if r.simple_name() != Some("EDGE_CURVE") {
+            if r.simple_name() != Some(EDGE_CURVE) {
                 return None;
             }
             Some((
@@ -454,7 +460,7 @@ fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
         .records
         .iter()
         .filter_map(|(&id, r)| {
-            if r.simple_name() != Some("ORIENTED_EDGE") {
+            if r.simple_name() != Some(ORIENTED_EDGE) {
                 return None;
             }
             Some((
@@ -490,12 +496,12 @@ fn build(
 ) -> Option<Built> {
     let solid = matches!(
         root.simple_name(),
-        Some("MANIFOLD_SOLID_BREP" | "BREP_WITH_VOIDS")
+        Some(MANIFOLD_SOLID_BREP | BREP_WITH_VOIDS)
     );
     let shell_steps = match root.simple_name()? {
-        "SHELL_BASED_SURFACE_MODEL" => refs(root.parameter(1)?)?,
-        "MANIFOLD_SOLID_BREP" => vec![root.parameter(1)?.reference()?],
-        "BREP_WITH_VOIDS" => {
+        SHELL_BASED_SURFACE_MODEL => refs(root.parameter(1)?)?,
+        MANIFOLD_SOLID_BREP => vec![root.parameter(1)?.reference()?],
+        BREP_WITH_VOIDS => {
             let mut ids = vec![root.parameter(1)?.reference()?];
             ids.extend(refs(root.parameter(2)?)?);
             ids
@@ -543,7 +549,7 @@ fn build(
             continue;
         }
         let sr = exchange.records.get(&shell_step)?;
-        if !matches!(sr.simple_name(), Some("OPEN_SHELL" | "CLOSED_SHELL")) {
+        if !matches!(sr.simple_name(), Some(OPEN_SHELL | CLOSED_SHELL)) {
             return None;
         }
         let sid = ShellId(format!("step:data:shell#{shell_step}"));
@@ -553,7 +559,7 @@ fn build(
                 continue;
             }
             let fr = exchange.records.get(&face_step)?;
-            if fr.simple_name() != Some("ADVANCED_FACE") {
+            if fr.simple_name() != Some(ADVANCED_FACE) {
                 return None;
             }
             let surface_step = fr.parameter(2)?.reference()?;
@@ -561,13 +567,13 @@ fn build(
             let mut loop_ids = vec![];
             for bound_step in refs(fr.parameter(1)?)? {
                 let br = exchange.records.get(&bound_step)?;
-                if !matches!(br.simple_name(), Some("FACE_BOUND" | "FACE_OUTER_BOUND")) {
+                if !matches!(br.simple_name(), Some(FACE_BOUND | FACE_OUTER_BOUND)) {
                     return None;
                 }
                 let loop_step = br.parameter(1)?.reference()?;
                 let lr = exchange.records.get(&loop_step)?;
                 let lid = LoopId(format!("step:data:loop#{loop_step}-face-{face_step}"));
-                if lr.simple_name() == Some("VERTEX_LOOP") {
+                if lr.simple_name() == Some(VERTEX_LOOP) {
                     let vertex_step = lr.parameter(1)?.reference()?;
                     if !vdefs.contains_key(&vertex_step) {
                         return None;
@@ -575,7 +581,7 @@ fn build(
                     built.loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary_role: if br.simple_name() == Some("FACE_OUTER_BOUND") {
+                        boundary_role: if br.simple_name() == Some(FACE_OUTER_BOUND) {
                             LoopBoundaryRole::Outer
                         } else {
                             LoopBoundaryRole::Inner
@@ -587,12 +593,12 @@ fn build(
                             pcurves: Vec::new(),
                         }],
                     });
-                    loop_ids.push((br.simple_name() == Some("FACE_OUTER_BOUND"), lid));
+                    loop_ids.push((br.simple_name() == Some(FACE_OUTER_BOUND), lid));
                     used_v.insert(vertex_step);
                     built.typed.extend([bound_step, loop_step]);
                     continue;
                 }
-                if lr.simple_name() != Some("EDGE_LOOP") {
+                if lr.simple_name() != Some(EDGE_LOOP) {
                     return None;
                 }
                 let bound_forward = br.parameter(2)?.logical()?;
@@ -649,7 +655,7 @@ fn build(
                 built.loops.push(Loop {
                     id: lid.clone(),
                     face: fid.clone(),
-                    boundary_role: if br.simple_name() == Some("FACE_OUTER_BOUND") {
+                    boundary_role: if br.simple_name() == Some(FACE_OUTER_BOUND) {
                         LoopBoundaryRole::Outer
                     } else {
                         LoopBoundaryRole::Inner
@@ -657,7 +663,7 @@ fn build(
                     coedges: coedge_ids,
                     vertex_uses: Vec::new(),
                 });
-                loop_ids.push((br.simple_name() == Some("FACE_OUTER_BOUND"), lid));
+                loop_ids.push((br.simple_name() == Some(FACE_OUTER_BOUND), lid));
                 built.typed.extend([bound_step, loop_step]);
             }
             loop_ids.sort_by_key(|(outer, _)| !outer);
@@ -731,7 +737,7 @@ fn build(
 
 fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {
     let curve = exchange.records.get(&curve_step)?;
-    if matches!(curve.simple_name(), Some("SURFACE_CURVE" | "SEAM_CURVE")) {
+    if matches!(curve.simple_name(), Some(SURFACE_CURVE | SEAM_CURVE)) {
         curve.parameter(1)?.reference()
     } else {
         Some(curve_step)
@@ -740,14 +746,14 @@ fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {
 
 fn associated_pcurve(curve_step: u64, surface_step: u64, exchange: &Exchange) -> Option<PcurveId> {
     let curve = exchange.records.get(&curve_step)?;
-    if !matches!(curve.simple_name(), Some("SURFACE_CURVE" | "SEAM_CURVE")) {
+    if !matches!(curve.simple_name(), Some(SURFACE_CURVE | SEAM_CURVE)) {
         return None;
     }
     refs(curve.parameter(2)?)?
         .into_iter()
         .find_map(|pcurve_step| {
             let pcurve = exchange.records.get(&pcurve_step)?;
-            (pcurve.simple_name() == Some("PCURVE")
+            (pcurve.simple_name() == Some(PCURVE)
                 && pcurve.parameter(1)?.reference()? == surface_step)
                 .then(|| PcurveId(format!("step:data:pcurve#{pcurve_step}")))
         })
@@ -759,12 +765,12 @@ fn resolve_shell(
     typed: &mut BTreeSet<u64>,
 ) -> Option<(u64, bool)> {
     let record = exchange.records.get(&reference)?;
-    if matches!(record.simple_name(), Some("OPEN_SHELL" | "CLOSED_SHELL")) {
+    if matches!(record.simple_name(), Some(OPEN_SHELL | CLOSED_SHELL)) {
         return Some((reference, true));
     }
     if matches!(
         record.simple_name(),
-        Some("ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL")
+        Some(ORIENTED_OPEN_SHELL | ORIENTED_CLOSED_SHELL)
     ) {
         typed.insert(reference);
         return Some((

@@ -47,6 +47,7 @@ pub mod lex;
 pub mod parse;
 mod reader;
 pub mod strings;
+mod vocab;
 mod writer;
 
 use std::collections::BTreeMap;

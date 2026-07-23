@@ -10,6 +10,13 @@ use crate::geometry;
 use crate::writer::{real, refs, Ref};
 
 use super::Builder;
+use crate::vocab::{
+    ADVANCED_FACE, AXIS1_PLACEMENT, CLOSED_SHELL, COMPOSITE_CURVE, COMPOSITE_CURVE_SEGMENT,
+    DEFINITIONAL_REPRESENTATION, DEGENERATE_TOROIDAL_SURFACE, EDGE_CURVE, EDGE_LOOP, FACE_BOUND,
+    FACE_OUTER_BOUND, GEOMETRIC_REPRESENTATION_CONTEXT, OFFSET_CURVE_3D, OFFSET_SURFACE,
+    OPEN_SHELL, ORIENTED_EDGE, PCURVE, SURFACE_CURVE, SURFACE_OF_LINEAR_EXTRUSION,
+    SURFACE_OF_REVOLUTION, TRIMMED_CURVE, VECTOR, VERTEX_LOOP, VERTEX_POINT,
+};
 
 impl Builder<'_> {
     pub(super) fn emit_shell(&mut self, shell_id: &str, closed: bool) -> Option<Ref> {
@@ -25,7 +32,7 @@ impl Builder<'_> {
             return None;
         }
         Some(self.emitter.emit(
-            if closed { "CLOSED_SHELL" } else { "OPEN_SHELL" },
+            if closed { CLOSED_SHELL } else { OPEN_SHELL },
             &format!("'',{}", refs(&face_refs)),
         ))
     }
@@ -66,9 +73,9 @@ impl Builder<'_> {
                             .get(id.as_str())
                             .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
                     })) {
-                    "FACE_OUTER_BOUND"
+                    FACE_OUTER_BOUND
                 } else {
-                    "FACE_BOUND"
+                    FACE_BOUND
                 };
                 let b = self.emitter.emit(kind, &format!("'',{loop_ref},.T."));
                 bound_refs.push(b);
@@ -79,7 +86,7 @@ impl Builder<'_> {
         }
         let flag = if same_sense { ".T." } else { ".F." };
         let advanced_face = self.emitter.emit(
-            "ADVANCED_FACE",
+            ADVANCED_FACE,
             &format!("'',{},{surf_ref},{flag}", refs(&bound_refs)),
         );
         self.links
@@ -92,7 +99,7 @@ impl Builder<'_> {
         let lp = self.index.loops.get(loop_id).copied()?;
         if lp.coedges.is_empty() && lp.vertex_uses.len() == 1 {
             let vertex = self.emit_vertex(lp.vertex_uses[0].vertex.as_str())?;
-            return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
+            return Some(self.emitter.emit(VERTEX_LOOP, &format!("'',{vertex}")));
         }
         let coedge_ids: Vec<String> = lp.coedges.iter().map(|c| c.0.clone()).collect();
         let mut oe_refs = Vec::new();
@@ -107,7 +114,7 @@ impl Builder<'_> {
             let flag = if orientation { ".T." } else { ".F." };
             let oe = self
                 .emitter
-                .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"));
+                .emit(ORIENTED_EDGE, &format!("'',*,*,{edge_ref},{flag}"));
             oe_refs.push(oe);
         }
         if oe_refs.is_empty() {
@@ -115,7 +122,7 @@ impl Builder<'_> {
         }
         Some(
             self.emitter
-                .emit("EDGE_LOOP", &format!("'',{}", refs(&oe_refs))),
+                .emit(EDGE_LOOP, &format!("'',{}", refs(&oe_refs))),
         )
     }
 
@@ -156,7 +163,7 @@ impl Builder<'_> {
             basis_curve
         } else {
             self.emitter.emit(
-                "SURFACE_CURVE",
+                SURFACE_CURVE,
                 &format!("'',{basis_curve},{},.CURVE_3D.", refs(&pcurve_refs)),
             )
         };
@@ -164,7 +171,7 @@ impl Builder<'_> {
         // parameterization, the convention IR curves follow.
         let r = self
             .emitter
-            .emit("EDGE_CURVE", &format!("'',{v1},{v2},{curve_ref},.T."));
+            .emit(EDGE_CURVE, &format!("'',{v1},{v2},{curve_ref},.T."));
         self.geom.edge_refs.insert(edge_id.to_string(), r);
         Some(r)
     }
@@ -177,19 +184,19 @@ impl Builder<'_> {
             context
         } else {
             let context = self.emitter.emit_raw(
-                "GEOMETRIC_REPRESENTATION_CONTEXT",
+                GEOMETRIC_REPRESENTATION_CONTEXT,
                 "( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('uv','2D') )",
             );
             self.geom.pcurve_context = Some(context);
             context
         };
         let representation = self.emitter.emit(
-            "DEFINITIONAL_REPRESENTATION",
+            DEFINITIONAL_REPRESENTATION,
             &format!("'',({curve}),{context}"),
         );
         Some(
             self.emitter
-                .emit("PCURVE", &format!("'',{surface},{representation}")),
+                .emit(PCURVE, &format!("'',{surface},{representation}")),
         )
     }
 
@@ -201,7 +208,7 @@ impl Builder<'_> {
         let pt = self.index.points.get(vertex.point.as_str()).copied()?;
         let cp = geometry::point(&mut self.emitter, pt.position);
         self.geom.point_refs.insert(vertex.point.0.clone(), cp);
-        let r = self.emitter.emit("VERTEX_POINT", &format!("'',{cp}"));
+        let r = self.emitter.emit(VERTEX_POINT, &format!("'',{cp}"));
         self.geom.vertex_refs.insert(vertex_id.to_string(), r);
         Some(r)
     }
@@ -263,11 +270,11 @@ impl Builder<'_> {
                 let directrix = self.emit_curve(directrix.as_str())?;
                 let direction_ref = geometry::direction(&mut self.emitter, *direction);
                 let vector = self.emitter.emit(
-                    "VECTOR",
+                    VECTOR,
                     &format!("'',{direction_ref},{}", real(direction.norm())),
                 );
                 Some(self.emitter.emit(
-                    "SURFACE_OF_LINEAR_EXTRUSION",
+                    SURFACE_OF_LINEAR_EXTRUSION,
                     &format!("'',{directrix},{vector}"),
                 ))
             }
@@ -281,10 +288,10 @@ impl Builder<'_> {
                 let direction = geometry::direction(&mut self.emitter, *axis_direction);
                 let axis = self
                     .emitter
-                    .emit("AXIS1_PLACEMENT", &format!("'',{origin},{direction}"));
+                    .emit(AXIS1_PLACEMENT, &format!("'',{origin},{direction}"));
                 Some(
                     self.emitter
-                        .emit("SURFACE_OF_REVOLUTION", &format!("'',{directrix},{axis}")),
+                        .emit(SURFACE_OF_REVOLUTION, &format!("'',{directrix},{axis}")),
                 )
             }
             ProceduralSurfaceDefinition::ParallelOffset {
@@ -294,7 +301,7 @@ impl Builder<'_> {
             } => {
                 let support = self.emit_surface(support.as_str())?;
                 Some(self.emitter.emit(
-                    "OFFSET_SURFACE",
+                    OFFSET_SURFACE,
                     &format!(
                         "'',{support},{},{}",
                         real(*distance),
@@ -316,7 +323,7 @@ impl Builder<'_> {
                 let placement =
                     geometry::placement(&mut self.emitter, *center, *axis, *ref_direction);
                 Some(self.emitter.emit(
-                    "DEGENERATE_TOROIDAL_SURFACE",
+                    DEGENERATE_TOROIDAL_SURFACE,
                     &format!(
                         "'',{placement},{},{},{}",
                         real(major_radius.abs()),
@@ -374,7 +381,7 @@ impl Builder<'_> {
                     }
                 };
                     segment_refs.push(self.emitter.emit(
-                        "COMPOSITE_CURVE_SEGMENT",
+                        COMPOSITE_CURVE_SEGMENT,
                         &format!(
                             "{transition},{},{curve}",
                             if segment.same_sense { ".T." } else { ".F." }
@@ -382,7 +389,7 @@ impl Builder<'_> {
                     ));
                 }
                 self.emitter.emit(
-                    "COMPOSITE_CURVE",
+                    COMPOSITE_CURVE,
                     &format!(
                         "'',{},{}",
                         refs(&segment_refs),
@@ -416,7 +423,7 @@ impl Builder<'_> {
             } => {
                 let source = self.emit_curve(source.as_str())?;
                 Some(self.emitter.emit(
-                    "TRIMMED_CURVE",
+                    TRIMMED_CURVE,
                     &format!(
                         "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.",
                         real(*start),
@@ -438,7 +445,7 @@ impl Builder<'_> {
                     None => ".U.",
                 };
                 Some(self.emitter.emit(
-                    "OFFSET_CURVE_3D",
+                    OFFSET_CURVE_3D,
                     &format!(
                         "'',{source},{},{self_intersect},{direction}",
                         real(*distance)
