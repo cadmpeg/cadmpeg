@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 72;
+pub const CATIA_NATIVE_VERSION: u32 = 73;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -2055,7 +2055,13 @@ fn value_schema_selections(
         .iter()
         .enumerate()
         .filter_map(|(index, field)| {
-            matches!(field, value_block::ValueField::SchemaSelector { .. }).then_some(index)
+            let value_block::ValueField::SchemaSelector { ordinal, .. } = field else {
+                return None;
+            };
+            usize::try_from(*ordinal)
+                .ok()
+                .filter(|ordinal| *ordinal <= catalog.entries.len())
+                .map(|_| index)
         })
         .collect::<Vec<_>>();
     selector_indices
@@ -2073,15 +2079,16 @@ fn value_schema_selections(
                     .get(selector_rank + 1)
                     .copied()
                     .unwrap_or(fields.len());
+                let encoded_value = if entry.is_some() {
+                    fields[index + 1..value_end].to_vec()
+                } else {
+                    Vec::new()
+                };
                 Some(CatiaValueSchemaSelection {
                     offset: *offset as u64,
                     ordinal: *ordinal,
-                    value: entry.as_ref().and_then(|_| fields.get(index + 1)).cloned(),
-                    encoded_value: if entry.is_some() {
-                        fields[index + 1..value_end].to_vec()
-                    } else {
-                        Vec::new()
-                    },
+                    value: encoded_value.first().cloned(),
+                    encoded_value,
                     entry,
                     name: catalog_entry.map(|entry| entry.value.clone()),
                 })

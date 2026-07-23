@@ -4289,6 +4289,48 @@ fn native_value_blocks_distinguish_the_terminal_schema_sentinel() {
 }
 
 #[test]
+fn native_value_blocks_frame_values_between_catalog_valid_selectors() {
+    let mut bytes = value_block_stream(&[
+        0x32, 3, 0, 0, 0, 0x83, 0x32, 5, 0, 0, 0, 0x84, 0x32, 2, 0, 0, 0, 0x32, 1, 0, 0, 0, 0x82,
+    ]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+    ]));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let selections = &native.value_blocks[0].schema_selections;
+    assert_eq!(selections.len(), 3);
+    assert_eq!(selections[0].ordinal, 3);
+    assert_eq!(
+        selections[0].value,
+        Some(crate::value_block::ValueField::Atom {
+            value: 3,
+            width: 1,
+            offset: 5,
+        })
+    );
+    assert!(matches!(
+        selections[0].encoded_value.as_slice(),
+        [
+            crate::value_block::ValueField::Atom { value: 3, .. },
+            crate::value_block::ValueField::SchemaSelector { ordinal: 5, .. },
+            crate::value_block::ValueField::Atom { value: 4, .. },
+        ]
+    ));
+    assert_eq!(selections[1].ordinal, 2);
+    assert_eq!(selections[1].value, None);
+    assert!(selections[1].encoded_value.is_empty());
+    assert_eq!(selections[2].ordinal, 1);
+    assert!(matches!(
+        selections[2].value,
+        Some(crate::value_block::ValueField::Atom { value: 2, .. })
+    ));
+}
+
+#[test]
 fn native_design_inventory_excludes_records_inside_object_payloads() {
     let mut nested = value_block_stream(&[0x81]);
     nested.extend(catalog_stream(&[
