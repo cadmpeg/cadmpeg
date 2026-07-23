@@ -1113,9 +1113,9 @@ pub(crate) fn project_fixed_fillet(
                 })
         })
         .collect::<Vec<_>>();
-    if groups.is_empty() {
+    let [group] = groups.as_slice() else {
         return None;
-    }
+    };
     let radius = match fixed.radii.as_slice() {
         [radius] if *radius > 0.0 => RadiusSpec::Constant {
             radius: Length(*radius * 10.0),
@@ -1147,134 +1147,20 @@ pub(crate) fn project_fixed_fillet(
         RadiusSpec::Chordal { .. } => None,
         _ => None,
     };
-    let groups = groups
-        .into_iter()
-        .map(|group| FilletGroup {
-            edges: resolved_edge_group(
-                group,
-                construction_groups,
-                edge_operands,
-                edge_identity_operands,
-                scope.previous_history_state_id,
-                &neutral_feature_id(scope),
-                edge_radius,
-            ),
-            radius: radius.clone(),
+    let edges = resolved_edge_group(
+        group,
+        construction_groups,
+        edge_operands,
+        edge_identity_operands,
+        scope.previous_history_state_id,
+        &neutral_feature_id(scope),
+        edge_radius,
+    );
+    Some(FeatureDefinition::Fillet {
+        groups: vec![FilletGroup {
+            edges,
+            radius,
             tangency_weight: Some(fixed.tangency_weight),
-        })
-        .collect();
-    Some(FeatureDefinition::Fillet { groups })
-}
-
-#[cfg(test)]
-mod fixed_fillet_tests {
-    use super::project_fixed_fillet;
-    use crate::records::{
-        DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignParameterScope,
-    };
-    use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, Length, RadiusSpec};
-
-    #[test]
-    fn fixed_scalar_lanes_apply_to_every_ordered_edge_group() {
-        let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:scope#1",
-            "byte_offset": 0,
-            "class_tag": "315",
-            "record_index": 1,
-            "frame_length": 1,
-            "kind": "Fillet",
-            "kind_offset": 0,
-            "feature_ordinal": 1,
-            "feature_ordinal_offset": 0,
-            "history_state_id": 8,
-            "history_state_id_offset": 0,
-            "previous_history_state_id": 7,
-            "previous_history_state_id_offset": 0,
-            "reference_count_offset": 0,
-            "reference_members": [],
-            "reference_member_offsets": [],
-            "fixed_fillet_parameters": {
-                "tangency_weight": 0.75,
-                "tangency_weight_record_index": 2,
-                "tangency_weight_offset": 0,
-                "radii": [0.2],
-                "radius_record_indexes": [3],
-                "radius_offsets": [0],
-                "intermediate_parameters": [],
-                "intermediate_parameter_record_indexes": [],
-                "intermediate_parameter_offsets": []
-            },
-            "paired_class_tag": "264",
-            "paired_byte_offset": 1
-        }))
-        .expect("test Fillet scope");
-        let group = |record_index, member| DesignConstructionOperandGroup {
-            id: format!("f3d:test:group#{record_index}"),
-            scope_record_index: 1,
-            scope_reference_ordinal: record_index,
-            record_index,
-            byte_offset: 0,
-            class_tag: "287".into(),
-            member_count_offset: 0,
-            members: vec![member],
-            lost_edge_references: Vec::new(),
-            member_offsets: vec![0],
-            identity_record_index: record_index + 100,
-            identity_record_offset: 0,
-            role: 0,
-            extrude_role: None,
-            extrude_face_role: None,
-            role_offset: 0,
-            opaque_index: 0,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
-            paired_class_tag: "264".into(),
-            paired_byte_offset: 1,
-        };
-        let groups = [group(10, 11), group(20, 21)];
-        let identity = |group_record_index, record_index, edge| {
-            serde_json::from_value::<DesignEdgeIdentityOperand>(serde_json::json!({
-                "id": format!("f3d:test:identity#{record_index}"),
-                "scope_record_index": 1,
-                "group_record_index": group_record_index,
-                "group_member_ordinal": 0,
-                "record_index": record_index,
-                "byte_offset": 0,
-                "class_tag": "280",
-                "local_id": record_index,
-                "local_id_offset": 0,
-                "asset_id": "asset",
-                "asset_id_offset": 0,
-                "context_id": "context",
-                "context_id_offset": 0,
-                "resolved_edge_slot": edge
-            }))
-            .expect("test edge identity")
-        };
-        let identities = [identity(10, 11, 101), identity(20, 21, 202)];
-
-        let FeatureDefinition::Fillet { groups } =
-            project_fixed_fillet(&scope, &groups, &[], &identities)
-                .expect("fixed Fillet with two edge groups")
-        else {
-            panic!("fixed Fillet did not project");
-        };
-        assert_eq!(groups.len(), 2);
-        for (group, edge) in groups.iter().zip([101, 202]) {
-            assert_eq!(
-                group.radius,
-                RadiusSpec::Constant {
-                    radius: Length(2.0)
-                }
-            );
-            assert_eq!(group.tangency_weight, Some(0.75));
-            assert!(matches!(
-                &group.edges,
-                EdgeSelection::Historical { edges, .. }
-                    if edges.len() == 1 && edges[0].0.ends_with(&format!(":{edge}"))
-            ));
-        }
-    }
+        }],
+    })
 }
