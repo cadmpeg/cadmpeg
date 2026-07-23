@@ -40,6 +40,10 @@ pub mod diff;
 pub mod document;
 pub mod drawings;
 pub mod eval;
+/// Hand-built fixture documents for tests and tooling. Gated behind the
+/// `test-support` feature (always on under `cfg(test)`) so a normal library
+/// build omits them.
+#[cfg(any(test, feature = "test-support"))]
 pub mod examples;
 pub mod features;
 pub mod geometry;
