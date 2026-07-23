@@ -2944,6 +2944,24 @@ fn partial_endpoint_ports_propagate_known_components_only() {
 }
 
 #[test]
+fn unbound_native_edge_pair_must_be_unique_in_the_geometric_domain() {
+    use crate::families::standard::decode::unique_unbound_native_endpoint_pair;
+
+    assert_eq!(
+        unique_unbound_native_endpoint_pair(&[2, 4, 7], &[[7, 2], [2, 7], [1, 4]]),
+        Some([2, 7])
+    );
+    assert_eq!(
+        unique_unbound_native_endpoint_pair(&[2, 4, 7], &[[7, 2], [2, 4]]),
+        None
+    );
+    assert_eq!(
+        unique_unbound_native_endpoint_pair(&[2, 4, 7], &[[1, 4], [2, 9]]),
+        None
+    );
+}
+
+#[test]
 fn endpoint_port_propagation_requires_a_point_bijection() {
     assert_eq!(
         propagate_edge_port_points(&[[10, 11]], &[Some([0, 1])]),
