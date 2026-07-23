@@ -35,7 +35,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::product::{OccurrenceParent, Product, ProductOccurrence};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchCoordinateAxis,
     SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
@@ -55,6 +55,7 @@ use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use serde::Serialize;
 
 use crate::container::{self, role, ContainerScan};
+use crate::loss::CreoLossCode;
 use crate::topology::HalfEdgeId;
 
 mod native;
@@ -25205,13 +25206,10 @@ fn build_report(
     let mut losses = Vec::new();
 
     if container_only {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::ContainerOnly,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: "Container-only decode requested; entity transfer was skipped.".to_string(),
-            provenance: None,
-        });
+        losses.push(
+            CreoLossCode::ContainerOnlyDecode
+                .note("Container-only decode requested; entity transfer was skipped.".to_string()),
+        );
     }
 
     // The namespace census: what is byte-backed and readable.
@@ -25225,11 +25223,7 @@ fn build_report(
         .census
         .crv_array_count
         .map_or_else(|| "n/a".to_string(), |c| c.to_string());
-    losses.push(LossNote {
-        code: cadmpeg_ir::report::LossCode::CarrierSummary,
-        category: LossCategory::Geometry,
-        severity: Severity::Info,
-        message: format!(
+    losses.push(CreoLossCode::NamespaceCensusSummary.note(format!(
             "PSB container decoded structurally: {} section(s), {} layout, VisibGeom namespace \
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
@@ -25252,16 +25246,10 @@ fn build_report(
             scan.curves.prototypes.len(),
             scan.curves.topology_rows.len(),
             scan.topology.loops.len(),
-        ),
-        provenance: None,
-    });
+        )));
 
     // The core prototype-vs-instance limitation.
-    losses.push(LossNote {
-        code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-        category: LossCategory::Geometry,
-        severity: Severity::Blocking,
-        message: format!(
+    losses.push(CreoLossCode::GeneralBrepIncomplete.note(format!(
             "General model B-rep transfer remains incomplete. Native face components transfer \
              when every boundary edge has solved vertex orbits, face orientation is unique, and \
              every loop is complete; a multi-loop planar face additionally requires one strict \
@@ -25276,208 +25264,126 @@ fn build_report(
              defaults; they require their per-instance parameter bodies \
              ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). {geom_sections} PSB geometry section(s) were preserved verbatim as unknown \
              records."
-        ),
-        provenance: None,
-    });
+        )));
 
     if !container_only && placed_plane_count != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
-                "Transferred {placed_plane_count} model-space plane carrier(s) from complete \
+        losses.push(CreoLossCode::PlaneCarriersTransferred.note(format!(
+            "Transferred {placed_plane_count} model-space plane carrier(s) from complete \
                  VisibGeom local-system support frames."
-            ),
-            provenance: None,
-        });
+        )));
     }
 
     if !container_only && first_instance_prototype_surface_count != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
+        losses.push(
+            CreoLossCode::FirstInstancePrototypeCarriersTransferred.note(format!(
                 "Transferred {first_instance_prototype_surface_count} first-instance ND plane, \
                  cylinder, cone, torus, or interpolation-spline carrier(s) from complete named \
                  parameters."
-            ),
-            provenance: None,
-        });
+            )),
+        );
     }
 
     if !container_only && paired_envelope_sphere_count != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
-                "Transferred {paired_envelope_sphere_count} sphere carrier(s) from complementary \
+        losses.push(CreoLossCode::SphereCarriersTransferred.note(format!(
+            "Transferred {paired_envelope_sphere_count} sphere carrier(s) from complementary \
                  five-coordinate type-26 hemisphere envelopes and their shared zero-major-radius \
                  prototype."
-            ),
-            provenance: None,
-        });
+        )));
     }
 
     if !container_only && positional_torus_count != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
+        losses.push(
+            CreoLossCode::PositionalTorusCarriersTransferred.note(format!(
                 "Transferred {positional_torus_count} exact positional torus carrier(s) from \
                  complete local-system, radius, and five-coordinate envelope bodies."
-            ),
-            provenance: None,
-        });
+            )),
+        );
     }
 
     if !container_only && positional_cylinder_count != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
+        losses.push(
+            CreoLossCode::PositionalCylinderCarriersTransferred.note(format!(
                 "Transferred {positional_cylinder_count} exact positional cylinder carrier(s) \
                  from complete per-instance parameter bodies."
-            ),
-            provenance: None,
-        });
+            )),
+        );
     }
 
     if !container_only && positional_cone_count != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
+        losses.push(
+            CreoLossCode::PositionalConeCarriersTransferred.note(format!(
                 "Transferred {positional_cone_count} exact positional cone carrier(s) from \
                  complete support-apex or planar-envelope bodies."
-            ),
-            provenance: None,
-        });
+            )),
+        );
     }
 
     if !container_only && positional_line_extrusion_plane_count != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
-                "Transferred {positional_line_extrusion_plane_count} unbound straight positional \
+        losses.push(CreoLossCode::LineExtrusionCarriersTransferred.note(format!(
+            "Transferred {positional_line_extrusion_plane_count} unbound straight positional \
                  surface-of-extrusion carrier(s) from complete sweep-direction and directrix \
                  frames."
-            ),
-            provenance: None,
-        });
+        )));
     }
 
     if !container_only && tabulated_cylinder_spline_extrusion_count != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
+        losses.push(
+            CreoLossCode::TabulatedCylinderSplineExtrusionCarriersTransferred.note(format!(
                 "Transferred {tabulated_cylinder_spline_extrusion_count} tabulated-cylinder \
                  cubic spline extrusion carrier(s) from uniquely matched directrix and frame spans."
-            ),
-            provenance: None,
-        });
+            )),
+        );
     }
 
     if !container_only && !scan.planes.datums.is_empty() {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
-                "Transferred {} exact model-space construction datum plane carrier(s) from ActDatums; \
+        losses.push(CreoLossCode::DatumPlaneCarriersTransferred.note(format!(
+            "Transferred {} exact model-space construction datum plane carrier(s) from ActDatums; \
                  these are unbounded reference planes, not model B-rep faces.",
-                scan.planes.datums.len()
-            ),
-            provenance: None,
-        });
+            scan.planes.datums.len()
+        )));
     }
 
     if !container_only && !scan.references.lines.is_empty() {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
-                "Transferred {} finite model-space reference line carrier(s) from MdlRefInfo; \
+        losses.push(CreoLossCode::ReferenceLineCarriersTransferred.note(format!(
+            "Transferred {} finite model-space reference line carrier(s) from MdlRefInfo; \
                  their byte-exact endpoints remain attached as native line records.",
-                scan.references.lines.len()
-            ),
-            provenance: None,
-        });
+            scan.references.lines.len()
+        )));
     }
 
     if !container_only && !scan.references.circles.is_empty() {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
+        losses.push(CreoLossCode::ReferenceCircleCarriersTransferred.note(format!(
                 "Transferred {} circular reference carrier(s) from MdlRefInfo rows whose stored center, radius, and endpoints satisfy the circle equation; byte-exact endpoints remain attached as native circle records.",
                 scan.references.circles.len()
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     if !container_only && !scan.references.ellipses.is_empty() {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
+        losses.push(CreoLossCode::ReferenceEllipseCarriersTransferred.note(format!(
                 "Transferred {} elliptical reference carrier(s) from MdlRefInfo conic rows whose frame, coefficient radii, and antipodal endpoints satisfy one ellipse equation; the source conic records remain byte-exact native records.",
                 scan.references.ellipses.len()
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let topological_point_count = count("transferred_topological_point_count");
     if !container_only && topological_point_count != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
+        losses.push(CreoLossCode::TopologicalPointCarriersTransferred.note(format!(
                 "Transferred {topological_point_count} exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or pcurve endpoint domains constrained by agreeing face maps and incident analytic edge carriers."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let native_topological_edge_count = count("transferred_native_topological_edge_count");
     if !container_only && native_topological_edge_count != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Topology,
-            severity: Severity::Info,
-            message: format!(
+        losses.push(CreoLossCode::TopologicalEdgeCarriersTransferred.note(format!(
                 "Transferred {native_topological_edge_count} native topological edge(s) whose endpoint vertex orbits have exact model-space points."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let straight_pcurve_line_count = count("transferred_straight_pcurve_line_count");
     if !container_only && straight_pcurve_line_count != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
+        losses.push(CreoLossCode::PcurveLineCarriersTransferred.note(format!(
                 "Transferred {straight_pcurve_line_count} exact line carrier(s) by mapping native linear pcurves through placed planar, cylindrical, or conical face charts."
-            ),
-            provenance: None,
-        });
+            )));
     }
 
     let torus_coverage = torus_parameter_coverage(scan);
@@ -25486,51 +25392,41 @@ fn build_report(
         || torus_coverage.five_coordinate_envelopes != 0
         || torus_coverage.split_coordinate_envelopes != 0
     {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
-                "Retained {} tagged type-26 radius override(s), {} terminal outline extent(s), \
+        losses.push(CreoLossCode::TorusParameterCoverageRetained.note(format!(
+            "Retained {} tagged type-26 radius override(s), {} terminal outline extent(s), \
                  {} five-coordinate envelope(s), and {} split-coordinate envelope(s). These \
                  row-local fields remain byte-exact native data. Placement-complete paired sphere \
                  envelopes additionally transfer as analytic carriers.",
-                torus_coverage.radius_overrides,
-                torus_coverage.outline_extents,
-                torus_coverage.five_coordinate_envelopes,
-                torus_coverage.split_coordinate_envelopes,
-            ),
-            provenance: None,
-        });
+            torus_coverage.radius_overrides,
+            torus_coverage.outline_extents,
+            torus_coverage.five_coordinate_envelopes,
+            torus_coverage.split_coordinate_envelopes,
+        )));
     }
 
     // The specific undecoded PSB layers that gate per-instance geometry.
-    losses.push(LossNote {
-        code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-        category: LossCategory::Geometry,
-        severity: Severity::Blocking,
-        message: "Additional model-space carriers are gated by unresolved lane-specific scalar \
+    losses.push(
+        CreoLossCode::PerInstanceGeometryGated.note(
+            "Additional model-space carriers are gated by unresolved lane-specific scalar \
                   prefixes, feature-local transform bindings, placement-incomplete or untagged \
                   `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps \
                   prevent transfer of the remaining non-plane per-instance surfaces, curves, and \
                   vertices."
-            .to_string(),
-        provenance: None,
-    });
+                .to_string(),
+        ),
+    );
 
     // Topology.
-    losses.push(LossNote {
-        code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-        category: LossCategory::Topology,
-        severity: Severity::Blocking,
-        message: "Native curve half-edges and closed loops were decoded. Components with complete \
+    losses.push(
+        CreoLossCode::TopologyPartiallyTransferred.note(
+            "Native curve half-edges and closed loops were decoded. Components with complete \
                   solved boundaries and unique face orientations transfer as \
                   body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components \
                   require face-instance partitioning, surface parameter bindings, curve geometry, \
                   or vertex coordinates."
-            .to_string(),
-        provenance: None,
-    });
+                .to_string(),
+        ),
+    );
 
     let configuration_gap = match scan.framing.family_table.map(|record| record.pointer) {
         Some(crate::container::FamilyTablePointer::Null) => "",
@@ -25560,101 +25456,63 @@ fn build_report(
     };
 
     // Features, history, materials.
-    losses.push(LossNote {
-        code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
-        category: LossCategory::Attribute,
-        severity: Severity::Warning,
-        message: format!(
-            "Named feature operations and their decoded dependency/input tables transfer as typed \
+    losses.push(CreoLossCode::FeatureOperationsRetained.note(format!(
+        "Named feature operations and their decoded dependency/input tables transfer as typed \
              or native design records. {curve_expression_transfer} \
              Full neutral operation semantics\
              {configuration_gap}, graph, case-study, cabling, and cross-model relation functions, \
              materials, and display data \
              remain untransferred."
-        ),
-        provenance: None,
-    });
+    )));
 
     // Coverage drops: VisibGeom rows and curve-equation records that decoded
     // but could not be transferred, resolved, or evaluated.
     let untransferred_surface_rows = count("untransferred_visible_surface_row_count");
     if untransferred_surface_rows != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{untransferred_surface_rows} unique VisibGeom surface row(s) were not \
+        losses.push(CreoLossCode::VisibleSurfaceRowsUntransferred.note(format!(
+            "{untransferred_surface_rows} unique VisibGeom surface row(s) were not \
                  transferred as carriers and remain structural namespace records."
-            ),
-            provenance: None,
-        });
+        )));
     }
     let untransferred_curve_rows = count("untransferred_visible_curve_row_count");
     if untransferred_curve_rows != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{untransferred_curve_rows} unique VisibGeom curve-topology row(s) were not \
+        losses.push(CreoLossCode::VisibleCurveRowsUntransferred.note(format!(
+            "{untransferred_curve_rows} unique VisibGeom curve-topology row(s) were not \
                  transferred as carriers and remain structural namespace records."
-            ),
-            provenance: None,
-        });
+        )));
     }
     let ambiguous_surface_rows = count("ambiguous_visible_surface_row_count");
     if ambiguous_surface_rows != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
-                "{ambiguous_surface_rows} VisibGeom surface row(s) share a non-unique identity \
+        losses.push(CreoLossCode::AmbiguousSurfaceRows.note(format!(
+            "{ambiguous_surface_rows} VisibGeom surface row(s) share a non-unique identity \
                  and were not resolved to a single carrier."
-            ),
-            provenance: None,
-        });
+        )));
     }
     let ambiguous_curve_rows = count("ambiguous_visible_curve_row_count");
     if ambiguous_curve_rows != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
-                "{ambiguous_curve_rows} VisibGeom curve-topology row(s) share a non-unique \
+        losses.push(CreoLossCode::AmbiguousCurveRows.note(format!(
+            "{ambiguous_curve_rows} VisibGeom curve-topology row(s) share a non-unique \
                  identity and were not resolved to a single carrier."
-            ),
-            provenance: None,
-        });
+        )));
     }
     let prohibited_records = count("prohibited_active_curve_expression_record_count");
     if prohibited_records != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
-            category: LossCategory::Attribute,
-            severity: Severity::Warning,
-            message: format!(
+        losses.push(
+            CreoLossCode::ProhibitedCurveExpressionRecordsRetained.note(format!(
                 "{prohibited_records} active curve-equation record(s) containing prohibited \
                  datum-curve constructs were not evaluated; source and dependencies were \
                  retained without values or derived curves."
-            ),
-            provenance: None,
-        });
+            )),
+        );
     }
     let prohibited_kinds = count("prohibited_active_curve_expression_kind_count");
     if prohibited_kinds != 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
-            category: LossCategory::Attribute,
-            severity: Severity::Warning,
-            message: format!(
+        losses.push(
+            CreoLossCode::ProhibitedCurveExpressionKindsRetained.note(format!(
                 "{prohibited_kinds} prohibited datum-curve construct(s) across active \
                  curve-equation records were not evaluated."
-            ),
-            provenance: None,
-        });
+            )),
+        );
     }
 
     DecodeReport {
