@@ -11,7 +11,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -26,6 +26,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chunks::ArchiveVersion;
 use crate::container::Scan;
+use crate::loss::RhinoLossCode;
 use crate::objects::ObjectDescriptor;
 
 /// Maximum bytes retained for one Rhino object record.
@@ -1828,79 +1829,65 @@ impl<'a> DecodeContext<'a> {
             .map(|outcome| outcome.decoded)
             .sum::<usize>();
         let total = self.scan.objects.len();
-        losses.push(LossNote {
-            code: LossCode::ObjectRecordsUntransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!("decoded {decoded}/{total} Rhino object records"),
-            provenance: None,
-        });
+        losses.push(
+            RhinoLossCode::ObjectRecordsSummary
+                .note(format!("decoded {decoded}/{total} Rhino object records")),
+        );
         let mut omissions: Vec<LossNote> = Vec::new();
         for (class, outcome) in &self.outcomes {
             if outcome.retained > 0 {
-                omissions.push(LossNote {
-                    code: LossCode::UnsupportedObjectFamily,
-                    category: LossCategory::Geometry,
-                    severity: Severity::Warning,
-                    message: format!(
+                omissions.push(RhinoLossCode::ObjectFamilyRetained.note_with_provenance(
+                    format!(
                         "retained {} object record(s) for class {class}; geometry is not decoded",
                         outcome.retained
                     ),
-                    provenance: Some(loss_provenance(class, outcome)),
-                });
+                    loss_provenance(class, outcome),
+                ));
             }
             if outcome.attribute_degraded > 0 {
-                losses.push(LossNote {
-                    code: LossCode::AttributesNotTransferred,
-                    category: LossCategory::Attribute,
-                    severity: Severity::Warning,
-                    message: format!(
-                        "{} object record(s) for class {class} have degraded attributes",
-                        outcome.attribute_degraded
+                losses.push(
+                    RhinoLossCode::ObjectAttributesDegraded.note_with_provenance(
+                        format!(
+                            "{} object record(s) for class {class} have degraded attributes",
+                            outcome.attribute_degraded
+                        ),
+                        loss_provenance(class, outcome),
                     ),
-                    provenance: Some(loss_provenance(class, outcome)),
-                });
+                );
             }
             if outcome.failed_framed > 0 {
-                losses.push(LossNote {
-                    code: LossCode::DecodeDiagnostic,
-                    category: LossCategory::Other,
-                    severity: Severity::Error,
-                    message: format!(
+                losses.push(RhinoLossCode::FramedObjectUndecoded.note_with_provenance(
+                    format!(
                         "{} framed object record(s) for class {class} could not be decoded",
                         outcome.failed_framed
                     ),
-                    provenance: Some(loss_provenance(class, outcome)),
-                });
+                    loss_provenance(class, outcome),
+                ));
             }
         }
         self.typed_losses.extend(omissions);
         if let Some(first) = self.scan.definitions.diagnostics.first() {
-            losses.push(LossNote {
-                code: LossCode::DecodeDiagnostic,
-                category: LossCategory::Other,
-                severity: Severity::Warning,
-                message: format!(
+            losses.push(RhinoLossCode::InstanceDefinitionsRetained.note_with_provenance(
+                format!(
                     "retained {} malformed, ambiguous, or checksum-degraded instance-definition record(s); first: {}",
                     self.scan.definitions.diagnostics.len(),
                     first.message
                 ),
-                provenance: Some(LossProvenance {
+                LossProvenance {
                     format: "rhino".to_string(),
                     stream: String::new(),
                     offset: first.source_range.start as u64,
                     tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
-                }),
-            });
+                },
+            ));
         }
         losses.append(&mut self.typed_losses);
-        losses.extend(self.scan.warnings.iter().map(|warning| LossNote {
-            code: LossCode::DecodeDiagnostic,
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: warning.clone(),
-            provenance: None,
-        }));
+        losses.extend(
+            self.scan
+                .warnings
+                .iter()
+                .map(|warning| RhinoLossCode::ScanWarning.note(warning.clone())),
+        );
         let mut phase_families = BTreeMap::<String, (usize, String)>::new();
         for warning in &self.phase_warnings {
             let (family, detail) = warning
@@ -1913,21 +1900,13 @@ impl<'a> DecodeContext<'a> {
                 .or_insert_with(|| (0, detail.to_string()));
             entry.0 += 1;
         }
-        losses.extend(
-            phase_families
-                .into_iter()
-                .map(|(family, (count, first))| LossNote {
-                    code: LossCode::DecodeDiagnostic,
-                    category: LossCategory::Other,
-                    severity: Severity::Warning,
-                    message: if count == 1 {
-                        format!("{family}: {first}")
-                    } else {
-                        format!("{family}: {count} decode warnings; first: {first}")
-                    },
-                    provenance: None,
-                }),
-        );
+        losses.extend(phase_families.into_iter().map(|(family, (count, first))| {
+            RhinoLossCode::PhaseWarning.note(if count == 1 {
+                format!("{family}: {first}")
+            } else {
+                format!("{family}: {count} decode warnings; first: {first}")
+            })
+        }));
         let byte_records = self
             .unknowns
             .iter()
@@ -2657,13 +2636,10 @@ impl<'a> DecodeContext<'a> {
                 if validation.is_ok() {
                     for warning in warnings {
                         if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
-                            self.typed_losses.push(LossNote {
-                                code: LossCode::TopologyNotTransferred,
-                                category: LossCategory::Topology,
-                                severity: Severity::Warning,
-                                message: format!("Brep topology fallback: {cause}"),
-                                provenance: None,
-                            });
+                            self.typed_losses.push(
+                                RhinoLossCode::BrepTopologyFallback
+                                    .note(format!("Brep topology fallback: {cause}")),
+                            );
                         } else {
                             self.scan_warning(source_order, &warning);
                         }

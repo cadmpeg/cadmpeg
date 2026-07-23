@@ -5,10 +5,11 @@
 //! support ladder. The codec provides bounded 3DM container inspection, typed
 //! decoding, and explicitly versioned semantic native writing.
 
+use crate::loss::RhinoLossCode;
 use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::{ExportReport, LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::report::ExportReport;
 use std::io::Write;
 
 pub(crate) mod annotations;
@@ -26,6 +27,7 @@ pub(crate) mod extrusion;
 pub(crate) mod hatch;
 pub(crate) mod history;
 pub(crate) mod instances;
+pub(crate) mod loss;
 pub(crate) mod mesh;
 pub(crate) mod morph;
 pub(crate) mod objects;
@@ -147,22 +149,15 @@ impl Encoder for RhinoEncoder {
             });
         let mut losses = Vec::new();
         if vertex_quantization {
-            losses.push(LossNote {
-                code: LossCode::MeshVertexPrecision,
-                category: LossCategory::Geometry,
-                severity: Severity::Warning,
-                message: "archive version 50 stores standalone mesh vertices as f32".into(),
-                provenance: None,
-            });
+            losses.push(
+                RhinoLossCode::MeshVertexQuantized
+                    .note("archive version 50 stores standalone mesh vertices as f32"),
+            );
         }
         if normal_quantization {
-            losses.push(LossNote {
-                code: LossCode::MeshVertexPrecision,
-                category: LossCategory::Geometry,
-                severity: Severity::Warning,
-                message: "3DM mesh normals are stored as f32".into(),
-                provenance: None,
-            });
+            losses.push(
+                RhinoLossCode::MeshNormalQuantized.note("3DM mesh normals are stored as f32"),
+            );
         }
         Ok(ExportReport {
             format: "rhino".into(),

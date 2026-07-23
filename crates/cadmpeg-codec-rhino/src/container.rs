@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
 
 use crate::chunks::{
@@ -14,6 +14,7 @@ use crate::chunks::{
     FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
+use crate::loss::RhinoLossCode;
 use crate::objects::{
     degraded_object_record, parse_object_record, resolve_identities, ObjectDescriptor,
 };
@@ -656,31 +657,19 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
     let mut losses: Vec<_> = scan
         .warnings
         .iter()
-        .map(|message| LossNote {
-            code: LossCode::DecodeDiagnostic,
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: message.clone(),
-            provenance: None,
-        })
+        .map(|message| RhinoLossCode::ScanWarning.note(message.clone()))
         .collect();
-    losses.extend(
-        scan.definitions
-            .diagnostics
-            .iter()
-            .map(|diagnostic| LossNote {
-                code: LossCode::DecodeDiagnostic,
-                category: LossCategory::Other,
-                severity: Severity::Warning,
-                message: diagnostic.message.clone(),
-                provenance: Some(cadmpeg_ir::LossProvenance {
-                    format: "rhino".to_string(),
-                    stream: String::new(),
-                    offset: diagnostic.source_range.start as u64,
-                    tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
-                }),
-            }),
-    );
+    losses.extend(scan.definitions.diagnostics.iter().map(|diagnostic| {
+        RhinoLossCode::InstanceDefinitionsRetained.note_with_provenance(
+            diagnostic.message.clone(),
+            cadmpeg_ir::LossProvenance {
+                format: "rhino".to_string(),
+                stream: String::new(),
+                offset: diagnostic.source_range.start as u64,
+                tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
+            },
+        )
+    }));
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
         DecodeReport {
