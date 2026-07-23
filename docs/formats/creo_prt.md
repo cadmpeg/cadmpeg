@@ -2143,7 +2143,10 @@ also define the section's in-plane reference equation through the stored
 origin. This complete local frame supplies section orientation when the
 section's referenced plane entities do not reduce to one orientation plane.
 
-A class-923 feature with exactly one resolved plane carrier defines that datum plane by the carrier's model-space origin, normal, and in-plane reference direction.
+A class-923 feature with exactly one owned plane row defines that datum plane
+when the row's neutral carrier has a resolved model-space origin, normal, and
+in-plane reference direction. Multiple owned plane rows leave the datum
+unresolved even when only one carrier is currently transferable.
 
 For a linear section sweep, generated plane carriers parallel to the section normal bound the sweep axially. Their signed offsets are measured from the section origin along the section normal. The extreme nonzero offset on one side defines a blind extrusion from offset zero to that offset; its sign determines the sweep direction. Extreme offsets on opposite sides define a two-sided extrusion. Equal magnitudes select the symmetric form with total length equal to the sum of the magnitudes. Interior axis-normal planes do not shorten the sweep. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain. The first resolved section sweep in feature-definition order forms the base body. A later sweep requires its Boolean operation before it can be committed as an independent body. A section-sweep definition is solid when its evaluated closed-profile topology produces a solid body. An absent evaluated body does not define a nonsolid sweep.
 A class-916 or class-917 section sweep with one complete section transform and

@@ -1601,6 +1601,55 @@ fn stored_section_sweep_family_defines_boolean_operation() {
 }
 
 #[test]
+fn datum_feature_uses_its_unique_transferred_plane_carrier() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 6,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 5,
+        reversed: false,
+        boundary_type: 1,
+        next_surface: 0,
+        offset: 0,
+    });
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId("creo:visibgeom:surface#6".to_string()),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 1.0, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    });
+
+    assert_eq!(
+        schema_feature_definition(&scan, &ir, 5, 923, "Datum Plane"),
+        IrFeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 1.0, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, 1.0),
+        }
+    );
+
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 7,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 5,
+        reversed: false,
+        boundary_type: 1,
+        next_surface: 0,
+        offset: 1,
+    });
+    assert_eq!(
+        schema_feature_definition(&scan, &ir, 5, 923, "Datum Plane"),
+        IrFeatureDefinition::DatumPlaneUnresolved
+    );
+}
+
+#[test]
 fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     let feature = |definition, outputs| Feature {
         id: IrFeatureId("creo:model:feature#1".to_string()),

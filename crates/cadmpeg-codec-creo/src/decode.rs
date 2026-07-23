@@ -13787,22 +13787,50 @@ fn schema_feature_definition(
         {
             return IrFeatureDefinition::DatumPlaneUnresolved;
         }
-        let placed = placed_planes(scan);
-        let planes = scan
+        let plane_ids = scan
             .surfaces
             .rows
             .iter()
             .filter(|row| {
                 row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
             })
-            .filter_map(|row| placed.get(&row.id))
-            .collect::<Vec<_>>();
-        if let [plane] = planes.as_slice() {
+            .map(|row| row.id)
+            .collect::<BTreeSet<_>>();
+        let plane_ids = plane_ids.into_iter().collect::<Vec<_>>();
+        let [surface_id] = plane_ids.as_slice() else {
+            return IrFeatureDefinition::DatumPlaneUnresolved;
+        };
+        if crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_none() {
+            return IrFeatureDefinition::DatumPlaneUnresolved;
+        }
+        if let Some(plane) = placed_planes(scan).get(surface_id) {
             let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
             return IrFeatureDefinition::DatumPlane {
                 origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
                 normal,
                 u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+            };
+        }
+        let surface_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+        let planes = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == surface_id)
+            .filter_map(|surface| match surface.geometry {
+                SurfaceGeometry::Plane {
+                    origin,
+                    normal,
+                    u_axis,
+                } => Some((origin, normal, u_axis)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if let [(origin, normal, u_axis)] = planes.as_slice() {
+            return IrFeatureDefinition::DatumPlane {
+                origin: *origin,
+                normal: *normal,
+                u_axis: *u_axis,
             };
         }
         return IrFeatureDefinition::DatumPlaneUnresolved;
