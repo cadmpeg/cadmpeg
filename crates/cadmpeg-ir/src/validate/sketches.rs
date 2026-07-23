@@ -202,7 +202,7 @@ fn spatial_parallel_line_distance(
     )
 }
 
-pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_sketches(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     let entity_geometry = ir
         .model
         .sketch_entities
@@ -437,12 +437,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
 
-    let spatial_sketches = ir
-        .model
-        .spatial_sketches
-        .iter()
-        .map(|sketch| &sketch.id)
-        .collect::<HashSet<_>>();
     let spatial_geometry = ir
         .model
         .spatial_sketch_entities
@@ -538,7 +532,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
     for entity in &ir.model.spatial_sketch_entities {
         let id = &entity.id.0;
-        if !spatial_sketches.contains(&entity.sketch) {
+        if !index
+            .spatial_sketches
+            .contains_key(entity.sketch.0.as_str())
+        {
             finding(
                 findings,
                 Check::ReferentialIntegrity,
@@ -706,7 +703,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|parameter| (&parameter.id, &parameter.value))
         .collect::<HashMap<_, _>>();
     for constraint in &ir.model.spatial_sketch_constraints {
-        if !spatial_sketches.contains(&constraint.sketch) {
+        if !index
+            .spatial_sketches
+            .contains_key(constraint.sketch.0.as_str())
+        {
             finding(
                 findings,
                 Check::ReferentialIntegrity,

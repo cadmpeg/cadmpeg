@@ -105,7 +105,7 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     check_subds(ir, &mut findings);
     check_procedural_surfaces(ir, &mut findings);
     check_source_associations(ir, &mut findings);
-    check_sketches(ir, &mut findings);
+    check_sketches(ir, &index, &mut findings);
     check_spreadsheets(ir, &index, &mut findings);
     check_component_products(ir, &index, &mut findings);
     check_presentation(ir, &index, &mut findings);
