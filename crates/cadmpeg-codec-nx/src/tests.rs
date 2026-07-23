@@ -5081,6 +5081,35 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
 }
 
 #[test]
+fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
+    let mut stream = pcurve_topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 18, 26);
+    let mut trim = record(133, 85);
+    put_ref(&mut trim, 2, 26);
+    trim[18] = b'+';
+    put_ref(&mut trim, 19, 25);
+    put_f64(&mut trim, 69, 1.0);
+    put_f64(&mut trim, 77, 0.0);
+    stream.extend(trim);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.pcurves[0].parameter_range, None);
+    assert_eq!(
+        result.ir.model.coedges[0].pcurves[0].parameter_range,
+        Some([0.0, 1.0])
+    );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn decode_omits_surface_curve_missing_tolerance_sentinel() {
     let mut stream = pcurve_topology_partition_stream();
     let surface_curve = stream

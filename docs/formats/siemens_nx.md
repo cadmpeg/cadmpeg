@@ -661,7 +661,7 @@ torus:    Y = A×X;  P = C_mm + (R + r·cos v)·(cos u · X + sin u · Y) + r·s
 
 ### 6.4 TRIMMED_CURVE (133) and SP_CURVE (137)
 
-**TRIMMED_CURVE (133):** basis_curve ref `+19` (large-index capable → shifts later fields +2), `point_1 +21`, `point_2 +45`, `parm_1:f64 +69`, `parm_2:f64 +77`. The curve is `basis(t)` restricted to `[parm_1, parm_2]`; parameters are in the basis's native units: LINE uses meters of arc length from the stored point (×1000 for mm), CIRCLE uses radians, and B_CURVE uses knot units. Unscaled meter spans on a LINE basis place the trim interval 1000× too small.
+**TRIMMED_CURVE (133):** basis_curve ref `+19` (large-index capable → shifts later fields +2), `point_1 +21`, `point_2 +45`, `parm_1:f64 +69`, `parm_2:f64 +77`. The curve is `basis(t)` restricted to the unordered interval bounded by `parm_1` and `parm_2`; parameters are in the basis's native units: LINE uses meters of arc length from the stored point (×1000 for mm), CIRCLE uses radians, and B_CURVE uses knot units. Unscaled meter spans on a LINE basis place the trim interval 1000× too small. When the basis is a surface pcurve, the ordered interval belongs to the coedge's pcurve occurrence; the shared pcurve carrier retains its intrinsic parameter domain.
 
 The typed source record retains the basis reference, both stored model-space points in millimetres, both parameters in basis units, and the inflated-stream offset. Topological transfer aliases the wrapper to its terminal basis carrier and applies the validated parameter range to the owning edge.
 

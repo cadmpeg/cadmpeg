@@ -729,9 +729,6 @@ fn try_decode_geometry(
                     }
                 }
                 if let Some(pcurve) = pcurves_by_xmt.get(&trim.basis).cloned() {
-                    if let Some(carrier) = ir.model.pcurves.iter_mut().find(|p| p.id == pcurve) {
-                        carrier.parameter_range = Some(trim.parameters);
-                    }
                     pcurves_by_xmt.insert(trim.xmt, pcurve);
                     if let Some(support) = pcurve_supports_by_xmt.get(&trim.basis).cloned() {
                         pcurve_supports_by_xmt.insert(trim.xmt, support);
@@ -5074,6 +5071,10 @@ fn emit_topology(
             .and_then(Node::face_fields)
             .and_then(|face| surfaces.get(&face.surface))
             .cloned();
+        let pcurve_use_range = trim_ranges
+            .get(&fields.curve_xmt)
+            .copied()
+            .and_then(ordered_parameter_range);
         let mut pcurve = pcurves.get(&fields.curve_xmt).cloned().filter(|id| {
             let Some((carrier, support)) = ir
                 .model
@@ -5089,10 +5090,11 @@ fn emit_topology(
                 &edge,
                 support,
                 &carrier.geometry,
-                carrier.parameter_range,
+                pcurve_use_range.or(carrier.parameter_range),
                 carrier.fit_tolerance,
             )
         });
+        let attached_pcurve_use_range = pcurve.as_ref().and(pcurve_use_range);
         if pcurve.is_none() {
             let carrier = ir
                 .model
@@ -5145,7 +5147,7 @@ fn emit_topology(
                 .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
                     pcurve,
                     isoparametric: None,
-                    parameter_range: None,
+                    parameter_range: attached_pcurve_use_range,
                 })
                 .collect(),
             use_curve: None,
