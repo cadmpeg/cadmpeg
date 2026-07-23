@@ -2298,10 +2298,11 @@ mod marker_tests {
 
     #[test]
     fn legacy_extended_line_cycle_carries_rectangle_from_opposite_vertices() {
-        let mut payload = vec![0; 4 * 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
-        let edges = [[1u16, 2u16], [2, 3], [3, 4], [4, 1]];
+        const CURVE_START: usize = 400;
+        let mut payload = vec![0; CURVE_START + 4 * 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        let edges = [[0u16, 2u16], [0, 3], [3, 1], [2, 1]];
         for (index, edge) in edges.into_iter().enumerate() {
-            let offset = index * 84;
+            let offset = CURVE_START + index * 84;
             payload[offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
                 .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
             payload[offset + 5..offset + 13].fill(0xff);
@@ -2313,13 +2314,14 @@ mod marker_tests {
             payload[offset + 31..offset + 35].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
             payload[offset + 35..offset + 39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
             payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
-            payload[offset + 56..offset + 58].copy_from_slice(&(edge[0] - 1).to_le_bytes());
-            payload[offset + 58..offset + 60].copy_from_slice(&(edge[1] - 1).to_le_bytes());
+            payload[offset + 56..offset + 58].copy_from_slice(&edge[0].to_le_bytes());
+            payload[offset + 58..offset + 60].copy_from_slice(&edge[1].to_le_bytes());
             payload[offset + 60..offset + 64].copy_from_slice(&1u32.to_le_bytes());
             payload[offset + 64..offset + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
         }
-        payload[3 * 84 + 74..3 * 84 + 76].copy_from_slice(&1u16.to_le_bytes());
-        payload[4 * 84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[CURVE_START + 3 * 84 + 74..CURVE_START + 3 * 84 + 76]
+            .copy_from_slice(&2u16.to_le_bytes());
+        payload[CURVE_START + 4 * 84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         let marker = |id: &str,
                       offset: u64,
                       object_index: Option<u32>,
@@ -2341,22 +2343,48 @@ mod marker_tests {
         let markers = [
             marker(
                 "first",
-                400,
-                Some(1),
+                0,
+                None,
                 Some([-0.025, -0.011]),
                 SketchInputKind::Point,
             ),
             marker(
-                "third",
-                500,
-                Some(3),
+                "opposite",
+                100,
+                None,
                 Some([0.025, 0.011]),
                 SketchInputKind::Point,
             ),
-            marker("line-1", 0, None, None, SketchInputKind::LineOrCircle),
-            marker("line-2", 84, None, None, SketchInputKind::LineOrCircle),
-            marker("line-3", 168, None, None, SketchInputKind::LineOrCircle),
-            marker("line-4", 252, None, None, SketchInputKind::LineOrCircle),
+            marker("third", 200, None, None, SketchInputKind::Point),
+            marker("fourth", 300, None, None, SketchInputKind::Point),
+            marker(
+                "line-1",
+                CURVE_START as u64,
+                None,
+                None,
+                SketchInputKind::LineOrCircle,
+            ),
+            marker(
+                "line-2",
+                (CURVE_START + 84) as u64,
+                None,
+                None,
+                SketchInputKind::LineOrCircle,
+            ),
+            marker(
+                "line-3",
+                (CURVE_START + 168) as u64,
+                None,
+                None,
+                SketchInputKind::LineOrCircle,
+            ),
+            marker(
+                "line-4",
+                (CURVE_START + 252) as u64,
+                None,
+                None,
+                SketchInputKind::LineOrCircle,
+            ),
         ];
         let marker_refs = markers.iter().collect::<Vec<_>>();
 
@@ -2371,7 +2399,8 @@ mod marker_tests {
         );
 
         let mut adjacent = markers;
-        adjacent[1].object_index = Some(2);
+        adjacent[1].coordinates_m = None;
+        adjacent[2].coordinates_m = Some([0.025, 0.011]);
         assert_eq!(
             legacy_extended_diagonal_rectangle(&payload, &adjacent.iter().collect::<Vec<_>>()),
             None
@@ -19613,22 +19642,17 @@ fn legacy_extended_diagonal_rectangle(
     {
         return None;
     }
+    let mut roster = markers.to_vec();
+    roster.sort_unstable_by_key(|marker| marker.offset);
     let mut known = vertices
         .iter()
         .filter_map(|vertex| {
-            let mut candidates = markers.iter().copied().filter(|marker| {
-                marker.object_index == Some(*vertex)
-                    && marker.coordinates_m.is_some()
-                    && matches!(
-                        marker.kind,
-                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                    )
-            });
-            let marker = candidates.next()?;
-            candidates
-                .next()
-                .is_none()
-                .then_some((*vertex, marker.coordinates_m?))
+            let marker = roster.get(usize::try_from(*vertex).ok()?)?;
+            (matches!(
+                marker.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) && marker.coordinates_m.is_some())
+            .then_some((*vertex, marker.coordinates_m?))
         })
         .collect::<Vec<_>>();
     known.sort_unstable_by_key(|(vertex, _)| *vertex);
@@ -19688,10 +19712,18 @@ fn legacy_extended_diagonal_rectangle_line_endpoints(
     {
         return None;
     }
-    let endpoints = one_based_u16_endpoint_pair(payload, offset, 56)?;
-    let terminal_vertex =
-        u16::from_le_bytes(payload.get(offset + 74..offset + 76)?.try_into().ok()?) as u32;
-    (terminal_vertex == 0 || terminal_vertex == endpoints[1]).then_some(endpoints)
+    let endpoint = |relative: usize| {
+        payload
+            .get(offset + relative..offset + relative + 2)?
+            .try_into()
+            .ok()
+            .map(u16::from_le_bytes)
+            .map(u32::from)
+    };
+    let endpoints = [endpoint(56)?, endpoint(58)?];
+    let terminal_state =
+        u16::from_le_bytes(payload.get(offset + 74..offset + 76)?.try_into().ok()?);
+    (matches!(terminal_state, 0 | 2) && endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
 fn unique_dimensioned_rectangle_markers<'a>(
