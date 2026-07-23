@@ -3211,7 +3211,7 @@ fn saved_line_joins_through_order_table() {
         id: 6,
         kind: 0,
         flags: 0,
-        status: 1,
+        status: 0,
         items: vec![
             crate::feature::FeatureSkampItem {
                 entity_id: 99,
@@ -3226,6 +3226,16 @@ fn saved_line_joins_through_order_table() {
     }];
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
+        None
+    );
+    solver_families
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .status = 1;
+    assert_eq!(
+        solver_only_section_entity_family(&solver_families, 99),
         Some(SectionEntityIncidenceFamily::BoundedCurve)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
@@ -3233,7 +3243,7 @@ fn saved_line_joins_through_order_table() {
         id: 6,
         kind: 0,
         flags: 0,
-        status: 1,
+        status: 0,
         items: vec![
             crate::feature::FeatureSkampItem {
                 entity_id: 99,
@@ -3246,6 +3256,16 @@ fn saved_line_joins_through_order_table() {
         ],
         offset: 32,
     }];
+    assert_eq!(
+        solver_only_section_entity_family(&solver_families, 99),
+        None
+    );
+    solver_families
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .status = 1;
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
         Some(SectionEntityIncidenceFamily::Point)
