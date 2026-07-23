@@ -292,6 +292,9 @@ support scalars satisfy
 5, `e4` copies `b`, and `m` supplies the magnitude of the negated first
 component. The resulting support directions are `(a, 0, b)` and
 `(b, 0, -a)`; the final three scalars occupy slots 9 through 11.
+The compact axis form begins `18 0f 18 e5 0f e4 18 e4`; that prefix defines
+support directions `(1, 0, 0)` and `(0, 0, -1)` with a zero middle rank. Its
+three following scalars are the origin coordinates.
 
 Two five-coordinate type-26 rows for one zero-`radius1` prototype encode the
 two hemispheres of one Z-axis sphere. Each row stores
