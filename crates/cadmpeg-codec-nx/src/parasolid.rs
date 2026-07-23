@@ -283,63 +283,49 @@ pub fn entity_54_string_records(bytes: &[u8]) -> Vec<Entity54StringRecord<'_>> {
 
 /// Decode framed type-81 entity/attribute-list records.
 pub fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
-    let mut records = Vec::new();
-    for offset in 0..bytes.len().saturating_sub(25) {
-        if bytes.get(offset..offset + 2) != Some(&[0x00, 0x51]) {
-            continue;
-        }
-        let mut at = offset + 2;
-        if bytes.get(at) == Some(&0xff) {
-            at += 1;
-        }
-        let Some(flags) = bytes
-            .get(at..at + 4)
-            .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")))
-        else {
-            continue;
-        };
-        at += 4;
-        let Some(xmt) = read_xmt(bytes, &mut at) else {
-            continue;
-        };
-        let Some(sequence) = bytes
-            .get(at..at + 4)
-            .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")))
-        else {
-            continue;
-        };
-        at += 4;
-        let Some(discriminator) = bytes
-            .get(at..at + 2)
-            .map(|value| u16::from_be_bytes(value.try_into().expect("two bytes")))
-        else {
-            continue;
-        };
-        at += 2;
-        let low_flag = (flags & 0xff) as u8;
-        if xmt <= 1 || sequence == 0 || !(1..=0x20).contains(&low_flag) {
-            continue;
-        }
-        let reference_count = match (discriminator, low_flag) {
-            (0x0018 | 0x0020 | 0x0025, 1) => 6,
-            (0x001d | 0x001e, 2) => 7,
-            (0x0020 | 0x0024 | 0x0027, 4) => 9,
-            _ => 6,
-        };
-        let Some(references) = entity_51_references(bytes, &mut at, reference_count) else {
-            continue;
-        };
-        records.push(Entity51Record {
-            offset,
-            byte_len: at - offset,
-            flags,
-            xmt,
-            sequence,
-            discriminator,
-            references,
-        });
+    (0..bytes.len().saturating_sub(25))
+        .filter_map(|offset| entity_51_record_at(bytes, offset))
+        .collect()
+}
+
+/// Decode one complete type-81 entity/attribute-list record at `offset`.
+pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity51Record> {
+    let mut at = offset.checked_add(2)?;
+    (bytes.get(offset..at) == Some(&[0x00, 0x51])).then_some(())?;
+    if bytes.get(at) == Some(&0xff) {
+        at += 1;
     }
-    records
+    let flags = bytes
+        .get(at..at + 4)
+        .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")))?;
+    at += 4;
+    let xmt = read_xmt(bytes, &mut at)?;
+    let sequence = bytes
+        .get(at..at + 4)
+        .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")))?;
+    at += 4;
+    let discriminator = bytes
+        .get(at..at + 2)
+        .map(|value| u16::from_be_bytes(value.try_into().expect("two bytes")))?;
+    at += 2;
+    let low_flag = (flags & 0xff) as u8;
+    (xmt > 1 && sequence != 0 && (1..=0x20).contains(&low_flag)).then_some(())?;
+    let reference_count = match (discriminator, low_flag) {
+        (0x0018 | 0x0020 | 0x0025, 1) => 6,
+        (0x001d | 0x001e, 2) => 7,
+        (0x0020 | 0x0024 | 0x0027, 4) => 9,
+        _ => 6,
+    };
+    let references = entity_51_references(bytes, &mut at, reference_count)?;
+    Some(Entity51Record {
+        offset,
+        byte_len: at - offset,
+        flags,
+        xmt,
+        sequence,
+        discriminator,
+        references,
+    })
 }
 
 fn entity_51_references(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {

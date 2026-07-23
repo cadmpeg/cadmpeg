@@ -57,9 +57,9 @@
       },
       "source": {
         "attributes": {
-          "deltas.0.bytes_decoded": "50",
+          "deltas.0.bytes_decoded": "56",
           "deltas.0.full.FACE": "1",
-          "deltas.0.grammar": "status_byte_framed_topology",
+          "deltas.0.grammar": "typed_status_framed_records",
           "deltas.0.tombstone.EDGE": "1",
           "deltas_streams": "1",
           "directory_entries": "1",

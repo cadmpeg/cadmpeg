@@ -444,9 +444,11 @@ Type 38 is the XT `INTERSECTION` node. Delta-stream `0x5a` records use the `inte
 
 ### 4.2 Deltas-stream framing
 
-A deltas stream is a schema-framed incremental edit log paired with a partition. Both declare the same schema token. Records are not length-prefixed; they self-delimit by typed decode (valid record ends on a plausible next-record tag). Two record forms:
+A deltas stream is a schema-framed incremental edit log paired with a partition. Both declare the same schema token. Records are not length-prefixed; they self-delimit by typed decode (valid record ends on a plausible next-record tag). Records use the following forms:
 
-Status-framed fixed records are normalized by removing each reference status byte before fixed-record graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition; its non-fixed procedural residual remains a separate semantic lane.
+Status-framed fixed records are normalized by removing each reference status byte before fixed-record graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition. Current-revision records needed by semantic scanners remain in a separate semantic lane.
+
+Type-81 entity/attribute-list records use the complete type-81 grammar defined in section 9.4. Their individually `01`-prefixed reference layout is retained as serialized and the terminal `00` closes the record. They participate in the deltas byte ledger but do not replace topology or geometry records.
 
 **Full record:**
 

@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Walk status-byte-framed Parasolid deltas topology records.
+//! Walk status-byte-framed Parasolid deltas records.
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::be;
 
-/// One complete status-framed topology record.
+/// One complete admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Record {
     /// Parasolid node type.
     pub kind: u16,
     /// Stream-local XMT identifier.
     pub xmt: u32,
-    /// Kernel node identifier; FIN records do not carry one.
+    /// Kernel node identifier. FIN and variable entity records do not carry one.
     pub node_id: Option<u32>,
     /// Ordered reference fields without their framing status bytes.
     pub references: Vec<u32>,
     /// POINT coordinates in Parasolid metres, when present.
     pub position: Option<[f64; 3]>,
-    /// Equivalent partition-style record with status bytes removed.
+    /// Partition-style bytes for fixed records and exact bytes for variable records.
     pub canonical_bytes: Vec<u8>,
     /// Record start offset in the inflated stream.
     pub offset: usize,
@@ -51,7 +51,7 @@ pub struct BodyRevision {
     pub prefix_end: usize,
 }
 
-/// Result of a deterministic deltas topology walk.
+/// Result of a deterministic deltas record walk.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Census {
     /// Complete records in source order.
@@ -64,7 +64,7 @@ pub struct Census {
     pub full_counts: BTreeMap<&'static str, usize>,
     /// Compact tombstone counts keyed by Parasolid family name.
     pub tombstone_counts: BTreeMap<&'static str, usize>,
-    /// Sum of accepted complete-record byte lengths.
+    /// Sum of accepted full-record, tombstone, and revision-prefix byte lengths.
     pub bytes_decoded: usize,
 }
 
@@ -332,6 +332,7 @@ pub fn walk(stream: &[u8]) -> Census {
         };
         if kind == 12 {
             if let Some(revision) = body_revision_prefix(stream, offset) {
+                census.bytes_decoded += revision.prefix_end - revision.offset;
                 offset = revision.prefix_end;
                 census.body_revisions.push(revision);
                 continue;
@@ -339,6 +340,7 @@ pub fn walk(stream: &[u8]) -> Census {
         }
         let decoded = fixed_signature(kind)
             .and_then(|signature| consume_fixed(stream, offset, kind, signature))
+            .or_else(|| consume_variable(stream, offset, kind))
             .filter(|record| plausible_next(stream, record.end));
         if let Some(record) = decoded {
             census.bytes_decoded += record.end - record.offset;
@@ -351,6 +353,7 @@ pub fn walk(stream: &[u8]) -> Census {
             if xmt > 1 && plausible_next(stream, offset + 6) {
                 *census.tombstone_counts.entry(name).or_default() += 1;
                 census.tombstones.push(Tombstone { kind, xmt, offset });
+                census.bytes_decoded += 6;
                 offset += 6;
                 continue;
             }
@@ -570,19 +573,18 @@ fn current_revision_start(census: &Census) -> usize {
         .map_or(0, |revision| revision.offset)
 }
 
-/// Return raw deltas bytes with every decoded fixed record and compact
-/// tombstone masked. Bytes preceding the final BODY revision are also masked.
-/// Procedural families in the current revision keep their original offsets and
-/// bytes.
-pub fn procedural_residual(stream: &[u8]) -> Vec<u8> {
+/// Return raw deltas bytes with decoded records and compact tombstones masked.
+/// Bytes preceding the final BODY revision are also masked. Current-revision
+/// records needed by semantic scanners are appended in their partition form.
+pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
     let census = walk(stream);
     let mut residual = stream.to_vec();
     let revision_start = current_revision_start(&census);
     residual[..revision_start].fill(0xff);
-    let canonical_procedural = census
+    let canonical_residual_records = census
         .records
         .iter()
-        .filter(|record| record.offset >= revision_start && record.kind == 38)
+        .filter(|record| record.offset >= revision_start && matches!(record.kind, 38 | 81))
         .map(|record| record.canonical_bytes.clone())
         .collect::<Vec<_>>();
     for record in census.records {
@@ -591,7 +593,7 @@ pub fn procedural_residual(stream: &[u8]) -> Vec<u8> {
     for tombstone in census.tombstones {
         residual[tombstone.offset..tombstone.offset + 6].fill(0xff);
     }
-    for record in canonical_procedural {
+    for record in canonical_residual_records {
         residual.extend_from_slice(&record);
     }
     residual
@@ -683,6 +685,25 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
     })
 }
 
+fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
+    let record = (kind == 81)
+        .then(|| crate::parasolid::entity_51_record_at(stream, offset))
+        .flatten()?;
+    Some(Record {
+        kind,
+        xmt: record.xmt,
+        node_id: None,
+        references: record.references,
+        position: None,
+        canonical_bytes: stream
+            .get(offset..offset + record.byte_len)
+            .expect("validated type-81 record bounds")
+            .to_vec(),
+        offset,
+        end: offset + record.byte_len,
+    })
+}
+
 fn compact_tombstone(stream: &[u8], offset: usize) -> Option<u32> {
     let first = i16::from_be_bytes([*stream.get(offset + 2)?, *stream.get(offset + 3)?]);
     if first < 0 {
@@ -703,7 +724,22 @@ fn plausible_next(stream: &[u8], offset: usize) -> bool {
 fn is_next_kind(kind: u16) -> bool {
     matches!(
         kind,
-        12..=19 | 29..=32 | 38 | 40 | 41 | 51 | 56 | 60 | 81 | 90 | 91 | 124 | 133 | 134 | 137 | 204
+        12..=19
+            | 29..=32
+            | 38
+            | 40
+            | 41
+            | 51
+            | 56
+            | 60
+            | 81..=84
+            | 90
+            | 91
+            | 124
+            | 133
+            | 134
+            | 137
+            | 204
     )
 }
 
@@ -730,6 +766,7 @@ fn family_name(kind: u16) -> Option<&'static str> {
         133 => "TRIMMED_CURVE",
         134 => "B_CURVE",
         137 => "SP_CURVE",
+        81 => "ENTITY_51",
         12 => "BODY",
         13 => "SHELL",
         19 => "REGION",

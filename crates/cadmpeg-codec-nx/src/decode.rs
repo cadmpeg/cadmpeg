@@ -6603,7 +6603,7 @@ fn source_meta(scan: &Scan) -> SourceMeta {
         let census = crate::deltas::walk(&stream.inflated);
         attributes.insert(
             format!("deltas.{index}.grammar"),
-            "status_byte_framed_topology".to_string(),
+            "typed_status_framed_records".to_string(),
         );
         attributes.insert(
             format!("deltas.{index}.bytes_decoded"),
@@ -6784,7 +6784,8 @@ fn build_geometry_report(
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
                  each key. Validated partition topology remained authoritative, including any \
-                 point, curve, or surface carrier still referenced by surviving topology. Every \
+                 point, curve, or surface carrier still referenced by surviving topology. Complete \
+                 ENTITY_51 records were retained for native attribute extraction. Every \
                  terminal tombstone resolved to an exact current or earlier-added key.",
                     scan.count(StreamKind::Deltas)
                 )

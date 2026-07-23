@@ -59,7 +59,7 @@
         "attributes": {
           "deltas.0.bytes_decoded": "22",
           "deltas.0.full.LOOP": "1",
-          "deltas.0.grammar": "status_byte_framed_topology",
+          "deltas.0.grammar": "typed_status_framed_records",
           "deltas_streams": "1",
           "directory_entries": "1",
           "file_size": "194",

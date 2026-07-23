@@ -4077,6 +4077,11 @@ fn parasolid_entity_51_records_retain_layout_selected_references() {
     assert_eq!(records[0].sequence, 2);
     assert_eq!(records[0].discriminator, 0x21);
     assert_eq!(records[0].references, vec![3, 4, 5, 6, 7, 8]);
+    assert_eq!(
+        crate::parasolid::entity_51_record_at(&bytes, 0),
+        Some(records[0].clone())
+    );
+    assert!(crate::parasolid::entity_51_record_at(&bytes[..25], 0).is_none());
 }
 
 #[test]
@@ -5909,6 +5914,10 @@ fn decode_resolves_forward_blend_support_reference() {
 #[test]
 fn decode_reports_status_framed_deltas_records_and_tombstones() {
     let stream = status_framed_deltas_stream();
+    assert_eq!(
+        crate::deltas::walk(&stream).bytes_decoded,
+        stream.len() - DELTAS_PREAMBLE.len()
+    );
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let attributes = &result.ir.source.expect("source metadata").attributes;
@@ -5925,7 +5934,7 @@ fn decode_reports_status_framed_deltas_records_and_tombstones() {
     );
     assert_eq!(
         attributes.get("deltas.0.grammar").map(String::as_str),
-        Some("status_byte_framed_topology")
+        Some("typed_status_framed_records")
     );
 }
 
@@ -5941,6 +5950,43 @@ fn decode_accepts_exact_loop_and_rejects_incomplete_fin_deltas() {
         attributes.get("deltas.0.full.LOOP").map(String::as_str),
         Some("1")
     );
+}
+
+#[test]
+fn deltas_walks_complete_status_prefixed_entity_51_records() {
+    let mut stream = vec![0, 81];
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(&2u32.to_be_bytes());
+    stream.extend_from_slice(&0x21u16.to_be_bytes());
+    for reference in 3..=8u16 {
+        stream.push(1);
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    stream.push(0);
+    let entity_len = stream.len();
+    stream.extend(status_framed_deltas_point_stream());
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.records.len(), 2);
+    assert_eq!(census.records[0].kind, 81);
+    assert_eq!(census.records[0].xmt, 10);
+    assert_eq!(census.records[0].node_id, None);
+    assert_eq!(census.records[0].references, [3, 4, 5, 6, 7, 8]);
+    assert_eq!(census.records[0].end, entity_len);
+    assert_eq!(census.full_counts["ENTITY_51"], 1);
+    assert_eq!(census.bytes_decoded, stream.len());
+    let residual = crate::deltas::semantic_residual(&stream);
+    let retained = crate::parasolid::entity_51_records(&residual);
+    assert_eq!(retained.len(), 1);
+    assert_eq!(retained[0].xmt, 10);
+    assert!(residual[..stream.len()].iter().all(|byte| *byte == 0xff));
+
+    stream[entity_len - 1] = 1;
+    assert!(crate::deltas::walk(&stream)
+        .records
+        .iter()
+        .all(|record| record.kind != 81));
 }
 
 #[test]
@@ -5960,7 +6006,7 @@ fn deltas_point_normalizes_to_partition_record_framing() {
 
 #[test]
 fn deltas_intersection_normalizes_before_partition_style_decode() {
-    let residual = crate::deltas::procedural_residual(&status_framed_deltas_intersection_stream());
+    let residual = crate::deltas::semantic_residual(&status_framed_deltas_intersection_stream());
     let intersections = crate::topology::composite_curves(&residual);
     assert_eq!(intersections.len(), 1);
     assert_eq!(intersections[0].xmt, 12);
@@ -6147,14 +6193,14 @@ fn unmatched_tombstones_are_scoped_to_the_final_body_revision() {
 }
 
 #[test]
-fn procedural_residual_masks_historical_body_revisions() {
+fn semantic_residual_masks_historical_body_revisions() {
     let mut deltas = deltas_body_revision(1);
     let historical_len = deltas.len();
     deltas.extend_from_slice(&[0, 38, 0xaa, 0xbb, 0xcc]);
     deltas.extend_from_slice(&deltas_body_revision(2));
     deltas.extend_from_slice(&[0, 38, 0x11, 0x22, 0x33]);
 
-    let residual = crate::deltas::procedural_residual(&deltas);
+    let residual = crate::deltas::semantic_residual(&deltas);
     assert!(residual[..historical_len + 5]
         .iter()
         .all(|byte| *byte == 0xff));
