@@ -307,7 +307,11 @@ fn scan_with_auxiliaries(
                 result.constructions.push(construction);
                 result.curves.push(curve);
             }
-            Err(rejection) if referenced_curves.contains(&construction.xmt) => {
+            Err(rejection)
+                if referenced_curves.contains(&construction.xmt)
+                    && construction_supports(construction, &bridges, &graph).is_some()
+                    && construction_has_endpoint_witnesses(construction, terms, &graph) =>
+            {
                 result.constructions.push(construction);
                 result.rejected.add(rejection);
             }
@@ -376,6 +380,25 @@ fn enrich(
         .get(&construction.references[5])
         .cloned()
         .unwrap_or([None, None]);
+    let supports = construction_supports(construction, bridges, graph).unwrap_or([1, 1]);
+    Ok(IntersectionCurve {
+        xmt: construction.xmt,
+        references: construction.references,
+        supports,
+        pos: construction.pos,
+        points: chart.points.clone(),
+        parameters: chart.parameters.clone(),
+        fit_tolerance: chart.fit_tolerance,
+        support_uv,
+        ext_support_uv: chart.ext_support_uv.clone(),
+    })
+}
+
+fn construction_supports(
+    construction: CompositeCurve,
+    bridges: &BTreeMap<u32, u32>,
+    graph: &topology::Graph,
+) -> Option<[u32; 2]> {
     let first_is_surface = is_surface(graph, construction.references[0]);
     let second_is_surface = is_surface(graph, construction.references[1]);
     let (primary, bridge) = if first_is_surface {
@@ -391,17 +414,23 @@ fn enrich(
         .or_else(|| is_surface(graph, bridge).then_some(bridge))
         .filter(|secondary| *secondary != primary)
         .unwrap_or(1);
-    Ok(IntersectionCurve {
-        xmt: construction.xmt,
-        references: construction.references,
-        supports: [primary, secondary],
-        pos: construction.pos,
-        points: chart.points.clone(),
-        parameters: chart.parameters.clone(),
-        fit_tolerance: chart.fit_tolerance,
-        support_uv,
-        ext_support_uv: chart.ext_support_uv.clone(),
-    })
+    (primary > 1).then_some([primary, secondary])
+}
+
+fn construction_has_endpoint_witnesses(
+    construction: CompositeCurve,
+    terms: &BTreeMap<u32, Point3>,
+    graph: &topology::Graph,
+) -> bool {
+    construction.references[2..=4]
+        .iter()
+        .all(|reference| *reference == 1)
+        || construction.references[3..=4]
+            .iter()
+            .all(|reference| terms.contains_key(reference))
+        || graph
+            .unique_curve_edge_endpoints(construction.xmt)
+            .is_some()
 }
 
 fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {

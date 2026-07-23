@@ -5636,6 +5636,26 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
 }
 
 #[test]
+fn intersection_rejection_census_requires_resolved_supports() {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 19, 998);
+    put_ref(&mut stream, intersection + 21, 999);
+    put_ref(&mut stream, intersection + 23, 997);
+
+    let scan = crate::intersection::scan(&stream);
+    assert!(scan.constructions.is_empty());
+    assert!(scan.curves.is_empty());
+    assert_eq!(
+        scan.rejected,
+        crate::intersection::RejectionCounts::default()
+    );
+}
+
+#[test]
 fn intersection_chart_accepts_one_matching_parameter_complement() {
     let ext11 = ext11_charted_intersection_curve_stream();
     let ext11_start = ext11
