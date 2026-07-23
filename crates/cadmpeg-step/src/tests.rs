@@ -3353,3 +3353,555 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     counts.sort_unstable();
     assert_eq!(counts, vec![1, face_count - 1]);
 }
+
+/// S0 golden net: SHA-256-pinned STEP writer output. The deep-modules refactor
+/// moves code across module boundaries inside `cadmpeg-step`; a behavior-
+/// preserving refactor needs an anchor independent of the internal structure
+/// being changed. This freezes `write_step` output as sha256 digests pinned
+/// in-source, so every later writer diff is a byte-exact regression gate rather
+/// than a re-review.
+///
+/// Two surfaces are pinned. `WRITER_GOLDENS` freezes the two IR example fixtures
+/// (`unit_cube`, `directed_subd_sum`) across all six `StepSchema` targets under
+/// otherwise-default `StepWriteOptions` (empty timestamp is written as the fixed
+/// `1970-01-01T00:00:00` epoch, so output is deterministic). `ROUNDTRIP_GOLDENS`
+/// freezes every `tests/fixtures/*.p21` fixture decoded and re-written under
+/// `Ap242Edition3` and `Ap214`; a fixture that cannot round-trip (decode
+/// refuses, or a write refuses) pins the refusal string instead of a hash, which
+/// freezes the success/refusal boundary as coverage.
+///
+/// Digests use `cadmpeg_ir::hash::sha256_hex` (the workspace sha256 helper the
+/// freecad golden harness uses) rather than a fresh `sha2` dev-dependency, so no
+/// `Cargo.toml`/`Cargo.lock` change is needed. Regenerate the pinned tables with
+/// `cargo test -p cadmpeg-step golden::print_goldens -- --ignored --nocapture`
+/// and paste the printed rows back into the two `const` tables.
+mod golden {
+    use std::io::Cursor;
+
+    use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+    use cadmpeg_ir::hash::sha256_hex;
+    use cadmpeg_ir::CadIr;
+
+    use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+
+    /// The six application-protocol targets, paired with the label used as the
+    /// table key. Covers `Ap203Edition1..=Ap242Edition3`.
+    const SCHEMAS: [(&str, StepSchema); 6] = [
+        ("Ap203Edition1", StepSchema::Ap203Edition1),
+        ("Ap203Edition2", StepSchema::Ap203Edition2),
+        ("Ap214", StepSchema::Ap214),
+        ("Ap242Edition1", StepSchema::Ap242Edition1),
+        ("Ap242Edition2", StepSchema::Ap242Edition2),
+        ("Ap242Edition3", StepSchema::Ap242Edition3),
+    ];
+
+    /// Round-trip schema targets: the AP242 edition-3 long form and AP214.
+    const ROUNDTRIP_SCHEMAS: [(&str, StepSchema); 2] = [
+        ("Ap242Edition3", StepSchema::Ap242Edition3),
+        ("Ap214", StepSchema::Ap214),
+    ];
+
+    /// Default writer options with only `schema` overridden. The empty default
+    /// timestamp pins the header epoch, so digests are stable across runs.
+    fn options(schema: StepSchema) -> StepWriteOptions {
+        StepWriteOptions {
+            schema,
+            ..StepWriteOptions::default()
+        }
+    }
+
+    /// The two IR example fixtures, paired with the label used as the table key.
+    fn examples() -> [(&'static str, CadIr); 2] {
+        [
+            ("unit_cube", cadmpeg_ir::examples::unit_cube()),
+            (
+                "directed_subd_sum",
+                cadmpeg_ir::examples::directed_subd_sum(),
+            ),
+        ]
+    }
+
+    /// Every `tests/fixtures/*.p21` fixture, embedded, paired with its stem.
+    fn fixtures() -> Vec<(&'static str, &'static [u8])> {
+        macro_rules! fixture {
+            ($name:literal) => {
+                (
+                    $name,
+                    include_bytes!(concat!("../tests/fixtures/", $name, ".p21")) as &'static [u8],
+                )
+            };
+        }
+        vec![
+            fixture!("ap203_sheet"),
+            fixture!("ap214_sheet"),
+            fixture!("ap242_assembly"),
+            fixture!("ap242_conversion_units"),
+            fixture!("ap242_degree_cone"),
+            fixture!("ap242_ed3_sections"),
+            fixture!("ap242_external_documents"),
+            fixture!("ap242_geometric_set"),
+            fixture!("ap242_geometry"),
+            fixture!("ap242_mapped_assembly"),
+            fixture!("ap242_minimal"),
+            fixture!("ap242_presentation_pmi"),
+            fixture!("ap242_semantic_pmi"),
+            fixture!("ap242_tessellation"),
+            fixture!("ap242_vertex_loop"),
+            fixture!("complex_instance"),
+            fixture!("strings"),
+        ]
+    }
+
+    /// sha256 of `write_step(ir, opts(schema))`. Under the default `Report`
+    /// policy with a `Vec` sink, `write_step` cannot refuse, so an example golden
+    /// is always a hash.
+    fn writer_hash(ir: &CadIr, schema: StepSchema) -> String {
+        let mut buf = Vec::new();
+        write_step(ir, &mut buf, &options(schema))
+            .expect("writer golden: write_step under Report policy with a Vec sink cannot fail");
+        sha256_hex(&buf)
+    }
+
+    /// A round-trip outcome: either a sha256 of the re-written STEP bytes, or the
+    /// decode/write refusal that stands in for it. A pinned refusal freezes the
+    /// success/refusal boundary and counts as coverage.
+    enum Outcome {
+        Hash(String),
+        Refusal(String),
+    }
+
+    impl Outcome {
+        /// Compares a computed outcome against a pinned row.
+        fn matches(&self, pin: &Pin) -> bool {
+            match (self, pin) {
+                (Outcome::Hash(a), Pin::Hash(b)) => a == b,
+                (Outcome::Refusal(a), Pin::Refusal(b)) => a == b,
+                _ => false,
+            }
+        }
+
+        /// Renders a computed outcome as the `Pin` source literal it should pin to.
+        fn as_pin_literal(&self) -> String {
+            match self {
+                Outcome::Hash(hash) => format!("Pin::Hash(\"{hash}\")"),
+                Outcome::Refusal(message) => format!("Pin::Refusal({message:?})"),
+            }
+        }
+    }
+
+    /// A pinned round-trip row: a fixed hash or a fixed refusal string. Every
+    /// current fixture round-trips under both schemas, so `ROUNDTRIP_GOLDENS`
+    /// holds only `Hash` rows today; `Refusal` is retained because pinning a
+    /// decode/write refusal is the designed way to freeze the success/refusal
+    /// boundary, and `print_goldens` emits it verbatim if a fixture starts
+    /// refusing.
+    #[allow(dead_code)]
+    enum Pin {
+        Hash(&'static str),
+        Refusal(&'static str),
+    }
+
+    impl Pin {
+        fn describe(&self) -> String {
+            match self {
+                Pin::Hash(hash) => format!("Hash({hash})"),
+                Pin::Refusal(message) => format!("Refusal({message})"),
+            }
+        }
+    }
+
+    /// Decodes `bytes` with `StepCodec`, then re-writes under `schema`. Decode or
+    /// write failure becomes a pinned refusal.
+    fn roundtrip_outcome(bytes: &[u8], schema: StepSchema) -> Outcome {
+        let decoded =
+            match StepCodec::default().decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
+                Ok(result) => result,
+                Err(err) => return Outcome::Refusal(format!("decode: {err}")),
+            };
+        let mut buf = Vec::new();
+        match write_step(&decoded.ir, &mut buf, &options(schema)) {
+            Ok(_) => Outcome::Hash(sha256_hex(&buf)),
+            Err(err) => Outcome::Refusal(format!("write: {err}")),
+        }
+    }
+
+    /// `(example, schema, sha256)`. 2 examples x 6 schemas = 12 rows.
+    const WRITER_GOLDENS: &[(&str, &str, &str)] = &[
+        (
+            "unit_cube",
+            "Ap203Edition1",
+            "41fb7c0805b8dcf80c2c0f9621e3e43135870db45579272563055498ea75fafb",
+        ),
+        (
+            "unit_cube",
+            "Ap203Edition2",
+            "7044a4af4816496d1dec2814a3ab131d532de414347b8cc6d3ebe3619a6e2d41",
+        ),
+        (
+            "unit_cube",
+            "Ap214",
+            "a4443f1d97cdc9bb4651cbe046e70f8cf899de1980aaeeeeb16a6adecbea7e7d",
+        ),
+        (
+            "unit_cube",
+            "Ap242Edition1",
+            "3e6180609d599f91d36ba6a248c271a868efa98b198d769cf75d4cd6f415c35f",
+        ),
+        (
+            "unit_cube",
+            "Ap242Edition2",
+            "a4f4bd0c26045bf3685c7a3c657588d1650fff3f6862c79aef5e921dc1bbed0c",
+        ),
+        (
+            "unit_cube",
+            "Ap242Edition3",
+            "007928e140281aa1f057901c28c685f67bf70601ac1d8eeb41404c75500a2a14",
+        ),
+        (
+            "directed_subd_sum",
+            "Ap203Edition1",
+            "e16ed09b646d497d74f4f9b87f2abc2f69897b6b7362942cd984d2798e476b2a",
+        ),
+        (
+            "directed_subd_sum",
+            "Ap203Edition2",
+            "9fe1e2bc775ad9875d85f020d5e81cf05056b9a9a0e0daed4874044fca0e25a8",
+        ),
+        (
+            "directed_subd_sum",
+            "Ap214",
+            "9eb3590fc989eee82af4345cde4ffabbbc510bfc10e0879fabd9bb7a03849abb",
+        ),
+        (
+            "directed_subd_sum",
+            "Ap242Edition1",
+            "553d717fe73dc6e7757b587187c2c8b91b6dfed0ce100243064686f926f70453",
+        ),
+        (
+            "directed_subd_sum",
+            "Ap242Edition2",
+            "dc24c76c432a1764e8abd1e0330256f266fa8b8598cdd62bbbaa1f14094de91e",
+        ),
+        (
+            "directed_subd_sum",
+            "Ap242Edition3",
+            "8f564ebb79d21a4ca349482128c95b5f53e816d1413a4d03a1f61f96fccf4e02",
+        ),
+    ];
+
+    /// `(fixture, schema, pin)`. 17 fixtures x 2 schemas = 34 rows.
+    const ROUNDTRIP_GOLDENS: &[(&str, &str, Pin)] = &[
+        (
+            "ap203_sheet",
+            "Ap242Edition3",
+            Pin::Hash("bc2b6db905a538aa009ce570bb5e25ec15a9f716afb9ef23a2e44884d608921c"),
+        ),
+        (
+            "ap203_sheet",
+            "Ap214",
+            Pin::Hash("262733db93517ea047fc0fd2c455846f9dbb1d91809f38f9ff95510a808eb60a"),
+        ),
+        (
+            "ap214_sheet",
+            "Ap242Edition3",
+            Pin::Hash("cd15a680903ef1d2031efef28a3261c762aaae8e508a925f0d1d247b80ef9312"),
+        ),
+        (
+            "ap214_sheet",
+            "Ap214",
+            Pin::Hash("8ca5515e58ff53da0d8eb25bdabb1593122d5db85b57562ad64e385e3825aa16"),
+        ),
+        (
+            "ap242_assembly",
+            "Ap242Edition3",
+            Pin::Hash("6c39aea7adb6f31a91e3ba40a3452920fd9659186723cea703a12b082ea448db"),
+        ),
+        (
+            "ap242_assembly",
+            "Ap214",
+            Pin::Hash("0bc6646678bdc298e713a68d76b72ae0bf70d19cdc24650bcca8d67bc6fc34ba"),
+        ),
+        (
+            "ap242_conversion_units",
+            "Ap242Edition3",
+            Pin::Hash("0f916b8c468b0fa312fc83c587b8ede9173785cb6cd55cee485d31552259f6c2"),
+        ),
+        (
+            "ap242_conversion_units",
+            "Ap214",
+            Pin::Hash("d88626987d4667b6bdb5c1c2927406b94dab6fa95b320660d1e6187c8964e045"),
+        ),
+        (
+            "ap242_degree_cone",
+            "Ap242Edition3",
+            Pin::Hash("443cb87a8b42437ee254121b43e1aeaf6b173519ccfaf0309ae7f6dbc0775056"),
+        ),
+        (
+            "ap242_degree_cone",
+            "Ap214",
+            Pin::Hash("1436652fc776210992355d0e16ea962aed363a00c0d8f55447a7302bf78b4a07"),
+        ),
+        (
+            "ap242_ed3_sections",
+            "Ap242Edition3",
+            Pin::Hash("e13df86a5c42928f02c07765d14d7be70b749941f794b025adc9b330b0dbe1c6"),
+        ),
+        (
+            "ap242_ed3_sections",
+            "Ap214",
+            Pin::Hash("aeb71ec93a835d9d4dfeba55496f4a1297ac6d27df9e8db68bc5cce27c4cdbbc"),
+        ),
+        (
+            "ap242_external_documents",
+            "Ap242Edition3",
+            Pin::Hash("44bd5837446ba4d2130193bb75ed4b3c3a02b7eb4fec175e2762e46829f707ea"),
+        ),
+        (
+            "ap242_external_documents",
+            "Ap214",
+            Pin::Hash("2f9030385592bb5f892d40d5cd20a29afa64871e9c37c161238ac0fca05d053a"),
+        ),
+        (
+            "ap242_geometric_set",
+            "Ap242Edition3",
+            Pin::Hash("c55f54e3aa8cbd32e703b756d7d8f758e106bad2da6dd8924e97fcbdb4b5d253"),
+        ),
+        (
+            "ap242_geometric_set",
+            "Ap214",
+            Pin::Hash("97cc2e43c94b59ea9c1b28d0aa283bc252a71cd84de1839d5112b61294da30d5"),
+        ),
+        (
+            "ap242_geometry",
+            "Ap242Edition3",
+            Pin::Hash("c20f42e2a26c9950c5d2d867968794dab8f681fc127ade6832ab0411bbee9d74"),
+        ),
+        (
+            "ap242_geometry",
+            "Ap214",
+            Pin::Hash("9424c1de3c6984ffe03843993011056beefd6c91797b19c887e16e20c3e84f18"),
+        ),
+        (
+            "ap242_mapped_assembly",
+            "Ap242Edition3",
+            Pin::Hash("780615c9429e279473cfa093946da505d35a3b2cb0f39261969ffc3b9e2f11e7"),
+        ),
+        (
+            "ap242_mapped_assembly",
+            "Ap214",
+            Pin::Hash("fe15af32959595f507ce2f02093f01decf3108faf30510e37b8626b4887d165b"),
+        ),
+        (
+            "ap242_minimal",
+            "Ap242Edition3",
+            Pin::Hash("44bd5837446ba4d2130193bb75ed4b3c3a02b7eb4fec175e2762e46829f707ea"),
+        ),
+        (
+            "ap242_minimal",
+            "Ap214",
+            Pin::Hash("2f9030385592bb5f892d40d5cd20a29afa64871e9c37c161238ac0fca05d053a"),
+        ),
+        (
+            "ap242_presentation_pmi",
+            "Ap242Edition3",
+            Pin::Hash("7b7fe445171424c4a93d23b1bd34f03e8ac64dd2cf071e1a7aeadf3b9001f3fa"),
+        ),
+        (
+            "ap242_presentation_pmi",
+            "Ap214",
+            Pin::Hash("2f9030385592bb5f892d40d5cd20a29afa64871e9c37c161238ac0fca05d053a"),
+        ),
+        (
+            "ap242_semantic_pmi",
+            "Ap242Edition3",
+            Pin::Hash("75fd6f1c55b7a82b4d2e308bf048df440d50a3272a002234b82d4d3534e7663d"),
+        ),
+        (
+            "ap242_semantic_pmi",
+            "Ap214",
+            Pin::Hash("2f9030385592bb5f892d40d5cd20a29afa64871e9c37c161238ac0fca05d053a"),
+        ),
+        (
+            "ap242_tessellation",
+            "Ap242Edition3",
+            Pin::Hash("bf2c4d3cf5498c8782b7fd41e83fd79be47a941a9908c9501f6ed026582429b4"),
+        ),
+        (
+            "ap242_tessellation",
+            "Ap214",
+            Pin::Hash("2fc86fb810cd276ee64b01ba556c1315c093621b3a132a2061dfcf046763cbb9"),
+        ),
+        (
+            "ap242_vertex_loop",
+            "Ap242Edition3",
+            Pin::Hash("33bb68af326308714d6708f0c2ae06f66f7e27b92a26df084319068ff02dd7e6"),
+        ),
+        (
+            "ap242_vertex_loop",
+            "Ap214",
+            Pin::Hash("6172340a047123bdfa087bde94e80cb38af22ca3d534c5c45676cd0c91a32495"),
+        ),
+        (
+            "complex_instance",
+            "Ap242Edition3",
+            Pin::Hash("887b2574d978a876af85956c6ddf34a28767b56bfbcdd08361f0e81f773ee6a4"),
+        ),
+        (
+            "complex_instance",
+            "Ap214",
+            Pin::Hash("79f93adfa3955c0e8a961aa93f0f999162ea938cd9c4c8d4fcbc56ab1e93754d"),
+        ),
+        (
+            "strings",
+            "Ap242Edition3",
+            Pin::Hash("44bd5837446ba4d2130193bb75ed4b3c3a02b7eb4fec175e2762e46829f707ea"),
+        ),
+        (
+            "strings",
+            "Ap214",
+            Pin::Hash("2f9030385592bb5f892d40d5cd20a29afa64871e9c37c161238ac0fca05d053a"),
+        ),
+    ];
+
+    fn writer_pin(example: &str, schema: &str) -> Option<&'static str> {
+        WRITER_GOLDENS
+            .iter()
+            .find(|(e, s, _)| *e == example && *s == schema)
+            .map(|(_, _, hash)| *hash)
+    }
+
+    fn roundtrip_pin(fixture: &str, schema: &str) -> Option<&'static Pin> {
+        ROUNDTRIP_GOLDENS
+            .iter()
+            .find(|(f, s, _)| *f == fixture && *s == schema)
+            .map(|(_, _, pin)| pin)
+    }
+
+    /// Every example x schema must hash to its pinned writer digest.
+    #[test]
+    fn writer_goldens_match() {
+        assert_eq!(
+            WRITER_GOLDENS.len(),
+            examples().len() * SCHEMAS.len(),
+            "writer golden table size must equal examples x schemas"
+        );
+        let mut failures = Vec::new();
+        for (example, ir) in examples() {
+            for (label, schema) in SCHEMAS {
+                let actual = writer_hash(&ir, schema);
+                match writer_pin(example, label) {
+                    Some(expected) if expected == actual => {}
+                    Some(expected) => failures.push(format!(
+                        "writer `{example}` / `{label}`: pinned {expected} != actual {actual}"
+                    )),
+                    None => failures.push(format!("writer `{example}` / `{label}`: no pinned row")),
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} writer golden(s) drifted; regenerate with `cargo test -p cadmpeg-step golden::print_goldens -- --ignored --nocapture`:\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+    }
+
+    /// Every fixture x schema must match its pinned round-trip outcome (hash or
+    /// refusal).
+    #[test]
+    fn roundtrip_goldens_match() {
+        assert_eq!(
+            ROUNDTRIP_GOLDENS.len(),
+            fixtures().len() * ROUNDTRIP_SCHEMAS.len(),
+            "round-trip golden table size must equal fixtures x schemas"
+        );
+        let mut failures = Vec::new();
+        for (fixture, bytes) in fixtures() {
+            for (label, schema) in ROUNDTRIP_SCHEMAS {
+                let actual = roundtrip_outcome(bytes, schema);
+                match roundtrip_pin(fixture, label) {
+                    Some(pin) if actual.matches(pin) => {}
+                    Some(pin) => failures.push(format!(
+                        "roundtrip `{fixture}` / `{label}`: pinned {} != actual {}",
+                        pin.describe(),
+                        actual.as_pin_literal()
+                    )),
+                    None => {
+                        failures.push(format!("roundtrip `{fixture}` / `{label}`: no pinned row"))
+                    }
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} round-trip golden(s) drifted; regenerate with `cargo test -p cadmpeg-step golden::print_goldens -- --ignored --nocapture`:\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+    }
+
+    /// `write_step` output must be byte-identical across two runs with identical
+    /// options. Covers the pure-writer path (example IR, no decode) and the
+    /// decoded-fixture path (decode once, write twice) so the check isolates
+    /// writer nondeterminism from decode nondeterminism.
+    #[test]
+    fn write_step_output_is_deterministic() {
+        for (example, ir) in examples() {
+            for (label, schema) in SCHEMAS {
+                let mut first = Vec::new();
+                let mut second = Vec::new();
+                write_step(&ir, &mut first, &options(schema)).expect("first write");
+                write_step(&ir, &mut second, &options(schema)).expect("second write");
+                assert!(
+                    first == second,
+                    "writer `{example}` / `{label}`: write_step is nondeterministic across two runs"
+                );
+            }
+        }
+        for (fixture, bytes) in fixtures() {
+            let Ok(decoded) =
+                StepCodec::default().decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            else {
+                continue;
+            };
+            for (label, schema) in ROUNDTRIP_SCHEMAS {
+                let mut first = Vec::new();
+                let mut second = Vec::new();
+                if write_step(&decoded.ir, &mut first, &options(schema)).is_err() {
+                    continue;
+                }
+                write_step(&decoded.ir, &mut second, &options(schema)).expect("second write");
+                assert!(
+                    first == second,
+                    "roundtrip `{fixture}` / `{label}`: write_step is nondeterministic across two runs"
+                );
+            }
+        }
+    }
+
+    /// Regeneration path (not run by default). Prints both pinned tables with
+    /// freshly computed values, ready to paste into the `const` tables above.
+    #[test]
+    #[ignore = "regeneration helper; run with --ignored --nocapture"]
+    fn print_goldens() {
+        println!("\n// ==== WRITER_GOLDENS ====");
+        for (example, ir) in examples() {
+            for (label, schema) in SCHEMAS {
+                println!(
+                    "        (\"{example}\", \"{label}\", \"{}\"),",
+                    writer_hash(&ir, schema)
+                );
+            }
+        }
+        println!("\n// ==== ROUNDTRIP_GOLDENS ====");
+        for (fixture, bytes) in fixtures() {
+            for (label, schema) in ROUNDTRIP_SCHEMAS {
+                println!(
+                    "        (\"{fixture}\", \"{label}\", {}),",
+                    roundtrip_outcome(bytes, schema).as_pin_literal()
+                );
+            }
+        }
+        println!();
+    }
+}
