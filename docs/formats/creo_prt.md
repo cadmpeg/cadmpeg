@@ -2219,7 +2219,14 @@ Mapping a linear pcurve through a planar face chart defines an exact model-space
 line carrier. A linear pcurve with constant `u` through a cylindrical or
 conical face chart defines an exact generator line. Every positional and
 labeled path for that curve which maps through a placed face chart must produce
-the same ordered model-space endpoint pair.
+the same ordered model-space endpoint pair and the same analytic carrier.
+A constant-`v` cylindrical path defines a circle. A constant-`v` conical path
+defines a circle for equal radial scales and an ellipse for unequal radial
+scales. Constant-`u` spherical paths define meridian circles and constant-`v`
+paths define latitude circles. Constant-`u` toroidal paths define tube circles
+and constant-`v` paths define ring circles; a negative ring radius reverses the
+reference direction. If any evaluable adjacent face path is not one of these
+analytic forms, the pcurve does not define an analytic model-space carrier.
 Mapping endpoint A and endpoint B through every evaluable adjacent face chart
 must produce the same ordered model-space pair. For one topological vertex
 orbit, the common point among the unordered mapped endpoint pairs of at least

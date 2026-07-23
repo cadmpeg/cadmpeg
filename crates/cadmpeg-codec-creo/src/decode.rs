@@ -17391,23 +17391,244 @@ fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f6
         .collect()
 }
 
-fn linear_pcurve_is_straight(surface: &SurfaceGeometry, endpoints: [[f64; 2]; 2]) -> bool {
+fn linear_pcurve_carrier(
+    surface: &SurfaceGeometry,
+    endpoints: [[f64; 2]; 2],
+) -> Option<CurveGeometry> {
+    let scaled_vector = |vector: Vector3, scale: f64| {
+        Vector3::new(vector.x * scale, vector.y * scale, vector.z * scale)
+    };
+    let offset_point = |point: Point3, vector: Vector3, scale: f64| {
+        Point3::new(
+            point.x + vector.x * scale,
+            point.y + vector.y * scale,
+            point.z + vector.z * scale,
+        )
+    };
+    let [start, end] = endpoints;
+    if start == end {
+        return None;
+    }
     match surface {
-        SurfaceGeometry::Plane { .. } => true,
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
-            endpoints[0][0] == endpoints[1][0]
+        SurfaceGeometry::Plane { .. } => {
+            let [first, second] = endpoints.map(|uv| {
+                cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
+                    .map(|point| [point.x, point.y, point.z])
+            });
+            let [first, second] = [first?, second?];
+            let direction = normalized(std::array::from_fn(|axis| second[axis] - first[axis]))?;
+            Some(CurveGeometry::Line {
+                origin: Point3::new(first[0], first[1], first[2]),
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            })
         }
-        _ => false,
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } if start[0] == end[0] => {
+            let transverse = cross(
+                [axis.x, axis.y, axis.z],
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+            );
+            let reference = [ref_direction.x, ref_direction.y, ref_direction.z];
+            let radial: [f64; 3] = std::array::from_fn(|coordinate| {
+                start[0].cos() * reference[coordinate] + start[0].sin() * transverse[coordinate]
+            });
+            let point = [
+                origin.x + radius * radial[0] + start[1] * axis.x,
+                origin.y + radius * radial[1] + start[1] * axis.y,
+                origin.z + radius * radial[2] + start[1] * axis.z,
+            ];
+            let direction = normalized([axis.x, axis.y, axis.z])?;
+            Some(CurveGeometry::Line {
+                origin: Point3::new(point[0], point[1], point[2]),
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            })
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } if start[1] == end[1] && radius.is_finite() && *radius > 0.0 => {
+            Some(CurveGeometry::Circle {
+                center: offset_point(*origin, *axis, start[1]),
+                axis: *axis,
+                ref_direction: *ref_direction,
+                radius: *radius,
+            })
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            ratio,
+            half_angle,
+            ..
+        } if start[0] == end[0] => {
+            let [first, second] = endpoints.map(|uv| {
+                cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
+                    .map(|point| [point.x, point.y, point.z])
+            });
+            let [first, second] = [first?, second?];
+            let direction = normalized(std::array::from_fn(|axis| second[axis] - first[axis]))?;
+            (ratio.is_finite() && *ratio > 0.0 && half_angle.is_finite()).then_some(())?;
+            Some(CurveGeometry::Line {
+                origin: Point3::new(first[0], first[1], first[2]),
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            })
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } if start[1] == end[1] && ratio.is_finite() && *ratio > 0.0 => {
+            let local_radius = radius + start[1] * half_angle.tan();
+            let first_radius = local_radius.abs();
+            let second_radius = (local_radius * ratio).abs();
+            if !first_radius.is_finite() || !second_radius.is_finite() {
+                return None;
+            }
+            let center = offset_point(*origin, *axis, start[1]);
+            if (first_radius - second_radius).abs()
+                <= 1e-12 * first_radius.max(second_radius).max(1.0)
+            {
+                (first_radius > 0.0).then_some(CurveGeometry::Circle {
+                    center,
+                    axis: *axis,
+                    ref_direction: scaled_vector(*ref_direction, local_radius.signum()),
+                    radius: first_radius,
+                })
+            } else {
+                let transverse = cross(
+                    [axis.x, axis.y, axis.z],
+                    [ref_direction.x, ref_direction.y, ref_direction.z],
+                );
+                let transverse = Vector3::new(transverse[0], transverse[1], transverse[2]);
+                let (major_direction, major_radius, minor_radius) = if first_radius > second_radius
+                {
+                    (
+                        scaled_vector(*ref_direction, local_radius.signum()),
+                        first_radius,
+                        second_radius,
+                    )
+                } else {
+                    (
+                        scaled_vector(transverse, (local_radius * ratio).signum()),
+                        second_radius,
+                        first_radius,
+                    )
+                };
+                (minor_radius > 0.0).then_some(CurveGeometry::Ellipse {
+                    center,
+                    axis: *axis,
+                    major_direction,
+                    major_radius,
+                    minor_radius,
+                })
+            }
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } if start[1] == end[1] && radius.is_finite() && *radius > 0.0 => {
+            let ring = radius * start[1].cos();
+            (ring.abs() > 0.0).then_some(CurveGeometry::Circle {
+                center: offset_point(*center, *axis, radius * start[1].sin()),
+                axis: *axis,
+                ref_direction: scaled_vector(*ref_direction, ring.signum()),
+                radius: ring.abs(),
+            })
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } if start[0] == end[0] && radius.is_finite() && *radius > 0.0 => {
+            let transverse = cross(
+                [axis.x, axis.y, axis.z],
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+            );
+            let radial = Vector3::new(
+                start[0].cos() * ref_direction.x + start[0].sin() * transverse[0],
+                start[0].cos() * ref_direction.y + start[0].sin() * transverse[1],
+                start[0].cos() * ref_direction.z + start[0].sin() * transverse[2],
+            );
+            let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
+            Some(CurveGeometry::Circle {
+                center: *center,
+                axis: Vector3::new(normal[0], normal[1], normal[2]),
+                ref_direction: radial,
+                radius: *radius,
+            })
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } if start[1] == end[1]
+            && major_radius.is_finite()
+            && minor_radius.is_finite()
+            && *minor_radius > 0.0 =>
+        {
+            let ring = major_radius + minor_radius * start[1].cos();
+            (ring.abs() > 0.0).then_some(CurveGeometry::Circle {
+                center: offset_point(*center, *axis, minor_radius * start[1].sin()),
+                axis: *axis,
+                ref_direction: scaled_vector(*ref_direction, ring.signum()),
+                radius: ring.abs(),
+            })
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } if start[0] == end[0]
+            && major_radius.is_finite()
+            && minor_radius.is_finite()
+            && *minor_radius > 0.0 =>
+        {
+            let transverse = cross(
+                [axis.x, axis.y, axis.z],
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+            );
+            let radial = Vector3::new(
+                start[0].cos() * ref_direction.x + start[0].sin() * transverse[0],
+                start[0].cos() * ref_direction.y + start[0].sin() * transverse[1],
+                start[0].cos() * ref_direction.z + start[0].sin() * transverse[2],
+            );
+            let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
+            Some(CurveGeometry::Circle {
+                center: offset_point(*center, radial, *major_radius),
+                axis: Vector3::new(normal[0], normal[1], normal[2]),
+                ref_direction: radial,
+                radius: *minor_radius,
+            })
+        }
+        _ => None,
     }
 }
 
-fn transfer_straight_pcurve_lines(
+fn transfer_analytic_pcurve_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> BTreeSet<CurveId> {
     let reconciled_endpoints = pcurve_edge_endpoints(scan, ir);
-    let mut offsets = BTreeMap::<u32, Vec<usize>>::new();
+    let mut candidates = BTreeMap::<u32, Vec<(CurveGeometry, usize)>>::new();
+    let mut evaluable_path_counts = BTreeMap::<u32, usize>::new();
     for (curve_id, faces, endpoint_sets, offset) in scan
         .curves
         .pcurves
@@ -17435,34 +17656,48 @@ fn transfer_straight_pcurve_lines(
             }) else {
                 continue;
             };
-            if !linear_pcurve_is_straight(&surface.geometry, endpoints) {
-                continue;
+            if endpoints.iter().all(|uv| {
+                cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]).is_some()
+            }) {
+                *evaluable_path_counts.entry(curve_id).or_default() += 1;
             }
-            let [Some(first), Some(second)] = endpoints.map(|uv| {
-                cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1])
-                    .map(|point| [point.x, point.y, point.z])
-            }) else {
-                continue;
-            };
-            if !model_points_agree(first, second) {
-                offsets.entry(curve_id).or_default().push(offset);
+            if let Some(carrier) = linear_pcurve_carrier(&surface.geometry, endpoints) {
+                candidates
+                    .entry(curve_id)
+                    .or_default()
+                    .push((carrier, offset));
             }
         }
     }
     let mut transferred = BTreeSet::new();
-    for (curve_id, offsets) in offsets {
+    for (curve_id, candidates) in candidates {
+        if evaluable_path_counts.get(&curve_id).copied() != Some(candidates.len()) {
+            continue;
+        }
         let Some(points) = reconciled_endpoints.get(&curve_id).copied() else {
             continue;
         };
-        let delta = std::array::from_fn(|axis| points[1][axis] - points[0][axis]);
-        let Some(direction) = normalized(delta) else {
+        let Some((geometry, offset)) = candidates.first() else {
             continue;
         };
-        let geometry = CurveGeometry::Line {
-            origin: Point3::new(points[0][0], points[0][1], points[0][2]),
-            direction: Vector3::new(direction[0], direction[1], direction[2]),
-        };
-        let offset = offsets.into_iter().min().unwrap_or(0);
+        if !curve_contains_points(geometry, points)
+            || !candidates.iter().all(|(candidate, _)| {
+                curve_contains_points(candidate, points)
+                    && [0.0, 0.25, 0.5, 0.75, 1.0].into_iter().all(|parameter| {
+                        let point = cadmpeg_ir::eval::curve_point(candidate, parameter);
+                        point.is_some_and(|point| {
+                            curve_contains_points(geometry, [[point.x, point.y, point.z]; 2])
+                        })
+                    })
+            })
+        {
+            continue;
+        }
+        let offset = candidates
+            .iter()
+            .map(|(_, offset)| *offset)
+            .min()
+            .unwrap_or(*offset);
         let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
@@ -17472,12 +17707,12 @@ fn transfer_straight_pcurve_lines(
             &id,
             "VisibGeom",
             offset as u64,
-            "straight_pcurve_line",
+            "analytic_pcurve_carrier",
             Exactness::Derived,
         );
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry,
+            geometry: geometry.clone(),
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
                 object_id: format!("VisibGeom:{curve_id}"),
@@ -18942,7 +19177,7 @@ fn transfer_native_brep(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     derived_intersection_curves: &BTreeSet<CurveId>,
-    straight_pcurve_lines: &BTreeSet<CurveId>,
+    analytic_pcurve_carriers: &BTreeSet<CurveId>,
 ) -> (usize, usize) {
     let planes = placed_planes(scan);
     let carriers = placed_carriers(scan, ir);
@@ -19126,7 +19361,7 @@ fn transfer_native_brep(
                     .any(|face_id| native_pcurves.contains_key(&(*curve_id, *face_id)))
             });
         let derived_line = (derived_intersection_curves.contains(&curve)
-            || straight_pcurve_lines.contains(&curve))
+            || analytic_pcurve_carriers.contains(&curve))
             && ir.model.curves.iter().any(|candidate| {
                 candidate.id == curve && matches!(candidate.geometry, CurveGeometry::Line { .. })
             });
@@ -23649,8 +23884,9 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         transfer_constrained_slot_fillet_cylinders(scan, &mut ir, &mut annotations);
     let rowless_round_cylinder_count =
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
-    let straight_pcurve_lines = transfer_straight_pcurve_lines(scan, &mut ir, &mut annotations);
-    let straight_pcurve_line_count = straight_pcurve_lines.len();
+    let analytic_pcurve_carriers =
+        transfer_analytic_pcurve_carriers(scan, &mut ir, &mut annotations);
+    let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
     let derived_intersection_curves =
         transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
     let (topological_point_count, native_topological_edge_count) = transfer_native_brep(
@@ -23658,7 +23894,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         &mut ir,
         &mut annotations,
         &derived_intersection_curves,
-        &straight_pcurve_lines,
+        &analytic_pcurve_carriers,
     );
     let feature_revolution_brep_count =
         transfer_resolved_revolution_breps(scan, &mut ir, &mut annotations);
@@ -23785,8 +24021,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             native_topological_edge_count,
         );
         coverage.insert(
-            "transferred_straight_pcurve_line_count".to_string(),
-            straight_pcurve_line_count,
+            "transferred_analytic_pcurve_carrier_count".to_string(),
+            analytic_pcurve_carrier_count,
         );
         coverage.insert(
             "transferred_feature_revolution_surface_count".to_string(),
@@ -25950,14 +26186,14 @@ fn build_report(
         });
     }
 
-    let straight_pcurve_line_count = count("transferred_straight_pcurve_line_count");
-    if !container_only && straight_pcurve_line_count != 0 {
+    let analytic_pcurve_carrier_count = count("transferred_analytic_pcurve_carrier_count");
+    if !container_only && analytic_pcurve_carrier_count != 0 {
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Transferred {straight_pcurve_line_count} exact line carrier(s) by mapping native linear pcurves through placed planar, cylindrical, or conical face charts."
+                "Transferred {analytic_pcurve_carrier_count} exact analytic carrier(s) by mapping native linear pcurves through placed planar, cylindrical, conical, spherical, or toroidal face charts."
             ),
             provenance: None,
         });
