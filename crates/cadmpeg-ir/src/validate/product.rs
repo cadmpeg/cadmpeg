@@ -1,35 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product prototype and occurrence-tree validation.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use super::{Check, Finding, Severity};
+use super::{Check, Finding, ModelIndex, Severity};
 use crate::document::CadIr;
 use crate::product::OccurrenceParent;
 
-pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let bodies = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.as_str())
-        .collect::<HashSet<_>>();
-    let products = ir
-        .model
-        .products
-        .iter()
-        .map(|product| product.id.as_str())
-        .collect::<HashSet<_>>();
-    let occurrences = ir
-        .model
-        .product_occurrences
-        .iter()
-        .map(|occurrence| (occurrence.id.as_str(), occurrence))
-        .collect::<HashMap<_, _>>();
-
+pub(super) fn check_products(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     for product in &ir.model.products {
         for body in &product.bodies {
-            if !bodies.contains(body.as_str()) {
+            if !index.bodies.contains_key(body.as_str()) {
                 missing(findings, product.id.as_str(), "body", body.as_str());
             }
         }
@@ -43,7 +24,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                 entity: Some(occurrence.id.0.clone()),
             });
         }
-        if !products.contains(occurrence.product.as_str()) {
+        if !index.products.contains_key(occurrence.product.as_str()) {
             missing(
                 findings,
                 occurrence.id.as_str(),
@@ -52,7 +33,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
         if let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent {
-            if !occurrences.contains_key(parent.as_str()) {
+            if !index.product_occurrences.contains_key(parent.as_str()) {
                 missing(
                     findings,
                     occurrence.id.as_str(),
@@ -88,7 +69,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             let OccurrenceParent::Occurrence { occurrence: parent } = &cursor.parent else {
                 break;
             };
-            let Some(next) = occurrences.get(parent.as_str()) else {
+            let Some(next) = index.product_occurrences.get(parent.as_str()) else {
                 break;
             };
             cursor = next;

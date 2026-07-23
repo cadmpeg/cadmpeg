@@ -88,8 +88,8 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     check_identity_and_order(ir, &mut findings);
     check_units(ir, &mut findings);
     check_references(ir, &index, &mut findings);
-    check_step_products(ir, &mut findings);
-    check_pmi(ir, &mut findings);
+    check_step_products(ir, &index, &mut findings);
+    check_pmi(ir, &index, &mut findings);
     check_loops(ir, &index, &mut findings);
     check_coedge_pairing(ir, &index, &mut findings);
     check_shell_connectivity(ir, &index, &mut findings);
@@ -106,7 +106,7 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     check_procedural_surfaces(ir, &mut findings);
     check_source_associations(ir, &mut findings);
     check_sketches(ir, &mut findings);
-    check_spreadsheets(ir, &mut findings);
+    check_spreadsheets(ir, &index, &mut findings);
     check_component_products(ir, &mut findings);
     check_presentation(ir, &index.all_ids, &mut findings);
     check_drawings(ir, &index, &mut findings);
