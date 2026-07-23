@@ -7,6 +7,7 @@
 //! limits, loss reporting, and exit-status semantics.
 
 mod commands;
+mod diff;
 mod envelope;
 mod format;
 mod loader;
@@ -376,7 +377,7 @@ fn main() -> ExitCode {
             Err(error) => Err(error),
         },
         Command::Diff { a, b, json, decode } => {
-            commands::diff(&registry, &a, &b, decode.options(), json)
+            diff::diff(&registry, &a, &b, decode.options(), json)
         }
         Command::Convert {
             input,
