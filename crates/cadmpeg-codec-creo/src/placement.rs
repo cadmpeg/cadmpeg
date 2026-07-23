@@ -405,11 +405,11 @@ fn plane_equation(
         .filter(|plane| plane.surface_id == id)
         .collect::<Vec<_>>();
     if let [plane] = model_planes.as_slice() {
-        let normal = plane.normal?;
-        let origin = plane.origin?;
-        return Some((normal, dot(normal, origin)));
+        if let (Some(normal), Some(origin)) = (plane.normal, plane.origin) {
+            return Some((normal, dot(normal, origin)));
+        }
     }
-    if !model_planes.is_empty() {
+    if model_planes.len() > 1 {
         return None;
     }
     let outline_planes = outline_planes
@@ -1140,6 +1140,33 @@ mod tests {
             offset: 3,
         });
         assert_eq!(definition_local_plane_equation(&definition), None);
+    }
+
+    #[test]
+    fn unresolved_local_system_does_not_hide_a_complete_outline_plane() {
+        let unresolved = PlaneLocalSystem {
+            surface_id: 7,
+            body: Vec::new(),
+            slots: vec![None; 12],
+            origin: None,
+            u_axis: None,
+            normal: None,
+            classification: crate::surface::LocalSystemClassification::Unclassified,
+            row_offset: 10,
+            offset: 11,
+        };
+        let outline = OutlinePlane {
+            surface_id: 7,
+            origin: [0.0, 0.0, 3.0],
+            u_axis: [1.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            offset: 12,
+        };
+
+        assert_eq!(
+            plane_equation(7, &[], &[unresolved], &[outline]),
+            Some(([0.0, 0.0, 1.0], 3.0))
+        );
     }
 
     #[test]

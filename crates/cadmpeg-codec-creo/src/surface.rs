@@ -4970,7 +4970,12 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
         .collect::<Vec<_>>();
     let mut envelopes = Vec::new();
     for (row, body_start, row_end) in headers {
-        let Some(body_end) = first_compound_close(payload, body_start, row_end) else {
+        let Some(body) = payload.get(body_start..row_end) else {
+            continue;
+        };
+        let Some(body_end) = surface_body_compound_close(SurfaceKind::Plane, body, &cache)
+            .map(|relative| body_start + relative)
+        else {
             continue;
         };
         let body = payload[body_start..body_end].to_vec();
@@ -7832,6 +7837,26 @@ mod tests {
 
         assert_eq!(rows(&payload).len(), 1);
         assert!(plane_envelopes(&payload).is_empty());
+    }
+
+    #[test]
+    fn plane_envelope_scalar_tokens_take_precedence_over_compound_close_bytes() {
+        let body = [
+            70, 32, 107, 133, 30, 184, 81, 235, 70, 47, 201, 160, 13, 107, 10, 126, 47, 32, 0, 24,
+            70, 32, 107, 133, 30, 184, 81, 235, 70, 47, 201, 160, 13, 107, 10, 126, 142, 71, 174,
+            20, 122, 225, 72, 47, 32, 0, 24, 142, 71, 174, 20, 122, 225, 72,
+        ];
+        let mut payload = vec![7, 0x22, 4, 0x01, 0, 0];
+        payload.extend_from_slice(&body);
+        payload.push(psb::token::COMPOUND_CLOSE);
+
+        let envelopes = plane_envelopes(&payload);
+        assert_eq!(envelopes.len(), 1);
+        assert_eq!(envelopes[0].body, body);
+        assert_eq!(
+            envelopes[0].corner_coordinate_equal,
+            [Some(false), Some(false), Some(true)]
+        );
     }
 
     #[test]
