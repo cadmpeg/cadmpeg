@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::wire::hash::sha256_hex;
 use cadmpeg_ir::wire::le::u32_at as u32_le;
 
@@ -292,11 +293,27 @@ fn contains_utf16le_ascii(haystack: &[u8], text: &[u8]) -> bool {
     contains(haystack, &encoded)
 }
 
+/// Scan a `.sldprt` decode root into its container structure.
+///
+/// `_ctx` is taken for parity with the other container codecs' `scan(ctx, root)`
+/// entry points; the block scan is a pure function of the source bytes gated by
+/// per-block CRC validation, so it charges no decode budget.
+pub fn scan(_ctx: &DecodeContext<'_>, root: View<'_>) -> ContainerScan {
+    scan_image(root.window())
+}
+
 /// Scan an in-memory `.sldprt` image.
+///
+/// The byte-slice entry to the same core as [`scan`], for the writer paths that
+/// scan a retained source image rather than a decode root.
 ///
 /// Truncated input produces a scan containing every structure that could be
 /// validated; missing outer-header bytes yield version zero.
 pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
+    scan_image(bytes)
+}
+
+fn scan_image(bytes: &[u8]) -> ContainerScan {
     if bytes.starts_with(&COMPOUND_FILE_MAGIC) {
         let compound_streams = crate::compound::streams(bytes)
             .unwrap_or_default()

@@ -91,7 +91,7 @@ struct EvaluatedFeatureState<'a> {
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan_bytes(root.window());
+    let scan = container::scan(ctx, root);
 
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;

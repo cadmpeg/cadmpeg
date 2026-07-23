@@ -237,10 +237,10 @@ impl Codec for SldprtCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_bytes(root.window());
+        let scan = container::scan(ctx, root);
         Ok(container::summarize(&scan))
     }
 
