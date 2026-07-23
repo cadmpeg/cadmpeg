@@ -6,7 +6,8 @@
 //! in-bounds file offset and size. [`crate::parasolid`] uses the canonical
 //! `/Root/UG_PART/UG_PART` span to bound its compressed-stream scan.
 
-use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::wire::cursor::bounded_len;
 use cadmpeg_ir::wire::le::{u32_at as u32_le, u64_at as u64_le};
 
@@ -523,14 +524,16 @@ fn u48_le(d: &[u8], at: usize) -> u64 {
     v
 }
 
-/// Read a complete SPLMSSTR file and parse its header and directories.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<Container, CodecError> {
-    reader
-        .seek(std::io::SeekFrom::Start(0))
-        .map_err(CodecError::Io)?;
-    let mut data = Vec::new();
-    reader.read_to_end(&mut data).map_err(CodecError::Io)?;
-    scan_bytes(data)
+/// Scan a `.prt` decode root into its SPLMSSTR container structure.
+///
+/// The decode/inspect entry point, matching the other container codecs'
+/// `scan(ctx, root)` signature. `_ctx` is taken for parity; the scan is a pure
+/// function of the source bytes and charges no decode budget. Copies the root
+/// window into the owned buffer [`scan_bytes`] parses. [`Container`] owns that
+/// `Vec` because `native/*` retains slices of it, so borrow-from-`root` is
+/// deferred.
+pub fn scan(_ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Container, CodecError> {
+    scan_bytes(root.window().to_vec())
 }
 
 /// Parse an SPLMSSTR file image.

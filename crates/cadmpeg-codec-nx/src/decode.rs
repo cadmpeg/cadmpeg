@@ -76,7 +76,7 @@ impl Scan {
 
 /// Parse the SPLMSSTR container and inflate streams in its canonical part entry.
 pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan, CodecError> {
-    let container = container::scan_bytes(root.window().to_vec())?;
+    let container = container::scan(ctx, root)?;
     let streams = parasolid::extract_streams(ctx, root, &container)?;
     Ok(Scan { container, streams })
 }
