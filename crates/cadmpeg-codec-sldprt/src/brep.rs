@@ -21,6 +21,7 @@ use cadmpeg_ir::be::{f64_at as f64_be, f64s_at as f64_run, u16_at as u16_be, u32
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
+mod blend;
 mod entity;
 mod intersection;
 mod spline;
@@ -150,6 +151,8 @@ pub(crate) struct CarrierIndex {
     surfaces: HashMap<u16, Carrier>,
     /// Swept/spun surface constructions, resolved to a patch at face binding.
     sweeps: HashMap<u16, sweep::SweepCarrier>,
+    /// Constant-radius rolling-ball constructions, resolved at face binding.
+    blends: HashMap<u16, blend::BlendCarrier>,
     /// Curve attrs whose geometry is a derived cache, not an exact carrier.
     derived_curves: HashSet<u16>,
 }
@@ -179,6 +182,11 @@ impl CarrierIndex {
         self.sweeps.get(&attr)
     }
 
+    /// Constant-radius rolling-ball construction carried by `attr`.
+    pub(crate) fn blend(&self, attr: u16) -> Option<&blend::BlendCarrier> {
+        self.blends.get(&attr)
+    }
+
     /// Whether a curve attr holds a derived solved cache rather than an
     /// exact carrier.
     pub(crate) fn curve_is_derived(&self, attr: u16) -> bool {
@@ -199,6 +207,9 @@ impl CarrierIndex {
         }
         for (attr, carrier) in other.sweeps {
             self.sweeps.entry(attr).or_insert(carrier);
+        }
+        for (attr, carrier) in other.blends {
+            self.blends.entry(attr).or_insert(carrier);
         }
     }
 }
@@ -375,6 +386,7 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
         out.insert(carrier);
     }
     out.sweeps = sweep::scan_sweep_carriers(body);
+    out.blends = blend::scan_blend_carriers(body);
     for (attr, carrier) in intersection::scan_intersection_carriers(body) {
         debug_assert_eq!(attr, carrier.attr);
         if let std::collections::hash_map::Entry::Vacant(entry) = out.curves.entry(attr) {

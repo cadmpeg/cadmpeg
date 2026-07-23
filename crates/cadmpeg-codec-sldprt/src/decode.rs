@@ -1587,6 +1587,7 @@ fn build_geometry_ir(
     ir.model.vertices = brep.vertices;
     ir.model.points = brep.points;
     ir.model.surfaces = brep.surfaces;
+    ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.curves = brep.curves;
     ir.model.pcurves = brep.pcurves;
     crate::history::bind_topology_selections(

@@ -822,6 +822,19 @@ Terminator and support-UV bodies also occur inline after their field labels: `te
 
 The chart is a solved cache: the exact curve is the surface–surface intersection, and the chart polyline through the terminators reproduces it to within `chordal_error`.
 
+### 7.4 Constant-radius rolling-ball surfaces
+
+A `00 38` surface carrier defines a circular rolling-ball blend between two support surfaces:
+
+```
+00 38 [ff]? attr u16 BE  ordinal u32 BE  refs u16 BE[5]
+             marker u8 (0x2b|0x2d)
+             52  support0 u16 BE  support1 u16 BE  spine u16 BE
+             offset0 f64 BE  offset1 f64 BE  side0 f64 BE  side1 f64 BE
+```
+
+`support0` and `support1` name the two support-surface carriers. `spine` names the center/spine curve that selects the blend branch. `abs(offset0) == abs(offset1) > 0`; their common magnitude is the constant rolling-ball radius. A sign difference between the offsets reverses the second support relative to the first. Each `side` value is exactly `+1` or `-1`; a negative value independently reverses that support's natural-normal side. Lengths are metres.
+
 ## 8. Auxiliary lanes
 
 - **DisplayLists tessellation** uses a 6-descriptor table: List A strip lengths, Positions/Normals f32 metres, and Lists B/C/D. `C = sum(ListA)`, `ListC[i] = 2*ListA[i] - 2`, and `TriCount = C - 2*N`.

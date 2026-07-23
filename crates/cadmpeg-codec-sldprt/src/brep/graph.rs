@@ -11,11 +11,12 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
 use cadmpeg_ir::eval::nurbs_curve_point;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, Pcurve, PcurveGeometry,
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
+    RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -54,6 +55,8 @@ pub struct Brep {
     pub points: Vec<Point>,
     /// Analytic, NURBS, or opaque support surfaces.
     pub surfaces: Vec<Surface>,
+    /// Exact procedural constructions behind emitted support surfaces.
+    pub procedural_surfaces: Vec<ProceduralSurface>,
     /// Analytic, NURBS, or opaque support curves.
     pub curves: Vec<Curve>,
     /// Pcurves derived for supported analytic and NURBS-boundary cases.
@@ -143,11 +146,31 @@ impl Brep {
             .for_each(|point| point.id.0 = qualify(&point.id.0));
         for surface in &mut self.surfaces {
             surface.id.0 = qualify(&surface.id.0);
-            if let SurfaceGeometry::Unknown {
-                record: Some(record),
-            } = &mut surface.geometry
+            match &mut surface.geometry {
+                SurfaceGeometry::Procedural { construction } => {
+                    construction.0 = qualify(&construction.0);
+                }
+                SurfaceGeometry::Unknown {
+                    record: Some(record),
+                } => {
+                    record.0 = qualify(&record.0);
+                }
+                _ => {}
+            }
+        }
+        for procedural in &mut self.procedural_surfaces {
+            procedural.id.0 = qualify(&procedural.id.0);
+            procedural.surface.0 = qualify(&procedural.surface.0);
+            if let ProceduralSurfaceDefinition::Blend {
+                supports, spine, ..
+            } = &mut procedural.definition
             {
-                record.0 = qualify(&record.0);
+                for support in supports.iter_mut().flatten() {
+                    support.surface.0 = qualify(&support.surface.0);
+                }
+                if let Some(spine) = spine {
+                    spine.0 = qualify(&spine.0);
+                }
             }
         }
         for curve in &mut self.curves {
@@ -858,6 +881,13 @@ fn decode_graph(
     if !body_records.is_empty() {
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
+    let mut surface_ids_by_carrier = HashMap::<u16, u16>::new();
+    for face in &faces {
+        surface_ids_by_carrier
+            .entry(face.surface_attr)
+            .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
+            .or_insert(face.bridge_attr);
+    }
     for f in &faces {
         let loops: Vec<LoopId> = f
             .loops
@@ -887,7 +917,65 @@ fn decode_graph(
                 });
             }
             _ => {
-                if let Some((geometry, offset, tag, derived)) =
+                let resolved_blend = carriers.blend(f.surface_attr).and_then(|blend| {
+                    let [Some(first), Some(second)] = blend.supports.map(|attr| {
+                        surface_ids_by_carrier
+                            .get(&attr)
+                            .map(|bridge| SurfaceId(id_surf(*bridge)))
+                    }) else {
+                        return None;
+                    };
+                    Some((blend, first, second))
+                });
+                if let Some((blend, first, second)) = resolved_blend {
+                    let spine = carriers.curve(blend.spine).map(|carrier| {
+                        if emitted_curves.insert(blend.spine) {
+                            emit_curve(&mut out, carrier);
+                            annotations
+                                .note(id_curve(blend.spine), source_stream, carrier.offset as u64)
+                                .tag("blend_spine");
+                        }
+                        CurveId(id_curve(blend.spine))
+                    });
+                    let procedural_id = ProceduralSurfaceId(format!(
+                        "sldprt:brep:blend-construction#{}",
+                        f.bridge_attr
+                    ));
+                    out.procedural_surfaces.push(ProceduralSurface {
+                        id: procedural_id.clone(),
+                        surface: SurfaceId(id_surf(f.bridge_attr)),
+                        definition: ProceduralSurfaceDefinition::Blend {
+                            supports: [
+                                Some(BlendSupport {
+                                    surface: first,
+                                    reversed: blend.reversed[0],
+                                }),
+                                Some(BlendSupport {
+                                    surface: second,
+                                    reversed: blend.reversed[1],
+                                }),
+                            ],
+                            spine,
+                            radius: BlendRadiusLaw::Constant {
+                                signed_radius: blend.signed_radius,
+                            },
+                            cross_section: BlendCrossSection::Circular,
+                            native: None,
+                        },
+                        cache_fit_tolerance: None,
+                        record_bounds: None,
+                    });
+                    annotations
+                        .note(id_surf(f.bridge_attr), source_stream, blend.offset as u64)
+                        .tag("00_38");
+                    out.surfaces.push(Surface {
+                        id: SurfaceId(id_surf(f.bridge_attr)),
+                        source_object: None,
+                        geometry: SurfaceGeometry::Procedural {
+                            construction: procedural_id,
+                        },
+                    });
+                } else if let Some((geometry, offset, tag, derived)) =
                     resolve_sweep_surface(carriers, t, f)
                 {
                     annotations
@@ -1175,11 +1263,18 @@ fn prune_rejected_topology(out: &mut Brep) {
         .collect::<HashSet<_>>();
     out.points.retain(|point| kept_points.contains(&point.id));
 
-    let kept_curves = out
+    let mut kept_curves = out
         .edges
         .iter()
         .filter_map(|edge| edge.curve.clone())
         .collect::<HashSet<_>>();
+    kept_curves.extend(out.procedural_surfaces.iter().filter_map(|surface| {
+        if let ProceduralSurfaceDefinition::Blend { spine, .. } = &surface.definition {
+            spine.clone()
+        } else {
+            None
+        }
+    }));
     out.curves.retain(|curve| kept_curves.contains(&curve.id));
     out.stats.unknown_curve_edges = out
         .edges
@@ -3161,6 +3256,44 @@ mod tests {
 
         assert!(decoded.faces.is_empty());
         assert!(!decoded.stats.synthetic_body_grouping);
+    }
+
+    #[test]
+    fn topology_pruning_retains_a_procedural_blend_spine() {
+        use cadmpeg_ir::geometry::{
+            BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, ProceduralSurface,
+            ProceduralSurfaceDefinition,
+        };
+        use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+
+        let spine = CurveId("spine".into());
+        let mut brep = super::Brep {
+            curves: vec![Curve {
+                id: spine.clone(),
+                geometry: CurveGeometry::Line {
+                    origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            }],
+            procedural_surfaces: vec![ProceduralSurface {
+                id: ProceduralSurfaceId("blend".into()),
+                surface: SurfaceId("surface".into()),
+                definition: ProceduralSurfaceDefinition::Blend {
+                    supports: [None, None],
+                    spine: Some(spine.clone()),
+                    radius: BlendRadiusLaw::Constant { signed_radius: 0.5 },
+                    cross_section: BlendCrossSection::Circular,
+                    native: None,
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            }],
+            ..Default::default()
+        };
+
+        super::prune_rejected_topology(&mut brep);
+        assert_eq!(brep.curves.first().map(|curve| &curve.id), Some(&spine));
     }
 
     #[test]
