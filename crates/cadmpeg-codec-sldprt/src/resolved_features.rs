@@ -1242,7 +1242,7 @@ mod marker_tests {
         enrich_history_revolution_inputs, explicit_reference_axis_frame,
         explicit_reference_plane_frame, fixed_reference_plane_frame, generated_surface_identities,
         indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
-        legacy_compact_diameter_arc_center,
+        legacy_compact_diameter_arc_center, legacy_compact_direct_endpoint_markers,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_diagonal_rectangle,
         legacy_extended_profile_curve_kind, legacy_feature_input_section,
@@ -5791,6 +5791,66 @@ mod marker_tests {
         bind_resolved_curve_vertices(&mut lane);
 
         assert_eq!(lane.sketch_entities[4].kind, SketchInputKind::Point);
+    }
+
+    #[test]
+    fn compact_legacy_bounded_curve_can_use_direct_point_ids() {
+        let mut payload = vec![0; 84 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[29..31].copy_from_slice(&1u16.to_le_bytes());
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&7u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&10u16.to_le_bytes());
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        let entity = |id: &str, object_index, coordinates_m, kind| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("profile".into()),
+            ordinal: 0,
+            offset: 0,
+            object_index,
+            local_id: None,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let entities = [
+            entity("curve", Some(1), None, SketchInputKind::Arc),
+            entity("start", Some(7), Some([-1.0, 0.0]), SketchInputKind::Point),
+            entity("end", Some(10), Some([1.0, 0.0]), SketchInputKind::Point),
+            entity(
+                "one-based-start",
+                Some(8),
+                Some([0.0, 1.0]),
+                SketchInputKind::Point,
+            ),
+        ];
+        let markers = entities.iter().collect::<Vec<_>>();
+
+        let endpoints = legacy_compact_direct_endpoint_markers(&payload, 0, &entities[0], &markers);
+        assert_eq!(
+            endpoints
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["start", "end"]
+        );
+        assert_eq!(
+            roster_curve_endpoint_markers(&payload, &entities[0], &markers)
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["start", "end"]
+        );
     }
 
     #[test]
@@ -25503,7 +25563,15 @@ fn roster_curve_endpoint_markers<'a>(
             let legacy = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
                 == Some(LEGACY_SKETCH_MARKER);
             if legacy || indexed.len() != 2 {
-                return if roster.len() == 2 { roster } else { indexed };
+                if roster.len() == 2 {
+                    return roster;
+                }
+                if indexed.len() == 2 {
+                    return indexed;
+                }
+                if legacy {
+                    return legacy_compact_direct_endpoint_markers(payload, offset, curve, markers);
+                }
             }
         }
         return indexed;
@@ -25569,6 +25637,56 @@ fn roster_curve_endpoint_markers<'a>(
             candidates.next().is_none().then_some(candidate)
         })
         .collect()
+}
+
+fn legacy_compact_direct_endpoint_markers<'a>(
+    payload: &[u8],
+    offset: usize,
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Vec<&'a SketchInputEntity> {
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(2)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || compact_indexed_curve_endpoint_indices(payload, offset).is_none()
+        || !sketch_marker_prefix_at(payload, offset.saturating_add(84))
+    {
+        return Vec::new();
+    }
+    let endpoint = |relative: usize| {
+        payload
+            .get(offset + relative..offset + relative + 2)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u16::from_le_bytes)
+            .map(u32::from)
+    };
+    let Some(indices) = endpoint(56).zip(endpoint(58)) else {
+        return Vec::new();
+    };
+    if indices.0 == 0 || indices.0 == indices.1 {
+        return Vec::new();
+    }
+    let endpoints = [indices.0, indices.1]
+        .into_iter()
+        .filter_map(|index| {
+            let mut candidates = markers.iter().copied().filter(|marker| {
+                marker.feature_ref == curve.feature_ref
+                    && marker.object_index == Some(index)
+                    && marker.coordinates_m.is_some()
+                    && matches!(
+                        marker.kind,
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                    )
+            });
+            let candidate = candidates.next()?;
+            candidates.next().is_none().then_some(candidate)
+        })
+        .collect::<Vec<_>>();
+    if endpoints.len() == 2 {
+        endpoints
+    } else {
+        Vec::new()
+    }
 }
 
 fn current_wide_arc_direct_markers<'a>(
