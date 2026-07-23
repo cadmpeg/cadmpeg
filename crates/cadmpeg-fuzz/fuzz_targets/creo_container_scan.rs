@@ -8,5 +8,5 @@ use cadmpeg_codec_creo::container::scan_bytes;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let _ = scan_bytes(data);
+    let _ = scan_bytes(data.to_vec());
 });
