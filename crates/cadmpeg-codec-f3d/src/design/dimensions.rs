@@ -833,14 +833,16 @@ fn project_all_dimension_constraints(
         let sketch = sketches_by_scope
             .get(&(scope, owner.scope_record_index))?
             .clone();
-        Some(SketchConstraint {
-            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
-            sketch,
-            definition: Definition::Native {
+        let definition = (companion.payload_byte_length == 0)
+            .then(|| {
+                unique_radial_dimension_definition(entities, &sketch, parameter, &parameter_id)
+            })
+            .flatten()
+            .unwrap_or_else(|| Definition::Native {
                 native_kind: parameter.source_kind.clone(),
                 native_state: None,
                 entities: Vec::new(),
-                parameter: Some(parameter_id),
+                parameter: Some(parameter_id.clone()),
                 operands: vec![SketchNativeOperand {
                     native_kind: "dimension_companion".into(),
                     native_field: Some(
@@ -855,7 +857,11 @@ fn project_all_dimension_constraints(
                     object_index: companion.record_index,
                     native_ref: Some(companion.id.clone()),
                 }],
-            },
+            });
+        Some(SketchConstraint {
+            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
+            sketch,
+            definition,
             name: None,
             driving: None,
             active: None,
@@ -870,6 +876,32 @@ fn project_all_dimension_constraints(
     }));
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+/// Resolve an owner-scoped radial dimension when exactly one circular entity
+/// satisfies its evaluated measurement.
+pub(crate) fn unique_radial_dimension_definition(
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    if !design_dimension_unit(parameter) {
+        return None;
+    }
+    let mut definitions = entities
+        .iter()
+        .filter(|entity| &entity.sketch == sketch)
+        .filter_map(|entity| {
+            radial_dimension_definition(
+                entity,
+                &parameter.source_kind,
+                parameter.evaluated_value,
+                parameter_id.clone(),
+            )
+        });
+    let definition = definitions.next()?;
+    definitions.next().is_none().then_some(definition)
 }
 
 /// Attach single-locus offset dimensions to uniquely matching typed offset

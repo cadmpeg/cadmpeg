@@ -48,7 +48,7 @@ use crate::design::dimensions::{
     project_spatial_dimension_constraints, radial_dimension_definition,
     remove_dimension_frame_relations, repeated_linear_dimension,
     spatial_parallel_line_distance_matches, two_locus_distance_dimension,
-    unresolved_parameter_expression_dependency_count,
+    unique_radial_dimension_definition, unresolved_parameter_expression_dependency_count,
 };
 use crate::design::edge_resolve::{
     feature_input_topology_id, partial_historical_edge_selection,
@@ -2719,6 +2719,36 @@ fn radial_dimensions_require_one_exact_circular_measurement() {
         "Diameter Dimension-2",
         0.5,
         diameter_parameter.clone(),
+    )
+    .is_none());
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "10 mm",
+        "Diameter Dimension-2",
+        Some("mm"),
+        "d1",
+        1.0,
+    ))
+    .expect("diameter parameter");
+    assert!(matches!(
+        unique_radial_dimension_definition(
+            std::slice::from_ref(&entity),
+            &entity.sketch,
+            &parameter,
+            &diameter_parameter,
+        ),
+        Some(SketchConstraintDefinition::Diameter {
+            entity: ref actual,
+            ..
+        }) if actual == &entity.id
+    ));
+    let mut duplicate = entity.clone();
+    duplicate.id = SketchEntityId("f3d:model:sketch-entity#duplicate-circle".into());
+    assert!(unique_radial_dimension_definition(
+        &[entity.clone(), duplicate],
+        &entity.sketch,
+        &parameter,
+        &diameter_parameter,
     )
     .is_none());
 
