@@ -51,6 +51,7 @@ pub mod geometry;
 pub mod ids;
 pub mod math;
 pub mod native;
+pub mod parasolid;
 pub mod pmi;
 pub mod presentation;
 pub mod product;
