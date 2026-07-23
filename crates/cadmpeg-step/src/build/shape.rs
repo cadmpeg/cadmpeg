@@ -9,6 +9,11 @@ use crate::geometry;
 use crate::writer::{refs, Ref};
 
 use super::{is_identity, is_rigid_transform, Builder};
+use crate::vocab::{
+    BREP_WITH_VOIDS, CONNECTED_EDGE_SET, EDGE_BASED_WIREFRAME_MODEL, GEOMETRIC_CURVE_SET,
+    GEOMETRIC_SET, INVISIBILITY, MANIFOLD_SOLID_BREP, MAPPED_ITEM, ORIENTED_CLOSED_SHELL,
+    REPRESENTATION_MAP, SHAPE_REPRESENTATION, SHELL_BASED_SURFACE_MODEL,
+};
 
 impl Builder<'_> {
     /// Emit one shape item per region; visibility is represented separately
@@ -64,24 +69,22 @@ impl Builder<'_> {
             shell_refs.extend_from_slice(&voids);
             let item = if !closed {
                 self.emitter.emit(
-                    "SHELL_BASED_SURFACE_MODEL",
+                    SHELL_BASED_SURFACE_MODEL,
                     &format!("'',{}", refs(&shell_refs)),
                 )
             } else if voids.is_empty() {
                 self.emitter
-                    .emit("MANIFOLD_SOLID_BREP", &format!("'',{outer}"))
+                    .emit(MANIFOLD_SOLID_BREP, &format!("'',{outer}"))
             } else {
                 let void_refs: Vec<Ref> = voids
                     .iter()
                     .map(|s| {
                         self.emitter
-                            .emit("ORIENTED_CLOSED_SHELL", &format!("'',*,{s},.F."))
+                            .emit(ORIENTED_CLOSED_SHELL, &format!("'',*,{s},.F."))
                     })
                     .collect();
-                self.emitter.emit(
-                    "BREP_WITH_VOIDS",
-                    &format!("'',{outer},{}", refs(&void_refs)),
-                )
+                self.emitter
+                    .emit(BREP_WITH_VOIDS, &format!("'',{outer},{}", refs(&void_refs)))
             };
             let shape_item = self.place_body_item(&region.body, item, context);
             items.push(shape_item);
@@ -132,12 +135,12 @@ impl Builder<'_> {
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
         );
         let representation = self.emitter.emit(
-            "SHAPE_REPRESENTATION",
+            SHAPE_REPRESENTATION,
             &format!("'body-local',({item}),{context}"),
         );
         let map = self
             .emitter
-            .emit("REPRESENTATION_MAP", &format!("{origin},{representation}"));
+            .emit(REPRESENTATION_MAP, &format!("{origin},{representation}"));
         let rows = transform.rows;
         let target = geometry::placement(
             &mut self.emitter,
@@ -146,7 +149,7 @@ impl Builder<'_> {
             cadmpeg_ir::math::Vector3::new(rows[0][0], rows[1][0], rows[2][0]),
         );
         self.emitter.emit(
-            "MAPPED_ITEM",
+            MAPPED_ITEM,
             &format!("'cadmpeg body placement',{map},{target}"),
         )
     }
@@ -182,7 +185,7 @@ impl Builder<'_> {
             .filter_map(|body| self.links.body_step_refs.get(body.id.as_str()).copied())
             .collect::<Vec<_>>();
         if !hidden.is_empty() {
-            self.emitter.emit("INVISIBILITY", &refs(&hidden));
+            self.emitter.emit(INVISIBILITY, &refs(&hidden));
         }
     }
 
@@ -214,7 +217,7 @@ impl Builder<'_> {
             if !edges.is_empty() {
                 connected_sets.push(
                     self.emitter
-                        .emit("CONNECTED_EDGE_SET", &format!("'',{}", refs(&edges))),
+                        .emit(CONNECTED_EDGE_SET, &format!("'',{}", refs(&edges))),
                 );
             }
         }
@@ -222,7 +225,7 @@ impl Builder<'_> {
             return None;
         }
         Some(self.emitter.emit(
-            "EDGE_BASED_WIREFRAME_MODEL",
+            EDGE_BASED_WIREFRAME_MODEL,
             &format!("'',{}", refs(&connected_sets)),
         ))
     }
@@ -287,9 +290,9 @@ impl Builder<'_> {
         } else {
             vec![self.emitter.emit(
                 if has_surfaces {
-                    "GEOMETRIC_SET"
+                    GEOMETRIC_SET
                 } else {
-                    "GEOMETRIC_CURVE_SET"
+                    GEOMETRIC_CURVE_SET
                 },
                 &format!("'',{}", refs(&members)),
             )]

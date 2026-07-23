@@ -62,6 +62,7 @@ use cadmpeg_ir::CadIr;
 
 use writer::string;
 
+use crate::vocab::FILE_SCHEMA;
 use build::Builder;
 
 /// Metadata written to the STEP `FILE_NAME` header record.
@@ -443,7 +444,7 @@ impl Codec for StepCodec {
         let schema = exchange
             .header
             .iter()
-            .find(|record| record.name == "FILE_SCHEMA")
+            .find(|record| record.name == FILE_SCHEMA)
             .map_or_else(
                 || "unspecified".into(),
                 |record| {

@@ -7,6 +7,20 @@ use crate::geometry;
 use crate::writer::{real, refs, string, Ref};
 
 use super::{is_rigid_transform, Builder};
+use crate::vocab::{
+    ANGULARITY_TOLERANCE, ANGULAR_SIZE, ANNOTATION_TEXT_OCCURRENCE, CIRCULAR_RUNOUT_TOLERANCE,
+    CONCENTRICITY_TOLERANCE, CYLINDRICITY_TOLERANCE, DATUM, DATUM_REFERENCE_COMPARTMENT,
+    DATUM_REFERENCE_ELEMENT, DATUM_REFERENCE_MODIFIER_WITH_VALUE, DATUM_SYSTEM,
+    DIMENSIONAL_CHARACTERISTIC_REPRESENTATION, DIMENSIONAL_LOCATION, DIMENSIONAL_SIZE,
+    DRAUGHTING_MODEL, DRAUGHTING_MODEL_ITEM_ASSOCIATION, EXTERNALLY_DEFINED_TEXT_FONT,
+    EXTERNAL_SOURCE, FLATNESS_TOLERANCE, LENGTH_MEASURE, LENGTH_MEASURE_WITH_UNIT, LIMITS_AND_FITS,
+    LINE_PROFILE_TOLERANCE, MEASURE_REPRESENTATION_ITEM, MEASURE_WITH_UNIT, PARALLELISM_TOLERANCE,
+    PERPENDICULARITY_TOLERANCE, PLANE_ANGLE_MEASURE, PLANE_ANGLE_MEASURE_WITH_UNIT,
+    PLUS_MINUS_TOLERANCE, POSITION_TOLERANCE, PRESENTATION_STYLE_ASSIGNMENT, RATIO_MEASURE,
+    ROUNDNESS_TOLERANCE, SHAPE_ASPECT, SHAPE_DIMENSION_REPRESENTATION, STRAIGHTNESS_TOLERANCE,
+    SURFACE_PROFILE_TOLERANCE, SYMMETRY_TOLERANCE, TEXT_LITERAL, TOLERANCE_VALUE,
+    TOTAL_RUNOUT_TOLERANCE,
+};
 
 impl Builder<'_> {
     pub(super) fn emit_pmi(&mut self, context: Ref) {
@@ -27,16 +41,14 @@ impl Builder<'_> {
                     continue;
                 };
                 aspects.entry(source_id.clone()).or_insert_with(|| {
-                    self.emitter.emit(
-                        "SHAPE_ASPECT",
-                        &format!("{},'',{pds},.T.", string(source_id)),
-                    )
+                    self.emitter
+                        .emit(SHAPE_ASPECT, &format!("{},'',{pds},.T.", string(source_id)))
                 });
             }
         }
         let fallback_aspect = self
             .emitter
-            .emit("SHAPE_ASPECT", &format!("'PMI target','',{pds},.T."));
+            .emit(SHAPE_ASPECT, &format!("'PMI target','',{pds},.T."));
         let target_ref = |annotation: &cadmpeg_ir::PmiAnnotation| {
             annotation.targets.iter().find_map(|target| {
                 if let PmiTarget::ShapeAspect { source_id } = target {
@@ -56,7 +68,7 @@ impl Builder<'_> {
         for annotation in &annotations {
             if let PmiDefinition::Datum { identification } = &annotation.definition {
                 let datum = self.emitter.emit(
-                    "DATUM",
+                    DATUM,
                     &format!(
                         "{},$,{pds},.F.,{}",
                         string(annotation.name.as_deref().unwrap_or("")),
@@ -94,7 +106,7 @@ impl Builder<'_> {
                                     let modifiers =
                                         self.emit_datum_modifiers(&reference.modifiers)?;
                                     Some(self.emitter.emit(
-                                        "DATUM_REFERENCE_ELEMENT",
+                                        DATUM_REFERENCE_ELEMENT,
                                         &format!("'',$,{pds},.F.,{datum},({modifiers})"),
                                     ))
                                 })
@@ -110,7 +122,7 @@ impl Builder<'_> {
                             )
                         };
                         Some(self.emitter.emit(
-                            "DATUM_REFERENCE_COMPARTMENT",
+                            DATUM_REFERENCE_COMPARTMENT,
                             &format!("'',$,{pds},.F.,{datum},({modifiers})"),
                         ))
                     })
@@ -120,7 +132,7 @@ impl Builder<'_> {
                     continue;
                 }
                 let system = self.emitter.emit(
-                    "DATUM_SYSTEM",
+                    DATUM_SYSTEM,
                     &format!(
                         "{},'',{pds},.F.,{}",
                         string(annotation.name.as_deref().unwrap_or("")),
@@ -143,17 +155,15 @@ impl Builder<'_> {
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
                     let name = annotation.name.as_deref().unwrap_or("");
                     let (entity, kind_exact) = match dimension {
-                        DimensionKind::Size => ("DIMENSIONAL_SIZE", true),
-                        DimensionKind::Location => ("DIMENSIONAL_LOCATION", true),
-                        DimensionKind::Angular => ("ANGULAR_SIZE", true),
+                        DimensionKind::Size => (DIMENSIONAL_SIZE, true),
+                        DimensionKind::Location => (DIMENSIONAL_LOCATION, true),
+                        DimensionKind::Angular => (ANGULAR_SIZE, true),
                         // AP242 represents diameter and radius as a
                         // DIMENSIONAL_SIZE whose name identifies the size
                         // category; DIAMETER_SIZE and RADIUS_SIZE are not
                         // entity types.
-                        DimensionKind::Diameter | DimensionKind::Radius => {
-                            ("DIMENSIONAL_SIZE", true)
-                        }
-                        DimensionKind::Other(_) => ("DIMENSIONAL_SIZE", false),
+                        DimensionKind::Diameter | DimensionKind::Radius => (DIMENSIONAL_SIZE, true),
+                        DimensionKind::Other(_) => (DIMENSIONAL_SIZE, false),
                     };
                     let characteristic_name = match dimension {
                         DimensionKind::Diameter => "diameter",
@@ -173,11 +183,11 @@ impl Builder<'_> {
                     if let Some(value) = nominal {
                         let measure = self.emit_pmi_measure_representation_item(*value, name);
                         let representation = self.emitter.emit(
-                            "SHAPE_DIMENSION_REPRESENTATION",
+                            SHAPE_DIMENSION_REPRESENTATION,
                             &format!("'',({measure}),{context}"),
                         );
                         self.emitter.emit(
-                            "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION",
+                            DIMENSIONAL_CHARACTERISTIC_REPRESENTATION,
                             &format!("{characteristic},{representation}"),
                         );
                     }
@@ -186,15 +196,15 @@ impl Builder<'_> {
                         let upper = self.emit_pmi_measure(*upper);
                         let tolerance = self
                             .emitter
-                            .emit("TOLERANCE_VALUE", &format!("{lower},{upper}"));
+                            .emit(TOLERANCE_VALUE, &format!("{lower},{upper}"));
                         self.emitter.emit(
-                            "PLUS_MINUS_TOLERANCE",
+                            PLUS_MINUS_TOLERANCE,
                             &format!("{tolerance},{characteristic}"),
                         );
                     }
                     if let Some(fit) = limits_and_fits {
                         let fit = self.emitter.emit(
-                            "LIMITS_AND_FITS",
+                            LIMITS_AND_FITS,
                             &format!(
                                 "{},{},{},{}",
                                 string(&fit.form_variance),
@@ -204,7 +214,7 @@ impl Builder<'_> {
                             ),
                         );
                         self.emitter
-                            .emit("PLUS_MINUS_TOLERANCE", &format!("{fit},{characteristic}"));
+                            .emit(PLUS_MINUS_TOLERANCE, &format!("{fit},{characteristic}"));
                     }
                     annotation_refs.insert(annotation.id.clone(), characteristic);
                     let deviations_exact = lower_deviation.is_some() == upper_deviation.is_some();
@@ -218,20 +228,20 @@ impl Builder<'_> {
                 } => {
                     let kind_exact = !matches!(tolerance, GeometricToleranceKind::Other(value) if value != "geometric_tolerance");
                     let entity = match tolerance {
-                        GeometricToleranceKind::Straightness => "STRAIGHTNESS_TOLERANCE",
-                        GeometricToleranceKind::Flatness => "FLATNESS_TOLERANCE",
-                        GeometricToleranceKind::Roundness => "ROUNDNESS_TOLERANCE",
-                        GeometricToleranceKind::Cylindricity => "CYLINDRICITY_TOLERANCE",
-                        GeometricToleranceKind::LineProfile => "LINE_PROFILE_TOLERANCE",
-                        GeometricToleranceKind::SurfaceProfile => "SURFACE_PROFILE_TOLERANCE",
-                        GeometricToleranceKind::Angularity => "ANGULARITY_TOLERANCE",
-                        GeometricToleranceKind::Perpendicularity => "PERPENDICULARITY_TOLERANCE",
-                        GeometricToleranceKind::Parallelism => "PARALLELISM_TOLERANCE",
-                        GeometricToleranceKind::Position => "POSITION_TOLERANCE",
-                        GeometricToleranceKind::Concentricity => "CONCENTRICITY_TOLERANCE",
-                        GeometricToleranceKind::Symmetry => "SYMMETRY_TOLERANCE",
-                        GeometricToleranceKind::CircularRunout => "CIRCULAR_RUNOUT_TOLERANCE",
-                        GeometricToleranceKind::TotalRunout => "TOTAL_RUNOUT_TOLERANCE",
+                        GeometricToleranceKind::Straightness => STRAIGHTNESS_TOLERANCE,
+                        GeometricToleranceKind::Flatness => FLATNESS_TOLERANCE,
+                        GeometricToleranceKind::Roundness => ROUNDNESS_TOLERANCE,
+                        GeometricToleranceKind::Cylindricity => CYLINDRICITY_TOLERANCE,
+                        GeometricToleranceKind::LineProfile => LINE_PROFILE_TOLERANCE,
+                        GeometricToleranceKind::SurfaceProfile => SURFACE_PROFILE_TOLERANCE,
+                        GeometricToleranceKind::Angularity => ANGULARITY_TOLERANCE,
+                        GeometricToleranceKind::Perpendicularity => PERPENDICULARITY_TOLERANCE,
+                        GeometricToleranceKind::Parallelism => PARALLELISM_TOLERANCE,
+                        GeometricToleranceKind::Position => POSITION_TOLERANCE,
+                        GeometricToleranceKind::Concentricity => CONCENTRICITY_TOLERANCE,
+                        GeometricToleranceKind::Symmetry => SYMMETRY_TOLERANCE,
+                        GeometricToleranceKind::CircularRunout => CIRCULAR_RUNOUT_TOLERANCE,
+                        GeometricToleranceKind::TotalRunout => TOTAL_RUNOUT_TOLERANCE,
                         GeometricToleranceKind::Other(_) => continue,
                     };
                     let measure = self.emit_pmi_measure(*magnitude);
@@ -283,13 +293,13 @@ impl Builder<'_> {
                 cadmpeg_ir::math::Vector3::new(rows[0][2], rows[1][2], rows[2][2]),
                 cadmpeg_ir::math::Vector3::new(rows[0][0], rows[1][0], rows[2][0]),
             );
-            let font_source = self.emitter.emit("EXTERNAL_SOURCE", "'ISO 3098'");
+            let font_source = self.emitter.emit(EXTERNAL_SOURCE, "'ISO 3098'");
             let font = self.emitter.emit(
-                "EXTERNALLY_DEFINED_TEXT_FONT",
+                EXTERNALLY_DEFINED_TEXT_FONT,
                 &format!("IDENTIFIER('ISO 3098'),{font_source}"),
             );
             let literal = self.emitter.emit(
-                "TEXT_LITERAL",
+                TEXT_LITERAL,
                 &format!("{},{placement},'left',.RIGHT.,{font}", string(text)),
             );
             let semantic_refs = semantics
@@ -299,11 +309,9 @@ impl Builder<'_> {
             if semantic_refs.len() != semantics.len() {
                 continue;
             }
-            let style = self
-                .emitter
-                .emit("PRESENTATION_STYLE_ASSIGNMENT", "(.NULL.)");
+            let style = self.emitter.emit(PRESENTATION_STYLE_ASSIGNMENT, "(.NULL.)");
             let occurrence = self.emitter.emit(
-                "ANNOTATION_TEXT_OCCURRENCE",
+                ANNOTATION_TEXT_OCCURRENCE,
                 &format!(
                     "{},{},{literal}",
                     string(annotation.name.as_deref().unwrap_or("")),
@@ -317,7 +325,7 @@ impl Builder<'_> {
         }
         if !presentation_items.is_empty() {
             let model = self.emitter.emit(
-                "DRAUGHTING_MODEL",
+                DRAUGHTING_MODEL,
                 &format!(
                     "'PMI presentation',{}, {context}",
                     refs(&presentation_items)
@@ -326,7 +334,7 @@ impl Builder<'_> {
             for (occurrence, semantics) in presentation_semantics {
                 for semantic in semantics {
                     self.emitter.emit(
-                        "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
+                        DRAUGHTING_MODEL_ITEM_ASSOCIATION,
                         &format!("'','',{semantic},{model},{occurrence}"),
                     );
                 }
@@ -346,7 +354,7 @@ impl Builder<'_> {
                 modifiers.push(
                     self.emitter
                         .emit(
-                            "DATUM_REFERENCE_MODIFIER_WITH_VALUE",
+                            DATUM_REFERENCE_MODIFIER_WITH_VALUE,
                             &format!(".{}.,{measure}", kind.to_ascii_uppercase()),
                         )
                         .to_string(),
@@ -362,16 +370,16 @@ impl Builder<'_> {
         use cadmpeg_ir::pmi::PmiQuantity;
         let (entity, typed, unit) = match value.quantity {
             PmiQuantity::Length => (
-                "LENGTH_MEASURE_WITH_UNIT",
-                "LENGTH_MEASURE",
+                LENGTH_MEASURE_WITH_UNIT,
+                LENGTH_MEASURE,
                 self.emit_length_unit(),
             ),
             PmiQuantity::Angle => (
-                "PLANE_ANGLE_MEASURE_WITH_UNIT",
-                "PLANE_ANGLE_MEASURE",
+                PLANE_ANGLE_MEASURE_WITH_UNIT,
+                PLANE_ANGLE_MEASURE,
                 self.emit_angle_unit(),
             ),
-            PmiQuantity::Ratio => ("MEASURE_WITH_UNIT", "RATIO_MEASURE", self.emit_ratio_unit()),
+            PmiQuantity::Ratio => (MEASURE_WITH_UNIT, RATIO_MEASURE, self.emit_ratio_unit()),
         };
         self.emitter
             .emit(entity, &format!("{typed}({}),{unit}", real(value.value)))
@@ -384,12 +392,12 @@ impl Builder<'_> {
     ) -> Ref {
         use cadmpeg_ir::pmi::PmiQuantity;
         let (typed, unit) = match value.quantity {
-            PmiQuantity::Length => ("LENGTH_MEASURE", self.emit_length_unit()),
-            PmiQuantity::Angle => ("PLANE_ANGLE_MEASURE", self.emit_angle_unit()),
-            PmiQuantity::Ratio => ("RATIO_MEASURE", self.emit_ratio_unit()),
+            PmiQuantity::Length => (LENGTH_MEASURE, self.emit_length_unit()),
+            PmiQuantity::Angle => (PLANE_ANGLE_MEASURE, self.emit_angle_unit()),
+            PmiQuantity::Ratio => (RATIO_MEASURE, self.emit_ratio_unit()),
         };
         self.emitter.emit(
-            "MEASURE_REPRESENTATION_ITEM",
+            MEASURE_REPRESENTATION_ITEM,
             &format!("{},{typed}({}),{unit}", string(name), real(value.value)),
         )
     }

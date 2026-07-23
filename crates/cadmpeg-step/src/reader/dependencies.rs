@@ -4,6 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::parse::{Exchange, RawRecord, Value};
+use crate::vocab::{
+    APPLIED_DOCUMENT_REFERENCE, DOCUMENT, DOCUMENT_FILE, DOCUMENT_REFERENCE,
+    EXTERNALLY_DEFINED_ITEM, EXTERNAL_SOURCE,
+};
 
 pub(super) struct DependencyResult {
     pub typed_records: BTreeSet<u64>,
@@ -14,7 +18,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
     let documents = exchange
         .records
         .iter()
-        .filter(|(_, record)| matches!(record.simple_name(), Some("DOCUMENT" | "DOCUMENT_FILE")))
+        .filter(|(_, record)| matches!(record.simple_name(), Some(DOCUMENT | DOCUMENT_FILE)))
         .map(|(&id, record)| {
             (
                 id,
@@ -35,7 +39,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
     let sources = exchange
         .records
         .iter()
-        .filter(|(_, record)| record.simple_name() == Some("EXTERNAL_SOURCE"))
+        .filter(|(_, record)| record.simple_name() == Some(EXTERNAL_SOURCE))
         .map(|(&id, record)| (id, record.parameter(0).and_then(ValueExt::source_text)))
         .filter_map(|(id, source)| source.map(|source| (id, source)))
         .collect::<BTreeMap<_, _>>();
@@ -45,7 +49,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
     for (&id, record) in &exchange.records {
         if matches!(
             record.simple_name(),
-            Some("APPLIED_DOCUMENT_REFERENCE" | "DOCUMENT_REFERENCE")
+            Some(APPLIED_DOCUMENT_REFERENCE | DOCUMENT_REFERENCE)
         ) {
             let Some(document_id) = record.parameter(0).and_then(ValueExt::reference) else {
                 continue;
@@ -61,7 +65,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
             typed.extend([id, document_id]);
             typed.extend(kind);
         }
-        if record.simple_name() == Some("EXTERNALLY_DEFINED_ITEM") {
+        if record.simple_name() == Some(EXTERNALLY_DEFINED_ITEM) {
             let Some(source_id) = record.parameter(1).and_then(ValueExt::reference) else {
                 continue;
             };

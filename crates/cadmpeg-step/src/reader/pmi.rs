@@ -14,6 +14,23 @@ use cadmpeg_ir::transform::Transform;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::geometry::GeometryResult;
+use crate::vocab::{
+    ANGULARITY_TOLERANCE, ANGULAR_LOCATION, ANGULAR_SIZE, ANNOTATION_PLANE,
+    CIRCULAR_RUNOUT_TOLERANCE, COMMON_DATUM_LIST, CONCENTRICITY_TOLERANCE, CYLINDRICITY_TOLERANCE,
+    DATUM, DATUM_FEATURE, DATUM_REFERENCE_COMPARTMENT, DATUM_REFERENCE_ELEMENT,
+    DATUM_REFERENCE_MODIFIER_WITH_VALUE, DATUM_SYSTEM, DIAMETER_SIZE,
+    DIMENSIONAL_CHARACTERISTIC_REPRESENTATION, DIMENSIONAL_LOCATION, DIMENSIONAL_SIZE,
+    DIMENSIONAL_SIZE_WITH_DATUM_FEATURE, DRAUGHTING_CALLOUT, DRAUGHTING_MODEL,
+    DRAUGHTING_MODEL_ITEM_ASSOCIATION, FLATNESS_TOLERANCE, GEOMETRIC_TOLERANCE,
+    GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE, LEADER_CURVE, LEADER_DIRECTED_CALLOUT,
+    LEADER_DIRECTED_DIMENSION, LENGTH_MEASURE_WITH_UNIT, LENGTH_UNIT, LIMITS_AND_FITS,
+    LINE_PROFILE_TOLERANCE, MEASURE_REPRESENTATION_ITEM, MEASURE_WITH_UNIT, PARALLELISM_TOLERANCE,
+    PERPENDICULARITY_TOLERANCE, PLANE_ANGLE_MEASURE_WITH_UNIT, PLANE_ANGLE_UNIT,
+    PLUS_MINUS_TOLERANCE, POSITION_TOLERANCE, RADIUS_SIZE, ROUNDNESS_TOLERANCE, SHAPE_ASPECT,
+    SHAPE_DIMENSION_REPRESENTATION, STRAIGHTNESS_TOLERANCE, SURFACE_PROFILE_TOLERANCE,
+    SYMMETRY_TOLERANCE, TESSELLATED_ANNOTATION_OCCURRENCE, TEXT_LITERAL,
+    TEXT_LITERAL_WITH_ASSOCIATED_CURVES, TOLERANCE_VALUE, TOTAL_RUNOUT_TOLERANCE,
+};
 
 pub(super) struct PmiResult {
     pub typed_records: BTreeSet<u64>,
@@ -35,7 +52,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     let characteristic_values =
         characteristic_values(exchange, geometry.length_scale, geometry.plane_angle_scale);
     for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("DATUM") {
+        if record.simple_name() != Some(DATUM) {
             continue;
         }
         let identification = record
@@ -56,7 +73,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     }
 
     for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("DATUM_SYSTEM") {
+        if record.simple_name() != Some(DATUM_SYSTEM) {
             continue;
         }
         let constituents = record
@@ -111,7 +128,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         if matches!(kind, DimensionKind::Size) {
             let category = if record
                 .simple_name()
-                .is_some_and(|name| name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE"))
+                .is_some_and(|name| name.starts_with(DIMENSIONAL_SIZE_WITH_DATUM_FEATURE))
             {
                 record.parameters().iter().rev().find_map(ValueExt::text)
             } else {
@@ -150,7 +167,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     }
 
     for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("PLUS_MINUS_TOLERANCE") {
+        if record.simple_name() != Some(PLUS_MINUS_TOLERANCE) {
             continue;
         }
         let refs = record
@@ -165,11 +182,11 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             exchange
                 .records
                 .get(reference)
-                .filter(|candidate| candidate.simple_name() == Some("TOLERANCE_VALUE"))
+                .filter(|candidate| candidate.simple_name() == Some(TOLERANCE_VALUE))
         });
         let fit = refs.iter().find_map(|reference| {
             let record = exchange.records.get(reference)?;
-            (record.simple_name() == Some("LIMITS_AND_FITS")).then(|| {
+            (record.simple_name() == Some(LIMITS_AND_FITS)).then(|| {
                 (
                     *reference,
                     LimitsAndFits {
@@ -270,7 +287,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let has_datum_reference = record
             .partials
             .iter()
-            .any(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE");
+            .any(|partial| partial.name == GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE);
         let datum_system = if has_datum_reference {
             refs.iter().find_map(|id| {
                 let annotation = &ir.model.pmi[*annotations.get(id)?];
@@ -297,14 +314,14 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             exchange.records.get(reference).is_some_and(|candidate| {
                 matches!(
                     candidate.simple_name(),
-                    Some("LENGTH_MEASURE_WITH_UNIT" | "PLANE_ANGLE_MEASURE_WITH_UNIT")
+                    Some(LENGTH_MEASURE_WITH_UNIT | PLANE_ANGLE_MEASURE_WITH_UNIT)
                 )
             })
         }));
     }
 
     for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
+        if record.simple_name() != Some(DRAUGHTING_MODEL_ITEM_ASSOCIATION) {
             continue;
         }
         let Some(definition) = record.parameter(2).and_then(ValueExt::reference) else {
@@ -372,7 +389,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     for (&id, record) in &exchange.records {
         if matches!(
             record.simple_name(),
-            Some("DRAUGHTING_MODEL" | "ANNOTATION_PLANE" | "DRAUGHTING_CALLOUT")
+            Some(DRAUGHTING_MODEL | ANNOTATION_PLANE | DRAUGHTING_CALLOUT)
         ) {
             typed.insert(id);
         }
@@ -402,7 +419,7 @@ fn mark_characteristic_representations(
     typed: &mut BTreeSet<u64>,
 ) {
     for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
+        if record.simple_name() != Some(DIMENSIONAL_CHARACTERISTIC_REPRESENTATION) {
             continue;
         }
         let record_references = record
@@ -421,7 +438,7 @@ fn mark_characteristic_representations(
             let Some(representation) = exchange.records.get(&representation_id) else {
                 continue;
             };
-            if representation.simple_name() != Some("SHAPE_DIMENSION_REPRESENTATION") {
+            if representation.simple_name() != Some(SHAPE_DIMENSION_REPRESENTATION) {
                 continue;
             }
             typed.insert(representation_id);
@@ -435,10 +452,10 @@ fn mark_characteristic_representations(
                             matches!(
                                 record.simple_name(),
                                 Some(
-                                    "LENGTH_MEASURE_WITH_UNIT"
-                                        | "PLANE_ANGLE_MEASURE_WITH_UNIT"
-                                        | "MEASURE_WITH_UNIT"
-                                        | "MEASURE_REPRESENTATION_ITEM"
+                                    LENGTH_MEASURE_WITH_UNIT
+                                        | PLANE_ANGLE_MEASURE_WITH_UNIT
+                                        | MEASURE_WITH_UNIT
+                                        | MEASURE_REPRESENTATION_ITEM
                                 )
                             )
                         })
@@ -465,7 +482,7 @@ fn datum_references(
     };
     if !matches!(
         compartment.simple_name(),
-        Some("DATUM_REFERENCE_COMPARTMENT" | "DATUM_REFERENCE_ELEMENT")
+        Some(DATUM_REFERENCE_COMPARTMENT | DATUM_REFERENCE_ELEMENT)
     ) {
         return Vec::new();
     }
@@ -493,7 +510,7 @@ fn datum_references(
             .into_iter()
             .filter_map(|element_id| {
                 let element = exchange.records.get(&element_id)?;
-                if element.simple_name() != Some("DATUM_REFERENCE_ELEMENT") {
+                if element.simple_name() != Some(DATUM_REFERENCE_ELEMENT) {
                     return None;
                 }
                 let datum = element.parameter(4).and_then(ValueExt::reference)?;
@@ -537,7 +554,7 @@ fn datum_references(
 }
 
 fn is_common_datum_list(value: Option<&Value>) -> bool {
-    matches!(value, Some(Value::Typed(kind, _)) if kind == "COMMON_DATUM_LIST")
+    matches!(value, Some(Value::Typed(kind, _)) if kind == COMMON_DATUM_LIST)
 }
 
 fn datum_ids(value: Option<&Value>) -> Vec<u64> {
@@ -563,7 +580,7 @@ fn modifier_text(
         Value::Typed(_, value) => modifier_text(value, exchange, typed, length_scale, angle_scale),
         Value::Reference(id) => {
             let record = exchange.records.get(id)?;
-            if record.simple_name() != Some("DATUM_REFERENCE_MODIFIER_WITH_VALUE") {
+            if record.simple_name() != Some(DATUM_REFERENCE_MODIFIER_WITH_VALUE) {
                 return None;
             }
             typed.insert(*id);
@@ -587,10 +604,10 @@ fn is_presentation_annotation(name: &str) -> bool {
     name.starts_with("ANNOTATION_") && name.ends_with("_OCCURRENCE")
         || matches!(
             name,
-            "TESSELLATED_ANNOTATION_OCCURRENCE"
-                | "LEADER_CURVE"
-                | "LEADER_DIRECTED_CALLOUT"
-                | "LEADER_DIRECTED_DIMENSION"
+            TESSELLATED_ANNOTATION_OCCURRENCE
+                | LEADER_CURVE
+                | LEADER_DIRECTED_CALLOUT
+                | LEADER_DIRECTED_DIMENSION
         )
 }
 
@@ -606,7 +623,7 @@ fn find_annotation_text(
     let record = exchange.records.get(&id)?;
     if matches!(
         record.simple_name(),
-        Some("TEXT_LITERAL" | "TEXT_LITERAL_WITH_ASSOCIATED_CURVES")
+        Some(TEXT_LITERAL | TEXT_LITERAL_WITH_ASSOCIATED_CURVES)
     ) {
         return record.parameter(0).and_then(ValueExt::text);
     }
@@ -686,27 +703,27 @@ fn pmi_id(id: u64) -> PmiId {
 fn is_shape_aspect(record: &RawRecord) -> bool {
     matches!(
         record.simple_name(),
-        Some("SHAPE_ASPECT" | "DATUM_FEATURE" | "DATUM")
+        Some(SHAPE_ASPECT | DATUM_FEATURE | DATUM)
     )
 }
 
 fn dimension_kind(name: Option<&str>) -> Option<DimensionKind> {
     match name? {
-        name if name == "DIMENSIONAL_SIZE" || name.starts_with("DIMENSIONAL_SIZE_") => {
+        name if name == DIMENSIONAL_SIZE || name.starts_with("DIMENSIONAL_SIZE_") => {
             Some(DimensionKind::Size)
         }
-        name if name == "DIMENSIONAL_LOCATION" || name.starts_with("DIMENSIONAL_LOCATION_") => {
+        name if name == DIMENSIONAL_LOCATION || name.starts_with("DIMENSIONAL_LOCATION_") => {
             Some(DimensionKind::Location)
         }
-        name if name == "ANGULAR_SIZE"
+        name if name == ANGULAR_SIZE
             || name.starts_with("ANGULAR_SIZE_")
-            || name == "ANGULAR_LOCATION"
+            || name == ANGULAR_LOCATION
             || name.starts_with("ANGULAR_LOCATION_") =>
         {
             Some(DimensionKind::Angular)
         }
-        "DIAMETER_SIZE" => Some(DimensionKind::Diameter),
-        "RADIUS_SIZE" => Some(DimensionKind::Radius),
+        DIAMETER_SIZE => Some(DimensionKind::Diameter),
+        RADIUS_SIZE => Some(DimensionKind::Radius),
         name if name.ends_with("_SIZE") || name.ends_with("_LOCATION") => {
             Some(DimensionKind::Other(name.to_ascii_lowercase()))
         }
@@ -717,22 +734,22 @@ fn dimension_kind(name: Option<&str>) -> Option<DimensionKind> {
 fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
     use GeometricToleranceKind as Kind;
     Some(match name? {
-        "STRAIGHTNESS_TOLERANCE" => Kind::Straightness,
-        "FLATNESS_TOLERANCE" => Kind::Flatness,
-        "ROUNDNESS_TOLERANCE" => Kind::Roundness,
-        "CYLINDRICITY_TOLERANCE" => Kind::Cylindricity,
-        "LINE_PROFILE_TOLERANCE" => Kind::LineProfile,
-        "SURFACE_PROFILE_TOLERANCE" => Kind::SurfaceProfile,
-        "ANGULARITY_TOLERANCE" => Kind::Angularity,
-        "PERPENDICULARITY_TOLERANCE" => Kind::Perpendicularity,
-        "PARALLELISM_TOLERANCE" => Kind::Parallelism,
-        "POSITION_TOLERANCE" => Kind::Position,
-        "CONCENTRICITY_TOLERANCE" => Kind::Concentricity,
-        "SYMMETRY_TOLERANCE" => Kind::Symmetry,
-        "CIRCULAR_RUNOUT_TOLERANCE" => Kind::CircularRunout,
-        "TOTAL_RUNOUT_TOLERANCE" => Kind::TotalRunout,
-        "GEOMETRIC_TOLERANCE" => Kind::Other("geometric_tolerance".into()),
-        name if name.ends_with("_TOLERANCE") && name != "PLUS_MINUS_TOLERANCE" => {
+        STRAIGHTNESS_TOLERANCE => Kind::Straightness,
+        FLATNESS_TOLERANCE => Kind::Flatness,
+        ROUNDNESS_TOLERANCE => Kind::Roundness,
+        CYLINDRICITY_TOLERANCE => Kind::Cylindricity,
+        LINE_PROFILE_TOLERANCE => Kind::LineProfile,
+        SURFACE_PROFILE_TOLERANCE => Kind::SurfaceProfile,
+        ANGULARITY_TOLERANCE => Kind::Angularity,
+        PERPENDICULARITY_TOLERANCE => Kind::Perpendicularity,
+        PARALLELISM_TOLERANCE => Kind::Parallelism,
+        POSITION_TOLERANCE => Kind::Position,
+        CONCENTRICITY_TOLERANCE => Kind::Concentricity,
+        SYMMETRY_TOLERANCE => Kind::Symmetry,
+        CIRCULAR_RUNOUT_TOLERANCE => Kind::CircularRunout,
+        TOTAL_RUNOUT_TOLERANCE => Kind::TotalRunout,
+        GEOMETRIC_TOLERANCE => Kind::Other("geometric_tolerance".into()),
+        name if name.ends_with("_TOLERANCE") && name != PLUS_MINUS_TOLERANCE => {
             Kind::Other(name.to_ascii_lowercase())
         }
         _ => return None,
@@ -748,7 +765,7 @@ fn characteristic_values(
     for record in exchange
         .records
         .values()
-        .filter(|record| record.simple_name() == Some("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION"))
+        .filter(|record| record.simple_name() == Some(DIMENSIONAL_CHARACTERISTIC_REPRESENTATION))
     {
         let Some(characteristic) = record.parameters().iter().flat_map(references).find(|id| {
             exchange
@@ -847,7 +864,7 @@ fn measure_inner(
                 .find(|unit| {
                     exchange.records.get(unit).is_some_and(|record| {
                         record.partials.iter().any(|partial| {
-                            matches!(partial.name.as_str(), "LENGTH_UNIT" | "PLANE_ANGLE_UNIT")
+                            matches!(partial.name.as_str(), LENGTH_UNIT | PLANE_ANGLE_UNIT)
                         })
                     })
                 });

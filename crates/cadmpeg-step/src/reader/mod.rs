@@ -12,6 +12,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::wire::hash::sha256_hex;
 
 use crate::parse::{self, Exchange, Value};
+use crate::vocab::FILE_SCHEMA;
 
 mod dependencies;
 mod geometry;
@@ -302,7 +303,7 @@ fn schema_name(exchange: &Exchange) -> String {
     if let Some(record) = exchange
         .header
         .iter()
-        .find(|record| record.name == "FILE_SCHEMA")
+        .find(|record| record.name == FILE_SCHEMA)
     {
         record
             .parameters

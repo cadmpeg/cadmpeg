@@ -9,6 +9,9 @@ use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Point, Shel
 use cadmpeg_ir::CadIr;
 
 use crate::geometry;
+use crate::vocab::{
+    ADVANCED_BREP_SHAPE_REPRESENTATION, SHAPE_DEFINITION_REPRESENTATION, SHAPE_REPRESENTATION,
+};
 use crate::writer::{refs, string, Emitter, Ref};
 use crate::StepSchema;
 
@@ -311,16 +314,16 @@ impl<'a> Builder<'a> {
                     .iter()
                     .all(|body| body.kind == BodyKind::Solid)
             {
-                "ADVANCED_BREP_SHAPE_REPRESENTATION"
+                ADVANCED_BREP_SHAPE_REPRESENTATION
             } else {
-                "SHAPE_REPRESENTATION"
+                SHAPE_REPRESENTATION
             };
             let representation = self.emitter.emit(
                 representation_kind,
                 &format!("'',{},{context}", refs(&items)),
             );
             self.emitter.emit(
-                "SHAPE_DEFINITION_REPRESENTATION",
+                SHAPE_DEFINITION_REPRESENTATION,
                 &format!("{product_def_shape},{representation}"),
             );
         } else {
@@ -328,7 +331,7 @@ impl<'a> Builder<'a> {
             if has_standalone_geometry {
                 standalone_items.push(origin);
                 self.emitter.emit(
-                    "SHAPE_REPRESENTATION",
+                    SHAPE_REPRESENTATION,
                     &format!(
                         "{},{},{context}",
                         string("standalone geometry"),

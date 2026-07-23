@@ -9,6 +9,10 @@ use cadmpeg_ir::math::Point3;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::geometry::GeometryResult;
+use crate::vocab::{
+    AREA_MEASURE, CARTESIAN_POINT, DERIVED_UNIT, MEASURE_REPRESENTATION_ITEM, PROPERTY_DEFINITION,
+    PROPERTY_DEFINITION_REPRESENTATION, REPRESENTATION, SHAPE_REPRESENTATION, VOLUME_MEASURE,
+};
 
 pub(super) struct ValidationResult {
     pub typed_records: BTreeSet<u64>,
@@ -34,7 +38,7 @@ pub(super) fn decode(
         .filter_map(|(&id, record)| {
             if !matches!(
                 record.simple_name(),
-                Some("REPRESENTATION" | "SHAPE_REPRESENTATION")
+                Some(REPRESENTATION | SHAPE_REPRESENTATION)
             ) {
                 return None;
             }
@@ -45,7 +49,7 @@ pub(super) fn decode(
         .records
         .iter()
         .filter_map(|(&id, record)| {
-            if record.simple_name() == Some("PROPERTY_DEFINITION")
+            if record.simple_name() == Some(PROPERTY_DEFINITION)
                 && record
                     .parameter(0)?
                     .text()?
@@ -71,7 +75,7 @@ pub(super) fn decode(
     let mut warnings = Vec::new();
 
     for (&relation_id, relation) in &exchange.records {
-        if relation.simple_name() != Some("PROPERTY_DEFINITION_REPRESENTATION") {
+        if relation.simple_name() != Some(PROPERTY_DEFINITION_REPRESENTATION) {
             continue;
         }
         let Some(property_id) = relation.parameter(0).and_then(ValueExt::reference) else {
@@ -156,7 +160,7 @@ pub(super) fn decode(
 }
 
 fn expected_value(record: &RawRecord, exchange: &Exchange, scale: f64) -> Option<Expected> {
-    if record.simple_name() == Some("CARTESIAN_POINT") {
+    if record.simple_name() == Some(CARTESIAN_POINT) {
         let values = record.parameter(1)?.list()?;
         if values.len() != 3 {
             return None;
@@ -167,14 +171,14 @@ fn expected_value(record: &RawRecord, exchange: &Exchange, scale: f64) -> Option
             values[2].number()? * scale,
         )));
     }
-    if record.simple_name() != Some("MEASURE_REPRESENTATION_ITEM") {
+    if record.simple_name() != Some(MEASURE_REPRESENTATION_ITEM) {
         return None;
     }
     match record.parameter(1)? {
-        Value::Typed(kind, value) if kind == "AREA_MEASURE" => Some(Expected::Area(
+        Value::Typed(kind, value) if kind == AREA_MEASURE => Some(Expected::Area(
             value.number()? * measure_scale(record, exchange, scale, 2),
         )),
-        Value::Typed(kind, value) if kind == "VOLUME_MEASURE" => Some(Expected::Volume(
+        Value::Typed(kind, value) if kind == VOLUME_MEASURE => Some(Expected::Volume(
             value.number()? * measure_scale(record, exchange, scale, 3),
         )),
         _ => None,
@@ -187,7 +191,7 @@ fn measure_scale(record: &RawRecord, exchange: &Exchange, fallback: f64, order: 
         .and_then(ValueExt::reference)
         .and_then(|unit| exchange.records.get(&unit))
         .and_then(|unit| {
-            if unit.simple_name() != Some("DERIVED_UNIT") {
+            if unit.simple_name() != Some(DERIVED_UNIT) {
                 return None;
             }
             unit.parameter(0)?
@@ -210,7 +214,7 @@ fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut BTreeSet<u64>)
     let Some(record) = exchange.records.get(&id) else {
         return;
     };
-    if record.simple_name() != Some("DERIVED_UNIT") {
+    if record.simple_name() != Some(DERIVED_UNIT) {
         return;
     }
     for element in record
