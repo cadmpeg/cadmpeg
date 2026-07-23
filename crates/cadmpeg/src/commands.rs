@@ -13,9 +13,10 @@ use cadmpeg_ir::report::{DecodeReport, ExportReport};
 use cadmpeg_ir::validate::ValidationReport;
 use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, CodecEntry, SourceFidelity};
 
+use crate::format::{resolve_format, ForcedInput, Format};
 use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
 use crate::registry::Registry;
-use crate::{DecodeArgs, ForcedInput, Format};
+use crate::DecodeArgs;
 
 const CLI_SCHEMA_VERSION: u32 = 4;
 
@@ -602,23 +603,6 @@ fn lossy_refusal(
             format.name()
         ))
     })
-}
-
-fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format> {
-    if let Some(format) = explicit {
-        if let Some(inferred) = Format::from_path(out) {
-            if inferred != format {
-                eprintln!(
-                    "warning: explicit format {} disagrees with output extension format {}; using {}",
-                    format.name(),
-                    inferred.name(),
-                    format.name()
-                );
-            }
-        }
-        return Ok(format);
-    }
-    Format::from_path(out).ok_or_else(|| anyhow!("cannot infer format; pass -f"))
 }
 
 #[allow(clippy::too_many_arguments)]

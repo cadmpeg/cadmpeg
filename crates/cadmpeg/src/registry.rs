@@ -127,7 +127,7 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::Registry;
-    use crate::Format;
+    use crate::format::Format;
 
     #[test]
     fn every_exportable_format_has_an_encoder() {

@@ -7,6 +7,7 @@
 //! limits, loss reporting, and exit-status semantics.
 
 mod commands;
+mod format;
 mod loader;
 mod registry;
 
@@ -15,6 +16,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+use crate::format::{ForcedInput, Format, InputFormat};
 use crate::registry::Registry;
 
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -79,24 +81,6 @@ struct Cli {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum Format {
-    /// Canonical CADIR JSON.
-    #[value(alias = "json")]
-    Cadir,
-    /// ISO 10303-21 STEP AP214.
-    Step,
-    /// `FreeCAD` `.FCStd`.
-    Fcstd,
-    /// Autodesk Fusion `.f3d`.
-    F3d,
-    /// `SolidWorks` `.sldprt`.
-    Sldprt,
-    /// Rhino `.3dm`.
-    #[value(alias = "3dm")]
-    Rhino,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum RhinoVersion {
     /// Rhino 5 archive version 50.
     #[value(name = "50", alias = "5")]
@@ -119,91 +103,6 @@ impl RhinoVersion {
             Self::V6 => cadmpeg_codec_rhino::RhinoArchiveVersion::V6,
             Self::V7 => cadmpeg_codec_rhino::RhinoArchiveVersion::V7,
             Self::V8 => cadmpeg_codec_rhino::RhinoArchiveVersion::V8,
-        }
-    }
-}
-
-impl Format {
-    fn from_extension(extension: &str) -> Option<Self> {
-        match extension.to_ascii_lowercase().as_str() {
-            "cadir" | "json" => Some(Self::Cadir),
-            "step" | "stp" => Some(Self::Step),
-            "fcstd" => Some(Self::Fcstd),
-            "f3d" => Some(Self::F3d),
-            "sldprt" => Some(Self::Sldprt),
-            "3dm" => Some(Self::Rhino),
-            _ => None,
-        }
-    }
-
-    fn is_geometry_export(self) -> bool {
-        matches!(
-            self,
-            Self::Step | Self::Fcstd | Self::F3d | Self::Sldprt | Self::Rhino
-        )
-    }
-
-    fn from_path(path: Option<&std::path::Path>) -> Option<Self> {
-        path.and_then(std::path::Path::extension)
-            .and_then(|extension| extension.to_str())
-            .and_then(Self::from_extension)
-    }
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Cadir => "cadir",
-            Self::Step => "step",
-            Self::Fcstd => "fcstd",
-            Self::F3d => "f3d",
-            Self::Sldprt => "sldprt",
-            Self::Rhino => "rhino",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum InputFormat {
-    /// `FreeCAD` `.FCStd`.
-    Fcstd,
-    /// Autodesk Fusion `.f3d`.
-    F3d,
-    /// `SolidWorks` `.sldprt`.
-    Sldprt,
-    /// CATIA V5 `.CATPart`.
-    #[value(alias = "catia")]
-    Catpart,
-    /// Siemens NX `.prt`.
-    Nx,
-    /// Creo Parametric `.prt`.
-    Creo,
-    /// Rhino `.3dm`.
-    #[value(alias = "3dm")]
-    Rhino,
-    /// IGES `.igs` or `.iges`.
-    #[value(alias = "igs")]
-    Iges,
-    /// Canonical CADIR JSON.
-    Cadir,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ForcedInput {
-    Codec(&'static str),
-    Cadir,
-}
-
-impl InputFormat {
-    fn resolution(self) -> ForcedInput {
-        match self {
-            Self::Fcstd => ForcedInput::Codec("fcstd"),
-            Self::F3d => ForcedInput::Codec("f3d"),
-            Self::Sldprt => ForcedInput::Codec("sldprt"),
-            Self::Catpart => ForcedInput::Codec("catia"),
-            Self::Nx => ForcedInput::Codec("nx"),
-            Self::Creo => ForcedInput::Codec("creo"),
-            Self::Rhino => ForcedInput::Codec("rhino"),
-            Self::Iges => ForcedInput::Codec("iges"),
-            Self::Cadir => ForcedInput::Cadir,
         }
     }
 }

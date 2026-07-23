@@ -9,8 +9,8 @@ use anyhow::{anyhow, Context, Result};
 use cadmpeg_ir::codec::{CodecEntry, Confidence, DecodeOptions};
 use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
 
+use crate::format::ForcedInput;
 use crate::registry::Registry;
-use crate::ForcedInput;
 
 /// Leading byte window available to content-based codec detection.
 pub const DETECTION_PREFIX_LEN: usize = 128 * 1024;
