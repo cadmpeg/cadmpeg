@@ -6,6 +6,7 @@ use std::io::{Cursor, Read, SeekFrom};
 use std::path::{Component, Path};
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_ir::container::{walk_bounded, WalkConfig};
 use flate2::{Decompress, FlushDecompress};
 use zip::CompressionMethod;
 
@@ -49,15 +50,9 @@ pub(crate) fn has_document_markers(prefix: &[u8]) -> bool {
         }
         _ => return false,
     };
-    contains(&document, b"<Document")
-        && contains(&document, b"SchemaVersion")
-        && contains(&document, b"FileVersion")
-}
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
+    memchr::memmem::find(&document, b"<Document").is_some()
+        && memchr::memmem::find(&document, b"SchemaVersion").is_some()
+        && memchr::memmem::find(&document, b"FileVersion").is_some()
 }
 
 /// Fully scanned container used by inspection and decode.
@@ -93,84 +88,76 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
     let mut names = BTreeSet::new();
     let mut entries = Vec::with_capacity(archive.len());
     let mut data = BTreeMap::new();
-    let mut total = 0_u64;
     let mut raw_entries = Vec::new();
 
-    for index in 0..archive.len() {
-        let mut file = archive
-            .by_index(index)
-            .map_err(|error| CodecError::Malformed(format!("bad ZIP entry {index}: {error}")))?;
-        let name = file.name().to_owned();
-        validate_name(&name)?;
-        if !names.insert(name.clone()) {
+    // The shared walker owns entry iteration, name validation, and the
+    // per-entry and total inflated-size caps (`MAX_ENTRY_BYTES`,
+    // `MAX_TOTAL_BYTES`); it inflates each entry into a capped `Vec`. Every
+    // check the walker does not perform — duplicate names, encryption, the
+    // compression-method allowlist, the expansion-ratio guard, the physical
+    // offset bounds, and the exact-declared-size assertion — stays here in the
+    // callback, so decode and inspect see the same acceptance boundary.
+    let source_len = source.len() as u64;
+    let config = WalkConfig {
+        classify,
+        validate_name,
+        max_entry_bytes: MAX_ENTRY_BYTES,
+        max_total_bytes: MAX_TOTAL_BYTES,
+    };
+    walk_bounded(&mut archive, &config, |entry, bytes| {
+        let name = entry.name.as_str();
+        if !names.insert(entry.name.clone()) {
             return Err(CodecError::Malformed(format!(
                 "duplicate ZIP entry name {name}"
             )));
         }
-        if file.encrypted() {
+        if entry.encrypted {
             return Err(CodecError::Malformed(format!("encrypted ZIP entry {name}")));
         }
         if !matches!(
-            file.compression(),
+            entry.compression,
             CompressionMethod::Stored | CompressionMethod::Deflated
         ) {
             return Err(CodecError::NotImplemented(format!(
                 "FCStd ZIP compression {:?} for {name}",
-                file.compression()
+                entry.compression
             )));
         }
-        if file.size() > MAX_ENTRY_BYTES {
-            return Err(CodecError::Malformed(format!(
-                "entry size limit exceeded for {name}"
-            )));
-        }
-        total = total
-            .checked_add(file.size())
-            .ok_or_else(|| CodecError::Malformed("expanded size overflow".into()))?;
-        if total > MAX_TOTAL_BYTES {
-            return Err(CodecError::Malformed(
-                "total expanded-size limit exceeded".into(),
-            ));
-        }
-        if file.compressed_size() > 0 && file.size() / file.compressed_size() > MAX_EXPANSION_RATIO
+        if entry.compressed_size > 0
+            && entry.uncompressed_size / entry.compressed_size > MAX_EXPANSION_RATIO
         {
             return Err(CodecError::Malformed(format!(
                 "expansion-ratio limit exceeded for {name}"
             )));
         }
 
-        let header_start = file.header_start();
-        let data_start = file
-            .data_start()
+        let header_start = entry.header_start;
+        let data_start = entry
+            .data_start
             .ok_or_else(|| CodecError::Malformed(format!("missing data offset for {name}")))?;
         let data_end = data_start
-            .checked_add(file.compressed_size())
+            .checked_add(entry.compressed_size)
             .ok_or_else(|| CodecError::Malformed("compressed range overflow".into()))?;
-        let central_start = file.central_header_start();
+        let central_start = entry.central_start;
         for point in [header_start, data_start, data_end, central_start] {
-            if point > source.len() as u64 {
+            if point > source_len {
                 return Err(CodecError::Malformed(format!(
                     "ZIP offset outside archive for {name}"
                 )));
             }
         }
         raw_entries.push(RawEntry {
-            name: name.clone(),
+            name: entry.name.clone(),
             header_start,
             data_start,
             data_end,
             central_start,
-            crc32: file.crc32(),
-            compressed_size: file.compressed_size(),
-            uncompressed_size: file.size(),
+            crc32: entry.crc32,
+            compressed_size: entry.compressed_size,
+            uncompressed_size: entry.uncompressed_size,
         });
 
-        let declared_size = file.size();
-        let mut bytes = Vec::with_capacity(declared_size as usize);
-        (&mut file)
-            .take(declared_size.saturating_add(1))
-            .read_to_end(&mut bytes)
-            .map_err(|error| CodecError::Malformed(format!("cannot read {name}: {error}")))?;
+        let declared_size = entry.uncompressed_size;
         if u64::try_from(bytes.len()).ok() != Some(declared_size) {
             return Err(CodecError::Malformed(format!(
                 "entry {name} expanded to {} bytes but declares {declared_size}",
@@ -178,20 +165,21 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
             )));
         }
         let mut attributes = BTreeMap::new();
-        attributes.insert("crc32".into(), format!("{:08x}", file.crc32()));
+        attributes.insert("crc32".into(), format!("{:08x}", entry.crc32));
         attributes.insert("header_offset".into(), header_start.to_string());
         attributes.insert("data_offset".into(), data_start.to_string());
         attributes.insert("central_header_offset".into(), central_start.to_string());
         entries.push(ContainerEntry {
-            role: classify(&name).into(),
-            compression: compression_label(file.compression()).into(),
-            compressed_size: file.compressed_size(),
-            uncompressed_size: file.size(),
-            name: name.clone(),
+            role: entry.role.into(),
+            compression: compression_label(entry.compression).into(),
+            compressed_size: entry.compressed_size,
+            uncompressed_size: entry.uncompressed_size,
+            name: entry.name.clone(),
             attributes,
         });
-        data.insert(name, bytes);
-    }
+        data.insert(entry.name.clone(), bytes);
+        Ok(())
+    })?;
 
     let document_bytes = data
         .get("Document.xml")
