@@ -1000,9 +1000,9 @@ seven-byte scalar, an eight-byte control payload, and a terminal frame of seven
 contiguous scalars. The first terminal scalar is auxiliary. The remaining six
 are two XYZ corners and use the same unique-held-coordinate plane rule.
 An `f7 0c`-terminated auxiliary-corner form stores a final contiguous frame of
-seven scalars immediately before that terminator. The first scalar is
-auxiliary; the remaining six are the two XYZ corners. Control fields before the
-final frame do not participate in the corner coordinates.
+seven through ten scalars immediately before that terminator. The terminal
+seven slots consist of one auxiliary scalar followed by two XYZ corners.
+Earlier slots and control fields do not participate in the corner coordinates.
 
 A first-coordinate-lane positional plane body stores two XYZ corners as six
 contiguous scalars immediately after `00 0c 9a`; `a0` can immediately precede

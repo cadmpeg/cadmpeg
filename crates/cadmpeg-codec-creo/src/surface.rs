@@ -1504,7 +1504,7 @@ pub fn positional_frame_planes(
         let suffixed_auxiliary_frame = (|| {
             let frame_end = record.body.len().checked_sub(2)?;
             let mut frames = record.scalar_frames.iter().filter(|frame| {
-                frame.slots.len() == 7
+                (7..=10).contains(&frame.slots.len())
                     && frame
                         .slots
                         .last()
@@ -1512,11 +1512,9 @@ pub fn positional_frame_planes(
             });
             let terminal = frames.next()?;
             frames.next().is_none().then_some(())?;
-            let [_, corners @ ..] = terminal.slots.as_slice() else {
-                unreachable!("seven slots were checked above");
-            };
-            (record.body.ends_with(&[0xf7, 0x0c]) && corners.len() == 6)
-                .then(|| (corners[0].offset, corners))
+            record.body.ends_with(&[0xf7, 0x0c]).then_some(())?;
+            let corners = &terminal.slots[terminal.slots.len() - 6..];
+            Some((corners[0].offset, corners))
         })();
         let terminal_corner_frame = (|| {
             let frame_end = record.body.len().checked_sub(2)?;
@@ -7439,8 +7437,25 @@ mod tests {
                 ],
             },
         ];
+        let mut domain_prefixed = trailed.clone();
+        domain_prefixed.scalar_frames.remove(1);
+        domain_prefixed.scalar_frames[1].offset = 15;
+        domain_prefixed.scalar_frames[1].slots.splice(
+            0..0,
+            [slot(-2.0, 15, 1), slot(2.0, 16, 1), slot(0.0, 17, 1)],
+        );
         assert_eq!(
             positional_frame_planes(&[trailed], std::slice::from_ref(&row)),
+            vec![OutlinePlane {
+                surface_id: 41,
+                origin: [0.0, 0.0, 7.5],
+                normal: [0.0, 0.0, 1.0],
+                u_axis: [1.0, 0.0, 0.0],
+                offset: 37,
+            }]
+        );
+        assert_eq!(
+            positional_frame_planes(&[domain_prefixed], std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [0.0, 0.0, 7.5],
