@@ -487,7 +487,8 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             let kind = if marker_spatial_coordinates(payload, offset).is_some()
                 || legacy_line_handle_coordinates(payload, offset).is_some()
                 || coordinates_m.is_some()
-                    && (indexed_profile_vertex(payload, offset)
+                    && (compact_legacy_profile_vertex(payload, offset)
+                        || indexed_profile_vertex(payload, offset)
                         || linked_profile_vertex(payload, offset))
             {
                 SketchInputKind::Point
@@ -1043,6 +1044,14 @@ fn indexed_profile_coordinate_candidate(payload: &[u8], offset: usize) -> bool {
         .any(|size| sketch_marker_prefix_at(payload, offset.saturating_add(*size)))
 }
 
+fn compact_legacy_profile_vertex(payload: &[u8], offset: usize) -> bool {
+    compact_legacy_marker_body(payload, offset)
+        && marker_native_code(payload, offset) == Some(1)
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 42..offset + 44) == Some(&[0x1e, 0x00])
+        && finite_coordinate_pair(payload, offset.saturating_add(44)).is_some()
+}
+
 pub(crate) fn marker_object_index(payload: &[u8], offset: usize) -> Option<u32> {
     let start = offset.checked_sub(4)?;
     let index = u32::from_le_bytes(payload.get(start..offset)?.try_into().ok()?);
@@ -1223,8 +1232,9 @@ mod marker_tests {
         compact_extrusion_through_next_at, compact_extrusion_to_face_at,
         compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
         compact_indexed_curve_endpoint_indices, compact_legacy_curve_endpoint_indices,
-        compact_legacy_radial_circle_index, compact_legacy_selected_axis_endpoint_indices,
-        compact_line_chain_addresses, compact_line_region_addresses, compact_offset_plane_source,
+        compact_legacy_profile_vertex, compact_legacy_radial_circle_index,
+        compact_legacy_selected_axis_endpoint_indices, compact_line_chain_addresses,
+        compact_line_region_addresses, compact_offset_plane_source,
         compact_profile_reference_plane_source, compact_reference_plane_frame,
         compact_reference_plane_source, compact_single_face_reference_path_at,
         compact_single_face_reference_record_at, compact_sketch_surface_component_path_at,
@@ -4213,6 +4223,28 @@ mod marker_tests {
             payload[size..].copy_from_slice(LEGACY_SKETCH_MARKER);
             assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
         }
+    }
+
+    #[test]
+    fn compact_legacy_coordinate_value_one_is_a_profile_vertex() {
+        let mut payload = vec![0; 68];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&1u32.to_le_bytes());
+        payload[17..25].copy_from_slice(&[0x00, 0x00, 0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[25..27].copy_from_slice(&1u16.to_le_bytes());
+        payload[31] = 0x04;
+        payload[42..44].copy_from_slice(&[0x1e, 0x00]);
+        payload[44..52].copy_from_slice(&1.25f64.to_le_bytes());
+        payload[52..60].copy_from_slice(&(-2.5f64).to_le_bytes());
+
+        assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+        assert!(compact_legacy_profile_vertex(&payload, 0));
+        let entities = sketch_input_entities(&payload, "lane");
+        let [entity] = entities.as_slice() else {
+            panic!("expected one compact marker");
+        };
+        assert_eq!(entity.kind, SketchInputKind::Point);
     }
 
     #[test]
