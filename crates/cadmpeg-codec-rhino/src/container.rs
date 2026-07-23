@@ -325,9 +325,15 @@ fn known_record(record: u32) -> bool {
         || expected_record(TCODE_HISTORY, record)
 }
 
-/// Scan a V3/V4 or V5–V8 Rhino container.
-pub(crate) fn scan(data: &[u8]) -> Result<Scan<'_>, CodecError> {
-    scan_with_record_limit(data, TABLE_RECORD_CAP)
+/// Scan a Rhino decode root into its V3/V4 or V5–V8 container structure.
+///
+/// Folds the [`acquire`] byte extraction and codec-local input ceiling into the
+/// decode-root entry that `decode` and `inspect` share. `_ctx` is taken for
+/// parity with the other container codecs' `scan(ctx, root)` signature; the
+/// chunk walk is a pure function of the source bytes gated by per-chunk framing
+/// checks, so it charges no decode budget.
+pub(crate) fn scan<'a>(_ctx: &DecodeContext<'_>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
+    scan_with_record_limit(acquire(root)?, TABLE_RECORD_CAP)
 }
 
 fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, CodecError> {
@@ -700,9 +706,11 @@ pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
 }
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
-pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
-    let data = acquire(root)?;
-    let header = parse_header(data).map_err(|error| malformed(&error))?;
+pub(crate) fn inspect(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+) -> Result<ContainerSummary, CodecError> {
+    let header = parse_header(acquire(root)?).map_err(|error| malformed(&error))?;
     if header_only(header.archive_version) {
         return Ok(ContainerSummary {
             format: "rhino".to_string(),
@@ -714,7 +722,7 @@ pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
             )],
         });
     }
-    Ok(summarize(&scan(data)?))
+    Ok(summarize(&scan(ctx, root)?))
 }
 
 /// Decode a Rhino stream according to the supported container depth.
@@ -723,15 +731,14 @@ pub(crate) fn decode(
     root: View<'_>,
     container_only: bool,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, CodecError> {
-    let data = acquire(root)?;
-    let header = parse_header(data).map_err(|error| malformed(&error))?;
+    let header = parse_header(acquire(root)?).map_err(|error| malformed(&error))?;
     if header_only(header.archive_version) {
         return Err(CodecError::NotImplemented(format!(
             "Rhino archive version {} decode is not implemented",
             header.archive_version.value()
         )));
     }
-    let scan = scan(data)?;
+    let scan = scan(ctx, root)?;
     if container_only
         && matches!(
             scan.archive,
