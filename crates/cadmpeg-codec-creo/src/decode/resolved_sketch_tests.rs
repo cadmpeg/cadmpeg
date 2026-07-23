@@ -1082,7 +1082,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
         native_ref: None,
     };
     let entity = SketchEntityId("entity".to_string());
-    let constraints = vec![
+    let mut constraints = vec![
         constraint(
             "sketch:relation:1",
             SketchConstraintDefinition::Fixed {
@@ -1104,6 +1104,9 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
             SketchConstraintDefinition::Fixed { entity },
         ),
     ];
+    constraints[0].active = Some(true);
+    constraints[1].active = Some(true);
+    constraints[2].active = Some(false);
 
     let coverage =
         design_constraint_transfer_coverage(&constraints, ":relation:", "creo:relation:");
@@ -1111,6 +1114,9 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
     assert_eq!(coverage.transferred, 2);
     assert_eq!(coverage.native, 1);
     assert_eq!(coverage.typed(), 1);
+    assert_eq!(coverage.active, 2);
+    assert_eq!(coverage.active_native, 1);
+    assert_eq!(coverage.active_typed(), 1);
 }
 
 #[test]

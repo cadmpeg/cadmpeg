@@ -85,7 +85,8 @@ fixtures, claims above L1 remain unproven.
    Duplicate native identifiers are counted separately as ambiguous rows.
    Nonzero untransferred and ambiguous row counts each raise a decode loss note.
    The coverage map separately counts decoded, transferred, typed, and native
-   `relat_ptr` and `skamp_ptr` constraints.
+   `relat_ptr` and `skamp_ptr` constraints, with active typed and native
+   partitions. Every active native constraint raises a decode loss note.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts

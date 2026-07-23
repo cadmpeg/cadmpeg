@@ -870,11 +870,17 @@ struct CurveTransferCoverage {
 struct DesignConstraintTransferCoverage {
     transferred: usize,
     native: usize,
+    active: usize,
+    active_native: usize,
 }
 
 impl DesignConstraintTransferCoverage {
     fn typed(&self) -> usize {
         self.transferred.saturating_sub(self.native)
+    }
+
+    fn active_typed(&self) -> usize {
+        self.active.saturating_sub(self.active_native)
     }
 }
 
@@ -890,12 +896,19 @@ fn design_constraint_transfer_coverage(
             DesignConstraintTransferCoverage::default(),
             |mut coverage, constraint| {
                 coverage.transferred += 1;
-                if matches!(
+                let native = matches!(
                     &constraint.definition,
                     SketchConstraintDefinition::Native { native_kind, .. }
                         if native_kind.starts_with(native_kind_prefix)
-                ) {
+                );
+                if native {
                     coverage.native += 1;
+                }
+                if constraint.active == Some(true) {
+                    coverage.active += 1;
+                    if native {
+                        coverage.active_native += 1;
+                    }
                 }
                 coverage
             },
@@ -23473,6 +23486,18 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             skamp_constraint_coverage.typed(),
         );
         coverage.insert(
+            "active_feature_skamp_constraint_count".to_string(),
+            skamp_constraint_coverage.active,
+        );
+        coverage.insert(
+            "active_native_feature_skamp_constraint_count".to_string(),
+            skamp_constraint_coverage.active_native,
+        );
+        coverage.insert(
+            "active_typed_feature_skamp_constraint_count".to_string(),
+            skamp_constraint_coverage.active_typed(),
+        );
+        coverage.insert(
             "decoded_feature_relation_count".to_string(),
             decoded_feature_relation_count,
         );
@@ -23487,6 +23512,18 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "transferred_typed_feature_relation_constraint_count".to_string(),
             relation_constraint_coverage.typed(),
+        );
+        coverage.insert(
+            "active_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.active,
+        );
+        coverage.insert(
+            "active_native_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.active_native,
+        );
+        coverage.insert(
+            "active_typed_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.active_typed(),
         );
     }
     let operation_feature_ids = scan
@@ -25674,6 +25711,33 @@ fn build_report(
             message: format!(
                 "{ambiguous_curve_rows} VisibGeom curve-topology row(s) share a non-unique \
                  identity and were not resolved to a single carrier."
+            ),
+            provenance: None,
+        });
+    }
+    let active_native_skamps = count("active_native_feature_skamp_constraint_count");
+    if active_native_skamps != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{active_native_skamps} active section incidence constraint(s) retain native \
+                 operands because their neutral semantics or referenced geometry remain unresolved."
+            ),
+            provenance: None,
+        });
+    }
+    let active_native_relations = count("active_native_feature_relation_constraint_count");
+    if active_native_relations != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{active_native_relations} active section dimension relation(s) retain native \
+                 operands because their neutral semantics, incidence join, or referenced geometry \
+                 remain unresolved."
             ),
             provenance: None,
         });
