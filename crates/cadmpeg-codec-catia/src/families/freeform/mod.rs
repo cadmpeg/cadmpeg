@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -25,6 +25,7 @@ use crate::assemble::{
 };
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
+use crate::loss::CatiaLossCode;
 
 pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<FamilyOutput> {
     let mut b5_graph = crate::families::b5::graph::parse(&scan.data);
@@ -80,32 +81,17 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     }
     append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
     let mut losses = if topology_transferred && b5_complete {
-        vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
-            severity: Severity::Warning,
-            message: "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved."
-                .to_string(),
-            provenance: None,
-        }]
+        vec![CatiaLossCode::B5OrientationGauged.note(
+            "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved.",
+        )]
     } else if topology_transferred {
-        vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
-            severity: Severity::Blocking,
-            message: "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant nodes and unresolved endpoint lifts remain outside the connected graph."
-                .to_string(),
-            provenance: None,
-        }]
+        vec![CatiaLossCode::B5SubsetTransferred.note(
+            "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant nodes and unresolved endpoint lifts remain outside the connected graph.",
+        )]
     } else {
-        vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
-            severity: Severity::Blocking,
-            message: "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close."
-                .to_string(),
-            provenance: None,
-        }]
+        vec![CatiaLossCode::B5GraphNotClosed.note(
+            "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close.",
+        )]
     };
     insert_unresolved_carrier_loss(&ir, &mut losses);
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);

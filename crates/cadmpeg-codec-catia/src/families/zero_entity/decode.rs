@@ -11,7 +11,7 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -26,6 +26,7 @@ use crate::assemble::{
 };
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
+use crate::loss::CatiaLossCode;
 use crate::solve::UnionFind;
 
 pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutput> {
@@ -72,15 +73,9 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
         let mut losses = Vec::new();
         insert_unresolved_carrier_loss(&ir, &mut losses);
         if unresolved_pcurves != 0 {
-            losses.push(LossNote {
-                code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-                category: LossCategory::Topology,
-                severity: Severity::Warning,
-                message: format!(
-                    "The zero-entity B-rep graph is reconstructed; {unresolved_pcurves} referenced-pole pcurve occurrences remain unresolved."
-                ),
-                provenance: None,
-            });
+            losses.push(CatiaLossCode::ZeroEntityPcurvesUnresolved.note(format!(
+                "The zero-entity B-rep graph is reconstructed; {unresolved_pcurves} referenced-pole pcurve occurrences remain unresolved."
+            )));
         }
         return Some(FamilyOutput {
             ir,
@@ -159,14 +154,9 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
-        losses: vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
-            severity: Severity::Blocking,
-            message: "Zero-entity analytic surface carriers were decoded, but the face/loop/coedge/edge/vertex graph is not yet transferred."
-                .to_string(),
-            provenance: None,
-        }],
+        losses: vec![CatiaLossCode::ZeroEntityGraphNotTransferred.note(
+            "Zero-entity analytic surface carriers were decoded, but the face/loop/coedge/edge/vertex graph is not yet transferred.",
+        )],
         notes: summary.notes,
     };
     Some(FamilyOutput {

@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{BodyId, RegionId, ShellId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote};
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -23,6 +23,7 @@ use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, HashSet};
 
 use crate::container::{self, ContainerScan};
+use crate::loss::CatiaLossCode;
 
 pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
     SourceObjectAssociation {
@@ -167,15 +168,9 @@ pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNo
     }
     losses.insert(
         0,
-        LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Blocking,
-            message: format!(
-                "The transferred model retains {unresolved_curves} unresolved curve carriers and {unresolved_surfaces} unresolved surface carriers without exact procedural constructions."
-            ),
-            provenance: None,
-        },
+        CatiaLossCode::UnresolvedCarriers.note(format!(
+            "The transferred model retains {unresolved_curves} unresolved curve carriers and {unresolved_surfaces} unresolved surface carriers without exact procedural constructions."
+        )),
     );
 }
 
@@ -401,95 +396,60 @@ pub(crate) fn build_geometry_report(
 ) -> DecodeReport {
     let mut losses = Vec::new();
 
-    losses.push(LossNote {
-        code: cadmpeg_ir::report::LossCode::CarrierSummary,
-        category: LossCategory::Geometry,
-        severity: Severity::Info,
-        message: format!(
-            "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 \
-             LE, millimetres, identity world placement) and {} analytic surface carrier(s) were \
-             decoded from `SurfacicReps` `00 33` records: {} plane, {} cylinder, {} cone, {} \
-             sphere, {} torus.",
-            ir.model.vertices.len(),
-            typed.total(),
-            typed.plane,
-            typed.cylinder,
-            typed.cone,
-            typed.sphere,
-            typed.torus
-        ),
-        provenance: None,
-    });
+    losses.push(CatiaLossCode::CarrierSummary.note(format!(
+        "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 \
+         LE, millimetres, identity world placement) and {} analytic surface carrier(s) were \
+         decoded from `SurfacicReps` `00 33` records: {} plane, {} cylinder, {} cone, {} \
+         sphere, {} torus.",
+        ir.model.vertices.len(),
+        typed.total(),
+        typed.plane,
+        typed.cylinder,
+        typed.cone,
+        typed.sphere,
+        typed.torus
+    )));
 
     if !topology_attached {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
-            severity: Severity::Blocking,
-            message: format!(
-                "The B-rep boundary graph was not emitted: {} face outer-bound run(s) were \
-                 detected, but a complete trim/spine/support-table parse and unique \
-                 surface-constrained logical-vertex assignment were not all available.",
-                scan.census.fbb_runs
-            ),
-            provenance: None,
-        });
+        losses.push(CatiaLossCode::StandardBoundaryGraphNotEmitted.note(format!(
+            "The B-rep boundary graph was not emitted: {} face outer-bound run(s) were \
+             detected, but a complete trim/spine/support-table parse and unique \
+             surface-constrained logical-vertex assignment were not all available.",
+            scan.census.fbb_runs
+        )));
     }
 
     if plane_faces > 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{plane_faces} plane surface record(s) were located but not decoded because their \
-                 tag-bridged parameter records were absent or invalid."
-            ),
-            provenance: None,
-        });
+        losses.push(CatiaLossCode::PlaneRecordsNotDecoded.note(format!(
+            "{plane_faces} plane surface record(s) were located but not decoded because their \
+             tag-bridged parameter records were absent or invalid."
+        )));
     }
 
     let invalid_analytic = analytic_record_count.saturating_sub(typed.total() + plane_faces);
     if invalid_analytic > 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{invalid_analytic} analytic surface record(s) had a non-finite or out-of-range \
-                 inline payload and were not decoded."
-            ),
-            provenance: None,
-        });
+        losses.push(CatiaLossCode::AnalyticRecordsInvalid.note(format!(
+            "{invalid_analytic} analytic surface record(s) had a non-finite or out-of-range \
+             inline payload and were not decoded."
+        )));
     }
     if freeform_record_count > 0 {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{freeform_record_count} face-local free-form carrier record(s) retain their \
-                 tag, bounds, and orientation, but their aliased surface geometry is not yet \
-                 transferred."
-            ),
-            provenance: None,
-        });
+        losses.push(CatiaLossCode::FreeformCarriersRetained.note(format!(
+            "{freeform_record_count} face-local free-form carrier record(s) retain their \
+             tag, bounds, and orientation, but their aliased surface geometry is not yet \
+             transferred."
+        )));
     }
 
     insert_unresolved_carrier_loss(ir, &mut losses);
 
-    losses.push(LossNote {
-        code: cadmpeg_ir::report::LossCode::AttributesNotTransferred,
-        category: LossCategory::Attribute,
-        severity: Severity::Warning,
-        message: "Standard circles with an exact adjacent-carrier section normal and plane-plane \
-                  lines are transferred as curves. Standard spline edges retain exact \
-                  two-surface intersection constructions, but their serialized NURBS caches, \
-                  persistent cache bindings, materials, and document metadata are not yet \
-                  transferred."
-            .to_string(),
-        provenance: None,
-    });
+    losses.push(CatiaLossCode::StandardAttributesNotTransferred.note(
+        "Standard circles with an exact adjacent-carrier section normal and plane-plane \
+         lines are transferred as curves. Standard spline edges retain exact \
+         two-surface intersection constructions, but their serialized NURBS caches, \
+         persistent cache bindings, materials, and document metadata are not yet \
+         transferred.",
+    ));
 
     DecodeReport {
         format: "catia".to_string(),
@@ -591,40 +551,24 @@ pub(crate) fn link_payload_carriers(
 
 pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
-    let mut losses = vec![LossNote {
-        code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-        category: LossCategory::Geometry,
-        severity: Severity::Blocking,
-        message: format!(
-            "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
-             applicable decoded record families transfer geometry in this codec.",
-            scan.variant.token(),
-            scan.variant.description()
-        ),
-        provenance: None,
-    }];
+    let mut losses = vec![CatiaLossCode::NoGeometryTransferred.note(format!(
+        "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
+         applicable decoded record families transfer geometry in this codec.",
+        scan.variant.token(),
+        scan.variant.description()
+    ))];
 
     if container_only {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::ContainerOnly,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: "Container-only decode requested; entity decode was not attempted."
-                .to_string(),
-            provenance: None,
-        });
+        losses.push(
+            CatiaLossCode::ContainerOnlyRequested
+                .note("Container-only decode requested; entity decode was not attempted."),
+        );
     }
 
-    losses.push(LossNote {
-        code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-        category: LossCategory::Topology,
-        severity: Severity::Blocking,
-        message:
-            "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
-                  for this file."
-                .to_string(),
-        provenance: None,
-    });
+    losses.push(CatiaLossCode::TopologyGraphNotBuilt.note(
+        "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
+         for this file.",
+    ));
 
     DecodeReport {
         format: "catia".to_string(),

@@ -14,13 +14,14 @@
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::SourceFidelity;
 
 use crate::assemble::{build_container_report, build_metadata_ir};
 use crate::container::{self, ContainerScan};
 use crate::families;
+use crate::loss::CatiaLossCode;
 use crate::native::CatiaNative;
 
 /// Decodes a `.CATPart` reader into an IR document and decode report.
@@ -73,17 +74,13 @@ fn finish_decode(
         .map(|block| block.schema_selections.len())
         .sum::<usize>();
     if object_record_count != 0 || !native.value_blocks.is_empty() {
-        report.losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
-            category: LossCategory::DesignIntent,
-            severity: Severity::Blocking,
-            message: format!(
+        report
+            .losses
+            .push(CatiaLossCode::NativeDesignDataRetained.note(format!(
                 "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
                 native.design_objects.len(),
                 native.value_blocks.len(),
-            ),
-            provenance: None,
-        });
+            )));
     }
     native.store_owned(ir.native.namespace_mut("catia"))?;
     decode_result(ir, report, annotations, unknowns)

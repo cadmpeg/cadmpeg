@@ -46,6 +46,7 @@ pub(crate) mod catalog;
 pub(crate) mod container;
 pub(crate) mod decode;
 pub(crate) mod families;
+pub(crate) mod loss;
 pub(crate) mod native;
 pub(crate) mod nurbs;
 pub(crate) mod object_graph;
