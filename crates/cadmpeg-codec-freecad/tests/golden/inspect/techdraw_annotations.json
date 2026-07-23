@@ -1,0 +1,80 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "4655",
+        "crc32": "200cbc79",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compressed_size": 3384,
+      "compression": "deflate",
+      "name": "Document.xml",
+      "role": "document",
+      "uncompressed_size": 31478
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4713",
+        "crc32": "31a867d3",
+        "data_offset": "3471",
+        "header_offset": "3426"
+      },
+      "compressed_size": 771,
+      "compression": "deflate",
+      "name": "Model.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 8913
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4774",
+        "crc32": "3f9766c3",
+        "data_offset": "4288",
+        "header_offset": "4242"
+      },
+      "compressed_size": 153,
+      "compression": "deflate",
+      "name": "cc0_template.svg",
+      "role": "auxiliary",
+      "uncompressed_size": 207
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4836",
+        "crc32": "1fb2f7aa",
+        "data_offset": "4481",
+        "header_offset": "4441"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "BoxCorners",
+      "role": "auxiliary",
+      "uncompressed_size": 52
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4892",
+        "crc32": "a9da79d1",
+        "data_offset": "4546",
+        "header_offset": "4487"
+      },
+      "compressed_size": 109,
+      "compression": "deflate",
+      "name": "Dimension.SavedGeometry.0.brp",
+      "role": "brep",
+      "uncompressed_size": 154
+    }
+  ],
+  "format": "fcstd",
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=drawing",
+    "object count=8",
+    "physical ledger spans=36 coverage=exact",
+    "ProgramVersion=1.1R20260414 (Git shallow)"
+  ]
+}

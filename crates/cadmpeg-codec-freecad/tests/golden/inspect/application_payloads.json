@@ -1,0 +1,106 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "2775",
+        "crc32": "2f292a94",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compressed_size": 2351,
+      "compression": "deflate",
+      "name": "Document.xml",
+      "role": "document",
+      "uncompressed_size": 17887
+    },
+    {
+      "attributes": {
+        "central_header_offset": "2833",
+        "crc32": "14cfc018",
+        "data_offset": "2437",
+        "header_offset": "2393"
+      },
+      "compressed_size": 50,
+      "compression": "deflate",
+      "name": "MeshKernel.bms",
+      "role": "auxiliary",
+      "uncompressed_size": 392
+    },
+    {
+      "attributes": {
+        "central_header_offset": "2893",
+        "crc32": "0ce70ce4",
+        "data_offset": "2527",
+        "header_offset": "2487"
+      },
+      "compressed_size": 25,
+      "compression": "deflate",
+      "name": "PointCloud",
+      "role": "auxiliary",
+      "uncompressed_size": 40
+    },
+    {
+      "attributes": {
+        "central_header_offset": "2949",
+        "crc32": "2144df1c",
+        "data_offset": "2589",
+        "header_offset": "2552"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "Normals",
+      "role": "auxiliary",
+      "uncompressed_size": 4
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3002",
+        "crc32": "2144df1c",
+        "data_offset": "2631",
+        "header_offset": "2595"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "Points",
+      "role": "auxiliary",
+      "uncompressed_size": 4
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3054",
+        "crc32": "1bc1c86d",
+        "data_offset": "2678",
+        "header_offset": "2637"
+      },
+      "compressed_size": 39,
+      "compression": "deflate",
+      "name": "Toolpath.nc",
+      "role": "auxiliary",
+      "uncompressed_size": 114
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3111",
+        "crc32": "af05d4ef",
+        "data_offset": "2762",
+        "header_offset": "2717"
+      },
+      "compressed_size": 13,
+      "compression": "deflate",
+      "name": "cc0_payload.bin",
+      "role": "auxiliary",
+      "uncompressed_size": 16
+    }
+  ],
+  "format": "fcstd",
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=application-document",
+    "object count=7",
+    "physical ledger spans=50 coverage=exact",
+    "ProgramVersion=1.1R20260414 (Git shallow)"
+  ]
+}

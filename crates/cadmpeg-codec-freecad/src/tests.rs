@@ -5924,3 +5924,499 @@ fn inspects_and_closes_physical_ledger() {
         );
     }
 }
+
+/// Golden-snapshot harness that pins the FCStd codec's observable behavior before
+/// the deep-modules refactor. Each sha256-pinned corpus fixture is frozen through
+/// four surfaces: `decode/` (canonical IR + report + source-fidelity sidecar),
+/// `inspect/` (container summary), `encode/` (retained round-trip bytes), and
+/// `step/` (cross-crate STEP AP214 conversion). Regenerate with
+/// `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-freecad golden`.
+mod golden {
+    use std::path::{Path, PathBuf};
+
+    use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
+    use cadmpeg_ir::decode::InspectOptions;
+    use cadmpeg_ir::hash::sha256_hex;
+    use cadmpeg_step::{write_step, StepWriteOptions};
+    use serde_json::Value;
+    use std::io::Cursor;
+
+    use crate::FcstdCodec;
+
+    /// `(golden name, manifest sha256, embedded fixture bytes)`. Bytes are baked in
+    /// from the sha256-pinned corpus at `corpus/freecad_fcstd/fixtures`; the pinned
+    /// digest is the exact `sha256` field from `corpus/manifest.toml`.
+    /// `fixture_hashes_match_manifest` re-derives each digest and fails if an
+    /// embedded fixture ever drifts from its pin.
+    fn fixtures() -> Vec<(&'static str, &'static str, &'static [u8])> {
+        macro_rules! fixture {
+            ($name:literal, $hash:literal) => {
+                (
+                    $name,
+                    $hash,
+                    include_bytes!(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/../../corpus/freecad_fcstd/fixtures/",
+                        $name,
+                        ".FCStd"
+                    )) as &'static [u8],
+                )
+            };
+        }
+        vec![
+            fixture!(
+                "application_payloads",
+                "410af2e9ed55011039ee065b20e7614037482d382e75e173d78c9a008522de75"
+            ),
+            fixture!(
+                "binary_exact_shape",
+                "86ecddcee6d677370343c2f5a9682e57ca58db5808775b0e8812bdbe844dbe1e"
+            ),
+            fixture!(
+                "core_design_product",
+                "69c6aa00699cb8d8bb4014b48eb7c419352c49f360cffb45075f31e152f989ba"
+            ),
+            fixture!(
+                "core_operations",
+                "54cc992ca6278fdd8e38b3d01f37c616e5dfdc38ca7a058fe838599b709ed228"
+            ),
+            fixture!(
+                "design_history",
+                "c71da85ee80979f3f210690125da00406b2d49682be765100fc1cfb1d98ea0d7"
+            ),
+            fixture!(
+                "external_component",
+                "e1a563bd89e46c00237b65ac543482aaa361c833deef759164143687d0de557b"
+            ),
+            fixture!(
+                "geometry_topology",
+                "d7c0a6325cd4f68413f5ba9b0e51cd1396d4dc32a5f08dedc3ed5b00fc12cb59"
+            ),
+            fixture!(
+                "gui_appearance",
+                "393db41b6acd1d3c890dc07085017fa6f07e91f96d59e7a244e2c834075ffcc2"
+            ),
+            fixture!(
+                "product_assembly",
+                "b8e0e92c0155b4182565493deace3e30b42fe1e45e8424ae4fd1d9bc5ddd8340"
+            ),
+            fixture!(
+                "sketch_constraints",
+                "35bbba0d7529415176cfbbbdc1fabc265ac3748f5fc38058887ac254e44d074f"
+            ),
+            fixture!(
+                "techdraw_annotations",
+                "6bc4c0e639b8055640c0bb02e2828a63184c787d42bda85d661707de3db84317"
+            ),
+        ]
+    }
+
+    fn golden_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
+    }
+
+    fn update_requested() -> bool {
+        std::env::var_os("UPDATE_GOLDEN").is_some()
+    }
+
+    /// Decode outcome of a binary surface (`encode`, `step`). `Bytes` is committed
+    /// under the success path, `Err` under a sibling `.err` text path, and
+    /// `Skipped` (decode failed, so nothing to encode/convert) commits neither.
+    /// Freezing all three pins the success/failure boundary itself.
+    enum Outcome {
+        Bytes(Vec<u8>),
+        Err(String),
+        Skipped,
+    }
+
+    /// `decode/<name>.json`: the canonical IR, the `DecodeReport`, and the
+    /// `SourceFidelity` sidecar as one pretty document. The IR and sidecar are
+    /// serialized through their `to_canonical_json` producers so the frozen form is
+    /// the canonical one. The sidecar is retained deliberately: retained-write
+    /// integrity keys on its records, so a refactor that drops them surfaces here.
+    /// A decode failure is frozen as `{ "decode_error": ... }` (a real, contract-
+    /// relevant behavior for a fixture outside the schema-4/file-1 band).
+    fn decode_snapshot(bytes: &[u8]) -> String {
+        let value =
+            match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
+                Ok(result) => {
+                    let ir: Value = serde_json::from_str(
+                        &result.ir.to_canonical_json().expect("canonical ir json"),
+                    )
+                    .expect("parse canonical ir");
+                    let sidecar: Value = serde_json::from_str(
+                        &result
+                            .source_fidelity
+                            .to_canonical_json()
+                            .expect("canonical sidecar json"),
+                    )
+                    .expect("parse canonical sidecar");
+                    serde_json::json!({
+                        "ir": ir,
+                        "report": serde_json::to_value(&result.report).expect("serialize report"),
+                        "source_fidelity": sidecar,
+                    })
+                }
+                Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
+            };
+        let mut text = serde_json::to_string_pretty(&value).expect("serialize decode snapshot");
+        text.push('\n');
+        text
+    }
+
+    /// `inspect/<name>.json`: the `ContainerSummary` from the container-scan path.
+    /// This pins container behavior before the scan-signature migration. Inspection
+    /// runs on every fixture regardless of persistence band.
+    fn inspect_snapshot(bytes: &[u8]) -> String {
+        let value = match FcstdCodec
+            .inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default())
+        {
+            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
+            Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
+        };
+        let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
+        text.push('\n');
+        text
+    }
+
+    /// `encode/<name>.fcstd.bin`: decode, then `encode_with_source_fidelity` back to
+    /// native bytes. `FcstdCodec` does not override `encode_with_source_fidelity`, so
+    /// the sidecar argument has no byte effect — the retained round-trip is driven
+    /// entirely by the `fcstd` native namespace inside the IR. `encode_paths_agree`
+    /// pins that equivalence. When decode fails there is no IR to encode (`Skipped`).
+    fn encode_outcome(bytes: &[u8]) -> Outcome {
+        let Ok(result) =
+            FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        else {
+            return Outcome::Skipped;
+        };
+        let mut buf = Vec::new();
+        match FcstdCodec.encode_with_source_fidelity(
+            &result.ir,
+            Some(&result.source_fidelity),
+            &mut buf,
+        ) {
+            Ok(_) => Outcome::Bytes(buf),
+            Err(err) => Outcome::Err(err.to_string()),
+        }
+    }
+
+    /// `step/<name>.step`: decode, then convert the IR through
+    /// `cadmpeg_step::write_step` with default options (AP214, fixed epoch
+    /// timestamp). This doubles as the cross-crate STEP conversion reference for the
+    /// refactor. When decode fails there is no IR to convert (`Skipped`).
+    fn step_outcome(bytes: &[u8]) -> Outcome {
+        let Ok(result) =
+            FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        else {
+            return Outcome::Skipped;
+        };
+        let mut buf = Vec::new();
+        match write_step(&result.ir, &mut buf, &StepWriteOptions::default()) {
+            Ok(_) => Outcome::Bytes(buf),
+            Err(err) => Outcome::Err(err.to_string()),
+        }
+    }
+
+    fn write_golden(path: &Path, bytes: &[u8]) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create golden subdir");
+        }
+        std::fs::write(path, bytes)
+            .unwrap_or_else(|e| panic!("write golden {}: {e}", path.display()));
+    }
+
+    fn remove_if_exists(path: &Path) {
+        if path.exists() {
+            std::fs::remove_file(path).unwrap_or_else(|e| panic!("remove {}: {e}", path.display()));
+        }
+    }
+
+    /// First differing line between two texts, 1-based, both sides truncated for a
+    /// readable failure.
+    fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
+        let mut exp = expected.lines();
+        let mut act = actual.lines();
+        let mut line = 0usize;
+        loop {
+            line += 1;
+            match (exp.next(), act.next()) {
+                (Some(e), Some(a)) if e == a => {}
+                (e, a) => {
+                    let trunc = |s: Option<&str>| match s {
+                        Some(s) if s.len() > 200 => format!("{}…", &s[..200]),
+                        Some(s) => s.to_string(),
+                        None => "<end of file>".to_string(),
+                    };
+                    return (line, trunc(e), trunc(a));
+                }
+            }
+        }
+    }
+
+    fn first_byte_diff(expected: &[u8], actual: &[u8]) -> String {
+        let offset = expected
+            .iter()
+            .zip(actual)
+            .position(|(e, a)| e != a)
+            .unwrap_or_else(|| expected.len().min(actual.len()));
+        format!(
+            "first byte difference at offset {offset} (golden {} bytes, actual {} bytes)",
+            expected.len(),
+            actual.len()
+        )
+    }
+
+    fn check_text(
+        failures: &mut Vec<String>,
+        update: bool,
+        label: &str,
+        path: &Path,
+        actual: &str,
+    ) {
+        if update {
+            write_golden(path, actual.as_bytes());
+            return;
+        }
+        let expected = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) => {
+                failures.push(format!(
+                    "{label}: cannot read golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-freecad golden`",
+                    path.display()
+                ));
+                return;
+            }
+        };
+        if expected != actual {
+            let (line, exp_line, act_line) = first_line_diff(&expected, actual);
+            failures.push(format!(
+                "{label}: diverged from golden at line {line}\n    golden: {exp_line}\n    actual: {act_line}"
+            ));
+        }
+    }
+
+    fn check_outcome(
+        failures: &mut Vec<String>,
+        update: bool,
+        label: &str,
+        ok_path: &Path,
+        err_path: &Path,
+        outcome: &Outcome,
+    ) {
+        if update {
+            match outcome {
+                Outcome::Bytes(bytes) => {
+                    write_golden(ok_path, bytes);
+                    remove_if_exists(err_path);
+                }
+                Outcome::Err(message) => {
+                    write_golden(err_path, format!("{message}\n").as_bytes());
+                    remove_if_exists(ok_path);
+                }
+                Outcome::Skipped => {
+                    remove_if_exists(ok_path);
+                    remove_if_exists(err_path);
+                }
+            }
+            return;
+        }
+        match outcome {
+            Outcome::Bytes(actual) => {
+                if err_path.exists() {
+                    failures.push(format!(
+                        "{label}: now produces bytes but golden expected an error ({})",
+                        err_path.display()
+                    ));
+                }
+                match std::fs::read(ok_path) {
+                    Ok(expected) if &expected == actual => {}
+                    Ok(expected) => failures.push(format!(
+                        "{label}: byte mismatch; {}",
+                        first_byte_diff(&expected, actual)
+                    )),
+                    Err(e) => failures.push(format!(
+                        "{label}: cannot read golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-freecad golden`",
+                        ok_path.display()
+                    )),
+                }
+            }
+            Outcome::Err(actual) => {
+                if ok_path.exists() {
+                    failures.push(format!(
+                        "{label}: now errors but golden expected bytes ({})",
+                        ok_path.display()
+                    ));
+                }
+                let actual = format!("{actual}\n");
+                match std::fs::read_to_string(err_path) {
+                    Ok(expected) if expected == actual => {}
+                    Ok(expected) => {
+                        let (line, exp_line, act_line) = first_line_diff(&expected, &actual);
+                        failures.push(format!(
+                            "{label}: error diverged at line {line}\n    golden: {exp_line}\n    actual: {act_line}"
+                        ));
+                    }
+                    Err(e) => failures.push(format!(
+                        "{label}: cannot read golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-freecad golden`",
+                        err_path.display()
+                    )),
+                }
+            }
+            Outcome::Skipped => {
+                if ok_path.exists() || err_path.exists() {
+                    failures.push(format!(
+                        "{label}: decode no longer yields an IR, but a golden artifact still exists (remove it or fix decode)"
+                    ));
+                }
+            }
+        }
+    }
+
+    /// Every embedded fixture must hash to its `corpus/manifest.toml` pin. Guards the
+    /// pinning premise: a golden set anchored to unverified bytes proves nothing.
+    #[test]
+    fn fixture_hashes_match_manifest() {
+        let mut failures = Vec::new();
+        for (name, expected, bytes) in fixtures() {
+            let actual = sha256_hex(bytes);
+            if actual != expected {
+                failures.push(format!(
+                    "fixture `{name}`: embedded sha256 {actual} != manifest pin {expected}"
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn golden_snapshots_are_byte_identical() {
+        let update = update_requested();
+        let dir = golden_dir();
+        let mut failures: Vec<String> = Vec::new();
+        let mut skipped_binary: Vec<&str> = Vec::new();
+        for (name, _, bytes) in fixtures() {
+            check_text(
+                &mut failures,
+                update,
+                &format!("decode `{name}`"),
+                &dir.join(format!("decode/{name}.json")),
+                &decode_snapshot(bytes),
+            );
+            check_text(
+                &mut failures,
+                update,
+                &format!("inspect `{name}`"),
+                &dir.join(format!("inspect/{name}.json")),
+                &inspect_snapshot(bytes),
+            );
+            let encode = encode_outcome(bytes);
+            let step = step_outcome(bytes);
+            if matches!(encode, Outcome::Skipped) {
+                skipped_binary.push(name);
+            }
+            check_outcome(
+                &mut failures,
+                update,
+                &format!("encode `{name}`"),
+                &dir.join(format!("encode/{name}.fcstd.bin")),
+                &dir.join(format!("encode/{name}.fcstd.err")),
+                &encode,
+            );
+            check_outcome(
+                &mut failures,
+                update,
+                &format!("step `{name}`"),
+                &dir.join(format!("step/{name}.step")),
+                &dir.join(format!("step/{name}.step.err")),
+                &step,
+            );
+        }
+        if !skipped_binary.is_empty() {
+            println!(
+                "golden: {} fixture(s) do not decode, so carry no encode/step reference: {skipped_binary:?}",
+                skipped_binary.len()
+            );
+        }
+        assert!(
+            failures.is_empty(),
+            "{} golden snapshot(s) drifted; if the change is intended run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-freecad golden` and review the diff:\n\n{}",
+            failures.len(),
+            failures.join("\n\n")
+        );
+    }
+
+    /// Guards against nondeterministic output (`HashMap` iteration order, timestamps):
+    /// decoding and re-encoding the same bytes twice must be byte-identical across all
+    /// four surfaces.
+    #[test]
+    fn golden_output_is_deterministic() {
+        for (name, _, bytes) in fixtures() {
+            let decode = (decode_snapshot(bytes), decode_snapshot(bytes));
+            if decode.0 != decode.1 {
+                let (line, a, b) = first_line_diff(&decode.0, &decode.1);
+                panic!("fixture `{name}`: nondeterministic decode at line {line}\n    run 1: {a}\n    run 2: {b}");
+            }
+            let inspect = (inspect_snapshot(bytes), inspect_snapshot(bytes));
+            if inspect.0 != inspect.1 {
+                let (line, a, b) = first_line_diff(&inspect.0, &inspect.1);
+                panic!("fixture `{name}`: nondeterministic inspect at line {line}\n    run 1: {a}\n    run 2: {b}");
+            }
+            if let (Outcome::Bytes(first), Outcome::Bytes(second)) =
+                (encode_outcome(bytes), encode_outcome(bytes))
+            {
+                assert!(
+                    first == second,
+                    "fixture `{name}`: nondeterministic encode; {}",
+                    first_byte_diff(&first, &second)
+                );
+            }
+            if let (Outcome::Bytes(first), Outcome::Bytes(second)) =
+                (step_outcome(bytes), step_outcome(bytes))
+            {
+                assert!(
+                    first == second,
+                    "fixture `{name}`: nondeterministic step; {}",
+                    first_byte_diff(&first, &second)
+                );
+            }
+        }
+    }
+
+    /// `FcstdCodec` does not override `encode_with_source_fidelity`, so the retained
+    /// write is driven by the IR's `fcstd` native namespace and the sidecar argument
+    /// is inert. This freezes that equivalence: if a later change makes the sidecar
+    /// load-bearing and the two paths diverge, this fails and the golden `encode/`
+    /// bytes must be re-examined.
+    #[test]
+    fn encode_paths_agree() {
+        for (name, _, bytes) in fixtures() {
+            let Ok(result) =
+                FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+            else {
+                continue;
+            };
+            let mut plain = Vec::new();
+            let plain_ok = FcstdCodec.encode(&result.ir, &mut plain).is_ok();
+            let mut fidelity = Vec::new();
+            let fidelity_ok = FcstdCodec
+                .encode_with_source_fidelity(
+                    &result.ir,
+                    Some(&result.source_fidelity),
+                    &mut fidelity,
+                )
+                .is_ok();
+            assert_eq!(
+                plain_ok, fidelity_ok,
+                "fixture `{name}`: encode and encode_with_source_fidelity disagree on success"
+            );
+            if plain_ok {
+                assert!(
+                    plain == fidelity,
+                    "fixture `{name}`: encode and encode_with_source_fidelity produced different bytes; {}",
+                    first_byte_diff(&plain, &fidelity)
+                );
+            }
+        }
+    }
+}
