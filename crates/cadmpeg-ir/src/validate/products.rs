@@ -3,23 +3,14 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{Check, Finding, Severity};
+use super::{Check, Finding, ModelIndex, Severity};
 use crate::document::CadIr;
 use crate::products::ComponentReference;
 
-pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let components = ir
-        .model
-        .components
-        .iter()
-        .map(|component| (component.id.0.as_str(), component))
-        .collect::<HashMap<_, _>>();
-    let occurrences = ir
-        .model
-        .occurrences
-        .iter()
-        .map(|occurrence| (occurrence.id.0.as_str(), occurrence))
-        .collect::<HashMap<_, _>>();
+pub(super) fn check_products(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
+    let components = &index.components;
+    let occurrences = &index.occurrences;
+    // Keyed by native ref rather than id, so it stays local to this check.
     let occurrence_by_native = ir
         .model
         .occurrences
@@ -86,7 +77,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if component_cycle(&component.id.0, &components) {
+        if component_cycle(&component.id.0, components) {
             invalid(findings, &component.id.0, "product component cycle");
         }
     }
@@ -147,8 +138,8 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if occurrence_prototype_cycle(
             occurrence.id.0.as_str(),
-            &occurrences,
-            &components,
+            occurrences,
+            components,
             &occurrence_by_native,
         ) {
             invalid(
@@ -222,8 +213,8 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
 
 fn occurrence_prototype_cycle<'a>(
     start: &str,
-    occurrences: &HashMap<&'a str, &'a crate::products::Occurrence>,
-    components: &HashMap<&'a str, &'a crate::products::Component>,
+    occurrences: &HashMap<String, &'a crate::products::Occurrence>,
+    components: &HashMap<String, &'a crate::products::Component>,
     occurrence_by_native: &HashMap<&'a str, &'a crate::products::Occurrence>,
 ) -> bool {
     let mut current = start;
@@ -276,7 +267,7 @@ fn same_transform(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> bool {
         })
 }
 
-fn component_cycle(start: &str, components: &HashMap<&str, &crate::products::Component>) -> bool {
+fn component_cycle(start: &str, components: &HashMap<String, &crate::products::Component>) -> bool {
     let mut seen = HashSet::from([start]);
     let mut stack = vec![start];
     while let Some(current) = stack.pop() {
