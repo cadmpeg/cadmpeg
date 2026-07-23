@@ -22643,8 +22643,7 @@ fn transfer_positional_cylinders(
         else {
             continue;
         };
-        let reference_cap_frame = || {
-            let envelope = record.type24_scalar_frame_round_envelope(row.type_byte)?;
+        let reference_bound_frame = || {
             let entity_ids = scan
                 .features
                 .entity_tables
@@ -22658,15 +22657,31 @@ fn transfer_positional_cylinders(
                 .iter()
                 .filter(|circle| entity_ids.contains(&circle.entity_id))
                 .collect::<Vec<_>>();
+            let generated_cylinder_count = scan
+                .surfaces
+                .rows
+                .iter()
+                .filter(|candidate| {
+                    candidate.feature_id == row.feature_id
+                        && candidate.kind == crate::surface::SurfaceKind::Cylinder
+                })
+                .count();
+            if generated_cylinder_count == 1 {
+                if let Some(frame) = reference_circle_pair_cylinder_frame(&circles) {
+                    return Some((frame, "reference_circle_pair_cylinder_frame"));
+                }
+            }
+            let envelope = record.type24_scalar_frame_round_envelope(row.type_byte)?;
             reference_cap_bound_round_frame(envelope, &circles)
+                .map(|frame| (frame, "round_reference_cap_cylinder_frame"))
         };
         let (frame, mechanism) = match record.positional_cylinder_frame {
             Some(frame) => (frame, "positional_cylinder_frame"),
             None => {
-                let Some(frame) = reference_cap_frame() else {
+                let Some(frame) = reference_bound_frame() else {
                     continue;
                 };
-                (frame, "round_reference_cap_cylinder_frame")
+                frame
             }
         };
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", record.surface_id));
@@ -22706,6 +22721,57 @@ fn transfer_positional_cylinders(
         transferred += 1;
     }
     transferred
+}
+
+fn reference_circle_pair_cylinder_frame(
+    circles: &[&crate::reference::ReferenceCircle],
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    let [first, second] = circles else {
+        return None;
+    };
+    (first.radius.is_finite()
+        && first.radius > 0.0
+        && first.center_stored
+        && second.center_stored
+        && second.radius.is_finite())
+    .then_some(())?;
+    let radius = first.radius;
+    let radius_scale = radius.max(second.radius).max(1.0);
+    ((second.radius - radius).abs() <= 1e-9 * radius_scale).then_some(())?;
+    let scale = first
+        .center
+        .iter()
+        .chain(&second.center)
+        .map(|value| value.abs())
+        .fold(radius_scale, f64::max);
+    let first_axis = normalized(first.axis)?;
+    let second_axis = normalized(second.axis)?;
+    ((dot(first_axis, second_axis).abs() - 1.0).abs() <= 1e-9).then_some(())?;
+    let displacement: [f64; 3] =
+        std::array::from_fn(|index| second.center[index] - first.center[index]);
+    let length = dot(displacement, displacement).sqrt();
+    (length.is_finite() && length > 1e-9 * scale).then_some(())?;
+    let center_direction = displacement.map(|value| value / length);
+    ((dot(center_direction, first_axis).abs() - 1.0).abs() <= 1e-9
+        && (dot(center_direction, second_axis).abs() - 1.0).abs() <= 1e-9)
+        .then_some(())?;
+    let validated_radial = |circle: &crate::reference::ReferenceCircle, axis| {
+        let vector: [f64; 3] =
+            std::array::from_fn(|index| circle.start[index] - circle.center[index]);
+        let length = dot(vector, vector).sqrt();
+        ((length - radius).abs() <= 1e-9 * radius_scale
+            && dot(axis, vector).abs() <= 1e-9 * radius_scale)
+            .then_some((vector, length))
+    };
+    let (radial, radial_length) = validated_radial(first, first_axis)?;
+    validated_radial(second, second_axis)?;
+    Some(crate::surface::PositionalCylinderFrame {
+        origin: first.center,
+        axis: first_axis,
+        ref_direction: radial.map(|value| value / radial_length),
+        radius,
+        length: Some(length),
+    })
 }
 
 fn reference_cap_bound_round_frame(

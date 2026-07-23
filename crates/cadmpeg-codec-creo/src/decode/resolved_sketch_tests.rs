@@ -2354,6 +2354,45 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
 }
 
 #[test]
+fn coaxial_reference_circles_define_a_cylinder_frame() {
+    let circle = |entity_id, center, axis, start| crate::reference::ReferenceCircle {
+        entity_id,
+        center,
+        center_stored: true,
+        radius: 2.0,
+        axis,
+        start,
+        end: [0.0, 0.0, 0.0],
+        offset: 0,
+    };
+    let first = circle(41, [3.0, 5.0, -2.0], [0.0, 0.0, 1.0], [3.0, 7.0, -2.0]);
+    let second = circle(42, [3.0, 5.0, 4.0], [0.0, 0.0, -1.0], [1.0, 5.0, 4.0]);
+
+    assert_eq!(
+        reference_circle_pair_cylinder_frame(&[&first, &second]),
+        Some(crate::surface::PositionalCylinderFrame {
+            origin: first.center,
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [0.0, 1.0, 0.0],
+            radius: 2.0,
+            length: Some(6.0),
+        })
+    );
+    assert!(reference_circle_pair_cylinder_frame(&[&first]).is_none());
+
+    let mut unequal_radius = second.clone();
+    unequal_radius.radius = 1.0;
+    assert!(reference_circle_pair_cylinder_frame(&[&first, &unequal_radius]).is_none());
+
+    let displaced = circle(43, [3.5, 5.0, 4.0], [0.0, 0.0, 1.0], [3.5, 7.0, 4.0]);
+    assert!(reference_circle_pair_cylinder_frame(&[&first, &displaced]).is_none());
+
+    let mut derived_center = second;
+    derived_center.center_stored = false;
+    assert!(reference_circle_pair_cylinder_frame(&[&first, &derived_center]).is_none());
+}
+
+#[test]
 fn asymmetric_cap_planes_define_two_sided_extent() {
     assert_eq!(
         extrusion_extent_and_direction(
