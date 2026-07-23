@@ -979,8 +979,10 @@ In the frame-bound held-coordinate outline form, the support frame establishes
 the normal and parameter direction. The matching held outline coordinate,
 including its shortened terminal form, establishes the plane offset. The plane
 chart projects local-system slots 9 through 11 onto that plane, replacing only
-their normal component with the held coordinate. A second held outline axis
-makes the frame-bound plane degenerate and leaves it unresolved.
+their normal component with the held coordinate. Equality on another outline
+axis collapses the nominal outline to a line; it does not define a competing
+plane equation because the support-frame normal has already selected the plane
+axis.
 
 When exactly one coordinate is held constant across both corners, its axis is the positive basis normal and its value is the model-space plane offset. The other two coordinate pairs need only be known to be distinct; their magnitudes are not required. In the absence of a complete local-system chart, the first positive basis direction perpendicular to the normal is the neutral parameter reference direction. A complete local-system chart takes precedence. Zero or multiple held coordinates do not establish a plane equation from the outline.
 The held coordinate establishes only the plane equation. It does not establish
@@ -1020,8 +1022,8 @@ For an axis-aligned plane, the held-coordinate outline defines the placed plane
 equation. An axis-aligned `local_sys` support frame without that outline does not
 establish the model-space offset outside its generating feature.
 When an axis-aligned `local_sys` normal selects an outline coordinate whose two
-stored tokens are equal, that coordinate supplies the plane offset. Equality of
-the other outline coordinates need not be resolved because the support frame
+stored tokens are equal, that coordinate supplies the plane offset. The other
+outline coordinate pairs may be equal or unresolved because the support frame
 already fixes the plane orientation.
 A shortened standard outline can store the four bound scalars and first XYZ
 corner followed by one terminal scalar token. The terminal token occupies the

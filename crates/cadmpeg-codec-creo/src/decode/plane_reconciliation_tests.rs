@@ -1,7 +1,7 @@
 use super::{
     agreed_plane, agreed_plane_surface, dot, envelope_reconciled_plane_candidate,
-    frame_bound_outline_plane_candidate, held_coordinate_plane, PlaneCandidate, PlaneChart,
-    PlaneEquation,
+    frame_bound_outline_plane_candidate, held_coordinate_plane, plane_candidates, PlaneCandidate,
+    PlaneChart, PlaneEquation,
 };
 use crate::surface::{
     LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
@@ -153,4 +153,55 @@ fn frame_bound_outline_supplies_the_plane_chart_origin() {
     let mut conflicting = outline;
     conflicting.u_axis = [1.0, 0.0, 0.0];
     assert!(frame_bound_outline_plane_candidate(&frame, &conflicting).is_none());
+}
+
+#[test]
+fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 42,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: 1,
+        next_surface: 0,
+        offset: 10,
+    });
+    scan.planes.envelopes.push(PlaneEnvelopeRecord {
+        surface_id: 42,
+        body: Vec::new(),
+        envelope: PlaneEnvelope::Standard {
+            bounds_2d: [[None; 2]; 2],
+            corners_3d: [
+                [Some(-3.0), Some(-4.0), Some(7.0)],
+                [Some(-3.0), Some(-4.0), Some(9.0)],
+            ],
+        },
+        corner_coordinate_equal: [Some(true), Some(true), Some(false)],
+        scalar_tokens: Vec::new(),
+        row_offset: 10,
+        offset: 20,
+    });
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 42,
+        body: Vec::new(),
+        slots: Vec::new(),
+        origin: Some([100.0, 200.0, 300.0]),
+        u_axis: Some([0.0, 0.0, 1.0]),
+        normal: Some([0.0, 1.0, 0.0]),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 10,
+        offset: 30,
+    });
+    scan.planes.outlines =
+        crate::surface::placed_outline_planes(&scan.planes.envelopes, &scan.planes.local_systems);
+
+    let candidates = plane_candidates(&scan);
+    let candidates = candidates.get(&42).expect("plane candidates");
+    let (plane, u_axis, _) =
+        agreed_plane_surface(candidates).expect("frame-selected outline plane");
+    assert_eq!(plane.origin, [100.0, -4.0, 300.0]);
+    assert_eq!(plane.normal, [0.0, 1.0, 0.0]);
+    assert_eq!(u_axis, [0.0, 0.0, 1.0]);
 }

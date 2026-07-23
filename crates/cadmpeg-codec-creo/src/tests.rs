@@ -1418,7 +1418,7 @@ fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
 }
 
 #[test]
-fn decode_withholds_axis_aligned_surface_without_parameter_chart() {
+fn decode_uses_support_frame_to_chart_line_shaped_plane_outline() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&[0x0f; 10]);
@@ -1434,7 +1434,15 @@ fn decode_withholds_axis_aligned_surface_without_parameter_chart() {
         )
         .expect("decode");
 
-    assert!(result.ir.model.surfaces.is_empty());
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert_eq!(
+        result.ir.model.surfaces[0].geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(3.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        }
+    );
 }
 
 #[test]

@@ -16571,28 +16571,6 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
         &scan.planes.local_systems,
     )
     .into_iter()
-    .filter(|outline| {
-        let axis = outline
-            .normal
-            .iter()
-            .position(|component| component.abs() > 1e-9);
-        scan.planes.envelopes.iter().any(|envelope| {
-            envelope.surface_id == outline.surface_id
-                && envelope.offset == outline.offset
-                && axis.is_some_and(|axis| {
-                    outline
-                        .normal
-                        .iter()
-                        .enumerate()
-                        .all(|(candidate, component)| candidate == axis || component.abs() <= 1e-9)
-                        && envelope
-                            .corner_coordinate_equal
-                            .iter()
-                            .enumerate()
-                            .all(|(candidate, equal)| candidate == axis || *equal != Some(true))
-                })
-        })
-    })
     .fold(
         BTreeMap::<u32, Vec<crate::surface::OutlinePlane>>::new(),
         |mut outlines, outline| {
