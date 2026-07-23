@@ -3242,6 +3242,9 @@ fn surface_contact_direction(
     depth: usize,
 ) -> Option<Vector3> {
     (depth < 32).then_some(())?;
+    if let Some(direction) = blend_surface_contact_direction(ir, surface, center, depth + 1) {
+        return Some(direction);
+    }
     let carrier = ir
         .model
         .surfaces
@@ -3257,7 +3260,7 @@ fn surface_contact_direction(
                     center,
                     None,
                     None,
-                    BlendParameterGrid::Build,
+                    BlendParameterGrid::Disabled,
                     depth + 1,
                 )
             }),
@@ -3268,6 +3271,44 @@ fn surface_contact_direction(
         contact.x - center.x,
         contact.y - center.y,
         contact.z - center.z,
+    ))
+}
+
+fn blend_surface_contact_direction(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    depth: usize,
+) -> Option<Vector3> {
+    (depth < 32).then_some(())?;
+    let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    let u = closest_spine_parameter(ir, &spine, point, None)?;
+    let frame = blend_surface_frame(ir, surface, u, depth + 1)?;
+    let radial = unit_vector(Vector3::new(
+        point.x - frame.0.x,
+        point.y - frame.0.y,
+        point.z - frame.0.z,
+    ))?;
+    let sweep = signed_angle(frame.2, frame.3, frame.1);
+    if !sweep.is_finite() || sweep.abs() <= 1.0e-12 {
+        return None;
+    }
+    let angle = signed_angle(frame.2, radial, frame.1);
+    let candidate = (-2..=2)
+        .map(|turn| (angle + f64::from(turn) * std::f64::consts::TAU) / sweep)
+        .filter(|v| (0.0..=1.0).contains(v))
+        .map(|v| blend_surface_point_from_frame(frame, v))
+        .chain([
+            blend_surface_point_from_frame(frame, 0.0),
+            blend_surface_point_from_frame(frame, 1.0),
+        ])
+        .min_by(|first, second| {
+            point_distance(*first, point).total_cmp(&point_distance(*second, point))
+        })?;
+    unit_vector(Vector3::new(
+        candidate.x - point.x,
+        candidate.y - point.y,
+        candidate.z - point.z,
     ))
 }
 
