@@ -92,7 +92,7 @@ fixtures, claims above L1 remain unproven.
    decoded and transferred section dimensions separately and counts dimensions
    whose scalar values resolve. It counts decoded section solver variables,
    dimension-driven sentinel variables, and dimension-driven variables whose
-   section point resolves through the complete equation system separately. It
+   exact ordinate resolves through the complete equation system separately. It
    likewise counts decoded, transferred, and
    evaluated active curve-equation assignments separately and partitions them
    by active, inactive, and unresolved-conditional state. Prohibited active

@@ -248,6 +248,8 @@ struct CreoSketchVariable {
     variable_type: u32,
     key: u32,
     value: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resolved_value: Option<f64>,
     guess: Option<f64>,
     known: Option<u32>,
     homogeneity: Option<u32>,
@@ -2627,9 +2629,9 @@ fn resolved_section_segment_geometry_with_missing_line(
     }
 }
 
-pub(crate) fn resolved_section_points(
+pub(crate) fn resolved_section_coordinates(
     definition: &crate::feature::FeatureDefinition,
-) -> BTreeMap<u32, [f64; 2]> {
+) -> BTreeMap<u32, [Option<f64>; 2]> {
     let Some(variables) = &definition.variables else {
         return BTreeMap::new();
     };
@@ -2886,6 +2888,15 @@ pub(crate) fn resolved_section_points(
     solve_section_coordinate_equations(&equations, &stored_coordinates)
 }
 
+pub(crate) fn resolved_section_points(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeMap<u32, [f64; 2]> {
+    resolved_section_coordinates(definition)
+        .into_iter()
+        .filter_map(|(point, [u, v])| Some((point, [u?, v?])))
+        .collect()
+}
+
 type SectionCoordinateVariable = (u32, usize);
 
 #[derive(Default)]
@@ -2938,7 +2949,7 @@ impl SectionCoordinateEquation {
 fn solve_section_coordinate_equations(
     equations: &[SectionCoordinateEquation],
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
-) -> BTreeMap<u32, [f64; 2]> {
+) -> BTreeMap<u32, [Option<f64>; 2]> {
     let variables = equations
         .iter()
         .flat_map(|equation| equation.terms.keys().copied())
@@ -3023,9 +3034,6 @@ fn solve_section_coordinate_equations(
         points.entry(point).or_insert([None; 2])[coordinate] = Some(value);
     }
     points
-        .into_iter()
-        .filter_map(|(point, [u, v])| Some((point, [u?, v?])))
-        .collect()
 }
 
 struct SectionLinearRow {
@@ -25042,7 +25050,7 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .definitions
             .iter()
             .map(|definition| {
-                let resolved = resolved_section_points(definition);
+                let resolved = resolved_section_coordinates(definition);
                 definition
                     .variables
                     .iter()
@@ -25050,7 +25058,9 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
                     .filter(|row| {
                         row.dimension_driven
                             && matches!(row.variable_type, 1 | 2)
-                            && resolved.contains_key(&row.key)
+                            && resolved.get(&row.key).is_some_and(|coordinates| {
+                                coordinates[usize::from(row.variable_type == 2)].is_some()
+                            })
                     })
                     .count()
             })

@@ -3484,11 +3484,13 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(variables.len(), 2);
     assert_eq!(variables[0]["key"], 7);
     assert_eq!(variables[0]["value"], 1.0);
+    assert_eq!(variables[0]["resolved_value"], 1.0);
     assert_eq!(variables[0]["known"], 1);
     assert_eq!(variables[0]["homogeneity"], 0);
     assert_eq!(variables[0]["uvar_id"], 3);
     assert_eq!(variables[0]["offset"], variable_offset);
     assert_eq!(variables[1]["value"], 3.0);
+    assert_eq!(variables[1]["resolved_value"], 3.0);
     assert_eq!(variables[1]["known"], 1);
     assert_eq!(variables[1]["homogeneity"], 0);
     assert_eq!(variables[1]["uvar_id"], 4);

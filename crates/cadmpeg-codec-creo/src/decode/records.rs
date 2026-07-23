@@ -1760,22 +1760,34 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .trim_entities
                 .as_ref()
                 .map_or_else(Vec::new, |table| table.solved_external_ids.clone()),
-            variables: definition
-                .variables
-                .iter()
-                .flat_map(|table| &table.rows)
-                .map(|row| CreoSketchVariable {
-                    variable_type: row.variable_type,
-                    key: row.key,
-                    value: row.value,
-                    guess: row.guess,
-                    known: row.known,
-                    homogeneity: row.homogeneity,
-                    uvar_id: row.uvar_id,
-                    dimension_driven: row.dimension_driven,
-                    offset: row.offset,
-                })
-                .collect(),
+            variables: {
+                let resolved_coordinates = resolved_section_coordinates(definition);
+                definition
+                    .variables
+                    .iter()
+                    .flat_map(|table| &table.rows)
+                    .map(|row| CreoSketchVariable {
+                        variable_type: row.variable_type,
+                        key: row.key,
+                        value: row.value,
+                        guess: row.guess,
+                        known: row.known,
+                        homogeneity: row.homogeneity,
+                        uvar_id: row.uvar_id,
+                        dimension_driven: row.dimension_driven,
+                        resolved_value: match row.variable_type {
+                            1 => resolved_coordinates
+                                .get(&row.key)
+                                .and_then(|point| point[0]),
+                            2 => resolved_coordinates
+                                .get(&row.key)
+                                .and_then(|point| point[1]),
+                            _ => None,
+                        },
+                        offset: row.offset,
+                    })
+                    .collect()
+            },
             segments: definition
                 .segments
                 .iter()

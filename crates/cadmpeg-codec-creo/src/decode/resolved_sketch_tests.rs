@@ -34,7 +34,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
             ],
             &BTreeMap::new(),
         ),
-        BTreeMap::from([(1, [6.0, 3.0]), (2, [4.0, 4.0])])
+        BTreeMap::from([(1, [Some(6.0), Some(3.0)]), (2, [Some(4.0), Some(4.0)]),])
     );
 
     let stored = BTreeMap::from([((1, 0), 1.0), ((1, 1), 3.0)]);
@@ -47,7 +47,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
             ],
             &stored,
         ),
-        BTreeMap::from([(1, [1.0, 3.0])])
+        BTreeMap::from([(1, [Some(1.0), Some(3.0)])])
     );
     let stored = BTreeMap::from([((1, 0), 1.0), ((1, 1), 3.0), ((2, 0), 2.0), ((2, 1), 4.0)]);
     assert_eq!(
@@ -63,7 +63,11 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
             ],
             &stored,
         ),
-        BTreeMap::from([(1, [1.0, 3.0]), (2, [2.0, 4.0])])
+        BTreeMap::from([
+            (1, [Some(1.0), Some(3.0)]),
+            (2, [Some(2.0), Some(4.0)]),
+            (3, [None, Some(5.0)]),
+        ])
     );
     assert_eq!(
         solve_section_coordinate_equations(
@@ -73,7 +77,14 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
             ],
             &BTreeMap::new(),
         ),
-        BTreeMap::from([(3, [1.0e12, -1.0e12])])
+        BTreeMap::from([(3, [Some(1.0e12), Some(-1.0e12)])])
+    );
+    assert_eq!(
+        solve_section_coordinate_equations(
+            &[SectionCoordinateEquation::point_value(4, 0, 7.0)],
+            &BTreeMap::new(),
+        ),
+        BTreeMap::from([(4, [Some(7.0), None])])
     );
 }
 
