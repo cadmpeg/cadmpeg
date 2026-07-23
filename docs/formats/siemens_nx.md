@@ -448,7 +448,7 @@ A deltas stream is a schema-framed incremental edit log paired with a partition.
 
 Status-framed fixed records are normalized by removing each reference status byte before fixed-record graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition. Current-revision records needed by semantic scanners remain in a separate semantic lane.
 
-Type-81 entity/attribute-list records use the complete type-81 grammar defined in section 9.4. Their individually `01`-prefixed reference layout is retained as serialized and the terminal `00` closes the record. They participate in the deltas byte ledger but do not replace topology or geometry records.
+Type-81 entity/attribute-list records and type-82, type-83, and type-84 value records use the complete grammars defined in section 9.4. Type-81 individually `01`-prefixed reference layouts retain their serialized form and the terminal `00` closes the record. Counted type-82 integer and type-83 finite-binary64 records end after the declared value lane. Length-framed printable type-84 records end after their terminal `00`. These records participate in the deltas byte ledger but do not replace topology or geometry records.
 
 **Full record:**
 

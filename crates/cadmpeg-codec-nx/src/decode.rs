@@ -6785,7 +6785,8 @@ fn build_geometry_report(
                  non-topology replacements and tombstones were applied using the last event for \
                  each key. Validated partition topology remained authoritative, including any \
                  point, curve, or surface carrier still referenced by surviving topology. Complete \
-                 ENTITY_51 records were retained for native attribute extraction. Every \
+                 ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native \
+                 attribute extraction. Every \
                  terminal tombstone resolved to an exact current or earlier-added key.",
                     scan.count(StreamKind::Deltas)
                 )

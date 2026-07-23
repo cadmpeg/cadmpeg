@@ -584,7 +584,7 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
     let canonical_residual_records = census
         .records
         .iter()
-        .filter(|record| record.offset >= revision_start && matches!(record.kind, 38 | 81))
+        .filter(|record| record.offset >= revision_start && matches!(record.kind, 38 | 81..=84))
         .map(|record| record.canonical_bytes.clone())
         .collect::<Vec<_>>();
     for record in census.records {
@@ -686,21 +686,38 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
 }
 
 fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
-    let record = (kind == 81)
-        .then(|| crate::parasolid::entity_51_record_at(stream, offset))
-        .flatten()?;
+    let (xmt, byte_len, references) = match kind {
+        81 => {
+            let record = crate::parasolid::entity_51_record_at(stream, offset)?;
+            (record.xmt, record.byte_len, record.references)
+        }
+        82 => {
+            let record = crate::parasolid::entity_52_integer_record_at(stream, offset)?;
+            (record.xmt, record.byte_len, Vec::new())
+        }
+        83 => {
+            let record = crate::parasolid::entity_53_double_record_at(stream, offset)?;
+            (record.xmt, record.byte_len, Vec::new())
+        }
+        84 => {
+            let record = crate::parasolid::entity_54_string_record_at(stream, offset)?;
+            (record.xmt, record.byte_len, Vec::new())
+        }
+        _ => return None,
+    };
+    let end = offset.checked_add(byte_len)?;
     Some(Record {
         kind,
-        xmt: record.xmt,
+        xmt,
         node_id: None,
-        references: record.references,
+        references,
         position: None,
         canonical_bytes: stream
-            .get(offset..offset + record.byte_len)
-            .expect("validated type-81 record bounds")
+            .get(offset..end)
+            .expect("validated variable record bounds")
             .to_vec(),
         offset,
-        end: offset + record.byte_len,
+        end,
     })
 }
 
@@ -767,6 +784,9 @@ fn family_name(kind: u16) -> Option<&'static str> {
         134 => "B_CURVE",
         137 => "SP_CURVE",
         81 => "ENTITY_51",
+        82 => "ENTITY_52",
+        83 => "ENTITY_53",
+        84 => "ENTITY_54",
         12 => "BODY",
         13 => "SHELL",
         19 => "REGION",

@@ -4098,6 +4098,17 @@ fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
     assert_eq!(records[0].byte_len, 17);
     assert_eq!(records[0].xmt, 17);
     assert_eq!(records[0].value, "deadbeef");
+    assert_eq!(
+        crate::parasolid::entity_54_string_record_at(&bytes, 1),
+        Some(records[0].clone())
+    );
+    assert!(crate::parasolid::entity_54_string_record_at(&bytes, bytes.len() - 12).is_none());
+
+    let minimum = [0, 0x54, 0, 0, 0, 1, 0, 2, b'a', 0];
+    assert_eq!(
+        crate::parasolid::entity_54_string_records(&minimum)[0].value,
+        "a"
+    );
 }
 
 #[test]
@@ -4114,7 +4125,12 @@ fn parasolid_entity_52_integers_require_complete_counted_values() {
     assert_eq!(records[0].xmt, 17);
     assert_eq!(records[0].values, [3, u32::MAX]);
     assert_eq!(records[0].byte_len, 16);
+    assert_eq!(
+        crate::parasolid::entity_52_integer_record_at(&bytes, 1),
+        Some(records[0].clone())
+    );
     assert!(crate::parasolid::entity_52_integer_records(&bytes[..bytes.len() - 1]).is_empty());
+    assert!(crate::parasolid::entity_52_integer_record_at(&bytes[..bytes.len() - 1], 1).is_none());
 }
 
 #[test]
@@ -4131,10 +4147,15 @@ fn parasolid_entity_53_doubles_require_complete_finite_values() {
     assert_eq!(records[0].xmt, 18);
     assert_eq!(records[0].values, [0.001, 0.25]);
     assert_eq!(records[0].byte_len, 25);
+    assert_eq!(
+        crate::parasolid::entity_53_double_record_at(&bytes, 1),
+        Some(records[0].clone())
+    );
 
     let last = bytes.len() - 8;
     bytes[last..].copy_from_slice(&f64::NAN.to_be_bytes());
     assert!(crate::parasolid::entity_53_double_records(&bytes).is_empty());
+    assert!(crate::parasolid::entity_53_double_record_at(&bytes, 1).is_none());
 }
 
 #[test]
@@ -5987,6 +6008,52 @@ fn deltas_walks_complete_status_prefixed_entity_51_records() {
         .records
         .iter()
         .all(|record| record.kind != 81));
+}
+
+#[test]
+fn deltas_walks_complete_entity_value_records() {
+    let mut stream = vec![0, 82];
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&20u16.to_be_bytes());
+    stream.extend_from_slice(&u32::MAX.to_be_bytes());
+    stream.extend_from_slice(&[0, 83, 0xff]);
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&21u16.to_be_bytes());
+    stream.extend_from_slice(&0.25f64.to_be_bytes());
+    stream.extend_from_slice(&[0, 84]);
+    stream.extend_from_slice(&3u32.to_be_bytes());
+    stream.extend_from_slice(&22u16.to_be_bytes());
+    stream.extend_from_slice(b"abc\0");
+    stream.extend(status_framed_deltas_point_stream());
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [82, 83, 84, 29]
+    );
+    assert_eq!(census.full_counts["ENTITY_52"], 1);
+    assert_eq!(census.full_counts["ENTITY_53"], 1);
+    assert_eq!(census.full_counts["ENTITY_54"], 1);
+    assert_eq!(census.bytes_decoded, stream.len());
+
+    let residual = crate::deltas::semantic_residual(&stream);
+    assert!(residual[..stream.len()].iter().all(|byte| *byte == 0xff));
+    assert_eq!(
+        crate::parasolid::entity_52_integer_records(&residual)[0].values,
+        [u32::MAX]
+    );
+    assert_eq!(
+        crate::parasolid::entity_53_double_records(&residual)[0].values,
+        [0.25]
+    );
+    assert_eq!(
+        crate::parasolid::entity_54_string_records(&residual)[0].value,
+        "abc"
+    );
 }
 
 #[test]
