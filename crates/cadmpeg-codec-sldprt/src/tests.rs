@@ -2590,6 +2590,8 @@ fn encoder_writes_source_less_spatial_line_sketches() {
     let entity_id = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
     let start = Point3::new(1.25, -2.5, 3.75);
     let end = Point3::new(4.5, 5.25, -6.0);
+    let second_start = Point3::new(-7.0, 8.5, 9.25);
+    let second_end = Point3::new(10.0, -11.5, 12.75);
     ir.model.spatial_sketches.push(SpatialSketch {
         id: sketch_id.clone(),
         name: Some("Spatial path".into()),
@@ -2605,6 +2607,18 @@ fn encoder_writes_source_less_spatial_line_sketches() {
         geometry_ref: None,
         endpoint_refs: Vec::new(),
         geometry: SpatialSketchGeometry::Line { start, end },
+    });
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#second-line".into()),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
     });
     ir.model.features.push(Feature {
         id: FeatureId("synthetic:test:feature#spatial-path".into()),
@@ -2626,11 +2640,12 @@ fn encoder_writes_source_less_spatial_line_sketches() {
 
     let mut encoded = Vec::new();
     SldprtCodec.encode(&ir, &mut encoded).unwrap();
-    let regenerated = SldprtCodec
+    let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
     assert_eq!(regenerated.ir.model.spatial_sketches.len(), 1);
+    assert_eq!(regenerated.ir.model.spatial_sketch_entities.len(), 2);
     assert!(matches!(
         regenerated.ir.model.spatial_sketch_entities[0].geometry,
         SpatialSketchGeometry::Line {
@@ -2639,8 +2654,39 @@ fn encoder_writes_source_less_spatial_line_sketches() {
         } if regenerated_start == start && regenerated_end == end
     ));
     assert!(matches!(
+        regenerated.ir.model.spatial_sketch_entities[1].geometry,
+        SpatialSketchGeometry::Line {
+            start: regenerated_start,
+            end: regenerated_end,
+        } if regenerated_start == second_start && regenerated_end == second_end
+    ));
+    assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::SpatialSketch { sketch: Some(_) }
+    ));
+
+    let edited_start = Point3::new(13.0, 14.0, 15.0);
+    let edited_end = Point3::new(-16.0, 17.0, 18.0);
+    regenerated.ir.model.spatial_sketch_entities[1].geometry = SpatialSketchGeometry::Line {
+        start: edited_start,
+        end: edited_end,
+    };
+    let mut rewritten = Vec::new();
+    SldprtCodec
+        .write_preserved_with_source_fidelity(
+            &regenerated.ir,
+            &regenerated.source_fidelity,
+            &mut rewritten,
+        )
+        .unwrap();
+    let rewritten = SldprtCodec
+        .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(rewritten.ir.model.spatial_sketch_entities.len(), 2);
+    assert!(matches!(
+        rewritten.ir.model.spatial_sketch_entities[1].geometry,
+        SpatialSketchGeometry::Line { start, end }
+            if start == edited_start && end == edited_end
     ));
 }
 

@@ -150,7 +150,7 @@ fn legacy_feature_input_section(section: &str) -> bool {
     !configuration.is_empty() && configuration.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-/// Project spatial sketches from their model-space marker coordinates or one bounded line.
+/// Project spatial sketches from their model-space marker coordinates or bounded lines.
 pub(crate) fn spatial_sketches(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
@@ -258,14 +258,17 @@ pub(crate) fn spatial_sketches(
                 continue;
             };
             let vertices = spatial_vertex_coordinates(object);
-            if let [start, end] = vertices.as_slice() {
-                candidates.push((lane, *start, *end));
+            if vertices.len() >= 2 && vertices.len().is_multiple_of(2) {
+                candidates.push((lane, vertices));
             }
         }
-        let [(lane, start, end)] = candidates.as_slice() else {
+        let [(lane, vertices)] = candidates.as_slice() else {
             continue;
         };
-        if start == end {
+        if vertices
+            .chunks_exact(2)
+            .any(|vertices| vertices[0] == vertices[1])
+        {
             continue;
         }
         let sketch_id = SpatialSketchId(feature.id.0.replacen(
@@ -273,7 +276,6 @@ pub(crate) fn spatial_sketches(
             ":model:spatial-sketch#",
             1,
         ));
-        let entity_id = SpatialSketchEntityId(format!("{}:entity:0", sketch_id.0));
         sketches.push(SpatialSketch {
             id: sketch_id.clone(),
             name: feature.name.clone(),
@@ -281,18 +283,23 @@ pub(crate) fn spatial_sketches(
             profiles: Vec::new(),
             native_ref: Some(lane.id.clone()),
         });
-        entities.push(SpatialSketchEntity {
-            id: entity_id,
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SpatialSketchGeometry::Line {
-                start: *start,
-                end: *end,
-            },
-        });
+        entities.extend(
+            vertices
+                .chunks_exact(2)
+                .enumerate()
+                .map(|(index, vertices)| SpatialSketchEntity {
+                    id: SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: None,
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry: SpatialSketchGeometry::Line {
+                        start: vertices[0],
+                        end: vertices[1],
+                    },
+                }),
+        );
         feature.definition = FeatureDefinition::SpatialSketch {
             sketch: Some(sketch_id),
         };
@@ -35082,21 +35089,9 @@ fn patch_spatial_line_sketches(
             .iter()
             .filter(|entity| entity.sketch == sketch.id)
             .collect::<Vec<_>>();
-        let [entity] = entities.as_slice() else {
+        if entities.is_empty() {
             return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
-                "SLDPRT spatial sketch {} requires exactly one retained line",
-                sketch.id.0
-            )));
-        };
-        let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
-            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
-                "SLDPRT spatial sketch {} supports retained line geometry only",
-                sketch.id.0
-            )));
-        };
-        if start == end {
-            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
-                "SLDPRT spatial sketch {} has a zero-length line",
+                "SLDPRT spatial sketch {} requires at least one retained line",
                 sketch.id.0
             )));
         }
@@ -35120,21 +35115,45 @@ fn patch_spatial_line_sketches(
                     .unwrap_or(lane.native_payload.len());
                 let offsets =
                     spatial_vertex_offsets(lane.native_payload.get(object_start..object_end)?);
-                let [first, second] = offsets.as_slice() else {
+                if entities
+                    .len()
+                    .checked_mul(2)
+                    .is_none_or(|expected| offsets.len() != expected)
+                {
                     return None;
-                };
-                Some((lane_index, object_start + first, object_start + second))
+                }
+                Some((
+                    lane_index,
+                    offsets
+                        .into_iter()
+                        .map(|offset| object_start + offset)
+                        .collect::<Vec<_>>(),
+                ))
             })
             .collect::<Vec<_>>();
-        let [(lane_index, first, second)] = candidates.as_slice() else {
+        let [(lane_index, offsets)] = candidates.as_slice() else {
             return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
-                "SLDPRT spatial sketch {} does not resolve to one two-vertex feature object",
+                "SLDPRT spatial sketch {} does not resolve to one feature object with two vertices per line",
                 sketch.id.0
             )));
         };
         let payload = &mut native.feature_input_lanes[*lane_index].native_payload;
-        patch_spatial_vertex(payload, *first, start)?;
-        patch_spatial_vertex(payload, *second, end)?;
+        for (entity, offsets) in entities.iter().zip(offsets.chunks_exact(2)) {
+            let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
+                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                    "SLDPRT spatial sketch {} supports retained line geometry only",
+                    sketch.id.0
+                )));
+            };
+            if start == end {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "SLDPRT spatial sketch {} has a zero-length line",
+                    sketch.id.0
+                )));
+            }
+            patch_spatial_vertex(payload, offsets[0], start)?;
+            patch_spatial_vertex(payload, offsets[1], end)?;
+        }
     }
 
     let mut features = crate::history::project_features(&native.feature_histories);
@@ -36131,26 +36150,28 @@ fn source_less_lanes(
             .iter()
             .filter(|entity| entity.sketch == sketch.id)
             .collect::<Vec<_>>();
-        let [entity] = entities.as_slice() else {
+        if entities.is_empty() {
             return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
-                "source-less SLDPRT spatial sketch {} requires exactly one line",
-                sketch.id.0
-            )));
-        };
-        let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
-            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
-                "source-less SLDPRT spatial sketch {} supports line geometry only",
-                sketch.id.0
-            )));
-        };
-        if start == end {
-            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
-                "source-less SLDPRT spatial sketch {} has a zero-length line",
+                "source-less SLDPRT spatial sketch {} requires at least one line",
                 sketch.id.0
             )));
         }
-        append_spatial_vertex(&mut payload, start);
-        append_spatial_vertex(&mut payload, end);
+        for entity in entities {
+            let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
+                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                    "source-less SLDPRT spatial sketch {} supports line geometry only",
+                    sketch.id.0
+                )));
+            };
+            if start == end {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT spatial sketch {} has a zero-length line",
+                    sketch.id.0
+                )));
+            }
+            append_spatial_vertex(&mut payload, start);
+            append_spatial_vertex(&mut payload, end);
+        }
         objects.push((configuration, owner.ordinal, payload));
     }
     let mut lanes = assemble_source_less_lanes(objects);
