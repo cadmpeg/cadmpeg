@@ -4279,6 +4279,7 @@ fn native_value_blocks_distinguish_the_terminal_schema_sentinel() {
     assert_eq!(block.schema_selections.len(), 1);
     assert_eq!(block.schema_selections[0].ordinal, 4);
     assert_eq!(block.schema_selections[0].entry, None);
+    assert_eq!(block.schema_selections[0].name, None);
     assert_eq!(block.schema_selections[0].value, None);
     assert!(block.schema_selections[0].encoded_value.is_empty());
     assert!(block.fields.iter().any(|field| matches!(
@@ -4982,6 +4983,10 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
     assert_eq!(
         native.value_blocks[0].schema_selections[0].entry.as_deref(),
         Some(native.catalogs[0].entries[4].id.as_str())
+    );
+    assert_eq!(
+        native.value_blocks[0].schema_selections[0].name.as_deref(),
+        Some("Sketch")
     );
     assert_eq!(
         native.value_blocks[0].schema_selections[0].value,
