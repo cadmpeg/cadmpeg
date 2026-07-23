@@ -3698,6 +3698,53 @@ fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
 }
 
 #[test]
+fn om_offset_store_control_form_requires_one_complete_grammar() {
+    assert_eq!(
+        crate::om::offset_store_control_form(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]),
+        Some(crate::om::OffsetStoreControlForm::ZeroPrefixed {
+            values: vec![0x1234, 0x00ff_ffff],
+        })
+    );
+
+    let mut product = vec![0, 0];
+    product.extend_from_slice(&7u32.to_le_bytes());
+    product.extend_from_slice(&0x1020u32.to_le_bytes());
+    product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
+    assert_eq!(
+        crate::om::offset_store_control_form(&product),
+        Some(crate::om::OffsetStoreControlForm::ProductTerminated {
+            prefix_byte_len: 2,
+            values: vec![7, 0x1020],
+        })
+    );
+
+    product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
+    assert!(crate::om::offset_store_control_form(&product).is_none());
+    assert!(crate::om::offset_store_control_form(&[1, 2, 3, 4]).is_none());
+}
+
+#[test]
+fn decode_reports_unclassified_bounded_offset_store_controls() {
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        offset_only_indexed_om_section_with_control(&[1, 2, 3, 4]),
+    )]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let attributes = &result.ir.source.as_ref().unwrap().attributes;
+    assert_eq!(attributes["offset_store_control_count"], "1");
+    assert_eq!(attributes["classified_offset_store_control_count"], "0");
+    assert_eq!(attributes["unclassified_offset_store_control_count"], "1");
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.category == LossCategory::DesignIntent
+            && loss
+                .message
+                .contains("1 of 1 bounded offset-store control block(s)")
+    }));
+}
+
+#[test]
 fn om_offset_store_index_rows_require_complete_exact_frames() {
     let first =
         b"\x2d\x02\x0b\x2a\x93\x8a\x03\x80\x18\x20\x20\x41\x00\x47\x04\x04\x01\xc0\x44\x04\x00";
@@ -9569,6 +9616,7 @@ mod golden {
         "data_block_abr_reference_lanes",
         "data_block_column_index_tables",
         "data_block_control_class_references",
+        "data_block_control_forms",
         "data_block_control_handle_pairs",
         "data_block_control_index_values",
         "data_block_control_references",
@@ -10441,7 +10489,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (179), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (180), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -10450,7 +10498,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::CATALOGUE;
 
-        assert_eq!(CATALOGUE.len(), 179, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 180, "one catalogue row per model field");
 
         let mut catalogue_arenas = BTreeSet::new();
         for row in CATALOGUE {

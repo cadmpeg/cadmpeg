@@ -17,7 +17,6 @@ This document records unresolved NX `.prt` byte semantics.
 
 - Per-class NX OM field-value serialization is unspecified, including field offsets for feature history, constraints, attributes, and material bindings.
 - The geometric roles and coordinate spaces of framed scalar pairs in `SKETCH`, `DATUM_PLANE`, and `DATUM_CSYS` construction payloads are unspecified. Equal scalar pairs do not establish a model-space frame, sketch entity, or constraint relation.
-- Offset-only store control blocks outside the zero-prefixed and product-terminated array forms are unspecified.
 - The semantic role of the trailing byte in each OM type declaration is unspecified.
 - The semantic roles of bytes in each bounded OM field-registry suffix are unspecified.
 - Feature-history object-index relations not covered by primary-body writers, Boolean tool consumption, and segment body-image bindings are unspecified.

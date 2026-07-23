@@ -186,8 +186,11 @@
           "deltas.0.grammar": "status_byte_framed_topology",
           "deltas_streams": "1",
           "directory_entries": "1",
-          "file_size": "469",
-          "footer_offset": "0",
+          "file_size": "487",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "473",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
@@ -228,7 +231,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 473, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -290,12 +293,12 @@
         },
         "provenance": {
           "nx:container:parasolid#0": {
-            "offset": 72,
+            "offset": 76,
             "stream": 1,
             "tag": "partition"
           },
           "nx:container:parasolid#1": {
-            "offset": 334,
+            "offset": 338,
             "stream": 1,
             "tag": "deltas"
           },
@@ -366,7 +369,7 @@
           "byte_len": 470,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAYrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgACQAAKwAQAAgAAAAAAAA/M6kqMFUyYQAHAAAAAAAJAAAAAAAAADIABgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAkAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEgAKAAAAAAAAAAAAAAAAAAs/Gjbi6xxDLQAAABMADAAAAAAAAAAAAAAAAAAdAAsAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7P564UeuFHrg=",
           "id": "nx:container:parasolid#0",
-          "offset": 72,
+          "offset": 76,
           "sha256": "45205d742271c34f5068116a4ce8e06485d9373dd323abc0ffd2c5d5190922e1",
           "stream": "nx:container"
         },
@@ -374,7 +377,7 @@
           "byte_len": 151,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAOAAQAAAOGAAEBP0o24uscQy0AAQEAAQEABQEAAwEABgErAAEBAAEBAAEBAAEBAAEBABIACgAAA4cAAQEAAQEAAQEAAQEACwE/RvAGjbi6xwABAQ==",
           "id": "nx:container:parasolid#1",
-          "offset": 334,
+          "offset": 338,
           "sha256": "a2b32470a6c01faa9d080524937e19014b0ac54cc6bbcdea72bc31337ce129fb",
           "stream": "nx:container"
         }
@@ -387,18 +390,18 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "region": "HEADER"
         },
         "compressed_size": 397,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
+        "role": "part-payload",
         "uncompressed_size": 397
       },
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "kind": "partition",
           "records.body": "1",
           "records.edge": "1",
@@ -426,7 +429,7 @@
       },
       {
         "attributes": {
-          "file_offset": "334",
+          "file_offset": "338",
           "kind": "deltas",
           "records.body": "0",
           "records.delta.full.face": "1",
@@ -449,7 +452,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 473, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

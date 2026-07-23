@@ -189,6 +189,7 @@ pub(crate) struct OmRecords {
     pub(crate) rmfastload_object_id_tables: Vec<RmFastLoadObjectIdTable>,
     pub(crate) rmfastload_object_ids: Vec<RmFastLoadObjectId>,
     pub(crate) data_blocks: Vec<DataBlock>,
+    pub(crate) data_block_control_forms: Vec<DataBlockControlForm>,
     pub(crate) data_block_control_values: Vec<DataBlockControlValue>,
     pub(crate) data_block_control_class_references: Vec<DataBlockControlClassReference>,
     pub(crate) data_block_control_index_values: Vec<DataBlockControlIndexValue>,
@@ -599,6 +600,7 @@ impl NativeModel {
                 None => (Vec::new(), Vec::new()),
             };
         let data_blocks = data_blocks(container);
+        let data_block_control_forms = data_block_control_forms(container);
         let data_block_control_values = data_block_control_values(container);
         let data_block_control_class_references = data_block_control_class_references(container);
         let data_block_control_index_values = data_block_control_index_values(container);
@@ -832,6 +834,7 @@ impl NativeModel {
                 rmfastload_object_id_tables,
                 rmfastload_object_ids,
                 data_blocks,
+                data_block_control_forms,
                 data_block_control_values,
                 data_block_control_class_references,
                 data_block_control_index_values,

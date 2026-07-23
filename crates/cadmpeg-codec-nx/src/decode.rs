@@ -127,6 +127,19 @@ fn decode_result(
 }
 
 fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
+    let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
+    if classified_control_count != control_count {
+        report.losses.push(LossNote {
+            code: LossCode::RecordNotTyped,
+            category: LossCategory::DesignIntent,
+            severity: Severity::Warning,
+            message: format!(
+                "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
+                control_count - classified_control_count
+            ),
+            provenance: None,
+        });
+    }
     for entry in &scan.container.entries {
         let content = entry.content();
         if content.retains_opaque_payload() {
@@ -157,6 +170,20 @@ fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
             });
         }
     }
+}
+
+fn offset_store_control_counts(container: &Container) -> (usize, usize) {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .filter_map(|(_, section)| section.control)
+        .fold((0, 0), |(total, classified), control| {
+            (
+                total + 1,
+                classified
+                    + usize::from(crate::om::offset_store_control_form(control.bytes).is_some()),
+            )
+        })
 }
 
 /// Aggregate carrier counts across the decoded streams, for reporting.
@@ -6494,6 +6521,21 @@ fn source_meta(scan: &Scan) -> SourceMeta {
             u32::from_be_bytes(scan.container.footer_fingerprint)
         ),
     );
+    let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
+    if control_count != 0 {
+        attributes.insert(
+            "offset_store_control_count".to_string(),
+            control_count.to_string(),
+        );
+        attributes.insert(
+            "classified_offset_store_control_count".to_string(),
+            classified_control_count.to_string(),
+        );
+        attributes.insert(
+            "unclassified_offset_store_control_count".to_string(),
+            (control_count - classified_control_count).to_string(),
+        );
+    }
     attributes.insert(
         "partition_streams".to_string(),
         scan.count(StreamKind::Partition).to_string(),
@@ -7640,6 +7682,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
 /// Build container and embedded-stream notes for inspection and decode reports.
 pub fn summary_notes(scan: &Scan) -> Vec<String> {
     let c = &scan.container;
+    let (control_count, classified_control_count) = offset_store_control_counts(c);
     let mut notes = vec![format!(
         "SPLMSSTR container: version {:#04x}, file tag {}, footer offset {}, {} HEADER and {} FOOTER directory entry/ies, fingerprint {:08x}",
         c.version,
@@ -7656,6 +7699,11 @@ pub fn summary_notes(scan: &Scan) -> Vec<String> {
         scan.count(StreamKind::Plain),
         scan.count(StreamKind::Preview),
     ));
+    if control_count != 0 {
+        notes.push(format!(
+            "NX object model: {classified_control_count} of {control_count} bounded offset-store control block(s) have an admitted complete grammar"
+        ));
+    }
     if let Some(schema) = scan.streams.iter().find_map(|s| s.schema.as_deref()) {
         notes.push(format!("Parasolid schema: {schema}"));
     }

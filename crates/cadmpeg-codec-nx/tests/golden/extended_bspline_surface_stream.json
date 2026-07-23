@@ -55,8 +55,11 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "220",
-          "footer_offset": "0",
+          "file_size": "238",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "224",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
           "plain_streams": "0"
@@ -90,12 +93,16 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 224, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 1 preview/non-Parasolid"
       ]
     },
     "source_fidelity": {
-      "annotations": {},
+      "annotations": {
+        "streams": [
+          "nx:container"
+        ]
+      },
       "version": "3"
     }
   },
@@ -104,18 +111,18 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "region": "HEADER"
         },
         "compressed_size": 148,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
+        "role": "part-payload",
         "uncompressed_size": 148
       },
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "kind": "preview"
         },
         "compressed_size": 0,
@@ -127,7 +134,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 224, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 1 preview/non-Parasolid"
     ]
   }

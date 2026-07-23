@@ -172,7 +172,7 @@
                   1
                 ],
                 "physical_byte_len": 236,
-                "source_offset": 334,
+                "source_offset": 338,
                 "toc_entries": [
                   {
                     "attributes": [
@@ -203,7 +203,7 @@
                       2
                     ],
                     "segment_offset": 137,
-                    "source_offset": 443
+                    "source_offset": 447
                   }
                 ],
                 "toc_offset": 105,
@@ -219,11 +219,11 @@
                     "header_offset": 28,
                     "id": "nx:display-jt:index#0-row-0",
                     "ordinal": 0,
-                    "source_offset": 314,
+                    "source_offset": 318,
                     "value": 100
                   }
                 ],
-                "source_offset": 306,
+                "source_offset": 310,
                 "version": 9
               }
             ],
@@ -253,7 +253,7 @@
                   2
                 ],
                 "segment_type": 7,
-                "source_offset": 471,
+                "source_offset": 475,
                 "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
               }
             ],
@@ -284,7 +284,7 @@
                 ],
                 "ordinal": 0,
                 "segment": "nx:display-jt:segment#0-row-0-0",
-                "source_offset": 495
+                "source_offset": 499
               }
             ],
             "display_jt_tri_strip_lod_headers": [
@@ -295,7 +295,7 @@
                 "compressed_representation_sha256": "8d70d691c822d55638b6e7fd54cd94170c87d19eb1f628b757506ede5688d297",
                 "element": "nx:display-jt:segment#0-row-0-0-element-0",
                 "id": "nx:display-jt:segment#0-row-0-0-element-0-tri-strip-header",
-                "source_offset": 520,
+                "source_offset": 524,
                 "topological_mesh_version": 1,
                 "vertex_bindings": 0,
                 "vertex_records_object_id": 0,
@@ -320,8 +320,11 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "570",
-          "footer_offset": "0",
+          "file_size": "588",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "574",
+          "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
@@ -362,7 +365,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 2 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 574, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -415,7 +418,7 @@
         },
         "provenance": {
           "nx:container:parasolid#0": {
-            "offset": 115,
+            "offset": 119,
             "stream": 1,
             "tag": "partition"
           },
@@ -470,7 +473,7 @@
           "byte_len": 383,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQAAAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAAAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAAAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAAAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
           "id": "nx:container:parasolid#0",
-          "offset": 115,
+          "offset": 119,
           "sha256": "b5a338b2331eb7af411e1fbb4fcae722dffc02eb7b7ecba5ad477c50b8c3dad8",
           "stream": "nx:container"
         }
@@ -483,29 +486,29 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "115",
+          "file_offset": "119",
           "region": "HEADER"
         },
         "compressed_size": 191,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
+        "role": "part-payload",
         "uncompressed_size": 191
       },
       {
         "attributes": {
-          "file_offset": "306",
+          "file_offset": "310",
           "region": "HEADER"
         },
         "compressed_size": 264,
         "compression": "none",
         "name": "/Root/UG_PART/DisplayJT",
-        "role": "stream",
+        "role": "display-jt",
         "uncompressed_size": 264
       },
       {
         "attributes": {
-          "file_offset": "115",
+          "file_offset": "119",
           "kind": "partition",
           "records.body": "0",
           "records.edge": "0",
@@ -534,7 +537,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 2 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 574, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

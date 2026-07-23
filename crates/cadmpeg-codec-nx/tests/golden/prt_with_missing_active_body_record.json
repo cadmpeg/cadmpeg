@@ -1632,9 +1632,9 @@
                   0,
                   0
                 ],
-                "registry_source_offset": 3617,
+                "registry_source_offset": 3621,
                 "source_entry": "/Root/FastLoad/RMFastLoad",
-                "source_offset": 3634
+                "source_offset": 3638
               }
             ],
             "rmfastload_object_ids": [
@@ -1647,7 +1647,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3638,
+                "source_offset": 3642,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1000
               },
@@ -1660,7 +1660,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3642,
+                "source_offset": 3646,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1001
               },
@@ -1673,7 +1673,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3646,
+                "source_offset": 3650,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1002
               },
@@ -1686,7 +1686,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3650,
+                "source_offset": 3654,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1003
               },
@@ -1699,7 +1699,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3654,
+                "source_offset": 3658,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1004
               },
@@ -1712,7 +1712,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3658,
+                "source_offset": 3662,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1005
               },
@@ -1725,7 +1725,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3662,
+                "source_offset": 3666,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1006
               },
@@ -1738,7 +1738,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3666,
+                "source_offset": 3670,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1007
               },
@@ -1751,7 +1751,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3670,
+                "source_offset": 3674,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1008
               },
@@ -1764,7 +1764,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3674,
+                "source_offset": 3678,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1009
               },
@@ -1777,7 +1777,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3678,
+                "source_offset": 3682,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1010
               },
@@ -1790,7 +1790,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3682,
+                "source_offset": 3686,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1011
               },
@@ -1803,7 +1803,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3686,
+                "source_offset": 3690,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1012
               },
@@ -1816,7 +1816,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3690,
+                "source_offset": 3694,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1013
               },
@@ -1829,7 +1829,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3694,
+                "source_offset": 3698,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1014
               },
@@ -1842,7 +1842,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3698,
+                "source_offset": 3702,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1015
               },
@@ -1855,7 +1855,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3702,
+                "source_offset": 3706,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1016
               },
@@ -1868,7 +1868,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3706,
+                "source_offset": 3710,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1017
               },
@@ -1881,7 +1881,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3710,
+                "source_offset": 3714,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1018
               },
@@ -1894,7 +1894,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3714,
+                "source_offset": 3718,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1019
               },
@@ -1907,7 +1907,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3718,
+                "source_offset": 3722,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1020
               },
@@ -1920,7 +1920,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3722,
+                "source_offset": 3726,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1021
               },
@@ -1933,7 +1933,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3726,
+                "source_offset": 3730,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1022
               },
@@ -1946,7 +1946,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3730,
+                "source_offset": 3734,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1023
               },
@@ -1959,7 +1959,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3734,
+                "source_offset": 3738,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1024
               },
@@ -1972,7 +1972,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3738,
+                "source_offset": 3742,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1025
               },
@@ -1985,7 +1985,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3742,
+                "source_offset": 3746,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1026
               },
@@ -1998,7 +1998,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3746,
+                "source_offset": 3750,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1027
               },
@@ -2011,7 +2011,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3750,
+                "source_offset": 3754,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1028
               },
@@ -2024,7 +2024,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3754,
+                "source_offset": 3758,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1029
               },
@@ -2037,7 +2037,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3758,
+                "source_offset": 3762,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1030
               },
@@ -2050,7 +2050,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3762,
+                "source_offset": 3766,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1031
               },
@@ -2063,7 +2063,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3766,
+                "source_offset": 3770,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1032
               },
@@ -2076,7 +2076,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3770,
+                "source_offset": 3774,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1033
               },
@@ -2089,7 +2089,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3774,
+                "source_offset": 3778,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1034
               },
@@ -2102,7 +2102,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3778,
+                "source_offset": 3782,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1035
               },
@@ -2115,7 +2115,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3782,
+                "source_offset": 3786,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1036
               },
@@ -2128,7 +2128,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3786,
+                "source_offset": 3790,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1037
               },
@@ -2141,7 +2141,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3790,
+                "source_offset": 3794,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1038
               },
@@ -2154,7 +2154,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3794,
+                "source_offset": 3798,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1039
               },
@@ -2167,7 +2167,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3798,
+                "source_offset": 3802,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1040
               },
@@ -2180,7 +2180,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3802,
+                "source_offset": 3806,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1041
               },
@@ -2193,7 +2193,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3806,
+                "source_offset": 3810,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1042
               },
@@ -2206,7 +2206,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3810,
+                "source_offset": 3814,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1043
               },
@@ -2219,7 +2219,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3814,
+                "source_offset": 3818,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1044
               },
@@ -2232,7 +2232,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3818,
+                "source_offset": 3822,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1045
               },
@@ -2245,7 +2245,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3822,
+                "source_offset": 3826,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1046
               },
@@ -2258,7 +2258,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3826,
+                "source_offset": 3830,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1047
               },
@@ -2271,7 +2271,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3830,
+                "source_offset": 3834,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1048
               },
@@ -2284,7 +2284,7 @@
                   0,
                   0
                 ],
-                "source_offset": 3834,
+                "source_offset": 3838,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1049
               }
@@ -2358,8 +2358,11 @@
           "active_body_selector": "rmfastload_object_id_membership",
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "3838",
-          "footer_offset": "0",
+          "file_size": "3856",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "3842",
+          "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "2",
@@ -2397,7 +2400,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 2 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 3842, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 2 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -2412,10 +2415,7 @@
             }
           },
           "nx:container:parasolid#1": {
-            "entity": "derived",
-            "fields": {
-              "links": "derived"
-            }
+            "entity": "derived"
           },
           "nx:s0:body#2": {
             "entity": "unknown"
@@ -3029,12 +3029,12 @@
         },
         "provenance": {
           "nx:container:parasolid#0": {
-            "offset": 117,
+            "offset": 121,
             "stream": 1,
             "tag": "partition"
           },
           "nx:container:parasolid#1": {
-            "offset": 1860,
+            "offset": 1864,
             "stream": 1,
             "tag": "partition"
           },
@@ -3565,7 +3565,7 @@
           "byte_len": 6634,
           "data": "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",
           "id": "nx:container:parasolid#0",
-          "offset": 117,
+          "offset": 121,
           "sha256": "762ae6242538d80a70a407ec849f3d242b201ca54aba3168d7f3b8f5baf202dd",
           "stream": "nx:container"
         },
@@ -3573,7 +3573,7 @@
           "byte_len": 6634,
           "data": "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",
           "id": "nx:container:parasolid#1",
-          "offset": 1860,
+          "offset": 1864,
           "sha256": "706f04bfdcd0672dbe0d7ca5aef03aa07c430722e809c6e980703444cc490155",
           "stream": "nx:container"
         }
@@ -3586,29 +3586,29 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "117",
+          "file_offset": "121",
           "region": "HEADER"
         },
         "compressed_size": 3500,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
+        "role": "part-payload",
         "uncompressed_size": 3500
       },
       {
         "attributes": {
-          "file_offset": "3617",
+          "file_offset": "3621",
           "region": "HEADER"
         },
         "compressed_size": 221,
         "compression": "none",
         "name": "/Root/FastLoad/RMFastLoad",
-        "role": "stream",
+        "role": "active-body-index",
         "uncompressed_size": 221
       },
       {
         "attributes": {
-          "file_offset": "117",
+          "file_offset": "121",
           "kind": "partition",
           "records.body": "0",
           "records.edge": "0",
@@ -3636,7 +3636,7 @@
       },
       {
         "attributes": {
-          "file_offset": "1860",
+          "file_offset": "1864",
           "kind": "partition",
           "records.body": "1",
           "records.edge": "0",
@@ -3665,7 +3665,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 2 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 3842, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 2 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

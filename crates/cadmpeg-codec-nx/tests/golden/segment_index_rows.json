@@ -51,7 +51,7 @@
                 "id": "nx:segment-index:row#0",
                 "ordinal": 0,
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 72,
+                "source_offset": 76,
                 "subtype_code": 9,
                 "type_code": 7,
                 "value": 11
@@ -60,7 +60,7 @@
                 "id": "nx:segment-index:row#1",
                 "ordinal": 1,
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 84,
+                "source_offset": 88,
                 "subtype_code": 1,
                 "type_code": 1,
                 "value": 28
@@ -75,8 +75,11 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "100",
-          "footer_offset": "0",
+          "file_size": "118",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "104",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
           "plain_streams": "0"
@@ -104,7 +107,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 104, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ]
     },
@@ -112,12 +115,12 @@
       "annotations": {
         "provenance": {
           "nx:segment-index:row#0": {
-            "offset": 72,
+            "offset": 76,
             "stream": 0,
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           },
           "nx:segment-index:row#1": {
-            "offset": 84,
+            "offset": 88,
             "stream": 0,
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           }
@@ -134,19 +137,19 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "region": "HEADER"
         },
         "compressed_size": 28,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
+        "role": "part-payload",
         "uncompressed_size": 28
       }
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 104, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

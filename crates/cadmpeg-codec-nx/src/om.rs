@@ -4705,6 +4705,42 @@ pub fn offset_store_index_values(bytes: &[u8]) -> Option<(usize, Vec<u32>)> {
     Some((prefix_len, values))
 }
 
+/// One complete admitted offset-only store control-block form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OffsetStoreControlForm {
+    /// Complete `00 + value:u24 LE` word array.
+    ZeroPrefixed {
+        /// Ordered values decoded from the complete control block.
+        values: Vec<u32>,
+    },
+    /// Aligned `u32 LE` array ending at one self-framed product record.
+    ProductTerminated {
+        /// Number of leading zero bytes before the aligned array.
+        prefix_byte_len: usize,
+        /// Ordered values preceding the product record.
+        values: Vec<u32>,
+    },
+}
+
+/// Classify one complete offset-only store control block atomically.
+///
+/// Exactly one admitted grammar must accept the complete control envelope.
+pub fn offset_store_control_form(bytes: &[u8]) -> Option<OffsetStoreControlForm> {
+    match (
+        offset_store_control_values(bytes),
+        offset_store_index_values(bytes),
+    ) {
+        (Some(values), None) => Some(OffsetStoreControlForm::ZeroPrefixed { values }),
+        (None, Some((prefix_byte_len, values))) => {
+            Some(OffsetStoreControlForm::ProductTerminated {
+                prefix_byte_len,
+                values,
+            })
+        }
+        _ => None,
+    }
+}
+
 fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinition<'_>> {
     let mut out = Vec::new();
     let mut at = start;

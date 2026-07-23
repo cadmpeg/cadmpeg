@@ -327,6 +327,34 @@ pub struct DataBlock {
     pub source_offset: u64,
 }
 
+/// Admitted complete grammar selected for one offset-store control block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DataBlockControlFormKind {
+    ZeroPrefixed,
+    ProductTerminated,
+}
+
+/// Atomic classification of one complete offset-store control block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockControlForm {
+    /// Globally unique control-form identity.
+    pub id: String,
+    /// Owning control block in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Selected complete control grammar.
+    pub kind: DataBlockControlFormKind,
+    /// Number of values in the admitted control array.
+    pub value_count: u32,
+    /// Leading alignment zeros before a product-terminated value array.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix_byte_len: Option<u8>,
+    /// Exact serialized control-block length.
+    pub byte_len: u64,
+    /// Absolute file offset of the control block.
+    pub source_offset: u64,
+}
+
 /// Ordered value from a zero-prefixed offset-only OM store control array.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockControlValue {
@@ -1811,6 +1839,42 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
         .collect()
 }
 
+/// Classify every admitted complete offset-only store control block.
+pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlForm> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .filter_map(|(section_ordinal, (entry, section))| {
+            let control = section.control?;
+            let (kind, prefix_byte_len, value_count) =
+                match crate::om::offset_store_control_form(control.bytes)? {
+                    crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => {
+                        (DataBlockControlFormKind::ZeroPrefixed, None, values.len())
+                    }
+                    crate::om::OffsetStoreControlForm::ProductTerminated {
+                        prefix_byte_len,
+                        values,
+                    } => (
+                        DataBlockControlFormKind::ProductTerminated,
+                        Some(u8::try_from(prefix_byte_len).ok()?),
+                        values.len(),
+                    ),
+                };
+            Some(DataBlockControlForm {
+                id: format!("nx:om-data-block-control-forms:form#{section_ordinal}"),
+                data_block: format!("nx:om-data-blocks-{section_ordinal}:block#0"),
+                kind,
+                value_count: u32::try_from(value_count).ok()?,
+                prefix_byte_len,
+                byte_len: control.bytes.len() as u64,
+                source_offset: entry.file_span.map_or(0, |(offset, _)| offset)
+                    + control.offset as u64,
+            })
+        })
+        .collect()
+}
+
 /// Decode complete zero-prefixed control arrays from offset-only OM stores.
 pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlValue> {
     container
@@ -1821,7 +1885,9 @@ pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlV
             let Some(control) = section.control else {
                 return Vec::new();
             };
-            let Some(values) = crate::om::offset_store_control_values(control.bytes) else {
+            let Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { values }) =
+                crate::om::offset_store_control_form(control.bytes)
+            else {
                 return Vec::new();
             };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
@@ -1855,6 +1921,12 @@ pub fn data_block_control_class_references(
             let Some(control) = section.control else {
                 return Vec::new();
             };
+            if !matches!(
+                crate::om::offset_store_control_form(control.bytes),
+                Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { .. })
+            ) {
+                return Vec::new();
+            }
             let mut registry = BTreeMap::new();
             for definition in container
                 .om_sections()
@@ -1919,8 +1991,10 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
             let Some(control) = section.control else {
                 return Vec::new();
             };
-            let Some((prefix_byte_len, values)) =
-                crate::om::offset_store_index_values(control.bytes)
+            let Some(crate::om::OffsetStoreControlForm::ProductTerminated {
+                prefix_byte_len,
+                values,
+            }) = crate::om::offset_store_control_form(control.bytes)
             else {
                 return Vec::new();
             };
@@ -3720,6 +3794,13 @@ mod tests {
         assert_eq!(blocks[0].role, super::DataBlockRole::Control);
         assert_eq!(blocks[1].role, super::DataBlockRole::Column);
         assert!(blocks[0].byte_len > 0);
+        let forms = super::data_block_control_forms(&container);
+        assert_eq!(forms.len(), 1);
+        assert_eq!(forms[0].data_block, blocks[0].id);
+        assert_eq!(forms[0].kind, super::DataBlockControlFormKind::ZeroPrefixed);
+        assert_eq!(forms[0].value_count, 2);
+        assert_eq!(forms[0].prefix_byte_len, None);
+        assert_eq!(forms[0].byte_len, blocks[0].byte_len);
         let control_values = super::data_block_control_values(&container);
         assert_eq!(control_values.len(), 2);
         assert_eq!(control_values[0].data_block, blocks[0].id);
@@ -3742,6 +3823,26 @@ mod tests {
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, None);
         assert_eq!(expressions[0].record, None);
+    }
+
+    #[test]
+    fn native_catalog_classifies_product_terminated_control_atomically() {
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            offset_only_indexed_om_section_with_index_values(),
+        )]);
+        let container = container::scan_bytes(file).expect("required invariant");
+
+        let forms = super::data_block_control_forms(&container);
+        assert_eq!(forms.len(), 1);
+        assert_eq!(
+            forms[0].kind,
+            super::DataBlockControlFormKind::ProductTerminated
+        );
+        assert_eq!(forms[0].value_count, 2);
+        assert_eq!(forms[0].prefix_byte_len, Some(2));
+        assert!(super::data_block_control_values(&container).is_empty());
+        assert_eq!(super::data_block_control_index_values(&container).len(), 2);
     }
 
     #[test]

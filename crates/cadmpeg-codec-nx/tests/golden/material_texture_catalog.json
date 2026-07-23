@@ -155,7 +155,7 @@
                 "name": "unmap$1",
                 "sha256": "c90f086033471f18fec615e4d7bad96b574102e91843a09a853436115a89d77f",
                 "source_entry": "/Root/materialsTif/unmap$1",
-                "source_offset": 346,
+                "source_offset": 350,
                 "version": 42
               }
             ],
@@ -166,7 +166,7 @@
                 "material_path": "materialsTif/Carbon Fiber Harness Satin Coated",
                 "modify_time": "2026-07-15T08:02:00",
                 "source_entry": "/Root/qafmetadata",
-                "source_offset": 598,
+                "source_offset": 602,
                 "storage_path": "materialsTif/unmap$1",
                 "texture_asset": "nx:container:material-texture#0"
               }
@@ -189,8 +189,11 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "3",
-          "file_size": "839",
-          "footer_offset": "0",
+          "file_size": "857",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "843",
+          "header_entry_count": "3",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
@@ -231,7 +234,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 3 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 843, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -284,7 +287,7 @@
         },
         "provenance": {
           "nx:container:parasolid#0": {
-            "offset": 155,
+            "offset": 159,
             "stream": 1,
             "tag": "partition"
           },
@@ -339,7 +342,7 @@
           "byte_len": 383,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQAAAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAAAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAAAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAAAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
           "id": "nx:container:parasolid#0",
-          "offset": 155,
+          "offset": 159,
           "sha256": "b5a338b2331eb7af411e1fbb4fcae722dffc02eb7b7ecba5ad477c50b8c3dad8",
           "stream": "nx:container"
         }
@@ -352,40 +355,40 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "155",
+          "file_offset": "159",
           "region": "HEADER"
         },
         "compressed_size": 191,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
+        "role": "part-payload",
         "uncompressed_size": 191
       },
       {
         "attributes": {
-          "file_offset": "346",
+          "file_offset": "350",
           "region": "HEADER"
         },
         "compressed_size": 10,
         "compression": "none",
         "name": "/Root/materialsTif/unmap$1",
-        "role": "stream",
+        "role": "material-texture",
         "uncompressed_size": 10
       },
       {
         "attributes": {
-          "file_offset": "356",
+          "file_offset": "360",
           "region": "HEADER"
         },
         "compressed_size": 483,
         "compression": "none",
         "name": "/Root/qafmetadata",
-        "role": "stream",
+        "role": "asset-catalog",
         "uncompressed_size": 483
       },
       {
         "attributes": {
-          "file_offset": "155",
+          "file_offset": "159",
           "kind": "partition",
           "records.body": "0",
           "records.edge": "0",
@@ -414,7 +417,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 3 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 843, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

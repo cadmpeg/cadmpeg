@@ -107,9 +107,9 @@
                   0,
                   0
                 ],
-                "registry_source_offset": 76,
+                "registry_source_offset": 80,
                 "source_entry": "/Root/FastLoad/RMFastLoad",
-                "source_offset": 93
+                "source_offset": 97
               }
             ],
             "rmfastload_object_ids": [
@@ -122,7 +122,7 @@
                   0,
                   0
                 ],
-                "source_offset": 97,
+                "source_offset": 101,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1
               },
@@ -135,7 +135,7 @@
                   0,
                   0
                 ],
-                "source_offset": 101,
+                "source_offset": 105,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 2
               },
@@ -148,7 +148,7 @@
                   0,
                   0
                 ],
-                "source_offset": 105,
+                "source_offset": 109,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 3
               },
@@ -161,7 +161,7 @@
                   0,
                   0
                 ],
-                "source_offset": 109,
+                "source_offset": 113,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 4
               },
@@ -174,7 +174,7 @@
                   0,
                   0
                 ],
-                "source_offset": 113,
+                "source_offset": 117,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 5
               },
@@ -187,7 +187,7 @@
                   0,
                   0
                 ],
-                "source_offset": 117,
+                "source_offset": 121,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 6
               },
@@ -200,7 +200,7 @@
                   0,
                   0
                 ],
-                "source_offset": 121,
+                "source_offset": 125,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 7
               },
@@ -213,7 +213,7 @@
                   0,
                   0
                 ],
-                "source_offset": 125,
+                "source_offset": 129,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 8
               },
@@ -226,7 +226,7 @@
                   0,
                   0
                 ],
-                "source_offset": 129,
+                "source_offset": 133,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 9
               },
@@ -239,7 +239,7 @@
                   0,
                   0
                 ],
-                "source_offset": 133,
+                "source_offset": 137,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10
               },
@@ -252,7 +252,7 @@
                   0,
                   0
                 ],
-                "source_offset": 137,
+                "source_offset": 141,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 11
               },
@@ -265,7 +265,7 @@
                   0,
                   0
                 ],
-                "source_offset": 141,
+                "source_offset": 145,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 12
               },
@@ -278,7 +278,7 @@
                   0,
                   0
                 ],
-                "source_offset": 145,
+                "source_offset": 149,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 13
               },
@@ -291,7 +291,7 @@
                   0,
                   0
                 ],
-                "source_offset": 149,
+                "source_offset": 153,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 14
               },
@@ -304,7 +304,7 @@
                   0,
                   0
                 ],
-                "source_offset": 153,
+                "source_offset": 157,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 15
               },
@@ -317,7 +317,7 @@
                   0,
                   0
                 ],
-                "source_offset": 157,
+                "source_offset": 161,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 16
               },
@@ -330,7 +330,7 @@
                   0,
                   0
                 ],
-                "source_offset": 161,
+                "source_offset": 165,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 17
               },
@@ -343,7 +343,7 @@
                   0,
                   0
                 ],
-                "source_offset": 165,
+                "source_offset": 169,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 18
               },
@@ -356,7 +356,7 @@
                   0,
                   0
                 ],
-                "source_offset": 169,
+                "source_offset": 173,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 19
               },
@@ -369,7 +369,7 @@
                   0,
                   0
                 ],
-                "source_offset": 173,
+                "source_offset": 177,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 20
               },
@@ -382,7 +382,7 @@
                   0,
                   0
                 ],
-                "source_offset": 177,
+                "source_offset": 181,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 21
               },
@@ -395,7 +395,7 @@
                   0,
                   0
                 ],
-                "source_offset": 181,
+                "source_offset": 185,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 22
               },
@@ -408,7 +408,7 @@
                   0,
                   0
                 ],
-                "source_offset": 185,
+                "source_offset": 189,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 23
               },
@@ -421,7 +421,7 @@
                   0,
                   0
                 ],
-                "source_offset": 189,
+                "source_offset": 193,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 24
               },
@@ -434,7 +434,7 @@
                   0,
                   0
                 ],
-                "source_offset": 193,
+                "source_offset": 197,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 25
               },
@@ -447,7 +447,7 @@
                   0,
                   0
                 ],
-                "source_offset": 197,
+                "source_offset": 201,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 26
               },
@@ -460,7 +460,7 @@
                   0,
                   0
                 ],
-                "source_offset": 201,
+                "source_offset": 205,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 27
               },
@@ -473,7 +473,7 @@
                   0,
                   0
                 ],
-                "source_offset": 205,
+                "source_offset": 209,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 28
               },
@@ -486,7 +486,7 @@
                   0,
                   0
                 ],
-                "source_offset": 209,
+                "source_offset": 213,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 29
               },
@@ -499,7 +499,7 @@
                   0,
                   0
                 ],
-                "source_offset": 213,
+                "source_offset": 217,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 30
               },
@@ -512,7 +512,7 @@
                   0,
                   0
                 ],
-                "source_offset": 217,
+                "source_offset": 221,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 31
               },
@@ -525,7 +525,7 @@
                   0,
                   0
                 ],
-                "source_offset": 221,
+                "source_offset": 225,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 32
               },
@@ -538,7 +538,7 @@
                   0,
                   0
                 ],
-                "source_offset": 225,
+                "source_offset": 229,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 33
               },
@@ -551,7 +551,7 @@
                   0,
                   0
                 ],
-                "source_offset": 229,
+                "source_offset": 233,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 34
               },
@@ -564,7 +564,7 @@
                   0,
                   0
                 ],
-                "source_offset": 233,
+                "source_offset": 237,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 35
               },
@@ -577,7 +577,7 @@
                   0,
                   0
                 ],
-                "source_offset": 237,
+                "source_offset": 241,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 36
               },
@@ -590,7 +590,7 @@
                   0,
                   0
                 ],
-                "source_offset": 241,
+                "source_offset": 245,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 37
               },
@@ -603,7 +603,7 @@
                   0,
                   0
                 ],
-                "source_offset": 245,
+                "source_offset": 249,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 38
               },
@@ -616,7 +616,7 @@
                   0,
                   0
                 ],
-                "source_offset": 249,
+                "source_offset": 253,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 39
               },
@@ -629,7 +629,7 @@
                   0,
                   0
                 ],
-                "source_offset": 253,
+                "source_offset": 257,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 40
               },
@@ -642,7 +642,7 @@
                   0,
                   0
                 ],
-                "source_offset": 257,
+                "source_offset": 261,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 41
               },
@@ -655,7 +655,7 @@
                   0,
                   0
                 ],
-                "source_offset": 261,
+                "source_offset": 265,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 42
               },
@@ -668,7 +668,7 @@
                   0,
                   0
                 ],
-                "source_offset": 265,
+                "source_offset": 269,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 43
               },
@@ -681,7 +681,7 @@
                   0,
                   0
                 ],
-                "source_offset": 269,
+                "source_offset": 273,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 44
               },
@@ -694,7 +694,7 @@
                   0,
                   0
                 ],
-                "source_offset": 273,
+                "source_offset": 277,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 45
               },
@@ -707,7 +707,7 @@
                   0,
                   0
                 ],
-                "source_offset": 277,
+                "source_offset": 281,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 46
               },
@@ -720,7 +720,7 @@
                   0,
                   0
                 ],
-                "source_offset": 281,
+                "source_offset": 285,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 47
               },
@@ -733,7 +733,7 @@
                   0,
                   0
                 ],
-                "source_offset": 285,
+                "source_offset": 289,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 48
               },
@@ -746,7 +746,7 @@
                   0,
                   0
                 ],
-                "source_offset": 289,
+                "source_offset": 293,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 49
               },
@@ -759,7 +759,7 @@
                   0,
                   0
                 ],
-                "source_offset": 293,
+                "source_offset": 297,
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 50
               }
@@ -773,8 +773,11 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "297",
-          "footer_offset": "0",
+          "file_size": "315",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "301",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
           "plain_streams": "0",
@@ -803,7 +806,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 301, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ]
     },
@@ -821,19 +824,19 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "76",
+          "file_offset": "80",
           "region": "HEADER"
         },
         "compressed_size": 221,
         "compression": "none",
         "name": "/Root/FastLoad/RMFastLoad",
-        "role": "stream",
+        "role": "active-body-index",
         "uncompressed_size": 221
       }
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 301, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

@@ -143,8 +143,11 @@
           "deltas.0.grammar": "status_byte_framed_topology",
           "deltas_streams": "1",
           "directory_entries": "1",
-          "file_size": "405",
-          "footer_offset": "0",
+          "file_size": "423",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "409",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
@@ -191,7 +194,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 409, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -223,12 +226,12 @@
         },
         "provenance": {
           "nx:container:parasolid#0": {
-            "offset": 72,
+            "offset": 76,
             "stream": 1,
             "tag": "partition"
           },
           "nx:container:parasolid#1": {
-            "offset": 311,
+            "offset": 315,
             "stream": 1,
             "tag": "deltas"
           },
@@ -254,7 +257,7 @@
           "byte_len": 625,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pAFNDSF9URVNUXzFfOTk5OQAAfAAKAAAAAAAAAAAAAAAAAAArABQAFQB+ABQAAAABAAEAAAACAAAAAgUFAAAAAgAAAAIAAAAAAAAAAAAeAB8AIAAhAH0AFQB9ABUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACsAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAA/hHrhR64UewAAAAAAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7AAAAAAAAAAAAfwAAAAIAHgACAAIAfwAAAAIAHwACAAIAgAAAAAIAIAAAAAAAAAAAP/AAAAAAAAAAgAAAAAIAIQAAAAAAAAAAP/AAAAAAAAAAhgAyAAAAAAAAAAAAAAAAAAArACgAKQCIACgAAQAAAAIAAwAAAAIFAAAAAAAAACoAKwCHACkAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAAAAAAAAAAAAAB/AAAAAgAqAAIAAgCAAAAAAgArAAAAAAAAAAA/8AAAAAAAAACIAEYAAQAAAAIAAwAAAAIFAAAAAAAAACoAKwCHAEcAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7P4R64UeuFHsAAAAAAAAAAA==",
           "id": "nx:container:parasolid#0",
-          "offset": 72,
+          "offset": 76,
           "sha256": "d26c66fac58910af6efa3210241236b01f08502a598b87fc8029b2dca3db689c",
           "stream": "nx:container"
         },
@@ -262,7 +265,7 @@
           "byte_len": 97,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AACGADIAAAOTAAEBAAEBAAEBAAEBAAEBKwBGAQBHAQ==",
           "id": "nx:container:parasolid#1",
-          "offset": 311,
+          "offset": 315,
           "sha256": "7ba1639c1c80dfdf23c54456014a5481ac496f1746ddf007906f24bbb72c8360",
           "stream": "nx:container"
         }
@@ -275,18 +278,18 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "region": "HEADER"
         },
         "compressed_size": 333,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
+        "role": "part-payload",
         "uncompressed_size": 333
       },
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "kind": "partition",
           "records.body": "0",
           "records.edge": "0",
@@ -314,7 +317,7 @@
       },
       {
         "attributes": {
-          "file_offset": "311",
+          "file_offset": "315",
           "kind": "deltas",
           "records.body": "0",
           "records.delta.full.b_curve": "1",
@@ -336,7 +339,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 409, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

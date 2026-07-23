@@ -361,6 +361,11 @@ impl ContainerNoted for DataBlockControlValue {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for DataBlockControlForm {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
 impl ContainerNoted for DataBlockControlClassReference {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -1322,6 +1327,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.om.expression_declarations, r, a)),
         emit: |m, r, ns| emit_arena(&m.om.expression_declarations, r, ns),
         len: |m| m.om.expression_declarations.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "data_block_control_forms",
+        tag: Some("OM_DATA_BLOCK_CONTROL_FORM"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| note_container(&m.om.data_block_control_forms, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.data_block_control_forms, r, ns),
+        len: |m| m.om.data_block_control_forms.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

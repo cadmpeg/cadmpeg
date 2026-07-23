@@ -24,6 +24,12 @@
             "id": "nx:om-entry-0:feature#equations-72",
             "name": "NX expressions",
             "ordinal": 0,
+            "source_content": [
+              {
+                "kind": "parameter",
+                "value": "nx:om-entry-0:parameter#99"
+              }
+            ],
             "source_tag": "hostglobalvariables",
             "suppressed": false
           }
@@ -76,9 +82,9 @@
                 "id": "nx:om-entry-0:class#8",
                 "name": "UGS::ModlFeature",
                 "ordinal": 0,
-                "section_offset": 72,
+                "section_offset": 76,
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 80,
+                "source_offset": 84,
                 "trailing_code": 129
               }
             ],
@@ -87,10 +93,10 @@
                 "data_block": "nx:om-data-blocks-0:block#0",
                 "first_handle": 1,
                 "first_reference": "nx:om-data-block-control-references-0:reference#46",
-                "id": "nx:om-data-block-control:handle-pair#118",
+                "id": "nx:om-data-block-control:handle-pair#122",
                 "second_handle": 2,
                 "second_reference": "nx:om-data-block-control-references-0:reference#51",
-                "source_offset": 118
+                "source_offset": 122
               }
             ],
             "data_block_control_references": [
@@ -99,7 +105,7 @@
                 "id": "nx:om-data-block-control-references-0:reference#46",
                 "kind": "persistent_handle",
                 "ordinal": 0,
-                "source_offset": 118,
+                "source_offset": 122,
                 "value": 1
               },
               {
@@ -107,7 +113,7 @@
                 "id": "nx:om-data-block-control-references-0:reference#51",
                 "kind": "persistent_handle",
                 "ordinal": 1,
-                "source_offset": 123,
+                "source_offset": 127,
                 "value": 2
               }
             ],
@@ -120,7 +126,7 @@
                 "raw_object_id": [
                   42
                 ],
-                "source_offset": 165
+                "source_offset": 169
               }
             ],
             "data_blocks": [
@@ -129,33 +135,33 @@
                 "byte_len": 10,
                 "id": "nx:om-data-blocks-0:block#0",
                 "role": "control",
-                "section_offset": 72,
+                "section_offset": 76,
                 "section_ordinal": 0,
                 "sha256": "5312b038d29274ef7b1df3a55a638e376b87c81ab9eac49ae2a8e617a31bf330",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 118
+                "source_offset": 122
               },
               {
                 "block_ordinal": 1,
                 "byte_len": 35,
                 "id": "nx:om-data-blocks-0:block#1",
                 "role": "column",
-                "section_offset": 72,
+                "section_offset": 76,
                 "section_ordinal": 0,
                 "sha256": "304084362d58d3d80b8759c1b886a8dfd4b5ab46cd55a6d9ff901e0bb543a045",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 128
+                "source_offset": 132
               },
               {
                 "block_ordinal": 2,
                 "byte_len": 35,
                 "id": "nx:om-data-blocks-0:block#2",
                 "role": "column",
-                "section_offset": 72,
+                "section_offset": 76,
                 "section_ordinal": 0,
                 "sha256": "6690abf98f671ca97a189957e9fe96618388bb0b8174d4fbb0685bf56b3669ef",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 163
+                "source_offset": 167
               }
             ],
             "expressions": [
@@ -168,7 +174,7 @@
                 "qualifier": null,
                 "record": null,
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 171,
+                "source_offset": 175,
                 "source_table": "nx:om-entry-0:expression-table#72",
                 "unit": "millimeter",
                 "value": 25.0
@@ -202,7 +208,7 @@
                 "object_id": null,
                 "section_ordinal": 0,
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 128,
+                "source_offset": 132,
                 "version": "NX 2027.3102"
               }
             ],
@@ -223,13 +229,19 @@
       },
       "source": {
         "attributes": {
+          "classified_offset_store_control_count": "0",
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "198",
-          "footer_offset": "0",
+          "file_size": "216",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "202",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
+          "offset_store_control_count": "1",
           "partition_streams": "0",
-          "plain_streams": "0"
+          "plain_streams": "0",
+          "unclassified_offset_store_control_count": "1"
         },
         "format": "nx"
       },
@@ -251,11 +263,18 @@
           "code": "geometry_not_transferred",
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "category": "design_intent",
+          "code": "record_not_typed",
+          "message": "1 of 1 bounded offset-store control block(s) have no admitted complete grammar.",
+          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 202, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+        "NX object model: 0 of 1 bounded offset-store control block(s) have an admitted complete grammar",
         "NX object model: 1 indexed section(s), 0 ID-bounded entity record(s), 3 offset-only data block(s)"
       ]
     },
@@ -263,7 +282,10 @@
       "annotations": {
         "exactness": {
           "nx:om-entry-0:feature#equations-72": {
-            "entity": "derived"
+            "entity": "derived",
+            "fields": {
+              "source_content": "derived"
+            }
           },
           "nx:om-entry-0:parameter#99": {
             "entity": "byte_exact",
@@ -277,52 +299,52 @@
         },
         "provenance": {
           "nx:om-data-block-control-references-0:reference#46": {
-            "offset": 118,
+            "offset": 122,
             "stream": 0,
             "tag": "OM_DATA_BLOCK_CONTROL_REFERENCE"
           },
           "nx:om-data-block-control-references-0:reference#51": {
-            "offset": 123,
+            "offset": 127,
             "stream": 0,
             "tag": "OM_DATA_BLOCK_CONTROL_REFERENCE"
           },
-          "nx:om-data-block-control:handle-pair#118": {
-            "offset": 118,
+          "nx:om-data-block-control:handle-pair#122": {
+            "offset": 122,
             "stream": 0,
             "tag": "OM_DATA_BLOCK_CONTROL_HANDLE_PAIR"
           },
           "nx:om-data-block-references-0-2:reference#0": {
-            "offset": 165,
+            "offset": 169,
             "stream": 0,
             "tag": "OM_DATA_BLOCK_REFERENCE"
           },
           "nx:om-entry-0:feature#equations-72": {
-            "offset": 171,
+            "offset": 175,
             "stream": 0,
             "tag": "hostglobalvariables"
           },
           "nx:om-entry-0:parameter#99": {
-            "offset": 171,
+            "offset": 175,
             "stream": 0,
             "tag": "Number"
           },
           "nx:om-section-0:block#0": {
-            "offset": 118,
+            "offset": 122,
             "stream": 0,
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#1": {
-            "offset": 128,
+            "offset": 132,
             "stream": 0,
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#2": {
-            "offset": 163,
+            "offset": 167,
             "stream": 0,
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-store-headers:store#0": {
-            "offset": 128,
+            "offset": 132,
             "stream": 0,
             "tag": "OM_STORE_VERSION"
           }
@@ -336,7 +358,7 @@
           "byte_len": 10,
           "data": "4AAAAAHgAAAAAg==",
           "id": "nx:om-section-0:block#0",
-          "offset": 118,
+          "offset": 122,
           "sha256": "5312b038d29274ef7b1df3a55a638e376b87c81ab9eac49ae2a8e617a31bf330",
           "stream": "nx:container"
         },
@@ -344,7 +366,7 @@
           "byte_len": 35,
           "data": "BAEOTlggMjAyNy4zMTAyAGhvc3RnbG9iYWx2YXJpYWJsZXM=",
           "id": "nx:om-section-0:block#1",
-          "offset": 128,
+          "offset": 132,
           "sha256": "304084362d58d3d80b8759c1b886a8dfd4b5ab46cd55a6d9ff901e0bb543a045",
           "stream": "nx:container"
         },
@@ -352,7 +374,7 @@
           "byte_len": 35,
           "data": "BAAqAguZBBwoTnVtYmVyIFttbV0pIGxlbmd0aDogMjU7IAA=",
           "id": "nx:om-section-0:block#2",
-          "offset": 163,
+          "offset": 167,
           "sha256": "6690abf98f671ca97a189957e9fe96618388bb0b8174d4fbb0685bf56b3669ef",
           "stream": "nx:container"
         }
@@ -365,20 +387,21 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "region": "HEADER"
         },
         "compressed_size": 126,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
+        "role": "part-payload",
         "uncompressed_size": 126
       }
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 202, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+      "NX object model: 0 of 1 bounded offset-store control block(s) have an admitted complete grammar",
       "NX object model: 1 indexed section(s), 0 ID-bounded entity record(s), 3 offset-only data block(s)"
     ]
   }

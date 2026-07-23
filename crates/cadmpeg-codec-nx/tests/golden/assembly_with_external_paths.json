@@ -52,14 +52,14 @@
                 "ordinal": 0,
                 "path": "child.prt",
                 "source_entry": "/Root/UG_PART/ExternalReferences",
-                "source_offset": 102
+                "source_offset": 106
               },
               {
                 "id": "nx:external-reference:/Root/UG_PART/ExternalReferences#1",
                 "ordinal": 1,
                 "path": "nested/b.prt",
                 "source_entry": "/Root/UG_PART/ExternalReferences",
-                "source_offset": 113
+                "source_offset": 117
               }
             ],
             "unknowns": []
@@ -73,8 +73,11 @@
           "directory_entries": "1",
           "external_reference.0": "child.prt",
           "external_reference.1": "nested/b.prt",
-          "file_size": "125",
-          "footer_offset": "0",
+          "file_size": "143",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "129",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
           "plain_streams": "0"
@@ -102,7 +105,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 129, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "no inline Parasolid geometry (assembly .prt: geometry in external child parts)"
       ]
@@ -111,12 +114,12 @@
       "annotations": {
         "provenance": {
           "nx:external-reference:/Root/UG_PART/ExternalReferences#0": {
-            "offset": 102,
+            "offset": 106,
             "stream": 0,
             "tag": "EXTREFSTREAM_STRING"
           },
           "nx:external-reference:/Root/UG_PART/ExternalReferences#1": {
-            "offset": 113,
+            "offset": 117,
             "stream": 0,
             "tag": "EXTREFSTREAM_STRING"
           }
@@ -133,19 +136,19 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "83",
+          "file_offset": "87",
           "region": "HEADER"
         },
         "compressed_size": 42,
         "compression": "none",
         "name": "/Root/UG_PART/ExternalReferences",
-        "role": "stream",
+        "role": "external-references",
         "uncompressed_size": 42
       }
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 129, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "no inline Parasolid geometry (assembly .prt: geometry in external child parts)"
     ]
