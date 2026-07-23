@@ -3127,6 +3127,61 @@ fn saved_line_joins_through_order_table() {
         "{:?}",
         dimension_constraints[0].0.definition
     );
+    let mut solver_families = constrained.clone();
+    let family_relations = solver_families.relations.as_mut().expect("relations");
+    family_relations.skamps = vec![crate::feature::FeatureSkamp {
+        id: 6,
+        kind: 6,
+        flags: 0,
+        status: 1,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 99,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 100,
+                sense: 0,
+            },
+        ],
+        offset: 33,
+    }];
+    family_relations
+        .skamp_header
+        .as_mut()
+        .expect("skamp header")
+        .declared_count = 1;
+    assert_eq!(
+        solver_only_section_entity_family(&solver_families, 99),
+        Some(SolverOnlySectionEntityFamily::Circular)
+    );
+    let family_relations = solver_families.relations.as_mut().expect("relations");
+    family_relations.skamps.push(crate::feature::FeatureSkamp {
+        id: 7,
+        kind: 5,
+        flags: 0,
+        status: 1,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 99,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 101,
+                sense: 0,
+            },
+        ],
+        offset: 34,
+    });
+    family_relations
+        .skamp_header
+        .as_mut()
+        .expect("skamp header")
+        .declared_count = 2;
+    assert_eq!(
+        solver_only_section_entity_family(&solver_families, 99),
+        None
+    );
     let mut duplicate_incidence = constrained.clone();
     let duplicate_relations = duplicate_incidence.relations.as_mut().expect("relations");
     let mut duplicate = duplicate_relations.skamps[0].clone();

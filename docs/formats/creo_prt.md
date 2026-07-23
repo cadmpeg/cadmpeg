@@ -1403,7 +1403,10 @@ records.
 A solver incidence entity identifier with no `segtab_ptr` or ordered
 saved-section definition is a solver-only section entity. It retains one
 construction-entity identity shared by every incidence in the sketch; its
-geometry family remains native.
+geometry remains native. A unique non-conflicting line role from a two-line
+type five, seven, or eight incidence retains the native line family. Sense `4`
+or a two-circle type-six incidence retains the native circular family.
+Conflicting family roles retain the generic solver-only family.
 `skamp_ptr.id` is the incidence identity. A typed incidence requires exactly
 one row with that identifier. Rows sharing an identifier remain separate native
 constraints identified by their byte offsets.

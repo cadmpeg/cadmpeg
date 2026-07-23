@@ -9007,6 +9007,11 @@ fn section_skamp_is_line(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
+    if solver_only_section_entity_family(definition, item.entity_id)
+        == Some(SolverOnlySectionEntityFamily::Line)
+    {
+        return true;
+    }
     if unique_opaque_section_segment(definition, item.entity_id, 47).is_some() {
         return true;
     }
@@ -9132,6 +9137,11 @@ fn section_skamp_is_circular(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
+    if solver_only_section_entity_family(definition, item.entity_id)
+        == Some(SolverOnlySectionEntityFamily::Circular)
+    {
+        return true;
+    }
     if unique_opaque_section_segment(definition, item.entity_id, 10).is_some() {
         return true;
     }
@@ -10131,6 +10141,54 @@ fn solver_only_section_entities(
         )
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum SolverOnlySectionEntityFamily {
+    Line,
+    Circular,
+}
+
+fn solver_only_section_entity_family(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+) -> Option<SolverOnlySectionEntityFamily> {
+    solver_only_section_entities(definition)
+        .contains_key(&entity_id)
+        .then_some(())?;
+    let mut evidence = BTreeSet::new();
+    for skamp in definition
+        .relations
+        .iter()
+        .filter(|relations| feature_skamp_table_complete(relations))
+        .flat_map(|relations| &relations.skamps)
+    {
+        for item in &skamp.items {
+            if item.entity_id == entity_id && item.sense == 4 {
+                evidence.insert(SolverOnlySectionEntityFamily::Circular);
+            }
+        }
+        match (skamp.kind, skamp.items.as_slice()) {
+            (5 | 7 | 8, [first, second])
+                if first.sense == 0
+                    && second.sense == 0
+                    && (first.entity_id == entity_id || second.entity_id == entity_id) =>
+            {
+                evidence.insert(SolverOnlySectionEntityFamily::Line);
+            }
+            (6, [first, second])
+                if first.sense == 0
+                    && second.sense == 0
+                    && (first.entity_id == entity_id || second.entity_id == entity_id) =>
+            {
+                evidence.insert(SolverOnlySectionEntityFamily::Circular);
+            }
+            _ => {}
+        }
+    }
+    let mut evidence = evidence.into_iter();
+    let family = evidence.next()?;
+    evidence.next().is_none().then_some(family)
+}
+
 fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     for definition in scan
         .features
@@ -10798,7 +10856,12 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 geometry_ref: None,
                 endpoint_refs: Vec::new(),
                 geometry: SketchGeometry::Native {
-                    native_kind: "solver_only_section_entity".to_string(),
+                    native_kind: match solver_only_section_entity_family(definition, external_id) {
+                        Some(SolverOnlySectionEntityFamily::Line) => "line",
+                        Some(SolverOnlySectionEntityFamily::Circular) => "circle",
+                        None => "solver_only_section_entity",
+                    }
+                    .to_string(),
                 },
             });
         }
