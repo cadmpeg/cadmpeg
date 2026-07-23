@@ -385,12 +385,19 @@ fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
 /// Overlay supported complete deltas records onto one paired partition stream.
 ///
 /// Replaced partition records are masked with non-tag bytes. Status-free
-/// canonical current replacements are appended once. Raw deltas bytes remain
-/// available to independent procedural decoders.
+/// canonical current replacements are appended once. When BODY revision
+/// envelopes are present, only records in the final revision contribute to the
+/// current image. Raw current-revision deltas bytes remain available to
+/// independent procedural decoders.
 pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     let census = walk(deltas);
+    let revision_start = current_revision_start(&census);
     let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
-    for record in &census.records {
+    for record in census
+        .records
+        .iter()
+        .filter(|record| record.offset >= revision_start)
+    {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
@@ -400,7 +407,11 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     }
 
     let mut tombstones = BTreeMap::new();
-    for tombstone in &census.tombstones {
+    for tombstone in census
+        .tombstones
+        .iter()
+        .filter(|tombstone| tombstone.offset >= revision_start)
+    {
         if let Ok(kind) = u8::try_from(tombstone.kind) {
             tombstones.insert((kind, tombstone.xmt), tombstone);
         }
@@ -462,7 +473,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
 }
 
 /// Count terminal tombstones that have no exact carrier in the current image
-/// and no earlier full-record addition in the same deltas stream.
+/// and no earlier full-record addition in the current BODY revision.
 ///
 /// Events are keyed by Parasolid type and XMT identity. A later full record
 /// supersedes an earlier tombstone, while a full record followed by a
@@ -485,9 +496,14 @@ pub fn unmatched_terminal_tombstones_by_family(
     }
 
     let census = walk(deltas);
+    let revision_start = current_revision_start(&census);
     let graph = crate::topology::Graph::parse(partition);
     let mut events = BTreeMap::<(u8, u32), Vec<Event>>::new();
-    for record in census.records {
+    for record in census
+        .records
+        .into_iter()
+        .filter(|record| record.offset >= revision_start)
+    {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
@@ -501,7 +517,11 @@ pub fn unmatched_terminal_tombstones_by_family(
                 offset: record.offset,
             });
     }
-    for tombstone in census.tombstones {
+    for tombstone in census
+        .tombstones
+        .into_iter()
+        .filter(|tombstone| tombstone.offset >= revision_start)
+    {
         let Ok(kind) = u8::try_from(tombstone.kind) else {
             continue;
         };
@@ -543,16 +563,26 @@ fn mergeable_record(record: &Record, kind: u8) -> bool {
         .is_some()
 }
 
+fn current_revision_start(census: &Census) -> usize {
+    census
+        .body_revisions
+        .last()
+        .map_or(0, |revision| revision.offset)
+}
+
 /// Return raw deltas bytes with every decoded fixed record and compact
-/// tombstone masked. Procedural families outside the fixed-record census keep
-/// their original offsets and bytes.
+/// tombstone masked. Bytes preceding the final BODY revision are also masked.
+/// Procedural families in the current revision keep their original offsets and
+/// bytes.
 pub fn procedural_residual(stream: &[u8]) -> Vec<u8> {
     let census = walk(stream);
     let mut residual = stream.to_vec();
+    let revision_start = current_revision_start(&census);
+    residual[..revision_start].fill(0xff);
     let canonical_procedural = census
         .records
         .iter()
-        .filter(|record| record.kind == 38)
+        .filter(|record| record.offset >= revision_start && record.kind == 38)
         .map(|record| record.canonical_bytes.clone())
         .collect::<Vec<_>>();
     for record in census.records {

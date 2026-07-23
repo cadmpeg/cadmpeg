@@ -5988,6 +5988,71 @@ fn merged_deltas_uses_last_full_or_tombstone_event() {
     assert_eq!(crate::geometry::points(&merged)[0].position.x, 10.0);
 }
 
+fn deltas_body_revision(node_id: u32) -> Vec<u8> {
+    let mut revision = Vec::with_capacity(32);
+    revision.extend_from_slice(&12u16.to_be_bytes());
+    revision.extend_from_slice(&3u16.to_be_bytes());
+    revision.extend_from_slice(&node_id.to_be_bytes());
+    for _ in 0..8 {
+        revision.extend_from_slice(&0u16.to_be_bytes());
+        revision.push(1);
+    }
+    revision
+}
+
+#[test]
+fn final_body_revision_scopes_deltas_overlay_events() {
+    let mut partition = record(29, 40);
+    put_ref(&mut partition, 2, 11);
+    put_vec3(&mut partition, 16, [0.01, 0.02, 0.03]);
+    let known_tombstone = [0, 29, 0, 11, 0, 1];
+
+    let mut historical_delete = deltas_body_revision(1);
+    historical_delete.extend_from_slice(&known_tombstone);
+    historical_delete.extend_from_slice(&deltas_body_revision(2));
+    let merged = crate::deltas::merge_full_records(&partition, &historical_delete);
+    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_some());
+
+    let mut current_delete = historical_delete;
+    current_delete.extend_from_slice(&known_tombstone);
+    let merged = crate::deltas::merge_full_records(&partition, &current_delete);
+    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_none());
+}
+
+#[test]
+fn unmatched_tombstones_are_scoped_to_the_final_body_revision() {
+    let partition = topology_partition_stream();
+    let unknown_tombstone = [0, 29, 0, 99, 0, 1];
+    let mut historical_delete = deltas_body_revision(1);
+    historical_delete.extend_from_slice(&unknown_tombstone);
+    historical_delete.extend_from_slice(&deltas_body_revision(2));
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones(&partition, &historical_delete),
+        0
+    );
+
+    historical_delete.extend_from_slice(&unknown_tombstone);
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones(&partition, &historical_delete),
+        1
+    );
+}
+
+#[test]
+fn procedural_residual_masks_historical_body_revisions() {
+    let mut deltas = deltas_body_revision(1);
+    let historical_len = deltas.len();
+    deltas.extend_from_slice(&[0, 38, 0xaa, 0xbb, 0xcc]);
+    deltas.extend_from_slice(&deltas_body_revision(2));
+    deltas.extend_from_slice(&[0, 38, 0x11, 0x22, 0x33]);
+
+    let residual = crate::deltas::procedural_residual(&deltas);
+    assert!(residual[..historical_len + 5]
+        .iter()
+        .all(|byte| *byte == 0xff));
+    assert!(residual.ends_with(&[0, 38, 0x11, 0x22, 0x33]));
+}
+
 #[test]
 fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
     let partition = topology_partition_stream();
