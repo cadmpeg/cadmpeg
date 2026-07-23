@@ -12,6 +12,7 @@ use cadmpeg_codec_sldprt::SldprtCodec;
 use cadmpeg_ir::codec::{CadirEncoder, Codec, CodecError, Confidence, Encoder};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::Finding;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_step::StepCodec;
 
@@ -64,6 +65,14 @@ impl Registry {
             .iter()
             .find(|codec| codec.id() == id)
             .map(Box::as_ref)
+    }
+
+    /// Collect native-namespace findings from every registered codec.
+    pub fn native_findings(&self, ir: &CadIr) -> Vec<Finding> {
+        self.codecs
+            .iter()
+            .flat_map(|codec| codec.validate_native(ir))
+            .collect()
     }
 
     /// Return the encoder with the given stable output-format identifier.

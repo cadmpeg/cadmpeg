@@ -97,6 +97,7 @@ use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::Finding;
 use std::io::Write;
 
 /// The ZIP local-file-header magic.
@@ -189,6 +190,10 @@ impl Codec for F3dCodec {
         root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
         decode::decode(ctx, root)
+    }
+
+    fn validate_native(&self, ir: &CadIr) -> Vec<Finding> {
+        crate::validate::validate_native(ir)
     }
 }
 

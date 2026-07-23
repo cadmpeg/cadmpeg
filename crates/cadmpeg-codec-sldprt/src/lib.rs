@@ -183,6 +183,10 @@ impl Codec for SldprtCodec {
     ) -> Result<DecodeResult, CodecError> {
         decode::decode(ctx, root)
     }
+
+    fn validate_native(&self, ir: &CadIr) -> Vec<Finding> {
+        validate_native(ir)
+    }
 }
 
 impl Encoder for SldprtCodec {

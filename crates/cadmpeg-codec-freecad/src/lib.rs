@@ -1420,6 +1420,10 @@ impl Codec for FcstdCodec {
             source_fidelity,
         ))
     }
+
+    fn validate_native(&self, ir: &CadIr) -> Vec<Finding> {
+        validate_native(ir)
+    }
 }
 
 impl Encoder for FcstdCodec {

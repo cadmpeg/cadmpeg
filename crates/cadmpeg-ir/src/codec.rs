@@ -23,6 +23,7 @@ use crate::decode::{
 use crate::document::CadIr;
 use crate::report::DecodeReport;
 use crate::report::ExportReport;
+use crate::report::Finding;
 use crate::source_fidelity::SourceFidelity;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -224,6 +225,16 @@ pub trait Codec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<DecodeResult, CodecError>;
+
+    /// Report findings for this codec's retained native-namespace data.
+    ///
+    /// Callers may invoke this for every registered codec: the default reports
+    /// nothing, and implementations return an empty list when `ir` carries no
+    /// namespace this codec understands.
+    fn validate_native(&self, ir: &CadIr) -> Vec<Finding> {
+        let _ = ir;
+        Vec::new()
+    }
 }
 
 mod sealed {

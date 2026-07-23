@@ -19,6 +19,7 @@ use crate::{DecodeArgs, ForcedInput, Format};
 const CLI_SCHEMA_VERSION: u32 = 4;
 
 fn validate_ir(
+    registry: &Registry,
     ir: &CadIr,
     source_fidelity: Option<&SourceFidelity>,
     losses: Vec<cadmpeg_ir::LossNote>,
@@ -27,21 +28,7 @@ fn validate_ir(
         Some(source_fidelity) => validate_with_source_fidelity(ir, source_fidelity, losses),
         None => validate(ir, losses),
     };
-    if ir.native.namespace("f3d").is_some() {
-        report
-            .findings
-            .extend(cadmpeg_codec_f3d::validate::validate_native(ir));
-    }
-    if ir.native.namespace("fcstd").is_some() {
-        report
-            .findings
-            .extend(cadmpeg_codec_freecad::validate_native(ir));
-    }
-    if ir.native.namespace("sldprt").is_some() {
-        report
-            .findings
-            .extend(cadmpeg_codec_sldprt::validate_native(ir));
-    }
+    report.findings.extend(registry.native_findings(ir));
     report
 }
 
@@ -203,6 +190,7 @@ pub fn validate_cmd(
         print_decode_report(&mut io::stderr(), report)?;
     }
     let report = validate_ir(
+        registry,
         &loaded.ir,
         loaded.source_fidelity.as_ref(),
         losses(loaded.decode_report.as_ref()),
@@ -354,6 +342,7 @@ pub fn convert(
         return Err(refusal);
     }
     let validation = validate_ir(
+        registry,
         &loaded.ir,
         loaded.source_fidelity.as_ref(),
         losses(loaded.decode_report.as_ref()),
