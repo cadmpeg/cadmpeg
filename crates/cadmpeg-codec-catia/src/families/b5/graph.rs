@@ -277,10 +277,28 @@ pub struct B5SupportedSurface {
     pub support_surfaces: [u32; 2],
     /// Ordered pcurves, one bound to each support surface.
     pub support_pcurves: [u32; 2],
-    /// Six native control bytes surrounding the scalar fields.
-    pub controls: [u8; 6],
-    /// Positive radius of the support-bound construction.
-    pub construction_radius: f64,
+    /// Class-specific native controls and scalar parameters.
+    pub parameters: B5SupportedSurfaceParameters,
+}
+
+/// Native parameter layouts of a support-bound surface construction.
+#[derive(Debug, Clone, PartialEq)]
+pub enum B5SupportedSurfaceParameters {
+    /// Class `37`: interleaved controls, a positive construction radius, and
+    /// a zero scalar.
+    Radius {
+        /// Six control bytes surrounding the scalar fields.
+        controls: [u8; 6],
+        /// Positive radius of the support-bound construction.
+        construction_radius: f64,
+    },
+    /// Class `3b`: six contiguous controls followed by two positive scalars.
+    ScalarPair {
+        /// Six contiguous control bytes.
+        controls: [u8; 6],
+        /// Two positive construction scalars.
+        scalars: [f64; 2],
+    },
 }
 
 /// One class-`06` incidence lane connecting curves to parameters at a vertex.
@@ -419,6 +437,11 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     if records.is_empty() || by_id.len() != records.len() {
         return None;
     }
+    let object_stream_pcurve_jets = crate::families::a5a8::records::object_stream_pcurves(bytes);
+    let a8_pcurve_supports = object_stream_pcurve_jets
+        .iter()
+        .map(|pcurve| (pcurve.object_id, pcurve.support_id))
+        .collect::<HashMap<_, _>>();
     let a8_headers: BTreeMap<u32, crate::families::a5a8::records::A8SurfaceHeader> =
         crate::families::a5a8::records::a8_surface_headers(bytes)
             .into_iter()
@@ -525,42 +548,12 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         let Some(carrier) = surfaces.get(&construction.carrier_surface).cloned() else {
             continue;
         };
-        let radius_matches_carrier = match &carrier {
-            B5Surface::Cylinder { radius, .. } => {
-                (construction.construction_radius - radius).abs()
-                    <= 1e-12
-                        * construction
-                            .construction_radius
-                            .abs()
-                            .max(radius.abs())
-                            .max(1.0)
-            }
-            B5Surface::Torus { minor_radius, .. } => {
-                (construction.construction_radius - minor_radius).abs()
-                    <= 1e-12
-                        * construction
-                            .construction_radius
-                            .abs()
-                            .max(minor_radius.abs())
-                            .max(1.0)
-            }
-            B5Surface::Sphere {
-                construction_radius,
-                ..
-            } => {
-                (construction.construction_radius - construction_radius).abs()
-                    <= 1e-12
-                        * construction
-                            .construction_radius
-                            .abs()
-                            .max(construction_radius.abs())
-                            .max(1.0)
-            }
-            B5Surface::RollingBall { .. } => true,
-            _ => false,
-        };
+        let parameters_match_carrier =
+            supported_surface_parameters_match_carrier(&construction.parameters, &carrier);
         surfaces.insert(record.object_id, carrier);
-        if radius_matches_carrier && supported_surface_pcurves_match(&construction, &by_id) {
+        if parameters_match_carrier
+            && supported_surface_pcurves_match(&construction, &by_id, &a8_pcurve_supports)
+        {
             supported_surfaces.insert(record.object_id, construction);
         }
     }
@@ -599,7 +592,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             pcurves.entry(object_id).or_insert(candidate);
         }
     }
-    for jet in crate::families::a5a8::records::object_stream_pcurves(bytes) {
+    for jet in object_stream_pcurve_jets {
         let directrix_reference = extrusion_pcurves.contains(&jet.object_id);
         if !directrix_reference
             && by_id
@@ -1809,8 +1802,10 @@ fn analytic_pcurve_range(record: &B5Record) -> Option<[f64; 2]> {
 }
 
 fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
-    (record.family == 0xb5 && record.class == 0x37 && record.payload.first() == Some(&0x85))
-        .then_some(())?;
+    (record.family == 0xb5
+        && matches!(record.class, 0x37 | 0x3b)
+        && record.payload.first() == Some(&0x85))
+    .then_some(())?;
     let mut position = 1;
     let references: [u32; 5] = (0..5)
         .map(|_| wire::object_ref(&record.payload, &mut position, true))
@@ -1818,30 +1813,90 @@ fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
         .try_into()
         .ok()?;
     (record.payload.len() == position.checked_add(22)?).then_some(())?;
-    let controls = [
-        record.payload[position],
-        record.payload[position + 1],
-        record.payload[position + 10],
-        record.payload[position + 11],
-        record.payload[position + 20],
-        record.payload[position + 21],
-    ];
-    let construction_radius = scalar(&record.payload, position + 2)?;
-    let zero = scalar(&record.payload, position + 12)?;
-    (construction_radius > 0.0 && zero == 0.0).then_some(())?;
+    let parameters = match record.class {
+        0x37 => {
+            let controls = [
+                record.payload[position],
+                record.payload[position + 1],
+                record.payload[position + 10],
+                record.payload[position + 11],
+                record.payload[position + 20],
+                record.payload[position + 21],
+            ];
+            let construction_radius = scalar(&record.payload, position + 2)?;
+            let zero = scalar(&record.payload, position + 12)?;
+            (construction_radius > 0.0 && zero == 0.0).then_some(())?;
+            B5SupportedSurfaceParameters::Radius {
+                controls,
+                construction_radius,
+            }
+        }
+        0x3b => {
+            let controls = record.payload[position..position + 6].try_into().ok()?;
+            let scalars = [
+                scalar(&record.payload, position + 6)?,
+                scalar(&record.payload, position + 14)?,
+            ];
+            scalars.iter().all(|scalar| *scalar > 0.0).then_some(())?;
+            B5SupportedSurfaceParameters::ScalarPair { controls, scalars }
+        }
+        _ => unreachable!(),
+    };
     Some(B5SupportedSurface {
         object_id: record.object_id,
         carrier_surface: references[0],
         support_surfaces: [references[1], references[2]],
         support_pcurves: [references[3], references[4]],
-        controls,
-        construction_radius,
+        parameters,
     })
+}
+
+fn supported_surface_parameters_match_carrier(
+    parameters: &B5SupportedSurfaceParameters,
+    carrier: &B5Surface,
+) -> bool {
+    let close = |left: f64, right: f64| {
+        (left - right).abs() <= 1e-12 * left.abs().max(right.abs()).max(1.0)
+    };
+    match (parameters, carrier) {
+        (
+            B5SupportedSurfaceParameters::Radius {
+                construction_radius,
+                ..
+            },
+            B5Surface::Cylinder { radius, .. },
+        ) => close(*construction_radius, *radius),
+        (
+            B5SupportedSurfaceParameters::Radius {
+                construction_radius,
+                ..
+            },
+            B5Surface::Torus { minor_radius, .. },
+        ) => close(*construction_radius, *minor_radius),
+        (
+            B5SupportedSurfaceParameters::Radius {
+                construction_radius,
+                ..
+            },
+            B5Surface::Sphere {
+                construction_radius: carrier_radius,
+                ..
+            },
+        ) => close(*construction_radius, *carrier_radius),
+        (B5SupportedSurfaceParameters::Radius { .. }, B5Surface::RollingBall { .. }) => true,
+        (B5SupportedSurfaceParameters::ScalarPair { .. }, B5Surface::Plane { .. }) => true,
+        (
+            B5SupportedSurfaceParameters::ScalarPair { scalars, .. },
+            B5Surface::Cone { half_angle, .. },
+        ) => close(scalars[1], *half_angle),
+        _ => false,
+    }
 }
 
 fn supported_surface_pcurves_match(
     construction: &B5SupportedSurface,
     by_id: &HashMap<u32, &B5Record>,
+    a8_pcurve_supports: &HashMap<u32, u32>,
 ) -> bool {
     construction
         .support_pcurves
@@ -1851,6 +1906,9 @@ fn supported_surface_pcurves_match(
             let Some(pcurve) = by_id.get(pcurve_id) else {
                 return false;
             };
+            if pcurve.family == 0xa8 && pcurve.class == 0x20 {
+                return a8_pcurve_supports.get(pcurve_id) == Some(&support_id);
+            }
             let mut position = 1;
             pcurve.payload.first() == Some(&0x81)
                 && wire::object_ref(&pcurve.payload, &mut position, true) == Some(support_id)
@@ -3510,15 +3568,77 @@ mod tests {
                 carrier_surface: 2,
                 support_surfaces: [3, 4],
                 support_pcurves: [5, 6],
-                controls: [0x09, 0x05, 0x03, 0x05, 0x01, 0x05],
-                construction_radius: 2.5,
+                parameters: B5SupportedSurfaceParameters::Radius {
+                    controls: [0x09, 0x05, 0x03, 0x05, 0x01, 0x05],
+                    construction_radius: 2.5,
+                },
             })
         );
-        let unsupported_class_3b = B5Record {
+        let mut scalar_pair_payload = vec![0x85, 0x82, 0x83, 0x84, 0x85, 0x86];
+        scalar_pair_payload.extend_from_slice(&[0x09, 0x01, 0x01, 0x05, 0x05, 0x0d]);
+        scalar_pair_payload.extend_from_slice(&101.6f64.to_le_bytes());
+        scalar_pair_payload.extend_from_slice(&20.0f64.to_le_bytes());
+        let scalar_pair = B5Record {
             class: 0x3b,
+            payload: scalar_pair_payload,
             ..record.clone()
         };
-        assert_eq!(parse_supported_surface(&unsupported_class_3b), None);
+        assert_eq!(
+            parse_supported_surface(&scalar_pair),
+            Some(B5SupportedSurface {
+                object_id: 7,
+                carrier_surface: 2,
+                support_surfaces: [3, 4],
+                support_pcurves: [5, 6],
+                parameters: B5SupportedSurfaceParameters::ScalarPair {
+                    controls: [0x09, 0x01, 0x01, 0x05, 0x05, 0x0d],
+                    scalars: [101.6, 20.0],
+                },
+            })
+        );
+        let scalar_pair =
+            parse_supported_surface(&scalar_pair).expect("two-scalar supported surface");
+        let plane = B5Surface::Plane {
+            origin: [0.0; 3],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+        };
+        assert!(supported_surface_parameters_match_carrier(
+            &scalar_pair.parameters,
+            &plane
+        ));
+        let cone_parameters = B5SupportedSurfaceParameters::ScalarPair {
+            controls: [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
+            scalars: [0.76, std::f64::consts::FRAC_PI_4],
+        };
+        let cone = B5Surface::Cone {
+            apex: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            half_angle: std::f64::consts::FRAC_PI_4,
+            angular_offset: 0.0,
+            slant_range: [0.0, 1.0],
+            angular_scale: 1.0,
+        };
+        assert!(supported_surface_parameters_match_carrier(
+            &cone_parameters,
+            &cone
+        ));
+        let wrong_cone = B5Surface::Cone {
+            apex: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            half_angle: std::f64::consts::FRAC_PI_6,
+            angular_offset: 0.0,
+            slant_range: [0.0, 1.0],
+            angular_scale: 1.0,
+        };
+        assert!(!supported_surface_parameters_match_carrier(
+            &cone_parameters,
+            &wrong_cone
+        ));
         let construction = parse_supported_surface(&record).expect("supported surface");
         let pcurve0 = B5Record {
             object_id: 5,
@@ -3531,7 +3651,11 @@ mod tests {
             ..pcurve0.clone()
         };
         let records = HashMap::from([(5, &pcurve0), (6, &pcurve1)]);
-        assert!(supported_surface_pcurves_match(&construction, &records));
+        assert!(supported_surface_pcurves_match(
+            &construction,
+            &records,
+            &HashMap::new()
+        ));
 
         let wrong = B5Record {
             payload: vec![0x81, 0x82],
@@ -3539,7 +3663,8 @@ mod tests {
         };
         assert!(!supported_surface_pcurves_match(
             &construction,
-            &HashMap::from([(5, &pcurve0), (6, &wrong)])
+            &HashMap::from([(5, &pcurve0), (6, &wrong)]),
+            &HashMap::new()
         ));
     }
 
