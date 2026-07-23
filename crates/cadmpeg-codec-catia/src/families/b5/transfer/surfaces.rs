@@ -101,6 +101,7 @@ pub(super) fn neutral_surface(
             axis_origin,
             axis_direction,
             gauge_radius,
+            ..
         } => revolution_surface(
             graph.profiles.get(profile_curve),
             *axis_origin,

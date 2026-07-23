@@ -180,6 +180,10 @@ pub enum B5Surface {
         profile_curve: u32,
         /// A point on the revolution axis.
         axis_origin: [f64; 3],
+        /// First transverse unit direction of the stored revolution frame.
+        reference_x: [f64; 3],
+        /// Second transverse unit direction of the stored revolution frame.
+        reference_y: [f64; 3],
         /// Unit revolution axis.
         axis_direction: [f64; 3],
         /// Nonzero scale mapping a pcurve's `v` parameter to a revolution
@@ -1395,12 +1399,27 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let mut position = 1;
             let profile_curve = wire::object_ref(&record.payload, &mut position, true)?;
             let gauge_radius = scalar(&record.payload, position.checked_add(130)?)?;
-            (gauge_radius.abs() > f64::EPSILON).then_some(B5Surface::Revolution {
-                profile_curve,
-                axis_origin: point(&record.payload, position)?,
-                axis_direction: unit(point(&record.payload, position.checked_add(72)?)?)?,
-                gauge_radius,
-            })
+            let reference_x = point(&record.payload, position.checked_add(24)?)?;
+            let reference_y = point(&record.payload, position.checked_add(48)?)?;
+            let axis_direction = point(&record.payload, position.checked_add(72)?)?;
+            let directions_are_unit =
+                [reference_x, reference_y, axis_direction]
+                    .iter()
+                    .all(|direction| {
+                        (direction.iter().map(|value| value * value).sum::<f64>() - 1.0).abs()
+                            <= 1e-12
+                    });
+            (gauge_radius.abs() > f64::EPSILON
+                && directions_are_unit
+                && distance_squared(cross(reference_x, reference_y), axis_direction) <= 1e-24)
+                .then_some(B5Surface::Revolution {
+                    profile_curve,
+                    axis_origin: point(&record.payload, position)?,
+                    reference_x,
+                    reference_y,
+                    axis_direction,
+                    gauge_radius,
+                })
         }
         _ => None,
     }
@@ -1824,6 +1843,7 @@ fn lift_pcurve_endpoints(
             axis_origin,
             axis_direction,
             gauge_radius,
+            ..
         } => {
             let profile = profiles.get(profile_curve)?;
             Some(endpoints.map(|[u, v]| {
@@ -2746,7 +2766,9 @@ mod tests {
         let mut payload = vec![0; 175];
         payload[1..4].copy_from_slice(&[0x30, 0x86, 0x16]);
         payload[4..12].copy_from_slice(&1.0f64.to_le_bytes());
-        payload[76..84].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[28..36].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[60..68].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[92..100].copy_from_slice(&1.0f64.to_le_bytes());
         payload[134..142].copy_from_slice(&2.0f64.to_le_bytes());
         let record = B5Record {
             offset: 0,
@@ -2760,10 +2782,15 @@ mod tests {
             Some(B5Surface::Revolution {
                 profile_curve: 0x16_8600,
                 axis_origin: [1.0, 0.0, 0.0],
-                axis_direction: [1.0, 0.0, 0.0],
+                reference_x: [1.0, 0.0, 0.0],
+                reference_y: [0.0, 1.0, 0.0],
+                axis_direction: [0.0, 0.0, 1.0],
                 gauge_radius: 2.0,
             })
         );
+        let mut left_handed = record;
+        left_handed.payload[92..100].copy_from_slice(&(-1.0f64).to_le_bytes());
+        assert_eq!(parse_surface(&left_handed), None);
     }
 
     #[test]
