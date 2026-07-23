@@ -1569,6 +1569,19 @@ fn standard_catpart_with_object_graph() -> Vec<u8> {
     file
 }
 
+fn standard_catpart_with_nested_design_objects() -> Vec<u8> {
+    let graph = object_graph_from_records(&[
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x83, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x83, 0x84], &[0xfe]),
+    ]);
+    let mut file = standard_catpart();
+    file.splice(16..16, graph);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_catalog() -> Vec<u8> {
     let catalog = catalog_stream(&[
         "CATCatalogManager",
@@ -4542,6 +4555,37 @@ fn decode_retains_outer_object_graph_order_and_references() {
         .findings
         .iter()
         .all(|finding| finding.check != cadmpeg_ir::report::Check::Identity));
+}
+
+#[test]
+fn decode_links_design_objects_through_their_owner_record_group() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_nested_design_objects()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode nested design objects");
+    let native = crate::native::CatiaNative::load(
+        decoded
+            .ir
+            .native
+            .namespace("catia")
+            .expect("CATIA namespace"),
+    )
+    .expect("load CATIA native records");
+
+    assert_eq!(native.design_objects.len(), 2);
+    assert_eq!(native.design_objects[0].owner_ordinal, 2);
+    assert_eq!(native.design_objects[1].owner_ordinal, 3);
+    assert_eq!(
+        native.design_objects[0].owner_design_object.as_deref(),
+        Some(native.design_objects[1].id.as_str())
+    );
+    assert_eq!(native.design_objects[1].owner_design_object, None);
+    assert_eq!(
+        decoded.report.coverage["decoded_design_object_owner_link_count"],
+        1
+    );
 }
 
 #[test]

@@ -82,6 +82,11 @@ fn finish_decode(
         .iter()
         .map(|object| object.object_references.len())
         .sum();
+    let design_object_owner_link_count = native
+        .design_objects
+        .iter()
+        .filter(|object| object.owner_design_object.is_some())
+        .count();
     let unresolved_design_owner_count = native
         .design_objects
         .iter()
@@ -118,6 +123,10 @@ fn finish_decode(
         (
             "decoded_design_object_reference_count".to_string(),
             design_object_reference_count,
+        ),
+        (
+            "decoded_design_object_owner_link_count".to_string(),
+            design_object_owner_link_count,
         ),
         (
             "unresolved_design_owner_count".to_string(),
@@ -159,7 +168,7 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; neutral features, parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {design_object_owner_link_count} structural owner link(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; neutral features, parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
             ),
             provenance: None,

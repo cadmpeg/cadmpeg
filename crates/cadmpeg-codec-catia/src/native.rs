@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 76;
+pub const CATIA_NATIVE_VERSION: u32 = 77;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -542,6 +542,9 @@ pub struct CatiaDesignObject {
     /// Record selected by `owner_ordinal` when it lies inside the graph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_record: Option<String>,
+    /// Design object whose field set contains `owner_record`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_design_object: Option<String>,
     /// Exact class of a separator-form owner declaration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_class: Option<CatiaDesignClass>,
@@ -604,6 +607,12 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                         first_field_byte_offset: records[0].byte_offset,
                         owner_ordinal,
                         owner_record: owner_record.map(|record| record.id.clone()),
+                        owner_design_object: owner_record
+                            .and_then(|record| record.owner_ref)
+                            .filter(|owner| {
+                                *owner != owner_ordinal && owner_indices.contains_key(owner)
+                            })
+                            .map(|owner| design_object_id(graph.byte_offset, owner)),
                         owner_class: owner_record
                             .filter(|record| record_has_separator_roles(record))
                             .and_then(|record| {
