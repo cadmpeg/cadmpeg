@@ -19381,6 +19381,36 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_extrusion() {
 }
 
 #[test]
+fn decode_binds_configuration_sketch_state_after_geometry_projection() {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default" id="0"/><Sketch Name="Sketch1" Type="Sketch" id="0"/></Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .expect("projected sketch feature");
+    assert!(matches!(
+        &decoded.ir.model.configurations[0].feature_states[&feature.id].definition,
+        FeatureDefinition::Sketch {
+            sketch: Some(configuration_sketch),
+            ..
+        } if decoded.ir.model.sketches.iter().any(|sketch| &sketch.id == configuration_sketch)
+    ));
+}
+
+#[test]
 fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_extrusion() {
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
 

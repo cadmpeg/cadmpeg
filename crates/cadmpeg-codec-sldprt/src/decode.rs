@@ -1621,6 +1621,12 @@ fn build_geometry_ir(
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     stamp_feature_baseline(&mut ir);
     assign_configuration_bodies(&mut ir, configuration_bodies);
+    crate::history::project_configuration_sketch_states(
+        &mut ir,
+        &histories,
+        &native.feature_input_lanes,
+        &annotations,
+    );
     mark_active_configuration(&mut ir);
     snapshot_active_configuration(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
