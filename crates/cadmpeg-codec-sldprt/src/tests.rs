@@ -5060,7 +5060,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
 }
 
 #[test]
-fn semantic_writer_remaps_configuration_scoped_sections() {
+fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
     let mut source = outer_header();
     source.extend(make_block(
         0x42,
@@ -5101,7 +5101,7 @@ fn semantic_writer_remaps_configuration_scoped_sections() {
     assert!(scan
         .blocks
         .iter()
-        .any(|block| { block.section.as_deref() == Some("Contents/Config-5-ResolvedFeatures") }));
+        .any(|block| { block.section.as_deref() == Some("Contents/Config-3-ResolvedFeatures") }));
     assert_eq!(container::active_configuration_index(&scan), Some(5));
     assert_eq!(
         container::select_active_parasolid(&scan)
@@ -5117,14 +5117,14 @@ fn semantic_writer_remaps_configuration_scoped_sections() {
         .filter_map(|block| block.section.as_deref())
         .filter(|section| {
             *section == "Contents/Config-3-Partition"
-                || *section == "Contents/Config-3-ResolvedFeatures"
+                || *section == "Contents/Config-5-ResolvedFeatures"
         })
         .collect::<Vec<_>>();
     assert!(stale.is_empty(), "stale sections: {stale:?}");
     assert!(!scan.blocks.iter().any(|block| {
         block.section.as_deref().is_some_and(|section| {
             section == "Contents/Config-3-Partition"
-                || section == "Contents/Config-3-ResolvedFeatures"
+                || section == "Contents/Config-5-ResolvedFeatures"
         })
     }));
     let round_trip = SldprtCodec
@@ -5134,7 +5134,7 @@ fn semantic_writer_remaps_configuration_scoped_sections() {
 }
 
 #[test]
-fn semantic_writer_allocates_one_index_for_unassigned_configuration_sections() {
+fn semantic_writer_allocates_partition_index_without_remapping_resolved_features() {
     let mut source = outer_header();
     source.extend(make_block(
         0x42,
@@ -5173,14 +5173,14 @@ fn semantic_writer_allocates_one_index_for_unassigned_configuration_sections() {
     assert!(scan
         .blocks
         .iter()
-        .any(|block| { block.section.as_deref() == Some("Contents/Config-0-ResolvedFeatures") }));
+        .any(|block| { block.section.as_deref() == Some("Contents/Config-3-ResolvedFeatures") }));
     assert!(!scan.blocks.iter().any(|block| {
         matches!(
             block.section.as_deref(),
             Some(
                 "Contents/ResolvedFeatures"
                     | "Contents/Config-3-Partition"
-                    | "Contents/Config-3-ResolvedFeatures"
+                    | "Contents/Config-0-ResolvedFeatures"
             )
         )
     }));
@@ -12534,13 +12534,20 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     assert!(matches!(
         &decoded.ir.model.configurations[0].feature_states[&feature_id].definition,
         FeatureDefinition::Combine {
+            target: BodySelection::Unresolved,
+            tools: BodySelection::Unresolved,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &decoded.ir.model.configurations[1].feature_states[&feature_id].definition,
+        FeatureDefinition::Combine {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
             ..
         } if target.starts_with("sldprt:feature-input:body-path:")
             && tools.starts_with("sldprt:feature-input:body-path:")
     ));
-    assert!(decoded.ir.model.configurations[1].feature_states.is_empty());
 }
 
 #[test]

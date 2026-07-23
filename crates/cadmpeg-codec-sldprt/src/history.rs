@@ -3138,6 +3138,19 @@ mod history_reference_tests {
         }
     }
 
+    fn with_configuration_id(
+        mut configuration: DesignConfiguration,
+        id: u32,
+    ) -> DesignConfiguration {
+        configuration.properties.insert("id".into(), id.to_string());
+        configuration
+    }
+
+    fn native_with_configuration_id(mut configuration: Configuration, id: u32) -> Configuration {
+        configuration.properties.insert("id".into(), id.to_string());
+        configuration
+    }
+
     fn native_with_configuration_lanes(
         configurations: Vec<Configuration>,
         lanes: Vec<crate::records::FeatureInputLane>,
@@ -3422,9 +3435,9 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn explicit_configuration_index_precedes_ordinal_fallback() {
+    fn stored_configuration_id_precedes_ordinal_fallback() {
         let configurations = [
-            design_configuration("explicit", 0, Some(1), None),
+            with_configuration_id(design_configuration("explicit", 0, Some(7), None), 1),
             design_configuration("fallback", 1, None, None),
         ];
         let lanes = [feature_input_lane("lane", Some("1"))];
@@ -3436,9 +3449,9 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn changing_shadowed_ordinal_does_not_steal_explicit_lane() {
+    fn changing_shadowed_ordinal_does_not_steal_stored_id_lane() {
         let native_configurations = vec![
-            native_configuration("explicit-native", 0, Some(1)),
+            native_with_configuration_id(native_configuration("explicit-native", 0, Some(7)), 1),
             native_configuration("fallback-native", 1, None),
         ];
         let mut native = native_with_configuration_lanes(
@@ -3447,7 +3460,10 @@ mod history_reference_tests {
         )
         .into();
         let configurations = [
-            design_configuration("explicit", 0, Some(1), Some("explicit-native")),
+            with_configuration_id(
+                design_configuration("explicit", 0, Some(8), Some("explicit-native")),
+                1,
+            ),
             design_configuration("fallback", 2, None, Some("fallback-native")),
         ];
 
@@ -3465,8 +3481,8 @@ mod history_reference_tests {
     fn configuration_lane_index_swaps_are_simultaneous() {
         let mut native = native_with_configuration_lanes(
             vec![
-                native_configuration("first-native", 0, Some(1)),
-                native_configuration("second-native", 1, Some(2)),
+                native_with_configuration_id(native_configuration("first-native", 0, None), 1),
+                native_with_configuration_id(native_configuration("second-native", 1, None), 2),
             ],
             vec![
                 feature_input_lane("first-lane", Some("1")),
@@ -3475,8 +3491,14 @@ mod history_reference_tests {
         )
         .into();
         let configurations = [
-            design_configuration("first", 0, Some(2), Some("first-native")),
-            design_configuration("second", 1, Some(1), Some("second-native")),
+            with_configuration_id(
+                design_configuration("first", 0, None, Some("first-native")),
+                2,
+            ),
+            with_configuration_id(
+                design_configuration("second", 1, None, Some("second-native")),
+                1,
+            ),
         ];
 
         sync_neutral_configurations(&configurations, &mut native);
@@ -3496,8 +3518,11 @@ mod history_reference_tests {
     fn deleting_configuration_removes_its_uniquely_owned_lane() {
         let mut native = native_with_configuration_lanes(
             vec![
-                native_configuration("kept-native", 0, Some(1)),
-                native_configuration("deleted-native", 1, Some(2)),
+                native_with_configuration_id(native_configuration("kept-native", 0, Some(9)), 1),
+                native_with_configuration_id(
+                    native_configuration("deleted-native", 1, Some(10)),
+                    2,
+                ),
             ],
             vec![
                 feature_input_lane("kept-lane", Some("1")),
@@ -3507,11 +3532,9 @@ mod history_reference_tests {
         .into();
 
         sync_neutral_configurations(
-            &[design_configuration(
-                "kept",
-                0,
-                Some(1),
-                Some("kept-native"),
+            &[with_configuration_id(
+                design_configuration("kept", 0, Some(11), Some("kept-native")),
+                1,
             )],
             &mut native,
         );
@@ -3521,7 +3544,10 @@ mod history_reference_tests {
         assert_eq!(native.feature_input_lanes[0].id, "kept-lane");
 
         let mut native = native_with_configuration_lanes(
-            vec![native_configuration("deleted-native", 0, Some(1))],
+            vec![native_with_configuration_id(
+                native_configuration("deleted-native", 0, Some(1)),
+                1,
+            )],
             vec![
                 feature_input_lane("global-lane", None),
                 feature_input_lane("deleted-lane", Some("1")),
@@ -3536,26 +3562,30 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn configuration_lane_follows_effective_index_changes() {
-        for (previous_ordinal, previous_source, previous_lane, ordinal, source, expected) in [
+    fn configuration_lane_follows_stored_id_or_ordinal_changes() {
+        for (previous_ordinal, previous_id, previous_lane, ordinal, id, expected) in [
             (2, Some(7), "7", 3, None, "3"),
             (2, None, "2", 4, None, "4"),
         ] {
+            let native_configuration =
+                native_configuration("native-configuration", previous_ordinal, Some(19));
+            let native_configuration = previous_id.map_or(native_configuration.clone(), |id| {
+                native_with_configuration_id(native_configuration, id)
+            });
             let mut native = native_with_configuration_lanes(
-                vec![native_configuration(
-                    "native-configuration",
-                    previous_ordinal,
-                    previous_source,
-                )],
+                vec![native_configuration],
                 vec![feature_input_lane("lane", Some(previous_lane))],
             )
             .into();
             let mut configuration = design_configuration(
                 "configuration",
                 ordinal,
-                source,
+                Some(23),
                 Some("native-configuration"),
             );
+            if let Some(id) = id {
+                configuration = with_configuration_id(configuration, id);
+            }
             configuration.active = true;
             sync_neutral_configurations(&[configuration], &mut native);
 
@@ -7912,7 +7942,7 @@ pub(crate) fn configuration_lane_assignments(
 ) -> Vec<(usize, usize)> {
     let mut lanes_by_configuration = BTreeMap::<u32, Vec<usize>>::new();
     for (lane_index, lane) in lanes.iter().enumerate() {
-        let Some(source_index) = lane
+        let Some(slot_index) = lane
             .configuration
             .as_deref()
             .and_then(|value| value.parse::<u32>().ok())
@@ -7920,20 +7950,26 @@ pub(crate) fn configuration_lane_assignments(
             continue;
         };
         lanes_by_configuration
-            .entry(source_index)
+            .entry(slot_index)
             .or_default()
             .push(lane_index);
     }
     lanes_by_configuration
         .into_iter()
-        .filter_map(|(source_index, lane_indices)| {
+        .filter_map(|(slot_index, lane_indices)| {
             let [lane_index] = lane_indices.as_slice() else {
                 return None;
             };
             let explicit_candidates = configurations
                 .iter()
                 .enumerate()
-                .filter(|(_, configuration)| configuration.source_index == Some(source_index))
+                .filter(|(_, configuration)| {
+                    configuration
+                        .properties
+                        .get("id")
+                        .and_then(|value| value.parse::<u32>().ok())
+                        == Some(slot_index)
+                })
                 .map(|(position, _)| position)
                 .collect::<Vec<_>>();
             let candidates = if explicit_candidates.is_empty() {
@@ -7941,8 +7977,12 @@ pub(crate) fn configuration_lane_assignments(
                     .iter()
                     .enumerate()
                     .filter(|(_, configuration)| {
-                        configuration.source_index.is_none()
-                            && configuration.ordinal == source_index
+                        configuration
+                            .properties
+                            .get("id")
+                            .and_then(|value| value.parse::<u32>().ok())
+                            .is_none()
+                            && configuration.ordinal == slot_index
                     })
                     .map(|(position, _)| position)
                     .collect::<Vec<_>>()
@@ -9262,7 +9302,7 @@ fn sync_neutral_configurations(
                 .unwrap_or_else(|| format!("sldprt:generated:configuration#{}", configuration.id.0))
         })
         .collect::<std::collections::HashSet<_>>();
-    let previous_index_owners = native_configuration_index_owners(&native.feature_histories);
+    let previous_slot_owners = native_configuration_slot_owners(&native.feature_histories);
     let deleted_ids = native
         .feature_histories
         .iter()
@@ -9278,7 +9318,7 @@ fn sync_neutral_configurations(
         else {
             return true;
         };
-        previous_index_owners
+        previous_slot_owners
             .get(&index)
             .and_then(Option::as_deref)
             .is_none_or(|owner| !deleted_ids.contains(owner))
@@ -9297,21 +9337,22 @@ fn sync_neutral_configurations(
             .find(|candidate| configuration.native_ref.as_deref() == Some(candidate.id.as_str()));
         if let Some(existing) = existing {
             let existing_id = existing.id.clone();
-            let previous_index = existing.source_index.unwrap_or(existing.ordinal);
+            let previous_slot = configuration_slot(&existing.properties, existing.ordinal);
             existing.ordinal = configuration.ordinal;
             existing.source_index = configuration.source_index;
             existing.name.clone_from(&configuration.name);
             existing.material.clone_from(&configuration.material);
             existing.properties.clone_from(&configuration.properties);
-            let configuration_index = configuration.source_index.unwrap_or(configuration.ordinal);
-            if previous_index != configuration_index
-                && previous_index_owners
-                    .get(&previous_index)
+            let configuration_slot =
+                configuration_slot(&configuration.properties, configuration.ordinal);
+            if previous_slot != configuration_slot
+                && previous_slot_owners
+                    .get(&previous_slot)
                     .and_then(Clone::clone)
                     == Some(existing_id)
             {
                 lane_configuration_remaps
-                    .insert(previous_index.to_string(), configuration_index.to_string());
+                    .insert(previous_slot.to_string(), configuration_slot.to_string());
             }
         } else {
             let parent = native.feature_histories[0].id.clone();
@@ -9346,30 +9387,41 @@ fn sync_neutral_configurations(
     synchronize_history_content_order(native);
 }
 
-fn native_configuration_index_owners(
-    histories: &[FeatureHistory],
-) -> BTreeMap<u32, Option<String>> {
+fn configuration_slot(properties: &BTreeMap<String, String>, ordinal: u32) -> u32 {
+    properties
+        .get("id")
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(ordinal)
+}
+
+fn native_configuration_slot_owners(histories: &[FeatureHistory]) -> BTreeMap<u32, Option<String>> {
     let configurations = histories
         .iter()
         .flat_map(|history| &history.configurations)
         .collect::<Vec<_>>();
     let mut owners = BTreeMap::<u32, Option<String>>::new();
-    for configuration in configurations
-        .iter()
-        .filter(|configuration| configuration.source_index.is_some())
-    {
-        let index = configuration.source_index.expect("filtered above");
+    for configuration in configurations.iter().filter(|configuration| {
+        configuration
+            .properties
+            .get("id")
+            .and_then(|value| value.parse::<u32>().ok())
+            .is_some()
+    }) {
+        let index = configuration_slot(&configuration.properties, configuration.ordinal);
         owners
             .entry(index)
             .and_modify(|owner| *owner = None)
             .or_insert_with(|| Some(configuration.id.clone()));
     }
-    let explicit_indices = owners.keys().copied().collect::<HashSet<_>>();
-    for configuration in configurations
-        .into_iter()
-        .filter(|configuration| configuration.source_index.is_none())
-    {
-        if explicit_indices.contains(&configuration.ordinal) {
+    let explicit_slots = owners.keys().copied().collect::<HashSet<_>>();
+    for configuration in configurations.into_iter().filter(|configuration| {
+        configuration
+            .properties
+            .get("id")
+            .and_then(|value| value.parse::<u32>().ok())
+            .is_none()
+    }) {
+        if explicit_slots.contains(&configuration.ordinal) {
             continue;
         }
         owners
