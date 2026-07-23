@@ -3339,6 +3339,28 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_extrusion_through_all_accepts_a_dimensioned_traversal_body() {
+        let mut payload = vec![0; 68];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+        payload[4] = 1;
+        payload[18] = 1;
+        payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
+        payload[44..48].copy_from_slice(&1u32.to_le_bytes());
+        payload.extend_from_slice(&[0x77, 0x83]);
+        let block = payload.len();
+        payload.resize(block + 16, 0);
+        payload[block + 8] = 0x40;
+        payload[block + 9] = 0x28;
+        payload.extend_from_slice(&[0xff, 0xff, 0, 0, 1]);
+        payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+        payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+
+        assert!(compact_extrusion_through_all_at(&payload, 0));
+        payload[44] = 0;
+        assert!(!compact_extrusion_through_all_at(&payload, 0));
+    }
+
+    #[test]
     fn compact_extrusion_mid_plane_requires_the_dimension_child() {
         let dimension_tail = |payload: &mut Vec<u8>| {
             let block = payload.len();
@@ -21707,8 +21729,22 @@ pub(crate) fn project_compact_combine_paths(
 fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {
     compact_extrusion_end_spec_header(payload, offset, 1)
         && (compact_extrusion_traversal_tail_at(payload, offset)
+            || compact_extrusion_dimensioned_traversal_at(payload, offset)
             || (payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
                 && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()))
+}
+
+fn compact_extrusion_dimensioned_traversal_at(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset + 22..offset + 30) == Some(&[0; 8])
+        && payload.get(offset + 30..offset + 34) == Some(&[1, 0, 0, 1])
+        && payload
+            .get(offset + 34..offset + 44)
+            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+        && payload.get(offset + 44..offset + 48) == Some(&1u32.to_le_bytes())
+        && payload
+            .get(offset + 48..offset + 68)
+            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+        && compact_extrusion_dimension_child_at(payload, offset + 68).is_some()
 }
 
 fn compact_extrusion_blind_at(payload: &[u8], offset: usize) -> bool {
