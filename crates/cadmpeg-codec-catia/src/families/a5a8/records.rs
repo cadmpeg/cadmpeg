@@ -3,19 +3,17 @@
 //! Decodes `a5`/`a8` NURBS surface carriers, common-form and consolidated
 //! rolling-ball jets, guide-curve jets, and object-stream UV pcurves.
 
+use crate::nurbs::{expand_knots, pole_count};
+use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
+use crate::wire::records::{
+    a_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
+};
 use cadmpeg_ir::geometry::{
     NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
     SurfaceGeometry,
 };
 use cadmpeg_ir::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::HashSet;
-
-use crate::nurbs::{expand_knots, pole_count};
-use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
-use crate::wire::records::{
-    a_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
-};
 
 /// A decoded common-form object-stream NURBS surface (`a8 03 34`).
 #[derive(Debug, Clone)]
@@ -603,6 +601,7 @@ fn parse_object_stream_pcurve(
 /// Decode common-form object-stream NURBS surfaces.  Every variable-length
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
+#[cfg(any(test, feature = "fuzz"))]
 pub fn a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
     scan_surfaces(data, *b"\xa8\x03\x34", 3, a8_surface)
 }
@@ -612,18 +611,25 @@ pub fn a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
 /// allocation.
 #[must_use]
 pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
-    let mut surfaces = a8_surfaces(data);
-    let inline_positions = surfaces
-        .iter()
-        .map(|surface| surface.pos)
-        .collect::<HashSet<_>>();
-    surfaces.extend(
-        a8_surface_headers(data)
-            .into_iter()
-            .filter(|header| !inline_positions.contains(&header.pos))
-            .filter_map(|header| a8_surface_from_external_grid(data, &header)),
-    );
-    surfaces.sort_by_key(|surface| surface.pos);
+    let mut surfaces = Vec::new();
+    let mut search = 0usize;
+    while let Some(relative) = data[search..]
+        .windows(3)
+        .position(|bytes| bytes == [0xa8, 0x03, 0x34])
+    {
+        let pos = search + relative;
+        search = pos + 3;
+        let Some(parsed) = parse_a8_surface_header(data, pos) else {
+            continue;
+        };
+        if parsed.header.poles_elided {
+            if let Some(surface) = a8_surface_from_external_grid(data, &parsed.header) {
+                surfaces.push(surface);
+            }
+        } else if let Some(surface) = a8_surface_from_parsed(data, parsed) {
+            surfaces.push(surface);
+        }
+    }
     surfaces
 }
 
@@ -748,6 +754,7 @@ pub fn a5_surfaces(data: &[u8]) -> Vec<A8Surface> {
         .collect()
 }
 
+#[cfg(any(test, feature = "fuzz"))]
 fn scan_surfaces(
     data: &[u8],
     marker: [u8; 3],
@@ -917,13 +924,19 @@ fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHea
     })
 }
 
+#[cfg(any(test, feature = "fuzz"))]
 fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
+    a8_surface_from_parsed(data, parse_a8_surface_header(data, pos)?)
+}
+
+fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<A8Surface> {
     let ParsedA8SurfaceHeader {
         header,
         mut pole_start,
         end,
-    } = parse_a8_surface_header(data, pos)?;
+    } = parsed;
     let A8SurfaceHeader {
+        pos,
         object_id,
         u_degree,
         v_degree,
