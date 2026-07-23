@@ -5742,6 +5742,14 @@ mod marker_tests {
             legacy_state_five_curve_endpoint_indices(&payload, 0),
             Some([7, 10])
         );
+        payload[68..70].copy_from_slice(&1u16.to_le_bytes());
+        assert_eq!(
+            legacy_state_five_curve_endpoint_indices(&payload, 0),
+            Some([7, 10])
+        );
+        payload[70..72].copy_from_slice(&1u16.to_le_bytes());
+        assert_eq!(legacy_state_five_curve_endpoint_indices(&payload, 0), None);
+        payload[68..72].fill(0);
 
         let mut compact = vec![0; 84 + LEGACY_SKETCH_MARKER.len()];
         compact[..56].copy_from_slice(&payload[..56]);
@@ -27265,7 +27273,7 @@ fn legacy_state_five_curve_endpoint_offset(payload: &[u8], offset: usize) -> Opt
         return None;
     }
     if payload.get(offset + 60..offset + 64) == Some(&0u32.to_le_bytes())
-        && payload.get(offset + 68..offset + 72) == Some(&0u32.to_le_bytes())
+        && payload.get(offset + 70..offset + 72) == Some(&0u16.to_le_bytes())
         && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
         && sketch_marker_prefix_at(payload, offset.checked_add(92)?)
     {
