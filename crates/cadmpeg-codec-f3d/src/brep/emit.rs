@@ -3733,6 +3733,7 @@ pub(crate) fn emit_attributes(
 ) -> HashSet<i64> {
     let Reachable {
         faces: kept_faces,
+        loops: kept_loops,
         coedges: kept_coedges,
         edges: kept_edges,
         vertices: kept_vertices,
@@ -3746,7 +3747,11 @@ pub(crate) fn emit_attributes(
             "body" if out.bodies.iter().any(|entity| entity.id.0 == id(index)) => {
                 Some(AttributeTarget::Body(BodyId(id(index))))
             }
+            "shell" if out.shells.iter().any(|entity| entity.id.0 == id(index)) => {
+                Some(AttributeTarget::Shell(ShellId(id(index))))
+            }
             "face" if kept_faces.contains(&index) => Some(AttributeTarget::Face(FaceId(id(index)))),
+            "loop" if kept_loops.contains(&index) => Some(AttributeTarget::Loop(LoopId(id(index)))),
             "coedge" | "tcoedge" if kept_coedges.contains(&index) => {
                 Some(AttributeTarget::Coedge(CoedgeId(id(index))))
             }

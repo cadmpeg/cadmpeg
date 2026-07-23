@@ -12,8 +12,9 @@ use crate::nurbs;
 use crate::records::BodyNativeKey;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::ids::{BodyId, FaceId};
+use cadmpeg_ir::ids::{BodyId, FaceId, LoopId, RegionId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::{Loop, LoopBoundaryRole, Shell};
 use std::collections::{HashMap, HashSet};
 
 fn exact_circle_directrix() -> cadmpeg_ir::geometry::NurbsCurve {
@@ -490,6 +491,75 @@ fn nested_attributes_inherit_their_topology_owner() {
     let cycle_right = attribute(10, 9);
     let cycle = HashMap::from([(9, &cycle_left), (10, &cycle_right)]);
     assert_eq!(inherited_attribute_target(9, &cycle, &targets), None);
+}
+
+#[test]
+fn shell_and_loop_attribute_chains_retain_their_native_owners() {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let record = |index, name: &str, head: &str, tokens: Vec<Token>| Record {
+        index,
+        name: name.into(),
+        head: head.into(),
+        tokens: tokens.into(),
+        offset: 0,
+        len: 0,
+    };
+    let records = vec![
+        record(0, "asmheader", "asmheader", vec![]),
+        record(
+            1,
+            "ATTRIB_CUSTOM-attrib",
+            "ATTRIB_CUSTOM",
+            vec![Token::Ref(-1)],
+        ),
+        record(
+            2,
+            "ATTRIB_CUSTOM-attrib",
+            "ATTRIB_CUSTOM",
+            vec![Token::Ref(-1)],
+        ),
+        record(3, "shell", "shell", vec![Token::Ref(1)]),
+        record(4, "loop", "loop", vec![Token::Ref(2)]),
+    ];
+    let mut brep = Brep {
+        shells: vec![Shell {
+            id: ShellId(id(3)),
+            region: RegionId("region".into()),
+            faces: Vec::new(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        }],
+        loops: vec![Loop {
+            id: LoopId(id(4)),
+            face: FaceId("face".into()),
+            boundary_role: LoopBoundaryRole::Unspecified,
+            coedges: Vec::new(),
+            vertex_uses: Vec::new(),
+        }],
+        ..Brep::default()
+    };
+    let by_index = records
+        .iter()
+        .map(|record| (record.index as i64, record))
+        .collect();
+    let reach = Reachable {
+        loops: HashSet::from([4]),
+        ..Reachable::default()
+    };
+
+    assert_eq!(
+        emit_attributes(&mut brep, &records, &by_index, &reach),
+        HashSet::from([1, 2])
+    );
+    assert!(brep
+        .attributes
+        .iter()
+        .any(|attribute| attribute.target == AttributeTarget::Shell(ShellId(id(3)))));
+    assert!(brep
+        .attributes
+        .iter()
+        .any(|attribute| attribute.target == AttributeTarget::Loop(LoopId(id(4)))));
 }
 
 fn ident(bytes: &mut Vec<u8>, name: &str) {
