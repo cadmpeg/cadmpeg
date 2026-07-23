@@ -13,7 +13,7 @@ use super::Builder;
 
 impl Builder<'_> {
     pub(super) fn emit_shell(&mut self, shell_id: &str, closed: bool) -> Option<Ref> {
-        let shell = self.shells.get(shell_id).copied()?;
+        let shell = self.index.shells.get(shell_id).copied()?;
         let face_ids: Vec<String> = shell.faces.iter().map(|f| f.0.clone()).collect();
         let mut face_refs = Vec::new();
         for fid in &face_ids {
@@ -31,12 +31,12 @@ impl Builder<'_> {
     }
 
     fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
-        let face = self.faces.get(face_id).copied()?;
+        let face = self.index.faces.get(face_id).copied()?;
         let surface_id = face.surface.0.clone();
         // A face resting on an unknown (opaque) surface cannot become an
         // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
         // loss rather than fabricate placeholder geometry.
-        if let Some(surf) = self.surfaces.get(surface_id.as_str()) {
+        if let Some(surf) = self.index.surfaces.get(surface_id.as_str()) {
             if !geometry::surface_is_supported(&surf.geometry) {
                 self.unknown_surface_faces.insert(face_id.to_string());
                 return None;
@@ -54,13 +54,15 @@ impl Builder<'_> {
         for (i, lid) in loop_ids.iter().enumerate() {
             if let Some(loop_ref) = self.emit_loop(lid) {
                 let kind = if matches!(
-                    self.loops
+                    self.index
+                        .loops
                         .get(lid.as_str())
                         .map(|loop_| loop_.boundary_role),
                     Some(LoopBoundaryRole::Outer)
                 ) || (i == 0
                     && !loop_ids.iter().any(|id| {
-                        self.loops
+                        self.index
+                            .loops
                             .get(id.as_str())
                             .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
                     })) {
@@ -86,7 +88,7 @@ impl Builder<'_> {
     }
 
     fn emit_loop(&mut self, loop_id: &str) -> Option<Ref> {
-        let lp = self.loops.get(loop_id).copied()?;
+        let lp = self.index.loops.get(loop_id).copied()?;
         if lp.coedges.is_empty() && lp.vertex_uses.len() == 1 {
             let vertex = self.emit_vertex(lp.vertex_uses[0].vertex.as_str())?;
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
@@ -94,7 +96,7 @@ impl Builder<'_> {
         let coedge_ids: Vec<String> = lp.coedges.iter().map(|c| c.0.clone()).collect();
         let mut oe_refs = Vec::new();
         for cid in &coedge_ids {
-            let Some(coedge) = self.coedges.get(cid.as_str()).copied() else {
+            let Some(coedge) = self.index.coedges.get(cid.as_str()).copied() else {
                 continue;
             };
             let orientation = matches!(coedge.sense, Sense::Forward);
@@ -120,7 +122,7 @@ impl Builder<'_> {
         if let Some(r) = self.edge_refs.get(edge_id) {
             return Some(*r);
         }
-        let edge = self.edges.get(edge_id).copied()?;
+        let edge = self.index.edges.get(edge_id).copied()?;
         let v1 = self.emit_vertex(edge.start.as_str())?;
         let v2 = self.emit_vertex(edge.end.as_str())?;
         let Some(curve_id) = &edge.curve else {
@@ -128,6 +130,7 @@ impl Builder<'_> {
             return None;
         };
         if self
+            .index
             .curves
             .get(curve_id.as_str())
             .is_some_and(|curve| !geometry::curve_is_supported(&curve.geometry))
@@ -136,7 +139,12 @@ impl Builder<'_> {
             return None;
         }
         let basis_curve = self.emit_curve(curve_id.as_str())?;
-        let associated = self.edge_coedges.get(edge_id).cloned().unwrap_or_default();
+        let associated = self
+            .index
+            .edge_coedges
+            .get(edge_id)
+            .cloned()
+            .unwrap_or_default();
         let mut pcurve_refs = Vec::new();
         for (pcurve_id, surface_id) in associated {
             if let Some(pcurve) = self.emit_pcurve(pcurve_id, surface_id) {
@@ -161,7 +169,7 @@ impl Builder<'_> {
     }
 
     fn emit_pcurve(&mut self, pcurve_id: &str, surface_id: &str) -> Option<Ref> {
-        let pcurve = self.pcurves.get(pcurve_id).copied()?;
+        let pcurve = self.index.pcurves.get(pcurve_id).copied()?;
         let surface = self.emit_surface(surface_id)?;
         let curve = geometry::pcurve(&mut self.emitter, &pcurve.geometry)?;
         let context = if let Some(context) = self.pcurve_context {
@@ -188,8 +196,8 @@ impl Builder<'_> {
         if let Some(r) = self.vertex_refs.get(vertex_id) {
             return Some(*r);
         }
-        let vertex = self.vertices.get(vertex_id).copied()?;
-        let pt = self.points.get(vertex.point.as_str()).copied()?;
+        let vertex = self.index.vertices.get(vertex_id).copied()?;
+        let pt = self.index.points.get(vertex.point.as_str()).copied()?;
         let cp = geometry::point(&mut self.emitter, pt.position);
         self.point_refs.insert(vertex.point.0.clone(), cp);
         let r = self.emitter.emit("VERTEX_POINT", &format!("'',{cp}"));
@@ -208,8 +216,9 @@ impl Builder<'_> {
         }
         self.geometry_emission_depth += 1;
         let result = (|| {
-            let surf = self.surfaces.get(surface_id).copied()?;
+            let surf = self.index.surfaces.get(surface_id).copied()?;
             let procedural = self
+                .index
                 .procedural_surfaces
                 .get(surface_id)
                 .map(|procedural| (procedural.id.0.clone(), procedural.definition.clone()));
@@ -328,8 +337,9 @@ impl Builder<'_> {
         }
         self.geometry_emission_depth += 1;
         let result = (|| {
-            let geometry = self.curves.get(curve_id)?.geometry.clone();
+            let geometry = self.index.curves.get(curve_id)?.geometry.clone();
             let procedural = self
+                .index
                 .procedural_curves
                 .get(curve_id)
                 .map(|procedural| (procedural.id.0.clone(), procedural.definition.clone()));

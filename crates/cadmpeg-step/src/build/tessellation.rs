@@ -86,7 +86,7 @@ impl Builder<'_> {
                 .join(",");
             let linked_body = mesh.body.as_ref().and_then(|body| {
                 let link = self.body_step_refs.get(body.as_str()).copied()?;
-                let kind = self.bodies.get(body.as_str())?.kind;
+                let kind = self.index.bodies.get(body.as_str())?.kind;
                 matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
             });
             let item = if let Some((kind, link)) = linked_body {

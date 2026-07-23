@@ -21,13 +21,9 @@ mod shape;
 mod tessellation;
 mod topology;
 
-pub(crate) struct Builder<'a> {
-    ir: &'a CadIr,
-    schema: StepSchema,
-    pub(crate) emitter: Emitter,
-    losses: Vec<LossNote>,
-    notes: Vec<String>,
-
+/// Arena lookups over the source `CadIr`, keyed by entity id. Populated once
+/// by `IrIndex::new` and read-only for the remainder of the build.
+struct IrIndex<'a> {
     points: HashMap<&'a str, &'a Point>,
     bodies: HashMap<&'a str, &'a Body>,
     shells: HashMap<&'a str, &'a Shell>,
@@ -42,47 +38,10 @@ pub(crate) struct Builder<'a> {
     procedural_surfaces: HashMap<&'a str, &'a ProceduralSurface>,
     procedural_curves: HashMap<&'a str, &'a ProceduralCurve>,
     edge_coedges: HashMap<&'a str, Vec<(&'a str, &'a str)>>,
-
-    surface_refs: HashMap<String, Ref>,
-    curve_refs: HashMap<String, Ref>,
-    edge_refs: HashMap<String, Ref>,
-    vertex_refs: HashMap<String, Ref>,
-    point_refs: HashMap<String, Ref>,
-    pcurve_context: Option<Ref>,
-    active_surfaces: BTreeSet<String>,
-    pub(crate) active_curves: BTreeSet<String>,
-    written_procedural_surfaces: BTreeSet<String>,
-    written_procedural_curves: BTreeSet<String>,
-
-    /// Edges skipped because they carry no attributed 3D curve, deduplicated
-    /// (a shared edge is reached once per coedge) and aggregated into a single
-    /// counted loss note.
-    curveless_edges: BTreeSet<String>,
-
-    /// Faces skipped because their surface geometry is unknown (opaque), so no
-    /// STEP surface exists to build an `ADVANCED_FACE` on. Deduplicated (a face
-    /// is reached once per shell) and aggregated into a single counted loss.
-    unknown_surface_faces: BTreeSet<String>,
-
-    face_step_refs: HashMap<String, Ref>,
-    /// First emitted exact solid or shell for each body, used by AP242 tessellation links.
-    body_step_refs: HashMap<String, Ref>,
-    default_product_definition_shape: Option<Ref>,
-    body_shape_refs: HashMap<String, Ref>,
-    pub(crate) body_item_refs: HashMap<String, Vec<Ref>>,
-    tessellation_step_refs: HashMap<String, Ref>,
-    written_appearance_bindings: BTreeSet<String>,
-    unstyled_colors: usize,
-    unsupported_standalone_geometry: usize,
-    written_pmi: usize,
-    length_unit: Option<Ref>,
-    angle_unit: Option<Ref>,
-    ratio_unit: Option<Ref>,
-    geometry_emission_depth: usize,
 }
 
-impl<'a> Builder<'a> {
-    pub(crate) fn new(ir: &'a CadIr, schema: StepSchema) -> Self {
+impl<'a> IrIndex<'a> {
+    fn new(ir: &'a CadIr) -> Self {
         let loop_surfaces = ir
             .model
             .faces
@@ -121,12 +80,7 @@ impl<'a> Builder<'a> {
                     .push((pcurve.pcurve.as_str(), *surface));
             }
         }
-        Builder {
-            ir,
-            schema,
-            emitter: Emitter::new(),
-            losses: Vec::new(),
-            notes: Vec::new(),
+        IrIndex {
             points: ir.model.points.iter().map(|p| (p.id.as_str(), p)).collect(),
             bodies: ir
                 .model
@@ -191,6 +145,67 @@ impl<'a> Builder<'a> {
                 .map(|curve| (curve.curve.as_str(), curve))
                 .collect(),
             edge_coedges,
+        }
+    }
+}
+
+pub(crate) struct Builder<'a> {
+    ir: &'a CadIr,
+    schema: StepSchema,
+    pub(crate) emitter: Emitter,
+    losses: Vec<LossNote>,
+    notes: Vec<String>,
+
+    /// Immutable arena indices over the source `CadIr`, built once by `new`.
+    index: IrIndex<'a>,
+
+    surface_refs: HashMap<String, Ref>,
+    curve_refs: HashMap<String, Ref>,
+    edge_refs: HashMap<String, Ref>,
+    vertex_refs: HashMap<String, Ref>,
+    point_refs: HashMap<String, Ref>,
+    pcurve_context: Option<Ref>,
+    active_surfaces: BTreeSet<String>,
+    pub(crate) active_curves: BTreeSet<String>,
+    written_procedural_surfaces: BTreeSet<String>,
+    written_procedural_curves: BTreeSet<String>,
+
+    /// Edges skipped because they carry no attributed 3D curve, deduplicated
+    /// (a shared edge is reached once per coedge) and aggregated into a single
+    /// counted loss note.
+    curveless_edges: BTreeSet<String>,
+
+    /// Faces skipped because their surface geometry is unknown (opaque), so no
+    /// STEP surface exists to build an `ADVANCED_FACE` on. Deduplicated (a face
+    /// is reached once per shell) and aggregated into a single counted loss.
+    unknown_surface_faces: BTreeSet<String>,
+
+    face_step_refs: HashMap<String, Ref>,
+    /// First emitted exact solid or shell for each body, used by AP242 tessellation links.
+    body_step_refs: HashMap<String, Ref>,
+    default_product_definition_shape: Option<Ref>,
+    body_shape_refs: HashMap<String, Ref>,
+    pub(crate) body_item_refs: HashMap<String, Vec<Ref>>,
+    tessellation_step_refs: HashMap<String, Ref>,
+    written_appearance_bindings: BTreeSet<String>,
+    unstyled_colors: usize,
+    unsupported_standalone_geometry: usize,
+    written_pmi: usize,
+    length_unit: Option<Ref>,
+    angle_unit: Option<Ref>,
+    ratio_unit: Option<Ref>,
+    geometry_emission_depth: usize,
+}
+
+impl<'a> Builder<'a> {
+    pub(crate) fn new(ir: &'a CadIr, schema: StepSchema) -> Self {
+        Builder {
+            ir,
+            schema,
+            emitter: Emitter::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+            index: IrIndex::new(ir),
             surface_refs: HashMap::new(),
             curve_refs: HashMap::new(),
             edge_refs: HashMap::new(),

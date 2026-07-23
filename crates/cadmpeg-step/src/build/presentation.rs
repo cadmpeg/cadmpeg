@@ -81,7 +81,7 @@ impl Builder<'_> {
         for region in &ir.model.regions {
             let body = region.body.0.as_str();
             for shell_id in &region.shells {
-                let Some(shell) = self.shells.get(shell_id.as_str()).copied() else {
+                let Some(shell) = self.index.shells.get(shell_id.as_str()).copied() else {
                     continue;
                 };
                 for face in &shell.faces {

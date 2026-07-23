@@ -18,6 +18,7 @@ impl Builder<'_> {
         let ir = self.ir;
         for region in &ir.model.regions {
             let body_kind = self
+                .index
                 .bodies
                 .get(region.body.as_str())
                 .map_or(BodyKind::General, |body| body.kind);
@@ -102,6 +103,7 @@ impl Builder<'_> {
         context: Ref,
     ) -> Ref {
         let transform = self
+            .index
             .bodies
             .get(body_id.as_str())
             .and_then(|body| body.transform);
@@ -182,7 +184,7 @@ impl Builder<'_> {
         let shells = region
             .shells
             .iter()
-            .filter_map(|shell_id| self.shells.get(shell_id.as_str()).copied().cloned())
+            .filter_map(|shell_id| self.index.shells.get(shell_id.as_str()).copied().cloned())
             .collect::<Vec<_>>();
         let mut connected_sets = Vec::new();
         for shell in shells {
@@ -248,6 +250,7 @@ impl Builder<'_> {
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
             if self
+                .index
                 .curves
                 .get(curve_id.as_str())
                 .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
@@ -266,7 +269,7 @@ impl Builder<'_> {
             .map(|point| point.id.0.clone())
             .collect::<Vec<_>>();
         for point_id in point_ids {
-            let Some(point) = self.points.get(point_id.as_str()).copied() else {
+            let Some(point) = self.index.points.get(point_id.as_str()).copied() else {
                 continue;
             };
             let reference = geometry::point(&mut self.emitter, point.position);

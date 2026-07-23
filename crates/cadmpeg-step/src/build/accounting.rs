@@ -110,7 +110,7 @@ impl Builder<'_> {
             .coedges
             .iter()
             .flat_map(|coedge| &coedge.pcurves)
-            .filter(|use_| !self.pcurves.contains_key(use_.pcurve.as_str()))
+            .filter(|use_| !self.index.pcurves.contains_key(use_.pcurve.as_str()))
             .count();
         if missing_pcurve_count > 0 {
             self.loss(
@@ -128,7 +128,7 @@ impl Builder<'_> {
             .coedges
             .iter()
             .flat_map(|coedge| &coedge.pcurves)
-            .filter_map(|use_| self.pcurves.get(use_.pcurve.as_str()))
+            .filter_map(|use_| self.index.pcurves.get(use_.pcurve.as_str()))
             .filter(|pcurve| {
                 pcurve.wrapper_reversed.is_some()
                     || pcurve.native_tail_flags.is_some()
