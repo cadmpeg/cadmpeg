@@ -123,7 +123,8 @@ fn vertex_positions(ir: &CadIr) -> HashMap<&str, (Point3, Option<f64>)> {
 }
 
 /// An edge's curve evaluated at its parameter range must land on the edge's
-/// start and end vertex positions.
+/// start and end vertex positions within the topology tolerances or the
+/// evaluated curve cache's fit tolerance.
 pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
     let curves = ir
         .model
@@ -131,12 +132,27 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .iter()
         .map(|curve| (curve.id.0.as_str(), &curve.geometry))
         .collect::<HashMap<_, _>>();
+    let curve_cache_tolerances = ir
+        .model
+        .procedural_curves
+        .iter()
+        .map(|curve| {
+            (
+                curve.curve.0.as_str(),
+                curve.cache_fit_tolerance.filter(|value| value.is_finite()),
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let vertices = vertex_positions(ir);
     for edge in &ir.model.edges {
         let Some([start_t, end_t]) = edge.param_range else {
             continue;
         };
-        let Some(geometry) = edge.curve.as_ref().and_then(|id| curves.get(id.0.as_str())) else {
+        let Some((curve_id, geometry)) = edge
+            .curve
+            .as_ref()
+            .and_then(|id| curves.get(id.0.as_str()).map(|geometry| (id, geometry)))
+        else {
             continue;
         };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
@@ -150,7 +166,15 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         else {
             continue;
         };
-        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol]);
+        let bound = allowance(&[
+            edge.tolerance,
+            *start_tol,
+            *end_tol,
+            curve_cache_tolerances
+                .get(curve_id.0.as_str())
+                .copied()
+                .flatten(),
+        ]);
         let mismatch = distance(at_start, *start).max(distance(at_end, *end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
@@ -173,10 +197,10 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         let Some([start_t, end_t]) = coedge.use_curve_parameter_range else {
             continue;
         };
-        let Some(geometry) = coedge
+        let Some((curve_id, geometry)) = coedge
             .use_curve
             .as_ref()
-            .and_then(|id| curves.get(id.0.as_str()))
+            .and_then(|id| curves.get(id.0.as_str()).map(|geometry| (id, geometry)))
         else {
             continue;
         };
@@ -198,7 +222,15 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         else {
             continue;
         };
-        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol]);
+        let bound = allowance(&[
+            edge.tolerance,
+            *start_tol,
+            *end_tol,
+            curve_cache_tolerances
+                .get(curve_id.0.as_str())
+                .copied()
+                .flatten(),
+        ]);
         let mismatch = distance(at_start, *start).max(distance(at_end, *end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
@@ -214,9 +246,10 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
 }
 
 /// A coedge's pcurve, mapped through its face's surface, must land on the
-/// owning edge's vertex positions over the edge's parameter interval. Pcurve
-/// parameter sign and direction are independent of edge sense, so either sign
-/// and either endpoint assignment satisfy the check.
+/// owning edge's vertex positions over the edge's parameter interval within
+/// the topology tolerances or the evaluated pcurve carriers' fit tolerances.
+/// Pcurve parameter sign and direction are independent of edge sense, so
+/// either sign and either endpoint assignment satisfy the check.
 pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
     let surfaces = ir
         .model
@@ -321,7 +354,14 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         let Some(intervals) = intervals else {
             continue;
         };
-        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol, face.tolerance]);
+        let bound = allowance(&[
+            edge.tolerance,
+            *start_tol,
+            *end_tol,
+            face.tolerance,
+            first.fit_tolerance,
+            last.fit_tolerance,
+        ]);
         let Some(mismatch) = intervals
             .into_iter()
             .filter_map(|[t0, t1]| {

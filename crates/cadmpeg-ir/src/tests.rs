@@ -2603,6 +2603,46 @@ fn edge_endpoint_mismatch_is_flagged() {
         "displaced vertex must fail edge endpoint consistency, got: {:?}",
         report.findings
     );
+
+    let curve = ir.model.edges[0].curve.clone().expect("cube edge curve");
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: ProceduralCurveId("synthetic:cube:curve-cache#0".into()),
+        curve,
+        definition: ProceduralCurveDefinition::Intersection {
+            context: crate::geometry::IntcurveSupportContext {
+                sides: std::array::from_fn(|_| crate::geometry::IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                    pcurve_parameter_range: None,
+                }),
+                parameter_range: ir.model.edges[0].param_range.expect("cube edge range"),
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: Some(0.99),
+    });
+    let report = validate(&ir, Vec::new());
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|f| f.check == Check::GeometricConsistency
+                && f.entity.as_deref() == Some("synthetic:cube:edge#0")),
+        "cache tolerance below the endpoint mismatch must still fail"
+    );
+
+    ir.model.procedural_curves[0].cache_fit_tolerance = Some(1.0);
+    let report = validate(&ir, Vec::new());
+    assert!(
+        !report
+            .findings
+            .iter()
+            .any(|f| f.check == Check::GeometricConsistency
+                && f.entity.as_deref() == Some("synthetic:cube:edge#0")),
+        "curve mismatch within its cache fit tolerance must validate, got: {:?}",
+        report.findings
+    );
 }
 
 #[test]
@@ -2611,7 +2651,7 @@ fn pcurve_surface_mismatch_is_flagged() {
     // derived u/v frame maps `(u, v) -> (u, -v, 0)`. Edge #0 runs from
     // `(0,0,0)` to `(10,0,0)`, so its parameter image is the line
     // `(0,0) -> (10,0)`.
-    let good = |u_end: f64, v_end: f64| {
+    let checked = |u_end: f64, v_end: f64, fit_tolerance: Option<f64>| {
         let mut ir = unit_cube();
         ir.model.pcurves.push(crate::geometry::Pcurve {
             id: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
@@ -2628,7 +2668,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             wrapper_reversed: None,
             native_tail_flags: None,
             parameter_range: None,
-            fit_tolerance: None,
+            fit_tolerance,
         });
         let coedge = ir
             .model
@@ -2646,7 +2686,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         validate(&ir, Vec::new())
     };
 
-    let consistent = good(10.0, 0.0);
+    let consistent = checked(10.0, 0.0, None);
     assert!(
         !consistent
             .findings
@@ -2656,7 +2696,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         consistent.findings
     );
 
-    let inconsistent = good(10.0, 5.0);
+    let inconsistent = checked(10.0, 5.0, Some(4.99));
     assert!(
         inconsistent
             .findings
@@ -2665,6 +2705,15 @@ fn pcurve_surface_mismatch_is_flagged() {
                 && f.entity.as_deref().is_some_and(|e| e.contains("coedge"))),
         "off-surface-image pcurve must be flagged, got: {:?}",
         inconsistent.findings
+    );
+    let tolerance_qualified = checked(10.0, 5.0, Some(5.0));
+    assert!(
+        !tolerance_qualified
+            .findings
+            .iter()
+            .any(|f| f.check == Check::GeometricConsistency),
+        "pcurve mismatch within its fit tolerance must validate, got: {:?}",
+        tolerance_qualified.findings
     );
 
     let mut procedural = unit_cube();
