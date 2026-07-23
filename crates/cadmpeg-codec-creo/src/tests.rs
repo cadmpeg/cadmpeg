@@ -7778,3 +7778,727 @@ fn inspect_summary_has_layout_and_census_notes() {
     assert!(summary.notes.iter().any(|n| n.contains("layout: ND")));
     assert!(summary.notes.iter().any(|n| n.contains("srf_array=7")));
 }
+
+/// Golden-snapshot harness pinning the read-only Creo decoder before refactor.
+///
+/// Each fixture is a committed `.prt` byte image under `tests/golden/fixtures/`.
+/// The snapshot tests read those bytes (never the builders), decode and inspect
+/// them, and compare the output against `tests/golden/decode/<name>.json` and
+/// `tests/golden/inspect/<name>.json`. Regenerate every artifact with
+/// `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-creo golden`, which rebuilds the
+/// `.prt` bytes from the builders below and rewrites both JSON directories.
+///
+/// Freezing the bytes (not the builder code) makes the pins reproducible even if
+/// a builder helper drifts: after regeneration the `.prt` is the source of truth
+/// and the JSON is derived from it.
+mod golden {
+    use std::path::{Path, PathBuf};
+
+    use cadmpeg_ir::decode::InspectOptions;
+
+    use super::*;
+
+    /// The covering fixture set: `(golden name, full `.prt` bytes)`. Each entry
+    /// mirrors one decode family the white-box tests above exercise, assembled
+    /// from the same module-level builders (`build_prt`, `visibgeom_payload`,
+    /// `push_generated_*`, `push_named_analytic_prototype`, `jpeg_payload`).
+    fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
+        vec![
+            // --- Container framing / inspect surface ---
+            ("empty_part", build_prt("c", &[])),
+            (
+                "native_model_name",
+                b"#UGC:2 PART test \\\n#- CMNM 00bwidget.prt                                      \\\n#-END_OF_UGC_HEADER\n".to_vec(),
+            ),
+            (
+                "thumbnail_jpeg",
+                build_prt("c", &[("THMB_IMG_MAIN", jpeg_payload())]),
+            ),
+            (
+                "classified_sections",
+                build_prt(
+                    "test",
+                    &[
+                        ("VisibGeom", visibgeom_payload(5, 12)),
+                        ("AllFeatur", vec![0x01, 0x02, 0x03]),
+                        ("THMB_IMG_MAIN", jpeg_payload()),
+                    ],
+                ),
+            ),
+            ("unix_compress_solidprimdata", unix_compress_solidprimdata()),
+            (
+                "geometryless_preserved_sections",
+                geometryless_preserved_sections(),
+            ),
+            (
+                "nd_visibgeom_layout",
+                build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(7, 9))]),
+            ),
+            // --- Surface parameter records / prototypes ---
+            ("surface_parameter_slots", surface_parameter_slots()),
+            (
+                "type26_five_coordinate_envelope",
+                type26_five_coordinate_envelope(),
+            ),
+            (
+                "type26_split_coordinate_envelope",
+                type26_split_coordinate_envelope(),
+            ),
+            // --- Placed analytic geometry ---
+            ("axis_aligned_plane", axis_aligned_plane()),
+            ("line_extrusion_plane", line_extrusion_plane()),
+            ("positional_torus", positional_torus()),
+            ("positional_cylinder", positional_cylinder()),
+            ("paired_sphere_envelopes", paired_sphere_envelopes()),
+            // --- Named analytic prototypes ---
+            ("named_cylinder_prototype", named_cylinder_prototype()),
+            (
+                "named_torus_two_direction_prototype",
+                named_torus_two_direction_prototype(),
+            ),
+            (
+                "interpolation_spline_prototype",
+                interpolation_spline_prototype(),
+            ),
+            // --- Connected plane topology (B-rep) ---
+            (
+                "closed_plane_intersection_brep",
+                closed_plane_intersection_brep(),
+            ),
+            // --- Datum planes ---
+            ("datum_plane_carrier", datum_plane_carrier()),
+            ("datum_history_merge", datum_history_merge()),
+            // --- Sketches ---
+            ("featdefs_sketch_variables", featdefs_sketch_variables()),
+            // --- Feature dimensions / parameters ---
+            ("feature_dimensions", feature_dimensions()),
+            // --- Curve-expression relations ---
+            ("relation_unit_declarations", relation_unit_declarations()),
+            ("relation_model_name", relation_model_name()),
+            // --- Feature history / typing ---
+            ("mdlstatus_feature_history", mdlstatus_feature_history()),
+            ("class_911_hole", class_911_hole()),
+            ("depdb_recipe_history", depdb_recipe_history()),
+        ]
+    }
+
+    fn unix_compress_solidprimdata() -> Vec<u8> {
+        let mut data = b"#UGC:2 P test\n#-END_OF_UGC_HEADER\n".to_vec();
+        let header_base = data.len();
+        data.extend_from_slice(format!("{:<80}\n", "#UGC_TOC 2 1 81 17").as_bytes());
+        let section_offset = 2 * 81;
+        let compressed = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
+        let section_length = b"#SolidPrimdata\n".len() + compressed.len();
+        data.extend_from_slice(
+            format!(
+                "{:<80}\n",
+                format!("SolidPrimdata {section_offset:x} {section_length:x} 3")
+            )
+            .as_bytes(),
+        );
+        assert_eq!(data.len(), header_base + section_offset);
+        data.extend_from_slice(b"#SolidPrimdata\n");
+        data.extend_from_slice(&compressed);
+        data
+    }
+
+    fn geometryless_preserved_sections() -> Vec<u8> {
+        let mut visible = visibgeom_payload(5, 12);
+        visible.extend_from_slice(b"_principal_sys_units_id\0\x33");
+        build_prt(
+            "c",
+            &[
+                ("VisibGeom", visible),
+                ("NovisGeom", vec![0xaa, 0xbb]),
+                ("AllFeatur", vec![0x01]),
+            ],
+        )
+    }
+
+    fn surface_parameter_slots() -> Vec<u8> {
+        let mut payload = visibgeom_payload(1, 0);
+        payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+        payload.extend_from_slice(&[0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0]);
+        payload.push(0xe3);
+        build_prt("c", &[("VisibGeom", payload)])
+    }
+
+    fn type26_five_coordinate_envelope() -> Vec<u8> {
+        let body = [
+            0x18, 0x18, 0x01, 0x11, 0x2e, 0xb0, 0x12, 0x47, 0x05, 0x33, 0x2d, 0x2d, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0x29, 0x47, 0x05, 0x33, 0x2e, 0x05, 0x33, 0x2d, 0x31, 0xa6, 0x66,
+            0x66, 0x66, 0x66, 0x66, 0x18,
+        ];
+        let mut payload = visibgeom_payload(1, 0);
+        payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+        payload.extend_from_slice(&body);
+        payload.push(0xe3);
+        build_prt("c", &[("VisibGeom", payload)])
+    }
+
+    fn type26_split_coordinate_envelope() -> Vec<u8> {
+        let body = [
+            0x28, 0x8d, 0x07, 0x1b, 0xd2, 0x65, 0x6f, 0x6c, 0x18, 0x94, 0x3f, 0x02, 0x70, 0x16,
+            0xbe, 0xfc, 0x00, 0x12, 0x20, 0x47, 0x13, 0xcc, 0x46, 0x31, 0x3d, 0x70, 0xa3, 0xd7,
+            0x0a, 0x3e, 0x3a, 0xb1, 0x47, 0xba, 0x2e, 0x13, 0xcc, 0x46, 0x30, 0xbd, 0x70, 0xa3,
+            0xd7, 0x0a, 0x3e, 0x2e, 0x13, 0xcc,
+        ];
+        let mut payload = visibgeom_payload(1, 0);
+        payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+        payload.extend_from_slice(&body);
+        payload.push(0xe3);
+        build_prt("c", &[("VisibGeom", payload)])
+    }
+
+    fn axis_aligned_plane() -> Vec<u8> {
+        let mut payload = visibgeom_payload(1, 0);
+        payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+        for value in [0.0, 0.0, 0.0, 0.0, -1.0, -1.0, 1.0, 1.0, 2.0, 1.0] {
+            push_generated_scalar(&mut payload, value);
+        }
+        payload.push(0xe3);
+        payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f]);
+        payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
+        payload.push(0xe3);
+        build_prt("c", &[("VisibGeom", payload)])
+    }
+
+    fn line_extrusion_plane() -> Vec<u8> {
+        let mut payload = visibgeom_payload(1, 0);
+        payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 0]);
+        for value in [0.0, 0.0, 1.0] {
+            push_generated_scalar(&mut payload, value);
+        }
+        payload.extend_from_slice(&[0x00, 0x0c, 0x9a]);
+        for value in [0.0, 0.0, 0.0, 2.0, 0.0, 0.0] {
+            push_generated_scalar(&mut payload, value);
+        }
+        payload.push(0xe3);
+        build_prt("c", &[("ND:0:VisibGeom:0", payload)])
+    }
+
+    fn positional_torus() -> Vec<u8> {
+        let body = [
+            40, 141, 7, 27, 210, 101, 111, 108, 24, 148, 63, 2, 112, 22, 190, 252, 0, 18, 32, 71,
+            19, 204, 70, 49, 61, 112, 163, 215, 10, 62, 71, 19, 204, 46, 19, 204, 70, 48, 189, 112,
+            163, 215, 10, 62, 33, 177, 72, 10, 227, 194, 255, 45, 89, 199, 15, 241, 65, 141, 6,
+            220, 32, 138, 77, 219, 24, 229, 16, 40, 141, 6, 220, 32, 138, 77, 219, 194, 255, 45,
+            89, 199, 15, 241, 24, 228, 70, 48, 189, 112, 163, 215, 10, 62, 24, 46, 17, 204, 14,
+        ];
+        let mut payload = visibgeom_payload(1, 0);
+        payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+        payload.extend(body);
+        payload.push(0xe3);
+        build_prt("c", &[("VisibGeom", payload)])
+    }
+
+    fn positional_cylinder() -> Vec<u8> {
+        let body = [
+            17, 72, 0, 0, 19, 24, 72, 55, 192, 70, 29, 255, 255, 255, 255, 255, 143, 72, 38, 0, 72,
+            52, 64, 70, 21, 255, 255, 255, 255, 255, 143, 72, 34, 128,
+        ];
+        let mut payload = visibgeom_payload(1, 0);
+        payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
+        payload.extend(body);
+        payload.push(0xe3);
+        build_prt("c", &[("VisibGeom", payload)])
+    }
+
+    fn paired_sphere_envelopes() -> Vec<u8> {
+        let lower = [
+            0x18, 0x18, 0x01, 0x11, 0x2e, 0xb0, 0x12, 0x47, 0x05, 0x33, 0x2d, 0x2d, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0x29, 0x47, 0x05, 0x33, 0x2e, 0x05, 0x33, 0x2d, 0x31, 0xa6, 0x66,
+            0x66, 0x66, 0x66, 0x66, 0x18,
+        ];
+        let upper = [
+            0x18, 0x18, 0x01, 0x11, 0x2e, 0xb8, 0x12, 0x47, 0x05, 0x33, 0x2d, 0x28, 0xb3, 0x33,
+            0x33, 0x33, 0x33, 0x33, 0x47, 0x05, 0x33, 0x2e, 0x05, 0x33, 0x2d, 0x2e, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0xd7, 0x18,
+        ];
+        let mut payload = b"srf_array\0\xf8\x02".to_vec();
+        payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+        payload.extend_from_slice(&lower);
+        payload.push(0xe3);
+        payload.extend_from_slice(&[8, 0x26, 4, 0x01, 0, 0]);
+        payload.extend_from_slice(&upper);
+        payload.push(0xe3);
+        payload.extend_from_slice(
+            b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe0\x01radius2\0\x2e\x05\x33\xe3",
+        );
+        payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+        build_prt("c", &[("ND:0:VisibGeom:0", payload)])
+    }
+
+    fn named_cylinder_prototype() -> Vec<u8> {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
+        push_named_analytic_prototype(&mut payload, "cylinder", &[("radius", 1.0)]);
+        payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+        build_prt("c", &[("ND:0:VisibGeom:0", payload)])
+    }
+
+    fn named_torus_two_direction_prototype() -> Vec<u8> {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+        payload.extend_from_slice(b"srf_prim_ptr(torus)\0\xe0\x02local_sys\0\xf9\x04\x03");
+        for value in [1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, -2.0] {
+            push_generated_scalar(&mut payload, value);
+        }
+        payload.extend_from_slice(b"\xe0\x01radius1\0\xe4\xe0\x01radius2\0\xe4");
+        payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+        build_prt("c", &[("ND:0:VisibGeom:0", payload)])
+    }
+
+    fn interpolation_spline_prototype() -> Vec<u8> {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[7, 0x28, 4, 0x01, 0, 0]);
+        payload.extend_from_slice(b"srf_prim_ptr(splsrf)\0\xe0\x02i_points\0\xf9\x04\x03");
+        for point in [
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 1.0],
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 2.0],
+        ] {
+            for value in point {
+                push_generated_scalar(&mut payload, value);
+            }
+        }
+        payload.extend_from_slice(b"\xe0\x02end_u_tangts\0\xf9\x04\x03");
+        for _ in 0..4 {
+            for value in [1.0, 0.0, 1.0] {
+                push_generated_scalar(&mut payload, value);
+            }
+        }
+        payload.extend_from_slice(b"\xe0\x02end_v_tangts\0\xf9\x04\x03");
+        for _ in 0..4 {
+            for value in [0.0, 1.0, 1.0] {
+                push_generated_scalar(&mut payload, value);
+            }
+        }
+        payload.extend_from_slice(b"\xe0\x02end_uv_deriv\0\xf9\x04\x03");
+        for _ in 0..12 {
+            push_generated_scalar(&mut payload, 0.0);
+        }
+        for name in ["u_params", "v_params"] {
+            payload.extend_from_slice(&[0xe0, 0x02]);
+            payload.extend_from_slice(name.as_bytes());
+            payload.extend_from_slice(&[0, 0xf8, 0x02]);
+            push_generated_scalar(&mut payload, 0.0);
+            push_generated_scalar(&mut payload, 1.0);
+        }
+        payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+        build_prt("c", &[("ND:0:VisibGeom:0", payload)])
+    }
+
+    fn closed_plane_intersection_brep() -> Vec<u8> {
+        let mut payload = b"srf_array\0\xf8\x04".to_vec();
+        push_generated_plane_row(
+            &mut payload,
+            1,
+            true,
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0],
+        );
+        push_generated_plane_row(
+            &mut payload,
+            2,
+            false,
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+        );
+        push_generated_plane_row(
+            &mut payload,
+            3,
+            false,
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0],
+        );
+        push_generated_plane_row(
+            &mut payload,
+            4,
+            false,
+            [-2.0, -1.0, 2.0],
+            [2.0, -2.0, 1.0],
+            [1.0, 0.0, 0.0],
+        );
+        payload.extend_from_slice(b"crv_array\0\xf3\xf8\x06topol_ref_data\0");
+        for (curve, faces, next) in [
+            (10, [1, 2], [12, 13]),
+            (11, [1, 3], [10, 15]),
+            (12, [1, 4], [11, 14]),
+            (13, [2, 3], [14, 11]),
+            (14, [2, 4], [10, 15]),
+            (15, [3, 4], [13, 12]),
+        ] {
+            push_generated_topology_row(&mut payload, curve, faces, next);
+        }
+
+        let allfeatur = b"\x04\xeb\x04\x00\x10\x01\x00\xe5\xe3\xf6\x83\x91\xe1\
+            \xe0\x21geoms_affected\0\xf8\x01\x63\
+            \xe0\x21edgs_affected\0\xf8\x02\x0a\x0b"
+            .to_vec();
+        build_prt(
+            "c",
+            &[
+                ("VisibGeom", payload),
+                ("AllFeatur", allfeatur),
+                ("MdlStatus", b"Round id 4\0".to_vec()),
+            ],
+        )
+    }
+
+    fn datum_carrier_payload(owner_feature_id: u8) -> Vec<u8> {
+        let mut datum = vec![4, 0x22, owner_feature_id, 1, 0, 0];
+        datum.extend([0x0f; 4]);
+        for value in [2.0_f64, 0.0, 3.0, -2.0, 0.0, -3.0] {
+            if value == 0.0 {
+                datum.push(0x0f);
+            } else {
+                let mut bytes = value.to_be_bytes();
+                bytes[0] = if value.is_sign_negative() { 0x2d } else { 0x46 };
+                datum.extend(bytes);
+            }
+        }
+        datum
+    }
+
+    fn datum_plane_carrier() -> Vec<u8> {
+        build_prt("c", &[("ActDatums", datum_carrier_payload(1))])
+    }
+
+    fn datum_history_merge() -> Vec<u8> {
+        build_prt(
+            "c",
+            &[
+                ("ActDatums", datum_carrier_payload(4)),
+                ("MdlStatus", b"Round id 3\0Datum Plane id 4\0".to_vec()),
+            ],
+        )
+    }
+
+    fn featdefs_sketch_variables() -> Vec<u8> {
+        let mut payload =
+            b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+        payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
+        payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
+        build_prt("c", &[("FeatDefs", payload)])
+    }
+
+    fn feature_dimensions() -> Vec<u8> {
+        let payload = b"feat_defs_917\0\xe0\x01feat_id\0\x28\xe0\x00gsec2d_ptr\0\
+            dimtab_ptr\0\xf8\x02\xf7\x81\x02\xfb\xe2\
+            \xe0\x01type\0\x0a\xe0\x01value\0\xe4\
+            \xe0\x01direct\0\x01\xe0\x01aux_value\0\x0f\
+            \xe0\x01ext_id\0\x2a\xf3\xf7\x81\x02\xe2\
+            \x0a\xe4\x01\x18\x2a\xe0\x00relat_ptr\0"
+            .to_vec();
+        build_prt(
+            "c",
+            &[
+                ("FeatDefs", payload),
+                ("MdlStatus", b"Extrude id 40\0".to_vec()),
+                (
+                    "DEPDB_DATA",
+                    b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+                        \xe0\x0aexpression\0\xf8\x01result=d42+1[deg]\0"
+                        .to_vec(),
+                ),
+            ],
+        )
+    }
+
+    fn relation_unit_declarations() -> Vec<u8> {
+        let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x0aexpression\0\xf8\x05span[inch]=2\0copy=span+25.4[mm]\0\
+            stress[N/mm^2]=2\0angle=atan2(span,25.4[mm])\0freezing[C]=0\0"
+            .to_vec();
+        build_prt("c", &[("DEPDB_DATA", payload)])
+    }
+
+    fn relation_model_name() -> Vec<u8> {
+        let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x0aexpression\0\xf8\x01name=rel_model_name()\0"
+            .to_vec();
+        let mut data = build_prt("c", &[("DEPDB_DATA", payload)]);
+        let header_end = data
+            .windows(b"#-END_OF_UGC_HEADER\n".len())
+            .position(|window| window == b"#-END_OF_UGC_HEADER\n")
+            .expect("header end");
+        data.splice(
+            header_end..header_end,
+            b"#- CMNM 00bwidget.prt \n".iter().copied(),
+        );
+        data
+    }
+
+    fn mdlstatus_feature_history() -> Vec<u8> {
+        build_prt(
+            "c",
+            &[(
+                "MdlStatus",
+                b"noise\0xProtrusion id 40\0Round id 41\0Future Feature id 42\0Datum Plane id 43\0Draft id 44\0Hole id 40\0ySurface id 45\0"
+                    .to_vec(),
+            )],
+        )
+    }
+
+    fn class_911_hole() -> Vec<u8> {
+        let mut geometry = visibgeom_payload(1, 0);
+        geometry.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
+        let allfeatur = vec![
+            4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x8f, 0xe1,
+        ];
+        build_prt(
+            "c",
+            &[
+                ("VisibGeom", geometry),
+                ("AllFeatur", allfeatur),
+                ("MdlStatus", b"Hole id 4\0".to_vec()),
+            ],
+        )
+    }
+
+    fn depdb_recipe_history() -> Vec<u8> {
+        let depdb = b"\xe3K\xc3\xb6rper ID 8051\0\xe3\
+            \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0"
+            .to_vec();
+        build_prt("c", &[("DEPDB_DATA", depdb)])
+    }
+
+    fn golden_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
+    }
+
+    fn fixtures_dir() -> PathBuf {
+        golden_dir().join("fixtures")
+    }
+
+    fn decode_dir() -> PathBuf {
+        golden_dir().join("decode")
+    }
+
+    fn inspect_dir() -> PathBuf {
+        golden_dir().join("inspect")
+    }
+
+    /// Nest a pretty-JSON block under an object key, preserving the block's own
+    /// key order (a `serde_json::Value` round-trip would re-sort object keys and
+    /// so would not reflect `to_canonical_json` faithfully).
+    fn indent_block(block: &str) -> String {
+        let mut lines = block.lines();
+        let mut out = String::new();
+        if let Some(first) = lines.next() {
+            out.push_str(first);
+        }
+        for line in lines {
+            out.push('\n');
+            out.push_str("  ");
+            out.push_str(line);
+        }
+        out
+    }
+
+    /// The decode snapshot: the canonical IR (via `CadIr::to_canonical_json`),
+    /// the `DecodeReport`, and the `SourceFidelity` sidecar, as one stable pretty
+    /// document. A decode error is frozen as `{"decode_error": ...}` (a `.prt`
+    /// that fails to decode is contract-relevant behavior), so this never panics.
+    fn decode_snapshot(bytes: &[u8]) -> String {
+        match CreoCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
+            Ok(result) => {
+                let ir = result
+                    .ir
+                    .to_canonical_json()
+                    .expect("serialize canonical ir");
+                let report =
+                    serde_json::to_string_pretty(&result.report).expect("serialize report");
+                let fidelity = serde_json::to_string_pretty(&result.source_fidelity)
+                    .expect("serialize source_fidelity");
+                let mut out = String::from("{\n");
+                out.push_str("  \"ir\": ");
+                out.push_str(&indent_block(&ir));
+                out.push_str(",\n  \"report\": ");
+                out.push_str(&indent_block(&report));
+                out.push_str(",\n  \"source_fidelity\": ");
+                out.push_str(&indent_block(&fidelity));
+                out.push_str("\n}\n");
+                out
+            }
+            Err(err) => {
+                let value = serde_json::json!({ "decode_error": err.to_string() });
+                let mut text =
+                    serde_json::to_string_pretty(&value).expect("serialize decode error");
+                text.push('\n');
+                text
+            }
+        }
+    }
+
+    /// The inspect snapshot: the `ContainerSummary` as stable pretty JSON, with
+    /// inspect errors frozen the same way decode errors are.
+    fn inspect_snapshot(bytes: &[u8]) -> String {
+        let value =
+            match CreoCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
+                Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
+                Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
+            };
+        let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
+        text.push('\n');
+        text
+    }
+
+    /// First line that differs between two documents, 1-based, both sides
+    /// truncated for a readable failure. Length-only differences report the
+    /// short side as `<end of file>`.
+    fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
+        let mut exp = expected.lines();
+        let mut act = actual.lines();
+        let mut line = 0usize;
+        loop {
+            line += 1;
+            match (exp.next(), act.next()) {
+                (Some(e), Some(a)) if e == a => {}
+                (e, a) => {
+                    let trunc = |s: Option<&str>| match s {
+                        Some(s) if s.len() > 200 => format!("{}…", &s[..200]),
+                        Some(s) => s.to_string(),
+                        None => "<end of file>".to_string(),
+                    };
+                    return (line, trunc(e), trunc(a));
+                }
+            }
+        }
+    }
+
+    fn update_requested() -> bool {
+        std::env::var_os("UPDATE_GOLDEN").is_some()
+    }
+
+    /// Reads a committed `.prt` fixture; the bytes, not the builder, are the
+    /// snapshot source of truth so a builder drift cannot silently repin.
+    fn read_fixture(name: &str) -> Result<Vec<u8>, String> {
+        let path = fixtures_dir().join(format!("{name}.prt"));
+        std::fs::read(&path).map_err(|e| {
+            format!(
+                "fixture `{name}`: cannot read {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-creo golden`",
+                path.display()
+            )
+        })
+    }
+
+    #[test]
+    fn golden_snapshots_are_byte_identical() {
+        let update = update_requested();
+        if update {
+            for dir in [fixtures_dir(), decode_dir(), inspect_dir()] {
+                std::fs::create_dir_all(&dir).expect("create golden dir");
+            }
+        }
+        let mut failures: Vec<String> = Vec::new();
+        for (name, builder_bytes) in fixtures() {
+            if update {
+                std::fs::write(fixtures_dir().join(format!("{name}.prt")), &builder_bytes)
+                    .unwrap_or_else(|e| panic!("write fixture {name}: {e}"));
+                std::fs::write(
+                    decode_dir().join(format!("{name}.json")),
+                    decode_snapshot(&builder_bytes),
+                )
+                .unwrap_or_else(|e| panic!("write decode golden {name}: {e}"));
+                std::fs::write(
+                    inspect_dir().join(format!("{name}.json")),
+                    inspect_snapshot(&builder_bytes),
+                )
+                .unwrap_or_else(|e| panic!("write inspect golden {name}: {e}"));
+                continue;
+            }
+            let bytes = match read_fixture(name) {
+                Ok(bytes) => bytes,
+                Err(message) => {
+                    failures.push(message);
+                    continue;
+                }
+            };
+            for (kind, dir, actual) in [
+                ("decode", decode_dir(), decode_snapshot(&bytes)),
+                ("inspect", inspect_dir(), inspect_snapshot(&bytes)),
+            ] {
+                let path = dir.join(format!("{name}.json"));
+                let expected = match std::fs::read_to_string(&path) {
+                    Ok(text) => text,
+                    Err(e) => {
+                        failures.push(format!(
+                            "fixture `{name}` ({kind}): cannot read golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-creo golden`",
+                            path.display()
+                        ));
+                        continue;
+                    }
+                };
+                if expected != actual {
+                    let (line, exp_line, act_line) = first_line_diff(&expected, &actual);
+                    failures.push(format!(
+                        "fixture `{name}` ({kind}): output diverged from golden at line {line}\n    golden: {exp_line}\n    actual: {act_line}"
+                    ));
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} golden snapshot(s) drifted; if the change is intended run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-creo golden` and review the diff:\n\n{}",
+            failures.len(),
+            failures.join("\n\n")
+        );
+    }
+
+    /// Guards against nondeterministic codec output (`HashMap` iteration order,
+    /// timestamps): decoding and inspecting the same bytes twice must produce
+    /// identical JSON. Runs on the builder bytes so it holds before the first
+    /// `UPDATE_GOLDEN` generation.
+    #[test]
+    fn golden_output_is_deterministic() {
+        for (name, bytes) in fixtures() {
+            for (kind, first, second) in [
+                ("decode", decode_snapshot(&bytes), decode_snapshot(&bytes)),
+                (
+                    "inspect",
+                    inspect_snapshot(&bytes),
+                    inspect_snapshot(&bytes),
+                ),
+            ] {
+                if first != second {
+                    let (line, a, b) = first_line_diff(&first, &second);
+                    panic!("fixture `{name}` ({kind}): nondeterministic output at line {line}\n    run 1: {a}\n    run 2: {b}");
+                }
+            }
+        }
+    }
+
+    /// The committed `.prt` fixtures still reproduce the builder bytes. This is a
+    /// corruption check on the frozen fixtures, not a drift gate; skipped during
+    /// generation. When it fails after an intentional builder edit, regenerate
+    /// with `UPDATE_GOLDEN=1`.
+    #[test]
+    fn golden_fixtures_match_builders() {
+        if update_requested() {
+            return;
+        }
+        let mut failures: Vec<String> = Vec::new();
+        for (name, builder_bytes) in fixtures() {
+            match read_fixture(name) {
+                Ok(bytes) if bytes == builder_bytes => {}
+                Ok(bytes) => failures.push(format!(
+                    "fixture `{name}`: committed {} bytes, builder produces {} bytes",
+                    bytes.len(),
+                    builder_bytes.len()
+                )),
+                Err(message) => failures.push(message),
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "committed fixtures diverged from their builders; regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-creo golden`:\n\n{}",
+            failures.join("\n")
+        );
+    }
+}

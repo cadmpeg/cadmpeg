@@ -1,0 +1,755 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "source": {
+      "format": "creo",
+      "attributes": {
+        "expanded_section_byte_count": "0",
+        "expanded_section_count": "0",
+        "file_size": "316",
+        "layout": "DEPDB",
+        "section.0.length": "140",
+        "section.0.name": "FeatDefs",
+        "section.0.offset": "76",
+        "section.0.raw_name": "FeatDefs",
+        "section.0.role": "model-data",
+        "section.1.length": "27",
+        "section.1.name": "MdlStatus",
+        "section.1.offset": "216",
+        "section.1.raw_name": "MdlStatus",
+        "section.1.role": "metadata",
+        "section.2.length": "73",
+        "section.2.name": "DEPDB_DATA",
+        "section.2.offset": "243",
+        "section.2.raw_name": "DEPDB_DATA",
+        "section.2.role": "metadata",
+        "section_count": "3",
+        "version_line": "#UGC:2 P c"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 1e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [],
+      "regions": [],
+      "shells": [],
+      "faces": [],
+      "loops": [],
+      "coedges": [],
+      "edges": [],
+      "vertices": [],
+      "points": [],
+      "surfaces": [],
+      "curves": [],
+      "subds": [],
+      "pcurves": [],
+      "procedural_surfaces": [],
+      "procedural_curves": [],
+      "features": [
+        {
+          "id": "creo:depdb:curve_expression_feature#7-257",
+          "ordinal": 2,
+          "name": "Curve Equation 7",
+          "suppressed": false,
+          "source_tag": "crv_fr_eqn",
+          "source_text": "result=d42+1[deg]",
+          "source_content": [
+            {
+              "kind": "parameter",
+              "value": "creo:depdb:curve_expression_parameter#7-257-0"
+            }
+          ],
+          "definition": {
+            "definition": "native",
+            "kind": "CurveFromEquation",
+            "parameters": {
+              "assignment_count": "1",
+              "entity_id": "7"
+            }
+          },
+          "native_ref": "creo:depdb:curve_expression#active-7-257"
+        },
+        {
+          "id": "creo:model:feature#40",
+          "ordinal": 1,
+          "name": "Extrude id 40",
+          "suppressed": false,
+          "source_properties": {
+            "native_parameter.dimension_count": "2",
+            "native_parameter.sketch_segment_count": "0"
+          },
+          "definition": {
+            "definition": "extrude",
+            "profile": {
+              "kind": "unresolved",
+              "value": "creo:model:feature#40"
+            },
+            "start": {
+              "kind": "profile_plane"
+            },
+            "extent": {
+              "kind": "one_sided",
+              "side": {
+                "termination": {
+                  "kind": "unresolved"
+                }
+              }
+            },
+            "op": "unresolved"
+          },
+          "native_ref": "creo:featdefs:feature_definition#917"
+        },
+        {
+          "id": "creo:model:sketch_feature#917",
+          "ordinal": 0,
+          "suppressed": false,
+          "source_tag": "section",
+          "source_content": [
+            {
+              "kind": "parameter",
+              "value": "creo:featdefs:parameter#917:42:1"
+            },
+            {
+              "kind": "parameter",
+              "value": "creo:featdefs:parameter#917:42:2"
+            }
+          ],
+          "definition": {
+            "definition": "sketch",
+            "space": "planar",
+            "sketch": "creo:model:sketch#917"
+          },
+          "native_ref": "creo:featdefs:sketch#917"
+        }
+      ],
+      "configurations": [],
+      "parameters": [
+        {
+          "id": "creo:depdb:curve_expression_parameter#7-257-0",
+          "owner": "creo:depdb:curve_expression_feature#7-257",
+          "ordinal": 0,
+          "name": "result",
+          "expression": "d42+1[deg]",
+          "value": {
+            "kind": "angle",
+            "value": 1.0174532925199433
+          },
+          "properties": {
+            "activation": "active",
+            "external_dependencies": "d42",
+            "source_assignment_ordinal": "0"
+          },
+          "native_ref": "creo:depdb:curve_expression#active-7-257"
+        },
+        {
+          "id": "creo:featdefs:parameter#917:42:1",
+          "owner": "creo:model:sketch_feature#917",
+          "ordinal": 0,
+          "name": "d917_42_1",
+          "expression": "1",
+          "value": {
+            "kind": "angle",
+            "value": 1.0
+          },
+          "properties": {
+            "auxiliary_value": "0",
+            "definition_id": "917",
+            "dimension_type": "10",
+            "direction_byte": "1",
+            "external_id": "42",
+            "source_ordinal": "0"
+          },
+          "native_ref": "creo:featdefs:sketch#917"
+        },
+        {
+          "id": "creo:featdefs:parameter#917:42:2",
+          "owner": "creo:model:sketch_feature#917",
+          "ordinal": 1,
+          "name": "d917_42_2",
+          "expression": "1",
+          "value": {
+            "kind": "angle",
+            "value": 1.0
+          },
+          "properties": {
+            "auxiliary_value": "0",
+            "definition_id": "917",
+            "dimension_type": "10",
+            "direction_byte": "1",
+            "external_id": "42",
+            "source_ordinal": "1"
+          },
+          "native_ref": "creo:featdefs:sketch#917"
+        }
+      ],
+      "sketches": [
+        {
+          "id": "creo:model:sketch#917",
+          "placement": {
+            "kind": "unresolved"
+          },
+          "native_ref": "creo:featdefs:sketch#917"
+        }
+      ],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "components": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [],
+      "products": [],
+      "product_occurrences": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "creo": {
+        "version": 1,
+        "arenas": {
+          "curve_expressions": [
+            {
+              "id": "creo:depdb:curve_expression#active-7-257",
+              "assignments": [
+                {
+                  "activation": "active",
+                  "declared_unit": null,
+                  "dependencies": [
+                    "d42"
+                  ],
+                  "expression": "d42+1[deg]",
+                  "name": "result",
+                  "offset": 298,
+                  "value": 58.29577951308232
+                }
+              ],
+              "backup": false,
+              "entity_id": 7,
+              "lines": [
+                {
+                  "offset": 298,
+                  "text": "result=d42+1[deg]"
+                }
+              ],
+              "local_system": null,
+              "prohibited_constructs": []
+            }
+          ],
+          "feature_definitions": [
+            {
+              "id": "creo:featdefs:feature_definition#917",
+              "body": [
+                102,
+                101,
+                97,
+                116,
+                95,
+                100,
+                101,
+                102,
+                115,
+                95,
+                57,
+                49,
+                55,
+                0,
+                224,
+                1,
+                102,
+                101,
+                97,
+                116,
+                95,
+                105,
+                100,
+                0,
+                40,
+                224,
+                0,
+                103,
+                115,
+                101,
+                99,
+                50,
+                100,
+                95,
+                112,
+                116,
+                114,
+                0,
+                100,
+                105,
+                109,
+                116,
+                97,
+                98,
+                95,
+                112,
+                116,
+                114,
+                0,
+                248,
+                2,
+                247,
+                129,
+                2,
+                251,
+                226,
+                224,
+                1,
+                116,
+                121,
+                112,
+                101,
+                0,
+                10,
+                224,
+                1,
+                118,
+                97,
+                108,
+                117,
+                101,
+                0,
+                228,
+                224,
+                1,
+                100,
+                105,
+                114,
+                101,
+                99,
+                116,
+                0,
+                1,
+                224,
+                1,
+                97,
+                117,
+                120,
+                95,
+                118,
+                97,
+                108,
+                117,
+                101,
+                0,
+                15,
+                224,
+                1,
+                101,
+                120,
+                116,
+                95,
+                105,
+                100,
+                0,
+                42,
+                243,
+                247,
+                129,
+                2,
+                226,
+                10,
+                228,
+                1,
+                24,
+                42,
+                224,
+                0,
+                114,
+                101,
+                108,
+                97,
+                116,
+                95,
+                112,
+                116,
+                114,
+                0,
+                35,
+                10
+              ],
+              "definition_id": 917,
+              "offset": 86,
+              "outlines": [],
+              "owner_feature_id": 40,
+              "parameter_frames": [],
+              "source_section": "FeatDefs"
+            }
+          ],
+          "feature_operation_states": [
+            {
+              "id": "creo:mdlstatus:feature_state#40:0",
+              "current": true,
+              "display_name_stored": true,
+              "family": "Extrude",
+              "feature_id": 40,
+              "identifier_keyword": "id",
+              "offset": 227,
+              "parent_feature_id": null,
+              "recipe": null,
+              "root_schema_class": null,
+              "state_offset": 227,
+              "state_ordinal": 0,
+              "stored_name": "Extrude id 40",
+              "stored_name_bytes": [
+                69,
+                120,
+                116,
+                114,
+                117,
+                100,
+                101,
+                32,
+                105,
+                100,
+                32,
+                52,
+                48
+              ],
+              "stored_name_prefix": null
+            }
+          ],
+          "sketches": [
+            {
+              "id": "creo:featdefs:sketch#917",
+              "definition_id": 917,
+              "dimensions": [
+                {
+                  "auxiliary_value": 0.0,
+                  "dimension_type": 10,
+                  "direction_byte": 1,
+                  "external_id": 42,
+                  "offset": 144,
+                  "unit": "radians",
+                  "value": 1.0
+                },
+                {
+                  "auxiliary_value": 0.0,
+                  "dimension_type": 10,
+                  "direction_byte": 1,
+                  "external_id": 42,
+                  "offset": 197,
+                  "unit": "radians",
+                  "value": 1.0
+                }
+              ],
+              "offset": 86,
+              "opaque_segments": [],
+              "order_rows": [],
+              "owner_feature_id": 40,
+              "relation_triples": [],
+              "relations": [],
+              "saved_entities": [],
+              "section_3d": null,
+              "section_points": [],
+              "segments": [],
+              "skamps": [],
+              "solved_external_ids": [],
+              "source_section": "FeatDefs",
+              "table_headers": [
+                {
+                  "buckets": [],
+                  "declared_count": 2,
+                  "entity_ref": 258,
+                  "entry_ref": null,
+                  "kind": "dimensions",
+                  "offset": 124,
+                  "row_count": 2
+                }
+              ],
+              "trim_entities": [],
+              "trim_vertices": [],
+              "variables": []
+            }
+          ],
+          "unknowns": []
+        }
+      }
+    }
+  },
+  "report": {
+    "format": "creo",
+    "container_only": false,
+    "geometry_transferred": false,
+    "coverage": {
+      "active_curve_expression_assignment_count": 1,
+      "ambiguous_visible_curve_row_count": 0,
+      "ambiguous_visible_surface_row_count": 0,
+      "conditional_curve_expression_assignment_count": 0,
+      "decoded_active_curve_expression_assignment_count": 1,
+      "decoded_bound_prototype_pcurve_count": 0,
+      "decoded_cross_section_curve_prototype_count": 0,
+      "decoded_cross_section_curve_row_count": 0,
+      "decoded_cross_section_outline_plane_count": 0,
+      "decoded_cross_section_plane_envelope_count": 0,
+      "decoded_cross_section_plane_local_system_count": 0,
+      "decoded_cross_section_surface_parameter_record_count": 0,
+      "decoded_cross_section_surface_row_count": 0,
+      "decoded_curve_expression_record_count": 1,
+      "decoded_curve_parameter_record_count": 0,
+      "decoded_curve_prototype_count": 0,
+      "decoded_curve_prototype_topology_count": 0,
+      "decoded_curve_topology_row_count": 0,
+      "decoded_datum_plane_count": 0,
+      "decoded_face_component_count": 0,
+      "decoded_fc05_circle_count": 0,
+      "decoded_fc05_cylinder_cap_pair_count": 0,
+      "decoded_fc_curve_coordinate_record_count": 0,
+      "decoded_feature_affected_id_array_count": 0,
+      "decoded_feature_choice_count": 0,
+      "decoded_feature_choice_field_count": 0,
+      "decoded_feature_count": 0,
+      "decoded_feature_definition_count": 1,
+      "decoded_feature_dimension_count": 2,
+      "decoded_feature_entity_count": 0,
+      "decoded_feature_entity_reference_count": 0,
+      "decoded_feature_entity_table_count": 0,
+      "decoded_feature_geometry_table_count": 0,
+      "decoded_feature_loop_restore_direction_count": 0,
+      "decoded_feature_opaque_segment_count": 0,
+      "decoded_feature_operation_count": 1,
+      "decoded_feature_operation_state_count": 1,
+      "decoded_feature_order_entry_count": 0,
+      "decoded_feature_outline_count": 0,
+      "decoded_feature_placement_instruction_count": 0,
+      "decoded_feature_relation_count": 0,
+      "decoded_feature_replay_affected_id_count": 0,
+      "decoded_feature_revolution_extent_count": 0,
+      "decoded_feature_row_count": 0,
+      "decoded_feature_saved_entity_count": 0,
+      "decoded_feature_section_point_count": 0,
+      "decoded_feature_section_transform_count": 0,
+      "decoded_feature_segment_count": 0,
+      "decoded_feature_skamp_count": 0,
+      "decoded_feature_surface_replay_association_count": 0,
+      "decoded_feature_trim_entity_count": 0,
+      "decoded_feature_trim_vertex_count": 0,
+      "decoded_half_edge_count": 0,
+      "decoded_loop_count": 0,
+      "decoded_named_surface_prototype_count": 0,
+      "decoded_outline_plane_count": 0,
+      "decoded_pcurve_count": 0,
+      "decoded_plane_envelope_count": 0,
+      "decoded_plane_local_system_count": 0,
+      "decoded_positional_extrusion_direction_count": 0,
+      "decoded_positional_frame_plane_count": 0,
+      "decoded_prototype_pcurve_count": 0,
+      "decoded_reference_circle_count": 0,
+      "decoded_reference_conic_count": 0,
+      "decoded_reference_line_count": 0,
+      "decoded_surface_parameter_record_count": 0,
+      "decoded_surface_prototype_count": 0,
+      "decoded_surface_row_count": 0,
+      "decoded_tabulated_cylinder_control_point_set_count": 0,
+      "decoded_tabulated_cylinder_curve_replay_count": 0,
+      "decoded_topological_vertex_count": 0,
+      "decoded_torus_outline_extent_count": 0,
+      "decoded_torus_radius_override_count": 0,
+      "decoded_type26_five_coordinate_envelope_count": 0,
+      "decoded_type26_split_coordinate_envelope_count": 0,
+      "evaluated_active_curve_expression_assignment_count": 1,
+      "inactive_curve_expression_assignment_count": 0,
+      "prohibited_active_curve_expression_kind_count": 0,
+      "prohibited_active_curve_expression_record_count": 0,
+      "resolved_feature_dimension_value_count": 2,
+      "transferred_circular_sweep_cylinder_count": 0,
+      "transferred_constrained_slot_fillet_cylinder_count": 0,
+      "transferred_cross_section_plane_count": 0,
+      "transferred_curve_expression_parameter_count": 1,
+      "transferred_feature_circular_extrusion_brep_count": 0,
+      "transferred_feature_dimension_parameter_count": 2,
+      "transferred_feature_extrusion_brep_count": 0,
+      "transferred_feature_extrusion_surface_count": 0,
+      "transferred_feature_extrusion_vertex_orbit_curve_count": 0,
+      "transferred_feature_relation_constraint_count": 0,
+      "transferred_feature_revolution_brep_count": 0,
+      "transferred_feature_revolution_surface_count": 0,
+      "transferred_feature_revolution_vertex_orbit_curve_count": 0,
+      "transferred_feature_skamp_constraint_count": 0,
+      "transferred_first_instance_prototype_surface_count": 0,
+      "transferred_hole_cylinder_count": 0,
+      "transferred_native_feature_relation_constraint_count": 0,
+      "transferred_native_feature_skamp_constraint_count": 0,
+      "transferred_native_topological_edge_count": 0,
+      "transferred_paired_envelope_sphere_count": 0,
+      "transferred_part_product_count": 0,
+      "transferred_positional_cone_count": 0,
+      "transferred_positional_cylinder_count": 0,
+      "transferred_positional_line_extrusion_plane_count": 0,
+      "transferred_positional_torus_count": 0,
+      "transferred_reference_ellipse_count": 0,
+      "transferred_rowless_round_cylinder_count": 0,
+      "transferred_saved_spline_curve_count": 0,
+      "transferred_split_outline_cylinder_count": 0,
+      "transferred_straight_pcurve_line_count": 0,
+      "transferred_tabulated_cylinder_spline_extrusion_count": 0,
+      "transferred_topological_point_count": 0,
+      "transferred_typed_feature_relation_constraint_count": 0,
+      "transferred_typed_feature_skamp_constraint_count": 0,
+      "transferred_visible_cone_surface_row_count": 0,
+      "transferred_visible_curve_row_count": 0,
+      "transferred_visible_cylinder_surface_row_count": 0,
+      "transferred_visible_extrusion_surface_row_count": 0,
+      "transferred_visible_fillet_surface_row_count": 0,
+      "transferred_visible_plane_surface_row_count": 0,
+      "transferred_visible_spline_surface_row_count": 0,
+      "transferred_visible_surface_row_count": 0,
+      "transferred_visible_torus_or_sphere_surface_row_count": 0,
+      "unique_visible_curve_row_count": 0,
+      "unique_visible_surface_row_count": 0,
+      "untransferred_visible_curve_row_count": 0,
+      "untransferred_visible_surface_row_count": 0,
+      "visible_cone_surface_row_count": 0,
+      "visible_cylinder_surface_row_count": 0,
+      "visible_extrusion_surface_row_count": 0,
+      "visible_fillet_surface_row_count": 0,
+      "visible_plane_surface_row_count": 0,
+      "visible_spline_surface_row_count": 0,
+      "visible_torus_or_sphere_surface_row_count": 0
+    },
+    "losses": [
+      {
+        "code": "carrier_summary",
+        "category": "geometry",
+        "severity": "info",
+        "message": "PSB container decoded structurally: 3 section(s), DEPDB layout, VisibGeom namespace census srf_array=n/a / crv_array=n/a; 0 typed surface rows, 0 labeled curve prototypes, 0 canonical curve-topology rows, and 0 closed native loops were decoded. Outline-backed planes, guarded non-axis support frames, complete ND first-instance plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional surface-of-extrusion planes, topology-bound `fc 05` cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind circular-sweep cylinders, four-entry simple-hole cylinders with complete cap outlines, radius-anchored class-911 counterbore and bore patches, and compact simple-hole cylinders with complete positional carriers, complementary split-outline cylinders bound to an axis-normal plane, complete positional cylinder bodies, complete support-apex and planar-envelope positional cones, and complete local-system positional tori transfer as carriers; other parameter bodies remain structural records."
+      },
+      {
+        "code": "geometry_not_transferred",
+        "category": "geometry",
+        "severity": "blocking",
+        "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop planar face additionally requires one strict containment outer boundary. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). 0 PSB geometry section(s) were preserved verbatim as unknown records."
+      },
+      {
+        "code": "geometry_not_transferred",
+        "category": "geometry",
+        "severity": "blocking",
+        "message": "Additional model-space carriers are gated by unresolved lane-specific scalar prefixes, feature-local transform bindings, placement-incomplete or untagged `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps prevent transfer of the remaining non-plane per-instance surfaces, curves, and vertices."
+      },
+      {
+        "code": "topology_not_transferred",
+        "category": "topology",
+        "severity": "blocking",
+        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates."
+      },
+      {
+        "code": "feature_history_retained",
+        "category": "attribute",
+        "severity": "warning",
+        "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred."
+      }
+    ],
+    "notes": [
+      "PSB container: #UGC:2 P c",
+      "layout: DEPDB; 3 section(s) enumerated",
+      "no VisibGeom srf_array/crv_array count header was located",
+      "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
+    ]
+  },
+  "source_fidelity": {
+    "version": "3",
+    "annotations": {
+      "streams": [
+        "creo:FeatDefs",
+        "creo:MdlStatus",
+        "creo:DEPDB_DATA"
+      ],
+      "provenance": {
+        "creo:depdb:curve_expression#active-7-257": {
+          "stream": 2,
+          "offset": 283,
+          "tag": "curve_expression_program"
+        },
+        "creo:depdb:curve_expression_feature#7-257": {
+          "stream": 2,
+          "offset": 283,
+          "tag": "curve_expression_feature"
+        },
+        "creo:depdb:curve_expression_parameter#7-257-0": {
+          "stream": 2,
+          "offset": 298,
+          "tag": "curve_expression_assignment"
+        },
+        "creo:featdefs:feature_definition#917": {
+          "stream": 0,
+          "offset": 86,
+          "tag": "feature_definition_record"
+        },
+        "creo:featdefs:parameter#917:42:1": {
+          "stream": 0,
+          "offset": 144,
+          "tag": "section_dimension"
+        },
+        "creo:featdefs:parameter#917:42:2": {
+          "stream": 0,
+          "offset": 197,
+          "tag": "section_dimension"
+        },
+        "creo:featdefs:sketch#917": {
+          "stream": 0,
+          "offset": 86,
+          "tag": "feature_sketch"
+        },
+        "creo:mdlstatus:feature_state#40:0": {
+          "stream": 1,
+          "offset": 227,
+          "tag": "feature_operation_state"
+        },
+        "creo:model:feature#40": {
+          "stream": 1,
+          "offset": 227,
+          "tag": "feature_operation_name"
+        },
+        "creo:model:sketch#917": {
+          "stream": 0,
+          "offset": 86,
+          "tag": "unplaced_section"
+        },
+        "creo:model:sketch_feature#917": {
+          "stream": 0,
+          "offset": 86,
+          "tag": "section_sketch_feature"
+        }
+      },
+      "exactness": {
+        "creo:depdb:curve_expression_feature#7-257": {
+          "entity": "derived"
+        },
+        "creo:depdb:curve_expression_parameter#7-257-0": {
+          "entity": "derived"
+        },
+        "creo:featdefs:parameter#917:42:1": {
+          "entity": "derived"
+        },
+        "creo:featdefs:parameter#917:42:2": {
+          "entity": "derived"
+        },
+        "creo:featdefs:sketch#917": {
+          "entity": "derived"
+        },
+        "creo:model:sketch#917": {
+          "entity": "derived"
+        },
+        "creo:model:sketch_feature#917": {
+          "entity": "derived"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "container_kind": "psb",
+  "entries": [
+    {
+      "attributes": {
+        "offset": "76"
+      },
+      "compressed_size": 48,
+      "compression": "none",
+      "name": "VisibGeom",
+      "role": "psb-geometry",
+      "uncompressed_size": 48
+    },
+    {
+      "attributes": {
+        "offset": "124"
+      },
+      "compressed_size": 28,
+      "compression": "none",
+      "name": "AllFeatur",
+      "role": "model-data",
+      "uncompressed_size": 28
+    },
+    {
+      "attributes": {
+        "offset": "152"
+      },
+      "compressed_size": 21,
+      "compression": "none",
+      "name": "MdlStatus",
+      "role": "metadata",
+      "uncompressed_size": 21
+    }
+  ],
+  "format": "creo",
+  "notes": [
+    "PSB container: #UGC:2 P c",
+    "layout: unknown; 3 section(s) enumerated",
+    "VisibGeom namespace census: srf_array=1, crv_array=0 (byte-backed count headers; per-instance row geometry is not decoded)",
+    "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
+  ]
+}
