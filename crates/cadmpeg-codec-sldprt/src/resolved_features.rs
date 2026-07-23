@@ -496,6 +496,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 || coordinates_m.is_some()
                     && (compact_legacy_profile_vertex(payload, offset)
                         || indexed_profile_vertex(payload, offset)
+                        || current_geometry_locus_profile_vertex(payload, offset)
                         || linked_profile_vertex(payload, offset))
             {
                 SketchInputKind::Point
@@ -1136,6 +1137,30 @@ fn indexed_profile_vertex(payload: &[u8], offset: usize) -> bool {
         && marker_profile_curve_role(payload, offset) == Some(1)
 }
 
+fn current_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && marker_is_geometry_locus(payload, offset)
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&[0; 2])
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
+        && payload.get(offset + 64..offset + 66) == Some(&[0x1e, 0x00])
+        && finite_coordinate_pair(payload, offset.saturating_add(66)).is_some()
+        && payload.get(offset + 82..offset + 86) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 86..offset + 92) == Some(&[0; 6])
+        && payload.get(offset + 92..offset + 98) == Some(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00])
+        && payload.get(offset + 98..offset + 132) == Some(&[0; 34])
+        && payload
+            .get(offset + 132..offset + 136)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        && payload.get(offset + 136..offset + 142) == Some(&[0; 6])
+        && payload.get(offset + 142..offset + 146) == Some(&[0xff; 4])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(146))
+}
+
 type LinkedProfilePoint = ([f64; 2], [(u16, u16); 2]);
 
 fn linked_profile_point(payload: &[u8], offset: usize) -> Option<LinkedProfilePoint> {
@@ -1324,14 +1349,15 @@ mod marker_tests {
         coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, cosmetic_thread_component_face_reference_at,
         cosmetic_thread_cylinder_reference_at, current_coordinate_linked_line_endpoints,
-        current_indexed_arc_reverses_center_sweep, current_reverse_incidence_endpoint_offsets,
-        current_wide_arc_direct_markers, current_wide_undetailed_line,
-        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
-        explicit_reference_axis_frame, explicit_reference_plane_frame,
-        extended_compact_object_endpoint_markers, extended_line_handle_coordinates,
-        fixed_reference_plane_frame, generated_surface_identities,
-        indexed_arc_uses_coordinate_center, indexed_profile_vertex, inline_surface_reference_at,
-        legacy_compact_diameter_arc_center, legacy_compact_direct_endpoint_markers,
+        current_geometry_locus_profile_vertex, current_indexed_arc_reverses_center_sweep,
+        current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
+        current_wide_undetailed_line, direct_indexed_curve_endpoint_indices,
+        enrich_history_revolution_inputs, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, extended_compact_object_endpoint_markers,
+        extended_line_handle_coordinates, fixed_reference_plane_frame,
+        generated_surface_identities, indexed_arc_uses_coordinate_center, indexed_profile_vertex,
+        inline_surface_reference_at, legacy_compact_diameter_arc_center,
+        legacy_compact_direct_endpoint_markers,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_diagonal_rectangle,
         legacy_extended_profile_curve_kind, legacy_feature_input_section,
@@ -5281,6 +5307,33 @@ mod marker_tests {
         );
         linked[92..94].copy_from_slice(&4u16.to_le_bytes());
         assert_eq!(extended_line_handle_coordinates(&linked, 0), None);
+    }
+
+    #[test]
+    fn current_geometry_locus_profile_vertex_decodes_as_a_point() {
+        let mut payload = vec![0; 146 + SKETCH_MARKER.len()];
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+        payload[66..74].copy_from_slice(&(-1.125f64).to_le_bytes());
+        payload[74..82].copy_from_slice(&0.542f64.to_le_bytes());
+        payload[82..86].copy_from_slice(&1u32.to_le_bytes());
+        payload[92..98].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00]);
+        payload[132..136].copy_from_slice(&7u32.to_le_bytes());
+        payload[142..146].fill(0xff);
+        payload[146..].copy_from_slice(SKETCH_MARKER);
+
+        assert!(current_geometry_locus_profile_vertex(&payload, 0));
+        let entity = &sketch_input_entities(&payload, "lane")[0];
+        assert_eq!(entity.kind, SketchInputKind::Point);
+        assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
+        payload[132..136].fill(0);
+        assert!(!current_geometry_locus_profile_vertex(&payload, 0));
     }
 
     #[test]
