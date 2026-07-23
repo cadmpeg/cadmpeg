@@ -13619,12 +13619,12 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 911 {
-        let unresolved_form = stepped_hole_form(
+        let stepped_form = stepped_hole_form(
             feature_id,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
         );
-        let stepped_dimensions = (unresolved_form == Some(HoleForm::Counterbore))
+        let stepped_dimensions = (stepped_form == Some(HoleForm::Counterbore))
             .then(|| counterbore_dimensions(scan, ir, feature_id))
             .flatten();
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
@@ -13689,17 +13689,21 @@ fn schema_feature_definition(
             position,
             direction,
             placements: Vec::new(),
-            kind: if simple_form {
-                HoleKind::Simple
-            } else {
-                HoleKind::Unresolved {
-                    form: unresolved_form,
-                    counterbore_diameter: stepped_dimensions
-                        .map(|(_, diameter, _)| Length(diameter)),
-                    counterbore_depth: stepped_dimensions.map(|(_, _, depth)| Length(depth)),
+            kind: match (simple_form, stepped_form, stepped_dimensions) {
+                (true, None, None) => HoleKind::Simple,
+                (false, Some(HoleForm::Counterbore), Some((_, diameter, depth))) => {
+                    HoleKind::Counterbore {
+                        diameter: Length(diameter),
+                        depth: Length(depth),
+                    }
+                }
+                (_, form, dimensions) => HoleKind::Unresolved {
+                    form,
+                    counterbore_diameter: dimensions.map(|(_, diameter, _)| Length(diameter)),
+                    counterbore_depth: dimensions.map(|(_, _, depth)| Length(depth)),
                     countersink_diameter: None,
                     countersink_angle: None,
-                }
+                },
             },
             exit_kind: None,
             diameter: diameter

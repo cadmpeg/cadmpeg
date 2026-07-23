@@ -2151,7 +2151,9 @@ counterbore radius. IDs `0`, `1`, and `3` have dimension type `2`; ID `2` has
 dimension type `1`. Bore and counterbore diameters are twice their stored
 radii. A replay supplies neutral hole dimensions only when its ID-3 radius
 equals a generated larger-cylinder radius for that hole and all matching
-replays agree. The two source-entity cylinder pairs are coaxial. The pair whose
+replays agree. A counterbore-form hole with this complete dimensional tuple has
+a resolved counterbore entry; otherwise the identified counterbore form remains
+unresolved. The two source-entity cylinder pairs are coaxial. The pair whose
 materialized carrier radius equals ID `3` uses the counterbore cylinder; the
 other pair uses the same origin, axis, and reference direction with radius ID
 `0`. This carrier derivation does not assign an axial trim or hole direction.
