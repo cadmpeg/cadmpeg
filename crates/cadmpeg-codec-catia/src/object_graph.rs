@@ -798,7 +798,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     offset,
                 });
             }
-            0x80 | 0x32 if at + 5 <= bytes.len() => {
+            0x80 | 0x32 if at + 5 < bytes.len() => {
                 let tag = bytes[at];
                 fields.push(if tag == 0x80 {
                     PayloadField::Atom {

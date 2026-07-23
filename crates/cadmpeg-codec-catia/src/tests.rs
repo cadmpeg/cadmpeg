@@ -4853,6 +4853,40 @@ fn native_design_inventory_excludes_alias_rows_inside_catalog_entries() {
 }
 
 #[test]
+fn object_graph_payload_does_not_consume_terminator_as_fixed_width_atom_data() {
+    use crate::object_graph::PayloadField;
+
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x04, 0x01, 0x81, 0x83],
+        &[0x8d, 0x80, 0x8f, 0x81, 0x8b, 0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&bytes).expect("terminator-bounded object payload");
+
+    assert_eq!(
+        graph.records[0].payload.fields,
+        [
+            PayloadField::Atom {
+                value: 13,
+                offset: 0,
+            },
+            PayloadField::Atom {
+                value: 0,
+                offset: 1,
+            },
+            PayloadField::Atom {
+                value: 15,
+                offset: 2,
+            },
+            PayloadField::Reference {
+                value: 11,
+                offset: 3,
+            },
+            PayloadField::Terminator,
+        ]
+    );
+}
+
+#[test]
 fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
     use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
 
