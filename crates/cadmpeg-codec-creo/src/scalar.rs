@@ -426,14 +426,23 @@ pub fn decode_named_local_system_coordinate(
 /// Decode one scalar in a named analytic surface-radius field.
 ///
 /// Prefix `0x28` supplies IEEE bytes one through seven after an implicit
-/// positive subunit high byte.
+/// positive subunit high byte. DICT prefixes `0x5b..=0xa3` encode the first
+/// two IEEE bytes as `0x3f75 + prefix`; their six-byte payload supplies the
+/// remaining bytes.
 pub fn decode_named_surface_radius(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
-    if data.get(offset) == Some(&0x28) {
+    let head = *data.get(offset)?;
+    if head == 0x28 {
         return ieee8(data, offset, 0x3f);
+    }
+    if LANE_OPENERS.contains(&head) {
+        return decode_in_lane(data, offset, cache);
+    }
+    if matches!(head, 0x5b..=0xa3) {
+        return ieee7_dict(data, offset, 0x3f75 + u16::from(head));
     }
     decode_in_lane(data, offset, cache)
 }

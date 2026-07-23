@@ -8356,6 +8356,24 @@ mod tests {
     }
 
     #[test]
+    fn named_prototype_radius_decodes_positive_dict_form() {
+        let value = 4.5_f64;
+        let raw = value.to_be_bytes();
+        let prefix = u8::try_from(u16::from_be_bytes([raw[0], raw[1]]) - 0x3f75)
+            .expect("synthetic value lies in the named-radius DICT lattice");
+        let mut payload = b"srf_prim_ptr(cylinder)\0\xe0\x01radius\0".to_vec();
+        payload.push(prefix);
+        payload.extend_from_slice(&raw[2..]);
+
+        let records = named_prototype_records(&payload);
+
+        assert_eq!(
+            records[0].field("radius").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarSequence(vec![value]))
+        );
+    }
+
+    #[test]
     fn withholds_ambiguous_outline_plane() {
         let records = [PlaneEnvelopeRecord {
             surface_id: 42,

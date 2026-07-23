@@ -260,6 +260,10 @@ A decoder must not infer the kind of a row without a materialized parameter row 
 In a named analytic surface-radius field, prefix `28` stores a positive
 eight-byte scalar: `3f` is the implicit first IEEE-754 byte and the seven bytes
 after the prefix are bytes one through seven.
+Within `5b` through `a3`, prefixes not assigned a generic named-scalar form
+store a positive DICT scalar in seven bytes. The first two IEEE-754 bytes equal
+the big-endian integer `3f75 + prefix`; the six bytes after the prefix are
+bytes two through seven. Generic named-scalar forms retain precedence.
 The family name inside `srf_prim_ptr(<family>)` is retained independently of
 the normalized surface family; `tab_cyl` and `ruled_srf` remain distinct names.
 
