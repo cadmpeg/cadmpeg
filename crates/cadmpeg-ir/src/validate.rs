@@ -97,8 +97,8 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     check_carrier_reachability(ir, &mut findings);
     check_native_links(ir, &index, &mut findings);
     check_parameter_domains(ir, &mut findings);
-    check_edge_endpoint_consistency(ir, &mut findings);
-    check_pcurve_surface_consistency(ir, &mut findings);
+    check_edge_endpoint_consistency(ir, &index, &mut findings);
+    check_pcurve_surface_consistency(ir, &index, &mut findings);
     check_procedural_support_consistency(ir, &mut findings);
     check_bounds(ir, &mut findings);
     check_tessellations(ir, &mut findings);

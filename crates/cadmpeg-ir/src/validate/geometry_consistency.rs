@@ -124,7 +124,11 @@ fn vertex_positions(ir: &CadIr) -> HashMap<&str, (Point3, Option<f64>)> {
 
 /// An edge's curve evaluated at its parameter range must land on the edge's
 /// start and end vertex positions.
-pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_edge_endpoint_consistency(
+    ir: &CadIr,
+    index: &ModelIndex<'_>,
+    findings: &mut Vec<Finding>,
+) {
     let curves = ir
         .model
         .curves
@@ -163,12 +167,6 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
             });
         }
     }
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (edge.id.0.as_str(), edge))
-        .collect::<HashMap<_, _>>();
     for coedge in &ir.model.coedges {
         let Some([start_t, end_t]) = coedge.use_curve_parameter_range else {
             continue;
@@ -180,7 +178,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         else {
             continue;
         };
-        let Some(edge) = edges.get(coedge.edge.0.as_str()) else {
+        let Some(edge) = index.edges.get(coedge.edge.0.as_str()) else {
             continue;
         };
         let (first_vertex, last_vertex) = match coedge.sense {
@@ -217,7 +215,11 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
 /// owning edge's vertex positions over the edge's parameter interval. Pcurve
 /// parameter sign and direction are independent of edge sense, so either sign
 /// and either endpoint assignment satisfy the check.
-pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_pcurve_surface_consistency(
+    ir: &CadIr,
+    index: &ModelIndex<'_>,
+    findings: &mut Vec<Finding>,
+) {
     let surfaces = ir
         .model
         .surfaces
@@ -236,30 +238,6 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         })
         .map(|surface| surface.surface.0.as_str())
         .collect::<HashSet<_>>();
-    let pcurves = ir
-        .model
-        .pcurves
-        .iter()
-        .map(|pcurve| (pcurve.id.0.as_str(), pcurve))
-        .collect::<HashMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (edge.id.0.as_str(), edge))
-        .collect::<HashMap<_, _>>();
-    let faces = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| (face.id.0.as_str(), face))
-        .collect::<HashMap<_, _>>();
-    let loops = ir
-        .model
-        .loops
-        .iter()
-        .map(|lp| (lp.id.0.as_str(), lp))
-        .collect::<HashMap<_, _>>();
     let vertices = vertex_positions(ir);
 
     for coedge in &ir.model.coedges {
@@ -267,14 +245,15 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             continue;
         };
         let (Some(first), Some(last)) = (
-            pcurves.get(first_use.pcurve.0.as_str()),
-            pcurves.get(last_use.pcurve.0.as_str()),
+            index.pcurves.get(first_use.pcurve.0.as_str()),
+            index.pcurves.get(last_use.pcurve.0.as_str()),
         ) else {
             continue;
         };
-        let Some(face) = loops
+        let Some(face) = index
+            .loops
             .get(coedge.owner_loop.0.as_str())
-            .and_then(|lp| faces.get(lp.face.0.as_str()))
+            .and_then(|lp| index.faces.get(lp.face.0.as_str()))
         else {
             continue;
         };
@@ -288,7 +267,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         if procedurally_parameterized_surfaces.contains(face.surface.0.as_str()) {
             continue;
         }
-        let Some(edge) = edges.get(coedge.edge.0.as_str()) else {
+        let Some(edge) = index.edges.get(coedge.edge.0.as_str()) else {
             continue;
         };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
