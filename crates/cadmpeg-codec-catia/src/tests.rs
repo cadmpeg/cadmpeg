@@ -2860,6 +2860,44 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
 }
 
 #[test]
+fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
+    let native = crate::native::CatiaNative::decode(&b2_linked_owner_stream());
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+    assert_eq!(
+        packet.references,
+        [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]
+    );
+    assert_eq!(packet.numeric_tail, (0u8..62).collect::<Vec<_>>());
+    let link = packet.allocation_link.expect("allocation-successor link");
+    assert_eq!(link.byte_len, 11);
+    assert_eq!(link.target, 1003);
+    assert_eq!(link.target + 1, packet.references[8]);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA owner packet");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA owner packet"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_owner_packets[0]
+        .allocation_link
+        .as_mut()
+        .expect("allocation-successor link")
+        .target -= 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store invalid CATIA owner packet");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+}
+
+#[test]
 fn native_namespace_retains_consolidated_historical_edge_runs() {
     let bytes = a5_native_edge_run_stream(6, 139, 142);
     let native = crate::native::CatiaNative::decode(&bytes);

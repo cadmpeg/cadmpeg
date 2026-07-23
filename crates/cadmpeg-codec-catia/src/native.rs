@@ -26,6 +26,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "catalogs",
     "consolidated_edge_nodes",
     "consolidated_edge_runs",
+    "consolidated_owner_packets",
     "consolidated_pcurves",
     "consolidated_vertex_identities",
     "design_objects",
@@ -46,6 +47,51 @@ pub enum CatiaConsolidatedFamily {
     A,
     /// B-family frame with a u8 payload length.
     B,
+}
+
+/// Reference dialect used by a consolidated class-`0x62` owner packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaOwnerReferenceEncoding {
+    /// Strong identities use tagged little-endian `u16` values.
+    TaggedU16Strong,
+    /// Strong identities use width-coded compact integers.
+    WidthCodedStrong,
+}
+
+/// Allocation link immediately preceding a consolidated owner packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaOwnerAllocationLink {
+    /// Link-record byte offset.
+    pub byte_offset: u64,
+    /// Complete framed-record byte length.
+    pub byte_len: u64,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Allocation identity whose successor is the owner's final reference.
+    pub target: u32,
+}
+
+/// Exact nine-reference class-`0x62` consolidated owner packet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedOwnerPacket {
+    /// Stable source identity.
+    pub id: String,
+    /// Record byte offset.
+    pub byte_offset: u64,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Reference encoding selected by the packet.
+    pub reference_encoding: CatiaOwnerReferenceEncoding,
+    /// Nine persistent identities in serialization order.
+    pub references: [u32; 9],
+    /// Fixed 62-byte class-specific numeric tail.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub numeric_tail: Vec<u8>,
+    /// Structurally adjacent allocation link, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocation_link: Option<CatiaOwnerAllocationLink>,
 }
 
 /// One structurally complete consolidated `A/B:20` pcurve jet whose support
@@ -727,6 +773,9 @@ pub struct CatiaNative {
     /// Complete consolidated historical edge runs.
     #[serde(default)]
     pub consolidated_edge_runs: Vec<CatiaConsolidatedEdgeRun>,
+    /// Exact consolidated owner packets and their allocation links.
+    #[serde(default)]
+    pub consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket>,
     /// Consolidated pcurve jets retained before support resolution.
     #[serde(default)]
     pub consolidated_pcurves: Vec<CatiaConsolidatedPcurve>,
@@ -761,6 +810,7 @@ impl Default for CatiaNative {
             catalogs: Vec::new(),
             consolidated_edge_nodes: Vec::new(),
             consolidated_edge_runs: Vec::new(),
+            consolidated_owner_packets: Vec::new(),
             consolidated_pcurves: Vec::new(),
             consolidated_vertex_identities: Vec::new(),
             design_objects: Vec::new(),
@@ -800,6 +850,37 @@ fn consolidated_pcurves(bytes: &[u8]) -> Vec<CatiaConsolidatedPcurve> {
             second_derivatives: pcurve.second_derivatives,
             range: pcurve.range,
             tail: pcurve.tail,
+        })
+        .collect()
+}
+
+fn consolidated_owner_packets(bytes: &[u8]) -> Vec<CatiaConsolidatedOwnerPacket> {
+    let links = crate::families::b2::records::b2_linked_owners(bytes)
+        .into_iter()
+        .map(|linked| (linked.owner.pos, linked.link))
+        .collect::<HashMap<_, _>>();
+    crate::families::b2::records::b2_owner_packets(bytes)
+        .into_iter()
+        .map(|packet| CatiaConsolidatedOwnerPacket {
+            id: format!("catia:consolidated:owner-packet#{:010}", packet.pos),
+            byte_offset: packet.pos as u64,
+            header_token: packet.header_token,
+            reference_encoding: match packet.reference_encoding {
+                crate::families::b2::records::B2OwnerReferenceEncoding::TaggedU16Strong => {
+                    CatiaOwnerReferenceEncoding::TaggedU16Strong
+                }
+                crate::families::b2::records::B2OwnerReferenceEncoding::WidthCodedStrong => {
+                    CatiaOwnerReferenceEncoding::WidthCodedStrong
+                }
+            },
+            references: packet.references,
+            numeric_tail: packet.numeric_tail.to_vec(),
+            allocation_link: links.get(&packet.pos).map(|link| CatiaOwnerAllocationLink {
+                byte_offset: link.pos as u64,
+                byte_len: (packet.pos - link.pos) as u64,
+                header_token: link.header_token,
+                target: link.target,
+            }),
         })
         .collect()
 }
@@ -1090,6 +1171,29 @@ fn validate_consolidated_pcurves(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated pcurve `{}` is structurally invalid",
                 pcurve.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_consolidated_owner_packets(
+    packets: &[CatiaConsolidatedOwnerPacket],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, packet) in packets.iter().enumerate() {
+        let valid_link = packet.allocation_link.is_none_or(|link| {
+            link.byte_offset.checked_add(link.byte_len) == Some(packet.byte_offset)
+                && link.target.checked_add(1) == Some(packet.references[8])
+        });
+        if packet.id != format!("catia:consolidated:owner-packet#{:010}", packet.byte_offset)
+            || packet.numeric_tail.len() != 62
+            || !valid_link
+            || index > 0 && packets[index - 1].byte_offset >= packet.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated owner packet `{}` is structurally invalid",
+                packet.id
             )));
         }
     }
@@ -1732,6 +1836,7 @@ impl CatiaNative {
             .collect::<Vec<_>>();
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
+        let consolidated_owner_packets = consolidated_owner_packets(bytes);
         let consolidated_pcurves = consolidated_pcurves(bytes);
         let mut consolidated_edge_nodes = consolidated_edge_nodes(bytes);
         let consolidated_edge_runs =
@@ -1744,6 +1849,7 @@ impl CatiaNative {
             catalogs,
             consolidated_edge_nodes,
             consolidated_edge_runs,
+            consolidated_owner_packets,
             consolidated_pcurves,
             consolidated_vertex_identities,
             design_objects,
@@ -1946,6 +2052,10 @@ impl CatiaNative {
         }
         let preview_images = expected_preview_images;
         let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
+        let mut consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket> =
+            namespace.arena_as("consolidated_owner_packets")?;
+        consolidated_owner_packets.sort_by_key(|packet| packet.byte_offset);
+        validate_consolidated_owner_packets(&consolidated_owner_packets)?;
         let mut consolidated_pcurves: Vec<CatiaConsolidatedPcurve> =
             namespace.arena_as("consolidated_pcurves")?;
         consolidated_pcurves.sort_by_key(|pcurve| pcurve.byte_offset);
@@ -1977,6 +2087,7 @@ impl CatiaNative {
             catalogs,
             consolidated_edge_nodes,
             consolidated_edge_runs,
+            consolidated_owner_packets,
             consolidated_pcurves,
             consolidated_vertex_identities,
             design_objects,
@@ -2040,6 +2151,10 @@ impl CatiaNative {
         namespace.set_arena("catalogs", &catalogs)?;
         namespace.set_arena("consolidated_edge_nodes", &self.consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
+        namespace.set_arena(
+            "consolidated_owner_packets",
+            &self.consolidated_owner_packets,
+        )?;
         namespace.set_arena("consolidated_pcurves", &self.consolidated_pcurves)?;
         namespace.set_arena(
             "consolidated_vertex_identities",
@@ -2075,6 +2190,7 @@ impl CatiaNative {
             mut catalogs,
             consolidated_edge_nodes,
             consolidated_edge_runs,
+            consolidated_owner_packets,
             consolidated_pcurves,
             consolidated_vertex_identities,
             design_objects,
@@ -2101,6 +2217,7 @@ impl CatiaNative {
         namespace.set_arena("catalogs", &catalogs)?;
         namespace.set_arena("consolidated_edge_nodes", &consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &consolidated_edge_runs)?;
+        namespace.set_arena("consolidated_owner_packets", &consolidated_owner_packets)?;
         namespace.set_arena("consolidated_pcurves", &consolidated_pcurves)?;
         namespace.set_arena(
             "consolidated_vertex_identities",

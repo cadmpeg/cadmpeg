@@ -7,19 +7,16 @@
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::le::u16_at as u16_le;
 use cadmpeg_ir::math::{Point3, Vector3};
-#[cfg(test)]
 use std::collections::BTreeMap;
 
 use crate::families::a5a8::records::A8Surface;
-#[cfg(test)]
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
     allocation_ref, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
 };
-#[cfg(test)]
-use crate::wire::records::consolidated_records;
 use crate::wire::records::{
-    b_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
+    b_family_frames, consolidated_records, parse_consolidated_pcurve, ConsolidatedFrame,
+    ConsolidatedPcurve,
 };
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
@@ -78,7 +75,6 @@ pub struct B2ReferenceList {
 /// Nine-reference owner packet stored in a `b2/b3/b4 03 62` record with a
 /// 62-byte numeric tail.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(test)]
 pub struct B2OwnerPacket {
     /// Record byte offset.
     pub pos: usize,
@@ -108,7 +104,6 @@ pub struct B2CountedOwner {
 
 /// Reference dialect used by a nine-reference class-`0x62` owner packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(test)]
 pub enum B2OwnerReferenceEncoding {
     /// Strong identities use `0x0a <u16le>` and weak identities use compact integers.
     TaggedU16Strong,
@@ -151,7 +146,6 @@ pub struct B2Long61 {
 
 /// Fixed-shape class-`0x5f` link record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(test)]
 pub struct B2Link5f {
     /// Record byte offset.
     pub pos: usize,
@@ -164,7 +158,6 @@ pub struct B2Link5f {
 /// Adjacent class-`0x5f` link and class-`0x62` owner packet joined by their
 /// allocation-successor identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(test)]
 pub struct B2LinkedOwner {
     /// Fixed link immediately preceding the owner packet.
     pub link: B2Link5f,
@@ -431,7 +424,6 @@ pub fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
 /// Decode width-coded class-`0x62` owner packets whose counted references and
 /// fixed numeric tail consume the complete frame.
 #[must_use]
-#[cfg(test)]
 pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
     b_family_frames(data, 0x62)
         .into_iter()
@@ -562,7 +554,6 @@ pub fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
 
 /// Decode `82 <width-coded target> 03 05` class-`0x5f` links.
 #[must_use]
-#[cfg(test)]
 pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
     b_family_frames(data, 0x5f)
         .into_iter()
@@ -586,7 +577,6 @@ pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
 /// Bind immediately adjacent `5f,62` records when the owner's ninth identity
 /// is the checked successor of the link target.
 #[must_use]
-#[cfg(test)]
 pub fn b2_linked_owners(data: &[u8]) -> Vec<B2LinkedOwner> {
     let links = b2_links_5f(data)
         .into_iter()
