@@ -7768,3 +7768,423 @@ fn decode_retains_post_terminate_physical_record() {
         8
     );
 }
+
+/// Golden-snapshot harness pinning the read-only IGES codec before refactoring.
+///
+/// The fixture set is assembled from the crate's inline builders and covers the
+/// `entities/` subtree broadly. Each fixture is committed three ways under
+/// `tests/golden/`: the exact source bytes as `fixtures/<name>.igs`, the decode
+/// output (`{ir, report, source_fidelity}`) as `decode/<name>.json`, and the
+/// container inspection (`ContainerSummary`) as `inspect/<name>.json`. Goldens
+/// are regenerated from the committed `.igs` bytes, so they stay reproducible
+/// without the builders. There are no encode goldens: the codec is read-only.
+///
+/// Regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden`.
+mod golden {
+    use std::io::Cursor;
+    use std::path::{Path, PathBuf};
+
+    use cadmpeg_ir::decode::InspectOptions;
+
+    use super::*;
+
+    /// Build the covering fixture set: `(golden name, full IGES bytes)`. Every
+    /// entry reuses an existing inline builder with the same arguments its
+    /// originating white-box test passes, so the bytes exercise the real decode
+    /// path. Fixtures are grouped by the `entities/` module they principally
+    /// exercise; the module comments are the coverage ledger.
+    fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
+        let mut f: Vec<(&'static str, Vec<u8>)> = Vec::new();
+
+        // entities/geometry.rs: point, direction, line, transform, NURBS curve.
+        f.push(("point", point_file()));
+        f.push(("direction", direction_file()));
+        f.push(("line", line_file(0)));
+        f.push(("weighted_line", weighted_line_file()));
+        f.push(("nurbs_curve", rational_nurbs_curve_file()));
+        f.push(("nested_transformed_point", nested_transformed_point_file()));
+
+        // entities/conics.rs: the three standard conic-arc families.
+        f.push((
+            "conic_ellipse",
+            conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;"),
+        ));
+        f.push((
+            "conic_hyperbola",
+            conic_arc_file(
+                2,
+                b"104,0.25,0,-0.1111111111111111,0,0,-1,0,2,0,3.086161269630487,3.525603580931404;",
+            ),
+        ));
+        f.push((
+            "conic_parabola",
+            conic_arc_file(3, b"104,1,0,0,0,-4,0,0,2,1,-2,1;"),
+        ));
+
+        // entities/composite.rs: composite curve, and one mixing analytic children.
+        f.push(("composite_curve", composite_curve_file()));
+        f.push((
+            "mixed_analytic_composite_curve",
+            mixed_analytic_composite_curve_file(),
+        ));
+
+        // entities/copious.rs: linear path, point/vector cloud, presentation witness.
+        f.push((
+            "copious_linear_path",
+            copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000"),
+        ));
+        f.push((
+            "copious_points_vectors",
+            copious_data_file(3, b"106,3,2,1,2,3,0,0,1,4,5,6,1,0,0;", "00000000"),
+        ));
+        f.push((
+            "copious_witness_line",
+            copious_data_file(40, b"106,1,3,0,0,0,1,0,2,0;", "00000100"),
+        ));
+
+        // entities/splines.rs: parametric spline curve and surface.
+        f.push(("parametric_spline_curve", parametric_spline_curve_file()));
+        f.push((
+            "parametric_spline_surface",
+            parametric_spline_surface_file(),
+        ));
+
+        // entities/surfaces.rs: plane, ruled, tabulated cylinder, revolution, NURBS.
+        f.push(("plane", plane_file()));
+        f.push(("ruled_surface", ruled_surface_file()));
+        f.push(("tabulated_cylinder", tabulated_cylinder_file()));
+        f.push(("surface_of_revolution", surface_of_revolution_file()));
+        f.push((
+            "placed_surface_of_revolution",
+            placed_surface_of_revolution_file(),
+        ));
+        f.push(("nurbs_surface", nurbs_surface_file()));
+
+        // entities/analytic_surfaces.rs: the five pointer-defined analytic forms.
+        f.push((
+            "analytic_plane_surface",
+            pointer_defined_surface_file(190, 1),
+        ));
+        f.push((
+            "analytic_cylinder_surface",
+            pointer_defined_surface_file(192, 0),
+        ));
+        f.push((
+            "analytic_cone_surface",
+            pointer_defined_surface_file(194, 1),
+        ));
+        f.push((
+            "analytic_sphere_surface",
+            pointer_defined_surface_file(196, 1),
+        ));
+        f.push((
+            "analytic_torus_surface",
+            pointer_defined_surface_file(198, 1),
+        ));
+
+        // entities/offsets.rs: offset curves (uniform, linear, function) and surface.
+        f.push(("uniform_offset_circle", uniform_offset_circle_file()));
+        f.push(("linear_offset_line", linear_offset_line_file(1)));
+        f.push(("function_offset_line", function_offset_line_file()));
+        f.push(("offset_plane", offset_plane_file(1.0, 2.0)));
+
+        // entities/trimming.rs: trimmed sheets, bounded planes, boundary loops.
+        f.push(("trimmed_plane", trimmed_plane_file()));
+        f.push((
+            "trimmed_plane_inner_loop",
+            trimmed_plane_with_inner_loop_file(),
+        ));
+        f.push((
+            "parameter_domain_trimmed_surface",
+            parameter_domain_trimmed_surface_file(),
+        ));
+        f.push(("bounded_plane", bounded_plane_file()));
+        f.push((
+            "parametrically_bounded_plane",
+            parametrically_bounded_plane_file(),
+        ));
+        f.push(("multi_pcurve_boundary", multi_pcurve_boundary_file()));
+
+        // entities/brep.rs: shells, manifold/void solids, vertex/pcurve loops.
+        f.push(("explicit_open_shell", explicit_open_shell_file()));
+        f.push((
+            "explicit_non_manifold_open_shell",
+            explicit_non_manifold_open_shell_file(),
+        ));
+        f.push((
+            "explicit_tetrahedron_solid",
+            explicit_tetrahedron_solid_file(),
+        ));
+        f.push((
+            "explicit_tetrahedron_solid_with_boolean",
+            explicit_tetrahedron_solid_with_boolean_file(),
+        ));
+        f.push(("explicit_void_solid", explicit_void_solid_file().0));
+        f.push(("explicit_vertex_loop", explicit_vertex_loop_file()));
+        f.push((
+            "colored_explicit_vertex_loop",
+            colored_explicit_vertex_loop_file(),
+        ));
+        f.push(("explicit_cylinder_seam", explicit_cylinder_seam_file()));
+        f.push((
+            "explicit_multi_pcurve_loop",
+            explicit_multi_pcurve_loop_file(),
+        ));
+
+        // entities/csg.rs: primitives, procedural/boolean trees, assemblies, instances.
+        f.push(("primitive_solids", primitive_solids_file()));
+        f.push((
+            "procedural_and_boolean_solids",
+            procedural_and_boolean_solids_file(),
+        ));
+        f.push(("solid_assembly", solid_assembly_file()));
+        f.push(("solid_instance", solid_instance_file()));
+        f.push(("patterned_instance", patterned_instance_file()));
+
+        // entities/structure.rs: references, groups, attributes, properties,
+        // subfigures, networks, units, levels, associativities. The null entity
+        // (type 0) routes through the same `structure::project` retention path.
+        f.push((
+            "null_entity",
+            owned_test_file(&[OwnedTestEntity {
+                entity_type: 0,
+                form: 0,
+                label: "NULL".into(),
+                status: "00000000",
+                parameters: "0;".into(),
+            }]),
+        ));
+        f.push(("external_reference_forms", external_reference_forms_file()));
+        f.push(("group_forms", group_forms_file()));
+        f.push((
+            "attribute_definition_forms",
+            attribute_definition_forms_file(),
+        ));
+        f.push(("attribute_instance_forms", attribute_instance_forms_file()));
+        f.push(("product_property", product_property_file()));
+        f.push((
+            "variable_schema_property_forms",
+            variable_schema_property_forms_file(),
+        ));
+        f.push(("scalar_property_forms", scalar_property_forms_file()));
+        f.push(("nested_subfigure", nested_subfigure_file()));
+        f.push(("network_subfigure", network_subfigure_file()));
+        f.push((
+            "connected_network_subfigure",
+            connected_network_subfigure_file(),
+        ));
+        f.push(("units_data", units_data_file()));
+        f.push(("definition_levels", definition_levels_file()));
+        f.push(("associativity_definition", associativity_definition_file()));
+        f.push((
+            "bounded_associativity_forms",
+            bounded_associativity_forms_file(),
+        ));
+        f.push(("flow_associativity_forms", flow_associativity_forms_file()));
+        f.push(("view_visibility_forms", view_visibility_forms_file()));
+
+        // entities/drawing.rs: views and drawings carrying properties.
+        f.push(("view_forms", view_forms_file()));
+        f.push(("drawing_with_properties", drawing_with_properties_file()));
+
+        // entities/presentation.rs: line-font and text-font definitions.
+        f.push(("line_font_definitions", line_font_definitions_file()));
+        f.push(("text_font_definition", text_font_definition_file()));
+
+        // entities/annotation.rs: text, leaders, dimensions, labels, symbols.
+        f.push(("text_annotation", text_annotation_file()));
+        f.push(("leader_forms", leader_forms_file()));
+        f.push(("dimension_forms", dimension_forms_file()));
+        f.push((
+            "legacy_dimension_and_label_forms",
+            legacy_dimension_and_label_forms_file(),
+        ));
+        f.push((
+            "symbol_and_sectioned_area",
+            symbol_and_sectioned_area_file(),
+        ));
+        f.push((
+            "text_display_template_forms",
+            text_display_template_forms_file(),
+        ));
+
+        f
+    }
+
+    /// Serialize the decode output for one fixture as stable pretty JSON:
+    /// canonical IR, decode report, and source-fidelity sidecar. A decode error
+    /// is frozen too (an input the codec refuses is contract-relevant behavior),
+    /// so this never panics on codec output.
+    fn decode_snapshot(bytes: &[u8]) -> String {
+        let value =
+            match IgesCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
+                Ok(result) => serde_json::json!({
+                    "ir": serde_json::to_value(&result.ir).expect("serialize ir"),
+                    "report": serde_json::to_value(&result.report).expect("serialize report"),
+                    "source_fidelity": serde_json::to_value(&result.source_fidelity)
+                        .expect("serialize source_fidelity"),
+                }),
+                Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
+            };
+        let mut text = serde_json::to_string_pretty(&value).expect("serialize decode snapshot");
+        text.push('\n');
+        text
+    }
+
+    /// Serialize the container inspection for one fixture as stable pretty JSON.
+    /// Inspection errors are frozen for the same reason decode errors are.
+    fn inspect_snapshot(bytes: &[u8]) -> String {
+        let value =
+            match IgesCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
+                Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
+                Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
+            };
+        let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
+        text.push('\n');
+        text
+    }
+
+    fn golden_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
+    }
+
+    fn fixture_path(name: &str) -> PathBuf {
+        golden_dir().join("fixtures").join(format!("{name}.igs"))
+    }
+
+    fn decode_path(name: &str) -> PathBuf {
+        golden_dir().join("decode").join(format!("{name}.json"))
+    }
+
+    fn inspect_path(name: &str) -> PathBuf {
+        golden_dir().join("inspect").join(format!("{name}.json"))
+    }
+
+    /// First line that differs between two documents, 1-based, with both sides
+    /// truncated for a readable failure.
+    fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
+        let mut exp = expected.lines();
+        let mut act = actual.lines();
+        let mut line = 0usize;
+        loop {
+            line += 1;
+            match (exp.next(), act.next()) {
+                (Some(e), Some(a)) if e == a => {}
+                (e, a) => {
+                    let trunc = |s: Option<&str>| match s {
+                        Some(s) if s.len() > 200 => format!("{}…", &s[..200]),
+                        Some(s) => s.to_string(),
+                        None => "<end of file>".to_string(),
+                    };
+                    return (line, trunc(e), trunc(a));
+                }
+            }
+        }
+    }
+
+    fn update_requested() -> bool {
+        std::env::var_os("UPDATE_GOLDEN").is_some()
+    }
+
+    /// Compare one regenerated snapshot against its committed golden, pushing a
+    /// readable failure when they diverge or the golden cannot be read.
+    fn compare(path: &Path, actual: &str, name: &str, kind: &str, failures: &mut Vec<String>) {
+        let expected = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) => {
+                failures.push(format!(
+                    "fixture `{name}` ({kind}): cannot read golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden`",
+                    path.display()
+                ));
+                return;
+            }
+        };
+        if expected != actual {
+            let (line, exp_line, act_line) = first_line_diff(&expected, actual);
+            failures.push(format!(
+                "fixture `{name}` ({kind}): output diverged from golden at line {line}\n    golden: {exp_line}\n    actual: {act_line}"
+            ));
+        }
+    }
+
+    /// Freezes the codec's decode and inspect output against the committed
+    /// `.igs` bytes. Under `UPDATE_GOLDEN`, (re)writes the source bytes and both
+    /// snapshots; otherwise regenerates snapshots from the committed bytes and
+    /// asserts byte-identity, and separately asserts the committed bytes still
+    /// reproduce from their builder.
+    #[test]
+    fn golden_snapshots_are_byte_identical() {
+        let update = update_requested();
+        if update {
+            for sub in ["fixtures", "decode", "inspect"] {
+                std::fs::create_dir_all(golden_dir().join(sub)).expect("create golden dir");
+            }
+        }
+        let mut failures: Vec<String> = Vec::new();
+        for (name, bytes) in fixtures() {
+            if update {
+                std::fs::write(fixture_path(name), &bytes)
+                    .unwrap_or_else(|e| panic!("write fixture {name}: {e}"));
+                std::fs::write(decode_path(name), decode_snapshot(&bytes).as_bytes())
+                    .unwrap_or_else(|e| panic!("write decode golden {name}: {e}"));
+                std::fs::write(inspect_path(name), inspect_snapshot(&bytes).as_bytes())
+                    .unwrap_or_else(|e| panic!("write inspect golden {name}: {e}"));
+                continue;
+            }
+            let committed = match std::fs::read(fixture_path(name)) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    failures.push(format!(
+                        "fixture `{name}`: cannot read committed {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden`",
+                        fixture_path(name).display()
+                    ));
+                    continue;
+                }
+            };
+            if committed != bytes {
+                failures.push(format!(
+                    "fixture `{name}`: committed .igs bytes no longer reproduce from the builder; run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden`"
+                ));
+            }
+            compare(
+                &decode_path(name),
+                &decode_snapshot(&committed),
+                name,
+                "decode",
+                &mut failures,
+            );
+            compare(
+                &inspect_path(name),
+                &inspect_snapshot(&committed),
+                name,
+                "inspect",
+                &mut failures,
+            );
+        }
+        assert!(
+            failures.is_empty(),
+            "{} golden snapshot(s) drifted; if the change is intended run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden` and review the diff:\n\n{}",
+            failures.len(),
+            failures.join("\n\n")
+        );
+    }
+
+    /// Guards against nondeterministic codec output (`HashMap` iteration order,
+    /// timestamps): decoding and inspecting the same bytes twice must produce
+    /// identical JSON.
+    #[test]
+    fn golden_output_is_deterministic() {
+        for (name, bytes) in fixtures() {
+            let (first, second) = (decode_snapshot(&bytes), decode_snapshot(&bytes));
+            if first != second {
+                let (line, a, b) = first_line_diff(&first, &second);
+                panic!("fixture `{name}`: nondeterministic decode at line {line}\n    run 1: {a}\n    run 2: {b}");
+            }
+            let (first, second) = (inspect_snapshot(&bytes), inspect_snapshot(&bytes));
+            if first != second {
+                let (line, a, b) = first_line_diff(&first, &second);
+                panic!("fixture `{name}`: nondeterministic inspect at line {line}\n    run 1: {a}\n    run 2: {b}");
+            }
+        }
+    }
+}

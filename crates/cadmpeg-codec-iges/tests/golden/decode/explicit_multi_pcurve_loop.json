@@ -1,0 +1,3509 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "iges:model:body#D27",
+          "kind": "sheet",
+          "regions": ["iges:model:region#D27"],
+          "visible": true
+        },
+        {
+          "id": "iges:model:body#free-geometry",
+          "kind": "wire",
+          "name": "IGES free geometry",
+          "regions": ["iges:model:region#free-geometry"]
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "iges:model:edge#D27:D17:1",
+          "id": "iges:model:coedge#D27:D23:0",
+          "next": "iges:model:coedge#D27:D23:2",
+          "owner_loop": "iges:model:loop#D27:D23",
+          "pcurves": [
+            {
+              "isoparametric": true,
+              "pcurve": "iges:model:pcurve#D27:D23:0:0"
+            },
+            {
+              "isoparametric": false,
+              "pcurve": "iges:model:pcurve#D27:D23:0:1"
+            }
+          ],
+          "previous": "iges:model:coedge#D27:D23:4",
+          "radial_next": "iges:model:coedge#D27:D23:0",
+          "sense": "forward"
+        },
+        {
+          "edge": "iges:model:edge#D27:D17:2",
+          "id": "iges:model:coedge#D27:D23:2",
+          "next": "iges:model:coedge#D27:D23:3",
+          "owner_loop": "iges:model:loop#D27:D23",
+          "previous": "iges:model:coedge#D27:D23:0",
+          "radial_next": "iges:model:coedge#D27:D23:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "iges:model:edge#D27:D17:3",
+          "id": "iges:model:coedge#D27:D23:3",
+          "next": "iges:model:coedge#D27:D23:4",
+          "owner_loop": "iges:model:loop#D27:D23",
+          "previous": "iges:model:coedge#D27:D23:2",
+          "radial_next": "iges:model:coedge#D27:D23:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "iges:model:edge#D27:D17:4",
+          "id": "iges:model:coedge#D27:D23:4",
+          "next": "iges:model:coedge#D27:D23:0",
+          "owner_loop": "iges:model:loop#D27:D23",
+          "previous": "iges:model:coedge#D27:D23:3",
+          "radial_next": "iges:model:coedge#D27:D23:4",
+          "sense": "forward"
+        }
+      ],
+      "components": [],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "direction": {
+              "x": -1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 1.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          },
+          "id": "iges:model:curve#D11",
+          "source_object": {
+            "format": "iges",
+            "layer": "0",
+            "name": "EDGE3",
+            "object_id": "D11",
+            "visible": true
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          },
+          "id": "iges:model:curve#D13",
+          "source_object": {
+            "format": "iges",
+            "layer": "0",
+            "name": "EDGE4",
+            "object_id": "D13",
+            "visible": true
+          }
+        },
+        {
+          "geometry": {
+            "control_points": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.5,
+                "y": 0.0,
+                "z": 0.0
+              }
+            ],
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [0.0, 0.0, 1.0, 1.0],
+            "periodic": false
+          },
+          "id": "iges:model:curve#D19",
+          "source_object": {
+            "format": "iges",
+            "layer": "0",
+            "name": "PCURVE1",
+            "object_id": "D19",
+            "visible": true
+          }
+        },
+        {
+          "geometry": {
+            "control_points": [
+              {
+                "x": 0.5,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            ],
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [0.0, 0.0, 1.0, 1.0],
+            "periodic": false
+          },
+          "id": "iges:model:curve#D21",
+          "source_object": {
+            "format": "iges",
+            "layer": "0",
+            "name": "PCURVE2",
+            "object_id": "D21",
+            "visible": true
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "iges:model:curve#D7",
+          "source_object": {
+            "format": "iges",
+            "layer": "0",
+            "name": "EDGE1",
+            "object_id": "D7",
+            "visible": true
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "iges:model:curve#D9",
+          "source_object": {
+            "format": "iges",
+            "layer": "0",
+            "name": "EDGE2",
+            "object_id": "D9",
+            "visible": true
+          }
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "curve": "iges:model:curve#D11",
+          "end": "iges:model:vertex#D11-end",
+          "id": "iges:model:edge#D11",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D11-start"
+        },
+        {
+          "curve": "iges:model:curve#D13",
+          "end": "iges:model:vertex#D13-end",
+          "id": "iges:model:edge#D13",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D13-start"
+        },
+        {
+          "curve": "iges:model:curve#D19",
+          "end": "iges:model:vertex#D19-end",
+          "id": "iges:model:edge#D19",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D19-start"
+        },
+        {
+          "curve": "iges:model:curve#D21",
+          "end": "iges:model:vertex#D21-end",
+          "id": "iges:model:edge#D21",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D21-start"
+        },
+        {
+          "curve": "iges:model:curve#D7",
+          "end": "iges:model:vertex#D27:D15:2",
+          "id": "iges:model:edge#D27:D17:1",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D27:D15:1"
+        },
+        {
+          "curve": "iges:model:curve#D9",
+          "end": "iges:model:vertex#D27:D15:3",
+          "id": "iges:model:edge#D27:D17:2",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D27:D15:2"
+        },
+        {
+          "curve": "iges:model:curve#D11",
+          "end": "iges:model:vertex#D27:D15:4",
+          "id": "iges:model:edge#D27:D17:3",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D27:D15:3"
+        },
+        {
+          "curve": "iges:model:curve#D13",
+          "end": "iges:model:vertex#D27:D15:1",
+          "id": "iges:model:edge#D27:D17:4",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D27:D15:4"
+        },
+        {
+          "curve": "iges:model:curve#D7",
+          "end": "iges:model:vertex#D7-end",
+          "id": "iges:model:edge#D7",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D7-start"
+        },
+        {
+          "curve": "iges:model:curve#D9",
+          "end": "iges:model:vertex#D9-end",
+          "id": "iges:model:edge#D9",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D9-start"
+        }
+      ],
+      "faces": [
+        {
+          "id": "iges:model:face#D27:D25",
+          "loops": ["iges:model:loop#D27:D23"],
+          "sense": "forward",
+          "shell": "iges:model:shell#D27",
+          "surface": "iges:model:surface#D5"
+        }
+      ],
+      "features": [],
+      "loops": [
+        {
+          "boundary_role": "outer",
+          "coedges": [
+            "iges:model:coedge#D27:D23:0",
+            "iges:model:coedge#D27:D23:2",
+            "iges:model:coedge#D27:D23:3",
+            "iges:model:coedge#D27:D23:4"
+          ],
+          "face": "iges:model:face#D27:D25",
+          "id": "iges:model:loop#D27:D23",
+          "vertex_uses": [
+            {
+              "after": "iges:model:coedge#D27:D23:0",
+              "vertex": "iges:model:vertex#D27:D15:2"
+            }
+          ]
+        }
+      ],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [
+        {
+          "geometry": {
+            "control_points": [
+              {
+                "u": 0.0,
+                "v": 0.0
+              },
+              {
+                "u": 0.5,
+                "v": 0.0
+              }
+            ],
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [0.0, 0.0, 1.0, 1.0],
+            "periodic": false
+          },
+          "id": "iges:model:pcurve#D27:D23:0:0",
+          "parameter_range": [0.0, 1.0]
+        },
+        {
+          "geometry": {
+            "control_points": [
+              {
+                "u": 0.5,
+                "v": 0.0
+              },
+              {
+                "u": 1.0,
+                "v": 0.0
+              }
+            ],
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [0.0, 0.0, 1.0, 1.0],
+            "periodic": false
+          },
+          "id": "iges:model:pcurve#D27:D23:0:1",
+          "parameter_range": [0.0, 1.0]
+        }
+      ],
+      "pmi": [],
+      "points": [
+        {
+          "id": "iges:model:point#D1",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D11-end",
+          "position": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D11-start",
+          "position": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D13-end",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D13-start",
+          "position": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D19-end",
+          "position": {
+            "x": 0.5,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D19-start",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D21-end",
+          "position": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D21-start",
+          "position": {
+            "x": 0.5,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D27:D15:1",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D27:D15:2",
+          "position": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D27:D15:3",
+          "position": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D27:D15:4",
+          "position": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D7-end",
+          "position": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D7-start",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D9-end",
+          "position": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D9-start",
+          "position": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_occurrences": [],
+      "products": [],
+      "regions": [
+        {
+          "body": "iges:model:body#D27",
+          "id": "iges:model:region#D27",
+          "shells": ["iges:model:shell#D27"]
+        },
+        {
+          "body": "iges:model:body#free-geometry",
+          "id": "iges:model:region#free-geometry",
+          "shells": ["iges:model:shell#free-geometry"]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "faces": ["iges:model:face#D27:D25"],
+          "id": "iges:model:shell#D27",
+          "region": "iges:model:region#D27"
+        },
+        {
+          "faces": [],
+          "free_vertices": ["iges:model:vertex#D1"],
+          "id": "iges:model:shell#free-geometry",
+          "region": "iges:model:region#free-geometry",
+          "wire_edges": [
+            "iges:model:edge#D7",
+            "iges:model:edge#D9",
+            "iges:model:edge#D11",
+            "iges:model:edge#D13",
+            "iges:model:edge#D19",
+            "iges:model:edge#D21"
+          ]
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "iges:model:surface#D5",
+          "source_object": {
+            "format": "iges",
+            "layer": "0",
+            "name": "SURFACE",
+            "object_id": "D5",
+            "visible": true
+          }
+        }
+      ],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "iges:model:vertex#D1",
+          "point": "iges:model:point#D1"
+        },
+        {
+          "id": "iges:model:vertex#D11-end",
+          "point": "iges:model:point#D11-end"
+        },
+        {
+          "id": "iges:model:vertex#D11-start",
+          "point": "iges:model:point#D11-start"
+        },
+        {
+          "id": "iges:model:vertex#D13-end",
+          "point": "iges:model:point#D13-end"
+        },
+        {
+          "id": "iges:model:vertex#D13-start",
+          "point": "iges:model:point#D13-start"
+        },
+        {
+          "id": "iges:model:vertex#D19-end",
+          "point": "iges:model:point#D19-end"
+        },
+        {
+          "id": "iges:model:vertex#D19-start",
+          "point": "iges:model:point#D19-start"
+        },
+        {
+          "id": "iges:model:vertex#D21-end",
+          "point": "iges:model:point#D21-end"
+        },
+        {
+          "id": "iges:model:vertex#D21-start",
+          "point": "iges:model:point#D21-start"
+        },
+        {
+          "id": "iges:model:vertex#D27:D15:1",
+          "point": "iges:model:point#D27:D15:1"
+        },
+        {
+          "id": "iges:model:vertex#D27:D15:2",
+          "point": "iges:model:point#D27:D15:2"
+        },
+        {
+          "id": "iges:model:vertex#D27:D15:3",
+          "point": "iges:model:point#D27:D15:3"
+        },
+        {
+          "id": "iges:model:vertex#D27:D15:4",
+          "point": "iges:model:point#D27:D15:4"
+        },
+        {
+          "id": "iges:model:vertex#D7-end",
+          "point": "iges:model:point#D7-end"
+        },
+        {
+          "id": "iges:model:vertex#D7-start",
+          "point": "iges:model:point#D7-start"
+        },
+        {
+          "id": "iges:model:vertex#D9-end",
+          "point": "iges:model:point#D9-end"
+        },
+        {
+          "id": "iges:model:vertex#D9-start",
+          "point": "iges:model:point#D9-start"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {
+      "iges": {
+        "arenas": {
+          "annotations": [],
+          "associativities": [],
+          "attribute_table_definitions": [],
+          "attribute_table_instances": [],
+          "boolean_trees": [],
+          "cards": [
+            {
+              "id": "iges:physical:card#1",
+              "line_ending": [10],
+              "offset": 0,
+              "payload": [
+                111, 114, 105, 103, 105, 110, 97, 108, 32, 102, 105, 120, 116, 117, 114, 101, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 83, 32, 32, 32, 32, 32, 32, 49
+              ],
+              "section": "start",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#10",
+              "line_ending": [10],
+              "offset": 729,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 52, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 55
+              ],
+              "section": "directory",
+              "sequence": 7
+            },
+            {
+              "id": "iges:physical:card#11",
+              "line_ending": [10],
+              "offset": 810,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 69, 68, 71, 69,
+                49, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 32, 56
+              ],
+              "section": "directory",
+              "sequence": 8
+            },
+            {
+              "id": "iges:physical:card#12",
+              "line_ending": [10],
+              "offset": 891,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 53, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 57
+              ],
+              "section": "directory",
+              "sequence": 9
+            },
+            {
+              "id": "iges:physical:card#13",
+              "line_ending": [10],
+              "offset": 972,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 69, 68, 71, 69,
+                50, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 48
+              ],
+              "section": "directory",
+              "sequence": 10
+            },
+            {
+              "id": "iges:physical:card#14",
+              "line_ending": [10],
+              "offset": 1053,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 54, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 49, 49
+              ],
+              "section": "directory",
+              "sequence": 11
+            },
+            {
+              "id": "iges:physical:card#15",
+              "line_ending": [10],
+              "offset": 1134,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 69, 68, 71, 69,
+                51, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 50
+              ],
+              "section": "directory",
+              "sequence": 12
+            },
+            {
+              "id": "iges:physical:card#16",
+              "line_ending": [10],
+              "offset": 1215,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 55, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 49, 51
+              ],
+              "section": "directory",
+              "sequence": 13
+            },
+            {
+              "id": "iges:physical:card#17",
+              "line_ending": [10],
+              "offset": 1296,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 69, 68, 71, 69,
+                52, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 52
+              ],
+              "section": "directory",
+              "sequence": 14
+            },
+            {
+              "id": "iges:physical:card#18",
+              "line_ending": [10],
+              "offset": 1377,
+              "payload": [
+                32, 32, 32, 32, 32, 53, 48, 50, 32, 32, 32, 32, 32, 32, 32, 56, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 49, 53
+              ],
+              "section": "directory",
+              "sequence": 15
+            },
+            {
+              "id": "iges:physical:card#19",
+              "line_ending": [10],
+              "offset": 1458,
+              "payload": [
+                32, 32, 32, 32, 32, 53, 48, 50, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 86, 69, 82, 84, 73, 67, 69,
+                83, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 54
+              ],
+              "section": "directory",
+              "sequence": 16
+            },
+            {
+              "id": "iges:physical:card#2",
+              "line_ending": [10],
+              "offset": 81,
+              "payload": [
+                49, 72, 44, 44, 49, 72, 59, 44, 55, 72, 112, 114, 111, 100, 117, 99, 116, 44, 56,
+                72, 112, 97, 114, 116, 46, 105, 103, 115, 44, 55, 72, 99, 97, 100, 109, 112, 101,
+                103, 44, 51, 72, 48, 46, 49, 44, 51, 50, 44, 51, 56, 44, 54, 44, 51, 48, 56, 44, 49,
+                53, 44, 48, 72, 44, 49, 46, 48, 44, 50, 44, 50, 72, 77, 71, 32, 32, 32, 32, 32, 32,
+                49
+              ],
+              "section": "global",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#20",
+              "line_ending": [10],
+              "offset": 1539,
+              "payload": [
+                32, 32, 32, 32, 32, 53, 48, 52, 32, 32, 32, 32, 32, 32, 32, 57, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 49, 68, 32, 32, 32, 32, 32, 49, 55
+              ],
+              "section": "directory",
+              "sequence": 17
+            },
+            {
+              "id": "iges:physical:card#21",
+              "line_ending": [10],
+              "offset": 1620,
+              "payload": [
+                32, 32, 32, 32, 32, 53, 48, 52, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 69, 68, 71, 69,
+                83, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 56
+              ],
+              "section": "directory",
+              "sequence": 18
+            },
+            {
+              "id": "iges:physical:card#22",
+              "line_ending": [10],
+              "offset": 1701,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 50, 54, 32, 32, 32, 32, 32, 32, 49, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 53, 48, 48, 68, 32, 32, 32, 32, 32, 49, 57
+              ],
+              "section": "directory",
+              "sequence": 19
+            },
+            {
+              "id": "iges:physical:card#23",
+              "line_ending": [10],
+              "offset": 1782,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 50, 54, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 80, 67, 85, 82, 86, 69,
+                49, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 50, 48
+              ],
+              "section": "directory",
+              "sequence": 20
+            },
+            {
+              "id": "iges:physical:card#24",
+              "line_ending": [10],
+              "offset": 1863,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 50, 54, 32, 32, 32, 32, 32, 32, 49, 49, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 53, 48, 48, 68, 32, 32, 32, 32, 32, 50, 49
+              ],
+              "section": "directory",
+              "sequence": 21
+            },
+            {
+              "id": "iges:physical:card#25",
+              "line_ending": [10],
+              "offset": 1944,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 50, 54, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 80, 67, 85, 82, 86, 69,
+                50, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 50, 50
+              ],
+              "section": "directory",
+              "sequence": 22
+            },
+            {
+              "id": "iges:physical:card#26",
+              "line_ending": [10],
+              "offset": 2025,
+              "payload": [
+                32, 32, 32, 32, 32, 53, 48, 56, 32, 32, 32, 32, 32, 32, 49, 50, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 50, 51
+              ],
+              "section": "directory",
+              "sequence": 23
+            },
+            {
+              "id": "iges:physical:card#27",
+              "line_ending": [10],
+              "offset": 2106,
+              "payload": [
+                32, 32, 32, 32, 32, 53, 48, 56, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 50, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 76, 79, 79,
+                80, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 50, 52
+              ],
+              "section": "directory",
+              "sequence": 24
+            },
+            {
+              "id": "iges:physical:card#28",
+              "line_ending": [10],
+              "offset": 2187,
+              "payload": [
+                32, 32, 32, 32, 32, 53, 49, 48, 32, 32, 32, 32, 32, 32, 49, 52, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 50, 53
+              ],
+              "section": "directory",
+              "sequence": 25
+            },
+            {
+              "id": "iges:physical:card#29",
+              "line_ending": [10],
+              "offset": 2268,
+              "payload": [
+                32, 32, 32, 32, 32, 53, 49, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 70, 65, 67,
+                69, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 50, 54
+              ],
+              "section": "directory",
+              "sequence": 26
+            },
+            {
+              "id": "iges:physical:card#3",
+              "line_ending": [10],
+              "offset": 162,
+              "payload": [
+                77, 44, 49, 44, 49, 46, 48, 44, 49, 53, 72, 50, 48, 50, 54, 48, 55, 49, 52, 46, 48,
+                48, 48, 48, 48, 48, 44, 48, 46, 48, 48, 49, 44, 49, 48, 48, 48, 46, 48, 44, 54, 72,
+                97, 117, 116, 104, 111, 114, 44, 51, 72, 111, 114, 103, 44, 49, 49, 44, 48, 44, 48,
+                72, 44, 48, 72, 59, 32, 32, 32, 32, 32, 32, 71, 32, 32, 32, 32, 32, 32, 50
+              ],
+              "section": "global",
+              "sequence": 2
+            },
+            {
+              "id": "iges:physical:card#30",
+              "line_ending": [10],
+              "offset": 2349,
+              "payload": [
+                32, 32, 32, 32, 32, 53, 49, 52, 32, 32, 32, 32, 32, 32, 49, 53, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 48, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 50, 55
+              ],
+              "section": "directory",
+              "sequence": 27
+            },
+            {
+              "id": "iges:physical:card#31",
+              "line_ending": [10],
+              "offset": 2430,
+              "payload": [
+                32, 32, 32, 32, 32, 53, 49, 52, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 50, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 83, 72, 69, 76,
+                76, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 50, 56
+              ],
+              "section": "directory",
+              "sequence": 28
+            },
+            {
+              "id": "iges:physical:card#32",
+              "line_ending": [10],
+              "offset": 2511,
+              "payload": [
+                49, 49, 54, 44, 48, 44, 48, 44, 48, 44, 48, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 49, 80, 32, 32, 32, 32, 32, 32, 49
+              ],
+              "section": "parameter",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#33",
+              "line_ending": [10],
+              "offset": 2592,
+              "payload": [
+                49, 50, 51, 44, 48, 44, 48, 44, 49, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 51, 80, 32, 32, 32, 32, 32, 32, 50
+              ],
+              "section": "parameter",
+              "sequence": 2
+            },
+            {
+              "id": "iges:physical:card#34",
+              "line_ending": [10],
+              "offset": 2673,
+              "payload": [
+                49, 57, 48, 44, 49, 44, 51, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 53, 80, 32, 32, 32, 32, 32, 32, 51
+              ],
+              "section": "parameter",
+              "sequence": 3
+            },
+            {
+              "id": "iges:physical:card#35",
+              "line_ending": [10],
+              "offset": 2754,
+              "payload": [
+                49, 49, 48, 44, 48, 44, 48, 44, 48, 44, 49, 44, 48, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 55, 80, 32, 32, 32, 32, 32, 32, 52
+              ],
+              "section": "parameter",
+              "sequence": 4
+            },
+            {
+              "id": "iges:physical:card#36",
+              "line_ending": [10],
+              "offset": 2835,
+              "payload": [
+                49, 49, 48, 44, 49, 44, 48, 44, 48, 44, 49, 44, 49, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 57, 80, 32, 32, 32, 32, 32, 32, 53
+              ],
+              "section": "parameter",
+              "sequence": 5
+            },
+            {
+              "id": "iges:physical:card#37",
+              "line_ending": [10],
+              "offset": 2916,
+              "payload": [
+                49, 49, 48, 44, 49, 44, 49, 44, 48, 44, 48, 44, 49, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 49, 49, 80, 32, 32, 32, 32, 32, 32, 54
+              ],
+              "section": "parameter",
+              "sequence": 6
+            },
+            {
+              "id": "iges:physical:card#38",
+              "line_ending": [10],
+              "offset": 2997,
+              "payload": [
+                49, 49, 48, 44, 48, 44, 49, 44, 48, 44, 48, 44, 48, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 49, 51, 80, 32, 32, 32, 32, 32, 32, 55
+              ],
+              "section": "parameter",
+              "sequence": 7
+            },
+            {
+              "id": "iges:physical:card#39",
+              "line_ending": [10],
+              "offset": 3078,
+              "payload": [
+                53, 48, 50, 44, 52, 44, 48, 44, 48, 44, 48, 44, 49, 44, 48, 44, 48, 44, 49, 44, 49,
+                44, 48, 44, 48, 44, 49, 44, 48, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 49, 53, 80, 32, 32, 32, 32, 32, 32, 56
+              ],
+              "section": "parameter",
+              "sequence": 8
+            },
+            {
+              "id": "iges:physical:card#4",
+              "line_ending": [10],
+              "offset": 243,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 54, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 49
+              ],
+              "section": "directory",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#40",
+              "line_ending": [10],
+              "offset": 3159,
+              "payload": [
+                53, 48, 52, 44, 52, 44, 55, 44, 49, 53, 44, 49, 44, 49, 53, 44, 50, 44, 57, 44, 49,
+                53, 44, 50, 44, 49, 53, 44, 51, 44, 49, 49, 44, 49, 53, 44, 51, 44, 49, 53, 44, 52,
+                44, 49, 51, 44, 49, 53, 44, 52, 44, 49, 53, 44, 49, 59, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 49, 55, 80, 32, 32, 32, 32, 32, 32, 57
+              ],
+              "section": "parameter",
+              "sequence": 9
+            },
+            {
+              "id": "iges:physical:card#41",
+              "line_ending": [10],
+              "offset": 3240,
+              "payload": [
+                49, 50, 54, 44, 49, 44, 49, 44, 49, 44, 48, 44, 49, 44, 48, 44, 48, 44, 48, 44, 49,
+                44, 49, 44, 49, 44, 49, 44, 48, 44, 48, 44, 48, 44, 48, 46, 53, 44, 48, 44, 48, 44,
+                48, 44, 49, 44, 48, 44, 48, 44, 49, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 49, 57, 80, 32, 32, 32, 32, 32, 49, 48
+              ],
+              "section": "parameter",
+              "sequence": 10
+            },
+            {
+              "id": "iges:physical:card#42",
+              "line_ending": [10],
+              "offset": 3321,
+              "payload": [
+                49, 50, 54, 44, 49, 44, 49, 44, 49, 44, 48, 44, 49, 44, 48, 44, 48, 44, 48, 44, 49,
+                44, 49, 44, 49, 44, 49, 44, 48, 46, 53, 44, 48, 44, 48, 44, 49, 44, 48, 44, 48, 44,
+                48, 44, 49, 44, 48, 44, 48, 44, 49, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 50, 49, 80, 32, 32, 32, 32, 32, 49, 49
+              ],
+              "section": "parameter",
+              "sequence": 11
+            },
+            {
+              "id": "iges:physical:card#43",
+              "line_ending": [10],
+              "offset": 3402,
+              "payload": [
+                53, 48, 56, 44, 53, 44, 48, 44, 49, 55, 44, 49, 44, 49, 44, 50, 44, 49, 44, 49, 57,
+                44, 48, 44, 50, 49, 44, 49, 44, 49, 53, 44, 50, 44, 48, 44, 48, 44, 48, 44, 49, 55,
+                44, 50, 44, 49, 44, 48, 44, 48, 44, 49, 55, 44, 51, 44, 49, 44, 48, 44, 48, 44, 49,
+                55, 32, 32, 32, 32, 32, 32, 50, 51, 80, 32, 32, 32, 32, 32, 49, 50
+              ],
+              "section": "parameter",
+              "sequence": 12
+            },
+            {
+              "id": "iges:physical:card#44",
+              "line_ending": [10],
+              "offset": 3483,
+              "payload": [
+                44, 52, 44, 49, 44, 48, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 50, 51, 80, 32, 32, 32, 32, 32, 49, 51
+              ],
+              "section": "parameter",
+              "sequence": 13
+            },
+            {
+              "id": "iges:physical:card#45",
+              "line_ending": [10],
+              "offset": 3564,
+              "payload": [
+                53, 49, 48, 44, 53, 44, 49, 44, 49, 44, 50, 51, 59, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 50, 53, 80, 32, 32, 32, 32, 32, 49, 52
+              ],
+              "section": "parameter",
+              "sequence": 14
+            },
+            {
+              "id": "iges:physical:card#46",
+              "line_ending": [10],
+              "offset": 3645,
+              "payload": [
+                53, 49, 52, 44, 49, 44, 50, 53, 44, 49, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 50, 55, 80, 32, 32, 32, 32, 32, 49, 53
+              ],
+              "section": "parameter",
+              "sequence": 15
+            },
+            {
+              "id": "iges:physical:card#47",
+              "line_ending": [10],
+              "offset": 3726,
+              "payload": [
+                83, 48, 48, 48, 48, 48, 48, 49, 71, 48, 48, 48, 48, 48, 48, 50, 68, 48, 48, 48, 48,
+                48, 50, 56, 80, 48, 48, 48, 48, 48, 49, 53, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 84, 32, 32, 32, 32, 32, 32, 49
+              ],
+              "section": "terminate",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#5",
+              "line_ending": [10],
+              "offset": 324,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 54, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 76, 79, 67, 65, 84, 73, 79,
+                78, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 32, 50
+              ],
+              "section": "directory",
+              "sequence": 2
+            },
+            {
+              "id": "iges:physical:card#6",
+              "line_ending": [10],
+              "offset": 405,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 50, 51, 32, 32, 32, 32, 32, 32, 32, 50, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 51
+              ],
+              "section": "directory",
+              "sequence": 3
+            },
+            {
+              "id": "iges:physical:card#7",
+              "line_ending": [10],
+              "offset": 486,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 50, 51, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 78, 79, 82, 77, 65,
+                76, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 32, 52
+              ],
+              "section": "directory",
+              "sequence": 4
+            },
+            {
+              "id": "iges:physical:card#8",
+              "line_ending": [10],
+              "offset": 567,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 57, 48, 32, 32, 32, 32, 32, 32, 32, 51, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 53
+              ],
+              "section": "directory",
+              "sequence": 5
+            },
+            {
+              "id": "iges:physical:card#9",
+              "line_ending": [10],
+              "offset": 648,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 57, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 83, 85, 82, 70, 65, 67,
+                69, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 32, 54
+              ],
+              "section": "directory",
+              "sequence": 6
+            }
+          ],
+          "circular_arrays": [],
+          "colors": [],
+          "connect_points": [],
+          "copious_data": [],
+          "definition_levels": [],
+          "directions": [
+            {
+              "components": [0.0, 0.0, 1.0],
+              "has_transform": false,
+              "id": "iges:native:direction#D3",
+              "physically_dependent": true,
+              "source_entity": "iges:entity:directory#3"
+            }
+          ],
+          "display_attributes": [
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D1",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#1",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D11",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#11",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D13",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#13",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D15",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#15",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D17",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#17",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D19",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#19",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D21",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#21",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D23",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#23",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D25",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#25",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D27",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#27",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D3",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#3",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D5",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#5",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D7",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#7",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D9",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#9",
+              "view": 0,
+              "visible": true
+            }
+          ],
+          "drawings": [],
+          "entities": [
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 1,
+              "entity_type": 116,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#1",
+              "label": [76, 79, 67, 65, 84, 73, 79, 78],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 49, 54, 44, 48, 44, 48, 44, 48, 44, 48, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 2,
+              "parameter_line_start": 1,
+              "parameter_start": 1,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 116
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 11,
+              "entity_type": 110,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#11",
+              "label": [32, 32, 32, 69, 68, 71, 69, 51],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 49, 48, 44, 49, 44, 49, 44, 48, 44, 48, 44, 49, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 7,
+              "parameter_line_start": 6,
+              "parameter_start": 6,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 110
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 13,
+              "entity_type": 110,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#13",
+              "label": [32, 32, 32, 69, 68, 71, 69, 52],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 49, 48, 44, 48, 44, 49, 44, 48, 44, 48, 44, 48, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 8,
+              "parameter_line_start": 7,
+              "parameter_start": 7,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 110
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 15,
+              "entity_type": 502,
+              "form": 1,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#15",
+              "label": [86, 69, 82, 84, 73, 67, 69, 83],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                53, 48, 50, 44, 52, 44, 48, 44, 48, 44, 48, 44, 49, 44, 48, 44, 48, 44, 49, 44, 49,
+                44, 48, 44, 48, 44, 49, 44, 48, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 9,
+              "parameter_line_start": 8,
+              "parameter_start": 8,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 502
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 4
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 17,
+                  "start": 16,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 19,
+                  "start": 18,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 21,
+                  "start": 20,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 23,
+                  "start": 22,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 25,
+                  "start": 24,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 27,
+                  "start": 26,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 29,
+                  "start": 28,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [32, 32, 32, 32, 32, 32, 32, 32],
+              "directory_sequence": 17,
+              "entity_type": 504,
+              "form": 1,
+              "hierarchy_status": 1,
+              "id": "iges:entity:directory#17",
+              "label": [32, 32, 32, 69, 68, 71, 69, 83],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                53, 48, 52, 44, 52, 44, 55, 44, 49, 53, 44, 49, 44, 49, 53, 44, 50, 44, 57, 44, 49,
+                53, 44, 50, 44, 49, 53, 44, 51, 44, 49, 49, 44, 49, 53, 44, 51, 44, 49, 53, 44, 52,
+                44, 49, 51, 44, 49, 53, 44, 52, 44, 49, 53, 44, 49, 59, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 10,
+              "parameter_line_start": 9,
+              "parameter_start": 9,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 504
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 4
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 7
+                  }
+                },
+                {
+                  "end": 10,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 15
+                  }
+                },
+                {
+                  "end": 12,
+                  "start": 11,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 13,
+                  "value": {
+                    "kind": "integer",
+                    "value": 15
+                  }
+                },
+                {
+                  "end": 17,
+                  "start": 16,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 19,
+                  "start": 18,
+                  "value": {
+                    "kind": "integer",
+                    "value": 9
+                  }
+                },
+                {
+                  "end": 22,
+                  "start": 20,
+                  "value": {
+                    "kind": "integer",
+                    "value": 15
+                  }
+                },
+                {
+                  "end": 24,
+                  "start": 23,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 27,
+                  "start": 25,
+                  "value": {
+                    "kind": "integer",
+                    "value": 15
+                  }
+                },
+                {
+                  "end": 29,
+                  "start": 28,
+                  "value": {
+                    "kind": "integer",
+                    "value": 3
+                  }
+                },
+                {
+                  "end": 32,
+                  "start": 30,
+                  "value": {
+                    "kind": "integer",
+                    "value": 11
+                  }
+                },
+                {
+                  "end": 35,
+                  "start": 33,
+                  "value": {
+                    "kind": "integer",
+                    "value": 15
+                  }
+                },
+                {
+                  "end": 37,
+                  "start": 36,
+                  "value": {
+                    "kind": "integer",
+                    "value": 3
+                  }
+                },
+                {
+                  "end": 40,
+                  "start": 38,
+                  "value": {
+                    "kind": "integer",
+                    "value": 15
+                  }
+                },
+                {
+                  "end": 42,
+                  "start": 41,
+                  "value": {
+                    "kind": "integer",
+                    "value": 4
+                  }
+                },
+                {
+                  "end": 45,
+                  "start": 43,
+                  "value": {
+                    "kind": "integer",
+                    "value": 13
+                  }
+                },
+                {
+                  "end": 48,
+                  "start": 46,
+                  "value": {
+                    "kind": "integer",
+                    "value": 15
+                  }
+                },
+                {
+                  "end": 50,
+                  "start": 49,
+                  "value": {
+                    "kind": "integer",
+                    "value": 4
+                  }
+                },
+                {
+                  "end": 53,
+                  "start": 51,
+                  "value": {
+                    "kind": "integer",
+                    "value": 15
+                  }
+                },
+                {
+                  "end": 55,
+                  "start": 54,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32],
+              "directory_sequence": 19,
+              "entity_type": 126,
+              "form": 1,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#19",
+              "label": [32, 80, 67, 85, 82, 86, 69, 49],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 50, 54, 44, 49, 44, 49, 44, 49, 44, 48, 44, 49, 44, 48, 44, 48, 44, 48, 44, 49,
+                44, 49, 44, 49, 44, 49, 44, 48, 44, 48, 44, 48, 44, 48, 46, 53, 44, 48, 44, 48, 44,
+                48, 44, 49, 44, 48, 44, 48, 44, 49, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 11,
+              "parameter_line_start": 10,
+              "parameter_start": 10,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 126
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 17,
+                  "start": 16,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 19,
+                  "start": 18,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 21,
+                  "start": 20,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 23,
+                  "start": 22,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 25,
+                  "start": 24,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 27,
+                  "start": 26,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 29,
+                  "start": 28,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 31,
+                  "start": 30,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 33,
+                  "start": 32,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 37,
+                  "start": 34,
+                  "value": {
+                    "kind": "real",
+                    "value": 0.5
+                  }
+                },
+                {
+                  "end": 39,
+                  "start": 38,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 41,
+                  "start": 40,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 43,
+                  "start": 42,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 45,
+                  "start": 44,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 47,
+                  "start": 46,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 49,
+                  "start": 48,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 51,
+                  "start": 50,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 5,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32],
+              "directory_sequence": 21,
+              "entity_type": 126,
+              "form": 1,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#21",
+              "label": [32, 80, 67, 85, 82, 86, 69, 50],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 50, 54, 44, 49, 44, 49, 44, 49, 44, 48, 44, 49, 44, 48, 44, 48, 44, 48, 44, 49,
+                44, 49, 44, 49, 44, 49, 44, 48, 46, 53, 44, 48, 44, 48, 44, 49, 44, 48, 44, 48, 44,
+                48, 44, 49, 44, 48, 44, 48, 44, 49, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 12,
+              "parameter_line_start": 11,
+              "parameter_start": 11,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 126
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 17,
+                  "start": 16,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 19,
+                  "start": 18,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 21,
+                  "start": 20,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 23,
+                  "start": 22,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 25,
+                  "start": 24,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 27,
+                  "start": 26,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 31,
+                  "start": 28,
+                  "value": {
+                    "kind": "real",
+                    "value": 0.5
+                  }
+                },
+                {
+                  "end": 33,
+                  "start": 32,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 35,
+                  "start": 34,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 37,
+                  "start": 36,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 39,
+                  "start": 38,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 41,
+                  "start": 40,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 43,
+                  "start": 42,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 45,
+                  "start": 44,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 47,
+                  "start": 46,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 49,
+                  "start": 48,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 51,
+                  "start": 50,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 5,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 23,
+              "entity_type": 508,
+              "form": 1,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#23",
+              "label": [32, 32, 32, 32, 76, 79, 79, 80],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                53, 48, 56, 44, 53, 44, 48, 44, 49, 55, 44, 49, 44, 49, 44, 50, 44, 49, 44, 49, 57,
+                44, 48, 44, 50, 49, 44, 49, 44, 49, 53, 44, 50, 44, 48, 44, 48, 44, 48, 44, 49, 55,
+                44, 50, 44, 49, 44, 48, 44, 48, 44, 49, 55, 44, 51, 44, 49, 44, 48, 44, 48, 44, 49,
+                55, 44, 52, 44, 49, 44, 48, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32
+              ],
+              "parameter_line_count": 2,
+              "parameter_line_end": 14,
+              "parameter_line_start": 12,
+              "parameter_start": 12,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 508
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 5
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 10,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 17
+                  }
+                },
+                {
+                  "end": 12,
+                  "start": 11,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 14,
+                  "start": 13,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 16,
+                  "start": 15,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 18,
+                  "start": 17,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 21,
+                  "start": 19,
+                  "value": {
+                    "kind": "integer",
+                    "value": 19
+                  }
+                },
+                {
+                  "end": 23,
+                  "start": 22,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 26,
+                  "start": 24,
+                  "value": {
+                    "kind": "integer",
+                    "value": 21
+                  }
+                },
+                {
+                  "end": 28,
+                  "start": 27,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 31,
+                  "start": 29,
+                  "value": {
+                    "kind": "integer",
+                    "value": 15
+                  }
+                },
+                {
+                  "end": 33,
+                  "start": 32,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 35,
+                  "start": 34,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 37,
+                  "start": 36,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 39,
+                  "start": 38,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 42,
+                  "start": 40,
+                  "value": {
+                    "kind": "integer",
+                    "value": 17
+                  }
+                },
+                {
+                  "end": 44,
+                  "start": 43,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 46,
+                  "start": 45,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 48,
+                  "start": 47,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 50,
+                  "start": 49,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 53,
+                  "start": 51,
+                  "value": {
+                    "kind": "integer",
+                    "value": 17
+                  }
+                },
+                {
+                  "end": 55,
+                  "start": 54,
+                  "value": {
+                    "kind": "integer",
+                    "value": 3
+                  }
+                },
+                {
+                  "end": 57,
+                  "start": 56,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 59,
+                  "start": 58,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 61,
+                  "start": 60,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 64,
+                  "start": 62,
+                  "value": {
+                    "kind": "integer",
+                    "value": 17
+                  }
+                },
+                {
+                  "end": 66,
+                  "start": 65,
+                  "value": {
+                    "kind": "integer",
+                    "value": 4
+                  }
+                },
+                {
+                  "end": 68,
+                  "start": 67,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 70,
+                  "start": 69,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 25,
+              "entity_type": 510,
+              "form": 1,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#25",
+              "label": [32, 32, 32, 32, 70, 65, 67, 69],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                53, 49, 48, 44, 53, 44, 49, 44, 49, 44, 50, 51, 59, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 15,
+              "parameter_line_start": 14,
+              "parameter_start": 14,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 510
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 5
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 12,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 23
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 27,
+              "entity_type": 514,
+              "form": 2,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#27",
+              "label": [32, 32, 32, 83, 72, 69, 76, 76],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                53, 49, 52, 44, 49, 44, 50, 53, 44, 49, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 16,
+              "parameter_line_start": 15,
+              "parameter_start": 15,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 514
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 8,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 25
+                  }
+                },
+                {
+                  "end": 10,
+                  "start": 9,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 3,
+              "entity_type": 123,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#3",
+              "label": [32, 32, 78, 79, 82, 77, 65, 76],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 50, 51, 44, 48, 44, 48, 44, 49, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 3,
+              "parameter_line_start": 2,
+              "parameter_start": 2,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 123
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 5,
+              "entity_type": 190,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#5",
+              "label": [32, 83, 85, 82, 70, 65, 67, 69],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 57, 48, 44, 49, 44, 51, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 4,
+              "parameter_line_start": 3,
+              "parameter_start": 3,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 190
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 3
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 7,
+              "entity_type": 110,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#7",
+              "label": [32, 32, 32, 69, 68, 71, 69, 49],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 49, 48, 44, 48, 44, 48, 44, 48, 44, 49, 44, 48, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 5,
+              "parameter_line_start": 4,
+              "parameter_start": 4,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 110
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 9,
+              "entity_type": 110,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#9",
+              "label": [32, 32, 32, 69, 68, 71, 69, 50],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 49, 48, 44, 49, 44, 48, 44, 48, 44, 49, 44, 49, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 6,
+              "parameter_line_start": 5,
+              "parameter_start": 5,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 110
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            }
+          ],
+          "external_references": [],
+          "groups": [],
+          "line_fonts": [],
+          "network_definitions": [],
+          "network_instances": [],
+          "primitive_solids": [],
+          "procedural_solids": [],
+          "product_occurrence_expansion": [
+            {
+              "emitted": 0,
+              "id": "iges:product:occurrence-expansion#state",
+              "limit": 100,
+              "truncated": false
+            }
+          ],
+          "product_occurrences": [],
+          "product_properties": [],
+          "properties": [],
+          "rectangular_arrays": [],
+          "segmented_visibility": [],
+          "selected_components": [],
+          "solid_assemblies": [],
+          "solid_instances": [],
+          "subfigure_definitions": [],
+          "subfigure_instances": [],
+          "text_fonts": [],
+          "text_templates": [],
+          "transformations": [],
+          "units_data": [],
+          "view_visibility": [],
+          "views": []
+        },
+        "version": 2
+      }
+    },
+    "source": {
+      "attributes": {
+        "iges_version": "5.3",
+        "iges_version_flag": "11",
+        "native_file_name": "part.igs",
+        "native_units": "MM",
+        "parameter_delimiter": ",",
+        "record_delimiter": ";",
+        "representation": "fixed-ascii",
+        "sender_product": "product"
+      },
+      "format": "iges"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "iges",
+    "geometry_transferred": true,
+    "losses": [],
+    "notes": [
+      "entities=14",
+      "entity.110.form.0=4",
+      "entity.116.form.0=1",
+      "entity.123.form.0=1",
+      "entity.126.form.1=2",
+      "entity.190.form.0=1",
+      "entity.502.form.1=1",
+      "entity.504.form.1=1",
+      "entity.508.form.1=1",
+      "entity.510.form.1=1",
+      "entity.514.form.2=1",
+      "parameter_records=14",
+      "parameter_tokens=164",
+      "external_references=0"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "version": "3"
+  }
+}

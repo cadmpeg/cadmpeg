@@ -1,0 +1,2454 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "iges:model:body#free-geometry",
+          "kind": "wire",
+          "name": "IGES free geometry",
+          "regions": ["iges:model:region#free-geometry"]
+        }
+      ],
+      "coedges": [],
+      "components": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "iges:model:point#D11",
+          "position": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D5",
+          "position": {
+            "x": 1.0,
+            "y": 2.0,
+            "z": 3.0
+          }
+        },
+        {
+          "id": "iges:model:point#D9",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_occurrences": [],
+      "products": [],
+      "regions": [
+        {
+          "body": "iges:model:body#free-geometry",
+          "id": "iges:model:region#free-geometry",
+          "shells": ["iges:model:shell#free-geometry"]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "faces": [],
+          "free_vertices": [
+            "iges:model:vertex#D5",
+            "iges:model:vertex#D9",
+            "iges:model:vertex#D11"
+          ],
+          "id": "iges:model:shell#free-geometry",
+          "region": "iges:model:region#free-geometry"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "iges:model:vertex#D11",
+          "point": "iges:model:point#D11"
+        },
+        {
+          "id": "iges:model:vertex#D5",
+          "point": "iges:model:point#D5"
+        },
+        {
+          "id": "iges:model:vertex#D9",
+          "point": "iges:model:point#D9"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {
+      "iges": {
+        "arenas": {
+          "annotations": [
+            {
+              "declared_string_count": 1,
+              "id": "iges:presentation:annotation#D17",
+              "kind": "general_note",
+              "source_entity": "iges:entity:directory#17",
+              "strings": [
+                {
+                  "box_size": [1.0, 1.0],
+                  "declared_character_count": 1,
+                  "font_code": 1,
+                  "font_definition": null,
+                  "mirror": 0,
+                  "rotation_angle": 0.0,
+                  "slant_angle": 1.5707963267948966,
+                  "start": [0.0, 0.0, 0.0],
+                  "text": [68],
+                  "vertical": 0
+                }
+              ],
+              "transformation": null
+            },
+            {
+              "arrowhead": [0.0, 0.0, 0.0],
+              "arrowhead_size": [2.0, 1.0],
+              "declared_segment_count": 1,
+              "form": 1,
+              "id": "iges:presentation:annotation#D19",
+              "kind": "leader",
+              "segment_tails": [[2.0, 0.0, 0.0]],
+              "source_entity": "iges:entity:directory#19",
+              "transformation": null
+            },
+            {
+              "form": 0,
+              "id": "iges:presentation:annotation#D21",
+              "kind": "linear_dimension",
+              "leaders": ["iges:presentation:annotation#D19", "iges:presentation:annotation#D19"],
+              "note": "iges:presentation:annotation#D17",
+              "source_entity": "iges:entity:directory#21",
+              "transformation": null,
+              "witnesses": [null, null]
+            },
+            {
+              "arrowhead": [0.0, 0.0, 0.0],
+              "arrowhead_size": [2.0, 1.0],
+              "declared_segment_count": 1,
+              "form": 1,
+              "id": "iges:presentation:annotation#D3",
+              "kind": "leader",
+              "segment_tails": [[2.0, 0.0, 0.0]],
+              "source_entity": "iges:entity:directory#3",
+              "transformation": null
+            }
+          ],
+          "associativities": [
+            {
+              "children": ["iges:entity:directory#11"],
+              "id": "iges:structure:associativity#D13",
+              "kind": "single_parent",
+              "parent": "iges:entity:directory#9",
+              "source_entity": "iges:entity:directory#13"
+            },
+            {
+              "declared_count": 1,
+              "entries": [
+                {
+                  "entity": "iges:entity:directory#9",
+                  "symbolic_name": [78, 65, 77, 69]
+                }
+              ],
+              "id": "iges:structure:associativity#D15",
+              "kind": "external_reference_index",
+              "source_entity": "iges:entity:directory#15"
+            },
+            {
+              "dimension": "iges:entity:directory#21",
+              "geometry": ["iges:entity:directory#9"],
+              "id": "iges:structure:associativity#D23",
+              "kind": "dimensioned_geometry",
+              "source_entity": "iges:entity:directory#23"
+            },
+            {
+              "entities": ["iges:entity:directory#9", "iges:entity:directory#11"],
+              "id": "iges:structure:associativity#D25",
+              "kind": "planar",
+              "plane_transform": null,
+              "source_entity": "iges:entity:directory#25"
+            },
+            {
+              "declared_count": 1,
+              "id": "iges:structure:associativity#D7",
+              "kind": "label_display",
+              "placements": [
+                {
+                  "entity": "iges:entity:directory#5",
+                  "label_level": 0,
+                  "leader": "iges:entity:directory#3",
+                  "text_location": [1.0, 2.0, 3.0],
+                  "view": "iges:entity:directory#1"
+                }
+              ],
+              "source_entity": "iges:entity:directory#7"
+            }
+          ],
+          "attribute_table_definitions": [],
+          "attribute_table_instances": [],
+          "boolean_trees": [],
+          "cards": [
+            {
+              "id": "iges:physical:card#1",
+              "line_ending": [10],
+              "offset": 0,
+              "payload": [
+                111, 114, 105, 103, 105, 110, 97, 108, 32, 102, 105, 120, 116, 117, 114, 101, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 83, 32, 32, 32, 32, 32, 32, 49
+              ],
+              "section": "start",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#10",
+              "line_ending": [10],
+              "offset": 729,
+              "payload": [
+                32, 32, 32, 32, 32, 52, 48, 50, 32, 32, 32, 32, 32, 32, 32, 52, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 48, 48, 50, 48, 48, 68, 32, 32, 32, 32, 32, 32, 55
+              ],
+              "section": "directory",
+              "sequence": 7
+            },
+            {
+              "id": "iges:physical:card#11",
+              "line_ending": [10],
+              "offset": 810,
+              "payload": [
+                32, 32, 32, 32, 32, 52, 48, 50, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 53, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 76, 65, 66, 69, 76, 68, 83,
+                80, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 32, 56
+              ],
+              "section": "directory",
+              "sequence": 8
+            },
+            {
+              "id": "iges:physical:card#12",
+              "line_ending": [10],
+              "offset": 891,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 54, 32, 32, 32, 32, 32, 32, 32, 53, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 48, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 57
+              ],
+              "section": "directory",
+              "sequence": 9
+            },
+            {
+              "id": "iges:physical:card#13",
+              "line_ending": [10],
+              "offset": 972,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 54, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 80, 65, 82, 69, 78,
+                84, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 48
+              ],
+              "section": "directory",
+              "sequence": 10
+            },
+            {
+              "id": "iges:physical:card#14",
+              "line_ending": [10],
+              "offset": 1053,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 54, 32, 32, 32, 32, 32, 32, 32, 54, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 48, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 49, 49
+              ],
+              "section": "directory",
+              "sequence": 11
+            },
+            {
+              "id": "iges:physical:card#15",
+              "line_ending": [10],
+              "offset": 1134,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 54, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 67, 72, 73, 76,
+                68, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 50
+              ],
+              "section": "directory",
+              "sequence": 12
+            },
+            {
+              "id": "iges:physical:card#16",
+              "line_ending": [10],
+              "offset": 1215,
+              "payload": [
+                32, 32, 32, 32, 32, 52, 48, 50, 32, 32, 32, 32, 32, 32, 32, 55, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 48, 48, 50, 48, 48, 68, 32, 32, 32, 32, 32, 49, 51
+              ],
+              "section": "directory",
+              "sequence": 13
+            },
+            {
+              "id": "iges:physical:card#17",
+              "line_ending": [10],
+              "offset": 1296,
+              "payload": [
+                32, 32, 32, 32, 32, 52, 48, 50, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 57, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 80, 65, 82, 69, 78, 84, 67,
+                72, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 52
+              ],
+              "section": "directory",
+              "sequence": 14
+            },
+            {
+              "id": "iges:physical:card#18",
+              "line_ending": [10],
+              "offset": 1377,
+              "payload": [
+                32, 32, 32, 32, 32, 52, 48, 50, 32, 32, 32, 32, 32, 32, 32, 56, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 48, 48, 50, 48, 48, 68, 32, 32, 32, 32, 32, 49, 53
+              ],
+              "section": "directory",
+              "sequence": 15
+            },
+            {
+              "id": "iges:physical:card#19",
+              "line_ending": [10],
+              "offset": 1458,
+              "payload": [
+                32, 32, 32, 32, 32, 52, 48, 50, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 49, 50, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 69, 88, 84, 73, 78, 68, 69,
+                88, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 54
+              ],
+              "section": "directory",
+              "sequence": 16
+            },
+            {
+              "id": "iges:physical:card#2",
+              "line_ending": [10],
+              "offset": 81,
+              "payload": [
+                49, 72, 44, 44, 49, 72, 59, 44, 55, 72, 112, 114, 111, 100, 117, 99, 116, 44, 56,
+                72, 112, 97, 114, 116, 46, 105, 103, 115, 44, 55, 72, 99, 97, 100, 109, 112, 101,
+                103, 44, 51, 72, 48, 46, 49, 44, 51, 50, 44, 51, 56, 44, 54, 44, 51, 48, 56, 44, 49,
+                53, 44, 48, 72, 44, 49, 46, 48, 44, 50, 44, 50, 72, 77, 71, 32, 32, 32, 32, 32, 32,
+                49
+              ],
+              "section": "global",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#20",
+              "line_ending": [10],
+              "offset": 1539,
+              "payload": [
+                32, 32, 32, 32, 32, 50, 49, 50, 32, 32, 32, 32, 32, 32, 32, 57, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 49, 48, 48, 68, 32, 32, 32, 32, 32, 49, 55
+              ],
+              "section": "directory",
+              "sequence": 17
+            },
+            {
+              "id": "iges:physical:card#21",
+              "line_ending": [10],
+              "offset": 1620,
+              "payload": [
+                32, 32, 32, 32, 32, 50, 49, 50, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 68, 73, 77, 78, 79, 84,
+                69, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 56
+              ],
+              "section": "directory",
+              "sequence": 18
+            },
+            {
+              "id": "iges:physical:card#22",
+              "line_ending": [10],
+              "offset": 1701,
+              "payload": [
+                32, 32, 32, 32, 32, 50, 49, 52, 32, 32, 32, 32, 32, 32, 49, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 49, 48, 48, 68, 32, 32, 32, 32, 32, 49, 57
+              ],
+              "section": "directory",
+              "sequence": 19
+            },
+            {
+              "id": "iges:physical:card#23",
+              "line_ending": [10],
+              "offset": 1782,
+              "payload": [
+                32, 32, 32, 32, 32, 50, 49, 52, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 68, 73, 77, 65, 82,
+                82, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 50, 48
+              ],
+              "section": "directory",
+              "sequence": 20
+            },
+            {
+              "id": "iges:physical:card#24",
+              "line_ending": [10],
+              "offset": 1863,
+              "payload": [
+                32, 32, 32, 32, 32, 50, 49, 54, 32, 32, 32, 32, 32, 32, 49, 49, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 48, 48, 49, 48, 48, 68, 32, 32, 32, 32, 32, 50, 49
+              ],
+              "section": "directory",
+              "sequence": 21
+            },
+            {
+              "id": "iges:physical:card#25",
+              "line_ending": [10],
+              "offset": 1944,
+              "payload": [
+                32, 32, 32, 32, 32, 50, 49, 54, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 68, 73, 77, 69, 78,
+                83, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 50, 50
+              ],
+              "section": "directory",
+              "sequence": 22
+            },
+            {
+              "id": "iges:physical:card#26",
+              "line_ending": [10],
+              "offset": 2025,
+              "payload": [
+                32, 32, 32, 32, 32, 52, 48, 50, 32, 32, 32, 32, 32, 32, 49, 50, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 48, 48, 50, 48, 48, 68, 32, 32, 32, 32, 32, 50, 51
+              ],
+              "section": "directory",
+              "sequence": 23
+            },
+            {
+              "id": "iges:physical:card#27",
+              "line_ending": [10],
+              "offset": 2106,
+              "payload": [
+                32, 32, 32, 32, 32, 52, 48, 50, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 49, 51, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 68, 73, 77, 71, 69, 79,
+                77, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 50, 52
+              ],
+              "section": "directory",
+              "sequence": 24
+            },
+            {
+              "id": "iges:physical:card#28",
+              "line_ending": [10],
+              "offset": 2187,
+              "payload": [
+                32, 32, 32, 32, 32, 52, 48, 50, 32, 32, 32, 32, 32, 32, 49, 51, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 48, 48, 50, 48, 48, 68, 32, 32, 32, 32, 32, 50, 53
+              ],
+              "section": "directory",
+              "sequence": 25
+            },
+            {
+              "id": "iges:physical:card#29",
+              "line_ending": [10],
+              "offset": 2268,
+              "payload": [
+                32, 32, 32, 32, 32, 52, 48, 50, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 49, 54, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 80, 76, 65, 78, 65,
+                82, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 50, 54
+              ],
+              "section": "directory",
+              "sequence": 26
+            },
+            {
+              "id": "iges:physical:card#3",
+              "line_ending": [10],
+              "offset": 162,
+              "payload": [
+                77, 44, 49, 44, 49, 46, 48, 44, 49, 53, 72, 50, 48, 50, 54, 48, 55, 49, 52, 46, 48,
+                48, 48, 48, 48, 48, 44, 48, 46, 48, 48, 49, 44, 49, 48, 48, 48, 46, 48, 44, 54, 72,
+                97, 117, 116, 104, 111, 114, 44, 51, 72, 111, 114, 103, 44, 49, 49, 44, 48, 44, 48,
+                72, 44, 48, 72, 59, 32, 32, 32, 32, 32, 32, 71, 32, 32, 32, 32, 32, 32, 50
+              ],
+              "section": "global",
+              "sequence": 2
+            },
+            {
+              "id": "iges:physical:card#30",
+              "line_ending": [10],
+              "offset": 2349,
+              "payload": [
+                52, 49, 48, 44, 49, 44, 49, 44, 48, 44, 48, 44, 48, 44, 48, 44, 48, 44, 48, 59, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 49, 80, 32, 32, 32, 32, 32, 32, 49
+              ],
+              "section": "parameter",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#31",
+              "line_ending": [10],
+              "offset": 2430,
+              "payload": [
+                50, 49, 52, 44, 49, 44, 50, 44, 49, 44, 48, 44, 48, 44, 48, 44, 50, 44, 48, 59, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 51, 80, 32, 32, 32, 32, 32, 32, 50
+              ],
+              "section": "parameter",
+              "sequence": 2
+            },
+            {
+              "id": "iges:physical:card#32",
+              "line_ending": [10],
+              "offset": 2511,
+              "payload": [
+                49, 49, 54, 44, 49, 44, 50, 44, 51, 44, 48, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 53, 80, 32, 32, 32, 32, 32, 32, 51
+              ],
+              "section": "parameter",
+              "sequence": 3
+            },
+            {
+              "id": "iges:physical:card#33",
+              "line_ending": [10],
+              "offset": 2592,
+              "payload": [
+                52, 48, 50, 44, 49, 44, 49, 44, 49, 44, 50, 44, 51, 44, 51, 44, 48, 44, 53, 59, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 55, 80, 32, 32, 32, 32, 32, 32, 52
+              ],
+              "section": "parameter",
+              "sequence": 4
+            },
+            {
+              "id": "iges:physical:card#34",
+              "line_ending": [10],
+              "offset": 2673,
+              "payload": [
+                49, 49, 54, 44, 48, 44, 48, 44, 48, 44, 48, 44, 49, 44, 49, 51, 44, 48, 59, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 57, 80, 32, 32, 32, 32, 32, 32, 53
+              ],
+              "section": "parameter",
+              "sequence": 5
+            },
+            {
+              "id": "iges:physical:card#35",
+              "line_ending": [10],
+              "offset": 2754,
+              "payload": [
+                49, 49, 54, 44, 49, 44, 48, 44, 48, 44, 48, 44, 49, 44, 49, 51, 44, 48, 59, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 49, 49, 80, 32, 32, 32, 32, 32, 32, 54
+              ],
+              "section": "parameter",
+              "sequence": 6
+            },
+            {
+              "id": "iges:physical:card#36",
+              "line_ending": [10],
+              "offset": 2835,
+              "payload": [
+                52, 48, 50, 44, 49, 44, 49, 44, 57, 44, 49, 49, 59, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 49, 51, 80, 32, 32, 32, 32, 32, 32, 55
+              ],
+              "section": "parameter",
+              "sequence": 7
+            },
+            {
+              "id": "iges:physical:card#37",
+              "line_ending": [10],
+              "offset": 2916,
+              "payload": [
+                52, 48, 50, 44, 49, 44, 52, 72, 78, 65, 77, 69, 44, 57, 59, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 49, 53, 80, 32, 32, 32, 32, 32, 32, 56
+              ],
+              "section": "parameter",
+              "sequence": 8
+            },
+            {
+              "id": "iges:physical:card#38",
+              "line_ending": [10],
+              "offset": 2997,
+              "payload": [
+                50, 49, 50, 44, 49, 44, 49, 44, 49, 44, 49, 44, 49, 44, 49, 46, 53, 55, 48, 55, 57,
+                54, 51, 50, 54, 55, 57, 52, 56, 57, 54, 54, 44, 48, 44, 48, 44, 48, 44, 48, 44, 48,
+                44, 48, 44, 49, 72, 68, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 49, 55, 80, 32, 32, 32, 32, 32, 32, 57
+              ],
+              "section": "parameter",
+              "sequence": 9
+            },
+            {
+              "id": "iges:physical:card#39",
+              "line_ending": [10],
+              "offset": 3078,
+              "payload": [
+                50, 49, 52, 44, 49, 44, 50, 44, 49, 44, 48, 44, 48, 44, 48, 44, 50, 44, 48, 59, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 49, 57, 80, 32, 32, 32, 32, 32, 49, 48
+              ],
+              "section": "parameter",
+              "sequence": 10
+            },
+            {
+              "id": "iges:physical:card#4",
+              "line_ending": [10],
+              "offset": 243,
+              "payload": [
+                32, 32, 32, 32, 32, 52, 49, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 48, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 49
+              ],
+              "section": "directory",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#40",
+              "line_ending": [10],
+              "offset": 3159,
+              "payload": [
+                50, 49, 54, 44, 49, 55, 44, 49, 57, 44, 49, 57, 44, 48, 44, 48, 44, 49, 44, 50, 51,
+                44, 48, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 50, 49, 80, 32, 32, 32, 32, 32, 49, 49
+              ],
+              "section": "parameter",
+              "sequence": 11
+            },
+            {
+              "id": "iges:physical:card#41",
+              "line_ending": [10],
+              "offset": 3240,
+              "payload": [
+                52, 48, 50, 44, 49, 44, 49, 44, 50, 49, 44, 57, 59, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 50, 51, 80, 32, 32, 32, 32, 32, 49, 50
+              ],
+              "section": "parameter",
+              "sequence": 12
+            },
+            {
+              "id": "iges:physical:card#42",
+              "line_ending": [10],
+              "offset": 3321,
+              "payload": [
+                52, 48, 50, 44, 49, 44, 50, 44, 48, 44, 57, 44, 49, 49, 59, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 50, 53, 80, 32, 32, 32, 32, 32, 49, 51
+              ],
+              "section": "parameter",
+              "sequence": 13
+            },
+            {
+              "id": "iges:physical:card#43",
+              "line_ending": [10],
+              "offset": 3402,
+              "payload": [
+                83, 48, 48, 48, 48, 48, 48, 49, 71, 48, 48, 48, 48, 48, 48, 50, 68, 48, 48, 48, 48,
+                48, 50, 54, 80, 48, 48, 48, 48, 48, 49, 51, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 84, 32, 32, 32, 32, 32, 32, 49
+              ],
+              "section": "terminate",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#5",
+              "line_ending": [10],
+              "offset": 324,
+              "payload": [
+                32, 32, 32, 32, 32, 52, 49, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 86, 73, 69,
+                87, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 32, 50
+              ],
+              "section": "directory",
+              "sequence": 2
+            },
+            {
+              "id": "iges:physical:card#6",
+              "line_ending": [10],
+              "offset": 405,
+              "payload": [
+                32, 32, 32, 32, 32, 50, 49, 52, 32, 32, 32, 32, 32, 32, 32, 50, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 49, 48, 48, 68, 32, 32, 32, 32, 32, 32, 51
+              ],
+              "section": "directory",
+              "sequence": 3
+            },
+            {
+              "id": "iges:physical:card#7",
+              "line_ending": [10],
+              "offset": 486,
+              "payload": [
+                32, 32, 32, 32, 32, 50, 49, 52, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 76, 65, 66, 69, 76, 65, 82,
+                82, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 32, 52
+              ],
+              "section": "directory",
+              "sequence": 4
+            },
+            {
+              "id": "iges:physical:card#8",
+              "line_ending": [10],
+              "offset": 567,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 54, 32, 32, 32, 32, 32, 32, 32, 51, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 48, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 53
+              ],
+              "section": "directory",
+              "sequence": 5
+            },
+            {
+              "id": "iges:physical:card#9",
+              "line_ending": [10],
+              "offset": 648,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 54, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 76, 65, 66, 69, 76, 69,
+                68, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 32, 54
+              ],
+              "section": "directory",
+              "sequence": 6
+            }
+          ],
+          "circular_arrays": [],
+          "colors": [],
+          "connect_points": [],
+          "copious_data": [],
+          "definition_levels": [],
+          "directions": [],
+          "display_attributes": [
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D1",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#1",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D11",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#11",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D13",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#13",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D15",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#15",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D17",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#17",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D19",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#19",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D21",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#21",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D23",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#23",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D25",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#25",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D3",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#3",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D5",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#5",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D7",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#7",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D9",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#9",
+              "view": 0,
+              "visible": true
+            }
+          ],
+          "drawings": [],
+          "entities": [
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32
+              ],
+              "directory_sequence": 1,
+              "entity_type": 410,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#1",
+              "label": [32, 32, 32, 32, 86, 73, 69, 87],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                52, 49, 48, 44, 49, 44, 49, 44, 48, 44, 48, 44, 48, 44, 48, 44, 48, 44, 48, 59, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 2,
+              "parameter_line_start": 1,
+              "parameter_start": 1,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 410
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 17,
+                  "start": 16,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 19,
+                  "start": 18,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": ["iges:entity:directory#13"],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32
+              ],
+              "directory_sequence": 11,
+              "entity_type": 116,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#11",
+              "label": [32, 32, 32, 67, 72, 73, 76, 68],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 49, 54, 44, 49, 44, 48, 44, 48, 44, 48, 44, 49, 44, 49, 51, 44, 48, 59, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 7,
+              "parameter_line_start": 6,
+              "parameter_start": 6,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 116
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 16,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 13
+                  }
+                },
+                {
+                  "end": 18,
+                  "start": 17,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 13,
+              "entity_type": 402,
+              "form": 9,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#13",
+              "label": [80, 65, 82, 69, 78, 84, 67, 72],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                52, 48, 50, 44, 49, 44, 49, 44, 57, 44, 49, 49, 59, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 8,
+              "parameter_line_start": 7,
+              "parameter_start": 7,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 402
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 9
+                  }
+                },
+                {
+                  "end": 12,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 11
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 2,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 15,
+              "entity_type": 402,
+              "form": 12,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#15",
+              "label": [69, 88, 84, 73, 78, 68, 69, 88],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                52, 48, 50, 44, 49, 44, 52, 72, 78, 65, 77, 69, 44, 57, 59, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 9,
+              "parameter_line_start": 8,
+              "parameter_start": 8,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 402
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 12,
+                  "start": 6,
+                  "value": {
+                    "kind": "string",
+                    "value": [78, 65, 77, 69]
+                  }
+                },
+                {
+                  "end": 14,
+                  "start": 13,
+                  "value": {
+                    "kind": "integer",
+                    "value": 9
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 2,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32],
+              "directory_sequence": 17,
+              "entity_type": 212,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#17",
+              "label": [32, 68, 73, 77, 78, 79, 84, 69],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                50, 49, 50, 44, 49, 44, 49, 44, 49, 44, 49, 44, 49, 44, 49, 46, 53, 55, 48, 55, 57,
+                54, 51, 50, 54, 55, 57, 52, 56, 57, 54, 54, 44, 48, 44, 48, 44, 48, 44, 48, 44, 48,
+                44, 48, 44, 49, 72, 68, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 10,
+              "parameter_line_start": 9,
+              "parameter_start": 9,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 212
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 32,
+                  "start": 14,
+                  "value": {
+                    "kind": "real",
+                    "value": 1.5707963267948966
+                  }
+                },
+                {
+                  "end": 34,
+                  "start": 33,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 36,
+                  "start": 35,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 38,
+                  "start": 37,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 40,
+                  "start": 39,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 42,
+                  "start": 41,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 44,
+                  "start": 43,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 48,
+                  "start": 45,
+                  "value": {
+                    "kind": "string",
+                    "value": [68]
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 1,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32
+              ],
+              "directory_sequence": 19,
+              "entity_type": 214,
+              "form": 1,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#19",
+              "label": [32, 32, 68, 73, 77, 65, 82, 82],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                50, 49, 52, 44, 49, 44, 50, 44, 49, 44, 48, 44, 48, 44, 48, 44, 50, 44, 48, 59, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 11,
+              "parameter_line_start": 10,
+              "parameter_start": 10,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 214
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 17,
+                  "start": 16,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 19,
+                  "start": 18,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 1,
+              "view": 0
+            },
+            {
+              "association_links": ["iges:entity:directory#23"],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 21,
+              "entity_type": 216,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#21",
+              "label": [32, 32, 68, 73, 77, 69, 78, 83],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                50, 49, 54, 44, 49, 55, 44, 49, 57, 44, 49, 57, 44, 48, 44, 48, 44, 49, 44, 50, 51,
+                44, 48, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 12,
+              "parameter_line_start": 11,
+              "parameter_start": 11,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 216
+                  }
+                },
+                {
+                  "end": 6,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 17
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 7,
+                  "value": {
+                    "kind": "integer",
+                    "value": 19
+                  }
+                },
+                {
+                  "end": 12,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 19
+                  }
+                },
+                {
+                  "end": 14,
+                  "start": 13,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 16,
+                  "start": 15,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 18,
+                  "start": 17,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 21,
+                  "start": 19,
+                  "value": {
+                    "kind": "integer",
+                    "value": 23
+                  }
+                },
+                {
+                  "end": 23,
+                  "start": 22,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 1,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 23,
+              "entity_type": 402,
+              "form": 13,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#23",
+              "label": [32, 68, 73, 77, 71, 69, 79, 77],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                52, 48, 50, 44, 49, 44, 49, 44, 50, 49, 44, 57, 59, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 13,
+              "parameter_line_start": 12,
+              "parameter_start": 12,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 402
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 10,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 21
+                  }
+                },
+                {
+                  "end": 12,
+                  "start": 11,
+                  "value": {
+                    "kind": "integer",
+                    "value": 9
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 2,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 25,
+              "entity_type": 402,
+              "form": 16,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#25",
+              "label": [32, 32, 80, 76, 65, 78, 65, 82],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                52, 48, 50, 44, 49, 44, 50, 44, 48, 44, 57, 44, 49, 49, 59, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 14,
+              "parameter_line_start": 13,
+              "parameter_start": 13,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 402
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 9
+                  }
+                },
+                {
+                  "end": 14,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 11
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 2,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32
+              ],
+              "directory_sequence": 3,
+              "entity_type": 214,
+              "form": 1,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#3",
+              "label": [76, 65, 66, 69, 76, 65, 82, 82],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                50, 49, 52, 44, 49, 44, 50, 44, 49, 44, 48, 44, 48, 44, 48, 44, 50, 44, 48, 59, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 3,
+              "parameter_line_start": 2,
+              "parameter_start": 2,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 214
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 17,
+                  "start": 16,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 19,
+                  "start": 18,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 1,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 5,
+              "entity_type": 116,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#5",
+              "label": [32, 76, 65, 66, 69, 76, 69, 68],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 49, 54, 44, 49, 44, 50, 44, 51, 44, 48, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 4,
+              "parameter_line_start": 3,
+              "parameter_start": 3,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 116
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 3
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32
+              ],
+              "directory_sequence": 7,
+              "entity_type": 402,
+              "form": 5,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#7",
+              "label": [76, 65, 66, 69, 76, 68, 83, 80],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                52, 48, 50, 44, 49, 44, 49, 44, 49, 44, 50, 44, 51, 44, 51, 44, 48, 44, 53, 59, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 5,
+              "parameter_line_start": 4,
+              "parameter_start": 4,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 402
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 3
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 3
+                  }
+                },
+                {
+                  "end": 17,
+                  "start": 16,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 19,
+                  "start": 18,
+                  "value": {
+                    "kind": "integer",
+                    "value": 5
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 2,
+              "view": 0
+            },
+            {
+              "association_links": ["iges:entity:directory#13"],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32
+              ],
+              "directory_sequence": 9,
+              "entity_type": 116,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#9",
+              "label": [32, 32, 80, 65, 82, 69, 78, 84],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 49, 54, 44, 48, 44, 48, 44, 48, 44, 48, 44, 49, 44, 49, 51, 44, 48, 59, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 6,
+              "parameter_line_start": 5,
+              "parameter_start": 5,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 116
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 16,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 13
+                  }
+                },
+                {
+                  "end": 18,
+                  "start": 17,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            }
+          ],
+          "external_references": [],
+          "groups": [],
+          "line_fonts": [],
+          "network_definitions": [],
+          "network_instances": [],
+          "primitive_solids": [],
+          "procedural_solids": [],
+          "product_occurrence_expansion": [
+            {
+              "emitted": 0,
+              "id": "iges:product:occurrence-expansion#state",
+              "limit": 100,
+              "truncated": false
+            }
+          ],
+          "product_occurrences": [],
+          "product_properties": [],
+          "properties": [],
+          "rectangular_arrays": [],
+          "segmented_visibility": [],
+          "selected_components": [],
+          "solid_assemblies": [],
+          "solid_instances": [],
+          "subfigure_definitions": [],
+          "subfigure_instances": [],
+          "text_fonts": [],
+          "text_templates": [],
+          "transformations": [],
+          "units_data": [],
+          "view_visibility": [],
+          "views": [
+            {
+              "center_of_projection": null,
+              "clipping_planes": [null, null, null, null, null, null],
+              "clipping_window": null,
+              "depth_clipping": null,
+              "depth_range": null,
+              "form": 0,
+              "id": "iges:presentation:view#D1",
+              "model_to_view": null,
+              "projection": "orthographic_parallel",
+              "scale": 1.0,
+              "source_entity": "iges:entity:directory#1",
+              "view_number": 1,
+              "view_plane_distance": null,
+              "view_plane_normal": null,
+              "view_reference_point": null,
+              "view_up": null
+            }
+          ]
+        },
+        "version": 2
+      }
+    },
+    "source": {
+      "attributes": {
+        "iges_version": "5.3",
+        "iges_version_flag": "11",
+        "native_file_name": "part.igs",
+        "native_units": "MM",
+        "parameter_delimiter": ",",
+        "record_delimiter": ";",
+        "representation": "fixed-ascii",
+        "sender_product": "product"
+      },
+      "format": "iges"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "iges",
+    "geometry_transferred": true,
+    "losses": [],
+    "notes": [
+      "entities=13",
+      "entity.116.form.0=3",
+      "entity.212.form.0=1",
+      "entity.214.form.1=2",
+      "entity.216.form.0=1",
+      "entity.402.form.5=1",
+      "entity.402.form.9=1",
+      "entity.402.form.12=1",
+      "entity.402.form.13=1",
+      "entity.402.form.16=1",
+      "entity.410.form.0=1",
+      "parameter_records=13",
+      "parameter_tokens=100",
+      "external_references=0"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "version": "3"
+  }
+}

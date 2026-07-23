@@ -1,0 +1,1782 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "iges:model:body#D13",
+          "kind": "sheet",
+          "regions": ["iges:model:region#D13"],
+          "visible": true
+        },
+        {
+          "id": "iges:model:body#free-geometry",
+          "kind": "wire",
+          "name": "IGES free geometry",
+          "regions": ["iges:model:region#free-geometry"]
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "iges:model:edge#D13:0:0",
+          "id": "iges:model:coedge#D13:0:0",
+          "next": "iges:model:coedge#D13:0:1",
+          "owner_loop": "iges:model:loop#D13:0",
+          "previous": "iges:model:coedge#D13:0:3",
+          "radial_next": "iges:model:coedge#D13:0:0",
+          "sense": "forward"
+        },
+        {
+          "edge": "iges:model:edge#D13:0:1",
+          "id": "iges:model:coedge#D13:0:1",
+          "next": "iges:model:coedge#D13:0:2",
+          "owner_loop": "iges:model:loop#D13:0",
+          "previous": "iges:model:coedge#D13:0:0",
+          "radial_next": "iges:model:coedge#D13:0:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "iges:model:edge#D13:0:2",
+          "id": "iges:model:coedge#D13:0:2",
+          "next": "iges:model:coedge#D13:0:3",
+          "owner_loop": "iges:model:loop#D13:0",
+          "previous": "iges:model:coedge#D13:0:1",
+          "radial_next": "iges:model:coedge#D13:0:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "iges:model:edge#D13:0:3",
+          "id": "iges:model:coedge#D13:0:3",
+          "next": "iges:model:coedge#D13:0:0",
+          "owner_loop": "iges:model:loop#D13:0",
+          "previous": "iges:model:coedge#D13:0:2",
+          "radial_next": "iges:model:coedge#D13:0:3",
+          "sense": "forward"
+        }
+      ],
+      "components": [],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "iges:model:curve#D3",
+          "source_object": {
+            "format": "iges",
+            "layer": "0",
+            "name": "EDGE1",
+            "object_id": "D3",
+            "visible": true
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 1.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          },
+          "id": "iges:model:curve#D5",
+          "source_object": {
+            "format": "iges",
+            "layer": "0",
+            "name": "EDGE2",
+            "object_id": "D5",
+            "visible": true
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": -1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 1.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          },
+          "id": "iges:model:curve#D7",
+          "source_object": {
+            "format": "iges",
+            "layer": "0",
+            "name": "EDGE3",
+            "object_id": "D7",
+            "visible": true
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          },
+          "id": "iges:model:curve#D9",
+          "source_object": {
+            "format": "iges",
+            "layer": "0",
+            "name": "EDGE4",
+            "object_id": "D9",
+            "visible": true
+          }
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "curve": "iges:model:curve#D3",
+          "end": "iges:model:vertex#D13:0:1",
+          "id": "iges:model:edge#D13:0:0",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D13:0:0"
+        },
+        {
+          "curve": "iges:model:curve#D5",
+          "end": "iges:model:vertex#D13:0:1",
+          "id": "iges:model:edge#D13:0:1",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D13:0:2"
+        },
+        {
+          "curve": "iges:model:curve#D7",
+          "end": "iges:model:vertex#D13:0:3",
+          "id": "iges:model:edge#D13:0:2",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D13:0:2"
+        },
+        {
+          "curve": "iges:model:curve#D9",
+          "end": "iges:model:vertex#D13:0:0",
+          "id": "iges:model:edge#D13:0:3",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D13:0:3"
+        },
+        {
+          "curve": "iges:model:curve#D3",
+          "end": "iges:model:vertex#D3-end",
+          "id": "iges:model:edge#D3",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D3-start"
+        },
+        {
+          "curve": "iges:model:curve#D5",
+          "end": "iges:model:vertex#D5-end",
+          "id": "iges:model:edge#D5",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D5-start"
+        },
+        {
+          "curve": "iges:model:curve#D7",
+          "end": "iges:model:vertex#D7-end",
+          "id": "iges:model:edge#D7",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D7-start"
+        },
+        {
+          "curve": "iges:model:curve#D9",
+          "end": "iges:model:vertex#D9-end",
+          "id": "iges:model:edge#D9",
+          "param_range": [0.0, 1.0],
+          "start": "iges:model:vertex#D9-start"
+        }
+      ],
+      "faces": [
+        {
+          "id": "iges:model:face#D13",
+          "loops": ["iges:model:loop#D13:0"],
+          "sense": "forward",
+          "shell": "iges:model:shell#D13",
+          "surface": "iges:model:surface#D1"
+        }
+      ],
+      "features": [],
+      "loops": [
+        {
+          "boundary_role": "unspecified",
+          "coedges": [
+            "iges:model:coedge#D13:0:0",
+            "iges:model:coedge#D13:0:1",
+            "iges:model:coedge#D13:0:2",
+            "iges:model:coedge#D13:0:3"
+          ],
+          "face": "iges:model:face#D13",
+          "id": "iges:model:loop#D13:0"
+        }
+      ],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "iges:model:point#D13:0:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D13:0:1",
+          "position": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D13:0:2",
+          "position": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D13:0:3",
+          "position": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D3-end",
+          "position": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D3-start",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D5-end",
+          "position": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D5-start",
+          "position": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D7-end",
+          "position": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D7-start",
+          "position": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D9-end",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "iges:model:point#D9-start",
+          "position": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_occurrences": [],
+      "products": [],
+      "regions": [
+        {
+          "body": "iges:model:body#D13",
+          "id": "iges:model:region#D13",
+          "shells": ["iges:model:shell#D13"]
+        },
+        {
+          "body": "iges:model:body#free-geometry",
+          "id": "iges:model:region#free-geometry",
+          "shells": ["iges:model:shell#free-geometry"]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "faces": ["iges:model:face#D13"],
+          "id": "iges:model:shell#D13",
+          "region": "iges:model:region#D13"
+        },
+        {
+          "faces": [],
+          "id": "iges:model:shell#free-geometry",
+          "region": "iges:model:region#free-geometry",
+          "wire_edges": [
+            "iges:model:edge#D3",
+            "iges:model:edge#D5",
+            "iges:model:edge#D7",
+            "iges:model:edge#D9"
+          ]
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "iges:model:surface#D1",
+          "source_object": {
+            "format": "iges",
+            "layer": "0",
+            "name": "PLANE",
+            "object_id": "D1",
+            "visible": true
+          }
+        }
+      ],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "iges:model:vertex#D13:0:0",
+          "point": "iges:model:point#D13:0:0"
+        },
+        {
+          "id": "iges:model:vertex#D13:0:1",
+          "point": "iges:model:point#D13:0:1"
+        },
+        {
+          "id": "iges:model:vertex#D13:0:2",
+          "point": "iges:model:point#D13:0:2"
+        },
+        {
+          "id": "iges:model:vertex#D13:0:3",
+          "point": "iges:model:point#D13:0:3"
+        },
+        {
+          "id": "iges:model:vertex#D3-end",
+          "point": "iges:model:point#D3-end"
+        },
+        {
+          "id": "iges:model:vertex#D3-start",
+          "point": "iges:model:point#D3-start"
+        },
+        {
+          "id": "iges:model:vertex#D5-end",
+          "point": "iges:model:point#D5-end"
+        },
+        {
+          "id": "iges:model:vertex#D5-start",
+          "point": "iges:model:point#D5-start"
+        },
+        {
+          "id": "iges:model:vertex#D7-end",
+          "point": "iges:model:point#D7-end"
+        },
+        {
+          "id": "iges:model:vertex#D7-start",
+          "point": "iges:model:point#D7-start"
+        },
+        {
+          "id": "iges:model:vertex#D9-end",
+          "point": "iges:model:point#D9-end"
+        },
+        {
+          "id": "iges:model:vertex#D9-start",
+          "point": "iges:model:point#D9-start"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {
+      "iges": {
+        "arenas": {
+          "annotations": [],
+          "associativities": [],
+          "attribute_table_definitions": [],
+          "attribute_table_instances": [],
+          "boolean_trees": [],
+          "cards": [
+            {
+              "id": "iges:physical:card#1",
+              "line_ending": [10],
+              "offset": 0,
+              "payload": [
+                111, 114, 105, 103, 105, 110, 97, 108, 32, 102, 105, 120, 116, 117, 114, 101, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 83, 32, 32, 32, 32, 32, 32, 49
+              ],
+              "section": "start",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#10",
+              "line_ending": [10],
+              "offset": 729,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 52, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 55
+              ],
+              "section": "directory",
+              "sequence": 7
+            },
+            {
+              "id": "iges:physical:card#11",
+              "line_ending": [10],
+              "offset": 810,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 69, 68, 71, 69,
+                51, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 32, 56
+              ],
+              "section": "directory",
+              "sequence": 8
+            },
+            {
+              "id": "iges:physical:card#12",
+              "line_ending": [10],
+              "offset": 891,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 53, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 57
+              ],
+              "section": "directory",
+              "sequence": 9
+            },
+            {
+              "id": "iges:physical:card#13",
+              "line_ending": [10],
+              "offset": 972,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 69, 68, 71, 69,
+                52, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 48
+              ],
+              "section": "directory",
+              "sequence": 10
+            },
+            {
+              "id": "iges:physical:card#14",
+              "line_ending": [10],
+              "offset": 1053,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 52, 49, 32, 32, 32, 32, 32, 32, 32, 54, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 49, 49
+              ],
+              "section": "directory",
+              "sequence": 11
+            },
+            {
+              "id": "iges:physical:card#15",
+              "line_ending": [10],
+              "offset": 1134,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 52, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 66, 79, 85, 78, 68, 65, 82,
+                89, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 50
+              ],
+              "section": "directory",
+              "sequence": 12
+            },
+            {
+              "id": "iges:physical:card#16",
+              "line_ending": [10],
+              "offset": 1215,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 52, 51, 32, 32, 32, 32, 32, 32, 32, 55, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 48, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 49, 51
+              ],
+              "section": "directory",
+              "sequence": 13
+            },
+            {
+              "id": "iges:physical:card#17",
+              "line_ending": [10],
+              "offset": 1296,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 52, 51, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 66, 79, 85, 78, 68, 69,
+                68, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 49, 52
+              ],
+              "section": "directory",
+              "sequence": 14
+            },
+            {
+              "id": "iges:physical:card#18",
+              "line_ending": [10],
+              "offset": 1377,
+              "payload": [
+                49, 48, 56, 44, 48, 44, 48, 44, 49, 44, 48, 44, 48, 44, 48, 44, 48, 44, 48, 44, 48,
+                59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 49, 80, 32, 32, 32, 32, 32, 32, 49
+              ],
+              "section": "parameter",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#19",
+              "line_ending": [10],
+              "offset": 1458,
+              "payload": [
+                49, 49, 48, 44, 48, 44, 48, 44, 48, 44, 49, 44, 48, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 51, 80, 32, 32, 32, 32, 32, 32, 50
+              ],
+              "section": "parameter",
+              "sequence": 2
+            },
+            {
+              "id": "iges:physical:card#2",
+              "line_ending": [10],
+              "offset": 81,
+              "payload": [
+                49, 72, 44, 44, 49, 72, 59, 44, 55, 72, 112, 114, 111, 100, 117, 99, 116, 44, 56,
+                72, 112, 97, 114, 116, 46, 105, 103, 115, 44, 55, 72, 99, 97, 100, 109, 112, 101,
+                103, 44, 51, 72, 48, 46, 49, 44, 51, 50, 44, 51, 56, 44, 54, 44, 51, 48, 56, 44, 49,
+                53, 44, 48, 72, 44, 49, 46, 48, 44, 50, 44, 50, 72, 77, 71, 32, 32, 32, 32, 32, 32,
+                49
+              ],
+              "section": "global",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#20",
+              "line_ending": [10],
+              "offset": 1539,
+              "payload": [
+                49, 49, 48, 44, 49, 44, 49, 44, 48, 44, 49, 44, 48, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 53, 80, 32, 32, 32, 32, 32, 32, 51
+              ],
+              "section": "parameter",
+              "sequence": 3
+            },
+            {
+              "id": "iges:physical:card#21",
+              "line_ending": [10],
+              "offset": 1620,
+              "payload": [
+                49, 49, 48, 44, 49, 44, 49, 44, 48, 44, 48, 44, 49, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 55, 80, 32, 32, 32, 32, 32, 32, 52
+              ],
+              "section": "parameter",
+              "sequence": 4
+            },
+            {
+              "id": "iges:physical:card#22",
+              "line_ending": [10],
+              "offset": 1701,
+              "payload": [
+                49, 49, 48, 44, 48, 44, 49, 44, 48, 44, 48, 44, 48, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 57, 80, 32, 32, 32, 32, 32, 32, 53
+              ],
+              "section": "parameter",
+              "sequence": 5
+            },
+            {
+              "id": "iges:physical:card#23",
+              "line_ending": [10],
+              "offset": 1782,
+              "payload": [
+                49, 52, 49, 44, 48, 44, 49, 44, 49, 44, 52, 44, 51, 44, 49, 44, 48, 44, 53, 44, 50,
+                44, 48, 44, 55, 44, 49, 44, 48, 44, 57, 44, 49, 44, 48, 59, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 49, 49, 80, 32, 32, 32, 32, 32, 32, 54
+              ],
+              "section": "parameter",
+              "sequence": 6
+            },
+            {
+              "id": "iges:physical:card#24",
+              "line_ending": [10],
+              "offset": 1863,
+              "payload": [
+                49, 52, 51, 44, 48, 44, 49, 44, 49, 44, 49, 49, 59, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 49, 51, 80, 32, 32, 32, 32, 32, 32, 55
+              ],
+              "section": "parameter",
+              "sequence": 7
+            },
+            {
+              "id": "iges:physical:card#25",
+              "line_ending": [10],
+              "offset": 1944,
+              "payload": [
+                83, 48, 48, 48, 48, 48, 48, 49, 71, 48, 48, 48, 48, 48, 48, 50, 68, 48, 48, 48, 48,
+                48, 49, 52, 80, 48, 48, 48, 48, 48, 48, 55, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 84, 32, 32, 32, 32, 32, 32, 49
+              ],
+              "section": "terminate",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#3",
+              "line_ending": [10],
+              "offset": 162,
+              "payload": [
+                77, 44, 49, 44, 49, 46, 48, 44, 49, 53, 72, 50, 48, 50, 54, 48, 55, 49, 52, 46, 48,
+                48, 48, 48, 48, 48, 44, 48, 46, 48, 48, 49, 44, 49, 48, 48, 48, 46, 48, 44, 54, 72,
+                97, 117, 116, 104, 111, 114, 44, 51, 72, 111, 114, 103, 44, 49, 49, 44, 48, 44, 48,
+                72, 44, 48, 72, 59, 32, 32, 32, 32, 32, 32, 71, 32, 32, 32, 32, 32, 32, 50
+              ],
+              "section": "global",
+              "sequence": 2
+            },
+            {
+              "id": "iges:physical:card#4",
+              "line_ending": [10],
+              "offset": 243,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 48, 56, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 49
+              ],
+              "section": "directory",
+              "sequence": 1
+            },
+            {
+              "id": "iges:physical:card#5",
+              "line_ending": [10],
+              "offset": 324,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 48, 56, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 80, 76, 65, 78,
+                69, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 32, 50
+              ],
+              "section": "directory",
+              "sequence": 2
+            },
+            {
+              "id": "iges:physical:card#6",
+              "line_ending": [10],
+              "offset": 405,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 50, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 51
+              ],
+              "section": "directory",
+              "sequence": 3
+            },
+            {
+              "id": "iges:physical:card#7",
+              "line_ending": [10],
+              "offset": 486,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 69, 68, 71, 69,
+                49, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 32, 52
+              ],
+              "section": "directory",
+              "sequence": 4
+            },
+            {
+              "id": "iges:physical:card#8",
+              "line_ending": [10],
+              "offset": 567,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 51, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32, 32, 32,
+                48, 48, 48, 48, 49, 48, 48, 48, 48, 68, 32, 32, 32, 32, 32, 32, 53
+              ],
+              "section": "directory",
+              "sequence": 5
+            },
+            {
+              "id": "iges:physical:card#9",
+              "line_ending": [10],
+              "offset": 648,
+              "payload": [
+                32, 32, 32, 32, 32, 49, 49, 48, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32, 32, 32, 32,
+                32, 32, 48, 32, 32, 32, 32, 32, 32, 32, 49, 32, 32, 32, 32, 32, 32, 32, 48, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 69, 68, 71, 69,
+                50, 32, 32, 32, 32, 32, 32, 32, 48, 68, 32, 32, 32, 32, 32, 32, 54
+              ],
+              "section": "directory",
+              "sequence": 6
+            }
+          ],
+          "circular_arrays": [],
+          "colors": [],
+          "connect_points": [],
+          "copious_data": [],
+          "definition_levels": [],
+          "directions": [],
+          "display_attributes": [
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D1",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#1",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D11",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#11",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D13",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#13",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D3",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#3",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D5",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#5",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D7",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#7",
+              "view": 0,
+              "visible": true
+            },
+            {
+              "color_definition": null,
+              "color_number": 0,
+              "id": "iges:presentation:display-attributes#D9",
+              "level_definition": null,
+              "level_number": 0,
+              "line_font_definition": null,
+              "line_font_number": 0,
+              "line_weight_mm": null,
+              "line_weight_number": 0,
+              "source_entity": "iges:entity:directory#9",
+              "view": 0,
+              "visible": true
+            }
+          ],
+          "drawings": [],
+          "entities": [
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 1,
+              "entity_type": 108,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#1",
+              "label": [32, 32, 32, 80, 76, 65, 78, 69],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 48, 56, 44, 48, 44, 48, 44, 49, 44, 48, 44, 48, 44, 48, 44, 48, 44, 48, 44, 48,
+                59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 2,
+              "parameter_line_start": 1,
+              "parameter_start": 1,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 108
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 17,
+                  "start": 16,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 19,
+                  "start": 18,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 21,
+                  "start": 20,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 11,
+              "entity_type": 141,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#11",
+              "label": [66, 79, 85, 78, 68, 65, 82, 89],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 52, 49, 44, 48, 44, 49, 44, 49, 44, 52, 44, 51, 44, 49, 44, 48, 44, 53, 44, 50,
+                44, 48, 44, 55, 44, 49, 44, 48, 44, 57, 44, 49, 44, 48, 59, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 7,
+              "parameter_line_start": 6,
+              "parameter_start": 6,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 141
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 4
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 3
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 17,
+                  "start": 16,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 19,
+                  "start": 18,
+                  "value": {
+                    "kind": "integer",
+                    "value": 5
+                  }
+                },
+                {
+                  "end": 21,
+                  "start": 20,
+                  "value": {
+                    "kind": "integer",
+                    "value": 2
+                  }
+                },
+                {
+                  "end": 23,
+                  "start": 22,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 25,
+                  "start": 24,
+                  "value": {
+                    "kind": "integer",
+                    "value": 7
+                  }
+                },
+                {
+                  "end": 27,
+                  "start": 26,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 29,
+                  "start": 28,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 31,
+                  "start": 30,
+                  "value": {
+                    "kind": "integer",
+                    "value": 9
+                  }
+                },
+                {
+                  "end": 33,
+                  "start": 32,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 35,
+                  "start": 34,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 13,
+              "entity_type": 143,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#13",
+              "label": [32, 66, 79, 85, 78, 68, 69, 68],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 52, 51, 44, 48, 44, 49, 44, 49, 44, 49, 49, 59, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 8,
+              "parameter_line_start": 7,
+              "parameter_start": 7,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 143
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 12,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 11
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 3,
+              "entity_type": 110,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#3",
+              "label": [32, 32, 32, 69, 68, 71, 69, 49],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 49, 48, 44, 48, 44, 48, 44, 48, 44, 49, 44, 48, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 3,
+              "parameter_line_start": 2,
+              "parameter_start": 2,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 110
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 5,
+              "entity_type": 110,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#5",
+              "label": [32, 32, 32, 69, 68, 71, 69, 50],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 49, 48, 44, 49, 44, 49, 44, 48, 44, 49, 44, 48, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 4,
+              "parameter_line_start": 3,
+              "parameter_start": 3,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 110
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 7,
+              "entity_type": 110,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#7",
+              "label": [32, 32, 32, 69, 68, 71, 69, 51],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 49, 48, 44, 49, 44, 49, 44, 48, 44, 48, 44, 49, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 5,
+              "parameter_line_start": 4,
+              "parameter_start": 4,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 110
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            },
+            {
+              "association_links": [],
+              "blank_status": 0,
+              "color": 0,
+              "comment": [
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32
+              ],
+              "directory_sequence": 9,
+              "entity_type": 110,
+              "form": 0,
+              "hierarchy_status": 0,
+              "id": "iges:entity:directory#9",
+              "label": [32, 32, 32, 69, 68, 71, 69, 52],
+              "label_display": 0,
+              "level": 0,
+              "line_font": 0,
+              "line_weight": 0,
+              "links": [],
+              "parameter_bytes": [
+                49, 49, 48, 44, 48, 44, 49, 44, 48, 44, 48, 44, 48, 44, 48, 59, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32
+              ],
+              "parameter_line_count": 1,
+              "parameter_line_end": 6,
+              "parameter_line_start": 5,
+              "parameter_start": 5,
+              "parameters": [
+                {
+                  "end": 3,
+                  "start": 0,
+                  "value": {
+                    "kind": "integer",
+                    "value": 110
+                  }
+                },
+                {
+                  "end": 5,
+                  "start": 4,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 7,
+                  "start": 6,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 9,
+                  "start": 8,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 11,
+                  "start": 10,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 13,
+                  "start": 12,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                },
+                {
+                  "end": 15,
+                  "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [32, 32, 32, 32, 32, 32, 32, 32],
+                [32, 32, 32, 32, 32, 32, 32, 32]
+              ],
+              "structure": 0,
+              "subordinate_status": 1,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 0,
+              "view": 0
+            }
+          ],
+          "external_references": [],
+          "groups": [],
+          "line_fonts": [],
+          "network_definitions": [],
+          "network_instances": [],
+          "primitive_solids": [],
+          "procedural_solids": [],
+          "product_occurrence_expansion": [
+            {
+              "emitted": 0,
+              "id": "iges:product:occurrence-expansion#state",
+              "limit": 100,
+              "truncated": false
+            }
+          ],
+          "product_occurrences": [],
+          "product_properties": [],
+          "properties": [],
+          "rectangular_arrays": [],
+          "segmented_visibility": [],
+          "selected_components": [],
+          "solid_assemblies": [],
+          "solid_instances": [],
+          "subfigure_definitions": [],
+          "subfigure_instances": [],
+          "text_fonts": [],
+          "text_templates": [],
+          "transformations": [],
+          "units_data": [],
+          "view_visibility": [],
+          "views": []
+        },
+        "version": 2
+      }
+    },
+    "source": {
+      "attributes": {
+        "iges_version": "5.3",
+        "iges_version_flag": "11",
+        "native_file_name": "part.igs",
+        "native_units": "MM",
+        "parameter_delimiter": ",",
+        "record_delimiter": ";",
+        "representation": "fixed-ascii",
+        "sender_product": "product"
+      },
+      "format": "iges"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "iges",
+    "geometry_transferred": true,
+    "losses": [],
+    "notes": [
+      "entities=7",
+      "entity.108.form.0=1",
+      "entity.110.form.0=4",
+      "entity.141.form.0=1",
+      "entity.143.form.0=1",
+      "parameter_records=7",
+      "parameter_tokens=60",
+      "external_references=0"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "version": "3"
+  }
+}
