@@ -3,9 +3,7 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-#[cfg(test)]
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::catalog;
 use crate::container;
@@ -72,7 +70,43 @@ pub struct CatiaOwnerAllocationLink {
     pub target: u32,
 }
 
-/// Exact nine-reference class-`0x62` consolidated owner packet.
+/// Structurally decoded payload of a class-`0x62` consolidated owner packet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CatiaOwnerPacketPayload {
+    /// Nine alternating strong/weak identities followed by a fixed numeric tail.
+    FixedNine {
+        /// Reference encoding selected by the packet.
+        reference_encoding: CatiaOwnerReferenceEncoding,
+        /// Nine persistent identities in serialization order.
+        references: [u32; 9],
+        /// Fixed 62-byte class-specific numeric tail.
+        #[serde(with = "cadmpeg_ir::bytes")]
+        #[schemars(with = "String")]
+        numeric_tail: Vec<u8>,
+    },
+    /// Count-selected persistent identities followed by a nonempty tail.
+    Counted {
+        /// Persistent identities in serialization order.
+        references: Vec<u32>,
+        /// Complete nonempty class-specific tail.
+        #[serde(with = "cadmpeg_ir::bytes")]
+        #[schemars(with = "String")]
+        tail: Vec<u8>,
+    },
+}
+
+#[cfg(test)]
+impl CatiaOwnerPacketPayload {
+    fn final_reference(&self) -> Option<u32> {
+        match self {
+            Self::FixedNine { references, .. } => references.last().copied(),
+            Self::Counted { references, .. } => references.last().copied(),
+        }
+    }
+}
+
+/// Exact class-`0x62` consolidated owner packet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaConsolidatedOwnerPacket {
     /// Stable source identity.
@@ -81,14 +115,8 @@ pub struct CatiaConsolidatedOwnerPacket {
     pub byte_offset: u64,
     /// Width-coded header token.
     pub header_token: u32,
-    /// Reference encoding selected by the packet.
-    pub reference_encoding: CatiaOwnerReferenceEncoding,
-    /// Nine persistent identities in serialization order.
-    pub references: [u32; 9],
-    /// Fixed 62-byte class-specific numeric tail.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
-    pub numeric_tail: Vec<u8>,
+    /// Count-specific reference lane and tail.
+    pub payload: CatiaOwnerPacketPayload,
     /// Structurally adjacent allocation link, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allocation_link: Option<CatiaOwnerAllocationLink>,
@@ -858,30 +886,70 @@ fn consolidated_owner_packets(bytes: &[u8]) -> Vec<CatiaConsolidatedOwnerPacket>
     let links = crate::families::b2::records::b2_linked_owners(bytes)
         .into_iter()
         .map(|linked| (linked.owner.pos, linked.link))
+        .chain(
+            crate::families::b2::records::b2_linked_counted_owners(bytes)
+                .into_iter()
+                .map(|linked| (linked.owner.pos, linked.link)),
+        )
         .collect::<HashMap<_, _>>();
-    crate::families::b2::records::b2_owner_packets(bytes)
+    let fixed = crate::families::b2::records::b2_owner_packets(bytes);
+    let fixed_positions = fixed
+        .iter()
+        .map(|packet| packet.pos)
+        .collect::<HashSet<_>>();
+    let mut packets = fixed
         .into_iter()
-        .map(|packet| CatiaConsolidatedOwnerPacket {
-            id: format!("catia:consolidated:owner-packet#{:010}", packet.pos),
-            byte_offset: packet.pos as u64,
-            header_token: packet.header_token,
-            reference_encoding: match packet.reference_encoding {
-                crate::families::b2::records::B2OwnerReferenceEncoding::TaggedU16Strong => {
-                    CatiaOwnerReferenceEncoding::TaggedU16Strong
-                }
-                crate::families::b2::records::B2OwnerReferenceEncoding::WidthCodedStrong => {
-                    CatiaOwnerReferenceEncoding::WidthCodedStrong
-                }
-            },
-            references: packet.references,
-            numeric_tail: packet.numeric_tail.to_vec(),
-            allocation_link: links.get(&packet.pos).map(|link| CatiaOwnerAllocationLink {
-                byte_offset: link.pos as u64,
-                byte_len: (packet.pos - link.pos) as u64,
-                header_token: link.header_token,
-                target: link.target,
-            }),
+        .map(|packet| {
+            (
+                packet.pos,
+                packet.header_token,
+                CatiaOwnerPacketPayload::FixedNine {
+                    reference_encoding: match packet.reference_encoding {
+                        crate::families::b2::records::B2OwnerReferenceEncoding::TaggedU16Strong => {
+                            CatiaOwnerReferenceEncoding::TaggedU16Strong
+                        }
+                        crate::families::b2::records::B2OwnerReferenceEncoding::WidthCodedStrong => {
+                            CatiaOwnerReferenceEncoding::WidthCodedStrong
+                        }
+                    },
+                    references: packet.references,
+                    numeric_tail: packet.numeric_tail.to_vec(),
+                },
+            )
         })
+        .chain(
+            crate::families::b2::records::b2_counted_owners(bytes)
+                .into_iter()
+                .filter(|packet| !fixed_positions.contains(&packet.pos))
+                .map(|packet| {
+                    (
+                        packet.pos,
+                        packet.header_token,
+                        CatiaOwnerPacketPayload::Counted {
+                            references: packet.references,
+                            tail: packet.tail,
+                        },
+                    )
+                }),
+        )
+        .collect::<Vec<_>>();
+    packets.sort_by_key(|(pos, _, _)| *pos);
+    packets
+        .into_iter()
+        .map(
+            |(pos, header_token, payload)| CatiaConsolidatedOwnerPacket {
+                id: format!("catia:consolidated:owner-packet#{pos:010}"),
+                byte_offset: pos as u64,
+                header_token,
+                payload,
+                allocation_link: links.get(&pos).map(|link| CatiaOwnerAllocationLink {
+                    byte_offset: link.pos as u64,
+                    byte_len: (pos - link.pos) as u64,
+                    header_token: link.header_token,
+                    target: link.target,
+                }),
+            },
+        )
         .collect()
 }
 
@@ -1184,10 +1252,16 @@ fn validate_consolidated_owner_packets(
     for (index, packet) in packets.iter().enumerate() {
         let valid_link = packet.allocation_link.is_none_or(|link| {
             link.byte_offset.checked_add(link.byte_len) == Some(packet.byte_offset)
-                && link.target.checked_add(1) == Some(packet.references[8])
+                && link.target.checked_add(1) == packet.payload.final_reference()
         });
+        let valid_payload = match &packet.payload {
+            CatiaOwnerPacketPayload::FixedNine { numeric_tail, .. } => numeric_tail.len() == 62,
+            CatiaOwnerPacketPayload::Counted { references, tail } => {
+                !references.is_empty() && !tail.is_empty()
+            }
+        };
         if packet.id != format!("catia:consolidated:owner-packet#{:010}", packet.byte_offset)
-            || packet.numeric_tail.len() != 62
+            || !valid_payload
             || !valid_link
             || index > 0 && packets[index - 1].byte_offset >= packet.byte_offset
         {

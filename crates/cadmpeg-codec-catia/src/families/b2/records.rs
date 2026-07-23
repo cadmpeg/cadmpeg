@@ -90,7 +90,6 @@ pub struct B2OwnerPacket {
 
 /// Count-framed class-`0x62` owner record with a class-specific tail.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(test)]
 pub struct B2CountedOwner {
     /// Record byte offset.
     pub pos: usize,
@@ -168,7 +167,6 @@ pub struct B2LinkedOwner {
 /// Adjacent class-`0x5f` link and count-framed class-`0x62` owner joined by
 /// the owner's allocation-successor identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(test)]
 pub struct B2LinkedCountedOwner {
     /// Fixed link immediately preceding the owner packet.
     pub link: B2Link5f,
@@ -398,7 +396,6 @@ pub fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
 /// Decode class-`0x62` owner packets whose leading count fixes the persistent
 /// reference lane and leaves a nonempty class-specific tail.
 #[must_use]
-#[cfg(test)]
 pub fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
     b_family_frames(data, 0x62)
         .into_iter()
@@ -605,7 +602,6 @@ pub fn b2_linked_owners(data: &[u8]) -> Vec<B2LinkedOwner> {
 /// Bind immediately adjacent `5f,62` records when the count-framed owner's
 /// final identity is the checked successor of the link target.
 #[must_use]
-#[cfg(test)]
 pub fn b2_linked_counted_owners(data: &[u8]) -> Vec<B2LinkedCountedOwner> {
     let links = b2_links_5f(data)
         .into_iter()

@@ -2865,15 +2865,20 @@ fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
     let [packet] = native.consolidated_owner_packets.as_slice() else {
         panic!("one consolidated owner packet")
     };
-    assert_eq!(
-        packet.references,
-        [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]
-    );
-    assert_eq!(packet.numeric_tail, (0u8..62).collect::<Vec<_>>());
+    let crate::native::CatiaOwnerPacketPayload::FixedNine {
+        references,
+        numeric_tail,
+        ..
+    } = &packet.payload
+    else {
+        panic!("fixed-nine owner payload")
+    };
+    assert_eq!(*references, [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]);
+    assert_eq!(*numeric_tail, (0u8..62).collect::<Vec<_>>());
     let link = packet.allocation_link.expect("allocation-successor link");
     assert_eq!(link.byte_len, 11);
     assert_eq!(link.target, 1003);
-    assert_eq!(link.target + 1, packet.references[8]);
+    assert_eq!(link.target + 1, references[8]);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -2894,6 +2899,48 @@ fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
     invalid
         .store(&mut namespace)
         .expect("store invalid CATIA owner packet");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_count_framed_owner_packet_and_allocation_link() {
+    let native = crate::native::CatiaNative::decode(&b2_linked_counted_owner_stream());
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+    let crate::native::CatiaOwnerPacketPayload::Counted { references, tail } = &packet.payload
+    else {
+        panic!("count-framed owner payload")
+    };
+    assert_eq!(references, &[911, 7, 263, 258, 281, 276, 917]);
+    assert_eq!(tail, &[0x83, 0x41, 0x92, 0x00, 0x01]);
+    let link = packet.allocation_link.expect("allocation-successor link");
+    assert_eq!(link.target, 916);
+    assert_eq!(
+        link.target + 1,
+        *references.last().expect("final owner reference")
+    );
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store count-framed CATIA owner packet");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load count-framed CATIA owner packet"),
+        native
+    );
+
+    let mut invalid = native;
+    let crate::native::CatiaOwnerPacketPayload::Counted { tail, .. } =
+        &mut invalid.consolidated_owner_packets[0].payload
+    else {
+        panic!("count-framed owner payload")
+    };
+    tail.clear();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store invalid count-framed CATIA owner packet");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 }
 
