@@ -1555,6 +1555,69 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
 }
 
 #[test]
+fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id,
+        source_entity_id,
+        prefixed: true,
+        offset: 0,
+        end_offset: 0,
+    };
+    let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
+        crate::feature::FeatureEntityTable {
+            feature_id: Some(144),
+            table_class_id,
+            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
+            surface_ids: (table_class_id == 29)
+                .then_some(vec![145])
+                .unwrap_or_default(),
+            non_surface_entity_ids: Vec::new(),
+            entries,
+            offset: 0,
+        }
+    };
+    let tables = vec![
+        table(29, vec![entry(145, 200, Some(0))]),
+        table(
+            94,
+            vec![
+                entry(146, 221, None),
+                entry(147, 222, None),
+                entry(148, 220, None),
+                entry(149, 220, None),
+            ],
+        ),
+        table(67, vec![entry(150, 200, Some(144))]),
+        table(100, vec![entry(150, 145, None)]),
+    ];
+    let surface = crate::surface::SurfaceRow {
+        id: 145,
+        type_byte: 0x2a,
+        kind: crate::surface::SurfaceKind::Extrusion,
+        feature_id: 144,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+
+    assert!(class_942_boundary_surface_entity_graph(
+        144,
+        &tables,
+        std::slice::from_ref(&surface),
+    ));
+
+    let mut incomplete = tables.clone();
+    incomplete[1].entries.pop();
+    assert!(!class_942_boundary_surface_entity_graph(
+        144,
+        &incomplete,
+        &[surface],
+    ));
+}
+
+#[test]
 fn stored_section_sweep_family_defines_boolean_operation() {
     use crate::feature::FeatureRecipeEffect::{Cut, Protrude};
 

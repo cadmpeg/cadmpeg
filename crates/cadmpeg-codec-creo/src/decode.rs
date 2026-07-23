@@ -13871,6 +13871,15 @@ fn schema_feature_definition(
     if numbered_feature_name_has_family(kind, "Extrude") {
         return unresolved_extrude_feature_definition(feature_id);
     }
+    if schema_class == 942
+        && class_942_boundary_surface_entity_graph(
+            feature_id,
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+        )
+    {
+        return IrFeatureDefinition::BoundarySurfaceUnresolved;
+    }
     if schema_operation_kind(schema_class).is_none() {
         if let Some(definition) = named_or_referenced_feature_definition(scan, ir, feature_id, kind)
         {
@@ -13963,6 +13972,70 @@ fn section_sweep_boolean_operation(
         None if has_evaluated_body => BooleanOp::NewBody,
         _ => BooleanOp::Unresolved,
     }
+}
+
+fn class_942_boundary_surface_entity_graph(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+    surface_rows: &[crate::surface::SurfaceRow],
+) -> bool {
+    let mut generated_surfaces = surface_rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id);
+    let Some(surface) = generated_surfaces.next() else {
+        return false;
+    };
+    if generated_surfaces.next().is_some() || surface.kind != crate::surface::SurfaceKind::Extrusion
+    {
+        return false;
+    }
+    let owned = tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let unique_table = |class_id| {
+        let mut matches = owned
+            .iter()
+            .copied()
+            .filter(|table| table.table_class_id == class_id);
+        let table = matches.next()?;
+        matches.next().is_none().then_some(table)
+    };
+    let Some(generated) = unique_table(29) else {
+        return false;
+    };
+    let Some(topology) = unique_table(94) else {
+        return false;
+    };
+    let Some(owner) = unique_table(67) else {
+        return false;
+    };
+    let Some(output) = unique_table(100) else {
+        return false;
+    };
+    let [owner_entry] = owner.entries.as_slice() else {
+        return false;
+    };
+    matches!(
+        generated.entries.as_slice(),
+        [entry]
+            if entry.class_id == 200
+                && entry.entity_id == surface.id
+                && entry.source_entity_id == Some(0)
+                && generated.surface_ids.as_slice() == [surface.id]
+    ) && topology
+        .entries
+        .iter()
+        .map(|entry| entry.class_id)
+        .eq([221, 222, 220, 220])
+        && owner_entry.class_id == 200
+        && owner_entry.source_entity_id == Some(feature_id)
+        && matches!(
+            output.entries.as_slice(),
+            [entry]
+                if entry.entity_id == owner_entry.entity_id
+                    && entry.class_id == surface.id
+        )
 }
 
 fn named_feature_definition(
