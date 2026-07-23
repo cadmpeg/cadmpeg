@@ -3200,12 +3200,15 @@ pub(crate) fn build_standard_edge_curve(
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } => {
             let start = ir.model.points[points[0]].position;
             let end = ir.model.points[points[1]].position;
-            let axes: Vec<Vector3> = support
+            let mut axes: Vec<Vector3> = support
                 .faces
                 .iter()
                 .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
                 .filter_map(|surface| circle_axis_from_carrier(*center, *radius, &surface.geometry))
                 .collect();
+            if axes.is_empty() {
+                axes.extend(circle_axis_from_endpoints(*center, *radius, start, end));
+            }
             let Some(axis) = axes.first().copied() else {
                 return (None, None);
             };
@@ -3672,6 +3675,25 @@ pub(crate) fn attach_standard_circles(
     }
 }
 
+fn circle_axis_from_endpoints(
+    center: Point3,
+    radius: f64,
+    start: Point3,
+    end: Point3,
+) -> Option<Vector3> {
+    let start_radius = start.vector_from(center);
+    let end_radius = end.vector_from(center);
+    let start_length = start_radius.norm();
+    let end_length = end_radius.norm();
+    if (start_length - radius).abs() > 1e-3 || (end_length - radius).abs() > 1e-3 {
+        return None;
+    }
+    let normal = start_radius.cross(end_radius);
+    (normal.norm() > 1e-6 * start_length * end_length)
+        .then(|| unit_vector(normal))
+        .flatten()
+}
+
 pub(crate) fn circle_axis_from_carrier(
     center: Point3,
     circle_radius: f64,
@@ -3848,9 +3870,10 @@ mod route_tests {
     use crate::families::e5::decode::reverse_e5_pcurve_geometry;
     use crate::families::standard::decode::{
         bind_ordered_standard_curve_branches, build_standard_edge_curve,
-        circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
-        include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
-        point_on_known_surface, point_on_standard_face, resolve_standard_endpoint_pairs,
+        circle_axis_from_endpoints, circular_ranges_are_nonoverlapping_or_coincident,
+        combine_propagated_endpoint_pairs, include_native_endpoint_pairs,
+        intersection_line_direction, merge_native_endpoint_evidence, point_on_known_surface,
+        point_on_standard_face, resolve_standard_endpoint_pairs,
         standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
         standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
@@ -3876,6 +3899,25 @@ mod route_tests {
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::BTreeMap;
     use std::collections::HashMap;
+
+    #[test]
+    fn non_collinear_circle_endpoints_determine_the_carrier_plane() {
+        let axis = circle_axis_from_endpoints(
+            Point3::new(1.0, 2.0, 3.0),
+            2.0,
+            Point3::new(3.0, 2.0, 3.0),
+            Point3::new(1.0, 4.0, 3.0),
+        )
+        .expect("non-collinear radii determine an axis");
+        assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
+        assert!(circle_axis_from_endpoints(
+            Point3::new(1.0, 2.0, 3.0),
+            2.0,
+            Point3::new(3.0, 2.0, 3.0),
+            Point3::new(-1.0, 2.0, 3.0),
+        )
+        .is_none());
+    }
 
     #[test]
     fn circular_face_intervals_allow_seams_but_reject_crossing_boundaries() {

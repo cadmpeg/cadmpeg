@@ -306,6 +306,7 @@ Same-incidence spline rows with the same complete bipartite endpoint relation bi
 
 - **Cylinder axis-frame** from its two parallel equal-radius rim circles: `origin=circle0.center`, `axis=normalize(circle1.center−circle0.center)`, `radius=circle.radius`.
 - **Circle plane normal from the adjacent carrier** under per-kind exact on-carrier identity gates (plane: center in plane; cylinder: center on axis and `r==R` ⇒ normal=axis; torus meridional/latitude, cone latitude, sphere section each with an exact identity gate). The gates matter: a center-on-axis circle not on the torus correctly declines.
+- **Circle plane normal from endpoints:** when both endpoint distances from the stored center equal the stored radius and their radius vectors are non-collinear, their normalized ordered cross product is the circle normal. Without a face-side branch witness or native parameter incidence, the carrier has no trim interval.
 - **Plane normal** from three non-collinear incident circle centers (cross product) or two non-parallel line directions. A cap closing a cylinder uses the cylinder axis.
 - Standard-family geometry uses single-precision storage (`05 08 01` = 3×f32le, `0x60` circles = BE f32). Incidence gates are no tighter than approximately 1e-5 mm.
 

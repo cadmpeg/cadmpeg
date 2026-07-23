@@ -482,11 +482,12 @@ pub(crate) fn build_geometry_report(
         code: cadmpeg_ir::report::LossCode::AttributesNotTransferred,
         category: LossCategory::Attribute,
         severity: Severity::Warning,
-        message: "Standard circles with an exact adjacent-carrier section normal, plane-plane \
-                  lines, and same-surface cylinder or cone generators are transferred as curves. \
-                  Standard spline edges retain exact two-surface intersection constructions and \
-                  their identity-bound support pcurves when present, but their serialized 3D \
-                  NURBS caches, materials, and document metadata are not yet transferred."
+        message: "Standard circles with an exact adjacent-carrier section normal or two \
+                  non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or \
+                  cone generators are transferred as curves. Standard spline edges retain exact \
+                  two-surface intersection constructions and their identity-bound support \
+                  pcurves when present, but their serialized 3D NURBS caches, materials, and \
+                  document metadata are not yet transferred."
             .to_string(),
         provenance: None,
     });
