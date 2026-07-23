@@ -543,6 +543,50 @@ pub(crate) fn resolved_surface_geometry(
     (!matches!(geometry, SurfaceGeometry::Unknown { .. })).then_some(geometry)
 }
 
+#[derive(Clone, PartialEq)]
+/// One object-stream pcurve lowered with its exact resolved support carrier.
+pub(crate) struct ResolvedObjectStreamPcurve {
+    /// Persistent identity of the pcurve's support surface.
+    pub(crate) surface_object_id: u32,
+    /// Exact neutral support geometry.
+    pub(crate) carrier: SurfaceGeometry,
+    /// Exact neutral parameter-space curve.
+    pub(crate) geometry: PcurveGeometry,
+    /// Native pcurve parameter interval.
+    pub(crate) parameter_range: [f64; 2],
+}
+
+/// Lower one decoded degree-5 UV jet through its resolved native chart.
+#[must_use]
+pub(crate) fn resolved_object_stream_pcurve(
+    pcurve: &crate::families::a5a8::records::A8Pcurve,
+    surface: &B5Surface,
+) -> Option<ResolvedObjectStreamPcurve> {
+    let carrier = surfaces::neutral_analytic_surface(surface)?;
+    let (knots, control_points) = crate::nurbs::quintic_jet_bspline(
+        pcurve.degree,
+        &pcurve.knots,
+        &pcurve.points,
+        &pcurve.first_derivatives,
+        &pcurve.second_derivatives,
+    )?;
+    Some(ResolvedObjectStreamPcurve {
+        surface_object_id: pcurve.support_id,
+        carrier,
+        geometry: PcurveGeometry::Nurbs {
+            degree: pcurve.degree,
+            knots,
+            control_points: control_points
+                .into_iter()
+                .map(|point| pcurves::neutral_pcurve_point(point, surface))
+                .collect(),
+            weights: None,
+            periodic: false,
+        },
+        parameter_range: pcurve.range,
+    })
+}
+
 pub(crate) fn resolved_surface_procedural_definition(
     graph: &B5Graph,
     surface_id: u32,

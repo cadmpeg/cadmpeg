@@ -4688,6 +4688,7 @@ mod record_decoders {
         let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
             [stream],
             &HashSet::from([501]),
+            &HashSet::new(),
         );
         assert!(matches!(
             evidence.surface_geometries.get(&501),
@@ -4707,6 +4708,7 @@ mod record_decoders {
 
         let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
             [first, second],
+            &HashSet::new(),
             &HashSet::new(),
         );
         assert!(evidence.edge_owner_faces.is_empty());
@@ -4734,6 +4736,7 @@ mod record_decoders {
         let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
             [stream],
             &HashSet::from([501]),
+            &HashSet::new(),
         );
         assert!(!evidence.surface_geometries.contains_key(&501));
         assert!(matches!(

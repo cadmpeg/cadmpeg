@@ -815,6 +815,121 @@ pub fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32, [u32; 2]> {
     edges
 }
 
+/// Return the ordered pcurve pair owned by each requested native edge's
+/// class-`23` curve-support wrapper.
+#[must_use]
+pub(crate) fn edge_support_pcurve_references(
+    bytes: &[u8],
+    edge_ids: &HashSet<u32>,
+) -> BTreeMap<u32, [u32; 2]> {
+    let mut edge_wrappers = HashMap::<u32, Option<u32>>::new();
+    let mut wrappers = HashMap::<u32, Option<[u32; 2]>>::new();
+    for offset in 0..bytes.len().saturating_sub(8) {
+        let Some((end, family, class, object_id)) = object_frame(bytes, offset) else {
+            continue;
+        };
+        let header = if family == 0xa8 { 11 } else { 8 };
+        let record = B5Record {
+            offset,
+            family,
+            class,
+            object_id,
+            payload: bytes[offset + header..end].to_vec(),
+        };
+        if class == 0x5e && edge_ids.contains(&object_id) {
+            let Some(wrapper) = parse_edge_refs(&record).map(|references| references[0]) else {
+                continue;
+            };
+            edge_wrappers
+                .entry(object_id)
+                .and_modify(|stored| {
+                    if stored.is_some_and(|stored| stored != wrapper) {
+                        *stored = None;
+                    }
+                })
+                .or_insert(Some(wrapper));
+        } else if family == 0xb5 && class == 0x23 {
+            let Some(references) = record_references(&record).try_into().ok() else {
+                continue;
+            };
+            wrappers
+                .entry(object_id)
+                .and_modify(|stored| {
+                    if stored.is_some_and(|stored| stored != references) {
+                        *stored = None;
+                    }
+                })
+                .or_insert(Some(references));
+        }
+    }
+    edge_wrappers
+        .into_iter()
+        .filter_map(|(edge, wrapper)| Some((edge, *wrappers.get(&wrapper?)?.as_ref()?)))
+        .collect()
+}
+
+/// Resolve only the requested surface identities through exact class-`37`
+/// result-carrier links and class-`2e`/`38` aliases.
+#[must_use]
+pub(crate) fn targeted_surfaces(
+    bytes: &[u8],
+    object_ids: &HashSet<u32>,
+) -> BTreeMap<u32, B5Surface> {
+    let headers = crate::families::a5a8::records::a8_surface_headers(bytes)
+        .into_iter()
+        .map(|header| (header.object_id, header))
+        .collect::<HashMap<_, _>>();
+    let mut records = HashMap::<u32, Option<B5Record>>::new();
+    for offset in 0..bytes.len().saturating_sub(8) {
+        let Some((end, family, class, found_id)) = object_frame(bytes, offset) else {
+            continue;
+        };
+        if !is_surface_class(class) {
+            continue;
+        }
+        let header = if family == 0xa8 { 11 } else { 8 };
+        let record = B5Record {
+            offset,
+            family,
+            class,
+            object_id: found_id,
+            payload: bytes[offset + header..end].to_vec(),
+        };
+        records
+            .entry(found_id)
+            .and_modify(|stored| {
+                if stored.as_ref().is_some_and(|stored| stored != &record) {
+                    *stored = None;
+                }
+            })
+            .or_insert(Some(record));
+    }
+    object_ids
+        .iter()
+        .filter_map(|&object_id| {
+            resolve_targeted_surface(object_id, &records, &headers, 0)
+                .map(|surface| (object_id, surface))
+        })
+        .collect()
+}
+
+fn resolve_targeted_surface(
+    object_id: u32,
+    records: &HashMap<u32, Option<B5Record>>,
+    headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
+    depth: usize,
+) -> Option<B5Surface> {
+    (depth < 16).then_some(())?;
+    let record = records.get(&object_id)?.as_ref()?;
+    if let Some(target) = surface_alias_target(record) {
+        return resolve_targeted_surface(target, records, headers, depth + 1);
+    }
+    if let Some(construction) = parse_supported_surface(record) {
+        return resolve_targeted_surface(construction.carrier_surface, records, headers, depth + 1);
+    }
+    surface_node(record, headers.get(&object_id))
+}
+
 fn parse_edge_refs(record: &B5Record) -> Option<[u32; 5]> {
     (record.class == 0x5e && record.payload.first() == Some(&0x85)).then_some(())?;
     let mut position = 1;
@@ -2894,6 +3009,35 @@ fn uncounted_references(bytes: &[u8]) -> Option<Vec<u32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn requested_edge_support_scan_closes_through_its_unique_wrapper() {
+        let mut bytes = Vec::new();
+        let append = |bytes: &mut Vec<u8>, class, object_id: u32, payload: &[u8]| {
+            bytes.extend_from_slice(&[0xb5, 0x03, class, payload.len() as u8]);
+            bytes.extend_from_slice(&object_id.to_le_bytes());
+            bytes.extend_from_slice(payload);
+        };
+        append(
+            &mut bytes,
+            0x23,
+            20,
+            &[0x82, 0x18, 30, 0, 0x18, 31, 0, 0x01],
+        );
+        append(
+            &mut bytes,
+            0x5e,
+            40,
+            &[
+                0x85, 0x18, 20, 0, 0x18, 1, 0, 0x18, 2, 0, 0x18, 3, 0, 0x18, 4, 0, 0x22,
+            ],
+        );
+        assert_eq!(
+            edge_support_pcurve_references(&bytes, &HashSet::from([40])),
+            BTreeMap::from([(40, [30, 31])])
+        );
+        assert!(edge_support_pcurve_references(&bytes, &HashSet::from([41])).is_empty());
+    }
 
     #[test]
     fn face_surface_references_do_not_require_resolved_loops() {

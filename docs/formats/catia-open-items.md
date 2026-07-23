@@ -19,7 +19,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The internal coding of the sampled-cache lane in `a8 03 25` extrusion directrices is unresolved. Its enclosing references, solved parameter interval, and fit tolerance are defined independently of that cache.
 
 - The byte relation assigning logical vertex components to `05 08 01` allocation rows is unspecified.
-- Standard spline cache poles, knots, and native parameterization. The exact two-surface intersection construction and endpoint trim are resolved, but the serialized cache referenced by the standard row remains unresolved.
+- Standard 3D spline cache poles and knots. Exact two-surface constructions use their native class-`20` pcurve jets and shared parameter interval when the standard tag closes through a class-`5e`/`23` dependency chain; the separate serialized 3D cache remains unresolved.
 - `op1` and persistent-tag resolution. The mapping from absolute persistent CGM tags to serialized records remains unresolved for the consolidated `a5` family.
 - The mapping from a standard `0x60` row's local allocation tag to its native edge record remains unresolved when no edge node carries the same curve identity.
 - Standard-path topology membership across multiple separate FBB face groups.

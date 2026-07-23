@@ -167,7 +167,13 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
         })
         .collect::<HashSet<_>>();
-    let object_evidence = standard_object_evidence(scan, &freeform_tags);
+    let curve_supports =
+        crate::families::standard::records::standard_curve_supports(brep, face_count);
+    let edge_tags = curve_supports
+        .iter()
+        .map(|support| support.tag)
+        .collect::<HashSet<_>>();
+    let object_evidence = standard_object_evidence(scan, &freeform_tags, &edge_tags);
     let freeform_geometries = &object_evidence.surface_geometries;
     let freeform_procedural_surfaces = &object_evidence.procedural_surfaces;
     let unresolved_freeform_record_count = records
@@ -182,8 +188,6 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         })
         .count();
     let face_frame_vectors = fbb::standard_face_frame_vectors(brep);
-    let curve_supports =
-        crate::families::standard::records::standard_curve_supports(brep, face_count);
     let curved_surfaces = records
         .iter()
         .map(|record| match record {
@@ -566,6 +570,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         brep,
         &scan.data,
         &object_evidence.edge_owner_faces,
+        &object_evidence.edge_supports,
     ) && neutral_model_is_admissible(&topology_ir, &unknowns);
     if topology_attached {
         ir = topology_ir;
@@ -608,6 +613,20 @@ pub(crate) struct StandardObjectEvidence {
     pub(crate) surface_geometries: HashMap<u32, SurfaceGeometry>,
     pub(crate) procedural_surfaces: HashMap<u32, StandardSurfaceProcedure>,
     pub(crate) edge_owner_faces: HashMap<u32, HashSet<u32>>,
+    pub(crate) edge_supports: HashMap<u32, StandardEdgeSupport>,
+}
+
+#[derive(Clone, PartialEq)]
+/// Exact two-sided construction evidence keyed by a standard edge identity.
+pub(crate) struct StandardEdgeSupport {
+    /// Persistent support-surface identities in wrapper order.
+    pub(crate) surface_object_ids: [u32; 2],
+    /// Exact neutral support carriers.
+    pub(crate) carriers: [SurfaceGeometry; 2],
+    /// Exact support pcurves in wrapper order.
+    pub(crate) pcurves: [PcurveGeometry; 2],
+    /// Shared native parameter interval.
+    pub(crate) parameter_range: [f64; 2],
 }
 
 #[derive(Clone, PartialEq)]
@@ -636,6 +655,7 @@ pub(crate) enum StandardSurfaceEvidence {
 pub(crate) fn standard_object_evidence(
     scan: &ContainerScan,
     tags: &HashSet<u32>,
+    edge_tags: &HashSet<u32>,
 ) -> StandardObjectEvidence {
     let streams = [scan.outer.as_ref(), scan.inner.as_ref()]
         .into_iter()
@@ -645,19 +665,86 @@ pub(crate) fn standard_object_evidence(
                 container::reconstruct_logical_stream(&scan.data, descriptor, directory.inner)
             })
         });
-    standard_object_evidence_from_streams(streams, tags)
+    standard_object_evidence_from_streams(streams, tags, edge_tags)
 }
 
 pub(crate) fn standard_object_evidence_from_streams(
     streams: impl IntoIterator<Item = Vec<u8>>,
     tags: &HashSet<u32>,
+    edge_tags: &HashSet<u32>,
 ) -> StandardObjectEvidence {
     let mut surface_candidates = HashMap::<u32, Option<StandardSurfaceEvidence>>::new();
     let mut support_candidates =
         HashMap::<u32, Option<crate::families::b5::transfer::ResolvedOffsetSupport>>::new();
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
+    let mut edge_support_candidates = HashMap::<u32, Option<StandardEdgeSupport>>::new();
     for stream in streams {
         let face_surfaces = crate::families::b5::graph::face_surface_references(&stream);
+        let edge_pcurves =
+            crate::families::b5::graph::edge_support_pcurve_references(&stream, edge_tags);
+        let requested_pcurves = edge_pcurves
+            .values()
+            .flatten()
+            .copied()
+            .collect::<HashSet<_>>();
+        let mut pcurves = HashMap::<u32, Option<crate::families::a5a8::records::A8Pcurve>>::new();
+        for pcurve in crate::families::a5a8::records::object_stream_pcurves(&stream)
+            .into_iter()
+            .filter(|pcurve| requested_pcurves.contains(&pcurve.object_id))
+        {
+            pcurves
+                .entry(pcurve.object_id)
+                .and_modify(|stored| {
+                    if stored.as_ref().is_some_and(|stored| {
+                        stored.support_id != pcurve.support_id
+                            || stored.degree != pcurve.degree
+                            || stored.knots != pcurve.knots
+                            || stored.points != pcurve.points
+                            || stored.first_derivatives != pcurve.first_derivatives
+                            || stored.second_derivatives != pcurve.second_derivatives
+                            || stored.range != pcurve.range
+                    }) {
+                        *stored = None;
+                    }
+                })
+                .or_insert(Some(pcurve));
+        }
+        let surface_ids = pcurves
+            .values()
+            .filter_map(Option::as_ref)
+            .map(|pcurve| pcurve.support_id)
+            .collect::<HashSet<_>>();
+        let targeted_surfaces =
+            crate::families::b5::graph::targeted_surfaces(&stream, &surface_ids);
+        for (edge, references) in edge_pcurves {
+            let sides = references.map(|reference| {
+                let pcurve = pcurves.get(&reference)?.as_ref()?;
+                crate::families::b5::transfer::resolved_object_stream_pcurve(
+                    pcurve,
+                    targeted_surfaces.get(&pcurve.support_id)?,
+                )
+            });
+            let [Some(first), Some(second)] = sides else {
+                continue;
+            };
+            if first.parameter_range != second.parameter_range {
+                continue;
+            }
+            let evidence = StandardEdgeSupport {
+                surface_object_ids: [first.surface_object_id, second.surface_object_id],
+                carriers: [first.carrier, second.carrier],
+                pcurves: [first.geometry, second.geometry],
+                parameter_range: first.parameter_range,
+            };
+            edge_support_candidates
+                .entry(edge)
+                .and_modify(|stored| {
+                    if stored.as_ref().is_some_and(|stored| stored != &evidence) {
+                        *stored = None;
+                    }
+                })
+                .or_insert(Some(evidence));
+        }
         let Some(graph) = crate::families::b5::graph::parse(&stream) else {
             continue;
         };
@@ -819,6 +906,10 @@ pub(crate) fn standard_object_evidence_from_streams(
         edge_owner_faces: edge_face_candidates
             .into_iter()
             .filter_map(|(edge, owners)| Some((edge, owners?)))
+            .collect(),
+        edge_supports: edge_support_candidates
+            .into_iter()
+            .filter_map(|(edge, support)| Some((edge, support?)))
             .collect(),
     }
 }
@@ -1055,6 +1146,7 @@ pub(crate) fn apply_standard_native_edge_faces(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn attach_standard_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -1063,6 +1155,7 @@ pub(crate) fn attach_standard_topology(
     brep: &[u8],
     source: &[u8],
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
+    native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
 ) -> bool {
     let face_count = ir.model.faces.len();
     let mut supports =
@@ -1688,6 +1781,7 @@ pub(crate) fn attach_standard_topology(
         &edge_vertices,
         &point_assignment,
         &topology,
+        native_edge_supports,
     );
     true
 }
@@ -1768,6 +1862,7 @@ fn emit_standard_topology(
     edge_vertices: &[[usize; 2]],
     point_assignment: &[usize],
     topology: &crate::families::standard::topology::StandardTopology,
+    native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
 ) {
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
     {
@@ -1781,6 +1876,7 @@ fn emit_standard_topology(
             brep,
             support,
             [start_point, end_point],
+            native_edge_supports.get(&support.tag),
         );
         let id = EdgeId(format!("catia:standard:edge#{edge_index}"));
         annotate(
@@ -3073,6 +3169,7 @@ pub(crate) fn standard_spline_line(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_standard_edge_curve(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -3081,6 +3178,7 @@ pub(crate) fn build_standard_edge_curve(
     brep: &[u8],
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
+    native_support: Option<&StandardEdgeSupport>,
 ) -> (Option<CurveId>, Option<[f64; 2]>) {
     let (geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
@@ -3206,17 +3304,76 @@ pub(crate) fn build_standard_edge_curve(
         &support.geometry,
         crate::families::standard::records::StandardCurveGeometry::Bspline
     ) {
-        let sides = support.faces.map(|face| {
-            let surface = bindings
-                .get(face)
-                .and_then(|(id, _, _)| surface_indices.get(id).map(|_| id.clone()));
-            IntcurveSupportSide {
-                surface,
-                pcurve: None,
-                pcurve_parameter_range: None,
+        let sides = if let Some(native) = native_support {
+            let mut surfaces = Vec::with_capacity(2);
+            for side in 0..2 {
+                let source = cgm_source("surface", native.surface_object_ids[side]);
+                let source_matches = ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .filter(|surface| surface.source_object.as_ref() == Some(&source))
+                    .map(|surface| surface.id.clone())
+                    .collect::<HashSet<_>>();
+                let geometry_matches = ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .filter(|surface| surface.geometry == native.carriers[side])
+                    .map(|surface| surface.id.clone())
+                    .collect::<HashSet<_>>();
+                let surface = if source_matches.len() == 1 {
+                    source_matches
+                        .into_iter()
+                        .next()
+                        .expect("one identity-matched support surface")
+                } else if source_matches.is_empty() && geometry_matches.len() == 1 {
+                    geometry_matches
+                        .into_iter()
+                        .next()
+                        .expect("one geometry-matched support surface")
+                } else {
+                    let id = SurfaceId(format!(
+                        "catia:standard:edge-support-surface#{}",
+                        native.surface_object_ids[side]
+                    ));
+                    annotate(
+                        annotations,
+                        &id,
+                        "CATPart",
+                        0,
+                        "native_edge_support_surface",
+                        Exactness::ByteExact,
+                    );
+                    ir.model.surfaces.push(Surface {
+                        id: id.clone(),
+                        geometry: native.carriers[side].clone(),
+                        source_object: Some(source),
+                    });
+                    id
+                };
+                surfaces.push(surface);
             }
-        });
-        if sides.iter().all(|side| side.surface.is_some()) && sides[0].surface != sides[1].surface {
+            std::array::from_fn(|side| IntcurveSupportSide {
+                surface: Some(surfaces[side].clone()),
+                pcurve: Some(native.pcurves[side].clone()),
+                pcurve_parameter_range: Some(native.parameter_range),
+            })
+        } else {
+            support.faces.map(|face| {
+                let surface = bindings
+                    .get(face)
+                    .and_then(|(id, _, _)| surface_indices.get(id).map(|_| id.clone()));
+                IntcurveSupportSide {
+                    surface,
+                    pcurve: None,
+                    pcurve_parameter_range: None,
+                }
+            })
+        };
+        if sides.iter().all(|side| side.surface.is_some())
+            && (native_support.is_some() || sides[0].surface != sides[1].surface)
+        {
             let procedural_id =
                 ProceduralCurveId(format!("catia:standard:intersection#{}", support.pos));
             annotate(
@@ -3224,13 +3381,16 @@ pub(crate) fn build_standard_edge_curve(
                 &procedural_id,
                 "MainDataStream+SurfacicReps",
                 support.pos as u64,
-                "standard_radial_surface_intersection",
+                "standard_surface_intersection",
                 Exactness::Derived,
             );
             annotations
                 .derived(&procedural_id, "curve")
                 .derived(&procedural_id, "definition");
-            let parameter_range = param_range.unwrap_or([0.0, 1.0]);
+            let parameter_range = native_support
+                .map(|native| native.parameter_range)
+                .or(param_range)
+                .unwrap_or([0.0, 1.0]);
             ir.model.procedural_curves.push(ProceduralCurve {
                 id: procedural_id,
                 curve: id.clone(),
@@ -3646,7 +3806,7 @@ mod route_tests {
         standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
         standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
-        standard_successor_endpoint_pairs, unique_native_identity_points,
+        standard_successor_endpoint_pairs, unique_native_identity_points, StandardEdgeSupport,
     };
 
     use crate::families::standard::records::{
@@ -3802,6 +3962,7 @@ mod route_tests {
             &[],
             &support,
             [0, 1],
+            None,
         );
         let id = id.expect("spline support identifies a curve carrier");
         assert_eq!(range, Some([0.0, 3.0]));
@@ -3823,6 +3984,71 @@ mod route_tests {
                 && context.sides[0].surface.as_ref().is_some_and(|id| id.0 == "surface-0")
                 && context.sides[1].surface.as_ref().is_some_and(|id| id.0 == "surface-1")
                 && context.parameter_range == [0.0, 3.0]
+        ));
+    }
+
+    #[test]
+    fn standard_spline_uses_identity_bound_native_support_pcurves() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.points.extend(
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
+                .into_iter()
+                .enumerate()
+                .map(|(index, position)| Point {
+                    id: PointId(format!("point-{index}")),
+                    position,
+                    source_object: None,
+                }),
+        );
+        let support = StandardCurveSupport {
+            pos: 12,
+            tag: 40,
+            faces: [0, 0],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        let native = StandardEdgeSupport {
+            surface_object_ids: [20, 21],
+            carriers: [
+                SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 1.0, 0.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+            ],
+            pcurves: [pcurve.clone(), pcurve],
+            parameter_range: [2.0, 5.0],
+        };
+        let (curve, range) = build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &support,
+            [0, 1],
+            Some(&native),
+        );
+        let curve = curve.expect("native support identifies the curve");
+        assert_eq!(range, Some([2.0, 5.0]));
+        assert_eq!(ir.model.surfaces.len(), 2);
+        assert!(matches!(
+            ir.model.procedural_curves.as_slice(),
+            [ProceduralCurve {
+                curve: bound_curve,
+                definition: ProceduralCurveDefinition::Intersection { context, .. },
+                ..
+            }] if bound_curve == &curve
+                && context.parameter_range == [2.0, 5.0]
+                && context.sides.iter().all(|side| side.pcurve.is_some())
         ));
     }
 
@@ -3923,6 +4149,7 @@ mod route_tests {
             &[],
             &support,
             [0, 1],
+            None,
         );
         assert_eq!(range, Some([0.0, 5.0]));
     }

@@ -20,37 +20,24 @@ use super::{
 };
 use crate::assemble::cgm_source;
 
-pub(super) fn neutral_surface(
-    surface: &B5Surface,
-    graph: &B5Graph,
-    surface_id: u32,
-    payload: &UnknownId,
-) -> SurfacePlan {
-    let mut procedure = None;
-    let geometry = match surface {
-        B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => SurfaceGeometry::Unknown {
-            record: Some(payload.clone()),
-        },
+pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeometry> {
+    match surface {
         B5Surface::Plane {
             origin,
             direction_u,
             direction_v,
-        } => orthonormal_plane(*origin, *direction_u, *direction_v).unwrap_or_else(|| {
-            SurfaceGeometry::Unknown {
-                record: Some(payload.clone()),
-            }
-        }),
+        } => orthonormal_plane(*origin, *direction_u, *direction_v),
         B5Surface::Cylinder {
             origin,
             reference_x,
             axis,
             radius,
-        } => SurfaceGeometry::Cylinder {
+        } => Some(SurfaceGeometry::Cylinder {
             origin: point(*origin),
             axis: vector(*axis),
             ref_direction: vector(*reference_x),
             radius: *radius,
-        },
+        }),
         B5Surface::Cone {
             apex,
             direction_x,
@@ -60,14 +47,14 @@ pub(super) fn neutral_surface(
             ..
         } => {
             let slant = slant_range[0];
-            SurfaceGeometry::Cone {
+            Some(SurfaceGeometry::Cone {
                 origin: point(add(*apex, scale(*axis, slant * half_angle.cos()))),
                 axis: vector(*axis),
                 ref_direction: vector(*direction_x),
                 radius: slant * half_angle.sin(),
                 ratio: 1.0,
                 half_angle: *half_angle,
-            }
+            })
         }
         B5Surface::Sphere {
             center,
@@ -75,12 +62,12 @@ pub(super) fn neutral_surface(
             axis,
             radius,
             ..
-        } => SurfaceGeometry::Sphere {
+        } => Some(SurfaceGeometry::Sphere {
             center: point(*center),
             axis: vector(*axis),
             ref_direction: vector(*direction_x),
             radius: *radius,
-        },
+        }),
         B5Surface::Torus {
             center,
             direction_x,
@@ -88,14 +75,38 @@ pub(super) fn neutral_surface(
             major_radius,
             minor_radius,
             ..
-        } => SurfaceGeometry::Torus {
+        } => Some(SurfaceGeometry::Torus {
             center: point(*center),
             axis: vector(*axis),
             ref_direction: vector(*direction_x),
             major_radius: *major_radius,
             minor_radius: *minor_radius,
+        }),
+        B5Surface::Nurbs(surface) => Some(SurfaceGeometry::Nurbs(surface.clone())),
+        B5Surface::UnresolvedNurbs { .. }
+        | B5Surface::Unknown { .. }
+        | B5Surface::RollingBall { .. }
+        | B5Surface::Revolution { .. } => None,
+    }
+}
+
+pub(super) fn neutral_surface(
+    surface: &B5Surface,
+    graph: &B5Graph,
+    surface_id: u32,
+    payload: &UnknownId,
+) -> SurfacePlan {
+    if let Some(geometry) = neutral_analytic_surface(surface) {
+        return SurfacePlan {
+            geometry,
+            procedure: None,
+        };
+    }
+    let mut procedure = None;
+    let geometry = match surface {
+        B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => SurfaceGeometry::Unknown {
+            record: Some(payload.clone()),
         },
-        B5Surface::Nurbs(surface) => SurfaceGeometry::Nurbs(surface.clone()),
         B5Surface::RollingBall {
             carrier_object_id,
             definition,
@@ -130,6 +141,12 @@ pub(super) fn neutral_surface(
                 SurfaceGeometry::Nurbs(surface)
             },
         ),
+        B5Surface::Plane { .. }
+        | B5Surface::Cylinder { .. }
+        | B5Surface::Cone { .. }
+        | B5Surface::Sphere { .. }
+        | B5Surface::Torus { .. }
+        | B5Surface::Nurbs(_) => unreachable!("analytic carriers returned above"),
     };
     SurfacePlan {
         geometry,
