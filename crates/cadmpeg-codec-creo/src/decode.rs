@@ -8269,32 +8269,24 @@ fn relation_incidence_entities(
     let Some(incidence) = relation_incidence(definition, relation_id) else {
         return Vec::new();
     };
-    let known = section_entity_external_ids(definition);
     incidence
         .items
         .iter()
-        .map(|item| {
-            known
-                .contains(&item.entity_id)
-                .then(|| sketch_entity_id(sketch, item.entity_id))
-        })
-        .collect::<Option<Vec<_>>>()
-        .unwrap_or_default()
+        .map(|item| sketch_entity_id(sketch, item.entity_id))
+        .collect()
 }
 
-fn relation_incidence_known_entities(
+fn joined_relation_incidence_entities(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
     relation_id: u32,
 ) -> Vec<SketchEntityId> {
-    let Some(incidence) = relation_incidence(definition, relation_id) else {
+    let Some(incidence) = joined_relation_incidence(definition, relation_id) else {
         return Vec::new();
     };
-    let known = section_entity_external_ids(definition);
     incidence
         .items
         .iter()
-        .filter(|item| known.contains(&item.entity_id))
         .map(|item| sketch_entity_id(sketch, item.entity_id))
         .collect()
 }
@@ -8538,36 +8530,41 @@ fn section_dimension_constraints(
                                 })
                                 .collect::<Vec<_>>();
                             if let [measured] = matching.as_slice() {
-                                known_entities
-                                    .contains(&measured.external_id)
-                                    .then_some(())?;
-                                let entity = sketch_entity_id(sketch, measured.external_id);
-                                let [first, second] = if measured.point_ids == [first_id, second_id]
-                                {
-                                    [SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]
-                                } else {
-                                    [SketchLocus::End(entity.clone()), SketchLocus::Start(entity)]
-                                };
-                                match section_line_fixed_coordinate(definition, measured) {
-                                    Some(0) => {
-                                        return Some(
-                                            SketchConstraintDefinition::VerticalDistance {
-                                                first,
-                                                second,
-                                                parameter,
-                                            },
-                                        );
+                                if known_entities.contains(&measured.external_id) {
+                                    let entity = sketch_entity_id(sketch, measured.external_id);
+                                    let [first, second] =
+                                        if measured.point_ids == [first_id, second_id] {
+                                            [
+                                                SketchLocus::Start(entity.clone()),
+                                                SketchLocus::End(entity),
+                                            ]
+                                        } else {
+                                            [
+                                                SketchLocus::End(entity.clone()),
+                                                SketchLocus::Start(entity),
+                                            ]
+                                        };
+                                    match section_line_fixed_coordinate(definition, measured) {
+                                        Some(0) => {
+                                            return Some(
+                                                SketchConstraintDefinition::VerticalDistance {
+                                                    first,
+                                                    second,
+                                                    parameter,
+                                                },
+                                            );
+                                        }
+                                        Some(1) => {
+                                            return Some(
+                                                SketchConstraintDefinition::HorizontalDistance {
+                                                    first,
+                                                    second,
+                                                    parameter,
+                                                },
+                                            );
+                                        }
+                                        _ => {}
                                     }
-                                    Some(1) => {
-                                        return Some(
-                                            SketchConstraintDefinition::HorizontalDistance {
-                                                first,
-                                                second,
-                                                parameter,
-                                            },
-                                        );
-                                    }
-                                    _ => {}
                                 }
                             }
                             let points = resolved_section_points(definition);
@@ -8584,22 +8581,24 @@ fn section_dimension_constraints(
                                 let same_v =
                                     (first_point[1] - second_point[1]).abs() <= 1e-9 * scale;
                                 if same_u != same_v {
-                                    let first = section_point_locus(definition, sketch, first_id)?;
-                                    let second =
-                                        section_point_locus(definition, sketch, second_id)?;
-                                    return Some(if same_u {
-                                        SketchConstraintDefinition::VerticalDistance {
-                                            first,
-                                            second,
-                                            parameter,
-                                        }
-                                    } else {
-                                        SketchConstraintDefinition::HorizontalDistance {
-                                            first,
-                                            second,
-                                            parameter,
-                                        }
-                                    });
+                                    if let (Some(first), Some(second)) = (
+                                        section_point_locus(definition, sketch, first_id),
+                                        section_point_locus(definition, sketch, second_id),
+                                    ) {
+                                        return Some(if same_u {
+                                            SketchConstraintDefinition::VerticalDistance {
+                                                first,
+                                                second,
+                                                parameter,
+                                            }
+                                        } else {
+                                            SketchConstraintDefinition::HorizontalDistance {
+                                                first,
+                                                second,
+                                                parameter,
+                                            }
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -8648,7 +8647,7 @@ fn section_dimension_constraints(
                 })
             })();
             let incidence_entities = if unique_relation_id {
-                relation_incidence_known_entities(definition, sketch, relation.relation_id)
+                joined_relation_incidence_entities(definition, sketch, relation.relation_id)
             } else {
                 Vec::new()
             };

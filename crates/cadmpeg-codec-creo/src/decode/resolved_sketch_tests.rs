@@ -3025,19 +3025,54 @@ fn saved_line_joins_through_order_table() {
         opaque_rows: Vec::new(),
         offset: 0,
     });
-    constrained.relations = Some(crate::feature::FeatureRelationTable {
-        declared_count: 0,
+    constrained.dimensions = Some(crate::feature::FeatureDimensionTable {
+        declared_count: 1,
         entity_ref: None,
-        rows: Vec::new(),
+        rows: vec![crate::feature::FeatureDimension {
+            dimension_type: 1,
+            value: Some(2.0),
+            unresolved_value_token: None,
+            value_unit: crate::feature::DimensionUnit::Millimeters,
+            direction_byte: 0,
+            auxiliary_value: None,
+            external_id: 4,
+            offset: 27,
+        }],
+        offset: 26,
+    });
+    constrained.relations = Some(crate::feature::FeatureRelationTable {
+        declared_count: 3,
+        entity_ref: None,
+        rows: vec![crate::feature::FeatureRelation {
+            relation_id: 7,
+            used: 1,
+            operands: Vec::new(),
+            operand_vectors: Some([
+                [Some(42), Some(99), None, Some(1)],
+                [Some(0); 4],
+                [Some(15), Some(16), Some(15), Some(1)],
+            ]),
+            sign: 0,
+            dimension_id: 0,
+            relation_type: 0,
+            body: Vec::new(),
+            offset: 28,
+        }],
         skamps: vec![crate::feature::FeatureSkamp {
             id: 5,
             kind: 99,
             flags: 0,
             status: 1,
-            items: vec![crate::feature::FeatureSkampItem {
-                entity_id: 42,
-                sense: 4,
-            }],
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 42,
+                    sense: 4,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                },
+            ],
             offset: 30,
         }],
         skamp_header: Some(crate::feature::FeatureSolverTableHeader {
@@ -3073,9 +3108,24 @@ fn saved_line_joins_through_order_table() {
             &SketchId("creo:model:sketch#5".to_string()),
             7,
         ),
-        vec![SketchEntityId(
-            "creo:featdefs:sketch_entity#5:42".to_string()
-        )]
+        vec![
+            SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
+            SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+        ]
+    );
+    let dimension_constraints =
+        section_dimension_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()));
+    assert!(
+        matches!(
+            &dimension_constraints[0].0.definition,
+            SketchConstraintDefinition::Distance { entities, .. }
+                if entities == &[
+                    SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
+                    SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+                ]
+        ),
+        "{:?}",
+        dimension_constraints[0].0.definition
     );
     let mut duplicate_incidence = constrained.clone();
     let duplicate_relations = duplicate_incidence.relations.as_mut().expect("relations");
@@ -3101,6 +3151,17 @@ fn saved_line_joins_through_order_table() {
         7,
     )
     .is_empty());
+    assert_eq!(
+        joined_relation_incidence_entities(
+            &constrained,
+            &SketchId("creo:model:sketch#5".to_string()),
+            7,
+        ),
+        vec![
+            SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
+            SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+        ]
+    );
     assert_eq!(
         section_skamp_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()))[0]
             .0
@@ -7145,8 +7206,8 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
         }
     );
-    let mut partially_resolved_incidence = incidence_distance.clone();
-    partially_resolved_incidence
+    let mut solver_only_incidence = incidence_distance.clone();
+    solver_only_incidence
         .relations
         .as_mut()
         .expect("relations")
@@ -7155,25 +7216,17 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .entity_id = 999;
     assert_eq!(
         section_dimension_constraints(
-            &partially_resolved_incidence,
+            &solver_only_incidence,
             &SketchId("creo:model:sketch#917".into())
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::Native {
-            native_kind: "creo:relation:0".to_string(),
-            native_state: None,
-            entities: vec![SketchEntityId(
-                "creo:featdefs:sketch_entity#917:12".to_string()
-            )],
-            parameter: Some(ParameterId("creo:featdefs:parameter#917:42".to_string())),
-            operands: vec![SketchNativeOperand {
-                native_kind: "relat_ptr".to_string(),
-                native_field: None,
-                native_role: None,
-                object_index: 8,
-                native_ref: Some("creo:featdefs:sketch#917".to_string()),
-            }],
+        SketchConstraintDefinition::Distance {
+            entities: vec![
+                SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+                SketchEntityId("creo:featdefs:sketch_entity#917:999".to_string()),
+            ],
+            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
         }
     );
     let mut angular_dimension = definition.clone();
