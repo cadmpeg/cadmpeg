@@ -1968,10 +1968,20 @@ conflicting classes as source properties. Those classes do not select a
 neutral operation family; an independent stored operation name can still do
 so.
 
-The row's leading entity-reference identifier occupies the model-feature
-namespace. Identical nonzero identifiers in `MdlStatus` or `DEPDB_DATA`
-operation states and `MdlRefInfo` feature-name entries establish row ownership
-without a materialized geometry row.
+The row's leading entity-reference identifier occupies a row-local numeric
+namespace that can collide with model-feature identifiers. A materialized
+surface whose `feat_id` equals the row identifier establishes ownership.
+An identifier in `parent_feats` establishes ownership because that table uses
+model-feature identifiers. Without either structural join, a `MdlStatus` or
+`DEPDB_DATA` operation state establishes ownership only when its root class or
+defined operation family agrees with the row's root class, or when the row
+class is outside the defined operation-class set. An `MdlRefInfo`
+feature-name entry establishes
+ownership for a section row, or for a datum-plane row when the stored name is
+`Datum Plane id <feature-id>`, `Bezugsebene ID <feature-id>`, or
+`DTM<decimal-ordinal>`. The exact `PRT_CSYS_DEF` name establishes ownership of
+a class-979 coordinate-system row. Numeric equality alone does not establish
+ownership.
 
 Each `DEPDB_DATA` recipe row ends with its canonical `f7` recipe binding. Its
 body begins at the section boundary or immediately after the preceding recipe

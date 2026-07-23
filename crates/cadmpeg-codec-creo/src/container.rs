@@ -1221,27 +1221,13 @@ fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlane> {
     planes
 }
 
-fn feature_ids(
+fn structural_feature_ids(
     data: &[u8],
     sections: &[Section],
     rows: &[SurfaceRow],
-    operations: &[FeatureOperation],
-    reference_names: &[FeatureReferenceName],
-) -> Vec<u32> {
+) -> std::collections::BTreeSet<u32> {
     let mut ids = std::collections::BTreeSet::new();
     ids.extend(rows.iter().map(|row| row.feature_id).filter(|id| *id != 0));
-    ids.extend(
-        operations
-            .iter()
-            .map(|operation| operation.feature_id)
-            .filter(|id| *id != 0),
-    );
-    ids.extend(
-        reference_names
-            .iter()
-            .map(|reference| reference.feature_id)
-            .filter(|id| *id != 0),
-    );
     for section in sections
         .iter()
         .filter(|section| section.role == role::GEOMETRY)
@@ -1269,7 +1255,73 @@ fn feature_ids(
             from = start;
         }
     }
-    ids.into_iter().collect()
+    ids
+}
+
+fn stored_operation_schema_class(operation: &FeatureOperation) -> Option<u32> {
+    operation
+        .root_schema_class
+        .or_else(|| match operation.kind.as_str() {
+            "Hole" => Some(911),
+            "Round" | "Rundung" => Some(913),
+            "Chamfer" => Some(914),
+            "Cut" => Some(916),
+            "Protrusion" => Some(917),
+            "Datum Plane" | "Bezugsebene" => Some(923),
+            "Section" => Some(926),
+            "Draft" | "Schräge" => Some(927),
+            "Surface Merge" => Some(946),
+            _ => operation.recipe.map(|recipe| match recipe.effect() {
+                feature::FeatureRecipeEffect::Cut => 916,
+                feature::FeatureRecipeEffect::Protrude => 917,
+            }),
+        })
+}
+
+fn registered_feature_schema_class(schema_class: u32) -> bool {
+    matches!(
+        schema_class,
+        911 | 913 | 914 | 916 | 917 | 923 | 926 | 927 | 946 | 979
+    )
+}
+
+fn feature_row_has_model_identity(
+    row: &FeatureRow,
+    structural_ids: &std::collections::BTreeSet<u32>,
+    operations: &[FeatureOperation],
+    reference_names: &[FeatureReferenceName],
+) -> bool {
+    structural_ids.contains(&row.feature_id)
+        || operations.iter().any(|operation| {
+            operation.feature_id == row.feature_id
+                && (stored_operation_schema_class(operation) == row.root_schema_class
+                    || (stored_operation_schema_class(operation).is_some()
+                        && row.root_schema_class.is_some_and(|schema_class| {
+                            !registered_feature_schema_class(schema_class)
+                        })))
+        })
+        || reference_names.iter().any(|reference| {
+            let numbered_family = |family: &str| {
+                [" id ", " ID "].into_iter().any(|separator| {
+                    reference
+                        .name
+                        .strip_prefix(family)
+                        .and_then(|suffix| suffix.strip_prefix(separator))
+                        .and_then(|ordinal| ordinal.parse::<u32>().ok())
+                        == Some(reference.feature_id)
+                })
+            };
+            let named_datum = matches!(reference.name.as_str(), "Datum Plane" | "Bezugsebene")
+                || numbered_family("Datum Plane")
+                || numbered_family("Bezugsebene")
+                || reference.name.strip_prefix("DTM").is_some_and(|ordinal| {
+                    !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+                });
+            reference.feature_id == row.feature_id
+                && (row.root_schema_class == Some(926)
+                    || (row.root_schema_class == Some(923) && named_datum)
+                    || (row.root_schema_class == Some(979) && reference.name == "PRT_CSYS_DEF"))
+        })
 }
 
 fn feature_entity_tables(
@@ -1797,14 +1849,34 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_operation_states = feature_operation_states(&data, &sections);
     let feature_operations = feature_operations(&data, &sections);
     let feature_reference_names = feature_reference_names(&data, &sections);
-    let feature_ids = feature_ids(
+    let structural_feature_ids = structural_feature_ids(&data, &sections, &surface_rows);
+    let mut candidate_feature_ids = structural_feature_ids.clone();
+    candidate_feature_ids.extend(
+        feature_operations
+            .iter()
+            .map(|operation| operation.feature_id),
+    );
+    candidate_feature_ids.extend(
+        feature_reference_names
+            .iter()
+            .map(|reference| reference.feature_id),
+    );
+    let mut feature_rows = feature_rows(
         &data,
         &sections,
-        &surface_rows,
-        &feature_operations,
-        &feature_reference_names,
+        &candidate_feature_ids.iter().copied().collect::<Vec<_>>(),
     );
-    let feature_rows = feature_rows(&data, &sections, &feature_ids);
+    feature_rows.retain(|row| {
+        feature_row_has_model_identity(
+            row,
+            &structural_feature_ids,
+            &feature_operations,
+            &feature_reference_names,
+        )
+    });
+    let mut feature_ids = structural_feature_ids;
+    feature_ids.extend(feature_rows.iter().map(|row| row.feature_id));
+    let feature_ids = feature_ids.into_iter().collect::<Vec<_>>();
     let feature_choices = feature::choices(&feature_rows);
     let feature_choice_fields = feature::choice_fields(&feature_choices);
     let depdb_recipe_rows = depdb_recipe_rows(&data, &sections);
@@ -2115,7 +2187,7 @@ mod feature_row_definition_tests {
     }
 
     #[test]
-    fn stored_feature_identities_bound_allfeatur_row_owners() {
+    fn stored_feature_identities_require_compatible_allfeatur_rows() {
         let operation = FeatureOperation {
             feature_id: 42,
             kind: "Round".to_string(),
@@ -2138,11 +2210,56 @@ mod feature_row_definition_tests {
             reference_type: 1,
             offset: 0,
         };
+        let datum_reference = FeatureReferenceName {
+            feature_id: 87,
+            name: "Datum Plane id 87".to_string(),
+            name_bytes: b"Datum Plane id 87".to_vec(),
+            own_reference_id: 10,
+            reference_type: 1,
+            offset: 0,
+        };
 
-        assert_eq!(
-            feature_ids(b"", &[], &[], &[operation], &[reference]),
-            vec![42, 73]
-        );
+        let row = |feature_id, root_schema_class| FeatureRow {
+            feature_id,
+            header: [0xe3, 0xf6],
+            root_schema_class: Some(root_schema_class),
+            stream_offset: 0,
+            body: Vec::new(),
+            body_offset: 0,
+            offset: 0,
+        };
+        let structural = std::collections::BTreeSet::new();
+
+        assert!(feature_row_has_model_identity(
+            &row(42, 913),
+            &structural,
+            std::slice::from_ref(&operation),
+            std::slice::from_ref(&reference),
+        ));
+        assert!(!feature_row_has_model_identity(
+            &row(42, 923),
+            &structural,
+            std::slice::from_ref(&operation),
+            std::slice::from_ref(&reference),
+        ));
+        assert!(feature_row_has_model_identity(
+            &row(73, 926),
+            &structural,
+            &[operation],
+            &[reference],
+        ));
+        assert!(feature_row_has_model_identity(
+            &row(87, 923),
+            &structural,
+            &[],
+            std::slice::from_ref(&datum_reference),
+        ));
+        assert!(!feature_row_has_model_identity(
+            &row(87, 911),
+            &structural,
+            &[],
+            &[datum_reference],
+        ));
     }
 
     #[test]
