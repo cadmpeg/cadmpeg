@@ -880,6 +880,14 @@ fn standard_mesh_missing_edge_assignment_domains(
     defer_validation: bool,
 ) -> Option<Vec<MeshFaceAssignmentDomain>> {
     const MAX_ASSIGNMENTS_PER_FACE: usize = 65_536;
+    // A contradictory face can visit factorially many partial orders without
+    // producing one complete assignment, so the assignment cap alone is not a
+    // work bound.
+    const MAX_SEARCH_STATES_PER_FACE: usize = 4_096;
+    // The same face search may be retried with progressively weaker endpoint
+    // constraints. Charge every retry and every candidate trim width to one
+    // decode-local budget.
+    const MAX_SEARCH_STATES: usize = 65_536;
     type PlacementConstraints<'a> = (
         Option<&'a [[u32; 2]]>,
         &'a HashMap<MeshCorner, u32>,
@@ -889,6 +897,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     type PointTransitions = HashMap<usize, Arc<HashSet<usize>>>;
     type DeadState = (usize, usize, u64, Option<u32>, Vec<usize>, bool);
 
+    #[allow(clippy::too_many_arguments)]
     fn enumerate_face(
         face: usize,
         gaps: &[MeshBoundaryGap],
@@ -897,6 +906,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         _rows: &[EdgeRow],
         constraints: PlacementConstraints<'_>,
         canonicalize_spans: bool,
+        remaining_states: &mut usize,
     ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
         struct Search<'a> {
             face: usize,
@@ -911,6 +921,8 @@ fn standard_mesh_missing_edge_assignment_domains(
             canonical_spans: bool,
             canonical_gap_partitions: bool,
             dead_states: HashSet<DeadState>,
+            remaining_states: &'a mut usize,
+            states: usize,
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
         }
@@ -963,6 +975,11 @@ fn standard_mesh_missing_edge_assignment_domains(
                 gap_placed_start: usize,
                 placed: &mut Vec<MeshEdgePlacementCandidate>,
             ) -> Option<()> {
+                *self.remaining_states = self.remaining_states.checked_sub(1)?;
+                self.states = self.states.checked_add(1)?;
+                if self.states > MAX_SEARCH_STATES_PER_FACE {
+                    return None;
+                }
                 if self.assignments > MAX_ASSIGNMENTS_PER_FACE {
                     return None;
                 }
@@ -1154,6 +1171,8 @@ fn standard_mesh_missing_edge_assignment_domains(
             canonical_spans: canonicalize_spans,
             canonical_gap_partitions: canonicalize_spans,
             dead_states: HashSet::new(),
+            remaining_states,
+            states: 0,
             assignments: 0,
             complete: Vec::new(),
         };
@@ -1447,6 +1466,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     });
     let edge_runs = standard_mesh_edge_runs(bytes)?;
     let mut solutions = Vec::new();
+    let mut remaining_states = MAX_SEARCH_STATES;
     for width in [1, 2, 3] {
         let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
             continue;
@@ -1551,6 +1571,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                             &corner_points,
                         ),
                         canonicalize_spans,
+                        &mut remaining_states,
                     )
                 })
                 .or_else(|| {
@@ -1562,6 +1583,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                         &edge_rows,
                         (None, &HashMap::new(), endpoint_constraints, &corner_points),
                         canonicalize_spans,
+                        &mut remaining_states,
                     )
                 })
                 .or_else(|| {
@@ -1573,6 +1595,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                         &edge_rows,
                         (None, &HashMap::new(), None, &MeshCornerPoints::new()),
                         canonicalize_spans,
+                        &mut remaining_states,
                     )
                 });
             assignments
