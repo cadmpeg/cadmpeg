@@ -81,6 +81,23 @@ pub struct CompactValuePacket {
     pub width: u8,
 }
 
+/// One `E8|E9 <type:compact-atom> <layout:u8> 37 FE FE` value packet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutValuePacket {
+    /// Stored packet opcode, either `E8` or `E9`.
+    pub opcode: u8,
+    /// Byte offset of the opcode within the value payload.
+    pub offset: usize,
+    /// Decoded compact type atom.
+    pub type_atom: u32,
+    /// Stored width of the type atom.
+    pub type_width: u8,
+    /// Uninterpreted one-byte layout code.
+    pub layout: u8,
+    /// Byte offset of the layout code within the value payload.
+    pub layout_offset: usize,
+}
+
 /// Decode every exact double-terminated compact packet in a tokenized value payload.
 #[must_use]
 pub fn compact_value_packets(fields: &[value_block::ValueField]) -> Vec<CompactValuePacket> {
@@ -99,6 +116,51 @@ pub fn compact_value_packets(fields: &[value_block::ValueField]) -> Vec<CompactV
                 width: *width,
             }),
             _ => None,
+        })
+        .collect()
+}
+
+/// Decode every exact layout-bearing packet in a tokenized value payload.
+#[must_use]
+pub fn layout_value_packets(fields: &[value_block::ValueField]) -> Vec<LayoutValuePacket> {
+    fields
+        .windows(6)
+        .filter_map(|fields| {
+            let [
+                value_block::ValueField::Opcode { code, offset },
+                value_block::ValueField::Atom {
+                    value: type_atom,
+                    width: type_width,
+                    ..
+                },
+                layout,
+                value_block::ValueField::Separator { .. },
+                value_block::ValueField::Terminator { .. },
+                value_block::ValueField::Terminator { .. },
+            ] = fields
+            else {
+                return None;
+            };
+            if !matches!(code, 0xe8 | 0xe9) {
+                return None;
+            }
+            let (layout, layout_offset) = match layout {
+                value_block::ValueField::Atom {
+                    value,
+                    width: 1,
+                    offset,
+                } => (u8::try_from(value.checked_add(0x80)?).ok()?, *offset),
+                value_block::ValueField::Literal { value, offset } => (*value, *offset),
+                _ => return None,
+            };
+            Some(LayoutValuePacket {
+                opcode: *code,
+                offset: *offset,
+                type_atom: *type_atom,
+                type_width: *type_width,
+                layout,
+                layout_offset,
+            })
         })
         .collect()
 }
@@ -392,9 +454,10 @@ fn u32_le(data: &[u8], at: usize) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compact_value_packets, parse_definition_schema_selectors, parse_numeric_tuple,
-        parse_reference_signature, parse_runs, CompactValuePacket, DefinitionSchemaSelector,
-        NumericTuple, NumericTupleItem, ReferenceSignature,
+        compact_value_packets, layout_value_packets, parse_definition_schema_selectors,
+        parse_numeric_tuple, parse_reference_signature, parse_runs, CompactValuePacket,
+        DefinitionSchemaSelector, LayoutValuePacket, NumericTuple, NumericTupleItem,
+        ReferenceSignature,
     };
     use crate::value_block;
 
@@ -534,6 +597,22 @@ mod tests {
                 offset: 0,
                 value: 3851,
                 width: 2,
+            }]
+        );
+    }
+
+    #[test]
+    fn layout_value_packet_requires_the_layout_and_double_terminator() {
+        let fields = value_block::tokenize(&[0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe]);
+        assert_eq!(
+            layout_value_packets(&fields),
+            [LayoutValuePacket {
+                opcode: 0xe9,
+                offset: 0,
+                type_atom: 3864,
+                type_width: 2,
+                layout: 8,
+                layout_offset: 3,
             }]
         );
     }
