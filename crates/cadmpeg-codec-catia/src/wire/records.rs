@@ -168,13 +168,23 @@ pub struct ConsolidatedRecord {
 #[must_use]
 pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
     let flags = [0x03, 0x13, 0x83];
-    let mut candidates = Vec::new();
-    for pos in 0..data.len().saturating_sub(4) {
+    let mut records = Vec::new();
+    let mut active_payload: Option<Range<usize>> = None;
+    let mut pos = 0;
+    while pos < data.len().saturating_sub(4) {
+        if let Some(payload) = active_payload
+            .as_ref()
+            .filter(|payload| payload.contains(&pos))
+        {
+            pos = payload.end;
+            continue;
+        }
         let (family, width, token_at, length) = if let Some(width) = data[pos]
             .checked_sub(0xa4)
             .filter(|width| (1..=3).contains(width))
         {
             let Some(length) = u32_le(data, pos + 3).and_then(|v| usize::try_from(v).ok()) else {
+                pos += 1;
                 continue;
             };
             (ConsolidatedFamily::A, width, pos + 7, length)
@@ -189,25 +199,32 @@ pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
                 usize::from(data[pos + 3]),
             )
         } else {
+            pos += 1;
             continue;
         };
         let Some(&flag) = data.get(pos + 1) else {
+            pos += 1;
             continue;
         };
         let Some(&class) = data.get(pos + 2) else {
+            pos += 1;
             continue;
         };
         if !flags.contains(&flag) {
+            pos += 1;
             continue;
         }
         let width_usize = usize::from(width);
         let Some(payload_start) = token_at.checked_add(width_usize) else {
+            pos += 1;
             continue;
         };
         let Some(end) = payload_start.checked_add(length) else {
+            pos += 1;
             continue;
         };
         if end > data.len() {
+            pos += 1;
             continue;
         }
         let header_token = data[token_at..payload_start]
@@ -216,7 +233,7 @@ pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
             .fold(0u32, |value, (shift, byte)| {
                 value | (u32::from(*byte) << (8 * shift))
             });
-        candidates.push(ConsolidatedRecord {
+        let record = ConsolidatedRecord {
             family,
             width,
             flag,
@@ -224,19 +241,10 @@ pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
             header_token,
             range: pos..end,
             payload: payload_start..end,
-        });
-    }
-    let mut records: Vec<ConsolidatedRecord> = Vec::new();
-    let mut active_payload: Option<Range<usize>> = None;
-    for candidate in candidates {
-        if active_payload
-            .as_ref()
-            .is_some_and(|payload| payload.contains(&candidate.range.start))
-        {
-            continue;
-        }
-        active_payload = Some(candidate.payload.clone());
-        records.push(candidate);
+        };
+        active_payload = Some(record.payload.clone());
+        records.push(record);
+        pos += 1;
     }
     records
 }
