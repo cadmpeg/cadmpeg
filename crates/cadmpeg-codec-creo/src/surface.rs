@@ -162,6 +162,8 @@ impl SurfacePrototypeFamily {
 /// Typed wrapper carried by a named surface-prototype parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SurfaceNamedValue {
+    /// Present named field with an empty body.
+    Empty,
     /// One compact integer.
     CompactInt(u32),
     /// Count-bounded compact-integer array.
@@ -1955,6 +1957,9 @@ fn prototype_parameter_allowed(family: &SurfacePrototypeFamily, name: &str) -> b
 }
 
 fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamedValue {
+    if body.is_empty() {
+        return SurfaceNamedValue::Empty;
+    }
     let radius_field = matches!(name, "radius" | "radius1" | "radius2");
     let parameter_bound_field = matches!(name, "par_v_0" | "par_v_1");
     let scalar_field = radius_field || parameter_bound_field || name == "half_angle";
@@ -8688,7 +8693,8 @@ mod tests {
     fn spline_metadata_decodes_wrapped_compact_values() {
         let payload = b"srf_prim_ptr(fillet_srf)\0\
             \xe0\x01flip\0\xf1\x01\
-            \xe0\x01offset_type\0\x00\xf1\xf7\x0e";
+            \xe0\x01offset_type\0\x00\xf1\xf7\x0e\
+            \xe0\x01tan_spline\0";
         let records = named_prototype_records(payload);
 
         assert_eq!(
@@ -8698,6 +8704,10 @@ mod tests {
         assert_eq!(
             records[0].field("offset_type").map(|field| &field.value),
             Some(&SurfaceNamedValue::CompactInt(0))
+        );
+        assert_eq!(
+            records[0].field("tan_spline").map(|field| &field.value),
+            Some(&SurfaceNamedValue::Empty)
         );
     }
 

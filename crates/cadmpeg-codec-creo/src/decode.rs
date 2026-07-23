@@ -1045,6 +1045,15 @@ fn surface_named_parameter_record(
         scalar_tokens,
         opaque,
     ) = match &parameter.value {
+        crate::surface::SurfaceNamedValue::Empty => (
+            "empty",
+            Vec::new(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
         crate::surface::SurfaceNamedValue::CompactInt(value) => (
             "compact_int",
             vec![*value],

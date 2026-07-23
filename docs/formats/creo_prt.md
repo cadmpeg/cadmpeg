@@ -288,10 +288,11 @@ contiguous entity-reference range `start_id .. start_id + count`. `flip f1
 <value_ci>` stores one compact integer. `offset_type <value_ci> f1 f7
 <class-id>` stores one compact integer followed by a nonzero canonical class
 reference. Both fields retain their complete wrapper bytes. `dum_array`,
-`data_dbls`, and `data_type` are separate named fields. A count-prefixed
-compact-integer array is typed as such only when exactly the declared number of
-compact integers consumes the entire bounded field body; trailing bytes make
-the field opaque.
+`data_dbls`, and `data_type` are separate named fields. A `tan_spline` field
+with no bytes before the next named-record header has an empty body. A
+count-prefixed compact-integer array is typed as such only when exactly the
+declared number of compact integers consumes the entire bounded field body;
+trailing bytes make the field opaque.
 `parent_feats` may append the exact trailer
 `f7 <class-id> <entity-id> [e1 [f6 f6]]` after its declared compact-integer
 array. Both trailer identifiers use the canonical entity-reference grammar and
