@@ -47,3 +47,28 @@ pub fn geometry_a5_surfaces(data: &[u8]) {
 pub fn geometry_a8_surfaces(data: &[u8]) {
     let _ = crate::families::a5a8::records::a8_surfaces(data);
 }
+
+/// Exercise `7C02` string-catalog parsing.
+pub fn catalog_parse(data: &[u8]) {
+    let _ = crate::catalog::parse(data);
+}
+
+/// Exercise `7C0B` value-block parsing.
+pub fn value_block_parse(data: &[u8]) {
+    let _ = crate::value_block::parse(data);
+}
+
+/// Exercise `7C08` outer object-graph parsing and surface-alias extraction.
+pub fn object_graph_parse(data: &[u8]) {
+    let _ = crate::object_graph::parse_all(data);
+    let _ = crate::object_graph::surface_aliases(data);
+}
+
+/// Exercise standard-nested and FBB topology parsing with the counted spine and
+/// edge-row walks.
+pub fn topology_parse(data: &[u8]) {
+    if let Some(topology) = crate::families::standard::fbb::parse_standard(data) {
+        let _ = topology.edge_vertices();
+    }
+    let _ = crate::families::standard::topology::parse_fbb(data);
+}
