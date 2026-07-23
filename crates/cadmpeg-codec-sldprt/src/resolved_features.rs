@@ -7453,7 +7453,7 @@ mod marker_tests {
     #[test]
     fn compact_edge_selection_accepts_heterogeneous_component_paths() {
         let marker = 12;
-        let mut payload = vec![0; 100];
+        let mut payload = vec![0; 120];
         payload[..4].copy_from_slice(&2u32.to_le_bytes());
         payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
         payload[8..12].copy_from_slice(&37u32.to_le_bytes());
@@ -7484,6 +7484,17 @@ mod marker_tests {
                     local_id: Some(3),
                 },
             ])
+        );
+
+        payload[..4].copy_from_slice(&3u32.to_le_bytes());
+        let third = second + 24;
+        payload[second + 20..third].fill(0xff);
+        payload[third..third + 4].copy_from_slice(&[0x53, 0x80, 0, 0]);
+        payload[third + 4..third + 16].copy_from_slice(&[3; 12]);
+        payload[third + 16..third + 20].copy_from_slice(&4u32.to_le_bytes());
+        assert_eq!(
+            compact_edge_selection_at(&payload, marker),
+            Some(vec![2, 3, 4])
         );
     }
 
@@ -15171,6 +15182,7 @@ fn compact_heterogeneous_component_path(
                 2 => payload.get(cursor..cursor + 2) == Some(&[0; 2]),
                 4 => payload.get(cursor..cursor + 4).is_some_and(|bytes| {
                     bytes == [0; 4]
+                        || bytes == [0xff; 4]
                         || (u16::from_le_bytes([bytes[0], bytes[1]]) != 0
                             && bytes[0..2] != [0xff, 0xff]
                             && bytes[2..4] == [0, 0])
