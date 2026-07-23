@@ -684,10 +684,11 @@ fn atom(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     match byte {
         0x80..=0xd0 => Some((u32::from(byte - 0x80), 1)),
         0x51..=0x7f => Some((u32::from(byte), 1)),
-        0xd1..=0xe4 => Some((
-            u32::from(byte - 0xd1) * 256 + u32::from(*bytes.get(at + 1)?) + 1,
+        0xd1..=0xe4 if at + 2 < bytes.len() => Some((
+            u32::from(byte - 0xd1) * 256 + u32::from(bytes[at + 1]) + 1,
             2,
         )),
+        0xd1..=0xe4 => None,
         _ => Some((u32::from(byte), 1)),
     }
 }
