@@ -255,6 +255,13 @@ pub(crate) fn resolved_edge_group(
         treatment_radius
             .and_then(|radius| radius_edge_group_candidates(&matched_operands, radius))
             .or_else(|| {
+                treatment_radius.and_then(|radius| {
+                    identity_matches.as_ref().and_then(|operands| {
+                        radius_edge_identity_group_candidates(operands, radius)
+                    })
+                })
+            })
+            .or_else(|| {
                 context_only_edge_group_candidates(matched_operands.iter().map(|operand| {
                     (
                         resolved_edge_operand(operand),
@@ -522,6 +529,54 @@ pub(crate) fn radius_edge_group_candidates(
         }
     }
     Some(chain)
+}
+
+fn radius_edge_identity_group_candidates(
+    operands: &[&DesignEdgeIdentityOperand],
+    radius: f64,
+) -> Option<Vec<i64>> {
+    if operands.is_empty() || !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    let tolerance = 1.0e-9 * (1.0 + radius.abs());
+    let mut chain = operands
+        .iter()
+        .flat_map(|operand| {
+            operand
+                .resolved_edge_slot
+                .iter()
+                .copied()
+                .chain(operand.resolved_edge_slots.iter().copied())
+                .chain(
+                    operand
+                        .treatment_radius_candidates
+                        .iter()
+                        .filter(|candidate| (candidate.radius - radius).abs() <= tolerance)
+                        .map(|candidate| candidate.edge_slot),
+                )
+        })
+        .collect::<Vec<_>>();
+    chain.sort_unstable();
+    chain.dedup();
+    if chain.is_empty() {
+        return None;
+    }
+    operands
+        .iter()
+        .all(|operand| {
+            operand.resolved_edge_slot.is_some()
+                || !operand.resolved_edge_slots.is_empty()
+                || operand
+                    .treatment_radius_candidates
+                    .iter()
+                    .any(|candidate| (candidate.radius - radius).abs() <= tolerance)
+                || operand.transition_edge_candidates.is_empty()
+                || operand
+                    .transition_edge_candidates
+                    .iter()
+                    .any(|edge| chain.contains(edge))
+        })
+        .then_some(chain)
 }
 
 pub(crate) fn unique_edge_assignment_with_context(
@@ -1163,4 +1218,54 @@ pub(crate) fn project_fixed_fillet(
             tangency_weight: Some(fixed.tangency_weight),
         }],
     })
+}
+
+#[cfg(test)]
+mod radius_identity_tests {
+    use super::radius_edge_identity_group_candidates;
+    use crate::records::DesignEdgeIdentityOperand;
+
+    fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
+        serde_json::from_value(serde_json::json!({
+            "id": format!("f3d:test:identity#{record_index}"),
+            "scope_record_index": 1,
+            "group_record_index": 2,
+            "group_member_ordinal": record_index,
+            "record_index": record_index,
+            "byte_offset": 0,
+            "class_tag": "277",
+            "local_id": record_index,
+            "local_id_offset": 0,
+            "asset_id": "asset",
+            "asset_id_offset": 0,
+            "context_id": "context",
+            "context_id_offset": 0,
+            "transition_edge_candidates": candidates
+                .iter()
+                .map(|(edge, _)| *edge)
+                .collect::<Vec<_>>(),
+            "treatment_radius_candidates": candidates
+                .iter()
+                .map(|(edge, radius)| serde_json::json!({
+                    "edge_slot": edge,
+                    "radius": radius
+                }))
+                .collect::<Vec<_>>()
+        }))
+        .expect("edge identity")
+    }
+
+    #[test]
+    fn identity_radius_candidates_select_only_the_matching_law() {
+        let first = identity(10, &[(17, 3.0), (18, 5.0)]);
+        let second = identity(11, &[(19, 3.0), (20, 5.0)]);
+        assert_eq!(
+            radius_edge_identity_group_candidates(&[&first, &second], 3.0),
+            Some(vec![17, 19])
+        );
+        assert_eq!(
+            radius_edge_identity_group_candidates(&[&first, &second], 4.0),
+            None
+        );
+    }
 }
