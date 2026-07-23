@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 95;
+pub const CATIA_NATIVE_VERSION: u32 = 96;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -635,6 +635,9 @@ pub struct CatiaEntityRecord {
     /// Value selectors resolved against the containing graph's source schema.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub value_schema_selections: Vec<CatiaEntityValueSchemaSelection>,
+    /// Exact double-terminated compact packets in the value program.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compact_value_packets: Vec<entity_table::CompactValuePacket>,
     /// Complete numeric tuple when the entire `7C07` payload has that production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub numeric_tuple: Option<entity_table::NumericTuple>,
@@ -1020,6 +1023,7 @@ fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
         && u64::from(record.value_len) == value_len
         && record.byte_len == total_len
         && record.value_fields == value_block::tokenize(&record.value_payload)
+        && record.compact_value_packets == entity_table::compact_value_packets(&record.value_fields)
         && record.numeric_tuple == entity_table::parse_numeric_tuple(&record.value_payload)
         && record.reference_signature
             == entity_table::parse_reference_signature(&record.value_payload)
@@ -3002,6 +3006,7 @@ fn native_object_graph(
         .filter_map(|(ordinal, entity)| {
             let object_record = records.get(ordinal)?;
             let value_fields = value_block::tokenize(&entity.value_payload);
+            let compact_value_packets = entity_table::compact_value_packets(&value_fields);
             Some(CatiaEntityRecord {
                 id: format!("catia:outer:entity-record#{:010}", entity.pos),
                 object_graph: id.clone(),
@@ -3021,6 +3026,7 @@ fn native_object_graph(
                 value_payload: entity.value_payload,
                 value_fields,
                 value_schema_selections: Vec::new(),
+                compact_value_packets,
                 numeric_tuple: entity.numeric_tuple,
                 reference_signature: entity.reference_signature,
                 record_suffix: entity.record_suffix,

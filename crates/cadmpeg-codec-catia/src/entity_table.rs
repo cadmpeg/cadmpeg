@@ -4,6 +4,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::value_block;
+
 /// One source-schema selector in a complete `7C06` definition prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DefinitionSchemaSelector {
@@ -66,6 +68,39 @@ pub struct ReferenceSignature {
     pub closing_atom: u32,
     /// Compact closing-frame type atom following `0xE9`.
     pub closing_type_atom: u32,
+}
+
+/// One `E8 <compact-atom> 37 FE FE` packet in a `7C07` value program.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CompactValuePacket {
+    /// Byte offset of the `E8` opcode within the value payload.
+    pub offset: usize,
+    /// Decoded compact atom.
+    pub value: u32,
+    /// Stored width of the compact atom.
+    pub width: u8,
+}
+
+/// Decode every exact double-terminated compact packet in a tokenized value payload.
+#[must_use]
+pub fn compact_value_packets(fields: &[value_block::ValueField]) -> Vec<CompactValuePacket> {
+    fields
+        .windows(5)
+        .filter_map(|fields| match fields {
+            [
+                value_block::ValueField::Opcode { code: 0xe8, offset },
+                value_block::ValueField::Atom { value, width, .. },
+                value_block::ValueField::Separator { .. },
+                value_block::ValueField::Terminator { .. },
+                value_block::ValueField::Terminator { .. },
+            ] => Some(CompactValuePacket {
+                offset: *offset,
+                value: *value,
+                width: *width,
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 /// One length-closed `7C05` entity-table record.
@@ -357,9 +392,11 @@ fn u32_le(data: &[u8], at: usize) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_definition_schema_selectors, parse_numeric_tuple, parse_reference_signature,
-        parse_runs, DefinitionSchemaSelector, NumericTuple, NumericTupleItem, ReferenceSignature,
+        compact_value_packets, parse_definition_schema_selectors, parse_numeric_tuple,
+        parse_reference_signature, parse_runs, CompactValuePacket, DefinitionSchemaSelector,
+        NumericTuple, NumericTupleItem, ReferenceSignature,
     };
+    use crate::value_block;
 
     fn record(prefix: &[u8], entity_id: u32) -> Vec<u8> {
         let mut bytes = vec![0x7c, 0x05, 0, 0, 0, 0, 0, 0x7c, 0x06];
@@ -485,5 +522,19 @@ mod tests {
         ];
 
         assert_eq!(parse_reference_signature(&payload), None);
+    }
+
+    #[test]
+    fn compact_value_packet_requires_the_double_terminated_production() {
+        let fields =
+            value_block::tokenize(&[0xe8, 0xe0, 0x0a, 0x37, 0xfe, 0xfe, 0xe8, 0x82, 0x37, 0xfe]);
+        assert_eq!(
+            compact_value_packets(&fields),
+            [CompactValuePacket {
+                offset: 0,
+                value: 3851,
+                width: 2,
+            }]
+        );
     }
 }

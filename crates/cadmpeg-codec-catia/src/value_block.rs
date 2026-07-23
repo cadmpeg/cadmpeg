@@ -51,6 +51,11 @@ pub enum ValueField {
         /// Byte offset within the value payload.
         offset: usize,
     },
+    /// `0x37` value-packet separator.
+    Separator {
+        /// Byte offset within the value payload.
+        offset: usize,
+    },
     /// `8E E8..EF 84` followed by one through eight inline bytes.
     Inline {
         /// Length code; the payload length is `code - E7`.
@@ -150,6 +155,9 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
                 offset,
             });
             at += 2;
+        } else if payload[at] == 0x37 {
+            fields.push(ValueField::Separator { offset });
+            at += 1;
         } else if payload
             .get(at)
             .is_some_and(|code| (0xe6..=0xe9).contains(code))
