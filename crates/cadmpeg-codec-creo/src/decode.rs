@@ -13872,7 +13872,8 @@ fn schema_feature_definition(
         return unresolved_extrude_feature_definition(feature_id);
     }
     if schema_operation_kind(schema_class).is_none() {
-        if let Some(definition) = named_feature_definition(scan, ir, feature_id, kind) {
+        if let Some(definition) = named_or_referenced_feature_definition(scan, ir, feature_id, kind)
+        {
             return definition;
         }
     }
@@ -14036,6 +14037,21 @@ fn named_feature_definition(
         schema_class,
         kind,
     ))
+}
+
+fn named_or_referenced_feature_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    kind: &str,
+) -> Option<IrFeatureDefinition> {
+    named_feature_definition(scan, ir, feature_id, kind).or_else(|| {
+        feature_reference_name(scan, feature_id)
+            .filter(|reference_name| *reference_name != kind)
+            .and_then(|reference_name| {
+                named_feature_definition(scan, ir, feature_id, reference_name)
+            })
+    })
 }
 
 fn unresolved_extrude_feature_definition(feature_id: u32) -> IrFeatureDefinition {
@@ -24214,7 +24230,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                     })
                     .or_else(|| {
                         current_operation.and_then(|operation| {
-                            named_feature_definition(
+                            named_or_referenced_feature_definition(
                                 scan,
                                 &ir,
                                 operation.feature_id,

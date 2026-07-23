@@ -2113,6 +2113,39 @@ fn decode_uses_stored_family_when_row_schema_is_not_registered() {
 }
 
 #[test]
+fn decode_uses_reference_name_family_when_operation_name_is_generic() {
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0xae, 0xe1,
+    ];
+    let reference_name = b"\xf7\x71\x09\x01\x04Extrude 7\0\x09\x09".to_vec();
+    let data = build_prt(
+        "c",
+        &[
+            ("AllFeatur", allfeatur),
+            ("MdlRefInfo", reference_name),
+            ("MdlStatus", b"Surface id 4\0".to_vec()),
+        ],
+    );
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("surface feature");
+
+    assert_eq!(feature.name.as_deref(), Some("Surface id 4"));
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude { .. }
+    ));
+}
+
+#[test]
 fn decode_types_default_part_coordinate_system() {
     let allfeatur = vec![
         7, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0xd3, 0xe1,
