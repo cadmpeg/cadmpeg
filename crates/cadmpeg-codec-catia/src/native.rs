@@ -17,7 +17,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 92;
+pub const CATIA_NATIVE_VERSION: u32 = 93;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -613,6 +613,9 @@ pub struct CatiaEntityRecord {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub value_payload: Vec<u8>,
+    /// Lossless tokenization of the complete `7C07` payload.
+    #[serde(default)]
+    pub value_fields: Vec<value_block::ValueField>,
     /// Complete numeric tuple when the entire `7C07` payload has that production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub numeric_tuple: Option<entity_table::NumericTuple>,
@@ -997,6 +1000,7 @@ fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
     u64::from(record.definition_len) == definition_body_len + 6
         && u64::from(record.value_len) == value_len
         && record.byte_len == total_len
+        && record.value_fields == value_block::tokenize(&record.value_payload)
         && record.numeric_tuple == entity_table::parse_numeric_tuple(&record.value_payload)
         && record.reference_signature
             == entity_table::parse_reference_signature(&record.value_payload)
@@ -2926,6 +2930,7 @@ fn native_object_graph(
         .enumerate()
         .filter_map(|(ordinal, entity)| {
             let object_record = records.get(ordinal)?;
+            let value_fields = value_block::tokenize(&entity.value_payload);
             Some(CatiaEntityRecord {
                 id: format!("catia:outer:entity-record#{:010}", entity.pos),
                 object_graph: id.clone(),
@@ -2943,6 +2948,7 @@ fn native_object_graph(
                 definition_suffix: entity.definition_suffix,
                 value_len: entity.value_len,
                 value_payload: entity.value_payload,
+                value_fields,
                 numeric_tuple: entity.numeric_tuple,
                 reference_signature: entity.reference_signature,
                 record_suffix: entity.record_suffix,

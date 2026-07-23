@@ -5410,6 +5410,51 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
 }
 
 #[test]
+fn native_namespace_tokenizes_and_validates_complete_entity_values() {
+    let mut value = vec![0x32, 4, 0, 0, 0, 0x87, 0xe6];
+    value.extend_from_slice(&12.5_f64.to_bits().to_le_bytes());
+    value.extend_from_slice(&[0x87, 0xe8, 0xfe]);
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
+    let mut bytes = entity_table_record_with_value(1, &value);
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&records));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(
+        native.entity_records[0].value_fields,
+        [
+            crate::value_block::ValueField::SchemaSelector {
+                ordinal: 4,
+                offset: 0,
+            },
+            crate::value_block::ValueField::Binary64 {
+                bits: 12.5_f64.to_bits(),
+                offset: 5,
+            },
+            crate::value_block::ValueField::Marker {
+                code: 0xe8,
+                offset: 15,
+            },
+            crate::value_block::ValueField::Literal {
+                value: 0xfe,
+                offset: 17,
+            },
+        ]
+    );
+
+    let mut malformed = native;
+    malformed.entity_records[0].value_fields.pop();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed entity-value view");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
 fn native_load_rejects_noncanonical_graph_catalog_views() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     assert!(native.object_graphs[0].catalog_byte_offset.is_some());
