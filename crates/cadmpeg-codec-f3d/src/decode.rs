@@ -186,6 +186,7 @@ fn report_unresolved_configuration_rules(
 struct DesignProjectionGaps {
     unresolved_body_bindings: usize,
     incomplete_features: usize,
+    native_reference_images: usize,
     unprojected_feature_scopes: usize,
     unprojected_parameters: usize,
     untyped_parameter_units: usize,
@@ -213,8 +214,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
     use cadmpeg_ir::features::{FeatureDefinition, PatternKind, SketchSpace};
 
     match definition {
-        FeatureDefinition::Native { .. }
-        | FeatureDefinition::DatumPlaneUnresolved
+        FeatureDefinition::Native { kind, .. } => kind != "Canvas",
+        FeatureDefinition::DatumPlaneUnresolved
         | FeatureDefinition::DatumPointUnresolved
         | FeatureDefinition::DatumCoordinateSystemUnresolved
         | FeatureDefinition::LoftUnresolved
@@ -562,6 +563,10 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     for feature in &ir.model.features {
         gaps.incomplete_features +=
             usize::from(feature_definition_is_incomplete(&feature.definition));
+        gaps.native_reference_images += usize::from(matches!(
+            &feature.definition,
+            FeatureDefinition::Native { kind, .. } if kind == "Canvas"
+        ));
         match &feature.definition {
             FeatureDefinition::BaseFeature { bodies }
             | FeatureDefinition::InsertBodies { bodies } => {
@@ -623,6 +628,18 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
             message: format!(
                 "{} Design body-map pair(s) do not resolve to a body in the named BREP blob.",
                 gaps.unresolved_body_bindings
+            ),
+            provenance: None,
+        });
+    }
+    if gaps.native_reference_images != 0 {
+        report.losses.push(LossNote {
+            code: LossCode::AttributesNotTransferred,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{} reference-image timeline object(s) retain native Canvas records because no neutral image-plane binding was resolved.",
+                gaps.native_reference_images
             ),
             provenance: None,
         });
@@ -2990,8 +3007,8 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_appearance_base_colors, design_projection_gaps, unresolved_dimension_companion_count,
-        DesignProjectionGaps,
+        apply_appearance_base_colors, design_projection_gaps, feature_definition_is_incomplete,
+        unresolved_dimension_companion_count, DesignProjectionGaps,
     };
     use crate::native::F3dNative;
     use crate::records::{
@@ -3000,6 +3017,18 @@ mod tests {
         DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignSketchPlacement,
         LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
     };
+
+    #[test]
+    fn canvas_is_a_reference_image_not_an_incomplete_modeling_feature() {
+        let native = |kind: &str| cadmpeg_ir::features::FeatureDefinition::Native {
+            kind: kind.into(),
+            parameters: std::collections::BTreeMap::new(),
+            properties: std::collections::BTreeMap::new(),
+        };
+
+        assert!(!feature_definition_is_incomplete(&native("Canvas")));
+        assert!(feature_definition_is_incomplete(&native("Fillet")));
+    }
 
     #[test]
     fn design_projection_gaps_count_unresolved_body_map_pairs() {
@@ -3326,6 +3355,7 @@ mod tests {
             DesignProjectionGaps {
                 unresolved_body_bindings: 0,
                 incomplete_features: 2,
+                native_reference_images: 0,
                 unprojected_feature_scopes: 1,
                 unprojected_parameters: 1,
                 untyped_parameter_units: 1,

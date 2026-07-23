@@ -221,6 +221,7 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
   Extrusions driven by prior solid faces retain exact state-qualified profile faces when every counted selection member corroborates one owner face.
 - **Product structure: Partial.** Body transforms and root-component records transfer. Multi-component structure and constraints remain open.
 - **Presentation and metadata: Partial.** Linked source attributes, Protein appearance assets, material properties, body bindings, and per-body display visibility transfer. External material-library display names and some schema fields remain unresolved.
+  Canvas timeline objects remain identity-preserving native reference-image records and report an attribute loss until their image-plane binding transfers; they do not count as incomplete shape-history operations.
 
 ### Write and round trip
 
