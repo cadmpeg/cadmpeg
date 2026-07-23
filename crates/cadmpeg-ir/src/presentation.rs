@@ -189,9 +189,9 @@ pub struct PresentationLayer {
 mod tests {
     use super::*;
     use crate::document::CadIr;
-    use crate::report::Check;
     use crate::units::Units;
     use crate::validate;
+    use crate::validate::Check;
 
     #[test]
     fn source_layer_items_validate_without_fabricated_geometry() {

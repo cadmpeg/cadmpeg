@@ -3,8 +3,8 @@
 
 use std::collections::HashSet;
 
+use super::{Check, Finding, Severity};
 use crate::document::CadIr;
-use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_drawings(ir: &CadIr, all_ids: &HashSet<String>, findings: &mut Vec<Finding>) {
     let mut orders = HashSet::new();

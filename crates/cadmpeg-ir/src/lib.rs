@@ -98,8 +98,7 @@ pub use products::{
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
-    Check, DecodeReport, ExportReport, Finding, LossCategory, LossCode, LossNote, Severity,
-    StrictConsequence, ValidationReport,
+    DecodeReport, ExportReport, LossCategory, LossCode, LossNote, Severity, StrictConsequence,
 };
 pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
@@ -115,7 +114,7 @@ pub use subd::{
     SubdVertexTag,
 };
 pub use unknown::{NativeUnknownRecord, UnknownRecord};
-pub use validate::{validate, validate_with_source_fidelity};
+pub use validate::{validate, validate_with_source_fidelity, Check, Finding, ValidationReport};
 
 pub mod unknown;
 

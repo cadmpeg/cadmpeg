@@ -2819,7 +2819,7 @@ fn restore_unknown_payloads(records: &mut [UnknownRecord], payloads: Vec<Option<
     }
 }
 
-fn validation_findings(report: &cadmpeg_ir::report::ValidationReport) -> String {
+fn validation_findings(report: &cadmpeg_ir::validate::ValidationReport) -> String {
     report
         .findings
         .iter()

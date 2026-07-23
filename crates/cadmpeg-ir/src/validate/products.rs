@@ -3,9 +3,9 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::{Check, Finding, Severity};
 use crate::document::CadIr;
 use crate::products::ComponentReference;
-use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
     let components = ir

@@ -227,9 +227,9 @@ pub struct PmiAnnotation {
 mod tests {
     use super::*;
     use crate::document::CadIr;
-    use crate::report::Check;
     use crate::units::Units;
     use crate::validate;
+    use crate::validate::Check;
 
     #[test]
     fn datum_system_references_resolve_with_precedence() {

@@ -4460,7 +4460,7 @@ fn decode_retains_outer_object_graph_order_and_dependencies() {
     assert!(validation
         .findings
         .iter()
-        .all(|finding| finding.check != cadmpeg_ir::report::Check::Identity));
+        .all(|finding| finding.check != cadmpeg_ir::validate::Check::Identity));
 }
 
 #[test]

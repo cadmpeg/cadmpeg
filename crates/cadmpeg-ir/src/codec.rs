@@ -23,8 +23,8 @@ use crate::decode::{
 use crate::document::CadIr;
 use crate::report::DecodeReport;
 use crate::report::ExportReport;
-use crate::report::Finding;
 use crate::source_fidelity::SourceFidelity;
+use crate::validate::Finding;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

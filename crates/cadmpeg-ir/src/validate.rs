@@ -19,7 +19,7 @@ use crate::geometry::{
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use crate::math::Vector3;
-use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
+use crate::report::{LossNote, Severity};
 use crate::source_fidelity::SourceFidelity;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
@@ -35,11 +35,14 @@ mod pmi;
 mod presentation;
 mod product;
 mod products;
+mod report;
 mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
 mod subd;
 mod topology;
+
+pub use report::{Check, Finding, ValidationReport};
 
 use annotations_native::{check_annotations, check_native_links};
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};

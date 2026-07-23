@@ -17,7 +17,7 @@ use crate::ids::{
 use crate::math::{Point3, Vector3};
 use crate::native::NativeRecord;
 use crate::provenance::{Exactness, SourceObjectAssociation};
-use crate::report::{Check, LossCategory, LossCode, LossNote, Severity};
+use crate::report::{LossCategory, LossCode, LossNote, Severity};
 use crate::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
@@ -26,6 +26,7 @@ use crate::tessellation::TessellationChannel;
 use crate::topology::Color;
 use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 use crate::validate::validate;
+use crate::validate::Check;
 use crate::{diff, CadIr, LossProvenance};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
@@ -79,7 +80,7 @@ fn product_occurrence_tree_validates_references_and_cycles() {
         .findings
         .iter()
         .any(|finding| {
-            finding.check == crate::report::Check::ProductStructure
+            finding.check == crate::validate::Check::ProductStructure
                 && finding.message.contains("non-finite")
         }));
     ir.model.product_occurrences[1].transform = Transform::identity();
@@ -91,7 +92,7 @@ fn product_occurrence_tree_validates_references_and_cycles() {
     assert!(report
         .findings
         .iter()
-        .any(|finding| finding.check == crate::report::Check::ProductStructure));
+        .any(|finding| finding.check == crate::validate::Check::ProductStructure));
 }
 
 #[test]

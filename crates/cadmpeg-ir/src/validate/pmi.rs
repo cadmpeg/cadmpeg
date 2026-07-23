@@ -3,9 +3,9 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use super::{Check, Finding, Severity};
 use crate::document::CadIr;
 use crate::pmi::{PmiDefinition, PmiTarget};
-use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
     let ids = ir

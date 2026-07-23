@@ -9,7 +9,8 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_ir::decode::InspectOptions;
-use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
+use cadmpeg_ir::report::{DecodeReport, ExportReport};
+use cadmpeg_ir::validate::ValidationReport;
 use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, CodecEntry, SourceFidelity};
 
 use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};

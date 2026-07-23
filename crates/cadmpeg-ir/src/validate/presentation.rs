@@ -3,9 +3,9 @@
 
 use std::collections::HashSet;
 
+use super::{Check, Finding, Severity};
 use crate::document::CadIr;
 use crate::presentation::PresentationItem;
-use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_presentation(
     ir: &CadIr,
