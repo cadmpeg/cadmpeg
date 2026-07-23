@@ -3240,6 +3240,7 @@ fn saved_line_joins_through_order_table() {
     let mut constrained = definition.clone();
     constrained.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 0,
+        has_elided_prototype: false,
         entity_ref: None,
         rows: Vec::new(),
         opaque_rows: Vec::new(),
@@ -3584,6 +3585,7 @@ fn saved_line_joins_through_order_table() {
         .declared_count = 0;
     completed.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 1,
+        has_elided_prototype: false,
         entity_ref: None,
         rows: vec![segment.clone()],
         opaque_rows: Vec::new(),
@@ -3875,6 +3877,7 @@ fn saved_arc_joins_through_order_table() {
     let mut trimmed = definition;
     trimmed.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 1,
+        has_elided_prototype: false,
         entity_ref: None,
         rows: vec![segment],
         opaque_rows: Vec::new(),
@@ -4055,6 +4058,7 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
         variables: None,
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 2,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![anchor, segment.clone()],
             opaque_rows: Vec::new(),
@@ -4276,6 +4280,7 @@ fn arc_carriers_use_trim_vertices() {
     });
     var_arc.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 1,
+        has_elided_prototype: false,
         entity_ref: None,
         rows: vec![var_segment.clone()],
         opaque_rows: Vec::new(),
@@ -4559,6 +4564,7 @@ fn dimension_identity_includes_its_feature_definition() {
     );
     definition.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 1,
+        has_elided_prototype: false,
         entity_ref: None,
         rows: Vec::new(),
         opaque_rows: vec![crate::feature::FeatureOpaqueSegment {
@@ -5120,6 +5126,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 5,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![segment, arc, point, other_line, other_arc],
             opaque_rows: Vec::new(),
@@ -8449,6 +8456,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     let mut incomplete_trim_graph = definition.clone();
     incomplete_trim_graph.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 4,
+        has_elided_prototype: false,
         entity_ref: None,
         rows: [(10, [1, 2]), (11, [2, 3]), (12, [3, 4]), (13, [4, 1])]
             .into_iter()
@@ -8506,6 +8514,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     arcs.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 2,
+        has_elided_prototype: false,
         entity_ref: None,
         rows: [10, 11]
             .into_iter()
@@ -8537,6 +8546,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     segment_graph.trim_entities = None;
     segment_graph.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 5,
+        has_elided_prototype: false,
         entity_ref: None,
         rows: [
             (10, [1, 2]),
@@ -8628,6 +8638,7 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 1,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![crate::feature::FeatureSegment {
                 kind: crate::feature::FeatureSegmentKind::Line,
@@ -8732,6 +8743,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         variables: None,
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 1,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: Vec::new(),
             opaque_rows: vec![crate::feature::FeatureOpaqueSegment {

@@ -1405,6 +1405,7 @@ mod tests {
             }),
             segments: Some(FeatureSegmentTable {
                 declared_count: 1,
+                has_elided_prototype: false,
                 entity_ref: None,
                 rows: vec![FeatureSegment {
                     kind: FeatureSegmentKind::Line,
@@ -1777,6 +1778,7 @@ mod tests {
             }),
             segments: Some(FeatureSegmentTable {
                 declared_count: 2,
+                has_elided_prototype: false,
                 entity_ref: None,
                 rows: vec![segment(252, 1), segment(255, 2)],
                 opaque_rows: Vec::new(),
@@ -1954,6 +1956,7 @@ mod tests {
             }),
             segments: Some(FeatureSegmentTable {
                 declared_count: 4,
+                has_elided_prototype: false,
                 entity_ref: None,
                 rows: vec![
                     line(4, [1, 2]),

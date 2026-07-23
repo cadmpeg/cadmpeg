@@ -3860,6 +3860,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 5,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![
                 crate::feature::FeatureSegment {

@@ -1553,6 +1553,11 @@ A non-linear or schema-defined selected dimension does not define a neutral
 circular-size constraint.
 
 The named `segtab` row before its schema close is likewise a data row. Its `type`, `dir`, `pointid`, `cntrid`, `arcorient`, `verhor`, radius, and `ext_id` fields contribute one segment to the declared table count.
+In a positional replay, `f2 f7 <table-class> e2` after the array header closes
+the inherited prototype without repeating its fields. That elided prototype
+contributes one entry to the declared count but does not create another segment
+entity. A positional segment table is complete when the elided prototype plus
+its complete replay rows equals the declared count.
 Positional rows may insert the two-byte `c0 80` or `c1 00` wrapper before
 `type`. The wrapper does not change the following field layout. A compact
 `ext_id` value of zero is an identifier; the `f6` control sentinel represents
@@ -2563,10 +2568,12 @@ or sibling section records are not segment rows.
 
 In an instantiated positional definition, the `S2D<N>` name terminator is
 followed immediately by the unlabeled `segtab_ptr` array body. Its `f8` extent
-bounds the section-entry table and can include non-segment entries; decoded
-line, arc, and point rows are the entries with segment type `2`, `3`, and `5`.
-The entity-reference header and segment rows use the same framing and field
-order as the labelled `segtab_ptr` table.
+bounds the section-entry table. Its first declared entry is the inherited
+prototype closed by `f2 f7 <table-class> e2`; subsequent entries are replay
+rows. Decoded line, arc, and point rows are the entries with segment type `2`,
+`3`, and `5`. Other complete fixed-field segment families remain opaque
+segment rows. The entity-reference header and segment rows use the same framing
+and field order as the labelled `segtab_ptr` table.
 
 The positional dimension table repeats the labelled template's `dimtab_ptr`
 table-class reference in an unlabeled `f8 <count> f7 <table-class> fb e2`

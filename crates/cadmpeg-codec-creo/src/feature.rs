@@ -917,6 +917,9 @@ pub struct FeatureOpaqueSegment {
 pub struct FeatureSegmentTable {
     /// Count declared by the `f8` opener.
     pub declared_count: u32,
+    /// Whether the declared count includes an inherited prototype omitted from
+    /// the positional replay body.
+    pub has_elided_prototype: bool,
     /// Entity-table reference following the opener.
     pub entity_ref: Option<u32>,
     /// Fully aligned line and arc rows.
@@ -930,7 +933,10 @@ pub struct FeatureSegmentTable {
 impl FeatureSegmentTable {
     /// Whether every row declared by the table decoded.
     pub fn is_complete(&self) -> bool {
-        usize::try_from(self.declared_count).ok() == Some(self.rows.len() + self.opaque_rows.len())
+        usize::try_from(self.declared_count).ok()
+            == Some(
+                usize::from(self.has_elided_prototype) + self.rows.len() + self.opaque_rows.len(),
+            )
     }
 
     /// Resolve a uniquely identified defining-sketch segment.
@@ -2173,7 +2179,7 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
     {
         cursor += 1;
     }
-    segment_table_body(payload, table, cursor, end)
+    segment_table_body(payload, table, cursor, end, false)
 }
 
 fn positional_segment_table(
@@ -2183,7 +2189,7 @@ fn positional_segment_table(
 ) -> Option<FeatureSegmentTable> {
     let name_end = find_bytes(payload, b"S2D", start, start.saturating_add(256).min(end))?;
     let cursor = payload[name_end..end].iter().position(|&byte| byte == 0)? + name_end + 1;
-    segment_table_body(payload, cursor, cursor, end)
+    segment_table_body(payload, cursor, cursor, end, true)
 }
 
 fn segment_table_body(
@@ -2191,6 +2197,7 @@ fn segment_table_body(
     table: usize,
     mut cursor: usize,
     end: usize,
+    has_elided_prototype: bool,
 ) -> Option<FeatureSegmentTable> {
     (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
     let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
@@ -2202,7 +2209,13 @@ fn segment_table_body(
     } else {
         None
     };
-    let close = find_bytes(payload, &[0xf2, psb::token::ENTITY_REF], cursor, end)?;
+    let (close, after_close_ref) = (cursor..end).find_map(|offset| {
+        (payload.get(offset..offset + 2) == Some(&[0xf2, psb::token::ENTITY_REF])).then_some(())?;
+        let (class, after_reference) = psb::reference_id(payload, offset + 2).ok()?;
+        (entity_ref.is_none_or(|expected| class == expected)
+            && payload.get(after_reference) == Some(&0xe2))
+        .then_some((offset, after_reference))
+    })?;
     let named_values = |label: &[u8], count: usize| -> Option<(usize, Vec<Option<u32>>)> {
         let offset = find_bytes(payload, label, cursor, close)?;
         let mut p = offset + label.len();
@@ -2240,11 +2253,7 @@ fn segment_table_body(
             offset,
         })
     })();
-    let (_, after_close_ref) = psb::compact_int(payload, close + 2);
-    cursor = after_close_ref;
-    if payload.get(cursor) == Some(&0xe2) {
-        cursor += 1;
-    }
+    cursor = after_close_ref + 1;
     let region_end = [
         b"order_table".as_slice(),
         b"dimtab_ptr\0",
@@ -2354,6 +2363,7 @@ fn segment_table_body(
     }
     Some(FeatureSegmentTable {
         declared_count,
+        has_elided_prototype,
         entity_ref,
         rows,
         opaque_rows,
@@ -7934,7 +7944,7 @@ mod tests {
     #[test]
     fn positional_saved_section_replays_its_segment_table() {
         let mut payload = b"feat_defs_917\0template\0\xe0\x01feat_id\0\x2a\
-            \xe0\x00ref_model_info\0\xe3S2D0004\0\xf8\x02\xf7\x01\xfb\xe2\
+            \xe0\x00ref_model_info\0\xe3S2D0004\0\xf8\x03\xf7\x01\xfb\xe2\
             \xf2\xf7\x01\xe2"
             .to_vec();
         payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
@@ -7943,7 +7953,8 @@ mod tests {
         let decoded = definitions(&payload);
         let segments = decoded[1].segments.as_ref().expect("positional segtab");
 
-        assert_eq!(segments.declared_count, 2);
+        assert_eq!(segments.declared_count, 3);
+        assert!(segments.has_elided_prototype);
         assert_eq!(segments.entity_ref, Some(1));
         assert_eq!(segments.rows.len(), 2);
         assert!(segments.is_complete());
@@ -7965,11 +7976,26 @@ mod tests {
             .expect("first positional segment table");
 
         assert_eq!(segments.declared_count, 3);
+        assert!(segments.has_elided_prototype);
         assert_eq!(segments.rows.len(), 2);
-        assert!(!segments.is_complete());
-        assert!(segments.segment(42).is_none());
+        assert!(segments.is_complete());
+        assert_eq!(segments.segment(42), Some(&segments.rows[0]));
         assert_eq!(segments.rows[0].external_id, 42);
         assert_eq!(segments.rows[1].external_id, 43);
+    }
+
+    #[test]
+    fn positional_segment_extent_counts_the_elided_prototype() {
+        let mut payload = b"\xe3S2D0004\0\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2".to_vec();
+        payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+        payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2]);
+
+        let segments =
+            positional_segment_table(&payload, 0, payload.len()).expect("positional segtab");
+
+        assert!(segments.has_elided_prototype);
+        assert_eq!(segments.rows.len(), 2);
+        assert!(!segments.is_complete());
     }
 
     #[test]
@@ -7982,12 +8008,19 @@ mod tests {
         assert!(!segments.is_complete());
 
         let positional = b"\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
-        let segments = segment_table_body(positional, 0, 0, positional.len())
+        let segments = segment_table_body(positional, 0, 0, positional.len(), false)
             .expect("positional segtab header");
         assert_eq!(segments.declared_count, 2);
         assert_eq!(segments.entity_ref, Some(1));
         assert!(segments.rows.is_empty());
         assert!(!segments.is_complete());
+    }
+
+    #[test]
+    fn segment_table_prototype_close_requires_the_header_class() {
+        let payload = b"\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x02\xe2";
+
+        assert!(segment_table_body(payload, 0, 0, payload.len(), true).is_none());
     }
 
     #[test]
@@ -8016,7 +8049,7 @@ mod tests {
             0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 2, 0, 1, 0, 10, 0xf6, 0xf6, 0, 0,
             0xf6, 0xf6, 1, 0xe2,
         ];
-        let segments = segment_table_body(&malformed_known, 0, 0, malformed_known.len())
+        let segments = segment_table_body(&malformed_known, 0, 0, malformed_known.len(), false)
             .expect("malformed known segment table");
         assert!(!segments.is_complete());
         assert!(segments.rows.is_empty());
@@ -8030,7 +8063,8 @@ mod tests {
             0xf6, 3, 0, 0xe6, 0xe2,
         ];
 
-        let segments = segment_table_body(&payload, 0, 0, payload.len()).expect("segment table");
+        let segments =
+            segment_table_body(&payload, 0, 0, payload.len(), false).expect("segment table");
 
         assert!(segments.is_complete());
         assert_eq!(segments.rows.len(), 1);
@@ -8792,6 +8826,7 @@ mod tests {
         };
         let segments = FeatureSegmentTable {
             declared_count: 2,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![
                 segment(FeatureSegmentKind::Line, [1, 2], 9),
@@ -9398,6 +9433,7 @@ mod tests {
         };
         let segments = FeatureSegmentTable {
             declared_count: 1,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![FeatureSegment {
                 kind: FeatureSegmentKind::Arc,
@@ -9463,6 +9499,7 @@ mod tests {
         };
         let segments = FeatureSegmentTable {
             declared_count: 1,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![FeatureSegment {
                 kind: FeatureSegmentKind::Arc,
@@ -9517,6 +9554,7 @@ mod tests {
         };
         let segments = FeatureSegmentTable {
             declared_count: 1,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![FeatureSegment {
                 kind: FeatureSegmentKind::Line,
