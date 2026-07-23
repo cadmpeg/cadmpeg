@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded navigation over one address space.
 
-use crate::cursor::bounded_len;
+use crate::wire::cursor::bounded_len;
 
 use super::error::SourceLocation;
 use super::probe::{ParseError, ParseErrorKind};

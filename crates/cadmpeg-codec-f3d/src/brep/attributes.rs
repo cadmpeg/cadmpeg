@@ -8,9 +8,9 @@ use crate::records::{
 };
 use crate::sab::{Record, Token};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::wire::cursor::bounded_len;
 use std::collections::{HashMap, HashSet};
 
 pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {

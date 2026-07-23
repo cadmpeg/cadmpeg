@@ -7,7 +7,7 @@
 //! `/Root/UG_PART/UG_PART` span to bound its compressed-stream scan.
 
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
-use cadmpeg_ir::cursor::bounded_len;
+use cadmpeg_ir::wire::cursor::bounded_len;
 use cadmpeg_ir::wire::le::{u32_at as u32_le, u64_at as u64_le};
 
 /// The eight-byte signature used to identify an SPLMSSTR container.

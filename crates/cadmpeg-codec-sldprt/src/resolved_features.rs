@@ -13,7 +13,6 @@ use crate::records::{
     SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, FeatureDefinition, HolePlacement, Length, PathRef, PatternKind, PatternSeed,
 };
@@ -32,6 +31,7 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
+use cadmpeg_ir::wire::cursor::bounded_len;
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::{Check, Finding, Severity};
 use sha2::{Digest, Sha256};

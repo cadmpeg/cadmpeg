@@ -747,7 +747,7 @@ fn decode_bitlength(
         bit: 0,
     };
     let value_count =
-        cadmpeg_ir::cursor::bounded_len(value_count as u64, 1, MAX_ARITHMETIC_VALUES)?;
+        cadmpeg_ir::wire::cursor::bounded_len(value_count as u64, 1, MAX_ARITHMETIC_VALUES)?;
     let mut values = Vec::with_capacity(value_count);
     if bits.read(1)? == 0 {
         let minimum_bits = u8::try_from(bits.read(6)?).ok()?;

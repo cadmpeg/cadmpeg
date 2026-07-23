@@ -53,7 +53,7 @@ missing_primitives = [
 ]
 present_primitives = [
   "cadmpeg_ir::cursor::Cursor",
-  "cadmpeg_ir::cursor::bounded_len",
+  "cadmpeg_ir::wire::cursor::bounded_len",
   "cadmpeg_ir::cursor::Cursor::counted",
   "cadmpeg_ir::cursor::Cursor::read_counted",
 ]
@@ -141,7 +141,7 @@ hostile_reads = "length-prefixed value blocks; already validated via bounded_len
 count_sites = ["bounded_len + Vec::with_capacity:485-486", "key encode buffer:388"]
 declared_count_sites = ["len:485"]
 req_mirrors = "absent"
-bounded_count = "partial: uses cadmpeg_ir::cursor::bounded_len (the closest available primitive)"
+bounded_count = "partial: uses cadmpeg_ir::wire::cursor::bounded_len (the closest available primitive)"
 read_counted = "manual loop after bounded_len; could be Cursor::read_counted"
 grow_vec = "n/a"
 alloc_unfloored = "the retained 1024 zero-floor production cap is applied by hand, not via alloc_unfloored"

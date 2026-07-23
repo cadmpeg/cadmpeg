@@ -19,11 +19,11 @@ use crate::nurbs::reader::{
 use crate::nurbs::subtypes::{
     find_subtype_marker, first_construction_subtype, subtype_refs, subtype_span, SubtypeTables,
 };
-use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::wire::cursor::bounded_len;
 use cadmpeg_ir::wire::le::f64_at as read_f64;
 
 /// A decoded native procedural definition and the fit contract of its solved cache.

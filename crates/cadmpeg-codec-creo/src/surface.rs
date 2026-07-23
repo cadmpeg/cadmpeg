@@ -5,7 +5,7 @@
 //! boundary, and namespace links. A [`SurfacePrototype`] contains named template
 //! parameters. A named prototype locates its adjacent first positional instance.
 
-use cadmpeg_ir::cursor::bounded_len;
+use cadmpeg_ir::wire::cursor::bounded_len;
 
 use crate::psb::{self, compact_int};
 use crate::scalar;

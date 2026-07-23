@@ -4,10 +4,10 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::wire::cursor::bounded_len;
 use serde::{Deserialize, Serialize};
 
 use crate::native::{EntryRecord, PropertyRecord};

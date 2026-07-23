@@ -15,22 +15,13 @@
 //! New decoder modules should read through this cursor (or the free
 //! functions in [`crate::le`]/[`crate::be`]) rather than slicing payloads
 //! directly, and should carry this module's lint attributes.
+//!
+//! Scheduled for deletion: the six codecs migrate to the poisoned
+//! [`crate::wire::cursor`], which now owns [`bounded_len`]; this
+//! `Option`-returning cursor is retired once they do.
 #![warn(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 
-/// Converts a declared element count into a safe `Vec` capacity.
-///
-/// Returns `None` unless `count * element_size <= remaining`, i.e. unless
-/// the declared elements could actually be present in the unread input.
-/// `element_size` must be the minimum encoded size of one element and must
-/// be nonzero.
-pub fn bounded_len(count: u64, element_size: usize, remaining: usize) -> Option<usize> {
-    if element_size == 0 {
-        return None;
-    }
-    let count = usize::try_from(count).ok()?;
-    let bytes = count.checked_mul(element_size)?;
-    (bytes <= remaining).then_some(count)
-}
+use crate::wire::cursor::bounded_len;
 
 /// A checked cursor over a bounded window of an in-memory payload.
 #[derive(Debug, Clone, Copy)]

@@ -2035,7 +2035,7 @@ fn support_pcurve(record: &ZeroEntityRecord, carrier: &SurfaceGeometry) -> Optio
     }
     // Each control point consumes 16 bytes (two f64) from `pole_offset` onward;
     // the summed-multiplicity count cannot exceed what the record can hold.
-    cadmpeg_ir::cursor::bounded_len(
+    cadmpeg_ir::wire::cursor::bounded_len(
         control_count as u64,
         16,
         record.bytes.len().saturating_sub(pole_offset),
