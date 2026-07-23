@@ -7351,27 +7351,21 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .expect("dimensions")
         .rows
         .push(duplicate);
-    assert_eq!(
-        section_dimension_constraints(
-            &duplicate_dimension,
-            &SketchId("creo:model:sketch#917".into())
-        )[0]
-        .0
-        .definition,
-        SketchConstraintDefinition::Native {
-            native_kind: "creo:relation:0".to_string(),
-            native_state: None,
-            entities: Vec::new(),
-            parameter: None,
-            operands: vec![SketchNativeOperand {
-                native_kind: "relat_ptr".to_string(),
-                native_field: None,
-                native_role: None,
-                object_index: 8,
-                native_ref: Some("creo:featdefs:sketch#917".to_string()),
-            }],
-        }
+    let duplicate_constraint = section_dimension_constraints(
+        &duplicate_dimension,
+        &SketchId("creo:model:sketch#917".into()),
     );
+    assert!(matches!(
+        &duplicate_constraint[0].0.definition,
+        SketchConstraintDefinition::Native {
+            native_kind,
+            parameter: None,
+            operands,
+            ..
+        } if native_kind == "creo:relation:0"
+            && operands.first().is_some_and(|operand| operand.object_index == 8)
+            && operands.iter().any(|operand| operand.native_field.as_deref() == Some("c[3]"))
+    ));
     let mut legacy_radius_definition = definition.clone();
     let legacy_arc = &mut legacy_radius_definition
         .segments
@@ -7957,6 +7951,34 @@ fn section_solver_constraints_require_complete_unique_semantics() {
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }],
         }
+    );
+    let mut vector_native = definition.clone();
+    vector_native.relations.as_mut().expect("relations").rows[0].operand_vectors = Some([
+        [Some(12), None, Some(0), Some(1)],
+        [None; 4],
+        [Some(15), Some(16), Some(15), Some(1)],
+    ]);
+    let vector_relation =
+        section_dimension_constraints(&vector_native, &SketchId("creo:model:sketch#917".into()));
+    let SketchConstraintDefinition::Native { operands, .. } = &vector_relation[0].0.definition
+    else {
+        panic!("native relation");
+    };
+    assert_eq!(
+        operands
+            .iter()
+            .map(|operand| (operand.native_field.as_deref(), operand.object_index))
+            .collect::<Vec<_>>(),
+        vec![
+            (None, 8),
+            (Some("a[0]"), 12),
+            (Some("a[2]"), 0),
+            (Some("a[3]"), 1),
+            (Some("c[0]"), 15),
+            (Some("c[1]"), 16),
+            (Some("c[2]"), 15),
+            (Some("c[3]"), 1),
+        ]
     );
     let mut coincident_definition = definition.clone();
     coincident_definition

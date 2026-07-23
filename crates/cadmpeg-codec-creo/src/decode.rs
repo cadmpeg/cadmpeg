@@ -8688,13 +8688,32 @@ fn section_dimension_constraints(
                     native_state: None,
                     entities: incidence_entities,
                     parameter,
-                    operands: vec![SketchNativeOperand {
-                        native_kind: "relat_ptr".to_string(),
-                        native_field: None,
-                        native_role: None,
-                        object_index: relation.relation_id,
-                        native_ref: Some(sketch_native_ref(sketch)),
-                    }],
+                    operands: {
+                        let native_ref = sketch_native_ref(sketch);
+                        let mut operands = vec![SketchNativeOperand {
+                            native_kind: "relat_ptr".to_string(),
+                            native_field: None,
+                            native_role: None,
+                            object_index: relation.relation_id,
+                            native_ref: Some(native_ref.clone()),
+                        }];
+                        if let Some(vectors) = relation.operand_vectors {
+                            for (vector, values) in ["a", "b", "c"].into_iter().zip(vectors) {
+                                operands.extend(values.into_iter().enumerate().filter_map(
+                                    |(slot, value)| {
+                                        value.map(|object_index| SketchNativeOperand {
+                                            native_kind: "relat_ptr".to_string(),
+                                            native_field: Some(format!("{vector}[{slot}]")),
+                                            native_role: None,
+                                            object_index,
+                                            native_ref: Some(native_ref.clone()),
+                                        })
+                                    },
+                                ));
+                            }
+                        }
+                        operands
+                    },
                 });
             (
                 SketchConstraint {

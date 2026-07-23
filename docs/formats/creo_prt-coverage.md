@@ -70,6 +70,9 @@ fixtures, claims above L1 remain unproven.
 - Every decoded section-dimension row transfers as a definition-scoped design
   parameter; table completeness gates ordinal relation joins, not row
   preservation.
+- A native `relat_ptr` constraint retains each decoded non-null `a`, `b`, and
+  `c` operand at its fixed vector slot. Null slots remain absent rather than
+  becoming zero-valued object references.
 
 ## Evidence required to raise the score
 
