@@ -1120,6 +1120,44 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
 }
 
 #[test]
+fn native_curve_families_accept_only_their_defined_loci() {
+    let point = SketchEntityId("point".to_string());
+    let line = SketchEntityId("line".to_string());
+    let circle = SketchEntityId("circle".to_string());
+    let geometry = BTreeMap::from([
+        (
+            point.clone(),
+            SketchGeometry::Native {
+                native_kind: "point".to_string(),
+            },
+        ),
+        (
+            line.clone(),
+            SketchGeometry::Native {
+                native_kind: "line".to_string(),
+            },
+        ),
+        (
+            circle.clone(),
+            SketchGeometry::Native {
+                native_kind: "circle".to_string(),
+            },
+        ),
+    ]);
+    let compatible = SketchConstraintDefinition::CoincidentLoci {
+        loci: vec![
+            SketchLocus::Entity(point),
+            SketchLocus::Center(circle.clone()),
+        ],
+    };
+    assert!(sketch_constraint_loci_compatible(&compatible, &geometry));
+    let incompatible = SketchConstraintDefinition::CoincidentLoci {
+        loci: vec![SketchLocus::Start(line), SketchLocus::Start(circle)],
+    };
+    assert!(!sketch_constraint_loci_compatible(&incompatible, &geometry));
+}
+
+#[test]
 fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
@@ -1729,7 +1767,7 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
 }
 
 #[test]
-fn typed_center_locus_requires_resolved_circular_geometry() {
+fn typed_center_locus_requires_a_circular_geometry_family() {
     let entity = SketchEntityId("creo:test:entity#1".into());
     let definition = SketchConstraintDefinition::CoincidentLoci {
         loci: vec![SketchLocus::Center(entity.clone())],
@@ -1737,10 +1775,18 @@ fn typed_center_locus_requires_resolved_circular_geometry() {
     let unresolved = BTreeMap::from([(
         entity.clone(),
         SketchGeometry::Native {
-            native_kind: "arc".into(),
+            native_kind: "solver_only_section_entity".into(),
         },
     )]);
     assert!(!sketch_constraint_loci_compatible(&definition, &unresolved));
+
+    let native_arc = BTreeMap::from([(
+        entity.clone(),
+        SketchGeometry::Native {
+            native_kind: "arc".into(),
+        },
+    )]);
+    assert!(sketch_constraint_loci_compatible(&definition, &native_arc));
 
     let resolved = BTreeMap::from([(
         entity,
@@ -3128,6 +3174,80 @@ fn saved_line_joins_through_order_table() {
         dimension_constraints[0].0.definition
     );
     let mut solver_families = constrained.clone();
+    let family_relations = solver_families.relations.as_mut().expect("relations");
+    family_relations.skamps = vec![crate::feature::FeatureSkamp {
+        id: 6,
+        kind: 0,
+        flags: 0,
+        status: 1,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 99,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 42,
+                sense: 2,
+            },
+        ],
+        offset: 32,
+    }];
+    assert_eq!(
+        solver_only_section_entity_family(&solver_families, 99),
+        Some(SolverOnlySectionEntityFamily::Point)
+    );
+    let solver_geometry = BTreeMap::from([
+        (
+            SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
+            SketchGeometry::Native {
+                native_kind: "line".to_string(),
+            },
+        ),
+        (
+            SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+            SketchGeometry::Native {
+                native_kind: "point".to_string(),
+            },
+        ),
+    ]);
+    let solver_constraints = section_skamp_constraints_for_geometry(
+        &solver_families,
+        &SketchId("creo:model:sketch#5".to_string()),
+        Some(&solver_geometry),
+    );
+    let point_item = &solver_families
+        .relations
+        .as_ref()
+        .expect("relations")
+        .skamps[0]
+        .items[0];
+    let line_item = &solver_families
+        .relations
+        .as_ref()
+        .expect("relations")
+        .skamps[0]
+        .items[1];
+    assert!(section_skamp_point_locus(
+        &solver_families,
+        &SketchId("creo:model:sketch#5".to_string()),
+        point_item
+    )
+    .is_some());
+    assert!(section_skamp_incidence_locus(
+        &solver_families,
+        &SketchId("creo:model:sketch#5".to_string()),
+        line_item,
+        Some(&solver_geometry)
+    )
+    .is_some());
+    assert!(
+        matches!(
+            solver_constraints[0].0.definition,
+            SketchConstraintDefinition::CoincidentLoci { .. }
+        ),
+        "{:?}",
+        solver_constraints[0].0.definition
+    );
     let family_relations = solver_families.relations.as_mut().expect("relations");
     family_relations.skamps = vec![crate::feature::FeatureSkamp {
         id: 6,
@@ -4952,7 +5072,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             },
         ),
     ]);
-    assert_eq!(
+    assert!(matches!(
         section_skamp_constraints_for_geometry(
             &point_coincidence_definition,
             &SketchId("creo:model:sketch#917".into()),
@@ -4960,15 +5080,8 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::CoincidentLoci {
-            loci: vec![
-                SketchLocus::End(SketchEntityId(
-                    "creo:featdefs:sketch_entity#917:12".to_string()
-                )),
-                SketchLocus::Start(native_endpoint.clone()),
-            ],
-        }
-    );
+        SketchConstraintDefinition::Native { .. }
+    ));
     let point_coincidence_relations = point_coincidence_definition
         .relations
         .as_mut()
@@ -4978,7 +5091,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         entity_id: 13,
         sense: 0,
     };
-    assert_eq!(
+    assert!(matches!(
         section_skamp_constraints_for_geometry(
             &point_coincidence_definition,
             &SketchId("creo:model:sketch#917".into()),
@@ -4986,11 +5099,8 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::PointOnObject {
-            point: SketchLocus::Start(native_endpoint.clone()),
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-        }
-    );
+        SketchConstraintDefinition::Native { .. }
+    ));
     point_coincidence_definition
         .relations
         .as_mut()
@@ -5160,7 +5270,10 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::Native { .. }
+        SketchConstraintDefinition::PointOnObject {
+            point: SketchLocus::Center(_),
+            ..
+        }
     ));
     let mut inactive_point_symmetry_definition = point_coincidence_definition.clone();
     let inactive_point_symmetry = &mut inactive_point_symmetry_definition
@@ -5245,15 +5358,14 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .expect("relations")
         .skamps[0]
         .status = 1;
+    let active_native_arc = section_skamp_constraints_for_geometry(
+        &point_coincidence_definition,
+        &SketchId("creo:model:sketch#917".into()),
+        Some(&unresolved_arc_geometry),
+    );
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
-            &point_coincidence_definition,
-            &SketchId("creo:model:sketch#917".into()),
-            Some(&unresolved_arc_geometry),
-        )[0]
-        .0
-        .definition,
-        SketchConstraintDefinition::Native { .. }
+        active_native_arc[0].0.definition,
+        SketchConstraintDefinition::SameCoordinate { .. }
     ));
     let point_coincidence_relations = point_coincidence_definition
         .relations
@@ -7276,11 +7388,13 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::Distance {
-            entities: vec![
-                SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
-                SketchEntityId("creo:featdefs:sketch_entity#917:999".to_string()),
-            ],
+        SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Start(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:12".to_string(),
+            )),
+            second: SketchLocus::Entity(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:999".to_string(),
+            )),
             parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
         }
     );

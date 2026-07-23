@@ -8775,6 +8775,17 @@ fn section_skamp_locus(
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SketchLocus> {
     let entity = sketch_entity_id(sketch, item.entity_id);
+    if let Some(family) = solver_only_section_entity_family(definition, item.entity_id) {
+        return match (family, item.sense) {
+            (SolverOnlySectionEntityFamily::Point, 0) => Some(SketchLocus::Entity(entity)),
+            (SolverOnlySectionEntityFamily::Line, 0) => Some(SketchLocus::Entity(entity)),
+            (SolverOnlySectionEntityFamily::Line, 2) => Some(SketchLocus::Start(entity)),
+            (SolverOnlySectionEntityFamily::Line, 3) => Some(SketchLocus::End(entity)),
+            (SolverOnlySectionEntityFamily::Circular, 0) => Some(SketchLocus::Entity(entity)),
+            (SolverOnlySectionEntityFamily::Circular, 4) => Some(SketchLocus::Center(entity)),
+            _ => None,
+        };
+    }
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
         return match (segment.kind, item.sense) {
             (_, 0) => Some(SketchLocus::Entity(entity)),
@@ -9032,7 +9043,9 @@ fn section_skamp_is_point(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
-    unique_opaque_section_segment(definition, item.entity_id, 1).is_some()
+    solver_only_section_entity_family(definition, item.entity_id)
+        == Some(SolverOnlySectionEntityFamily::Point)
+        || unique_opaque_section_segment(definition, item.entity_id, 1).is_some()
         || unique_decoded_section_segment(definition, item.entity_id)
             .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point)
 }
@@ -9555,16 +9568,28 @@ fn sketch_constraint_loci_compatible(
         };
         geometry.get(entity).is_some_and(|geometry| match locus {
             SketchLocus::Entity(_) => true,
-            SketchLocus::Start(_) | SketchLocus::End(_) => !matches!(
-                geometry,
-                SketchGeometry::Point { .. } | SketchGeometry::Circle { .. }
-            ),
-            SketchLocus::Center(_) => matches!(
-                geometry,
-                SketchGeometry::Circle { .. }
-                    | SketchGeometry::Arc { .. }
-                    | SketchGeometry::Ellipse { .. }
-            ),
+            SketchLocus::Start(_) | SketchLocus::End(_) => {
+                !matches!(
+                    geometry,
+                    SketchGeometry::Point { .. } | SketchGeometry::Circle { .. }
+                ) && !matches!(
+                    geometry,
+                    SketchGeometry::Native { native_kind }
+                        if !matches!(native_kind.as_str(), "line" | "arc" | "spline")
+                )
+            }
+            SketchLocus::Center(_) => {
+                matches!(
+                    geometry,
+                    SketchGeometry::Circle { .. }
+                        | SketchGeometry::Arc { .. }
+                        | SketchGeometry::Ellipse { .. }
+                ) || matches!(
+                    geometry,
+                    SketchGeometry::Native { native_kind }
+                        if matches!(native_kind.as_str(), "circle" | "arc")
+                )
+            }
         })
     };
     match definition {
@@ -10143,17 +10168,54 @@ fn solver_only_section_entities(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum SolverOnlySectionEntityFamily {
+    Point,
     Line,
     Circular,
 }
 
-fn solver_only_section_entity_family(
+fn section_skamp_has_proven_point_locus(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> bool {
+    if item.sense == 0 {
+        return unique_opaque_section_segment(definition, item.entity_id, 1).is_some()
+            || unique_decoded_section_segment(definition, item.entity_id)
+                .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point);
+    }
+    let solver_family = solver_only_section_curve_family_evidence(definition, item.entity_id);
+    if solver_family.len() == 1
+        && (solver_family.contains(&SolverOnlySectionEntityFamily::Line)
+            && matches!(item.sense, 2 | 3)
+            || solver_family.contains(&SolverOnlySectionEntityFamily::Circular)
+                && matches!(item.sense, 2..=4))
+    {
+        return true;
+    }
+    if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
+        return matches!(
+            (segment.kind, item.sense),
+            (crate::feature::FeatureSegmentKind::Line, 2 | 3)
+                | (crate::feature::FeatureSegmentKind::Arc, 2..=4)
+        );
+    }
+    if unique_opaque_section_segment(definition, item.entity_id, 47).is_some() {
+        return matches!(item.sense, 2 | 3);
+    }
+    if unique_opaque_section_segment(definition, item.entity_id, 10).is_some() {
+        return item.sense == 4;
+    }
+    matches!(
+        (section_saved_entity(definition, item.entity_id), item.sense),
+        (Some(crate::feature::FeatureSavedEntity::Line(_)), 2 | 3)
+            | (Some(crate::feature::FeatureSavedEntity::Arc(_)), 2..=4)
+            | (Some(crate::feature::FeatureSavedEntity::Circle(_)), 4)
+    )
+}
+
+fn solver_only_section_curve_family_evidence(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
-) -> Option<SolverOnlySectionEntityFamily> {
-    solver_only_section_entities(definition)
-        .contains_key(&entity_id)
-        .then_some(())?;
+) -> BTreeSet<SolverOnlySectionEntityFamily> {
     let mut evidence = BTreeSet::new();
     for skamp in definition
         .relations
@@ -10182,6 +10244,38 @@ fn solver_only_section_entity_family(
                 evidence.insert(SolverOnlySectionEntityFamily::Circular);
             }
             _ => {}
+        }
+    }
+    evidence
+}
+
+fn solver_only_section_entity_family(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+) -> Option<SolverOnlySectionEntityFamily> {
+    solver_only_section_entities(definition)
+        .contains_key(&entity_id)
+        .then_some(())?;
+    let mut evidence = solver_only_section_curve_family_evidence(definition, entity_id);
+    for skamp in definition
+        .relations
+        .iter()
+        .filter(|relations| feature_skamp_table_complete(relations))
+        .flat_map(|relations| &relations.skamps)
+    {
+        if let (0, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
+            if first.entity_id == entity_id
+                && first.sense == 0
+                && section_skamp_has_proven_point_locus(definition, second)
+            {
+                evidence.insert(SolverOnlySectionEntityFamily::Point);
+            }
+            if second.entity_id == entity_id
+                && second.sense == 0
+                && section_skamp_has_proven_point_locus(definition, first)
+            {
+                evidence.insert(SolverOnlySectionEntityFamily::Point);
+            }
         }
     }
     let mut evidence = evidence.into_iter();
@@ -10857,6 +10951,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 endpoint_refs: Vec::new(),
                 geometry: SketchGeometry::Native {
                     native_kind: match solver_only_section_entity_family(definition, external_id) {
+                        Some(SolverOnlySectionEntityFamily::Point) => "point",
                         Some(SolverOnlySectionEntityFamily::Line) => "line",
                         Some(SolverOnlySectionEntityFamily::Circular) => "circle",
                         None => "solver_only_section_entity",

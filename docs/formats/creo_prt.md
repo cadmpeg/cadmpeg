@@ -1293,7 +1293,10 @@ that point as a whole-point locus. The two selected point loci coincide and map
 to a neutral coincident-loci constraint. When both loci are arc or circle
 centers, the same incidence maps to the neutral concentric constraint for those
 two circular entities. Senses `2` and `3` retain their endpoint-locus meaning
-when the referenced entity geometry remains native.
+when the referenced entity has the native line, arc, or spline family. Sense
+`4` retains its center meaning when the referenced entity has the native arc or
+circle family. A generic native entity does not establish an endpoint or center
+locus.
 When exactly one `segtab` row owns each referenced external identifier, this
 incidence equates the corresponding stored `pointid` coordinates. A solved
 coordinate on either endpoint therefore supplies the missing coordinate on the
@@ -1406,6 +1409,9 @@ construction-entity identity shared by every incidence in the sketch; its
 geometry remains native. A unique non-conflicting line role from a two-line
 type five, seven, or eight incidence retains the native line family. Sense `4`
 or a two-circle type-six incidence retains the native circular family.
+In a type-zero coincidence, a sense-zero solver-only entity paired with an
+endpoint or center locus of a uniquely established carrier family retains the
+native point family.
 Conflicting family roles retain the generic solver-only family.
 `skamp_ptr.id` is the incidence identity. A typed incidence requires exactly
 one row with that identifier. Rows sharing an identifier remain separate native
