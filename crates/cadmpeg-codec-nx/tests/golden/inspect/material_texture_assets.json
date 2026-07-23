@@ -1,0 +1,72 @@
+{
+  "container_kind": "splmsstr",
+  "entries": [
+    {
+      "attributes": {
+        "file_offset": "174",
+        "region": "HEADER"
+      },
+      "compressed_size": 191,
+      "compression": "none",
+      "name": "/Root/UG_PART/UG_PART",
+      "role": "stream",
+      "uncompressed_size": 191
+    },
+    {
+      "attributes": {
+        "file_offset": "365",
+        "region": "HEADER"
+      },
+      "compressed_size": 10,
+      "compression": "none",
+      "name": "/Root/materialsTif/AISI Steel 4340",
+      "role": "stream",
+      "uncompressed_size": 10
+    },
+    {
+      "attributes": {
+        "file_offset": "375",
+        "region": "HEADER"
+      },
+      "compressed_size": 10,
+      "compression": "none",
+      "name": "/Root/materialsTif/Truncated",
+      "role": "stream",
+      "uncompressed_size": 10
+    },
+    {
+      "attributes": {
+        "file_offset": "174",
+        "kind": "partition",
+        "records.body": "0",
+        "records.edge": "0",
+        "records.face": "0",
+        "records.fin": "0",
+        "records.live.body": "0",
+        "records.live.edge": "0",
+        "records.live.face": "0",
+        "records.live.fin": "0",
+        "records.live.loop": "0",
+        "records.live.region": "0",
+        "records.live.shell": "0",
+        "records.live.vertex": "0",
+        "records.loop": "0",
+        "records.region": "0",
+        "records.shell": "0",
+        "records.vertex": "0",
+        "schema": "SCH_TEST_1_9999"
+      },
+      "compressed_size": 0,
+      "compression": "zlib",
+      "name": "parasolid#0",
+      "role": "parasolid-stream",
+      "uncompressed_size": 383
+    }
+  ],
+  "format": "nx",
+  "notes": [
+    "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 3 directory entry/ies",
+    "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+    "Parasolid schema: SCH_TEST_1_9999"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "container_kind": "splmsstr",
+  "entries": [
+    {
+      "attributes": {
+        "file_offset": "72",
+        "region": "HEADER"
+      },
+      "compressed_size": 136,
+      "compression": "none",
+      "name": "/Root/UG_PART/UG_PART",
+      "role": "stream",
+      "uncompressed_size": 136
+    },
+    {
+      "attributes": {
+        "file_offset": "112",
+        "kind": "deltas",
+        "records.body": "0",
+        "records.edge": "0",
+        "records.face": "0",
+        "records.fin": "0",
+        "records.loop": "0",
+        "records.region": "0",
+        "records.shell": "0",
+        "records.vertex": "0",
+        "schema": "SCH_test"
+      },
+      "compressed_size": 0,
+      "compression": "zlib",
+      "name": "parasolid#0",
+      "role": "parasolid-stream",
+      "uncompressed_size": 94
+    }
+  ],
+  "format": "nx",
+  "notes": [
+    "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+    "embedded streams: 0 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+    "Parasolid schema: SCH_test"
+  ]
+}

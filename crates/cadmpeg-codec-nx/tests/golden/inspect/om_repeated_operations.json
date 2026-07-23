@@ -1,0 +1,22 @@
+{
+  "container_kind": "splmsstr",
+  "entries": [
+    {
+      "attributes": {
+        "file_offset": "72",
+        "region": "HEADER"
+      },
+      "compressed_size": 1108,
+      "compression": "none",
+      "name": "/Root/UG_PART/UG_PART",
+      "role": "stream",
+      "uncompressed_size": 1108
+    }
+  ],
+  "format": "nx",
+  "notes": [
+    "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+    "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+    "NX object model: 1 size-framed section(s), 2 class declaration(s), 2 field declaration(s)"
+  ]
+}

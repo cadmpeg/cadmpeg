@@ -1,0 +1,22 @@
+{
+  "container_kind": "splmsstr",
+  "entries": [
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "HEADER"
+      },
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "/Root/UG_PART/ExternalReferences",
+      "role": "stream",
+      "uncompressed_size": 0
+    }
+  ],
+  "format": "nx",
+  "notes": [
+    "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+    "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+    "no inline Parasolid geometry (assembly .prt: geometry in external child parts)"
+  ]
+}
