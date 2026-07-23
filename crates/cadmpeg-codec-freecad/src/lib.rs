@@ -44,6 +44,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::source_fidelity::write_plan::verify_retained_bytes;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::wire::hash::sha256_hex;
@@ -836,7 +837,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .collect::<HashSet<_>>();
     for entry in &entries {
         entry_lengths.insert(entry.name.as_str(), entry.byte_len);
-        if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
+        if !verify_retained_bytes(&entry.data, entry.byte_len, &entry.sha256) {
             findings.push(finding(
                 Check::PayloadIntegrity,
                 format!("{} failed length or digest validation", entry.id),

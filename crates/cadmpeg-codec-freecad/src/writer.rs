@@ -7,7 +7,7 @@ use std::io::{Cursor, Write};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::wire::hash::sha256_hex;
+use cadmpeg_ir::source_fidelity::write_plan::verify_retained_bytes;
 use zip::write::SimpleFileOptions;
 
 use crate::native::{
@@ -147,7 +147,7 @@ fn validate_entries(entries: &[EntryRecord]) -> Result<(), CodecError> {
                 entry.name
             )));
         }
-        if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
+        if !verify_retained_bytes(&entry.data, entry.byte_len, &entry.sha256) {
             return Err(CodecError::Malformed(format!(
                 "FCStd output entry {} has stale length or digest metadata",
                 entry.name
