@@ -866,6 +866,9 @@ fn decode_plane_support_coordinate(
     slot: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
+    if slot == 6 && body.get(offset) == Some(&0x4e) {
+        return ieee7_with_prefix(body, offset, 0x3f, 0xcf);
+    }
     if slot == 8 && body.get(offset) == Some(&0x50) {
         return ieee7_with_prefix(body, offset, 0xbf, 0xc2);
     }
@@ -1241,6 +1244,27 @@ mod tests {
         assert_eq!(
             decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
             Some([first_x, 0.0, first_z, 0.0, 0.0, 0.0, first_z, 0.0, -first_x, 0.0, 0.0, 0.0])
+        );
+    }
+
+    #[test]
+    fn plane_support_slot_six_decodes_paired_positive_component() {
+        let first_x = 0.75;
+        let first_z = f64::from_be_bytes([0xbf, 0xcf, 0, 0, 0, 0, 0, 0]);
+        let second_x = -first_z;
+        let mut body = Vec::new();
+        body.extend_from_slice(&positive_subunit_coordinate(first_x));
+        body.push(0x18);
+        body.extend_from_slice(&[0xa4, 0, 0, 0, 0, 0, 0]);
+        body.extend_from_slice(&[0x18, 0x0f, 0x18]);
+        body.extend_from_slice(&[0x4e, 0, 0, 0, 0, 0, 0]);
+        body.push(0x18);
+        body.extend_from_slice(&positive_subunit_coordinate(first_x));
+        body.extend_from_slice(&[0x18, 0x18, 0x18]);
+
+        assert_eq!(
+            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
+            Some([first_x, 0.0, first_z, 0.0, 0.0, 0.0, second_x, 0.0, first_x, 0.0, 0.0, 0.0])
         );
     }
 

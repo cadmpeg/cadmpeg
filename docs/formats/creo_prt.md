@@ -308,6 +308,9 @@ satisfy `a² + b² = 1`; reflecting the final stored `a` gives support direction
 In plane-support slot 8, prefix `50` stores a negative component in seven
 bytes. IEEE-754 bytes zero and one are implicit `bf c2`; the six bytes after
 the prefix are bytes two through seven.
+In plane-support slot 6, prefix `4e` stores a positive component in seven
+bytes. IEEE-754 bytes zero and one are implicit `3f cf`; the six bytes after
+the prefix are bytes two through seven.
 
 Two five-coordinate type-26 rows for one zero-`radius1` prototype encode the
 two hemispheres of one Z-axis sphere. Each row stores
