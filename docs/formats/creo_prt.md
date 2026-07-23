@@ -912,6 +912,8 @@ model-space values.
 ### 3.4 Planes
 
 Plane row bodies contain envelope/domain data, `local_sys f9 04 03`, and a row/topology tail.
+The next `srf_array` row of any surface family bounds the plane row. Compound
+closes after that row do not terminate the plane envelope or local-system body.
 
 A standard positional envelope is exactly ten contiguous scalar slots: four
 two-dimensional domain bounds followed by two model-space corner triples. A

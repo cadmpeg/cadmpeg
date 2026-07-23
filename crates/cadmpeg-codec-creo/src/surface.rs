@@ -4877,28 +4877,33 @@ fn complete_plane_local_system_slots(
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
 pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
-    plane_local_systems_for_rows(payload, rows(payload))
+    plane_local_systems_for_rows(payload, &rows(payload))
 }
 
 /// Decode plane local-system chunks from a DEPDB cross-section namespace.
 #[must_use]
 pub fn cross_section_plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
-    plane_local_systems_for_rows(payload, cross_section_rows(payload))
+    plane_local_systems_for_rows(payload, &cross_section_rows(payload))
 }
 
-fn plane_local_systems_for_rows(payload: &[u8], rows: Vec<SurfaceRow>) -> Vec<PlaneLocalSystem> {
+fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<PlaneLocalSystem> {
     let cache = scalar::ScalarCache::from_section(payload);
     let headers = rows
-        .into_iter()
-        .filter(|row| row.kind == SurfaceKind::Plane)
-        .filter_map(|row| positional_body_start(payload, &row).map(|body_start| (row, body_start)))
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| row.kind == SurfaceKind::Plane)
+        .filter_map(|(index, row)| {
+            positional_body_start(payload, row).map(|body_start| {
+                let row_end = rows
+                    .get(index + 1)
+                    .map_or(payload.len(), |next| next.offset);
+                (row, body_start, row_end)
+            })
+        })
         .collect::<Vec<_>>();
     let mut systems = Vec::new();
-    for (index, (row, envelope_start)) in headers.iter().enumerate() {
-        let row_end = headers
-            .get(index + 1)
-            .map_or(payload.len(), |(next, _)| next.offset);
-        let Some(envelope_close) = first_compound_close(payload, *envelope_start, row_end) else {
+    for (row, envelope_start, row_end) in headers {
+        let Some(envelope_close) = first_compound_close(payload, envelope_start, row_end) else {
             continue;
         };
         let chunk_start = envelope_close + 1;
@@ -4952,19 +4957,23 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
     let cache = scalar::ScalarCache::from_section(payload);
     let headers = all_rows
         .iter()
-        .filter(|row| row.kind == SurfaceKind::Plane)
-        .cloned()
-        .filter_map(|row| positional_body_start(payload, &row).map(|body_start| (row, body_start)))
+        .enumerate()
+        .filter(|(_, row)| row.kind == SurfaceKind::Plane)
+        .filter_map(|(index, row)| {
+            positional_body_start(payload, row).map(|body_start| {
+                let row_end = all_rows
+                    .get(index + 1)
+                    .map_or(payload.len(), |next| next.offset);
+                (row, body_start, row_end)
+            })
+        })
         .collect::<Vec<_>>();
     let mut envelopes = Vec::new();
-    for (index, (row, body_start)) in headers.iter().enumerate() {
-        let row_end = headers
-            .get(index + 1)
-            .map_or(payload.len(), |(next, _)| next.offset);
-        let Some(body_end) = first_compound_close(payload, *body_start, row_end) else {
+    for (row, body_start, row_end) in headers {
+        let Some(body_end) = first_compound_close(payload, body_start, row_end) else {
             continue;
         };
-        let body = payload[*body_start..body_end].to_vec();
+        let body = payload[body_start..body_end].to_vec();
         let scalar_tokens;
         let (envelope, corner_coordinate_equal) = if body.first() == Some(&0x0e) {
             let Some(slots) = complete_plane_envelope_slots(&body[1..], 9, &cache) else {
@@ -5031,7 +5040,7 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
             corner_coordinate_equal,
             scalar_tokens,
             row_offset: row.offset,
-            offset: *body_start,
+            offset: body_start,
         });
     }
     for (index, row) in all_rows
@@ -5292,6 +5301,33 @@ mod tests {
         assert_eq!(planes[0].surface_id, 7);
         assert_eq!(planes[0].origin, [0.0, 0.0, 0.0]);
         assert_eq!(planes[0].normal, [0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn plane_records_end_at_the_next_surface_family() {
+        let payload = [
+            7, 0x22, 4, 0x01, 0, 0, // plane row
+            0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3, // envelope
+            8, 0x24, 4, 0x01, 0, 0, // cylinder row
+            0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe3,
+        ];
+        let rows = rows(&payload);
+
+        assert!(matches!(
+            rows.as_slice(),
+            [
+                SurfaceRow {
+                    kind: SurfaceKind::Plane,
+                    ..
+                },
+                SurfaceRow {
+                    kind: SurfaceKind::Cylinder,
+                    ..
+                }
+            ]
+        ));
+        assert_eq!(plane_envelopes_for_rows(&payload, &rows).len(), 1);
+        assert!(plane_local_systems_for_rows(&payload, &rows).is_empty());
     }
 
     #[test]
