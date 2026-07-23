@@ -8685,7 +8685,7 @@ fn section_dimension_constraints(
             let constraint_definition =
                 typed.unwrap_or_else(|| SketchConstraintDefinition::Native {
                     native_kind: format!("creo:relation:{}", relation.relation_type),
-                    native_state: None,
+                    native_state: Some(u64::from(relation.used)),
                     entities: incidence_entities,
                     parameter,
                     operands: {
@@ -9327,7 +9327,7 @@ fn section_skamp_constraints_for_geometry(
                     .collect::<Vec<_>>();
                 Some(SketchConstraintDefinition::Native {
                     native_kind: format!("creo:skamp:{}", skamp.kind),
-                    native_state: None,
+                    native_state: Some(u64::from(skamp.status)),
                     entities,
                     parameter: None,
                     operands: skamp

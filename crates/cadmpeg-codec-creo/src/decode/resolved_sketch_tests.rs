@@ -6553,7 +6553,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         constraints[2].0.definition,
         SketchConstraintDefinition::Native {
             native_kind: "creo:skamp:7".to_string(),
-            native_state: None,
+            native_state: Some(1),
             entities: vec![SketchEntityId(
                 "creo:featdefs:sketch_entity#917:12".to_string()
             )],
@@ -6567,6 +6567,25 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             }],
         }
     );
+    let mut stored_skamp_state = definition.clone();
+    stored_skamp_state
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[2]
+        .status = 34;
+    let stored_skamp_state = section_skamp_constraints(
+        &stored_skamp_state,
+        &SketchId("creo:model:sketch#917".into()),
+    );
+    assert!(matches!(
+        stored_skamp_state[2].0.definition,
+        SketchConstraintDefinition::Native {
+            native_state: Some(34),
+            ..
+        }
+    ));
+    assert_eq!(stored_skamp_state[2].0.active, Some(false));
     assert!(matches!(
         constraints[3].0.definition,
         SketchConstraintDefinition::Native {
@@ -7940,7 +7959,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         relations[0].0.definition,
         SketchConstraintDefinition::Native {
             native_kind: "creo:relation:99".to_string(),
-            native_state: None,
+            native_state: Some(1),
             entities: Vec::new(),
             parameter: Some(ParameterId("creo:featdefs:parameter#917:42".to_string(),)),
             operands: vec![SketchNativeOperand {
@@ -7980,6 +7999,16 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             (Some("c[3]"), 1),
         ]
     );
+    vector_native.relations.as_mut().expect("relations").rows[0].used = 34;
+    let stored_state =
+        section_dimension_constraints(&vector_native, &SketchId("creo:model:sketch#917".into()));
+    assert!(matches!(
+        stored_state[0].0.definition,
+        SketchConstraintDefinition::Native {
+            native_state: Some(34),
+            ..
+        }
+    ));
     let mut coincident_definition = definition.clone();
     coincident_definition
         .segments
