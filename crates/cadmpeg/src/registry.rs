@@ -14,7 +14,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::Finding;
 use cadmpeg_ir::SourceFidelity;
-use cadmpeg_step::StepCodec;
+use cadmpeg_step::{StepCodec, StepEncoder};
 
 /// Native codecs available to the CLI.
 pub struct Registry {
@@ -34,7 +34,7 @@ impl Registry {
                 Box::new(CreoCodec),
                 Box::new(NxCodec),
                 Box::new(RhinoCodec),
-                Box::new(StepCodec::default()),
+                Box::new(StepCodec),
                 Box::new(IgesCodec),
             ],
             encoders: vec![
@@ -42,7 +42,7 @@ impl Registry {
                 Box::new(F3dCodec),
                 Box::new(SldprtCodec),
                 Box::new(RhinoCodec),
-                Box::new(StepCodec::default()),
+                Box::new(StepEncoder::default()),
                 Box::new(CadirEncoder),
             ],
         }
@@ -90,7 +90,7 @@ impl Registry {
             .iter_mut()
             .find(|encoder| encoder.id() == "step")
         {
-            *encoder = Box::new(StepCodec { options });
+            *encoder = Box::new(StepEncoder { options });
         }
     }
 

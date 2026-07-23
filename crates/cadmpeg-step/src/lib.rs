@@ -2867,14 +2867,14 @@ impl<'a> Builder<'a> {
     }
 }
 
-/// STEP encoder with per-export header options.
+/// STEP Part 21 writer configured with per-export header options.
 #[derive(Debug, Clone, Default)]
-pub struct StepCodec {
+pub struct StepEncoder {
     /// Header metadata and deterministic writer options.
     pub options: StepWriteOptions,
 }
 
-impl Encoder for StepCodec {
+impl Encoder for StepEncoder {
     fn id(&self) -> &'static str {
         "step"
     }
@@ -2883,6 +2883,10 @@ impl Encoder for StepCodec {
         write_step(ir, writer, &self.options).map_err(CodecError::from)
     }
 }
+
+/// STEP Part 21 reader for ISO 10303-21 exchange structures.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StepCodec;
 
 impl Codec for StepCodec {
     fn id(&self) -> &'static str {
