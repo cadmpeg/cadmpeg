@@ -296,6 +296,9 @@ consuming feature depends on the adjacent surface row's `feat_id`.
 In a counted `params` scalar array, `e5` supplies two consecutive zero slots
 and `e6` supplies three. The expanded slots must exactly match the declared
 count and the scalar tokens must consume the complete bounded field body.
+`18` is either one standalone zero slot or a section-cache reference. The
+declared count and field boundary must select exactly one complete tokenization;
+zero or multiple complete tokenizations leave the field opaque.
 
 Named prototype fields describe the first surface instance. The first instance is the adjacent same-family positional surface row. The preceding adjacent row is the first instance when the prototype separates it from replay rows; otherwise the following adjacent row is the first instance. Positional row bodies carry the per-instance values for subsequent instances.
 

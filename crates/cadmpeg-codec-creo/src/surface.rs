@@ -4567,28 +4567,106 @@ fn counted_parameter_scalar_slots(
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<Vec<ScalarTokenSlot>> {
-    let mut slots = Vec::with_capacity(count);
-    let mut cursor = 0;
-    while cursor < body.len() && slots.len() < count {
-        let run = match body[cursor] {
-            0xe5 => 2,
-            0xe6 => 3,
-            _ => 0,
-        };
-        if run > 0 {
-            (slots.len().checked_add(run)? <= count).then_some(())?;
-            slots.push((Some(0.0), vec![body[cursor]]));
-            slots.extend(std::iter::repeat_n((Some(0.0), Vec::new()), run - 1));
-            cursor += 1;
-            continue;
+    let mut states = vec![BTreeMap::new(); body.len() + 1];
+    states[0].insert(0, CountedParameterParse::Unique(Vec::new()));
+    for cursor in 0..body.len() {
+        let current = std::mem::take(&mut states[cursor]);
+        for (slots_used, parse) in current {
+            if slots_used >= count {
+                continue;
+            }
+            let run = match body[cursor] {
+                0xe5 => 2,
+                0xe6 => 3,
+                _ => 0,
+            };
+            if run > 0 {
+                if slots_used
+                    .checked_add(run)
+                    .is_some_and(|next| next <= count)
+                {
+                    let mut slots = vec![(Some(0.0), vec![body[cursor]])];
+                    slots.extend(std::iter::repeat_n((Some(0.0), Vec::new()), run - 1));
+                    add_counted_parameter_state(
+                        &mut states[cursor + 1],
+                        slots_used + run,
+                        advance_counted_parameter_parse(parse, slots),
+                    );
+                }
+                continue;
+            }
+
+            if body[cursor] == 0x18 {
+                add_counted_parameter_state(
+                    &mut states[cursor + 1],
+                    slots_used + 1,
+                    advance_counted_parameter_parse(parse.clone(), vec![(Some(0.0), vec![0x18])]),
+                );
+                if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache)
+                    .filter(|(_, next)| *next > cursor + 1)
+                {
+                    add_counted_parameter_state(
+                        &mut states[next],
+                        slots_used + 1,
+                        advance_counted_parameter_parse(
+                            parse,
+                            vec![(Some(value), body[cursor..next].to_vec())],
+                        ),
+                    );
+                }
+                continue;
+            }
+
+            if let Some((value, next)) = named_spline_scalar_slot("params", body, cursor, cache) {
+                add_counted_parameter_state(
+                    &mut states[next],
+                    slots_used + 1,
+                    advance_counted_parameter_parse(
+                        parse,
+                        vec![(value, body[cursor..next].to_vec())],
+                    ),
+                );
+            }
         }
-        let start = cursor;
-        let (value, next) = named_spline_scalar_slot("params", body, cursor, cache)?;
-        (next > cursor).then_some(())?;
-        slots.push((value, body[start..next].to_vec()));
-        cursor = next;
     }
-    (slots.len() == count && cursor == body.len()).then_some(slots)
+    match states[body.len()].remove(&count) {
+        Some(CountedParameterParse::Unique(slots)) => Some(slots),
+        Some(CountedParameterParse::Ambiguous) | None => None,
+    }
+}
+
+#[derive(Clone)]
+enum CountedParameterParse {
+    Unique(Vec<ScalarTokenSlot>),
+    Ambiguous,
+}
+
+fn advance_counted_parameter_parse(
+    parse: CountedParameterParse,
+    mut suffix: Vec<ScalarTokenSlot>,
+) -> CountedParameterParse {
+    match parse {
+        CountedParameterParse::Unique(mut slots) => {
+            slots.append(&mut suffix);
+            CountedParameterParse::Unique(slots)
+        }
+        CountedParameterParse::Ambiguous => CountedParameterParse::Ambiguous,
+    }
+}
+
+fn add_counted_parameter_state(
+    states: &mut BTreeMap<usize, CountedParameterParse>,
+    slots_used: usize,
+    candidate: CountedParameterParse,
+) {
+    match states.entry(slots_used) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(candidate);
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            entry.insert(CountedParameterParse::Ambiguous);
+        }
+    }
 }
 
 fn named_spline_scalar_slot(
@@ -5772,6 +5850,34 @@ mod tests {
                 (Some(0.0), vec![]),
             ])
         );
+    }
+
+    #[test]
+    fn counted_parameters_use_the_exact_extent_to_select_cache_or_zero() {
+        let cache = scalar::ScalarCache::from_section(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
+
+        assert_eq!(
+            counted_parameter_scalar_slots(&[0x18, 0x00], 1, &cache),
+            Some(vec![(Some(2.0), vec![0x18, 0x00])])
+        );
+        assert_eq!(
+            counted_parameter_scalar_slots(&[0x18, 0, 1, 2, 3, 4, 5, 6], 2, &cache),
+            Some(vec![
+                (Some(0.0), vec![0x18]),
+                (
+                    Some(f64::from_be_bytes([0x40, 0x75, 1, 2, 3, 4, 5, 6])),
+                    vec![0, 1, 2, 3, 4, 5, 6],
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn counted_parameters_reject_multiple_complete_tokenizations() {
+        let cache = scalar::ScalarCache::from_section(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
+        let body = [0x18, 0, 0xe5, 0x29, 0x18, 4, 0x29, 5, 0xe6];
+
+        assert_eq!(counted_parameter_scalar_slots(&body, 5, &cache), None);
     }
 
     #[test]
