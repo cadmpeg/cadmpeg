@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::wire::hash::sha256_hex;
 
 use crate::native::{
     ApplicationPayloadRecord, ApplicationPropertyRecord, ApplicationRecord, EntryRecord,

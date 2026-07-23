@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
 use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeometry};
-use cadmpeg_ir::le::f64_at;
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::wire::le::f64_at;
 
 use super::vecmath::{add, cross, scale};
 use crate::wire;

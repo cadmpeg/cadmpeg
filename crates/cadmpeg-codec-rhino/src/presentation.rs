@@ -1410,7 +1410,7 @@ fn named_child(
     Ok(serde_json::json!({
         "offset": offset,
         "byte_len": chunk.next_offset - offset,
-        "sha256": cadmpeg_ir::hash::sha256_hex(&data[offset..chunk.next_offset]),
+        "sha256": cadmpeg_ir::wire::hash::sha256_hex(&data[offset..chunk.next_offset]),
     }))
 }
 
@@ -1779,7 +1779,7 @@ fn parse_embedded_image(
         uncompressed_byte_len,
         buffer_offset: buffer_offset as u64,
         buffer_byte_len: (buffer_end - buffer_offset) as u64,
-        buffer_sha256: cadmpeg_ir::hash::sha256_hex(&data[buffer_offset..buffer_end]),
+        buffer_sha256: cadmpeg_ir::wire::hash::sha256_hex(&data[buffer_offset..buffer_end]),
     })
 }
 
@@ -1836,7 +1836,7 @@ fn parse_windows_bitmap(
         important_colors,
         pixel_buffer_offset: pixel_buffer_offset as u64,
         pixel_buffer_byte_len: buffer.len() as u64,
-        pixel_buffer_sha256: cadmpeg_ir::hash::sha256_hex(buffer),
+        pixel_buffer_sha256: cadmpeg_ir::wire::hash::sha256_hex(buffer),
     })
 }
 

@@ -5,8 +5,8 @@
 //! parameter-space packets, and consolidated UV pcurves.
 
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::le::u16_at as u16_le;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::wire::le::u16_at as u16_le;
 #[cfg(test)]
 use std::collections::BTreeMap;
 

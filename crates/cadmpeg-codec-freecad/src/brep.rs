@@ -3623,7 +3623,7 @@ mod tests {
             name: "empty.brp".into(),
             role: "brep".into(),
             byte_len: 0,
-            sha256: cadmpeg_ir::hash::sha256_hex(b""),
+            sha256: cadmpeg_ir::wire::hash::sha256_hex(b""),
             referenced_by: vec![property.id.clone()],
             data: Vec::new(),
         };
@@ -3632,7 +3632,7 @@ mod tests {
             name: "empty-2.brp".into(),
             role: "brep".into(),
             byte_len: 0,
-            sha256: cadmpeg_ir::hash::sha256_hex(b""),
+            sha256: cadmpeg_ir::wire::hash::sha256_hex(b""),
             referenced_by: vec![property.id.clone()],
             data: Vec::new(),
         };

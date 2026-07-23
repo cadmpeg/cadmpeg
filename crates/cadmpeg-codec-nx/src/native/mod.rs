@@ -7,8 +7,8 @@ use flate2::read::ZlibDecoder;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::wire::hash::sha256_hex;
 use cadmpeg_ir::AnnotationBuilder;
 
 use crate::container::Container;

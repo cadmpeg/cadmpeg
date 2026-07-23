@@ -22,7 +22,6 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AttributeId, BodyId, LoopId, SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::semantic_annotations::{
@@ -31,6 +30,7 @@ use cadmpeg_ir::semantic_annotations::{
 use cadmpeg_ir::topology::{BodyKind, Coedge, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::wire::hash::sha256_hex;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::decode::Scan;

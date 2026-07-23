@@ -28,7 +28,6 @@ use cadmpeg_ir::geometry::{
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
     SurfaceGeometry,
 };
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, OccurrenceId, PcurveId, PointId,
     ProceduralCurveId, ProceduralSurfaceId, ProductId, RegionId, ShellId, SurfaceId, UnknownId,
@@ -50,6 +49,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::wire::hash::sha256_hex;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use serde::Serialize;

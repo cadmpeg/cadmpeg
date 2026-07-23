@@ -72,7 +72,7 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
                 control_words: header.control_words,
                 product_version: header.product.value.to_string(),
                 byte_len: bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                sha256: cadmpeg_ir::wire::hash::sha256_hex(bytes),
                 source_offset: entry_offset + header.offset as u64,
             })
         })
@@ -1706,7 +1706,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                         record_ordinal: record_ordinal as u32,
                         section_offset,
                         byte_len: record.bytes.len() as u64,
-                        sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
+                        sha256: cadmpeg_ir::wire::hash::sha256_hex(record.bytes),
                         dependencies: dependencies
                             .get(&record_ordinal)
                             .into_iter()
@@ -1798,7 +1798,7 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
                     role,
                     section_offset,
                     byte_len: block.bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(block.bytes),
+                    sha256: cadmpeg_ir::wire::hash::sha256_hex(block.bytes),
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + block.offset as u64,
                 })
@@ -3855,7 +3855,7 @@ mod tests {
         assert!(om_records.iter().all(|record| {
             record.data.as_ref().is_some_and(|data| {
                 data.len() as u64 == record.byte_len
-                    && cadmpeg_ir::hash::sha256_hex(data) == record.sha256
+                    && cadmpeg_ir::wire::hash::sha256_hex(data) == record.sha256
             })
         }));
         let object_records = result
@@ -4188,7 +4188,10 @@ mod tests {
         assert_eq!(assets[0].version, 42);
         assert_eq!(assets[0].first_ifd_offset, 8);
         assert_eq!(assets[0].byte_len, texture.len() as u64);
-        assert_eq!(assets[0].sha256, cadmpeg_ir::hash::sha256_hex(&texture));
+        assert_eq!(
+            assets[0].sha256,
+            cadmpeg_ir::wire::hash::sha256_hex(&texture)
+        );
         assert_eq!(assets[0].source_entry, "/Root/materialsTif/AISI Steel 4340");
     }
 

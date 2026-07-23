@@ -31,10 +31,8 @@
 pub mod annotations;
 pub mod appearance;
 pub mod attributes;
-pub mod be;
 pub mod bytes;
 pub mod codec;
-pub mod compression;
 pub mod cursor;
 pub mod decode;
 
@@ -45,10 +43,8 @@ pub mod eval;
 pub mod examples;
 pub mod features;
 pub mod geometry;
-pub mod hash;
 
 pub mod ids;
-pub mod le;
 pub mod math;
 pub mod native;
 pub mod pmi;
@@ -56,7 +52,6 @@ pub mod presentation;
 pub mod product;
 pub mod products;
 mod provenance;
-pub mod read;
 pub mod report;
 pub mod semantic_annotations;
 pub mod sketches;
@@ -68,6 +63,7 @@ pub mod topology;
 pub mod transform;
 pub mod units;
 pub mod validate;
+pub mod wire;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
 pub use codec::{

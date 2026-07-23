@@ -9,7 +9,6 @@ use cadmpeg_ir::geometry::{
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
     SurfaceGeometry,
 };
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
@@ -20,6 +19,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
+use cadmpeg_ir::wire::hash::sha256_hex;
 use cadmpeg_ir::LossProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};

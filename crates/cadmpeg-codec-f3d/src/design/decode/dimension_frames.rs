@@ -15,7 +15,7 @@ use crate::records::{
     PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
 };
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::u32_at;
+use cadmpeg_ir::wire::le::u32_at;
 use std::collections::{HashMap, HashSet};
 
 /// Record slices every dimension-record decode pass reads: the container scan

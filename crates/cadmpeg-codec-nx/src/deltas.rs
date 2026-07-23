@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::be;
+use cadmpeg_ir::wire::be;
 
 /// One complete status-framed topology record.
 #[derive(Debug, Clone, PartialEq)]

@@ -3,8 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::be;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::wire::be;
 use serde::{Deserialize, Serialize};
 
 use crate::topology::{self, CompositeCurve};

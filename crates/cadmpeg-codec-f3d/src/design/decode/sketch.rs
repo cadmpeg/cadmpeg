@@ -13,8 +13,8 @@ use crate::records::{
     SketchRelationOperand, SketchSurface, SketchText,
 };
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64, utf16le_at};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::wire::le::{f64_at, f64s_at, u32_at, u64_at as read_u64, utf16le_at};
 use std::collections::HashMap;
 
 /// Decode the unique local-to-model placement frame referenced by every

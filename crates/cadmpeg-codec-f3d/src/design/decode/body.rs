@@ -11,8 +11,8 @@ use crate::records::{
     DesignBodyMember, DesignEntityHeader, DesignObjectKind,
 };
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::wire::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
 use std::collections::HashMap;
 
 /// Decode the `BodiesRoot` member list following the doubled `BodiesRoot`

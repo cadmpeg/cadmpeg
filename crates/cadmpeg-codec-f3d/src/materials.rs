@@ -16,8 +16,8 @@ use cadmpeg_ir::appearance::{
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
-use cadmpeg_ir::le::{u32_at, u64_at};
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::wire::le::{u32_at, u64_at};
 
 use crate::bytes::{
     is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, lp_utf16_bytes, take_lp_utf8,

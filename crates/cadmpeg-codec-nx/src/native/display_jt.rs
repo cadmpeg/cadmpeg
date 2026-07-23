@@ -3873,7 +3873,7 @@ mod tests {
         assert_eq!(compression.compressed_byte_len, compressed.len() as u32);
         assert_eq!(
             compression.inflated_sha256,
-            cadmpeg_ir::hash::sha256_hex(&inflated)
+            cadmpeg_ir::wire::hash::sha256_hex(&inflated)
         );
         let (compressed_elements, sequences) =
             super::display_jt_compressed_element_sequences(&container, &segments);

@@ -24,8 +24,8 @@ use crate::records::{
     DesignSketchPlacement, DesignSolidPrimitive,
 };
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::{u32_at, u64_at as read_u64};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::wire::le::{u32_at, u64_at as read_u64};
 use std::collections::{HashMap, HashSet};
 
 /// Design record slices projected together into the neutral construction

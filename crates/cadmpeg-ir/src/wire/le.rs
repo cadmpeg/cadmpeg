@@ -2,7 +2,7 @@
 //! Checked little-endian primitive readers shared by binary codecs.
 #![deny(clippy::disallowed_methods)]
 
-use crate::read::readers;
+use crate::wire::read::readers;
 
 readers!(from_le_bytes, "little-endian";
     (u16_at, take_u16, u16, 2),

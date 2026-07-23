@@ -15,7 +15,7 @@ use crate::history_records::{
 use crate::records::{
     AsmHistoricalEntityKind, DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
 };
-use cadmpeg_ir::le::int_at;
+use cadmpeg_ir::wire::le::int_at;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";

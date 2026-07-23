@@ -17,9 +17,11 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_ir::be::{f64_at as f64_be, f64s_at as f64_run, u16_at as u16_be, u32_at as u32_be};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::wire::be::{
+    f64_at as f64_be, f64s_at as f64_run, u16_at as u16_be, u32_at as u32_be,
+};
 
 pub(crate) mod entity;
 mod intersection;

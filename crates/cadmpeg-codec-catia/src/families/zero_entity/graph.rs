@@ -4,8 +4,8 @@
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
 };
-use cadmpeg_ir::le::u32_at;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::wire::le::u32_at;
 use std::collections::{BTreeMap, HashMap};
 
 /// Resolved zero-entity `a9 03` stream: records, faces, loops, carrier runs,

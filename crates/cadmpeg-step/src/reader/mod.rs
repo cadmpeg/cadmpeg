@@ -5,11 +5,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::wire::hash::sha256_hex;
 
 use crate::parse::{self, Exchange, Value};
 

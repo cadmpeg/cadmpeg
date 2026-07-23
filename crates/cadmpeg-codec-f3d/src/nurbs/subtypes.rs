@@ -3,7 +3,7 @@
 
 use crate::nurbs::reader::INT_WIDTHS;
 use crate::sab::Record;
-use cadmpeg_ir::le::int_at as read_int;
+use cadmpeg_ir::wire::le::int_at as read_int;
 
 pub(crate) fn first_construction_subtype(bytes: &[u8]) -> Option<String> {
     for pos in 0..bytes.len().saturating_sub(3) {

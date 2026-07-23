@@ -11,9 +11,9 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_ir::be::{f64_at, u16_at, u32_at};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::wire::be::{f64_at, u16_at, u32_at};
 
 use super::{Carrier, CarrierGeometry, LEN_TO_MM};
 

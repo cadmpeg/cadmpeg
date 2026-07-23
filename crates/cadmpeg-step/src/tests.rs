@@ -3370,7 +3370,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
 /// refuses, or a write refuses) pins the refusal string instead of a hash, which
 /// freezes the success/refusal boundary as coverage.
 ///
-/// Digests use `cadmpeg_ir::hash::sha256_hex` (the workspace sha256 helper the
+/// Digests use `cadmpeg_ir::wire::hash::sha256_hex` (the workspace sha256 helper the
 /// freecad golden harness uses) rather than a fresh `sha2` dev-dependency, so no
 /// `Cargo.toml`/`Cargo.lock` change is needed. Regenerate the pinned tables with
 /// `cargo test -p cadmpeg-step golden::print_goldens -- --ignored --nocapture`
@@ -3379,7 +3379,7 @@ mod golden {
     use std::io::Cursor;
 
     use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
-    use cadmpeg_ir::hash::sha256_hex;
+    use cadmpeg_ir::wire::hash::sha256_hex;
     use cadmpeg_ir::CadIr;
 
     use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};

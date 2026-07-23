@@ -12,7 +12,7 @@ use cadmpeg_codec_freecad::{
     FcstdWriteOptions,
 };
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
-use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::wire::hash::sha256_hex;
 use cadmpeg_ir::{CadIr, Severity};
 use serde::Serialize;
 use serde_json::Value;

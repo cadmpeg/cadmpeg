@@ -4,7 +4,7 @@
 //! NURBS surface carriers from a zero-entity record stream.
 
 use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
-use cadmpeg_ir::le::u32_at as u32_le;
+use cadmpeg_ir::wire::le::u32_at as u32_le;
 
 use crate::nurbs::expand_knots;
 use crate::wire::bytes::{f64_le, f64_point, f64_vector};

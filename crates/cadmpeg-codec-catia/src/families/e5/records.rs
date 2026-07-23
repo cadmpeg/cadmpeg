@@ -5,8 +5,8 @@
 //! analytic surface carriers.
 
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
-use cadmpeg_ir::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::wire::le::{u16_at as u16_le, u32_at as u32_le};
 
 use crate::wire::bytes::{f64_le, f64_point, f64_vector, read_f64_array, u32_le_24};
 use crate::wire::records::scan_vertex_records;

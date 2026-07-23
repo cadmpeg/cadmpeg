@@ -13,9 +13,9 @@
 //! returned record offsets into topology.
 #![deny(clippy::disallowed_methods)]
 
-use cadmpeg_ir::be::{f64_at as read_f64, vec3_at as read_vec3};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::wire::be::{f64_at as read_f64, vec3_at as read_vec3};
 
 /// Candidate byte shifts from expanded leading references. Envelope escapes are
 /// resolved by the fixed-record graph, where their independent shift is known.

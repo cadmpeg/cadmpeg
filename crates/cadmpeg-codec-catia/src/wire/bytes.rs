@@ -6,8 +6,8 @@
 //! fixed-size `f64` array reads.
 
 use super::cursor::Cursor;
-use cadmpeg_ir::le::{f64_at, u16_at as u16_le};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::wire::le::{f64_at, u16_at as u16_le};
 
 pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<f64>> {
     if !bytes.len().is_multiple_of(8) {

@@ -10,11 +10,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::topology::Graph;
-use cadmpeg_ir::be::{u16_at as be_u16, u32_at as be_u32};
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::wire::be::{u16_at as be_u16, u32_at as be_u32};
 
 /// A decoded NURBS surface and its source descriptor offset.
 #[derive(Debug, Clone)]

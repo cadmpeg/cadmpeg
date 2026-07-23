@@ -11,7 +11,7 @@
 
 use std::ops::RangeInclusive;
 
-use cadmpeg_ir::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, utf16le_at};
+use cadmpeg_ir::wire::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, utf16le_at};
 
 /// Read a u32-length-prefixed ASCII string whose length lies in `bounds`,
 /// decoding it as strict UTF-8. Returns the string and the offset past it.

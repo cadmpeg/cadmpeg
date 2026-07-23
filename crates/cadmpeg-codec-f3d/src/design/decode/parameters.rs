@@ -12,7 +12,7 @@ use crate::records::{
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
 };
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::{f64_at, u32_at, u64_at as read_u64};
+use cadmpeg_ir::wire::le::{f64_at, u32_at, u64_at as read_u64};
 use std::collections::HashMap;
 
 /// Decode every parametric construction-recipe record (`body_recipe_data`,

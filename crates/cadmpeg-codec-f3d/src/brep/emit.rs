@@ -34,13 +34,13 @@ use cadmpeg_ir::geometry::{
     Surface, SurfaceGeometry, VariableBlendConstruction, VertexBlendBoundary,
     VertexBlendBoundaryGeometry, VertexBlendConstruction,
 };
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::wire::hash::sha256_hex;
 use std::collections::{HashMap, HashSet};
 
 use super::attributes::{

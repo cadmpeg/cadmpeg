@@ -6,8 +6,8 @@
 
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::le::u16_at as u16_le;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::wire::le::u16_at as u16_le;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

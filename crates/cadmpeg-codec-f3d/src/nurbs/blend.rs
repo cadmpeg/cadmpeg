@@ -27,8 +27,8 @@ use crate::nurbs::subtypes::{
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_int};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::wire::le::{f64_at as read_f64, int_at as read_int};
 
 /// Decode an inline `cyl_spl_sur` translational-extrusion definition.
 pub fn decode_cyl_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurface> {

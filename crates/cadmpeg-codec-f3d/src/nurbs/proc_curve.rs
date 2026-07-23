@@ -20,8 +20,8 @@ use crate::nurbs::subtypes::{
     subtype_span, SubtypeTables,
 };
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
-use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_int};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::wire::le::{f64_at as read_f64, int_at as read_int};
 
 /// Source curve and tail fields decoded from an `offset_int_cur` construction.
 pub(crate) type VectorOffsetDefinition = (NurbsCurve, [f64; 2], Vector3, [String; 2], [i64; 2]);

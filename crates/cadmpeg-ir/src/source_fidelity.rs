@@ -195,7 +195,7 @@ impl SourceFidelity {
                         actual,
                     });
                 }
-                if crate::hash::sha256_hex(data) != record.sha256 {
+                if crate::wire::hash::sha256_hex(data) != record.sha256 {
                     return Err(FidelityError::Digest {
                         id: record.id.clone(),
                     });
@@ -243,7 +243,7 @@ mod tests {
             stream: "source".into(),
             offset: 0,
             byte_len: data.len() as u64,
-            sha256: crate::hash::sha256_hex(data),
+            sha256: crate::wire::hash::sha256_hex(data),
             data: Some(data.to_vec()),
         }
     }
@@ -263,7 +263,7 @@ mod tests {
     fn validation_rejects_false_payload_metadata() {
         let mut sidecar = SourceFidelity::default();
         sidecar.retained_records.push(record("a", &[1, 2]));
-        sidecar.retained_records[0].sha256 = crate::hash::sha256_hex(&[2, 1]);
+        sidecar.retained_records[0].sha256 = crate::wire::hash::sha256_hex(&[2, 1]);
         assert!(matches!(
             sidecar.validate(),
             Err(FidelityError::Digest { .. })

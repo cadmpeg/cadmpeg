@@ -3641,13 +3641,16 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert_eq!(report.object, by_domain["Fem"].object);
     assert!(report.byte_start < report.byte_end);
     assert_eq!(report.byte_len, report.data.len() as u64);
-    assert_eq!(report.sha256, cadmpeg_ir::hash::sha256_hex(&report.data));
+    assert_eq!(
+        report.sha256,
+        cadmpeg_ir::wire::hash::sha256_hex(&report.data)
+    );
     assert_eq!(report.payloads.len(), 1);
     assert_eq!(report.payloads[0].name, "analysis.dat");
     assert_eq!(report.payloads[0].data, b"finite-element-results");
     assert_eq!(
         report.payloads[0].sha256,
-        cadmpeg_ir::hash::sha256_hex(&report.payloads[0].data)
+        cadmpeg_ir::wire::hash::sha256_hex(&report.payloads[0].data)
     );
     let python = &by_domain["Path"].property_records[0];
     assert!(python.inert);
@@ -3655,7 +3658,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert!(records.iter().all(|record| {
         record.byte_start < record.byte_end
             && record.byte_len == record.data.len() as u64
-            && record.sha256 == cadmpeg_ir::hash::sha256_hex(&record.data)
+            && record.sha256 == cadmpeg_ir::wire::hash::sha256_hex(&record.data)
     }));
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
@@ -5936,7 +5939,7 @@ mod golden {
 
     use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
     use cadmpeg_ir::decode::InspectOptions;
-    use cadmpeg_ir::hash::sha256_hex;
+    use cadmpeg_ir::wire::hash::sha256_hex;
     use cadmpeg_step::{write_step, StepWriteOptions};
     use serde_json::Value;
     use std::io::Cursor;

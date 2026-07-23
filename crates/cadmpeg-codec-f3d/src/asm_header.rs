@@ -19,8 +19,8 @@
 //! In both widths, three `0x06`-tagged little-endian f64s (`scale`, `resabs`,
 //! `resnor`) follow the strings, then the SAB record stream.
 
-use cadmpeg_ir::le::u32_at;
-use cadmpeg_ir::le::u64_at as read_le_u64;
+use cadmpeg_ir::wire::le::u32_at;
+use cadmpeg_ir::wire::le::u64_at as read_le_u64;
 
 /// The recognized header fields of a Fusion ASM BREP stream.
 #[derive(Debug, Clone, PartialEq)]

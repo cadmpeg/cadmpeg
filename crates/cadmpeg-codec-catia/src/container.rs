@@ -15,8 +15,8 @@
 use std::collections::BTreeMap;
 use std::ops::Range;
 
-use cadmpeg_ir::be::u32_at as u32_be;
 use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
+use cadmpeg_ir::wire::be::u32_at as u32_be;
 
 use crate::variant::Variant;
 

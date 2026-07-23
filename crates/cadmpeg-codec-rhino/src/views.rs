@@ -722,7 +722,7 @@ fn parse_view(
             kind: child_kind(child.typecode),
             source_offset: offset as u64,
             byte_len: (child.next_offset - offset) as u64,
-            sha256: cadmpeg_ir::hash::sha256_hex(&data[offset..child.next_offset]),
+            sha256: cadmpeg_ir::wire::hash::sha256_hex(&data[offset..child.next_offset]),
         });
         match child.typecode {
             VIEW_CPLANE if !child.short => {
@@ -885,7 +885,7 @@ fn parse_list(
                             kind: "degraded view record",
                             source_offset: view.header_start as u64,
                             byte_len: (view.next_offset - view.header_start) as u64,
-                            sha256: cadmpeg_ir::hash::sha256_hex(
+                            sha256: cadmpeg_ir::wire::hash::sha256_hex(
                                 &data[view.header_start..view.next_offset],
                             ),
                         }],

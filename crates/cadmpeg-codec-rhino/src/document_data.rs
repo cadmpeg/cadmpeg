@@ -501,7 +501,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
             source_offset: value.source.range.start as u64,
             byte_len: value.source.range.len() as u64,
             compressed: value.compressed,
-            sha256: cadmpeg_ir::hash::sha256_hex(&scan.data[value.source.range.clone()]),
+            sha256: cadmpeg_ir::wire::hash::sha256_hex(&scan.data[value.source.range.clone()]),
         })
         .collect::<Vec<_>>();
     let mut setting_records = settings
@@ -513,7 +513,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
             source_offset: value.source.range.start as u64,
             byte_len: value.source.range.len() as u64,
             typecode: format!("{:#010x}", value.typecode),
-            sha256: cadmpeg_ir::hash::sha256_hex(&scan.data[value.source.range.clone()]),
+            sha256: cadmpeg_ir::wire::hash::sha256_hex(&scan.data[value.source.range.clone()]),
             parse_error: None,
         })
         .collect::<Vec<_>>();
@@ -554,7 +554,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                     source_offset: record.range.start as u64,
                     byte_len: record.range.len() as u64,
                     typecode: format!("{:#010x}", record.typecode),
-                    sha256: cadmpeg_ir::hash::sha256_hex(&scan.data[record.range.clone()]),
+                    sha256: cadmpeg_ir::wire::hash::sha256_hex(&scan.data[record.range.clone()]),
                     parse_error: Some(error.to_string()),
                 });
             }

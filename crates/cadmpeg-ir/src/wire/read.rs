@@ -19,19 +19,19 @@ macro_rules! readers {
         $(
             #[doc = concat!("Reads a ", $endian, " `", stringify!($ty), "` at `offset`.")]
             pub fn $at(bytes: &[u8], offset: usize) -> Option<$ty> {
-                Some(<$ty>::$conversion($crate::read::bytes_at(bytes, offset, $width)?.try_into().ok()?))
+                Some(<$ty>::$conversion($crate::wire::read::bytes_at(bytes, offset, $width)?.try_into().ok()?))
             }
 
             #[doc = concat!("Takes a ", $endian, " `", stringify!($ty), "` and advances `position`.")]
             pub fn $take(bytes: &[u8], position: &mut usize) -> Option<$ty> {
-                Some(<$ty>::$conversion($crate::read::take(bytes, position, $width)?.try_into().ok()?))
+                Some(<$ty>::$conversion($crate::wire::read::take(bytes, position, $width)?.try_into().ok()?))
             }
         )*
 
         #[doc = concat!("Reads consecutive ", $endian, " `f64` values at `offset`.")]
         pub fn f64s_at(bytes: &[u8], offset: usize, count: usize) -> Option<Vec<f64>> {
             let byte_length = count.checked_mul(8)?;
-            let values = $crate::read::bytes_at(bytes, offset, byte_length)?;
+            let values = $crate::wire::read::bytes_at(bytes, offset, byte_length)?;
             values.chunks_exact(8)
                 .map(|value| Some(f64::$conversion(value.try_into().ok()?)))
                 .collect()

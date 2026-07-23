@@ -23,8 +23,8 @@ use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry,
 };
-use cadmpeg_ir::le::f64_at as read_f64;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::wire::le::f64_at as read_f64;
 
 /// A decoded native procedural definition and the fit contract of its solved cache.
 pub struct DecodedProceduralSurface {

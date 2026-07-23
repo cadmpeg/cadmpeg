@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_ir::le::u32_at;
+use cadmpeg_ir::wire::le::u32_at;
 
 /// One NX object-model entity with persistent object identity.
 #[derive(Debug, Clone, PartialEq, Eq)]

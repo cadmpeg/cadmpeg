@@ -7,8 +7,8 @@ use cadmpeg_ir::geometry::{
     NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
     SurfaceGeometry,
 };
-use cadmpeg_ir::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::wire::le::{u16_at as u16_le, u32_at as u32_le};
 use std::collections::HashSet;
 
 use crate::nurbs::{expand_knots, pole_count};

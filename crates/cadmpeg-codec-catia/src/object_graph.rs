@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Outer `7C08` feature and object-ownership graph decoder.
 
-use cadmpeg_ir::le::u32_at as u32_le;
+use cadmpeg_ir::wire::le::u32_at as u32_le;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

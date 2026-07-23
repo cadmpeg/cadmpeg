@@ -8,8 +8,8 @@
 //! from the graph.
 #![deny(clippy::disallowed_methods)]
 
-use cadmpeg_ir::be;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::wire::be;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A supported fixed-record node with its XMT identifier and source offset.

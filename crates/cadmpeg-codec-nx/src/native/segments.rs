@@ -391,7 +391,7 @@ pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<Se
             let Some(wrapper) = container.data.get(entry_start + relative..) else {
                 continue;
             };
-            let Some(wrapper_word) = cadmpeg_ir::le::u32_at(wrapper, 0) else {
+            let Some(wrapper_word) = cadmpeg_ir::wire::le::u32_at(wrapper, 0) else {
                 continue;
             };
             let extension = (wrapper_word & 0x3fff_ffff) as usize;

@@ -2,9 +2,9 @@
 //! `DisplayLists` descriptor tables.
 
 use crate::container::{ContainerScan, Section};
-use cadmpeg_ir::le::u32_at as u32_le;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationChannel;
+use cadmpeg_ir::wire::le::u32_at as u32_le;
 use std::collections::HashMap;
 
 const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];

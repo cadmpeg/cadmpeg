@@ -94,9 +94,9 @@ pub mod fuzzing;
 use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::wire::hash::sha256_hex;
 use cadmpeg_ir::{Annotations, Finding, SourceFidelity};
 use std::io::Write;
 

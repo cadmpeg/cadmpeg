@@ -2,9 +2,9 @@
 //! Stream-scope entity records needed for body membership.
 
 use super::{u16_be, u32_be};
-use cadmpeg_ir::be::f64_at as f64_be;
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::wire::be::f64_at as f64_be;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
