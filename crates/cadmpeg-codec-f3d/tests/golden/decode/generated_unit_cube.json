@@ -1,0 +1,2187 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "source": {
+      "format": "f3d",
+      "attributes": {
+        "active_brep": "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
+        "active_brep_sha256": "d7faf5998c3c2288cde0c726824aea7d806ac193df98f72dec9a583f2aab9211",
+        "active_slice_len": "8377",
+        "asset_folder": "FusionAssetName[Active]",
+        "product_family": "Autodesk Neutron",
+        "product_version": "ASM 231.6.3.65535 OSX",
+        "save_date": "Thu Jan  1 00:00:00 1970",
+        "semantic_sha256": "3f46352e955693f7bb80f5a88b1a8ff6d2c425e64b06480f52b8b69da50589ee",
+        "zip_entry_count": "3"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 1e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [
+        {
+          "id": "f3d:brep:entity#1",
+          "kind": "solid",
+          "regions": [
+            "f3d:brep:entity#2"
+          ],
+          "name": "unit cube"
+        }
+      ],
+      "regions": [
+        {
+          "id": "f3d:brep:entity#2",
+          "body": "f3d:brep:entity#1",
+          "shells": [
+            "f3d:brep:entity#3"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "f3d:brep:entity#3",
+          "region": "f3d:brep:entity#2",
+          "faces": [
+            "f3d:brep:entity#5",
+            "f3d:brep:entity#9",
+            "f3d:brep:entity#6",
+            "f3d:brep:entity#8",
+            "f3d:brep:entity#4",
+            "f3d:brep:entity#7"
+          ]
+        }
+      ],
+      "faces": [
+        {
+          "id": "f3d:brep:entity#4",
+          "shell": "f3d:brep:entity#3",
+          "surface": "f3d:brep:entity#16",
+          "sense": "forward",
+          "loops": [
+            "f3d:brep:entity#10"
+          ],
+          "name": "back face"
+        },
+        {
+          "id": "f3d:brep:entity#5",
+          "shell": "f3d:brep:entity#3",
+          "surface": "f3d:brep:entity#17",
+          "sense": "forward",
+          "loops": [
+            "f3d:brep:entity#11"
+          ],
+          "name": "bottom face"
+        },
+        {
+          "id": "f3d:brep:entity#6",
+          "shell": "f3d:brep:entity#3",
+          "surface": "f3d:brep:entity#18",
+          "sense": "forward",
+          "loops": [
+            "f3d:brep:entity#12"
+          ],
+          "name": "front face"
+        },
+        {
+          "id": "f3d:brep:entity#7",
+          "shell": "f3d:brep:entity#3",
+          "surface": "f3d:brep:entity#19",
+          "sense": "forward",
+          "loops": [
+            "f3d:brep:entity#13"
+          ],
+          "name": "left face"
+        },
+        {
+          "id": "f3d:brep:entity#8",
+          "shell": "f3d:brep:entity#3",
+          "surface": "f3d:brep:entity#20",
+          "sense": "forward",
+          "loops": [
+            "f3d:brep:entity#14"
+          ],
+          "name": "right face"
+        },
+        {
+          "id": "f3d:brep:entity#9",
+          "shell": "f3d:brep:entity#3",
+          "surface": "f3d:brep:entity#21",
+          "sense": "forward",
+          "loops": [
+            "f3d:brep:entity#15"
+          ],
+          "name": "top face"
+        }
+      ],
+      "loops": [
+        {
+          "id": "f3d:brep:entity#10",
+          "face": "f3d:brep:entity#4",
+          "boundary_role": "unspecified",
+          "coedges": [
+            "f3d:brep:entity#34",
+            "f3d:brep:entity#35",
+            "f3d:brep:entity#36",
+            "f3d:brep:entity#37"
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#11",
+          "face": "f3d:brep:entity#5",
+          "boundary_role": "unspecified",
+          "coedges": [
+            "f3d:brep:entity#38",
+            "f3d:brep:entity#39",
+            "f3d:brep:entity#40",
+            "f3d:brep:entity#41"
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#12",
+          "face": "f3d:brep:entity#6",
+          "boundary_role": "unspecified",
+          "coedges": [
+            "f3d:brep:entity#42",
+            "f3d:brep:entity#43",
+            "f3d:brep:entity#44",
+            "f3d:brep:entity#45"
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#13",
+          "face": "f3d:brep:entity#7",
+          "boundary_role": "unspecified",
+          "coedges": [
+            "f3d:brep:entity#46",
+            "f3d:brep:entity#47",
+            "f3d:brep:entity#48",
+            "f3d:brep:entity#49"
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#14",
+          "face": "f3d:brep:entity#8",
+          "boundary_role": "unspecified",
+          "coedges": [
+            "f3d:brep:entity#50",
+            "f3d:brep:entity#51",
+            "f3d:brep:entity#52",
+            "f3d:brep:entity#53"
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#15",
+          "face": "f3d:brep:entity#9",
+          "boundary_role": "unspecified",
+          "coedges": [
+            "f3d:brep:entity#54",
+            "f3d:brep:entity#55",
+            "f3d:brep:entity#56",
+            "f3d:brep:entity#57"
+          ]
+        }
+      ],
+      "coedges": [
+        {
+          "id": "f3d:brep:entity#34",
+          "owner_loop": "f3d:brep:entity#10",
+          "edge": "f3d:brep:entity#62",
+          "next": "f3d:brep:entity#35",
+          "previous": "f3d:brep:entity#37",
+          "radial_next": "f3d:brep:entity#40",
+          "sense": "reversed"
+        },
+        {
+          "id": "f3d:brep:entity#35",
+          "owner_loop": "f3d:brep:entity#10",
+          "edge": "f3d:brep:entity#60",
+          "next": "f3d:brep:entity#36",
+          "previous": "f3d:brep:entity#34",
+          "radial_next": "f3d:brep:entity#53",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#36",
+          "owner_loop": "f3d:brep:entity#10",
+          "edge": "f3d:brep:entity#66",
+          "next": "f3d:brep:entity#37",
+          "previous": "f3d:brep:entity#35",
+          "radial_next": "f3d:brep:entity#55",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#37",
+          "owner_loop": "f3d:brep:entity#10",
+          "edge": "f3d:brep:entity#61",
+          "next": "f3d:brep:entity#34",
+          "previous": "f3d:brep:entity#36",
+          "radial_next": "f3d:brep:entity#47",
+          "sense": "reversed"
+        },
+        {
+          "id": "f3d:brep:entity#38",
+          "owner_loop": "f3d:brep:entity#11",
+          "edge": "f3d:brep:entity#58",
+          "next": "f3d:brep:entity#39",
+          "previous": "f3d:brep:entity#41",
+          "radial_next": "f3d:brep:entity#42",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#39",
+          "owner_loop": "f3d:brep:entity#11",
+          "edge": "f3d:brep:entity#59",
+          "next": "f3d:brep:entity#40",
+          "previous": "f3d:brep:entity#38",
+          "radial_next": "f3d:brep:entity#50",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#40",
+          "owner_loop": "f3d:brep:entity#11",
+          "edge": "f3d:brep:entity#62",
+          "next": "f3d:brep:entity#41",
+          "previous": "f3d:brep:entity#39",
+          "radial_next": "f3d:brep:entity#34",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#41",
+          "owner_loop": "f3d:brep:entity#11",
+          "edge": "f3d:brep:entity#63",
+          "next": "f3d:brep:entity#38",
+          "previous": "f3d:brep:entity#40",
+          "radial_next": "f3d:brep:entity#46",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#42",
+          "owner_loop": "f3d:brep:entity#12",
+          "edge": "f3d:brep:entity#58",
+          "next": "f3d:brep:entity#43",
+          "previous": "f3d:brep:entity#45",
+          "radial_next": "f3d:brep:entity#38",
+          "sense": "reversed"
+        },
+        {
+          "id": "f3d:brep:entity#43",
+          "owner_loop": "f3d:brep:entity#12",
+          "edge": "f3d:brep:entity#68",
+          "next": "f3d:brep:entity#44",
+          "previous": "f3d:brep:entity#42",
+          "radial_next": "f3d:brep:entity#49",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#44",
+          "owner_loop": "f3d:brep:entity#12",
+          "edge": "f3d:brep:entity#64",
+          "next": "f3d:brep:entity#45",
+          "previous": "f3d:brep:entity#43",
+          "radial_next": "f3d:brep:entity#57",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#45",
+          "owner_loop": "f3d:brep:entity#12",
+          "edge": "f3d:brep:entity#69",
+          "next": "f3d:brep:entity#42",
+          "previous": "f3d:brep:entity#44",
+          "radial_next": "f3d:brep:entity#51",
+          "sense": "reversed"
+        },
+        {
+          "id": "f3d:brep:entity#46",
+          "owner_loop": "f3d:brep:entity#13",
+          "edge": "f3d:brep:entity#63",
+          "next": "f3d:brep:entity#47",
+          "previous": "f3d:brep:entity#49",
+          "radial_next": "f3d:brep:entity#41",
+          "sense": "reversed"
+        },
+        {
+          "id": "f3d:brep:entity#47",
+          "owner_loop": "f3d:brep:entity#13",
+          "edge": "f3d:brep:entity#61",
+          "next": "f3d:brep:entity#48",
+          "previous": "f3d:brep:entity#46",
+          "radial_next": "f3d:brep:entity#37",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#48",
+          "owner_loop": "f3d:brep:entity#13",
+          "edge": "f3d:brep:entity#67",
+          "next": "f3d:brep:entity#49",
+          "previous": "f3d:brep:entity#47",
+          "radial_next": "f3d:brep:entity#54",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#49",
+          "owner_loop": "f3d:brep:entity#13",
+          "edge": "f3d:brep:entity#68",
+          "next": "f3d:brep:entity#46",
+          "previous": "f3d:brep:entity#48",
+          "radial_next": "f3d:brep:entity#43",
+          "sense": "reversed"
+        },
+        {
+          "id": "f3d:brep:entity#50",
+          "owner_loop": "f3d:brep:entity#14",
+          "edge": "f3d:brep:entity#59",
+          "next": "f3d:brep:entity#51",
+          "previous": "f3d:brep:entity#53",
+          "radial_next": "f3d:brep:entity#39",
+          "sense": "reversed"
+        },
+        {
+          "id": "f3d:brep:entity#51",
+          "owner_loop": "f3d:brep:entity#14",
+          "edge": "f3d:brep:entity#69",
+          "next": "f3d:brep:entity#52",
+          "previous": "f3d:brep:entity#50",
+          "radial_next": "f3d:brep:entity#45",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#52",
+          "owner_loop": "f3d:brep:entity#14",
+          "edge": "f3d:brep:entity#65",
+          "next": "f3d:brep:entity#53",
+          "previous": "f3d:brep:entity#51",
+          "radial_next": "f3d:brep:entity#56",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#53",
+          "owner_loop": "f3d:brep:entity#14",
+          "edge": "f3d:brep:entity#60",
+          "next": "f3d:brep:entity#50",
+          "previous": "f3d:brep:entity#52",
+          "radial_next": "f3d:brep:entity#35",
+          "sense": "reversed"
+        },
+        {
+          "id": "f3d:brep:entity#54",
+          "owner_loop": "f3d:brep:entity#15",
+          "edge": "f3d:brep:entity#67",
+          "next": "f3d:brep:entity#55",
+          "previous": "f3d:brep:entity#57",
+          "radial_next": "f3d:brep:entity#48",
+          "sense": "reversed"
+        },
+        {
+          "id": "f3d:brep:entity#55",
+          "owner_loop": "f3d:brep:entity#15",
+          "edge": "f3d:brep:entity#66",
+          "next": "f3d:brep:entity#56",
+          "previous": "f3d:brep:entity#54",
+          "radial_next": "f3d:brep:entity#36",
+          "sense": "reversed"
+        },
+        {
+          "id": "f3d:brep:entity#56",
+          "owner_loop": "f3d:brep:entity#15",
+          "edge": "f3d:brep:entity#65",
+          "next": "f3d:brep:entity#57",
+          "previous": "f3d:brep:entity#55",
+          "radial_next": "f3d:brep:entity#52",
+          "sense": "reversed"
+        },
+        {
+          "id": "f3d:brep:entity#57",
+          "owner_loop": "f3d:brep:entity#15",
+          "edge": "f3d:brep:entity#64",
+          "next": "f3d:brep:entity#54",
+          "previous": "f3d:brep:entity#56",
+          "radial_next": "f3d:brep:entity#44",
+          "sense": "reversed"
+        }
+      ],
+      "edges": [
+        {
+          "id": "f3d:brep:entity#58",
+          "curve": "f3d:brep:entity#22",
+          "start": "f3d:brep:entity#70",
+          "end": "f3d:brep:entity#71",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#59",
+          "curve": "f3d:brep:entity#23",
+          "start": "f3d:brep:entity#71",
+          "end": "f3d:brep:entity#72",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#60",
+          "curve": "f3d:brep:entity#24",
+          "start": "f3d:brep:entity#72",
+          "end": "f3d:brep:entity#76",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#61",
+          "curve": "f3d:brep:entity#25",
+          "start": "f3d:brep:entity#73",
+          "end": "f3d:brep:entity#77",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#62",
+          "curve": "f3d:brep:entity#26",
+          "start": "f3d:brep:entity#72",
+          "end": "f3d:brep:entity#73",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#63",
+          "curve": "f3d:brep:entity#27",
+          "start": "f3d:brep:entity#73",
+          "end": "f3d:brep:entity#70",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#64",
+          "curve": "f3d:brep:entity#28",
+          "start": "f3d:brep:entity#74",
+          "end": "f3d:brep:entity#75",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#65",
+          "curve": "f3d:brep:entity#29",
+          "start": "f3d:brep:entity#75",
+          "end": "f3d:brep:entity#76",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#66",
+          "curve": "f3d:brep:entity#30",
+          "start": "f3d:brep:entity#76",
+          "end": "f3d:brep:entity#77",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#67",
+          "curve": "f3d:brep:entity#31",
+          "start": "f3d:brep:entity#77",
+          "end": "f3d:brep:entity#74",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#68",
+          "curve": "f3d:brep:entity#32",
+          "start": "f3d:brep:entity#70",
+          "end": "f3d:brep:entity#74",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        },
+        {
+          "id": "f3d:brep:entity#69",
+          "curve": "f3d:brep:entity#33",
+          "start": "f3d:brep:entity#71",
+          "end": "f3d:brep:entity#75",
+          "param_range": [
+            0.0,
+            10.0
+          ]
+        }
+      ],
+      "vertices": [
+        {
+          "id": "f3d:brep:entity#70",
+          "point": "f3d:brep:entity#78"
+        },
+        {
+          "id": "f3d:brep:entity#71",
+          "point": "f3d:brep:entity#79"
+        },
+        {
+          "id": "f3d:brep:entity#72",
+          "point": "f3d:brep:entity#80"
+        },
+        {
+          "id": "f3d:brep:entity#73",
+          "point": "f3d:brep:entity#81"
+        },
+        {
+          "id": "f3d:brep:entity#74",
+          "point": "f3d:brep:entity#82"
+        },
+        {
+          "id": "f3d:brep:entity#75",
+          "point": "f3d:brep:entity#83"
+        },
+        {
+          "id": "f3d:brep:entity#76",
+          "point": "f3d:brep:entity#84"
+        },
+        {
+          "id": "f3d:brep:entity#77",
+          "point": "f3d:brep:entity#85"
+        }
+      ],
+      "points": [
+        {
+          "id": "f3d:brep:entity#78",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "f3d:brep:entity#79",
+          "position": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "f3d:brep:entity#80",
+          "position": {
+            "x": 10.0,
+            "y": 10.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "f3d:brep:entity#81",
+          "position": {
+            "x": 0.0,
+            "y": 10.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "f3d:brep:entity#82",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 10.0
+          }
+        },
+        {
+          "id": "f3d:brep:entity#83",
+          "position": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 10.0
+          }
+        },
+        {
+          "id": "f3d:brep:entity#84",
+          "position": {
+            "x": 10.0,
+            "y": 10.0,
+            "z": 10.0
+          }
+        },
+        {
+          "id": "f3d:brep:entity#85",
+          "position": {
+            "x": 0.0,
+            "y": 10.0,
+            "z": 10.0
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "id": "f3d:brep:entity#16",
+          "geometry": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#17",
+          "geometry": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": -1.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#18",
+          "geometry": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#19",
+          "geometry": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": -1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#20",
+          "geometry": {
+            "kind": "plane",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#21",
+          "geometry": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          }
+        }
+      ],
+      "curves": [
+        {
+          "id": "f3d:brep:entity#22",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#23",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#24",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#25",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#26",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": -1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#27",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#28",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            },
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#29",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 10.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#30",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 10.0,
+              "z": 10.0
+            },
+            "direction": {
+              "x": -1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#31",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 10.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#32",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          }
+        },
+        {
+          "id": "f3d:brep:entity#33",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          }
+        }
+      ],
+      "subds": [],
+      "pcurves": [],
+      "procedural_surfaces": [],
+      "procedural_curves": [],
+      "features": [],
+      "configurations": [],
+      "parameters": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "components": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [
+        {
+          "id": "f3d:brep:attribute#86",
+          "target": {
+            "kind": "body",
+            "id": "f3d:brep:entity#1"
+          },
+          "name": "string_attrib-name_attrib-gen-attrib",
+          "values": [
+            {
+              "kind": "reference",
+              "value": "f3d:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "string",
+              "value": "name"
+            },
+            {
+              "kind": "string",
+              "value": "unit cube"
+            }
+          ]
+        },
+        {
+          "id": "f3d:brep:attribute#87",
+          "target": {
+            "kind": "face",
+            "id": "f3d:brep:entity#4"
+          },
+          "name": "string_attrib-name_attrib-gen-attrib",
+          "values": [
+            {
+              "kind": "reference",
+              "value": "f3d:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "string",
+              "value": "name"
+            },
+            {
+              "kind": "string",
+              "value": "back face"
+            }
+          ]
+        },
+        {
+          "id": "f3d:brep:attribute#88",
+          "target": {
+            "kind": "face",
+            "id": "f3d:brep:entity#5"
+          },
+          "name": "string_attrib-name_attrib-gen-attrib",
+          "values": [
+            {
+              "kind": "reference",
+              "value": "f3d:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "string",
+              "value": "name"
+            },
+            {
+              "kind": "string",
+              "value": "bottom face"
+            }
+          ]
+        },
+        {
+          "id": "f3d:brep:attribute#89",
+          "target": {
+            "kind": "face",
+            "id": "f3d:brep:entity#6"
+          },
+          "name": "string_attrib-name_attrib-gen-attrib",
+          "values": [
+            {
+              "kind": "reference",
+              "value": "f3d:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "string",
+              "value": "name"
+            },
+            {
+              "kind": "string",
+              "value": "front face"
+            }
+          ]
+        },
+        {
+          "id": "f3d:brep:attribute#90",
+          "target": {
+            "kind": "face",
+            "id": "f3d:brep:entity#7"
+          },
+          "name": "string_attrib-name_attrib-gen-attrib",
+          "values": [
+            {
+              "kind": "reference",
+              "value": "f3d:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "string",
+              "value": "name"
+            },
+            {
+              "kind": "string",
+              "value": "left face"
+            }
+          ]
+        },
+        {
+          "id": "f3d:brep:attribute#91",
+          "target": {
+            "kind": "face",
+            "id": "f3d:brep:entity#8"
+          },
+          "name": "string_attrib-name_attrib-gen-attrib",
+          "values": [
+            {
+              "kind": "reference",
+              "value": "f3d:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "string",
+              "value": "name"
+            },
+            {
+              "kind": "string",
+              "value": "right face"
+            }
+          ]
+        },
+        {
+          "id": "f3d:brep:attribute#92",
+          "target": {
+            "kind": "face",
+            "id": "f3d:brep:entity#9"
+          },
+          "name": "string_attrib-name_attrib-gen-attrib",
+          "values": [
+            {
+              "kind": "reference",
+              "value": "f3d:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            },
+            {
+              "kind": "string",
+              "value": "name"
+            },
+            {
+              "kind": "string",
+              "value": "top face"
+            }
+          ]
+        }
+      ],
+      "products": [],
+      "product_occurrences": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "f3d": {
+        "version": 5,
+        "arenas": {
+          "act_entities": [],
+          "act_guids": [],
+          "act_root_components": [],
+          "asm_bulletin_boards": [],
+          "asm_delta_states": [],
+          "asm_entity_changes": [],
+          "asm_histories": [],
+          "asm_history_records": [],
+          "body_native_keys": [
+            {
+              "id": "f3d:asm:body-native-key#1",
+              "asm_body_key": 1,
+              "body": "f3d:brep:entity#1",
+              "body_ordinal": 0,
+              "record_index": 1,
+              "source_brep": "BREP.generated.smbh"
+            }
+          ],
+          "body_visibilities": [],
+          "construction_recipes": [],
+          "creation_timestamps": [],
+          "design_body_bindings": [],
+          "design_body_bounds": [],
+          "design_body_members": [],
+          "design_body_recipe_operands": [],
+          "design_configurations": [],
+          "design_construction_operand_groups": [],
+          "design_construction_operand_identities": [],
+          "design_dimension_annotation_frames": [],
+          "design_dimension_locus_groups": [],
+          "design_dimension_locus_pairs": [],
+          "design_dimension_null_locus_pairs": [],
+          "design_dimension_recipe_records": [],
+          "design_edge_identity_operands": [],
+          "design_edge_operands": [],
+          "design_entity_headers": [],
+          "design_entity_selection_operands": [],
+          "design_extrude_selection_groups": [],
+          "design_extrude_selection_members": [],
+          "design_face_operands": [],
+          "design_fillet_radius_groups": [],
+          "design_material_assignments": [],
+          "design_objects": [],
+          "design_parameter_companions": [],
+          "design_parameter_owners": [],
+          "design_parameter_scopes": [],
+          "design_parameters": [],
+          "design_record_headers": [],
+          "design_sketch_placements": [],
+          "edge_continuities": [
+            {
+              "id": "f3d:asm:edge-continuity#58",
+              "continuity": "unknown",
+              "edge": "f3d:brep:entity#58",
+              "record_index": 58,
+              "sense": "forward"
+            },
+            {
+              "id": "f3d:asm:edge-continuity#59",
+              "continuity": "unknown",
+              "edge": "f3d:brep:entity#59",
+              "record_index": 59,
+              "sense": "forward"
+            },
+            {
+              "id": "f3d:asm:edge-continuity#60",
+              "continuity": "unknown",
+              "edge": "f3d:brep:entity#60",
+              "record_index": 60,
+              "sense": "forward"
+            },
+            {
+              "id": "f3d:asm:edge-continuity#61",
+              "continuity": "unknown",
+              "edge": "f3d:brep:entity#61",
+              "record_index": 61,
+              "sense": "forward"
+            },
+            {
+              "id": "f3d:asm:edge-continuity#62",
+              "continuity": "unknown",
+              "edge": "f3d:brep:entity#62",
+              "record_index": 62,
+              "sense": "forward"
+            },
+            {
+              "id": "f3d:asm:edge-continuity#63",
+              "continuity": "unknown",
+              "edge": "f3d:brep:entity#63",
+              "record_index": 63,
+              "sense": "forward"
+            },
+            {
+              "id": "f3d:asm:edge-continuity#64",
+              "continuity": "unknown",
+              "edge": "f3d:brep:entity#64",
+              "record_index": 64,
+              "sense": "forward"
+            },
+            {
+              "id": "f3d:asm:edge-continuity#65",
+              "continuity": "unknown",
+              "edge": "f3d:brep:entity#65",
+              "record_index": 65,
+              "sense": "forward"
+            },
+            {
+              "id": "f3d:asm:edge-continuity#66",
+              "continuity": "unknown",
+              "edge": "f3d:brep:entity#66",
+              "record_index": 66,
+              "sense": "forward"
+            },
+            {
+              "id": "f3d:asm:edge-continuity#67",
+              "continuity": "unknown",
+              "edge": "f3d:brep:entity#67",
+              "record_index": 67,
+              "sense": "forward"
+            },
+            {
+              "id": "f3d:asm:edge-continuity#68",
+              "continuity": "unknown",
+              "edge": "f3d:brep:entity#68",
+              "record_index": 68,
+              "sense": "forward"
+            },
+            {
+              "id": "f3d:asm:edge-continuity#69",
+              "continuity": "unknown",
+              "edge": "f3d:brep:entity#69",
+              "record_index": 69,
+              "sense": "forward"
+            }
+          ],
+          "edge_ownerships": [
+            {
+              "id": "f3d:asm:edge-ownership#58",
+              "edge": "f3d:brep:entity#58",
+              "record_index": 58
+            },
+            {
+              "id": "f3d:asm:edge-ownership#59",
+              "edge": "f3d:brep:entity#59",
+              "record_index": 59
+            },
+            {
+              "id": "f3d:asm:edge-ownership#60",
+              "edge": "f3d:brep:entity#60",
+              "record_index": 60
+            },
+            {
+              "id": "f3d:asm:edge-ownership#61",
+              "edge": "f3d:brep:entity#61",
+              "record_index": 61
+            },
+            {
+              "id": "f3d:asm:edge-ownership#62",
+              "edge": "f3d:brep:entity#62",
+              "record_index": 62
+            },
+            {
+              "id": "f3d:asm:edge-ownership#63",
+              "edge": "f3d:brep:entity#63",
+              "record_index": 63
+            },
+            {
+              "id": "f3d:asm:edge-ownership#64",
+              "edge": "f3d:brep:entity#64",
+              "record_index": 64
+            },
+            {
+              "id": "f3d:asm:edge-ownership#65",
+              "edge": "f3d:brep:entity#65",
+              "record_index": 65
+            },
+            {
+              "id": "f3d:asm:edge-ownership#66",
+              "edge": "f3d:brep:entity#66",
+              "record_index": 66
+            },
+            {
+              "id": "f3d:asm:edge-ownership#67",
+              "edge": "f3d:brep:entity#67",
+              "record_index": 67
+            },
+            {
+              "id": "f3d:asm:edge-ownership#68",
+              "edge": "f3d:brep:entity#68",
+              "record_index": 68
+            },
+            {
+              "id": "f3d:asm:edge-ownership#69",
+              "edge": "f3d:brep:entity#69",
+              "record_index": 69
+            }
+          ],
+          "face_sidedness": [
+            {
+              "id": "f3d:asm:face-sidedness#4",
+              "face": "f3d:brep:entity#4",
+              "native_sense": "forward",
+              "normalized_sense": "forward",
+              "record_index": 4
+            },
+            {
+              "id": "f3d:asm:face-sidedness#5",
+              "face": "f3d:brep:entity#5",
+              "native_sense": "forward",
+              "normalized_sense": "forward",
+              "record_index": 5
+            },
+            {
+              "id": "f3d:asm:face-sidedness#6",
+              "face": "f3d:brep:entity#6",
+              "native_sense": "forward",
+              "normalized_sense": "forward",
+              "record_index": 6
+            },
+            {
+              "id": "f3d:asm:face-sidedness#7",
+              "face": "f3d:brep:entity#7",
+              "native_sense": "forward",
+              "normalized_sense": "forward",
+              "record_index": 7
+            },
+            {
+              "id": "f3d:asm:face-sidedness#8",
+              "face": "f3d:brep:entity#8",
+              "native_sense": "forward",
+              "normalized_sense": "forward",
+              "record_index": 8
+            },
+            {
+              "id": "f3d:asm:face-sidedness#9",
+              "face": "f3d:brep:entity#9",
+              "native_sense": "forward",
+              "normalized_sense": "forward",
+              "record_index": 9
+            }
+          ],
+          "lost_edge_references": [],
+          "mesh_surface_sentinels": [],
+          "persistent_design_links": [],
+          "persistent_references": [],
+          "persistent_subentity_tags": [],
+          "sketch_curve_identities": [],
+          "sketch_curve_links": [],
+          "sketch_points": [],
+          "sketch_relations": [],
+          "sketch_surfaces": [],
+          "sketch_texts": [],
+          "tolerant_coedge_parameters": [],
+          "tolerant_edge_tails": [],
+          "tolerant_vertex_tails": [],
+          "transform_hints": [],
+          "unknowns": [],
+          "vertex_ownerships": [
+            {
+              "id": "f3d:asm:vertex-ownership#70",
+              "endpoint_index": 0,
+              "owning_edge": "f3d:brep:entity#58",
+              "record_index": 70,
+              "vertex": "f3d:brep:entity#70"
+            },
+            {
+              "id": "f3d:asm:vertex-ownership#71",
+              "endpoint_index": 1,
+              "owning_edge": "f3d:brep:entity#58",
+              "record_index": 71,
+              "vertex": "f3d:brep:entity#71"
+            },
+            {
+              "id": "f3d:asm:vertex-ownership#72",
+              "endpoint_index": 1,
+              "owning_edge": "f3d:brep:entity#59",
+              "record_index": 72,
+              "vertex": "f3d:brep:entity#72"
+            },
+            {
+              "id": "f3d:asm:vertex-ownership#73",
+              "endpoint_index": 0,
+              "owning_edge": "f3d:brep:entity#61",
+              "record_index": 73,
+              "vertex": "f3d:brep:entity#73"
+            },
+            {
+              "id": "f3d:asm:vertex-ownership#74",
+              "endpoint_index": 0,
+              "owning_edge": "f3d:brep:entity#64",
+              "record_index": 74,
+              "vertex": "f3d:brep:entity#74"
+            },
+            {
+              "id": "f3d:asm:vertex-ownership#75",
+              "endpoint_index": 1,
+              "owning_edge": "f3d:brep:entity#64",
+              "record_index": 75,
+              "vertex": "f3d:brep:entity#75"
+            },
+            {
+              "id": "f3d:asm:vertex-ownership#76",
+              "endpoint_index": 1,
+              "owning_edge": "f3d:brep:entity#60",
+              "record_index": 76,
+              "vertex": "f3d:brep:entity#76"
+            },
+            {
+              "id": "f3d:asm:vertex-ownership#77",
+              "endpoint_index": 1,
+              "owning_edge": "f3d:brep:entity#61",
+              "record_index": 77,
+              "vertex": "f3d:brep:entity#77"
+            }
+          ],
+          "wire_topologies": [],
+          "xref_designs": [],
+          "xref_references": []
+        }
+      }
+    }
+  },
+  "report": {
+    "format": "f3d",
+    "container_only": false,
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "material_not_transferred",
+        "category": "material",
+        "severity": "warning",
+        "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
+      }
+    ],
+    "notes": [
+      "asset folder (from entry paths): FusionAssetName[Active]",
+      "active BREP candidate: FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh (8388 bytes uncompressed, authoritative .smbh history stream)"
+    ]
+  },
+  "source_fidelity": {
+    "version": "3",
+    "annotations": {
+      "streams": [
+        "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
+        "f3d:native"
+      ],
+      "provenance": {
+        "f3d:brep:attribute#86": {
+          "stream": 0,
+          "offset": 7644,
+          "tag": "string_attrib-name_attrib-gen-attrib"
+        },
+        "f3d:brep:attribute#87": {
+          "stream": 0,
+          "offset": 7748,
+          "tag": "string_attrib-name_attrib-gen-attrib"
+        },
+        "f3d:brep:attribute#88": {
+          "stream": 0,
+          "offset": 7852,
+          "tag": "string_attrib-name_attrib-gen-attrib"
+        },
+        "f3d:brep:attribute#89": {
+          "stream": 0,
+          "offset": 7958,
+          "tag": "string_attrib-name_attrib-gen-attrib"
+        },
+        "f3d:brep:attribute#90": {
+          "stream": 0,
+          "offset": 8063,
+          "tag": "string_attrib-name_attrib-gen-attrib"
+        },
+        "f3d:brep:attribute#91": {
+          "stream": 0,
+          "offset": 8167,
+          "tag": "string_attrib-name_attrib-gen-attrib"
+        },
+        "f3d:brep:attribute#92": {
+          "stream": 0,
+          "offset": 8272,
+          "tag": "string_attrib-name_attrib-gen-attrib"
+        },
+        "f3d:brep:entity#1": {
+          "stream": 0,
+          "offset": 168,
+          "tag": "body"
+        },
+        "f3d:brep:entity#10": {
+          "stream": 0,
+          "offset": 858,
+          "tag": "loop"
+        },
+        "f3d:brep:entity#11": {
+          "stream": 0,
+          "offset": 919,
+          "tag": "loop"
+        },
+        "f3d:brep:entity#12": {
+          "stream": 0,
+          "offset": 980,
+          "tag": "loop"
+        },
+        "f3d:brep:entity#13": {
+          "stream": 0,
+          "offset": 1041,
+          "tag": "loop"
+        },
+        "f3d:brep:entity#14": {
+          "stream": 0,
+          "offset": 1102,
+          "tag": "loop"
+        },
+        "f3d:brep:entity#15": {
+          "stream": 0,
+          "offset": 1163,
+          "tag": "loop"
+        },
+        "f3d:brep:entity#16": {
+          "stream": 0,
+          "offset": 1224,
+          "tag": "plane-surface"
+        },
+        "f3d:brep:entity#17": {
+          "stream": 0,
+          "offset": 1344,
+          "tag": "plane-surface"
+        },
+        "f3d:brep:entity#18": {
+          "stream": 0,
+          "offset": 1464,
+          "tag": "plane-surface"
+        },
+        "f3d:brep:entity#19": {
+          "stream": 0,
+          "offset": 1584,
+          "tag": "plane-surface"
+        },
+        "f3d:brep:entity#2": {
+          "stream": 0,
+          "offset": 229,
+          "tag": "region"
+        },
+        "f3d:brep:entity#20": {
+          "stream": 0,
+          "offset": 1704,
+          "tag": "plane-surface"
+        },
+        "f3d:brep:entity#21": {
+          "stream": 0,
+          "offset": 1824,
+          "tag": "plane-surface"
+        },
+        "f3d:brep:entity#22": {
+          "stream": 0,
+          "offset": 1944,
+          "tag": "straight-curve"
+        },
+        "f3d:brep:entity#23": {
+          "stream": 0,
+          "offset": 2039,
+          "tag": "straight-curve"
+        },
+        "f3d:brep:entity#24": {
+          "stream": 0,
+          "offset": 2134,
+          "tag": "straight-curve"
+        },
+        "f3d:brep:entity#25": {
+          "stream": 0,
+          "offset": 2229,
+          "tag": "straight-curve"
+        },
+        "f3d:brep:entity#26": {
+          "stream": 0,
+          "offset": 2324,
+          "tag": "straight-curve"
+        },
+        "f3d:brep:entity#27": {
+          "stream": 0,
+          "offset": 2419,
+          "tag": "straight-curve"
+        },
+        "f3d:brep:entity#28": {
+          "stream": 0,
+          "offset": 2514,
+          "tag": "straight-curve"
+        },
+        "f3d:brep:entity#29": {
+          "stream": 0,
+          "offset": 2609,
+          "tag": "straight-curve"
+        },
+        "f3d:brep:entity#3": {
+          "stream": 0,
+          "offset": 292,
+          "tag": "shell"
+        },
+        "f3d:brep:entity#30": {
+          "stream": 0,
+          "offset": 2704,
+          "tag": "straight-curve"
+        },
+        "f3d:brep:entity#31": {
+          "stream": 0,
+          "offset": 2799,
+          "tag": "straight-curve"
+        },
+        "f3d:brep:entity#32": {
+          "stream": 0,
+          "offset": 2894,
+          "tag": "straight-curve"
+        },
+        "f3d:brep:entity#33": {
+          "stream": 0,
+          "offset": 2989,
+          "tag": "straight-curve"
+        },
+        "f3d:brep:entity#34": {
+          "stream": 0,
+          "offset": 3084,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#35": {
+          "stream": 0,
+          "offset": 3184,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#36": {
+          "stream": 0,
+          "offset": 3284,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#37": {
+          "stream": 0,
+          "offset": 3384,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#38": {
+          "stream": 0,
+          "offset": 3484,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#39": {
+          "stream": 0,
+          "offset": 3584,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#4": {
+          "stream": 0,
+          "offset": 372,
+          "tag": "face"
+        },
+        "f3d:brep:entity#40": {
+          "stream": 0,
+          "offset": 3684,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#41": {
+          "stream": 0,
+          "offset": 3784,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#42": {
+          "stream": 0,
+          "offset": 3884,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#43": {
+          "stream": 0,
+          "offset": 3984,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#44": {
+          "stream": 0,
+          "offset": 4084,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#45": {
+          "stream": 0,
+          "offset": 4184,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#46": {
+          "stream": 0,
+          "offset": 4284,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#47": {
+          "stream": 0,
+          "offset": 4384,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#48": {
+          "stream": 0,
+          "offset": 4484,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#49": {
+          "stream": 0,
+          "offset": 4584,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#5": {
+          "stream": 0,
+          "offset": 453,
+          "tag": "face"
+        },
+        "f3d:brep:entity#50": {
+          "stream": 0,
+          "offset": 4684,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#51": {
+          "stream": 0,
+          "offset": 4784,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#52": {
+          "stream": 0,
+          "offset": 4884,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#53": {
+          "stream": 0,
+          "offset": 4984,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#54": {
+          "stream": 0,
+          "offset": 5084,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#55": {
+          "stream": 0,
+          "offset": 5184,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#56": {
+          "stream": 0,
+          "offset": 5284,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#57": {
+          "stream": 0,
+          "offset": 5384,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#58": {
+          "stream": 0,
+          "offset": 5484,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#59": {
+          "stream": 0,
+          "offset": 5582,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#6": {
+          "stream": 0,
+          "offset": 534,
+          "tag": "face"
+        },
+        "f3d:brep:entity#60": {
+          "stream": 0,
+          "offset": 5680,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#61": {
+          "stream": 0,
+          "offset": 5778,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#62": {
+          "stream": 0,
+          "offset": 5876,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#63": {
+          "stream": 0,
+          "offset": 5974,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#64": {
+          "stream": 0,
+          "offset": 6072,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#65": {
+          "stream": 0,
+          "offset": 6170,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#66": {
+          "stream": 0,
+          "offset": 6268,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#67": {
+          "stream": 0,
+          "offset": 6366,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#68": {
+          "stream": 0,
+          "offset": 6464,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#69": {
+          "stream": 0,
+          "offset": 6562,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#7": {
+          "stream": 0,
+          "offset": 615,
+          "tag": "face"
+        },
+        "f3d:brep:entity#70": {
+          "stream": 0,
+          "offset": 6660,
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#71": {
+          "stream": 0,
+          "offset": 6723,
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#72": {
+          "stream": 0,
+          "offset": 6786,
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#73": {
+          "stream": 0,
+          "offset": 6849,
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#74": {
+          "stream": 0,
+          "offset": 6912,
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#75": {
+          "stream": 0,
+          "offset": 6975,
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#76": {
+          "stream": 0,
+          "offset": 7038,
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#77": {
+          "stream": 0,
+          "offset": 7101,
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#78": {
+          "stream": 0,
+          "offset": 7164,
+          "tag": "point"
+        },
+        "f3d:brep:entity#79": {
+          "stream": 0,
+          "offset": 7224,
+          "tag": "point"
+        },
+        "f3d:brep:entity#8": {
+          "stream": 0,
+          "offset": 696,
+          "tag": "face"
+        },
+        "f3d:brep:entity#80": {
+          "stream": 0,
+          "offset": 7284,
+          "tag": "point"
+        },
+        "f3d:brep:entity#81": {
+          "stream": 0,
+          "offset": 7344,
+          "tag": "point"
+        },
+        "f3d:brep:entity#82": {
+          "stream": 0,
+          "offset": 7404,
+          "tag": "point"
+        },
+        "f3d:brep:entity#83": {
+          "stream": 0,
+          "offset": 7464,
+          "tag": "point"
+        },
+        "f3d:brep:entity#84": {
+          "stream": 0,
+          "offset": 7524,
+          "tag": "point"
+        },
+        "f3d:brep:entity#85": {
+          "stream": 0,
+          "offset": 7584,
+          "tag": "point"
+        },
+        "f3d:brep:entity#9": {
+          "stream": 0,
+          "offset": 777,
+          "tag": "face"
+        }
+      },
+      "exactness": {
+        "f3d:brep:entity#16": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.normal": "derived",
+            "geometry.u_axis": "derived"
+          }
+        },
+        "f3d:brep:entity#17": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.normal": "derived",
+            "geometry.u_axis": "derived"
+          }
+        },
+        "f3d:brep:entity#18": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.normal": "derived",
+            "geometry.u_axis": "derived"
+          }
+        },
+        "f3d:brep:entity#19": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.normal": "derived",
+            "geometry.u_axis": "derived"
+          }
+        },
+        "f3d:brep:entity#20": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.normal": "derived",
+            "geometry.u_axis": "derived"
+          }
+        },
+        "f3d:brep:entity#21": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.normal": "derived",
+            "geometry.u_axis": "derived"
+          }
+        },
+        "f3d:brep:entity#22": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived"
+          }
+        },
+        "f3d:brep:entity#23": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived"
+          }
+        },
+        "f3d:brep:entity#24": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived"
+          }
+        },
+        "f3d:brep:entity#25": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived"
+          }
+        },
+        "f3d:brep:entity#26": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived"
+          }
+        },
+        "f3d:brep:entity#27": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived"
+          }
+        },
+        "f3d:brep:entity#28": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived"
+          }
+        },
+        "f3d:brep:entity#29": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived"
+          }
+        },
+        "f3d:brep:entity#30": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived"
+          }
+        },
+        "f3d:brep:entity#31": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived"
+          }
+        },
+        "f3d:brep:entity#32": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived"
+          }
+        },
+        "f3d:brep:entity#33": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived"
+          }
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "id": "f3d:file:source-image#0",
+        "stream": "f3d",
+        "offset": 0,
+        "byte_len": 8833,
+        "sha256": "4ae03c16c7c4773a52fe6fffe9c8bacb121e9faaf59231f380632af58542a0fa",
+        "data": "UEsDBAoAAAAAAAAAIQDZ7cq5FQAAABUAAAAMAAAATWFuaWZlc3QuZGF0Y2FkbXBlZy1nZW5lcmF0ZWQtZjNkUEsDBAoAAAAAAAAAIQAc30QhBAAAAAQAAAAOAAAAUHJvcGVydGllcy5kYXQAAAAAUEsDBAoAAAAAAAAAIQA3lUjHxCAAAMQgAAA7AAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vQnJlcHMuQmxvYlBhcnRzL0JSRVAuZ2VuZXJhdGVkLnNtYmhBU00gQmluYXJ5RmlsZTg8WgAAAAAAAAAAAAAAAAAABwAAAAAAAAADAAAAAAAAAAcQQXV0b2Rlc2sgTmV1dHJvbgcVQVNNIDIzMS42LjMuNjU1MzUgT1NYBxhUaHUgSmFuICAxIDAwOjAwOjAwIDE5NzAGAAAAAAAATkAGje21oPfGsD4Gu73X2d982z0NCWFzbWhlYWRlcgcNMjMxLjYuMy42NTUzNRENBGJvZHkMVgAAAAAAAAAEAQAAAAAAAAAM//////////8MAgAAAAAAAAAM//////////8M//////////8RDQZyZWdpb24M//////////8E//////////8M//////////8M//////////8MAwAAAAAAAAAMAQAAAAAAAAARDQVzaGVsbAz//////////wT//////////wz//////////wz//////////wz//////////wwFAAAAAAAAAAz//////////wwCAAAAAAAAABENBGZhY2UMVwAAAAAAAAAE//////////8M//////////8MBwAAAAAAAAAMCgAAAAAAAAAMAwAAAAAAAAAM//////////8MEAAAAAAAAAALCxENBGZhY2UMWAAAAAAAAAAE//////////8M//////////8MCQAAAAAAAAAMCwAAAAAAAAAMAwAAAAAAAAAM//////////8MEQAAAAAAAAALCxENBGZhY2UMWQAAAAAAAAAE//////////8M//////////8MCAAAAAAAAAAMDAAAAAAAAAAMAwAAAAAAAAAM//////////8MEgAAAAAAAAALCxENBGZhY2UMWgAAAAAAAAAE//////////8M//////////8M//////////8MDQAAAAAAAAAMAwAAAAAAAAAM//////////8MEwAAAAAAAAALCxENBGZhY2UMWwAAAAAAAAAE//////////8M//////////8MBAAAAAAAAAAMDgAAAAAAAAAMAwAAAAAAAAAM//////////8MFAAAAAAAAAALCxENBGZhY2UMXAAAAAAAAAAE//////////8M//////////8MBgAAAAAAAAAMDwAAAAAAAAAMAwAAAAAAAAAM//////////8MFQAAAAAAAAALCxENBGxvb3AM//////////8E//////////8M//////////8M//////////8MIgAAAAAAAAAMBAAAAAAAAAARDQRsb29wDP//////////BP//////////DP//////////DP//////////DCYAAAAAAAAADAUAAAAAAAAAEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwqAAAAAAAAAAwGAAAAAAAAABENBGxvb3AM//////////8E//////////8M//////////8M//////////8MLgAAAAAAAAAMBwAAAAAAAAARDQRsb29wDP//////////BP//////////DP//////////DP//////////DDIAAAAAAAAADAgAAAAAAAAAEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////ww2AAAAAAAAAAwJAAAAAAAAABEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABQAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAUAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACxEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8UAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACxEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAAUAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACxEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAADwvwAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAACxEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAACxEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8UAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACxEOCHN0cmFpZ2h0DQVjdXJ2ZQz//////////wT//////////wz//////////xMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAEQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAARDghzdHJhaWdodA0FY3VydmUM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxEOCHN0cmFpZ2h0DQVjdXJ2ZQz//////////wT//////////wz//////////xMAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/EQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAABQAAAAAAADwvwAAAAAAAAAAAAAAAAAAAAARDghzdHJhaWdodA0FY3VydmUM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAFAAAAAAAAAAAAAAAAAAA8L8AAAAAAAAAABEOCHN0cmFpZ2h0DQVjdXJ2ZQz//////////wT//////////wz//////////xMAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8UAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAEQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPxQAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAARDghzdHJhaWdodA0FY3VydmUM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/FAAAAAAAAPC/AAAAAAAAAAAAAAAAAAAAABEOCHN0cmFpZ2h0DQVjdXJ2ZQz//////////wT//////////wz//////////xMAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8UAAAAAAAAAAAAAAAAAADwvwAAAAAAAAAAEQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8RDghzdHJhaWdodA0FY3VydmUM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxENBmNvZWRnZQz//////////wT//////////wz//////////wwjAAAAAAAAAAwlAAAAAAAAAAwoAAAAAAAAAAw+AAAAAAAAAAoMCgAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MJAAAAAAAAAAMIgAAAAAAAAAMNQAAAAAAAAAMPAAAAAAAAAALDAoAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DCUAAAAAAAAADCMAAAAAAAAADDcAAAAAAAAADEIAAAAAAAAACwwKAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwiAAAAAAAAAAwkAAAAAAAAAAwvAAAAAAAAAAw9AAAAAAAAAAoMCgAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MJwAAAAAAAAAMKQAAAAAAAAAMKgAAAAAAAAAMOgAAAAAAAAALDAsAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DCgAAAAAAAAADCYAAAAAAAAADDIAAAAAAAAADDsAAAAAAAAACwwLAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwpAAAAAAAAAAwnAAAAAAAAAAwiAAAAAAAAAAw+AAAAAAAAAAsMCwAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MJgAAAAAAAAAMKAAAAAAAAAAMLgAAAAAAAAAMPwAAAAAAAAALDAsAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DCsAAAAAAAAADC0AAAAAAAAADCYAAAAAAAAADDoAAAAAAAAACgwMAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwsAAAAAAAAAAwqAAAAAAAAAAwxAAAAAAAAAAxEAAAAAAAAAAsMDAAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MLQAAAAAAAAAMKwAAAAAAAAAMOQAAAAAAAAAMQAAAAAAAAAALDAwAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DCoAAAAAAAAADCwAAAAAAAAADDMAAAAAAAAADEUAAAAAAAAACgwMAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwvAAAAAAAAAAwxAAAAAAAAAAwpAAAAAAAAAAw/AAAAAAAAAAoMDQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MMAAAAAAAAAAMLgAAAAAAAAAMJQAAAAAAAAAMPQAAAAAAAAALDA0AAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DDEAAAAAAAAADC8AAAAAAAAADDYAAAAAAAAADEMAAAAAAAAACwwNAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwuAAAAAAAAAAwwAAAAAAAAAAwrAAAAAAAAAAxEAAAAAAAAAAoMDQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MMwAAAAAAAAAMNQAAAAAAAAAMJwAAAAAAAAAMOwAAAAAAAAAKDA4AAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DDQAAAAAAAAADDIAAAAAAAAADC0AAAAAAAAADEUAAAAAAAAACwwOAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////ww1AAAAAAAAAAwzAAAAAAAAAAw4AAAAAAAAAAxBAAAAAAAAAAsMDgAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MMgAAAAAAAAAMNAAAAAAAAAAMIwAAAAAAAAAMPAAAAAAAAAAKDA4AAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DDcAAAAAAAAADDkAAAAAAAAADDAAAAAAAAAADEMAAAAAAAAACgwPAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////ww4AAAAAAAAAAw2AAAAAAAAAAwkAAAAAAAAAAxCAAAAAAAAAAoMDwAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MOQAAAAAAAAAMNwAAAAAAAAAMNAAAAAAAAAAMQQAAAAAAAAAKDA8AAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DDYAAAAAAAAADDgAAAAAAAAADCwAAAAAAAAADEAAAAAAAAAACgwPAAAAAAAAAAQAAAAAAAAAAAz//////////xENBGVkZ2UM//////////8E//////////8M//////////8MRgAAAAAAAAAGAAAAAAAAAAAMRwAAAAAAAAAGAAAAAAAA8D8M//////////8MFgAAAAAAAAALBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wxHAAAAAAAAAAYAAAAAAAAAAAxIAAAAAAAAAAYAAAAAAADwPwz//////////wwXAAAAAAAAAAsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DEgAAAAAAAAABgAAAAAAAAAADEwAAAAAAAAABgAAAAAAAPA/DP//////////DBgAAAAAAAAACwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MSQAAAAAAAAAGAAAAAAAAAAAMTQAAAAAAAAAGAAAAAAAA8D8M//////////8MGQAAAAAAAAALBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wxIAAAAAAAAAAYAAAAAAAAAAAxJAAAAAAAAAAYAAAAAAADwPwz//////////wwaAAAAAAAAAAsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DEkAAAAAAAAABgAAAAAAAAAADEYAAAAAAAAABgAAAAAAAPA/DP//////////DBsAAAAAAAAACwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MSgAAAAAAAAAGAAAAAAAAAAAMSwAAAAAAAAAGAAAAAAAA8D8M//////////8MHAAAAAAAAAALBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wxLAAAAAAAAAAYAAAAAAAAAAAxMAAAAAAAAAAYAAAAAAADwPwz//////////wwdAAAAAAAAAAsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DEwAAAAAAAAABgAAAAAAAAAADE0AAAAAAAAABgAAAAAAAPA/DP//////////DB4AAAAAAAAACwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MTQAAAAAAAAAGAAAAAAAAAAAMSgAAAAAAAAAGAAAAAAAA8D8M//////////8MHwAAAAAAAAALBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wxGAAAAAAAAAAYAAAAAAAAAAAxKAAAAAAAAAAYAAAAAAADwPwz//////////wwgAAAAAAAAAAsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DEcAAAAAAAAABgAAAAAAAAAADEsAAAAAAAAABgAAAAAAAPA/DP//////////DCEAAAAAAAAACwcHdW5rbm93bhENBnZlcnRleAz//////////wT//////////wz//////////ww6AAAAAAAAAAQAAAAAAAAAAAxOAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////ww6AAAAAAAAAAQBAAAAAAAAAAxPAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////ww7AAAAAAAAAAQBAAAAAAAAAAxQAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////ww9AAAAAAAAAAQAAAAAAAAAAAxRAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wxAAAAAAAAAAAQAAAAAAAAAAAxSAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wxAAAAAAAAAAAQBAAAAAAAAAAxTAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////ww8AAAAAAAAAAQBAAAAAAAAAAxUAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////ww9AAAAAAAAAAQBAAAAAAAAAAxVAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPxENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAA8D8AAAAAAADwPxENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPxEODXN0cmluZ19hdHRyaWIOC25hbWVfYXR0cmliDgNnZW4NBmF0dHJpYgz//////////wQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAQBAAAAAAAAAAcEbmFtZQcJdW5pdCBjdWJlEQ4Nc3RyaW5nX2F0dHJpYg4LbmFtZV9hdHRyaWIOA2dlbg0GYXR0cmliDP//////////BAEAAAAAAAAABAEAAAAAAAAABAEAAAAAAAAABAEAAAAAAAAABwRuYW1lBwliYWNrIGZhY2URDg1zdHJpbmdfYXR0cmliDgtuYW1lX2F0dHJpYg4DZ2VuDQZhdHRyaWIM//////////8EAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAHBG5hbWUHC2JvdHRvbSBmYWNlEQ4Nc3RyaW5nX2F0dHJpYg4LbmFtZV9hdHRyaWIOA2dlbg0GYXR0cmliDP//////////BAEAAAAAAAAABAEAAAAAAAAABAEAAAAAAAAABAEAAAAAAAAABwRuYW1lBwpmcm9udCBmYWNlEQ4Nc3RyaW5nX2F0dHJpYg4LbmFtZV9hdHRyaWIOA2dlbg0GYXR0cmliDP//////////BAEAAAAAAAAABAEAAAAAAAAABAEAAAAAAAAABAEAAAAAAAAABwRuYW1lBwlsZWZ0IGZhY2URDg1zdHJpbmdfYXR0cmliDgtuYW1lX2F0dHJpYg4DZ2VuDQZhdHRyaWIM//////////8EAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAHBG5hbWUHCnJpZ2h0IGZhY2URDg1zdHJpbmdfYXR0cmliDgtuYW1lX2F0dHJpYg4DZ2VuDQZhdHRyaWIM//////////8EAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAEAQAAAAAAAAAHBG5hbWUHCHRvcCBmYWNlEQ0LZGVsdGFfc3RhdGVQSwECCgMKAAAAAAAAACEA2e3KuRUAAAAVAAAADAAAAAAAAAAAAAAApIEAAAAATWFuaWZlc3QuZGF0UEsBAgoDCgAAAAAAAAAhABzfRCEEAAAABAAAAA4AAAAAAAAAAAAAAKSBPwAAAFByb3BlcnRpZXMuZGF0UEsBAgoDCgAAAAAAAAAhADeVSMfEIAAAxCAAADsAAAAAAAAAAAAAAKSBbwAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0JyZXBzLkJsb2JQYXJ0cy9CUkVQLmdlbmVyYXRlZC5zbWJoUEsFBgAAAAADAAMA3wAAAIwhAAAAAA=="
+      }
+    ]
+  }
+}

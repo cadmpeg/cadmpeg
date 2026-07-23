@@ -1,0 +1,43 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {},
+      "compressed_size": 18,
+      "compression": "stored",
+      "name": "Manifest.dat",
+      "role": "manifest",
+      "uncompressed_size": 18
+    },
+    {
+      "attributes": {
+        "active_slice_len": "1236",
+        "asm_entity_count": "2",
+        "asm_flags": "5",
+        "asm_magic": "ASM BinaryFile4",
+        "asm_record_count": "0",
+        "asm_release": "22700",
+        "asm_width": "4",
+        "delta_state_first_offset": "1236",
+        "product_family": "Autodesk Neutron",
+        "product_version": "ASM 227.5.0.65535 NT",
+        "resabs": "0.000001",
+        "resnor": "0.0000000001",
+        "save_date": "Mon Aug  8 02:39:24 2022",
+        "scale": "50",
+        "sha256": "d6ea22a11c31cf82205a5e2c458cbf15dd7577ef39c7c26c03292c33b3caf079"
+      },
+      "compressed_size": 1247,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+      "role": "brep-smbh",
+      "uncompressed_size": 1247
+    }
+  ],
+  "format": "f3d",
+  "notes": [
+    "asset folder (from entry paths): FusionAssetName[Active]",
+    "active BREP candidate: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (1247 bytes uncompressed, authoritative .smbh history stream)",
+    "container-level inspection only; run `decode` to build the B-rep graph and analytic geometry from the active BREP's SAB record stream"
+  ]
+}

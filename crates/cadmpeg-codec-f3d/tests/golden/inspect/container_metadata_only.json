@@ -1,0 +1,42 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {},
+      "compressed_size": 18,
+      "compression": "stored",
+      "name": "Manifest.dat",
+      "role": "manifest",
+      "uncompressed_size": 18
+    },
+    {
+      "attributes": {
+        "active_slice_len": "151",
+        "asm_entity_count": "7",
+        "asm_flags": "3",
+        "asm_magic": "ASM BinaryFile8",
+        "asm_release": "23100",
+        "asm_width": "8",
+        "delta_state_first_offset": "151",
+        "product_family": "Autodesk Neutron",
+        "product_version": "ASM 231.6.3.65535 OSX",
+        "resabs": "0.000001",
+        "resnor": "0.0000000001",
+        "save_date": "Tue Mar 31 16:16:19 2026",
+        "scale": "60",
+        "sha256": "1f3c3da3821c98610282c3b53568a7b800c2904066df3ce7d8043972ca502ba3"
+      },
+      "compressed_size": 178,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+      "role": "brep-smbh",
+      "uncompressed_size": 178
+    }
+  ],
+  "format": "f3d",
+  "notes": [
+    "asset folder (from entry paths): FusionAssetName[Active]",
+    "active BREP candidate: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (178 bytes uncompressed, authoritative .smbh history stream)",
+    "container-level inspection only; run `decode` to build the B-rep graph and analytic geometry from the active BREP's SAB record stream"
+  ]
+}

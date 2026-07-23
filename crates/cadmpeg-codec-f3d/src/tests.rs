@@ -21120,3 +21120,868 @@ fn f3z_prefix_detects_as_f3d() {
         Confidence::High
     );
 }
+
+/// Golden-snapshot harness pinning the F3D codec's decode, container-inspect, and
+/// every drivable encode branch against a covering, committed fixture set.
+///
+/// # Fixture-to-`brep/emit.rs` coverage ledger
+///
+/// Each committed `tests/golden/fixtures/*.f3d` decodes through the real codec;
+/// the union of their decode paths exercises the [`crate::brep::emit`] regions.
+/// The `emit_region_coverage` test enforces the floor below from the live decode
+/// output, so this ledger cannot drift silently: an over-claim fails the test.
+///
+/// PINNED emit.rs regions (each backed by ≥1 fixture, machine-checked):
+/// - `emit_points`         — every brep fixture (`topology_base`, …).
+/// - `emit_vertices`       — every brep fixture; tolerant/free forms via wire fixtures.
+/// - `emit_edges`          — every brep fixture.
+/// - `emit_coedges`        — every brep fixture.
+/// - `emit_loops`          — every faced brep fixture.
+/// - `emit_faces`          — every faced brep fixture.
+/// - `emit_containers`     — `topology_base` (solid), `wire_body`, `free_vertex_body`,
+///                           `mixed_face_wire_body` (general, drives `project_subshell_faces`).
+/// - `project_subshell_faces` — `mixed_face_wire_body`.
+/// - `emit_attributes`     — `attributes`, `body_color`, `face_color`.
+/// - `emit_annotation_records` — every brep fixture (maps each emitted entity to
+///   its source-record offset).
+/// - `count_other_records` — every fixture (opaque-leftover record accounting).
+/// - `emit_passthrough_unknowns` — `container_metadata_only`, `mesh_surface`
+///   (undecoded carrier retained as an unknown passthrough record).
+/// - `emit_carrier_records` (NURBS surface carriers) — `cyl_spline_surface`,
+///   `exact_surface`, and the procedural-surface fixtures below.
+/// - `emit_carrier_records` (NURBS curve carriers) — `exact_curve`, ruled/loft
+///   profiles, and the procedural-curve fixtures below.
+/// - `emit_pcurves`        — `pcurve_inline`, `pcurve_ref`, `pcurve_rational`.
+/// - Surface sub-emitters: `emit_deformable_surface` (`deformable_surface`),
+///   `emit_loft_surface` (`loft_surface`), `emit_compound_loft_surface`
+///   (`compound_loft_surface`), `emit_scaled_compound_loft_surface`
+///   (`scaled_compound_loft_surface`), `emit_law_surface` (`law_surface`),
+///   `emit_skin_surface` (`skin_surface`), `emit_net_surface` (`net_surface`),
+///   `emit_sweep_surface` (`sweep_surface`), `emit_g2_blend_surface`
+///   (`g2_blend_surface`), `emit_variable_blend_surface` (`variable_blend_surface`),
+///   `emit_vertex_blend_surface` (`vertex_blend_surface`), `emit_blend_surface`
+///   (`rolling_ball_blend_surface`). Inline definition arms (Exact/Ruled/Revolution/
+///   Offset/Taper/Sum/SubSurface/Helix/TSpline/Extrusion) are pinned by
+///   `exact_surface`, `ruled_surface`, `revolution_surface`, `offset_surface`,
+///   `taper_surface`, `sum_surface`, `sub_surface`, `helix_surface`,
+///   `tspline_surface`.
+/// - Curve sub-emitters: `emit_law_curve` (`law_curve`), `emit_silhouette_curve`
+///   (`silhouette_curve`), `emit_surface_offset_curve` (`surface_offset_curve`),
+///   `emit_spring_curve` (`spring_curve`), `emit_projection_curve`
+///   (`projection_curve`). Inline curve arms (VectorOffset/Subset/TwoSidedOffset/
+///   Intersection/Helix/Compound) via `subset_curve`, `compound_curve`,
+///   `helix_curve`, `surface_intersection_curve`, `degenerate_curve`.
+/// - design records — `design_appearances_protein` (Design MetaStream objects).
+/// - history — `history`.
+/// - appearances — `design_appearances_protein` (Protein appearance assets).
+///
+/// UNPINNED emit.rs regions (honest gaps — the go/no-go input for the emit
+/// migration; drive these before relying on the harness for those arms):
+/// - `emit_revision_compound_loft_surface` and `emit_revision_g2_blend_surface`:
+///   the `RevisionCompoundLoft` / `RevisionG2Blend` definition arms require the
+///   `synthetic_revision_surface_smbh` body closures, which are inlined per white-box
+///   test and not reusable as no-argument builders. No fixture drives these arms.
+/// - `emit_carrier_surface`'s `cached_unknown_procedural_surfaces` /
+///   `ProceduralSurfaceDefinition::Unknown` arm: no fixture retains an
+///   unknown-but-cached procedural surface.
+/// - BinaryFile4 carrier variants beyond the analytic base are not separately
+///   pinned here (the `binaryfile4` / `binaryfile4_nurbs` fixtures pin the BF4
+///   topology carriers only).
+mod golden {
+    use std::collections::BTreeSet;
+    use std::io::Cursor;
+    use std::path::{Path, PathBuf};
+
+    use cadmpeg_ir::codec::{CodecError, DecodeResult};
+    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+
+    use super::*;
+
+    /// The covering fixture set as `(golden name, full `.f3d` bytes)`.
+    ///
+    /// Every entry reuses the module-level synthetic builders (`synthetic_*_smbh`)
+    /// wrapped by the module-level ZIP builders (`f3d_with_smbh`,
+    /// `f3d_with_smbh_and_protein`, `f3d_with_configuration`). All wrappers use
+    /// STORED ZIP framing, so the committed bytes and the `ContainerSummary`
+    /// compressed-length fields are independent of the active `flate2` backend.
+    fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
+        let mut f: Vec<(&'static str, Vec<u8>)> = Vec::new();
+
+        // --- Base topology and container grouping. ---
+        f.push(("topology_base", f3d_with_smbh(&synthetic_geometry_smbh())));
+        f.push(("wire_body", f3d_with_smbh(&synthetic_wire_body_smbh())));
+        f.push((
+            "free_vertex_body",
+            f3d_with_smbh(&synthetic_free_vertex_body_smbh()),
+        ));
+        f.push((
+            "mixed_face_wire_body",
+            f3d_with_smbh(&synthetic_mixed_face_wire_body_smbh()),
+        ));
+
+        // --- Attributes, colors, transforms. ---
+        f.push((
+            "attributes",
+            f3d_with_smbh(&synthetic_geometry_with_attribute_smbh()),
+        ));
+        f.push((
+            "body_color",
+            f3d_with_smbh(&synthetic_geometry_with_body_color_smbh()),
+        ));
+        f.push((
+            "face_color",
+            f3d_with_smbh(&synthetic_geometry_with_face_color_smbh()),
+        ));
+        f.push((
+            "body_transform",
+            f3d_with_smbh(&synthetic_geometry_with_transform_smbh()),
+        ));
+
+        // --- History, design records, appearances. ---
+        f.push((
+            "history",
+            f3d_with_smbh(&synthetic_geometry_with_history_smbh()),
+        ));
+        f.push((
+            "design_appearances_protein",
+            f3d_with_smbh_and_protein(&synthetic_geometry_smbh()),
+        ));
+
+        // --- Metadata-only decode (no topology): passthrough unknown, geometry loss. ---
+        f.push(("container_metadata_only", f3d_with_smbh(&synthetic_smbh())));
+
+        // --- Mesh-surface sentinel and sketch-curve link. ---
+        f.push((
+            "mesh_surface",
+            f3d_with_smbh(&synthetic_geometry_with_mesh_surface_smbh()),
+        ));
+        f.push((
+            "sketch_link",
+            f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh()),
+        ));
+
+        // --- Pcurve carriers. ---
+        f.push((
+            "pcurve_inline",
+            f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh()),
+        ));
+        f.push((
+            "pcurve_ref",
+            f3d_with_smbh(&synthetic_geometry_with_ref_pcurve_smbh()),
+        ));
+        f.push((
+            "pcurve_rational",
+            f3d_with_smbh(&synthetic_geometry_with_rational_pcurve_smbh()),
+        ));
+
+        // --- Curve carriers and procedural-curve sub-emitters. ---
+        f.push((
+            "exact_curve",
+            f3d_with_smbh(&synthetic_geometry_with_exact_curve_smbh()),
+        ));
+        f.push((
+            "subset_curve",
+            f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh()),
+        ));
+        f.push((
+            "compound_curve",
+            f3d_with_smbh(&synthetic_geometry_with_compound_curve_smbh()),
+        ));
+        f.push((
+            "helix_curve",
+            f3d_with_smbh(&synthetic_geometry_with_helix_curve_smbh()),
+        ));
+        f.push((
+            "law_curve",
+            f3d_with_smbh(&synthetic_geometry_with_law_curve_smbh()),
+        ));
+        f.push((
+            "silhouette_curve",
+            f3d_with_smbh(&synthetic_geometry_with_silhouette_smbh(
+                "para_silh_int_cur",
+                None,
+            )),
+        ));
+        f.push((
+            "surface_offset_curve",
+            f3d_with_smbh(&synthetic_geometry_with_surface_offset_smbh()),
+        ));
+        f.push((
+            "spring_curve",
+            f3d_with_smbh(&synthetic_geometry_with_spring_smbh()),
+        ));
+        f.push((
+            "projection_curve",
+            f3d_with_smbh(&synthetic_geometry_with_projection_smbh()),
+        ));
+        f.push((
+            "surface_intersection_curve",
+            f3d_with_smbh(&synthetic_geometry_with_surface_intersection_smbh()),
+        ));
+        f.push((
+            "degenerate_curve",
+            f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh()),
+        ));
+
+        // --- NURBS surface carriers and procedural-surface sub-emitters. ---
+        f.push((
+            "cyl_spline_surface",
+            f3d_with_smbh(&synthetic_cyl_spl_sur_smbh()),
+        ));
+        f.push((
+            "exact_surface",
+            f3d_with_smbh(&synthetic_exact_spl_sur_smbh("exact_spl_sur")),
+        ));
+        f.push((
+            "ruled_surface",
+            f3d_with_smbh(&synthetic_ruled_spl_sur_smbh("rule_sur", true)),
+        ));
+        f.push((
+            "revolution_surface",
+            f3d_with_smbh(&synthetic_rot_spl_sur_smbh("rot_spl_sur")),
+        ));
+        f.push((
+            "offset_surface",
+            f3d_with_smbh(&synthetic_off_spl_sur_smbh("off_spl_sur")),
+        ));
+        f.push((
+            "taper_surface",
+            f3d_with_smbh(&synthetic_taper_spl_sur_smbh("taper_spl_sur")),
+        ));
+        f.push((
+            "sum_surface",
+            f3d_with_smbh(&synthetic_sum_spl_sur_smbh("sum_spl_sur", true)),
+        ));
+        f.push((
+            "sub_surface",
+            f3d_with_smbh(&synthetic_sub_spl_sur_smbh("sub_spl_sur")),
+        ));
+        f.push((
+            "loft_surface",
+            f3d_with_smbh(&synthetic_loft_spl_sur_smbh("loft_spl_sur")),
+        ));
+        f.push((
+            "compound_loft_surface",
+            f3d_with_smbh(&synthetic_comp_spl_sur_smbh()),
+        ));
+        f.push((
+            "scaled_compound_loft_surface",
+            f3d_with_smbh(&synthetic_scaled_compound_loft_smbh(true)),
+        ));
+        f.push((
+            "law_surface",
+            f3d_with_smbh(&synthetic_law_spl_sur_smbh("law_spl_sur", false, 0)),
+        ));
+        f.push((
+            "skin_surface",
+            f3d_with_smbh(&synthetic_skin_spl_sur_smbh(0, false)),
+        ));
+        f.push(("net_surface", f3d_with_smbh(&synthetic_net_spl_sur_smbh())));
+        f.push((
+            "sweep_surface",
+            f3d_with_smbh(&synthetic_profile_first_sweep_smbh()),
+        ));
+        f.push((
+            "g2_blend_surface",
+            f3d_with_smbh(&synthetic_g2_blend_spl_sur_smbh("g2_blend_spl_sur", true)),
+        ));
+        f.push((
+            "variable_blend_surface",
+            f3d_with_smbh(&synthetic_variable_blend_smbh("var_blend_spl_sur")),
+        ));
+        f.push((
+            "rolling_ball_blend_surface",
+            f3d_with_smbh(&synthetic_full_rolling_ball_smbh("rb_blend_spl_sur")),
+        ));
+        f.push((
+            "vertex_blend_surface",
+            f3d_with_smbh(&synthetic_vertex_blend_smbh("VBL_SURF")),
+        ));
+        f.push((
+            "helix_surface",
+            f3d_with_smbh(&synthetic_helix_surface_smbh(true)),
+        ));
+        f.push((
+            "tspline_surface",
+            f3d_with_smbh(&synthetic_t_spl_sur_smbh()),
+        ));
+        f.push((
+            "deformable_surface",
+            f3d_with_smbh(&synthetic_minimal_deformable_surface_smbh()),
+        ));
+
+        // --- BinaryFile4 topology carriers. ---
+        f.push(("binaryfile4", f3d_with_smbh(&synthetic_geometry_bf4_smbh())));
+        f.push((
+            "binaryfile4_nurbs",
+            f3d_with_smbh(&synthetic_geometry_bf4_nurbs_smbh()),
+        ));
+
+        // --- Design configuration table. ---
+        f.push((
+            "design_configuration",
+            f3d_with_configuration(
+                &synthetic_geometry_smbh(),
+                "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg",
+                br#"{"configurations":{"wide":{"parameters":{"width":"25 mm"},"suppressed":["slot"]}},"active":"wide"}"#,
+            ),
+        ));
+
+        // --- Encoder-generated round-trip fixture: the writer's own source-less
+        // output for a neutral unit-cube IR. Decoding it yields an IR the
+        // source-less writer accepts, so the `generate` branch produces bytes
+        // rather than a refusal. ---
+        f.push(("generated_unit_cube", encoder_generated_unit_cube()));
+
+        f
+    }
+
+    /// A valid `.f3d` produced by the source-less writer for a neutral unit-cube
+    /// IR. Deterministic: the writer performs no compression and no hash-map or
+    /// clock-dependent work.
+    fn encoder_generated_unit_cube() -> Vec<u8> {
+        let ir = cadmpeg_ir::examples::unit_cube();
+        let mut bytes = Vec::new();
+        F3dCodec
+            .encode(&ir, &mut bytes)
+            .expect("encode neutral unit-cube IR");
+        bytes
+    }
+
+    fn decode_result(bytes: &[u8]) -> Result<DecodeResult, CodecError> {
+        F3dCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+    }
+
+    /// Nest a pretty-JSON block under an object key, preserving the block's own
+    /// key order (a `serde_json::Value` round-trip would re-sort object keys and
+    /// so would not reflect `to_canonical_json` faithfully).
+    fn indent_block(block: &str) -> String {
+        let mut lines = block.lines();
+        let mut out = String::new();
+        if let Some(first) = lines.next() {
+            out.push_str(first);
+        }
+        for line in lines {
+            out.push('\n');
+            out.push_str("  ");
+            out.push_str(line);
+        }
+        out
+    }
+
+    /// The decode snapshot: the canonical IR (via `CadIr::to_canonical_json`),
+    /// the `DecodeReport`, and the `SourceFidelity` sidecar as one stable pretty
+    /// document. A refused decode is frozen as `{"decode_error": ...}` (a `.f3d`
+    /// that fails to decode is contract-relevant behavior), so this never panics.
+    fn decode_snapshot(bytes: &[u8]) -> String {
+        match decode_result(bytes) {
+            Ok(result) => {
+                let ir = result
+                    .ir
+                    .to_canonical_json()
+                    .expect("serialize canonical ir");
+                let report =
+                    serde_json::to_string_pretty(&result.report).expect("serialize report");
+                let fidelity = serde_json::to_string_pretty(&result.source_fidelity)
+                    .expect("serialize source_fidelity");
+                let mut out = String::from("{\n");
+                out.push_str("  \"ir\": ");
+                out.push_str(&indent_block(&ir));
+                out.push_str(",\n  \"report\": ");
+                out.push_str(&indent_block(&report));
+                out.push_str(",\n  \"source_fidelity\": ");
+                out.push_str(&indent_block(&fidelity));
+                out.push_str("\n}\n");
+                out
+            }
+            Err(err) => {
+                let value = serde_json::json!({ "decode_error": err.to_string() });
+                let mut text =
+                    serde_json::to_string_pretty(&value).expect("serialize decode error");
+                text.push('\n');
+                text
+            }
+        }
+    }
+
+    /// The inspect snapshot: the `ContainerSummary` as stable pretty JSON, with
+    /// inspect errors frozen the same way decode errors are.
+    fn inspect_snapshot(bytes: &[u8]) -> String {
+        let value =
+            match F3dCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
+                Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
+                Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
+            };
+        let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
+        text.push('\n');
+        text
+    }
+
+    /// The `replay` branch of [`crate::F3dCodec::encode_with_source_fidelity`]:
+    /// decode, then re-encode with the intact source-fidelity sidecar. The sidecar
+    /// retains the F3D source image and the IR is unchanged, so
+    /// `write_preserved_bytes` replays the retained bytes verbatim. `None` when the
+    /// fixture does not decode.
+    fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
+        let result = decode_result(bytes).ok()?;
+        let mut out = Vec::new();
+        Some(
+            match F3dCodec.encode_with_source_fidelity(
+                &result.ir,
+                Some(&result.source_fidelity),
+                &mut out,
+            ) {
+                Ok(_) => Ok(out),
+                Err(err) => Err(err.to_string()),
+            },
+        )
+    }
+
+    /// The `generate` branch of [`cadmpeg_ir::codec::Encoder::encode`]: re-encode
+    /// the decoded IR with no sidecar, driving `writer::generate::write_new`. Most
+    /// decoded synthetic archives carry native F3D records the source-less writer
+    /// declines, so this is usually a pinned refusal; `generated_unit_cube` drives
+    /// the successful path. `None` when the fixture does not decode.
+    fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
+        let result = decode_result(bytes).ok()?;
+        let mut out = Vec::new();
+        Some(match F3dCodec.encode(&result.ir, &mut out) {
+            Ok(_) => Ok(out),
+            Err(err) => Err(err.to_string()),
+        })
+    }
+
+    /// The `patch` branch of [`crate::F3dCodec::write_preserved_with_source_fidelity`]:
+    /// nudge the first model point, which changes `decode::semantic_hash` and so
+    /// routes through `writer::patch::write_semantic`. `None` when the fixture does
+    /// not decode or has no point to edit (patch is not drivable from it).
+    fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
+        let result = decode_result(bytes).ok()?;
+        if result.ir.model.points.is_empty() {
+            return None;
+        }
+        let mut edited = result.ir.clone();
+        edited.model.points[0].position.x += 1.0;
+        let mut out = Vec::new();
+        Some(
+            match F3dCodec.write_preserved_with_source_fidelity(
+                &edited,
+                &result.source_fidelity,
+                &mut out,
+            ) {
+                Ok(()) => Ok(out),
+                Err(err) => Err(err.to_string()),
+            },
+        )
+    }
+
+    fn golden_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
+    }
+
+    fn update_requested() -> bool {
+        std::env::var_os("UPDATE_GOLDEN").is_some()
+    }
+
+    /// First differing line, 1-based, both sides truncated for a readable failure.
+    fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
+        let mut exp = expected.lines();
+        let mut act = actual.lines();
+        let mut line = 0usize;
+        loop {
+            line += 1;
+            match (exp.next(), act.next()) {
+                (Some(e), Some(a)) if e == a => {}
+                (e, a) => {
+                    let trunc = |s: Option<&str>| match s {
+                        Some(s) if s.len() > 200 => format!("{}…", &s[..200]),
+                        Some(s) => s.to_string(),
+                        None => "<end of file>".to_string(),
+                    };
+                    return (line, trunc(e), trunc(a));
+                }
+            }
+        }
+    }
+
+    fn first_byte_diff(expected: &[u8], actual: &[u8]) -> String {
+        let offset = expected
+            .iter()
+            .zip(actual)
+            .position(|(e, a)| e != a)
+            .unwrap_or_else(|| expected.len().min(actual.len()));
+        let describe = |bytes: &[u8]| match bytes.get(offset) {
+            Some(byte) => format!("0x{byte:02x}"),
+            None => "<end of file>".to_string(),
+        };
+        format!(
+            "first byte difference at offset {offset}: golden {}, actual {} (lengths: {} and {})",
+            describe(expected),
+            describe(actual),
+            expected.len(),
+            actual.len(),
+        )
+    }
+
+    fn compare_text(update: bool, path: &Path, actual: &str, failures: &mut Vec<String>) {
+        if update {
+            std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
+                .expect("create golden dir");
+            std::fs::write(path, actual.as_bytes())
+                .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+            return;
+        }
+        match std::fs::read_to_string(path) {
+            Ok(expected) if expected == actual => {}
+            Ok(expected) => {
+                let (line, exp, act) = first_line_diff(&expected, actual);
+                failures.push(format!(
+                    "{}: diverged at line {line}\n    golden: {exp}\n    actual: {act}",
+                    path.display()
+                ));
+            }
+            Err(e) => failures.push(format!(
+                "{}: cannot read golden ({e}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
+                path.display()
+            )),
+        }
+    }
+
+    fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<String>) {
+        if update {
+            std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
+                .expect("create golden dir");
+            std::fs::write(path, actual)
+                .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+            return;
+        }
+        match std::fs::read(path) {
+            Ok(expected) if expected == actual => {}
+            Ok(expected) => {
+                failures.push(format!("{}: {}", path.display(), first_byte_diff(&expected, actual)))
+            }
+            Err(e) => failures.push(format!(
+                "{}: cannot read golden ({e}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
+                path.display()
+            )),
+        }
+    }
+
+    fn remove_if_exists(path: &Path) {
+        if path.exists() {
+            std::fs::remove_file(path).unwrap_or_else(|e| panic!("remove {}: {e}", path.display()));
+        }
+    }
+
+    /// Freeze an encode branch as either `<dir>/<name>.bin` (accepted) or
+    /// `<dir>/<name>.err.txt` (refused). `None` outcomes (branch not drivable from
+    /// this fixture) remove both artifacts on update and pin nothing.
+    fn compare_encode(
+        update: bool,
+        root: &Path,
+        dir: &str,
+        name: &str,
+        outcome: Option<Result<Vec<u8>, String>>,
+        failures: &mut Vec<String>,
+    ) {
+        let bin_path = root.join(dir).join(format!("{name}.bin"));
+        let err_path = root.join(dir).join(format!("{name}.err.txt"));
+        match outcome {
+            Some(Ok(encoded)) => {
+                if update {
+                    remove_if_exists(&err_path);
+                }
+                compare_bytes(update, &bin_path, &encoded, failures);
+            }
+            Some(Err(message)) => {
+                if update {
+                    remove_if_exists(&bin_path);
+                }
+                compare_text(update, &err_path, &format!("{message}\n"), failures);
+            }
+            None if update => {
+                remove_if_exists(&bin_path);
+                remove_if_exists(&err_path);
+            }
+            None => {}
+        }
+    }
+
+    /// Reads a committed `.f3d` fixture; the committed bytes, not the builder, are
+    /// the snapshot source of truth so a builder drift cannot silently repin.
+    fn read_fixture(name: &str) -> Result<Vec<u8>, String> {
+        let path = golden_root().join("fixtures").join(format!("{name}.f3d"));
+        std::fs::read(&path).map_err(|e| {
+            format!(
+                "fixture `{name}`: cannot read {} ({e}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
+                path.display()
+            )
+        })
+    }
+
+    #[test]
+    fn golden_snapshots_are_byte_identical() {
+        let update = update_requested();
+        let root = golden_root();
+        let mut failures = Vec::new();
+        for (name, builder_bytes) in fixtures() {
+            let fixture_path = root.join("fixtures").join(format!("{name}.f3d"));
+            // The committed `.f3d` is the frozen decode input. On update, rewrite
+            // it from the builder; then snapshot the exact committed bytes so the
+            // pins do not depend on the builder staying constant.
+            if update {
+                std::fs::create_dir_all(fixture_path.parent().expect("fixtures dir"))
+                    .expect("create fixtures dir");
+                std::fs::write(&fixture_path, &builder_bytes)
+                    .unwrap_or_else(|e| panic!("write fixture {name}: {e}"));
+            }
+            let input = if update {
+                builder_bytes.clone()
+            } else {
+                match read_fixture(name) {
+                    Ok(value) => value,
+                    Err(message) => {
+                        failures.push(message);
+                        continue;
+                    }
+                }
+            };
+
+            compare_text(
+                update,
+                &root.join("decode").join(format!("{name}.json")),
+                &decode_snapshot(&input),
+                &mut failures,
+            );
+            compare_text(
+                update,
+                &root.join("inspect").join(format!("{name}.json")),
+                &inspect_snapshot(&input),
+                &mut failures,
+            );
+            compare_encode(
+                update,
+                &root,
+                "replay",
+                name,
+                replay_outcome(&input),
+                &mut failures,
+            );
+            compare_encode(
+                update,
+                &root,
+                "generate",
+                name,
+                generate_outcome(&input),
+                &mut failures,
+            );
+            compare_encode(
+                update,
+                &root,
+                "patch",
+                name,
+                patch_outcome(&input),
+                &mut failures,
+            );
+        }
+        assert!(
+            failures.is_empty(),
+            "{} golden artifact(s) drifted; if the change is intended regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden` and review the diff:\n\n{}",
+            failures.len(),
+            failures.join("\n\n"),
+        );
+    }
+
+    /// Guards against nondeterministic output (hash-map iteration order,
+    /// timestamps): every artifact must be a pure function of the input bytes.
+    #[test]
+    fn golden_output_is_deterministic() {
+        for (name, bytes) in fixtures() {
+            let decode_first = decode_snapshot(&bytes);
+            let decode_second = decode_snapshot(&bytes);
+            if decode_first != decode_second {
+                let (line, a, b) = first_line_diff(&decode_first, &decode_second);
+                panic!("fixture `{name}`: nondeterministic decode at line {line}\n    run 1: {a}\n    run 2: {b}");
+            }
+            let inspect_first = inspect_snapshot(&bytes);
+            let inspect_second = inspect_snapshot(&bytes);
+            if inspect_first != inspect_second {
+                let (line, a, b) = first_line_diff(&inspect_first, &inspect_second);
+                panic!("fixture `{name}`: nondeterministic inspect at line {line}\n    run 1: {a}\n    run 2: {b}");
+            }
+            assert_eq!(
+                replay_outcome(&bytes),
+                replay_outcome(&bytes),
+                "fixture `{name}`: nondeterministic replay"
+            );
+            assert_eq!(
+                generate_outcome(&bytes),
+                generate_outcome(&bytes),
+                "fixture `{name}`: nondeterministic generate"
+            );
+            assert_eq!(
+                patch_outcome(&bytes),
+                patch_outcome(&bytes),
+                "fixture `{name}`: nondeterministic patch"
+            );
+        }
+    }
+
+    /// The committed `.f3d` fixtures still reproduce the builder bytes. A
+    /// corruption check on the frozen fixtures, not a drift gate; skipped during
+    /// generation. All fixtures use STORED ZIP framing, so this holds regardless
+    /// of the active `flate2` backend.
+    #[test]
+    fn golden_fixtures_match_builders() {
+        if update_requested() {
+            return;
+        }
+        let mut failures: Vec<String> = Vec::new();
+        for (name, builder_bytes) in fixtures() {
+            match read_fixture(name) {
+                Ok(bytes) if bytes == builder_bytes => {}
+                Ok(bytes) => failures.push(format!(
+                    "fixture `{name}`: committed {} bytes, builder produces {} bytes",
+                    bytes.len(),
+                    builder_bytes.len()
+                )),
+                Err(message) => failures.push(message),
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "committed fixtures diverged from their builders; regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`:\n\n{}",
+            failures.join("\n")
+        );
+    }
+
+    /// The `brep/emit.rs` regions the fixture set exercises, observed from live
+    /// decode output. Keeps the ledger doc honest: a region claimed pinned but
+    /// populated by no fixture fails `emit_region_coverage`.
+    fn coverage_tags(result: &DecodeResult) -> BTreeSet<&'static str> {
+        let mut t = BTreeSet::new();
+        let m = &result.ir.model;
+        if !m.points.is_empty() {
+            t.insert("points");
+        }
+        if !m.vertices.is_empty() {
+            t.insert("vertices");
+        }
+        if !m.edges.is_empty() {
+            t.insert("edges");
+        }
+        if !m.coedges.is_empty() {
+            t.insert("coedges");
+        }
+        if !m.loops.is_empty() {
+            t.insert("loops");
+        }
+        if !m.faces.is_empty() {
+            t.insert("faces");
+        }
+        if !m.bodies.is_empty() {
+            t.insert("containers");
+        }
+        if !m.attributes.is_empty() {
+            t.insert("attributes");
+        }
+        if !m.appearances.is_empty() || !m.appearance_bindings.is_empty() {
+            t.insert("appearances");
+        }
+        if !m.pcurves.is_empty() {
+            t.insert("pcurve_carrier");
+        }
+        if !m.procedural_surfaces.is_empty() {
+            t.insert("procedural_surface_carrier");
+        }
+        if !m.procedural_curves.is_empty() {
+            t.insert("procedural_curve_carrier");
+        }
+        if m.surfaces
+            .iter()
+            .any(|s| matches!(s.geometry, SurfaceGeometry::Nurbs(_)))
+        {
+            t.insert("nurbs_surface_carrier");
+        }
+        if m.curves
+            .iter()
+            .any(|c| matches!(c.geometry, CurveGeometry::Nurbs(_)))
+        {
+            t.insert("nurbs_curve_carrier");
+        }
+        if result
+            .ir
+            .native_unknowns("f3d")
+            .is_ok_and(|u| !u.is_empty())
+        {
+            t.insert("passthrough_unknowns");
+        }
+        let native = f3d_native(&result.ir);
+        if !native.design_objects.is_empty()
+            || !native.design_body_members.is_empty()
+            || !native.design_entity_headers.is_empty()
+            || !native.design_parameters.is_empty()
+        {
+            t.insert("design_records");
+        }
+        if !native.asm_histories.is_empty() {
+            t.insert("history");
+        }
+        t
+    }
+
+    /// The floor the fixture set must collectively cover. Every listed region is
+    /// claimed PINNED in the module ledger; this test proves each is populated by
+    /// at least one fixture from live decode output.
+    const REQUIRED_REGIONS: &[&str] = &[
+        "appearances",
+        "attributes",
+        "coedges",
+        "containers",
+        "design_records",
+        "edges",
+        "faces",
+        "history",
+        "loops",
+        "nurbs_curve_carrier",
+        "nurbs_surface_carrier",
+        "passthrough_unknowns",
+        "pcurve_carrier",
+        "points",
+        "procedural_curve_carrier",
+        "procedural_surface_carrier",
+        "vertices",
+    ];
+
+    #[test]
+    fn emit_region_coverage() {
+        let mut covered = BTreeSet::new();
+        let mut per_fixture = Vec::new();
+        for (name, bytes) in fixtures() {
+            if let Ok(result) = decode_result(&bytes) {
+                let tags = coverage_tags(&result);
+                covered.extend(tags.iter().copied());
+                per_fixture.push((name, tags));
+            } else {
+                per_fixture.push((name, BTreeSet::new()));
+            }
+        }
+        let missing: Vec<&str> = REQUIRED_REGIONS
+            .iter()
+            .copied()
+            .filter(|region| !covered.contains(region))
+            .collect();
+        println!(
+            "emit.rs region coverage: {}/{} required regions",
+            REQUIRED_REGIONS.len() - missing.len(),
+            REQUIRED_REGIONS.len()
+        );
+        for (name, tags) in &per_fixture {
+            println!("  {name}: {tags:?}");
+        }
+        assert!(
+            missing.is_empty(),
+            "ledger claims these regions pinned but no fixture populates them: {missing:?}"
+        );
+    }
+}
