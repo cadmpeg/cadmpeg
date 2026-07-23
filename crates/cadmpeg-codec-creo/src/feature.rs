@@ -5737,6 +5737,74 @@ fn replay_ids(run: &[u8], count: u32, mut cursor: usize) -> Option<(Vec<u32>, us
     Some((ids, cursor))
 }
 
+struct ReplayAffectedPair {
+    geometry_ids: Vec<u32>,
+    edge_ids: Vec<u32>,
+    geometry_extent: ReplayExtentSource,
+    edge_extent: ReplayExtentSource,
+    consumed: usize,
+}
+
+fn replay_affected_pair(run: &[u8], extents: [Option<u32>; 2]) -> Option<ReplayAffectedPair> {
+    let (geometry_count, geometry_extent, cursor) =
+        replay_extent(run, 0, b"geoms_affected", extents[0])?;
+    let (geometry_ids, cursor) = replay_ids(run, geometry_count, cursor)?;
+    let cursor = skip_replay_position_reference(run, cursor)?;
+    let (edge_count, edge_extent, cursor) =
+        replay_extent(run, cursor, b"edgs_affected", extents[1])?;
+    let (edge_ids, cursor) = replay_ids(run, edge_count, cursor)?;
+    Some(ReplayAffectedPair {
+        geometry_ids,
+        edge_ids,
+        geometry_extent,
+        edge_extent,
+        consumed: cursor,
+    })
+}
+
+fn unique_unanchored_replay_pair(
+    row: &FeatureRow,
+    extents: [Option<u32>; 2],
+) -> Option<(ReplayAffectedPair, usize)> {
+    let mut candidates = Vec::new();
+    for suffix in row
+        .body
+        .windows(2)
+        .enumerate()
+        .filter_map(|(offset, window)| (window == [0xe1, 0xe1]).then_some(offset))
+    {
+        let (row_id, after_id) = psb::compact_int(&row.body, suffix + 2);
+        if after_id == suffix + 2
+            || row.body.get(after_id..after_id + 2) != Some(&[psb::token::COMPOUND_CLOSE; 2])
+        {
+            continue;
+        }
+        let (_, after_selector) = psb::compact_int(&row.body, after_id + 2);
+        let (repeated_row_id, after_repeated_id) = psb::compact_int(&row.body, after_selector);
+        if after_selector == after_id + 2
+            || after_repeated_id == after_selector
+            || repeated_row_id != row_id
+            || row.body.get(after_repeated_id..after_repeated_id + 4)
+                != Some(&[0x00, 0xe1, 0x00, psb::token::COMPOUND_CLOSE])
+        {
+            continue;
+        }
+        for start in 1..suffix {
+            if row.body[start - 1] != psb::token::COMPOUND_CLOSE {
+                continue;
+            }
+            let Some(pair) = replay_affected_pair(&row.body[start..suffix], extents) else {
+                continue;
+            };
+            if pair.consumed == suffix - start {
+                candidates.push((pair, start));
+            }
+        }
+    }
+    (candidates.len() == 1).then_some(())?;
+    candidates.pop()
+}
+
 /// Decode the two affected-ID array positions in class-913 replay rows.
 ///
 /// Array extents are stateful within one `AllFeatur` stream and schema class.
@@ -5753,50 +5821,47 @@ pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds>
         if row.root_schema_class != Some(913) {
             continue;
         }
-        let Some(anchor) = row.body.windows(ANCHOR_LEN).rposition(|window| {
+        let anchor = row.body.windows(ANCHOR_LEN).rposition(|window| {
             window.starts_with(ANCHOR_PREFIX)
                 && matches!(window[ANCHOR_PREFIX.len()], 0xc8 | 0xd8)
                 && window.ends_with(ANCHOR_SUFFIX)
-        }) else {
-            continue;
-        };
-        let run_start = anchor + ANCHOR_LEN;
-        let Some(term_relative) = row.body[run_start..]
-            .windows(TERMINATOR.len())
-            .position(|window| window == TERMINATOR)
-        else {
-            continue;
-        };
-        let run = &row.body[run_start..run_start + term_relative];
+        });
         let state = extents.entry(row.stream_offset).or_default();
-        let Some((geometry_count, geometry_extent, cursor)) =
-            replay_extent(run, 0, b"geoms_affected", state[0])
-        else {
-            continue;
+        let (pair, source_offset) = if let Some(anchor) = anchor {
+            let run_start = anchor + ANCHOR_LEN;
+            let Some(term_relative) = row.body[run_start..]
+                .windows(TERMINATOR.len())
+                .position(|window| window == TERMINATOR)
+            else {
+                continue;
+            };
+            let run = &row.body[run_start..run_start + term_relative];
+            let Some(pair) = replay_affected_pair(run, *state) else {
+                continue;
+            };
+            (pair, anchor)
+        } else {
+            let Some(pair) = unique_unanchored_replay_pair(row, *state) else {
+                continue;
+            };
+            pair
         };
-        let Some((geometry_ids, cursor)) = replay_ids(run, geometry_count, cursor) else {
-            continue;
-        };
-        let Some(cursor) = skip_replay_position_reference(run, cursor) else {
-            continue;
-        };
-        let Some((edge_count, edge_extent, cursor)) =
-            replay_extent(run, cursor, b"edgs_affected", state[1])
-        else {
-            continue;
-        };
-        let Some((edge_ids, _)) = replay_ids(run, edge_count, cursor) else {
-            continue;
-        };
-        state[0] = Some(geometry_count);
-        state[1] = Some(edge_count);
+        let ReplayAffectedPair {
+            geometry_ids,
+            edge_ids,
+            geometry_extent,
+            edge_extent,
+            ..
+        } = pair;
+        state[0] = Some(geometry_ids.len() as u32);
+        state[1] = Some(edge_ids.len() as u32);
         result.push(FeatureReplayAffectedIds {
             feature_id: row.feature_id,
             geometry_ids,
             edge_ids,
             geometry_extent,
             edge_extent,
-            offset: row.body_offset + anchor,
+            offset: row.body_offset + source_offset,
         });
     }
     result.sort_by_key(|record| record.offset);
@@ -6970,6 +7035,27 @@ mod tests {
         }
     }
 
+    fn unanchored_replay_row(feature_id: u32, row_id: u8, operands: &[u8]) -> FeatureRow {
+        let mut row = replay_row(feature_id, operands);
+        row.body.clear();
+        row.body.push(psb::token::COMPOUND_CLOSE);
+        row.body.extend_from_slice(operands);
+        row.body.extend_from_slice(&[
+            0xe1,
+            0xe1,
+            row_id,
+            psb::token::COMPOUND_CLOSE,
+            psb::token::COMPOUND_CLOSE,
+            3,
+            row_id,
+            0x00,
+            0xe1,
+            0x00,
+            psb::token::COMPOUND_CLOSE,
+        ]);
+        row
+    }
+
     #[test]
     fn positional_round_replay_inherits_each_array_extent() {
         let mut rows = [
@@ -6992,6 +7078,24 @@ mod tests {
         assert_eq!(decoded[2].edge_ids, vec![26, 27, 28]);
         assert_eq!(decoded[2].geometry_extent, ReplayExtentSource::Explicit);
         assert_eq!(decoded[2].edge_extent, ReplayExtentSource::Inherited);
+    }
+
+    #[test]
+    fn positional_round_replay_uses_repeated_row_id_suffix() {
+        let rows = [
+            unanchored_replay_row(1, 40, &[0xf8, 2, 10, 11, 0xf8, 2, 20, 21]),
+            unanchored_replay_row(2, 41, &[12, 13, 22, 23]),
+        ];
+
+        let decoded = replay_affected_ids(&rows);
+
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].geometry_ids, vec![10, 11]);
+        assert_eq!(decoded[0].edge_ids, vec![20, 21]);
+        assert_eq!(decoded[1].geometry_ids, vec![12, 13]);
+        assert_eq!(decoded[1].edge_ids, vec![22, 23]);
+        assert_eq!(decoded[1].geometry_extent, ReplayExtentSource::Inherited);
+        assert_eq!(decoded[1].edge_extent, ReplayExtentSource::Inherited);
     }
 
     #[test]

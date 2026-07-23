@@ -1887,7 +1887,11 @@ two positions. The positional pair begins after `f1 f7 42 <variant> 80 01 e3`,
 where `<variant>` is `c8` or `d8`. Before an explicit second-position `f8`,
 `f7 <canonical-reference>` identifies the replayed schema position and does
 not belong to either identifier array. An omitted second-position extent also
-omits that reference.
+omits that reference. The unanchored positional form ends the pair immediately
+before `e1 e1 <row-id> e3 e3 <selector> <row-id> 00 e1 00 e3`. The repeated
+compact `row-id` values must agree. The pair begins immediately after a
+compound close, and its two stateful extents must consume the bytes up to that
+suffix exactly. More than one exact start leaves the row opaque.
 
 Repeated named affected-ID arrays for one feature and namespace are distinct
 stored states. They define a neutral edge selection, parent set, generated
