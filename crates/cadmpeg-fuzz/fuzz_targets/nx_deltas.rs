@@ -9,5 +9,5 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     let _ = deltas::walk(data);
-    let _ = deltas::points(data);
+    let _ = deltas::procedural_residual(data);
 });
