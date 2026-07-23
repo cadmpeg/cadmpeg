@@ -2,11 +2,12 @@
 //! Bounded `FCStd` archive scanning and physical byte accounting.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{Cursor, Read, SeekFrom};
+use std::io::Cursor;
 use std::path::{Component, Path};
 
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::container::{walk_bounded, WalkConfig};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use flate2::{Decompress, FlushDecompress};
 use zip::CompressionMethod;
 
@@ -68,16 +69,16 @@ pub struct Scan {
 }
 
 /// Scan an archive with deterministic resource limits.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
-    reader.seek(SeekFrom::Start(0))?;
-    let mut source = Vec::new();
-    reader
-        .take((MAX_ARCHIVE_BYTES + 1) as u64)
-        .read_to_end(&mut source)?;
+///
+/// `ctx` is taken for parity with the other container codecs' `scan(ctx, root)`
+/// entry points; freecad's bounded-`Vec` walk inflates into owned buffers rather
+/// than charging the decode platform, so the context is not consumed here.
+pub fn scan(_ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Scan, CodecError> {
+    let source = root.window();
     if source.len() > MAX_ARCHIVE_BYTES {
         return Err(CodecError::Malformed("archive size limit exceeded".into()));
     }
-    let mut archive = zip::ZipArchive::new(Cursor::new(&source))
+    let mut archive = zip::ZipArchive::new(Cursor::new(source))
         .map_err(|error| CodecError::Malformed(format!("not a readable ZIP: {error}")))?;
     if archive.len() > MAX_ENTRIES {
         return Err(CodecError::Malformed(
@@ -185,7 +186,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
         .get("Document.xml")
         .ok_or_else(|| CodecError::WrongFormat("ZIP has no root Document.xml".into()))?;
     let document = parse_document(document_bytes)?;
-    let ledger = physical_ledger(&source, &raw_entries)?;
+    let ledger = physical_ledger(source, &raw_entries)?;
     Ok(Scan {
         entries,
         document,

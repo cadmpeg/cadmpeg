@@ -31,7 +31,6 @@ mod writer;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
-use std::io::Cursor;
 
 use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder,
@@ -1119,10 +1118,10 @@ impl Codec for FcstdCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        container::scan(&mut Cursor::new(root.window())).map(|scan| container::summarize(&scan))
+        container::scan(ctx, root).map(|scan| container::summarize(&scan))
     }
 
     fn decode_impl(
@@ -1134,7 +1133,7 @@ impl Codec for FcstdCodec {
             container_only: ctx.container_only(),
             policy: *ctx.policy(),
         };
-        let scan = container::scan(&mut Cursor::new(root.window()))?;
+        let scan = container::scan(ctx, root)?;
         if !options.container_only
             && (scan.document.schema_version != "4" || scan.document.file_version != "1")
         {

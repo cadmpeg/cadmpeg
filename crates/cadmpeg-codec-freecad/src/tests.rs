@@ -4888,7 +4888,14 @@ fn frames_zip64_streaming_descriptor_and_local_extra() {
         "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>",
         SimpleFileOptions::default().large_file(true),
     );
-    let scan = crate::container::scan(&mut Cursor::new(bytes)).expect("ZIP64 streaming ZIP");
+    let arena = cadmpeg_ir::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_ir::decode::DecodePolicy::default(),
+    )
+    .expect("root view");
+    let scan = crate::container::scan(&ctx, root).expect("ZIP64 streaming ZIP");
     assert!(scan
         .ledger
         .iter()
@@ -4904,7 +4911,14 @@ fn frames_zip64_streaming_descriptor_and_local_extra() {
 #[test]
 fn frames_streaming_data_descriptor_separately_from_padding() {
     let bytes = streaming_archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>");
-    let scan = crate::container::scan(&mut Cursor::new(bytes)).expect("streaming ZIP");
+    let arena = cadmpeg_ir::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_ir::decode::DecodePolicy::default(),
+    )
+    .expect("root view");
+    let scan = crate::container::scan(&ctx, root).expect("streaming ZIP");
     let descriptors = scan
         .ledger
         .iter()
