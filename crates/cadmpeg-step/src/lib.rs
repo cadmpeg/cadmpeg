@@ -513,22 +513,6 @@ impl<'a> Builder<'a> {
         });
     }
 
-    fn omit(
-        &mut self,
-        code: LossCode,
-        category: LossCategory,
-        severity: Severity,
-        message: String,
-    ) {
-        self.losses.push(LossNote {
-            code,
-            category,
-            severity,
-            message,
-            provenance: None,
-        });
-    }
-
     fn build(&mut self) {
         let context = self.emit_context();
 
@@ -2580,7 +2564,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.curveless_edges.is_empty() {
-            self.omit(
+            self.loss(
                 LossCode::CurvelessEdgeOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
@@ -2592,7 +2576,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.unknown_surface_faces.is_empty() {
-            self.omit(
+            self.loss(
                 LossCode::UnknownSurfaceFaceOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
@@ -2624,7 +2608,7 @@ impl<'a> Builder<'a> {
             .filter(|use_| !self.pcurves.contains_key(use_.pcurve.as_str()))
             .count();
         if missing_pcurve_count > 0 {
-            self.omit(
+            self.loss(
                 LossCode::PcurveOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
@@ -2648,7 +2632,7 @@ impl<'a> Builder<'a> {
             })
             .count();
         if reduced_pcurve_count > 0 {
-            self.omit(
+            self.loss(
                 LossCode::PcurveOmitted,
                 LossCategory::Geometry,
                 Severity::Info,
@@ -2658,7 +2642,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.model.subds.is_empty() {
-            self.omit(
+            self.loss(
                 LossCode::SubdOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
@@ -2671,7 +2655,7 @@ impl<'a> Builder<'a> {
         }
         let unwritten_pmi = self.ir.model.pmi.len().saturating_sub(self.written_pmi);
         if unwritten_pmi > 0 {
-            self.omit(
+            self.loss(
                 LossCode::PmiOmitted,
                 LossCategory::Attribute,
                 Severity::Warning,
