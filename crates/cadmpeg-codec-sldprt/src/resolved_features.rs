@@ -1424,6 +1424,7 @@ mod marker_tests {
         coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, coordinate_roster_full_circle,
         cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
+        cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
         current_coordinate_linked_line_endpoints, current_geometry_locus_profile_vertex,
         current_indexed_arc_reverses_center_sweep, current_reverse_incidence_endpoint_offsets,
         current_wide_arc_direct_markers, current_wide_undetailed_line,
@@ -1456,22 +1457,23 @@ mod marker_tests {
         roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
         sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
         spatial_vertex_coordinates, tangent_bounded_curve, unique_arc_center_marker,
-        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
-        wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind, Length,
-        CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
-        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
-        SKETCH_MARKER,
+        unique_cylindrical_face, unique_dimensioned_rectangle_markers, unique_locus,
+        unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle, BooleanOp,
+        CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
+        NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
         FeatureInputComponentPathEntry, FeatureInputLane, FeatureInputName, FeatureInputOperand,
-        FeatureInputOperandKind, SketchInputEntity, SketchInputKind, SketchInputLink,
-        SketchRelationKind,
+        FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
+        SketchInputKind, SketchInputLink, SketchRelationKind,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
-    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchGeometry, SketchId, SketchLocus};
+    use cadmpeg_ir::topology::{Face, Sense};
     use std::collections::{BTreeMap, HashSet};
 
     #[test]
@@ -7675,6 +7677,7 @@ mod marker_tests {
         let body_offset = 30;
         let marker = body_offset + 94;
         let mut payload = vec![0; marker - 12];
+        payload[body_offset..body_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
         payload[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
         payload[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
         let actual_marker = selection_vector_tail(&mut payload, &[3]);
@@ -7690,6 +7693,7 @@ mod marker_tests {
 
         let compact_marker = body_offset + 66;
         let mut compact = vec![0; compact_marker - 12];
+        compact[body_offset..body_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
         compact[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
         compact[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(selection_vector_tail(&mut compact, &[5]), compact_marker);
@@ -7704,6 +7708,7 @@ mod marker_tests {
 
         let selected_marker = body_offset + 70;
         let mut selected = vec![0; selected_marker - 12];
+        selected[body_offset..body_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
         selected[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
         selected[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
         selected[body_offset + 8] = 0x40;
@@ -7719,6 +7724,7 @@ mod marker_tests {
 
         let extended_marker = body_offset + 106;
         let mut extended = vec![0; extended_marker - 12];
+        extended[body_offset..body_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
         extended[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
         extended[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(selection_vector_tail(&mut extended, &[9]), extended_marker);
@@ -7737,6 +7743,7 @@ mod marker_tests {
         );
 
         let mut payload = vec![0; marker - 12];
+        payload[body_offset..body_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
         payload[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
         payload[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
         payload.extend(3u32.to_le_bytes());
@@ -7764,6 +7771,164 @@ mod marker_tests {
                 .map(|component| component.local_id)
                 .collect::<Vec<_>>(),
             [Some(3), Some(7)]
+        );
+    }
+
+    #[test]
+    fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
+        let body_offset = 220;
+        let marker = body_offset + 94;
+        let mut payload = vec![0; marker - 12];
+        payload[body_offset..body_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
+        payload[body_offset + 2..body_offset + 4].copy_from_slice(&0x802d_u16.to_le_bytes());
+        payload[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(selection_vector_tail(&mut payload, &[3]), marker);
+        payload.resize(500, 0);
+
+        let feature = Feature {
+            id: "thread".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some("53".into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: "Thread".into(),
+            kind: "Feature".into(),
+            input_class: Some("moCosmeticThread_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::from([("D2".into(), "<MOD-DIAM>8".into())]),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        };
+        let diameter = FeatureInputScalar {
+            id: "diameter".into(),
+            parent: "lane".into(),
+            feature_ref: Some("other-feature".into()),
+            ordinal: 0,
+            offset: 150,
+            object_id: 52,
+            name: "diameter-name".into(),
+            value: 0.008,
+            role: FeatureInputScalarRole::Native,
+            entity_indices: Vec::new(),
+            operands: Vec::new(),
+        };
+        let mut lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: vec![
+                FeatureInputName {
+                    id: "diameter-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 0,
+                    offset: 120,
+                    object_id: Some(u32::MAX),
+                    value: "D2".into(),
+                },
+                FeatureInputName {
+                    id: "next-feature".into(),
+                    parent: "lane".into(),
+                    ordinal: 1,
+                    offset: 400,
+                    object_id: Some(54),
+                    value: "Next".into(),
+                },
+            ],
+            scalars: vec![diameter],
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        assert_eq!(
+            cosmetic_thread_diameter_child_tail(&feature, &lane),
+            Some(158..400)
+        );
+        let references =
+            cosmetic_thread_cylinder_references(&feature, &lane, 20, 100, &HashSet::from([0x802f]));
+        assert_eq!(
+            references
+                .iter()
+                .map(|(offset, components)| (*offset, components[0].local_id))
+                .collect::<Vec<_>>(),
+            [(marker, Some(3))]
+        );
+
+        lane.scalars.push(FeatureInputScalar {
+            id: "next-scalar".into(),
+            parent: "lane".into(),
+            feature_ref: None,
+            ordinal: 1,
+            offset: 200,
+            object_id: 54,
+            name: "next-feature".into(),
+            value: 1.0,
+            role: FeatureInputScalarRole::Native,
+            entity_indices: Vec::new(),
+            operands: Vec::new(),
+        });
+        assert!(cosmetic_thread_cylinder_references(
+            &feature,
+            &lane,
+            20,
+            100,
+            &HashSet::from([0x802f]),
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
+        let surface = Surface {
+            id: SurfaceId("cylinder".into()),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 4.0,
+            },
+            source_object: None,
+        };
+        let face = Face {
+            id: FaceId("face".into()),
+            shell: ShellId("shell".into()),
+            surface: surface.id.clone(),
+            sense: Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        assert_eq!(
+            unique_cylindrical_face(
+                4.0,
+                std::slice::from_ref(&face),
+                std::slice::from_ref(&surface)
+            ),
+            Some(face.id.clone())
+        );
+        assert_eq!(
+            unique_cylindrical_face(
+                3.0,
+                std::slice::from_ref(&face),
+                std::slice::from_ref(&surface)
+            ),
+            None
+        );
+        let mut duplicate = face.clone();
+        duplicate.id = FaceId("other-face".into());
+        assert_eq!(
+            unique_cylindrical_face(4.0, &[face, duplicate], &[surface]),
+            None
         );
     }
 
@@ -14395,28 +14560,24 @@ fn compact_surface_selections(
                         .map(|ids| (marker, ids))
                 })
                 .collect(),
-            NativeClassKind::CosmeticThread => (start..end.saturating_sub(95))
-                .find_map(|offset| {
-                    let token = lane
-                        .native_payload
-                        .get(offset..offset + 2)
-                        .and_then(|bytes| bytes.try_into().ok())
-                        .map(u16::from_le_bytes)?;
-                    cylinder_reference_tokens.contains(&token).then(|| {
-                        cosmetic_thread_cylinder_reference_at(&lane.native_payload, offset)
-                    })?
-                })
-                .into_iter()
-                .chain(lane.classes.iter().filter_map(|class| {
-                    let offset = usize::try_from(class.offset).ok()?;
-                    (class.name == "moCompFace_c" && (start..end).contains(&offset))
-                        .then(|| offset.checked_add(6 + class.name.len()))
-                        .flatten()
-                        .and_then(|body| {
-                            cosmetic_thread_component_face_reference_at(&lane.native_payload, body)
-                        })
-                }))
-                .collect(),
+            NativeClassKind::CosmeticThread => cosmetic_thread_cylinder_references(
+                feature,
+                lane,
+                start,
+                end,
+                &cylinder_reference_tokens,
+            )
+            .into_iter()
+            .chain(lane.classes.iter().filter_map(|class| {
+                let offset = usize::try_from(class.offset).ok()?;
+                (class.name == "moCompFace_c" && (start..end).contains(&offset))
+                    .then(|| offset.checked_add(6 + class.name.len()))
+                    .flatten()
+                    .and_then(|body| {
+                        cosmetic_thread_component_face_reference_at(&lane.native_payload, body)
+                    })
+            }))
+            .collect(),
             NativeClassKind::MirrorPattern => (start.saturating_add(12)
                 ..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
                 .filter(|marker| {
@@ -14476,10 +14637,104 @@ fn compact_surface_selections(
     result
 }
 
+fn cosmetic_thread_cylinder_references(
+    feature: &crate::records::Feature,
+    lane: &FeatureInputLane,
+    object_start: usize,
+    object_end: usize,
+    cylinder_reference_tokens: &HashSet<u16>,
+) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    let mut ranges = Vec::with_capacity(2);
+    ranges.push(object_start..object_end);
+    if let Some(range) = cosmetic_thread_diameter_child_tail(feature, lane) {
+        ranges.push(range);
+    }
+    let mut offsets = ranges
+        .into_iter()
+        .flatten()
+        .filter(|offset| {
+            lane.native_payload
+                .get(*offset..*offset + 2)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u16::from_le_bytes)
+                .is_some_and(|token| cylinder_reference_tokens.contains(&token))
+        })
+        .collect::<Vec<_>>();
+    offsets.sort_unstable();
+    offsets.dedup();
+    offsets
+        .into_iter()
+        .find_map(|offset| cosmetic_thread_cylinder_reference_at(&lane.native_payload, offset))
+        .into_iter()
+        .collect()
+}
+
+fn cosmetic_thread_diameter_child_tail(
+    feature: &crate::records::Feature,
+    lane: &FeatureInputLane,
+) -> Option<std::ops::Range<usize>> {
+    let source_id = feature.source_id.as_deref()?.parse::<u32>().ok()?;
+    let diameter_id = source_id.checked_sub(1)?;
+    let names = lane
+        .names
+        .iter()
+        .map(|name| (name.id.as_str(), name))
+        .collect::<HashMap<_, _>>();
+    let mut diameters = lane.scalars.iter().filter(|scalar| {
+        scalar.object_id == diameter_id
+            && names
+                .get(scalar.name.as_str())
+                .is_some_and(|name| name.value == "D2")
+    });
+    let diameter = diameters.next()?;
+    if diameters.next().is_some() {
+        return None;
+    }
+    let start = usize::try_from(diameter.offset).ok()?.checked_add(8)?;
+    let end = lane
+        .scalars
+        .iter()
+        .map(|scalar| scalar.offset)
+        .chain(
+            lane.names
+                .iter()
+                .filter(|name| name.object_id != Some(u32::MAX))
+                .map(|name| name.offset),
+        )
+        .filter(|offset| *offset >= start as u64)
+        .min()
+        .and_then(|offset| usize::try_from(offset).ok())
+        .unwrap_or(lane.native_payload.len());
+    (start < end).then_some(start..end)
+}
+
 fn cosmetic_thread_cylinder_reference_at(
     payload: &[u8],
     body_offset: usize,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    let marker = cosmetic_thread_cylinder_reference_marker_layout_at(payload, body_offset)?;
+    compact_termination_reference_path_at(payload, marker)
+        .or_else(|| compact_edge_component_path_at(payload, marker))
+        .or_else(|| compact_sketch_surface_component_path_at(payload, marker))
+        .map(|components| (marker, components))
+}
+
+fn cosmetic_thread_cylinder_reference_marker_at(
+    payload: &[u8],
+    body_offset: usize,
+) -> Option<usize> {
+    let class_token =
+        u16::from_le_bytes(payload.get(body_offset..body_offset + 2)?.try_into().ok()?);
+    if class_token & 0x8000 == 0 || class_token == 0xffff {
+        return None;
+    }
+    cosmetic_thread_cylinder_reference_marker_layout_at(payload, body_offset)
+}
+
+fn cosmetic_thread_cylinder_reference_marker_layout_at(
+    payload: &[u8],
+    body_offset: usize,
+) -> Option<usize> {
     let body = payload.get(body_offset..body_offset + 11)?;
     let nested_token = u16::from_le_bytes(body[2..4].try_into().ok()?);
     if nested_token & 0x8000 == 0
@@ -14492,10 +14747,18 @@ fn cosmetic_thread_cylinder_reference_at(
     }
     [66, 70, 94, 106].into_iter().find_map(|relative| {
         let marker = body_offset.checked_add(relative)?;
-        compact_termination_reference_path_at(payload, marker)
-            .or_else(|| compact_edge_component_path_at(payload, marker))
-            .or_else(|| compact_sketch_surface_component_path_at(payload, marker))
-            .map(|components| (marker, components))
+        let count = u32::from_le_bytes(
+            payload
+                .get(marker.checked_sub(12)?..marker - 8)?
+                .try_into()
+                .ok()?,
+        );
+        ((1..=64).contains(&count)
+            && matches!(payload.get(marker - 8..marker - 4), Some([0, 2 | 3, 0, 0]))
+            && payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
+                == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+            && payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..marker + 18) == Some(&[0, 0]))
+        .then_some(marker)
     })
 }
 
@@ -22070,6 +22333,96 @@ pub(crate) fn project_compact_surface_selections(
             }
         }
     }
+}
+
+/// Resolve an attached thread face when its persistent cylinder reference is
+/// structurally present but does not carry a typed component path.
+pub(crate) fn project_opaque_cosmetic_thread_faces(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+    faces: &[Face],
+    surfaces: &[Surface],
+) {
+    let native_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(native_feature) = native_features.get(native_ref).copied() else {
+            continue;
+        };
+        let FeatureDefinition::CosmeticThread {
+            face,
+            diameter: Some(Length(diameter)),
+            ..
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        if !matches!(
+            face,
+            cadmpeg_ir::features::FaceSelection::Unresolved
+                | cadmpeg_ir::features::FaceSelection::Native(_)
+        ) {
+            continue;
+        }
+        let mut references = lanes
+            .iter()
+            .filter_map(|lane| {
+                let mut range = cosmetic_thread_diameter_child_tail(native_feature, lane)?;
+                let marker = range.find_map(|body| {
+                    cosmetic_thread_cylinder_reference_marker_at(&lane.native_payload, body)
+                })?;
+                let lane_key = lane
+                    .id
+                    .rsplit_once('#')
+                    .map_or(lane.id.as_str(), |(_, key)| key);
+                Some(format!("{lane_key}:{marker}"))
+            })
+            .collect::<Vec<_>>();
+        references.sort();
+        references.dedup();
+        if references.is_empty() {
+            continue;
+        }
+        let Some(selected) = unique_cylindrical_face(*diameter * 0.5, faces, surfaces) else {
+            continue;
+        };
+        *face = cadmpeg_ir::features::FaceSelection::Resolved {
+            faces: vec![selected],
+            native: format!(
+                "sldprt:feature-input:cylinder-reference:{}",
+                references.join(",")
+            ),
+        };
+    }
+}
+
+fn unique_cylindrical_face(radius: f64, faces: &[Face], surfaces: &[Surface]) -> Option<FaceId> {
+    if !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    let tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+    let cylindrical = surfaces
+        .iter()
+        .filter_map(|surface| match surface.geometry {
+            SurfaceGeometry::Cylinder {
+                radius: candidate, ..
+            } if (candidate - radius).abs() <= tolerance => Some(&surface.id),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let mut candidates = faces
+        .iter()
+        .filter(|face| cylindrical.contains(&face.surface))
+        .map(|face| face.id.clone());
+    let selected = candidates.next()?;
+    candidates.next().is_none().then_some(selected)
 }
 
 /// Add semantic termination forms carried by compact extrusion end-spec children.

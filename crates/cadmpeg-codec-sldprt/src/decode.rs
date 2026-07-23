@@ -1619,7 +1619,6 @@ fn build_geometry_ir(
         &native.feature_input_lanes,
     );
     crate::history::order_features_for_regeneration(&mut ir.model.features);
-    stamp_feature_baseline(&mut ir);
     assign_configuration_bodies(&mut ir, configuration_bodies);
     crate::history::project_configuration_sketch_states(
         &mut ir,
@@ -1628,6 +1627,15 @@ fn build_geometry_ir(
         &annotations,
     );
     mark_active_configuration(&mut ir);
+    crate::resolved_features::project_opaque_cosmetic_thread_faces(
+        &mut ir.model.features,
+        &histories,
+        &native.feature_input_lanes,
+        &ir.model.faces,
+        &ir.model.surfaces,
+    );
+    sync_active_configuration_cosmetic_thread_faces(&mut ir);
+    stamp_feature_baseline(&mut ir);
     snapshot_active_configuration(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
@@ -2264,6 +2272,14 @@ fn build_metadata_ir(
         &histories,
         &lanes,
     );
+    crate::resolved_features::project_opaque_cosmetic_thread_faces(
+        &mut ir.model.features,
+        &histories,
+        &lanes,
+        &ir.model.faces,
+        &ir.model.surfaces,
+    );
+    sync_active_configuration_cosmetic_thread_faces(&mut ir);
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes, &annotations);
     stamp_feature_baseline(&mut ir);
@@ -2476,6 +2492,65 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = parameter_values;
     configuration.feature_states = feature_states;
+}
+
+fn sync_active_configuration_cosmetic_thread_faces(ir: &mut CadIr) {
+    let mut active = ir
+        .model
+        .configurations
+        .iter()
+        .enumerate()
+        .filter(|(_, configuration)| configuration.active)
+        .map(|(index, _)| index);
+    let Some(configuration_index) = active.next() else {
+        return;
+    };
+    if active.next().is_some() {
+        return;
+    }
+    let resolved = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
+                face:
+                    face @ cadmpeg_ir::features::FaceSelection::Resolved {
+                        faces: selected, ..
+                    },
+                diameter,
+                extent,
+            } = &feature.definition
+            else {
+                return None;
+            };
+            (!selected.is_empty()).then_some((feature.id.clone(), face.clone(), *diameter, *extent))
+        })
+        .collect::<Vec<_>>();
+    let configuration = &mut ir.model.configurations[configuration_index];
+    for (feature, resolved_face, resolved_diameter, resolved_extent) in resolved {
+        let Some(state) = configuration.feature_states.get_mut(&feature) else {
+            continue;
+        };
+        let cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
+            face,
+            diameter,
+            extent,
+        } = &mut state.definition
+        else {
+            continue;
+        };
+        if *diameter == resolved_diameter
+            && *extent == resolved_extent
+            && matches!(
+                face,
+                cadmpeg_ir::features::FaceSelection::Unresolved
+                    | cadmpeg_ir::features::FaceSelection::Native(_)
+            )
+        {
+            *face = resolved_face;
+        }
+    }
 }
 
 fn stamp_feature_baseline(ir: &mut CadIr) {
