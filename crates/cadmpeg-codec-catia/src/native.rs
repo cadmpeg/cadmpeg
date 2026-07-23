@@ -16,7 +16,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 80;
+pub const CATIA_NATIVE_VERSION: u32 = 81;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -615,6 +615,19 @@ pub struct CatiaDesignClass {
     pub name: String,
 }
 
+/// One exact inter-object reference occurrence in a grouped design object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaDesignObjectRelation {
+    /// Field record containing the reference.
+    pub source_field: String,
+    /// Stored one-based target-record ordinal.
+    pub target_ordinal: u32,
+    /// Exact field record selected by the stored ordinal.
+    pub target_field: String,
+    /// Design object containing the selected field record.
+    pub target_design_object: String,
+}
+
 /// One serialized design object formed by a shared `7C09` owner ordinal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaDesignObject {
@@ -645,9 +658,9 @@ pub struct CatiaDesignObject {
     /// Distinct exact field classes, in first field order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub field_classes: Vec<CatiaDesignClass>,
-    /// Referenced design objects, in first field-reference order.
+    /// Exact inter-object reference occurrences in field and payload order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub object_references: Vec<String>,
+    pub relations: Vec<CatiaDesignObjectRelation>,
 }
 
 fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
@@ -673,24 +686,9 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                 .map(move |(ordinal, (owner_ordinal, records))| {
                     let owner_record = object_record_index(owner_ordinal, graph.records.len())
                         .and_then(|index| graph.records.get(index));
-                    let mut referenced_owners = Vec::new();
-                    for reference in records
-                        .iter()
-                        .flat_map(|record| payload_references(&record.payload))
-                    {
-                        let target_owner = object_record_index(reference, graph.records.len())
-                            .and_then(|index| graph.records.get(index))
-                            .and_then(|record| record.owner_ref);
-                        if let Some(target_owner) = target_owner.filter(|target| {
-                            *target != owner_ordinal
-                                && owner_indices.contains_key(target)
-                                && !referenced_owners.contains(target)
-                        }) {
-                            referenced_owners.push(target_owner);
-                        }
-                    }
+                    let id = design_object_id(graph.byte_offset, owner_ordinal);
                     CatiaDesignObject {
-                        id: design_object_id(graph.byte_offset, owner_ordinal),
+                        id: id.clone(),
                         parent: graph.id.clone(),
                         ordinal: ordinal as u64,
                         first_field_byte_offset: records[0].byte_offset,
@@ -728,9 +726,23 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                                 }
                                 classes
                             }),
-                        object_references: referenced_owners
-                            .into_iter()
-                            .map(|owner| design_object_id(graph.byte_offset, owner))
+                        relations: records
+                            .iter()
+                            .flat_map(|record| {
+                                record.references.iter().filter_map(|reference| {
+                                    let target_design_object =
+                                        reference.design_object.as_ref()?.clone();
+                                    let target_field = reference.target.as_ref()?.clone();
+                                    (target_design_object != id).then_some(
+                                        CatiaDesignObjectRelation {
+                                            source_field: record.id.clone(),
+                                            target_ordinal: reference.ordinal,
+                                            target_field,
+                                            target_design_object,
+                                        },
+                                    )
+                                })
+                            })
                             .collect(),
                     }
                 })

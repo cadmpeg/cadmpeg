@@ -3987,8 +3987,8 @@ fn incomplete_object_payload_tags_do_not_consume_the_terminator() {
 #[test]
 fn native_design_objects_preserve_payload_references_to_target_owners() {
     let bytes = object_graph_from_records(&[
-        object_graph_record(&[0x04, 0x01, 0x81, 0x83], &[0x81, 0x83, 0xfe]),
-        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x83], &[0x81, 0x83, 0x81, 0x83, 0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0x81, 0x81, 0xfe]),
         object_graph_record(&[0x04, 0x01, 0x83, 0x85], &[0x81, 0x81, 0xfe]),
     ]);
     let native = crate::native::CatiaNative::decode(&bytes);
@@ -4008,15 +4008,43 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
     );
     assert_eq!(
         graph.records[0].references,
-        [crate::native::CatiaObjectRecordReference {
-            ordinal: 3,
-            target: Some(graph.records[2].id.clone()),
-            design_object: graph.records[2].design_object.clone(),
-        }]
+        [
+            crate::native::CatiaObjectRecordReference {
+                ordinal: 3,
+                target: Some(graph.records[2].id.clone()),
+                design_object: graph.records[2].design_object.clone(),
+            },
+            crate::native::CatiaObjectRecordReference {
+                ordinal: 3,
+                target: Some(graph.records[2].id.clone()),
+                design_object: graph.records[2].design_object.clone(),
+            },
+        ]
     );
     assert_eq!(
-        native.design_objects[0].object_references,
-        vec![native.design_objects[1].id.clone()]
+        native.design_objects[0].relations,
+        [
+            crate::native::CatiaDesignObjectRelation {
+                source_field: graph.records[0].id.clone(),
+                target_ordinal: 3,
+                target_field: graph.records[2].id.clone(),
+                target_design_object: native.design_objects[1].id.clone(),
+            },
+            crate::native::CatiaDesignObjectRelation {
+                source_field: graph.records[0].id.clone(),
+                target_ordinal: 3,
+                target_field: graph.records[2].id.clone(),
+                target_design_object: native.design_objects[1].id.clone(),
+            },
+        ]
+    );
+    assert_eq!(
+        graph.records[1].references,
+        [crate::native::CatiaObjectRecordReference {
+            ordinal: 1,
+            target: Some(graph.records[0].id.clone()),
+            design_object: graph.records[0].design_object.clone(),
+        }]
     );
     assert_eq!(native.design_objects[1].owner_ordinal, 3);
     assert_eq!(native.design_objects[1].ordinal, 1);
@@ -4025,8 +4053,13 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
         native.object_graphs[0].records[2].byte_offset
     );
     assert_eq!(
-        native.design_objects[1].object_references,
-        vec![native.design_objects[0].id.clone()]
+        native.design_objects[1].relations,
+        [crate::native::CatiaDesignObjectRelation {
+            source_field: graph.records[2].id.clone(),
+            target_ordinal: 1,
+            target_field: graph.records[0].id.clone(),
+            target_design_object: native.design_objects[0].id.clone(),
+        }]
     );
 }
 
@@ -4172,7 +4205,7 @@ fn incomplete_object_lists_do_not_assert_reference_links() {
     let native = crate::native::CatiaNative::decode(&bytes);
 
     assert!(native.object_graphs[0].records[0].references.is_empty());
-    assert!(native.design_objects[0].object_references.is_empty());
+    assert!(native.design_objects[0].relations.is_empty());
     assert!(matches!(
         &native.object_graphs[0].records[0].payload.fields[0],
         crate::object_graph::PayloadField::List {
@@ -4196,7 +4229,7 @@ fn incomplete_object_list_tags_do_not_consume_the_payload_terminator() {
     let record = &native.object_graphs[0].records[0];
 
     assert!(record.references.is_empty());
-    assert!(native.design_objects[0].object_references.is_empty());
+    assert!(native.design_objects[0].relations.is_empty());
     assert!(matches!(
         record.payload.fields.as_slice(),
         [
@@ -4230,7 +4263,7 @@ fn incomplete_object_list_headers_do_not_consume_the_payload_terminator() {
         ]
     );
     assert!(record.references.is_empty());
-    assert!(native.design_objects[0].object_references.is_empty());
+    assert!(native.design_objects[0].relations.is_empty());
 }
 
 #[test]

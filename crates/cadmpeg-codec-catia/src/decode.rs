@@ -80,7 +80,7 @@ fn finish_decode(
     let design_object_reference_count = native
         .design_objects
         .iter()
-        .map(|object| object.object_references.len())
+        .map(|object| object.relations.len())
         .sum();
     let design_object_owner_link_count = native
         .design_objects
