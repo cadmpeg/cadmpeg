@@ -4,11 +4,11 @@
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
-use cadmpeg_ir::codec::{CadirEncoder, Encoder};
+use cadmpeg_ir::codec::{CadirEncoder, DecodeOptions, Encoder};
 use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport};
 use cadmpeg_ir::validate::ValidationReport;
@@ -18,7 +18,6 @@ use crate::envelope::{envelope, print_json, write_output, ReportSink};
 use crate::format::{ForcedInput, Format};
 use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
 use crate::registry::Registry;
-use crate::DecodeArgs;
 
 fn validate_ir(
     registry: &Registry,
@@ -39,26 +38,6 @@ fn validate_ir(
 ///
 /// The executable maps this error to exit status 1.
 pub struct SemanticFailure(String);
-
-/// Safety and reporting options for `convert`.
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "each bool is an independent, orthogonal CLI safety toggle the user opts into by name; an enum would obscure that they compose freely"
-)]
-pub struct ConvertSettings {
-    /// Replace an existing output or report file.
-    pub force: bool,
-    /// Optional path for the versioned JSON command report.
-    pub report: Option<PathBuf>,
-    /// Export despite CADIR validation errors.
-    pub allow_invalid: bool,
-    /// Export a geometry format when decoding transferred no geometry.
-    pub allow_empty: bool,
-    /// Refuse to export when the decode reported any loss.
-    pub reject_lossy: bool,
-    /// Explicit input format selected by the user.
-    pub forced_input: Option<ForcedInput>,
-}
 
 impl fmt::Display for SemanticFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -146,9 +125,9 @@ pub fn decode(
     force: bool,
     report_path: Option<&Path>,
     forced: Option<ForcedInput>,
-    args: &DecodeArgs,
+    options: DecodeOptions,
 ) -> Result<()> {
-    let loaded = loader::load_ir(registry, path, args.options(), forced)?;
+    let loaded = loader::load_ir(registry, path, options, forced)?;
     export_ir(
         &CadirEncoder,
         &loaded.ir,
@@ -175,10 +154,10 @@ pub fn validate_cmd(
     registry: &Registry,
     path: &Path,
     forced: Option<ForcedInput>,
-    args: &DecodeArgs,
+    options: DecodeOptions,
     json: bool,
 ) -> Result<()> {
-    let loaded = loader::load_ir(registry, path, args.options(), forced)?;
+    let loaded = loader::load_ir(registry, path, options, forced)?;
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
@@ -208,52 +187,104 @@ pub fn validate_cmd(
     Ok(())
 }
 
-/// Safety and reporting options for `export`.
-pub struct ExportSettings {
+/// Whether an export validates CADIR before writing.
+pub enum ValidationGate {
+    /// Export without validating, as `export` does.
+    Skip,
+    /// Validate first, refusing on errors unless `allow_invalid`, as `convert` does.
+    Require {
+        /// Export despite CADIR validation errors.
+        allow_invalid: bool,
+    },
+}
+
+/// One export's format, encoder, destinations, and safety gates.
+///
+/// This carries everything an export needs beyond the registry, input path, and
+/// decode options, so `export` and `convert` differ only in their [`ValidationGate`].
+pub struct ExportPipeline<'a> {
+    /// Resolved output format.
+    pub format: Format,
+    /// Encoder for `format`, carried unresolved so its guard surfaces in order.
+    pub encoder: Result<Box<dyn Encoder>>,
+    /// Output artifact path, or `None` to write to standard output.
+    pub out: Option<&'a Path>,
+    /// Versioned JSON report path, or `None` for no report.
+    pub report: Option<&'a Path>,
     /// Replace an existing output or report file.
     pub force: bool,
-    /// Optional path for the versioned JSON command report.
-    pub report: Option<PathBuf>,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
     /// Refuse to export when the decode reported any loss.
     pub reject_lossy: bool,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
+    /// Whether CADIR is validated before writing.
+    pub gate: ValidationGate,
 }
 
-/// Decode if needed and export without validating CADIR.
-pub fn export(
+/// Decode if needed, optionally validate, then export.
+pub fn run_export(
     registry: &Registry,
-    path: &Path,
-    format: Format,
-    out: Option<&Path>,
-    encoder: Result<Box<dyn Encoder>>,
-    settings: ExportSettings,
-    args: &DecodeArgs,
+    input: &Path,
+    pipeline: ExportPipeline<'_>,
+    options: DecodeOptions,
 ) -> Result<()> {
-    let ExportSettings {
-        force,
+    let ExportPipeline {
+        format,
+        encoder,
+        out,
         report: report_path,
+        force,
         allow_empty,
         reject_lossy,
         forced_input,
-    } = settings;
-    let loaded = loader::load_ir(registry, path, args.options(), forced_input)?;
+        gate,
+    } = pipeline;
+    let loaded = loader::load_ir(registry, input, options, forced_input)?;
     let sink = ReportSink {
-        input: path,
-        output: report_path.as_deref(),
+        input,
+        output: report_path,
         force,
-        command: "export",
+        command: match gate {
+            ValidationGate::Skip => "export",
+            ValidationGate::Require { .. } => "convert",
+        },
     };
+    let mut stderr = io::stderr();
     if let Some(report) = &loaded.decode_report {
-        print_decode_report(&mut io::stderr(), report)?;
-        eprintln!("note: export skips IR validation; use `convert` to validate");
+        print_decode_report(&mut stderr, report)?;
+        match gate {
+            ValidationGate::Skip => {
+                eprintln!("note: export skips IR validation; use `convert` to validate");
+            }
+            ValidationGate::Require { .. } => writeln!(stderr)?,
+        }
     }
     if let Some(refusal) = lossy_refusal(reject_lossy, loaded.decode_report.as_ref(), format) {
         sink.write(loaded.decode_report.as_ref(), None, None)?;
         return Err(refusal);
     }
+    let validation = match gate {
+        ValidationGate::Skip => None,
+        ValidationGate::Require { allow_invalid } => {
+            let validation = validate_ir(
+                registry,
+                &loaded.ir,
+                loaded.source_fidelity.as_ref(),
+                losses(loaded.decode_report.as_ref()),
+            );
+            print_validation_report(&mut stderr, &validation)?;
+            if !validation.is_ok() && !allow_invalid {
+                sink.write(loaded.decode_report.as_ref(), Some(&validation), None)?;
+                return Err(semantic(format!(
+                    "validation found {} error(s); refusing to export (use --allow-invalid to override)",
+                    validation.error_count()
+                )));
+            }
+            Some(validation)
+        }
+    };
     if format.is_geometry_export()
         && loaded
             .decode_report
@@ -261,7 +292,7 @@ pub fn export(
             .is_some_and(|report| !report.geometry_transferred)
         && !allow_empty
     {
-        sink.write(loaded.decode_report.as_ref(), None, None)?;
+        sink.write(loaded.decode_report.as_ref(), validation.as_ref(), None)?;
         return Err(semantic(format!(
             "decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)",
             format.name()
@@ -272,78 +303,12 @@ pub fn export(
         &loaded.ir,
         loaded.source_fidelity.as_ref(),
         out,
-        path,
+        input,
         force,
-    )?;
-    sink.write(loaded.decode_report.as_ref(), None, Some(&report))
-}
-
-/// Decode if needed, validate CADIR, and export.
-pub fn convert(
-    registry: &Registry,
-    path: &Path,
-    format: Format,
-    out: Option<&Path>,
-    encoder: Result<Box<dyn Encoder>>,
-    settings: &ConvertSettings,
-    args: &DecodeArgs,
-) -> Result<()> {
-    let loaded = loader::load_ir(registry, path, args.options(), settings.forced_input)?;
-    let sink = ReportSink {
-        input: path,
-        output: settings.report.as_deref(),
-        force: settings.force,
-        command: "convert",
-    };
-    let mut stderr = io::stderr();
-    if let Some(report) = &loaded.decode_report {
-        print_decode_report(&mut stderr, report)?;
-        writeln!(stderr)?;
-    }
-    if let Some(refusal) =
-        lossy_refusal(settings.reject_lossy, loaded.decode_report.as_ref(), format)
-    {
-        sink.write(loaded.decode_report.as_ref(), None, None)?;
-        return Err(refusal);
-    }
-    let validation = validate_ir(
-        registry,
-        &loaded.ir,
-        loaded.source_fidelity.as_ref(),
-        losses(loaded.decode_report.as_ref()),
-    );
-    print_validation_report(&mut stderr, &validation)?;
-    if !validation.is_ok() && !settings.allow_invalid {
-        sink.write(loaded.decode_report.as_ref(), Some(&validation), None)?;
-        return Err(semantic(format!(
-            "validation found {} error(s); refusing to export (use --allow-invalid to override)",
-            validation.error_count()
-        )));
-    }
-    if format.is_geometry_export()
-        && loaded
-            .decode_report
-            .as_ref()
-            .is_some_and(|report| !report.geometry_transferred)
-        && !settings.allow_empty
-    {
-        sink.write(loaded.decode_report.as_ref(), Some(&validation), None)?;
-        return Err(semantic(format!(
-            "decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)",
-            format.name()
-        )));
-    }
-    let report = export_ir(
-        &*encoder?,
-        &loaded.ir,
-        loaded.source_fidelity.as_ref(),
-        out,
-        path,
-        settings.force,
     )?;
     sink.write(
         loaded.decode_report.as_ref(),
-        Some(&validation),
+        validation.as_ref(),
         Some(&report),
     )
 }
@@ -353,11 +318,11 @@ pub fn diff(
     registry: &Registry,
     a: &Path,
     b: &Path,
-    args: &DecodeArgs,
+    options: DecodeOptions,
     json: bool,
 ) -> Result<ExitCode> {
-    let left = loader::load_ir(registry, a, args.options(), None)?;
-    let right = loader::load_ir(registry, b, args.options(), None)?;
+    let left = loader::load_ir(registry, a, options, None)?;
+    let right = loader::load_ir(registry, b, options, None)?;
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
     let fidelity = fidelity_diff(
         left.source_fidelity.as_ref(),

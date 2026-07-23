@@ -327,7 +327,7 @@ fn main() -> ExitCode {
             force,
             report.as_deref(),
             input_args.forced(),
-            &decode,
+            decode.options(),
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Validate {
@@ -335,8 +335,14 @@ fn main() -> ExitCode {
             json,
             input_args,
             decode,
-        } => commands::validate_cmd(&registry, &input, input_args.forced(), &decode, json)
-            .map(|()| ExitCode::SUCCESS),
+        } => commands::validate_cmd(
+            &registry,
+            &input,
+            input_args.forced(),
+            decode.options(),
+            json,
+        )
+        .map(|()| ExitCode::SUCCESS),
         Command::Export {
             input,
             format,
@@ -350,25 +356,28 @@ fn main() -> ExitCode {
             decode,
             step,
         } => match resolve_format(format, output.as_deref()) {
-            Ok(resolved) => commands::export(
+            Ok(resolved) => commands::run_export(
                 &registry,
                 &input,
-                resolved,
-                output.as_deref(),
-                select_encoder(resolved, &step, rhino_version),
-                commands::ExportSettings {
+                commands::ExportPipeline {
+                    format: resolved,
+                    encoder: select_encoder(resolved, &step, rhino_version),
+                    out: output.as_deref(),
+                    report: report.as_deref(),
                     force,
-                    report,
                     allow_empty,
                     reject_lossy,
                     forced_input: input_args.forced(),
+                    gate: commands::ValidationGate::Skip,
                 },
-                &decode,
+                decode.options(),
             )
             .map(|()| ExitCode::SUCCESS),
             Err(error) => Err(error),
         },
-        Command::Diff { a, b, json, decode } => commands::diff(&registry, &a, &b, &decode, json),
+        Command::Diff { a, b, json, decode } => {
+            commands::diff(&registry, &a, &b, decode.options(), json)
+        }
         Command::Convert {
             input,
             format,
@@ -383,21 +392,21 @@ fn main() -> ExitCode {
             decode,
             step,
         } => match resolve_format(format, output.as_deref()) {
-            Ok(resolved) => commands::convert(
+            Ok(resolved) => commands::run_export(
                 &registry,
                 &input,
-                resolved,
-                output.as_deref(),
-                select_encoder(resolved, &step, rhino_version),
-                &commands::ConvertSettings {
+                commands::ExportPipeline {
+                    format: resolved,
+                    encoder: select_encoder(resolved, &step, rhino_version),
+                    out: output.as_deref(),
+                    report: report.as_deref(),
                     force,
-                    report,
-                    allow_invalid,
                     allow_empty,
                     reject_lossy,
                     forced_input: input_args.forced(),
+                    gate: commands::ValidationGate::Require { allow_invalid },
                 },
-                &decode,
+                decode.options(),
             )
             .map(|()| ExitCode::SUCCESS),
             Err(error) => Err(error),
