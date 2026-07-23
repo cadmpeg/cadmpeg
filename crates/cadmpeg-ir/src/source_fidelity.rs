@@ -9,6 +9,8 @@ use crate::document::CadIr;
 use crate::native::NativeConvertError;
 use crate::unknown::UnknownRecord;
 
+pub mod write_plan;
+
 /// Current serialized sidecar version.
 pub const SOURCE_FIDELITY_VERSION: &str = "3";
 

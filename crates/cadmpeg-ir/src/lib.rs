@@ -111,6 +111,7 @@ pub use sketches::{
     SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchEntityUse, SpatialSketchGeometry,
     SpatialSketchId, SpatialSketchProfile,
 };
+pub use source_fidelity::write_plan::{plan_write, verify_retained_bytes, WritePlan};
 pub use source_fidelity::{RetainedSourceRecord, SourceFidelity, SOURCE_FIDELITY_VERSION};
 pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
 pub use subd::{
