@@ -270,7 +270,7 @@ See [`formats/siemens_nx.md`](formats/siemens_nx.md) and [`formats/siemens_nx-op
 - **Tessellation: None.**
 - **Design intent: None.**
 - **Product structure: None.**
-- **Presentation and metadata: Partial.** The summary-information JPEG preview transfers byte-exactly with its dimensions. Persistent tags, attributes, materials, and appearance bindings remain outside the IR.
+- **Presentation and metadata: Partial.** The summary-information JPEG preview transfers byte-exactly with its dimensions. Framed visualization value blocks retain source-schema identity, ordered presentation values, and exact encoded fields. Neutral visualization bindings, persistent tags, attributes, materials, and appearance bindings remain outside the IR.
 
 ### Write and round trip
 

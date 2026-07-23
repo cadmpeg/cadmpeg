@@ -153,14 +153,25 @@ fn finish_decode(
             ir.model.configurations.len(),
         ),
     ]);
-    if object_record_count != 0 || !native.value_blocks.is_empty() {
+    if object_record_count != 0 {
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), {design_object_reference_count} inter-object reference(s), {} value block(s), {value_field_count} value field(s), and {value_selection_count} schema-selected value(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; neutral features, parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), and {design_object_reference_count} inter-object reference(s); {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; neutral features, parameters, sketch geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
+            ),
+            provenance: None,
+        });
+    }
+    if !native.value_blocks.is_empty() {
+        report.losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::AttributesNotTransferred,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "CATIA native data retains {} visualization value block(s), {value_field_count} encoded field(s), and {value_selection_count} schema-selected presentation value(s); neutral visualization and display-property bindings remain unresolved.",
                 native.value_blocks.len(),
             ),
             provenance: None,

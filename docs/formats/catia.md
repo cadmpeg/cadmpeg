@@ -519,7 +519,7 @@ A compact `0x81` reference field, a fixed-width `0x32` reference field, and ever
 
 The following `7C02` schema catalog stores UTF-8 strings. A nonzero first byte is the inclusive one-byte-header-plus-string length. A zero first byte selects a following `u32le` string-byte length after the five-byte header. It either immediately follows the `7C08` graph or follows the graph's intervening `7C0B` value block. Preserve the graph's exact catalog link and the catalog's framing offset. String values may contain line feeds and non-ASCII unit symbols. Its fixed first four entries are `CATCatalogManager`, `catalogManager`, `catalogLinks`, and the empty string. A `7C09` head's `class_ref` is the zero-based ordinal of its class name in this catalog; preserve both the selected entry identity and its string value on the field record.
 
-### 7.3 `7C0B` value blocks
+### 7.3 `7C0B` visualization value blocks
 
 ```text
 value_block := 7C 0B <declared_len:u32le> <payload[declared_len-6]> FE 7C 02 ...
@@ -527,7 +527,7 @@ value_block := 7C 0B <declared_len:u32le> <payload[declared_len-6]> FE 7C 02 ...
 
 `declared_len` measures from the `7C0B` marker through the byte before the terminator. The complete block occupies `declared_len + 1` bytes. The trailing `FE` is followed immediately by the associated `7C02` source-schema catalog.
 
-The value block begins at the exact end offset of its owning `7C08` object graph and owns the immediately following catalog as its source schema. The two frame boundaries identify both relations without scanning or name matching. A `7C0B` or `7C02` candidate contained by a complete value-block extent is value payload, not an independent block or catalog.
+The value block begins at the exact end offset of its preceding `7C08` object graph and owns the immediately following catalog as its source schema. It stores visualization, color, display-offset, chirality, scale-context, and presentation schema values rather than feature parameters. The two frame boundaries identify both structural relations without scanning or name matching. A `7C0B` or `7C02` candidate contained by a complete value-block extent is value payload, not an independent block or catalog.
 
 The payload is a serialized token stream. `32 <ordinal:u32le>` stores a source-schema selector candidate. An ordinal below the source schema's entry population selects that zero-based entry; an ordinal equal to the population is the absent-schema sentinel. A larger ordinal remains a fixed-width field without delimiting a schema-selected value. `87 E6 <bits:u64le>` stores one IEEE-754 binary64 value. `87 E7` and `87 E8` are zero-payload markers. `8E <code:E8..EF> 84 <bytes[code-E7]>` stores one through eight inline bytes. `80..D0` stores the unsigned atom `byte - 80`; `D1..E4 <low:u8>` stores `(byte - D1) * 256 + low + 1`. The longer assigned forms take precedence over atom recognition. Multi-byte token payloads are opaque to token recognition: marker-like bytes inside them do not start another token. Bytes outside these forms are single-byte literals, so tokenization preserves the complete payload without residual bytes.
 

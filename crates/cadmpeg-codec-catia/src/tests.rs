@@ -1598,7 +1598,23 @@ fn standard_catpart_with_value_block() -> Vec<u8> {
         "catalogManager",
         "catalogLinks",
         "",
-        "Sketch",
+        "VPGlobal",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
+fn standard_catpart_with_visualization_values_only() -> Vec<u8> {
+    let mut stream = value_block_stream(&[0x32, 4, 0, 0, 0, 0x83]);
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "VPGlobal",
     ]));
     let mut file = standard_catpart();
     file.splice(16..16, stream);
@@ -5063,7 +5079,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
     );
     assert_eq!(
         native.value_blocks[0].schema_selections[0].name.as_deref(),
-        Some("Sketch")
+        Some("VPGlobal")
     );
     assert_eq!(
         native.value_blocks[0].schema_selections[0].encoded_value,
@@ -5081,11 +5097,39 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
         ]
     );
     assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::Attribute
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
+            && loss.message.contains("1 visualization value block(s)")
+            && loss
+                .message
+                .contains("1 schema-selected presentation value(s)")
+    }));
+    assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
-            && loss.message.contains("1 value block(s)")
-            && loss.message.contains("1 schema-selected value(s)")
+            && loss.message.contains("neutral features")
+            && !loss.message.contains("value block")
     }));
+}
+
+#[test]
+fn visualization_values_do_not_assert_missing_design_intent() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_visualization_values_only()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode visualization-only values");
+
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::Attribute
+            && loss.message.contains("schema-selected presentation value")
+    }));
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.category != cadmpeg_ir::report::LossCategory::DesignIntent));
 }
 
 #[test]
